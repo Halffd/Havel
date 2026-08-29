@@ -210,6 +210,17 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 #else
   (void)linkCmd;
 #endif
+
+  // AOT standalone executables are linked as static archives.  Under
+  // --as-needed the linker only pulls members that resolve symbols
+  // currently referenced by the link unit.  The wayland protocol
+  // interface objects (zxdg_output_v1_interface, wl_registry_interface,
+  // ...) live in wayland-protos but no symbol in the LLVM-generated AOT
+  // main references them directly, so lld drops that archive member.
+  // havel_core transitively requires those symbols on some platforms.
+  // Force the entire archive in for the native-AOT link.
+  linkCmd +=
+      " -Wl,--whole-archive -lwayland-protos -Wl,--no-whole-archive";
 }
 #endif
 
@@ -259,6 +270,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugAst = cfg.debugAst,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
+          .headlessMode = cfg.headlessMode,
           .pureStdlib = cfg.pureStdlib,
           .vmConfig = cfg.vmConfig,
           .serviceIncludes = cfg.serviceIncludes,
@@ -661,7 +673,7 @@ public:
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       auto hostAPI = createHostAPI(havel_inst);
       havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                       cfg.serviceExcludes);
+                                       cfg.serviceExcludes, cfg.headlessMode);
       hostAPI->SetVM(bytecodeVM);
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
@@ -883,7 +895,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
   havel::repl::REPL repl(makeREPLConfig(cfg));
   auto hostAPI = createHostAPI(havel_inst);
   havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                   cfg.serviceExcludes);
+                                   cfg.serviceExcludes, cfg.headlessMode);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
               collectKnownGlobals(bytecodeVM));
@@ -1111,6 +1123,8 @@ public:
       appArgList.push_back("--debug-ast");
     if (cfg.stopOnError)
       appArgList.push_back("--error");
+    if (cfg.headlessMode)
+      appArgList.push_back("--headless");
 
     // Script files
     for (const auto &f : cfg.scriptFiles)
@@ -1501,6 +1515,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.stopOnError = true;
     } else if (arg == "--minimal" || arg == "-m") {
       // Minimal mode - no IO/hotkeys/GUI
+      cfg.minimalMode = true;
+    } else if (arg == "--headless") {
+      // Headless mode - skip all hardware initialization (X11, BrightnessManager, etc.)
+      cfg.headlessMode = true;
       cfg.minimalMode = true;
     } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" ||
                arg == "-i") {

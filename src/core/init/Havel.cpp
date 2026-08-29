@@ -51,13 +51,14 @@ constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
 constexpr int CONFIG_CHECK_INTERVAL_S = 5;
 
 Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
-             const std::vector<std::string> &args)
+             const std::vector<std::string> &args, bool headless)
     : lastCheck(std::chrono::steady_clock::now()),
       lastWindowCheck(std::chrono::steady_clock::now()),
       guiMode(gui),
       replMode(repl),
       scriptFile(scriptFile),
-      commandLineArgs(args) {
+      commandLineArgs(args),
+      headlessMode(headless) {
 
   if (instance) {
     throw std::runtime_error("Havel instance already exists");
@@ -93,6 +94,9 @@ void Havel::initialize(bool isStartup) {
 
     // Initialize in dependency order
     io = std::make_shared<IO>();
+    if (headlessMode) {
+      io->SetHeadlessMode(true);
+    }
     if (replMode) {
       io->SetEventListenerThreaded(false);
     }

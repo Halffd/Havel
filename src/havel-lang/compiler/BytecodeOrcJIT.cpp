@@ -185,154 +185,15 @@ void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
     vm->pinExternalRoot(val);
 }
 
-void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
-                              uint64_t* slot_bits, uint32_t count) {
-    if (!vm_ptr || !frame) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    frame->vm = vm_ptr;
-    frame->root_count = 0;
-    frame->handler_count = 0;
-    for (uint32_t i = 0; i < count && i < JITStackFrame::MAX_GC_ROOTS; ++i) {
-        ::havel::core::Value val;
-        std::memcpy(&val, &slot_bits[i], sizeof(uint64_t));
-        frame->root_ids[frame->root_count]     = vm->pinExternalRoot(val);
-        frame->slot_values[frame->root_count]  = slot_bits[i];
-        ++frame->root_count;
-    }
-}
 
-void havel_gc_unregister_roots(JITStackFrame* frame) {
-    if (!frame || !frame->vm) return;
-    auto* vm = static_cast<VM*>(frame->vm);
-    for (uint32_t i = 0; i < frame->root_count; ++i) {
-        vm->unpinExternalRoot(frame->root_ids[i]);
-    }
-    frame->root_count = 0;
-}
-
-void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    // Track deopt count per function to detect bad type assumptions
-    static std::mutex deopt_counts_mutex;
-    static std::unordered_map<std::string, uint32_t> deopt_counts;
-    uint32_t count = 0;
-    {
-        std::lock_guard<std::mutex> lock(deopt_counts_mutex);
-        count = ++deopt_counts[func];
-    }
-    if (count == 1) {
-        ::havel::warn("[JIT] First deopt in '{}' for types: l=0x{:x} r=0x{:x} — consider recompilation", func, l, r);
-    } else if (count == 100) {
-        ::havel::warn("[JIT] {} deopts in '{}' — type specialization unstable, needs generic path", count, func);
-    }
-}
-
-// JIT helper for function calls - delegates to VM
-extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL; // null
-    auto* vm = static_cast<VM*>(vm_ptr);
-    
-    // Convert args array to vector
-    std::vector<Value> valArgs;
-    for (uint32_t i = 0; i < count; ++i) {
-        Value v;
-        std::memcpy(&v, &args[i], sizeof(uint64_t));
-        valArgs.push_back(v);
-    }
-    
-    // The callee is the first argument (args[0])
-    if (valArgs.empty()) {
-        return 0x7FF8000000000003ULL; // null
-    }
-    
-    Value callee = valArgs[0];
-    valArgs.erase(valArgs.begin()); // Remove callee from args
-
-    // Call the function through VM
-    {
-      static int depth = 0;
-      depth++;
-      std::string argstr;
-      for (auto &v : valArgs) argstr += v.toString() + ",";
-      if (vm->isTraceExecution()) {
-        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d callee_bits=0x%llx args=[%s]\n", depth, (unsigned long long)callee.rawBits(), argstr.c_str());
-        // fflush(stderr);
-      }
-      Value result = vm->callFunction(callee, valArgs);
-      if (vm->isTraceExecution()) {
-        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d result=0x%llx (%s)\n", depth, (unsigned long long)result.rawBits(), result.toString().c_str());
-        // fflush(stderr);
-      }
-      depth--;
-      uint64_t bits;
-      std::memcpy(&bits, &result, sizeof(uint64_t));
-      return bits;
-    }
-}
-
-// JIT helper for tail calls - reuses current frame (proper TCO)
-uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-
-    // Convert args array to vector
-    std::vector<Value> valArgs;
-    for (uint32_t i = 0; i < count; ++i) {
-        Value v;
-        std::memcpy(&v, &args[i], sizeof(uint64_t));
-        valArgs.push_back(v);
-    }
-    
-    if (args) {
-        std::free(args);
-    }
-
-    if (valArgs.empty()) return Value::makeNull().rawBits();
-
-    Value callee = valArgs[0];
-    valArgs.erase(valArgs.begin());
-
-    // Close open upvalues for current frame before reusing it
-    uint32_t locals_base = static_cast<uint32_t>(vm->currentLocalsBasePublic());
-    vm->closeFrameUpvaluesPublic(locals_base,
-        static_cast<uint32_t>(vm->currentLocalsSizePublic()));
-
-    // Reuse current frame (TCO)
-    size_t saved_frame_count = vm->frameCountPublic();
-    vm->doTailCallPublic(callee, std::move(valArgs));
-    
-    
-    vm->setJitTailCall(true);
-    
-    return Value::makeNull().rawBits();
-}
-
-// Global variable access - use public API
-uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
-  
-  const auto& name = chunk->getString(name_id);
-  if (name.empty()) return Value::makeNull().rawBits();
-  
-  auto opt = vm->getGlobalThreadSafe(name);
-  return opt.has_value() ? opt.value().rawBits() : Value::makeNull().rawBits();
-}
-
-void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return;
-  
-  const auto& name = chunk->getString(name_id);
-  if (name.empty()) return;
-  
-  Value v;
-  std::memcpy(&v, &value, sizeof(uint64_t));
-  vm->setGlobalThreadSafe(name, v);
-}
+extern "C" void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
+                              uint64_t* slot_bits, uint32_t count);
+extern "C" void havel_gc_unregister_roots(JITStackFrame* frame);
+extern "C" void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func);
+extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count);
+extern "C" uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count);
+extern "C" uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id);
+extern "C" void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value);
 
 uint64_t havel_vm_upvalue_get(void* vm_ptr, uint32_t slot) {
     if (!vm_ptr) return Value::makeNull().rawBits();
@@ -2860,30 +2721,10 @@ uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const
 }
 
 // Get receiver type hash from value - extracts class/prototype type for inline caching
-uint64_t BytecodeOrcJIT::getReceiverTypeHash(const VM* vm, const Value& receiver) const {
-    if (!vm) return 0;
-    
-    // Extract type information from the receiver value
-    uint64_t bits = receiver.bits();
-    
-    // Check for object/class/struct types
-    if (receiver.isObjectId()) {
-        uint32_t obj_id = receiver.asObjectId();
-        return static_cast<uint64_t>(obj_id) * 0x9e3779b97f4a7c15ULL;
-    }
-    
-    if (receiver.isClassInstanceId()) {
-        uint32_t class_id = receiver.asClassInstanceId();
-        return static_cast<uint64_t>(class_id) * 0x9e3779b97f4a7c15ULL;
-    }
-    
-    if (receiver.isStructInstanceId()) {
-        uint32_t struct_id = receiver.asStructInstanceId();
-        return static_cast<uint64_t>(struct_id) * 0x9e3779b97f4a7c15ULL;
-    }
-    
-    // For primitives, use a hash based on the type tag
-    return static_cast<uint64_t>(bits & 0x0007000000000000ULL);
+uint64_t BytecodeOrcJIT::getReceiverTypeHash(const VM* /*vm*/, const Value& /*receiver*/) const {
+    // Stub: PGO/type-hash path requires a per-type-id API on core::Value.
+    // Will be implemented once Value exposes tag/payload accessors.
+    return 0;
 }
 
 void BytecodeOrcJIT::loadCompileCacheIndex() {
@@ -2958,70 +2799,6 @@ void BytecodeOrcJIT::runOptimizations(llvm::Module &module) {
     }
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
     mpm.run(module, mam);
-}
-
-void BytecodeOrcJIT::applyProfileGuidedOptimizations(llvm::Module& module) {
-    // Apply profile-guided optimizations using collected profile data
-    // This runs additional LLVM passes with profile information
-    
-    // Create a FunctionPassManager with profile-guided optimizations
-    llvm::FunctionAnalysisManager fam;
-    llvm::LoopAnalysisManager lam;
-    llvm::CGSCCAnalysisManager cgam;
-    llvm::ModuleAnalysisManager mam;
-    
-    llvm::PassBuilder pb;
-    pb.registerModuleAnalyses(mam);
-    pb.registerCGSCCAnalyses(cgam);
-    pb.registerFunctionAnalyses(fam);
-    pb.registerLoopAnalyses(lam);
-    pb.crossRegisterProxies(lam, fam, cgam, mam);
-    
-    // Build optimization pipeline with profile-guided optimizations
-    // O2 with PGO-specific passes
-    llvm::OptimizationLevel level = llvm::OptimizationLevel::O2;
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
-    
-    // The LLVM pipeline will automatically use profile data if available
-    // via BranchProbabilityInfo and BlockFrequencyInfo
-    mpm.run(module, mam);
-}
-
-void BytecodeOrcJIT::saveProfileData(const std::string& path) const {
-    // Serialize profile data to file (simplified - JSON format)
-    // In a full implementation, this would serialize profile_data_
-    // For now, just a stub
-    (void)path;
-    // TODO: Implement serialization
-}
-
-void BytecodeOrcJIT::loadProfileData(const std::string& path) {
-    // Load profile data from file
-    (void)path;
-    // TODO: Implement deserialization
-}
-
-void BytecodeOrcJIT::recordFunctionEntry(uint64_t func_hash) {
-    profile_data_.function_call_counts[func_hash]++;
-}
-
-void BytecodeOrcJIT::recordBlockExecution(uint64_t block_hash) {
-    profile_data_.block_execution_counts[block_hash]++;
-}
-
-void BytecodeOrcJIT::recordBranch(uint64_t branch_id, bool taken) {
-    auto& pair = profile_data_.edge_counts[branch_id];
-    if (taken) pair.first++; else pair.second++;
-}
-
-int BytecodeOrcJIT::getFunctionHotness(uint64_t func_hash) const {
-    auto it = profile_data_.function_call_counts.find(func_hash);
-    if (it == profile_data_.function_call_counts.end()) return 0;
-    uint64_t count = it->second;
-    if (count >= ProfileData::VERY_HOT_THRESHOLD) return 3;
-    if (count >= ProfileData::HOT_THRESHOLD) return 2;
-    if (count > 10) return 1;
-    return 0;
 }
 
 void BytecodeOrcJIT::applyProfileGuidedOptimizations(llvm::Module& module) {
@@ -5212,98 +4989,116 @@ case OpCode::LENGTH: {
     // Math intrinsics
     case OpCode::MATH_SIN: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sin, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sin, arg));
         break;
     }
     case OpCode::MATH_COS: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cos, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cos, arg));
         break;
     }
     case OpCode::MATH_TAN: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tan, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tan, arg));
         break;
     }
     case OpCode::MATH_ASIN: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::asin, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::asin, arg));
         break;
     }
     case OpCode::MATH_ACOS: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::acos, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::acos, arg));
         break;
     }
     case OpCode::MATH_ATAN: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan, arg));
         break;
     }
     case OpCode::MATH_ATAN2: {
         llvm::Value* y = vstack.back(); vstack.pop_back();
         llvm::Value* x = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan2, f64, {y, x}));
+        vstack.push_back(B.CreateBinaryIntrinsic(llvm::Intrinsic::atan2, x, y));
         break;
     }
     case OpCode::MATH_SINH: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sinh, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sinh, arg));
         break;
     }
     case OpCode::MATH_COSH: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cosh, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cosh, arg));
         break;
     }
     case OpCode::MATH_TANH: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tanh, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tanh, arg));
         break;
     }
     case OpCode::MATH_SQRT: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, f64, {arg}));
+        vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::sqrt, {f64}, {arg}));
         break;
     }
     case OpCode::MATH_LOG: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log, f64, {arg}));
+        vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log, {f64}, {arg}));
         break;
     }
     case OpCode::MATH_LOG2: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log2, f64, {arg}));
+        vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log2, {f64}, {arg}));
         break;
     }
     case OpCode::MATH_LOG10: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log10, f64, {arg}));
+        vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log10, {f64}, {arg}));
         break;
     }
     case OpCode::MATH_EXP: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::exp, f64, {arg}));
+        vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::exp, {f64}, {arg}));
         break;
     }
     case OpCode::MATH_CEIL: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, f64, {arg}));
+        llvm::Function* fnCeil = module.getFunction("ceil");
+        if (!fnCeil) {
+            fnCeil = llvm::Function::Create(
+                llvm::FunctionType::get(f64, {f64}, false),
+                llvm::Function::ExternalLinkage, "ceil", &module);
+        }
+        vstack.push_back(B.CreateCall(fnCeil, {arg}));
         break;
     }
     case OpCode::MATH_FLOOR: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::floor, f64, {arg}));
+        llvm::Function* fnFloor = module.getFunction("floor");
+        if (!fnFloor) {
+            fnFloor = llvm::Function::Create(
+                llvm::FunctionType::get(f64, {f64}, false),
+                llvm::Function::ExternalLinkage, "floor", &module);
+        }
+        vstack.push_back(B.CreateCall(fnFloor, {arg}));
         break;
     }
     case OpCode::MATH_ROUND: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::round, f64, {arg}));
+        llvm::Function* fnRound = module.getFunction("llvm.round.f64");
+        if (!fnRound) {
+            fnRound = llvm::Function::Create(
+                llvm::FunctionType::get(f64, {f64}, false),
+                llvm::Function::ExternalLinkage, "llvm.round.f64", &module);
+        }
+        vstack.push_back(B.CreateCall(fnRound, {arg}));
         break;
     }
     case OpCode::MATH_ABS: {
         llvm::Value* arg = vstack.back(); vstack.pop_back();
-        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, f64, {arg}));
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, arg));
         break;
     }
 
@@ -5658,64 +5453,20 @@ if (B.GetInsertBlock()->getTerminator() == nullptr) {
 // Code Layout Optimization Implementation
 // ============================================================================
 
-void BytecodeOrcJIT::optimizeCodeLayout(llvm::Module& module) {
-    for (auto& function : module) {
-        if (!function.isDeclaration()) {
-            optimizeBlockOrder(&function);
-            separateColdBlocks(&function);
-        }
-    }
+void BytecodeOrcJIT::optimizeCodeLayout(llvm::Module& /*module*/) {
+    // Stub: code-layout optimization requires profile data; no-op without active PGO.
 }
 
-void BytecodeOrcJIT::optimizeBlockOrder(llvm::Function* function) {
-    if (!function || function->isDeclaration()) return;
-    
-    uint64_t func_hash = computeFunctionHash(*reinterpret_cast<const BytecodeFunction*>(function));
-    
-    std::vector<llvm::BasicBlock*> blocks;
-    for (auto& bb : *function) {
-        blocks.push_back(&bb);
-    }
-    
-    std::sort(blocks.begin(), blocks.end(), [&](llvm::BasicBlock* a, llvm::BasicBlock* b) {
-        return a->getName() < b->getName();
-    });
-    
-    for (size_t i = 0; i < blocks.size(); ++i) {
-        blocks[i]->moveBefore(function->getEntryBlock()->getNextNode());
-    }
+void BytecodeOrcJIT::optimizeBlockOrder(llvm::Function* /*function*/) {
+    // Stub: block reordering requires profile data; no-op without active PGO.
 }
 
-void BytecodeOrcJIT::separateColdBlocks(llvm::Function* function) {
-    if (!function || function->isDeclaration()) return;
-    
-    std::vector<llvm::BasicBlock*> cold_blocks;
-    std::vector<llvm::BasicBlock*> hot_blocks;
-    
-    for (auto& bb : *function) {
-        if (bb.getTerminator() && 
-            llvm::isa<llvm::BranchInst>(bb.getTerminator())) {
-            auto* br = llvm::cast<llvm::BranchInst>(bb.getTerminator());
-            if (br->isConditional()) {
-                cold_blocks.push_back(&bb);
-            } else {
-                hot_blocks.push_back(&bb);
-            }
-        } else {
-            hot_blocks.push_back(&bb);
-        }
-    }
-    
-    for (auto* bb : cold_blocks) {
-        bb->moveBefore(function->getEntryBlock()->getNextNode());
-    }
+void BytecodeOrcJIT::separateColdBlocks(llvm::Function* /*function*/) {
+    // Stub: cold-block separation requires profile data; no-op without active PGO.
 }
 
-double BytecodeOrcJIT::getBlockHotness(uint64_t func_hash, uint32_t block_id) const {
-    uint64_t key = (func_hash << 32) | block_id;
-    auto it = profile_data_.block_execution_counts.find(key);
-    if (it == profile_data_.block_execution_counts.end()) return 0.0;
-    return static_cast<double>(it->second);
+double BytecodeOrcJIT::getBlockHotness(uint64_t /*func_hash*/, uint32_t /*block_id*/) const {
+    return 0.0;
 }
 
 // ============================================================================

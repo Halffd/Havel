@@ -160,7 +160,8 @@ int main(int argc, char **argv) {
         std::vector<std::string> self_hosted_flags = {
             "--run",
             "--self-hosted-path",
-            self_hosted_path.string()
+            self_hosted_path.string(),
+            "--minimal"
         };
         failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
     }
@@ -191,7 +192,8 @@ int main(int argc, char **argv) {
         std::vector<std::string> self_hosted_flags = {
             "--run",
             "--self-hosted-path",
-            self_hosted_path.string()
+            self_hosted_path.string(),
+            "--minimal"
         };
         failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
     }

@@ -94,6 +94,7 @@ bool debugIo = false;
   host::ServiceFilter serviceExcludes;
   bool listServices = false;
   bool strictSemantics = true;
+  bool headlessMode = false;
 };
 
 class RunStrategy {

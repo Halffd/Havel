@@ -122,9 +122,13 @@ Value VM::execLengthOp(Value v) {
  if (methodIt != typeIt->second.end()) {
  auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
  if (fnIt != host_functions.end()) return fnIt->second({v});
- }
- }
- }
+}
+  }
+  // DEBUG
+  fprintf(stderr, "DEBUG len: value received\n");
+  fflush(stderr);
+  COMPILER_THROW("Length operator requires array, string, object, or set");
+}
  if (v.isArrayId()) {
  return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
  } else if (v.isStringValId()) {
@@ -144,8 +148,27 @@ Value VM::execLengthOp(Value v) {
   auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
   if (fnIt != host_functions.end()) return fnIt->second({v});
   }
+}
+  } else if (v.isRangeId()) {
+    auto *r = heap_.range(v.asRangeId());
+    if (!r) return Value::makeInt(0);
+    if (r->step == 0) return Value::makeInt(0);
+    int64_t delta = r->end - r->start;
+    int64_t step = r->step;
+    int64_t count = 0;
+    if ((step > 0 && delta >= 0) || (step < 0 && delta <= 0)) {
+      int64_t span = step > 0 ? delta : -delta;
+      int64_t absStep = step > 0 ? step : -step;
+      count = span / absStep + 1;
+    }
+    if (count < 0) count = 0;
+    return Value::makeInt(count);
   }
-  }
+  // DEBUG
+  uint64_t tag = v.getTagBits() & 0x7;
+  fprintf(stderr, "DEBUG len: value tag = %llu (isArray=%d isString=%d isObject=%d isSet=%d isRange=%d isIter=%d)\n",
+          (unsigned long long)tag, v.isArrayId(), v.isStringId(), v.isObjectId(), v.isSetId(), v.isRangeId(), v.isIteratorId());
+  fflush(stderr);
   COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 

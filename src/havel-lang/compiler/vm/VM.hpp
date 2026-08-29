@@ -1119,6 +1119,9 @@ void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::mov
     void setHeadlessMode(bool enabled) { headlessMode_ = enabled; }
     bool isHeadlessMode() const { return headlessMode_; }
 
+    void setSelfHostedModulesPath(const std::string& path) { self_hosted_modules_path_ = path; }
+    const std::string& getSelfHostedModulesPath() const { return self_hosted_modules_path_; }
+
     void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
     void runGarbageCollection() { collectGarbage(); }
 GCHeap::Stats gcStats() const { return heap_.stats(); }

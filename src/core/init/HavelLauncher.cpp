@@ -1513,6 +1513,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--minimal" || arg == "-m") {
       // Minimal mode - no IO/hotkeys/GUI
       cfg.minimalMode = true;
+    } else if (arg == "--headless") {
+      // Headless mode - skip X11/Brightness/EventListener initialization
+      cfg.headlessMode = true;
+      cfg.minimalMode = true;
     } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" ||
                arg == "-i") {
       repl = true;
@@ -1886,6 +1890,7 @@ Options:
   -e, --error         Stop on first error/warning
   -E, --eval CODE     Run inline Havel code
   -m, --minimal       Minimal mode (no IO/hotkeys/GUI)
+  --headless            Headless mode (skip X11/BrightnessManager/EventListener)
   -r, --repl          Start interactive REPL
   -i, --interactive   Same as --repl
   --run               Run script in minimal mode

@@ -1,0 +1,30 @@
+// Regression test: host functions resolve in strict-mode semantic analysis.
+// What: the run/compile path should recognize live registered host functions
+//   (from options.host_functions + the VM's registered names and globals) as
+//   known globals, so they don't trigger "Unresolved identifier" errors.
+// Why: guards the removal of the hardcoded knownGlobals list. Any of these
+//   being unresolved means the live-harvest broke.
+// How: run with `havel run scripts/tests/test_host_globals_strict.hv
+//   --no-self-hosted`. Exits 0 on success, 255 on any assertion failure.
+
+fail = fn(label, expected, got) {
+  print("FAIL host-globals " + label + ": expected " + str(expected) + ", got " + str(got))
+  process.exit(255)
+}
+
+// type is a registered host function
+if type(42) != "int" {
+  fail("type", "int", type(42))
+}
+
+// len is a registered host function
+if len([1, 2, 3]) != 3 {
+  fail("len", 3, len([1, 2, 3]))
+}
+
+// print should resolve and return null
+if print("shell", "ok") != null {
+  fail("print", "null", print("shell", "ok"))
+}
+
+print("ok")

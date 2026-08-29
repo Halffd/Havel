@@ -5,17 +5,18 @@
 #include <iostream>
 #include <sstream>
 // Check if a token is skippable (whitespace, comment, or #unsafe marker)
-static inline bool isSkippableToken(const havel::Token &t) {
-  return t.type == havel::TokenType::NewLine ||
-         t.type == havel::TokenType::Comment ||
-         t.type == havel::TokenType::UnsafeMarker;
+static inline bool isSkippableToken(const havel::Token& t) {
+    return t.type == havel::TokenType::NewLine || 
+           t.type == havel::TokenType::Comment || 
+           t.type == havel::TokenType::UnsafeMarker;
 }
+
 
 /*
  * MAIN C++ PARSER — FROZEN (Stage 0)
  *
- * This is the C++ parser used by the main havel executable (C++ compilation
- * path). It exists for the C++ compilation pipeline (--no-self-hosted).
+ * This is the C++ parser used by the main havel executable (C++ compilation path).
+ * It exists for the C++ compilation pipeline (--no-self-hosted).
  *
  * DO NOT ADD NEW FEATURES HERE.
  *
@@ -33,77 +34,51 @@ using enum havel::TokenType;
 namespace havel::parser {
 
 static bool isKeywordToken(TokenType t) {
-  switch (t) {
-  case TokenType::Mode:
-  case TokenType::Sync:
-  case TokenType::Channel:
-  case TokenType::Class:
-  case TokenType::Match:
-  case TokenType::Select:
-  case TokenType::Where:
-  case TokenType::Config:
-  case TokenType::Devices:
-  case TokenType::Modes:
-  case TokenType::Pool:
-  case TokenType::Repeat:
-  case TokenType::On:
-  case TokenType::Off:
-  case TokenType::When:
-  case TokenType::True:
-  case TokenType::False:
-  case TokenType::Null:
-  case TokenType::Del:
-  case TokenType::Trait:
-  case TokenType::Prot:
-  case TokenType::Impl:
-  case TokenType::This:
-  case TokenType::Struct:
-  case TokenType::Enum:
-  case TokenType::Op:
-  case TokenType::Default:
-  case TokenType::Val:
-  case TokenType::Let:
-  case TokenType::Const:
-  case TokenType::Fn:
-  case TokenType::Go:
-  case TokenType::Thread:
-  case TokenType::Timeout:
-  case TokenType::Interval:
-  case TokenType::Wait:
-  case TokenType::WaitGroup:
-  case TokenType::Defer:
-  case TokenType::Co:
-  case TokenType::Yield:
-  case TokenType::Update:
-    return true;
-  default:
-    return false;
-  }
+    switch (t) {
+    case TokenType::Mode: case TokenType::Sync: case TokenType::Channel:
+    case TokenType::Class: case TokenType::Match: case TokenType::Select:
+    case TokenType::Where: case TokenType::Config: case TokenType::Devices:
+    case TokenType::Modes: case TokenType::Pool:
+    case TokenType::Repeat: case TokenType::On: case TokenType::Off:
+    case TokenType::When: case TokenType::True: case TokenType::False:
+    case TokenType::Null: case TokenType::Del: case TokenType::Trait:
+    case TokenType::Prot: case TokenType::Impl: case TokenType::This:
+    case TokenType::Struct: case TokenType::Enum: case TokenType::Op:
+    case TokenType::Default:
+    case TokenType::Val: case TokenType::Let: case TokenType::Const:
+    case TokenType::Fn: case TokenType::Go: case TokenType::Thread:
+    case TokenType::Timeout: case TokenType::Interval: case TokenType::Wait:
+    case TokenType::WaitGroup: case TokenType::Defer: case TokenType::Co:
+    case TokenType::Yield: case TokenType::Update:
+        return true;
+    default:
+        return false;
+    }
 }
 
-static double parseNumberLiteral(const std::string &s) {
-  if (s.size() >= 2 && s[0] == '0') {
-    if (s[1] == 'x' || s[1] == 'X')
-      return static_cast<double>(std::stoll(s, nullptr, 0));
-    if (s[1] == 'o' || s[1] == 'O')
-      return static_cast<double>(std::stoll(s.substr(2), nullptr, 8));
-    if (s[1] == 'b' || s[1] == 'B')
-      return static_cast<double>(std::stoll(s.substr(2), nullptr, 2));
-  }
-  return std::stod(s);
+static double parseNumberLiteral(const std::string& s) {
+    if (s.size() >= 2 && s[0] == '0') {
+        if (s[1] == 'x' || s[1] == 'X')
+            return static_cast<double>(std::stoll(s, nullptr, 0));
+        if (s[1] == 'o' || s[1] == 'O')
+            return static_cast<double>(std::stoll(s.substr(2), nullptr, 8));
+        if (s[1] == 'b' || s[1] == 'B')
+            return static_cast<double>(std::stoll(s.substr(2), nullptr, 2));
+    }
+    return std::stod(s);
 }
 
-static bool hasDecimalPart(const std::string &s) {
-  return s.find('.') != std::string::npos || s.find('e') != std::string::npos ||
-         s.find('E') != std::string::npos;
+static bool hasDecimalPart(const std::string& s) {
+    return s.find('.') != std::string::npos ||
+           s.find('e') != std::string::npos ||
+           s.find('E') != std::string::npos;
 }
 
-void Parser::reportError(const std::string &message) {
+  void Parser::reportError(const std::string &message) {
   if (errors.size() >= MAX_PARSER_ERRORS) {
     if (errors.size() == MAX_PARSER_ERRORS) {
       CompilerError err(ErrorSeverity::Error, at().line, at().column,
-                        "too many errors, stopping (" +
-                            std::to_string(MAX_PARSER_ERRORS) + " limit)");
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
       errors.push_back(err);
     }
     throw ParseError(at().line, at().column, "parser error limit exceeded");
@@ -111,17 +86,16 @@ void Parser::reportError(const std::string &message) {
   CompilerError err(ErrorSeverity::Error, at().line, at().column, message);
   errors.push_back(err);
 
-  errors::ErrorReporter::instance().errorAt(::havel::errors::ErrorStage::Parser,
-                                            message, at().line, at().column,
-                                            at().length);
-}
+  errors::ErrorReporter::instance().errorAt(
+  ::havel::errors::ErrorStage::Parser, message,
+  at().line, at().column, at().length);
+  }
 
-void Parser::reportErrorAt(const Token &token, const std::string &message) {
+  void Parser::reportErrorAt(const Token &token, const std::string &message) {
   if (errors.size() >= MAX_PARSER_ERRORS) {
     if (errors.size() == MAX_PARSER_ERRORS) {
       CompilerError err(ErrorSeverity::Error, token.line, token.column,
-                        "too many errors, stopping (" +
-                            std::to_string(MAX_PARSER_ERRORS) + " limit)");
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
       errors.push_back(err);
     }
     throw ParseError(token.line, token.column, "parser error limit exceeded");
@@ -129,17 +103,17 @@ void Parser::reportErrorAt(const Token &token, const std::string &message) {
   CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
   errors.push_back(err);
 
-  errors::ErrorReporter::instance().errorAt(::havel::errors::ErrorStage::Parser,
-                                            message, token.line, token.column,
-                                            token.length);
-}
+  errors::ErrorReporter::instance().errorAt(
+  ::havel::errors::ErrorStage::Parser, message,
+  token.line, token.column, token.length);
+  }
 
 void Parser::reportWarning(const std::string &message) {
   CompilerError err(ErrorSeverity::Warning, at().line, at().column, message);
   errors.push_back(err);
 
-  errors::ErrorReporter::instance().warning(::havel::errors::ErrorStage::Parser,
-                                            message);
+  errors::ErrorReporter::instance().warning(
+      ::havel::errors::ErrorStage::Parser, message);
 }
 
 // ============================================================================
@@ -149,39 +123,33 @@ void Parser::reportWarning(const std::string &message) {
 void Parser::checkTokenLimit() {
   if (tokens_consumed_ > MAX_PARSER_TOKENS) {
     throw ParseError(at().line, at().column,
-                     "parser timeout: exceeded " +
-                         std::to_string(MAX_PARSER_TOKENS) +
-                         " tokens (possible infinite loop)");
+      "parser timeout: exceeded " + std::to_string(MAX_PARSER_TOKENS) + " tokens (possible infinite loop)");
   }
 }
 
-void Parser::checkParseLoop(int &counter, const char *context) {
+void Parser::checkParseLoop(int &counter, const char* context) {
   if (++counter > 100000) {
     size_t line = position < tokens.size() ? tokens[position].line : 0;
-    throw ParseError(line,
-                     position < tokens.size() ? tokens[position].column : 0,
-                     std::string("parse loop exceeded 100000 iterations in ") +
-                         context + " (possible infinite loop)");
+    throw ParseError(line, position < tokens.size() ? tokens[position].column : 0,
+      std::string("parse loop exceeded 100000 iterations in ") + context +
+      " (possible infinite loop)");
   }
 }
 
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
-  return makeNode<ast::Identifier>(token.value, token.line, token.column);
+    return makeNode<ast::Identifier>(token.value, token.line,
+        token.column);
 }
 
 bool Parser::isFieldLikeToken(const Token &tok) const {
-  if (tok.type == havel::TokenType::Identifier)
-    return true;
-  if (tok.value.empty())
-    return false;
-  char first = tok.value[0];
-  if (!std::isalpha(static_cast<unsigned char>(first)) && first != '_')
-    return false;
-  for (char c : tok.value) {
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
-      return false;
-  }
-  return true;
+    if (tok.type == havel::TokenType::Identifier) return true;
+    if (tok.value.empty()) return false;
+    char first = tok.value[0];
+    if (!std::isalpha(static_cast<unsigned char>(first)) && first != '_') return false;
+    for (char c : tok.value) {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
+        }
+        return true;
 }
 
 void Parser::synchronize() {
@@ -192,21 +160,13 @@ void Parser::synchronize() {
   if (auto unclosed = getUnclosedDelimiter()) {
     std::string msg;
     switch (unclosed->type) {
-    case TokenType::OpenParen:
-      msg = "Unclosed '('";
-      break;
-    case TokenType::OpenBracket:
-      msg = "Unclosed '['";
-      break;
-    case TokenType::OpenBrace:
-      msg = "Unclosed '{'";
-      break;
-    default:
-      msg = "Unclosed delimiter";
+      case TokenType::OpenParen: msg = "Unclosed '('"; break;
+      case TokenType::OpenBracket: msg = "Unclosed '['"; break;
+      case TokenType::OpenBrace: msg = "Unclosed '{'"; break;
+      default: msg = "Unclosed delimiter";
     }
     // Report at the opener location, not here
-    errorAt(at(), msg + " (opened at line " + std::to_string(unclosed->line) +
-                      ", col " + std::to_string(unclosed->column) + ")");
+    errorAt(at(), msg + " (opened at line " + std::to_string(unclosed->line) + ", col " + std::to_string(unclosed->column) + ")");
   }
 
   while (notEOF()) {
@@ -248,63 +208,48 @@ void Parser::synchronizeTo(havel::TokenType type) {
   }
 }
 
-void Parser::pushDelimiter(TokenType type, const Token *token) {
-  if (!token) {
-    token = &at();
-  }
-  delimiterStack_.push_back({type, token->line, token->column, position});
+void Parser::pushDelimiter(TokenType type, const Token* token) {
+  const Token& current = token ? *token : at();
+  delimiterStack_.push_back({type, current.line, current.column, position});
 }
 
 void Parser::popDelimiter(TokenType expected) {
+  // expected is the OPENING delimiter type (OpenParen, OpenBracket, OpenBrace)
+  // Map to the corresponding closing delimiter type for error messages
+  TokenType expectedClose;
+  switch (expected) {
+    case TokenType::OpenParen: expectedClose = TokenType::CloseParen; break;
+    case TokenType::OpenBracket: expectedClose = TokenType::CloseBracket; break;
+    case TokenType::OpenBrace: expectedClose = TokenType::CloseBrace; break;
+    default: expectedClose = TokenType::CloseParen; break;
+  }
+
   // Check for delimiter mismatch before popping
   if (!delimiterStack_.empty() && delimiterStack_.back().type != expected) {
     auto unclosed = delimiterStack_.back();
     std::string expectedStr, foundStr;
-    switch (expected) {
-    case TokenType::CloseParen:
-      expectedStr = "')'";
-      break;
-    case TokenType::CloseBracket:
-      expectedStr = "']'";
-      break;
-    case TokenType::CloseBrace:
-      expectedStr = "'}'";
-      break;
-    default:
-      expectedStr = "closing delimiter";
+    switch (expectedClose) {
+      case TokenType::CloseParen: expectedStr = "')'"; break;
+      case TokenType::CloseBracket: expectedStr = "']'"; break;
+      case TokenType::CloseBrace: expectedStr = "'}'"; break;
+      default: expectedStr = "closing delimiter";
     }
     switch (at().type) {
-    case TokenType::CloseParen:
-      foundStr = "')'";
-      break;
-    case TokenType::CloseBracket:
-      foundStr = "']'";
-      break;
-    case TokenType::CloseBrace:
-      foundStr = "'}'";
-      break;
-    default:
-      foundStr = "'" + at().value + "'";
+      case TokenType::CloseParen: foundStr = "')'"; break;
+      case TokenType::CloseBracket: foundStr = "']'"; break;
+      case TokenType::CloseBrace: foundStr = "'}'"; break;
+      default: foundStr = "'" + at().value + "'";
     }
     std::string openStr;
     switch (unclosed.type) {
-    case TokenType::OpenParen:
-      openStr = "'('";
-      break;
-    case TokenType::OpenBracket:
-      openStr = "'['";
-      break;
-    case TokenType::OpenBrace:
-      openStr = "'{'";
-      break;
-    default:
-      openStr = "delimiter";
+      case TokenType::OpenParen: openStr = "'('"; break;
+      case TokenType::OpenBracket: openStr = "'['"; break;
+      case TokenType::OpenBrace: openStr = "'{'"; break;
+      default: openStr = "delimiter";
     }
-    errorAt(at(), "Mismatched delimiter: expected " + expectedStr +
-                      " to close " + openStr + " (opened at line " +
-                      std::to_string(unclosed.line) + ", col " +
-                      std::to_string(unclosed.column) + "), but found " +
-                      foundStr);
+    errorAt(at(),
+      "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+      " (opened at line " + std::to_string(unclosed.line) + ", col " + std::to_string(unclosed.column) + "), but found " + foundStr);
     // Pop the mismatched delimiter so we don't get cascading errors
     delimiterStack_.pop_back();
     return;
@@ -315,6 +260,7 @@ void Parser::popDelimiter(TokenType expected) {
   // If mismatch, don't pop - let the error be caught elsewhere
 }
 
+
 // Check for mismatched closing delimiter and report a clear error
 // Returns true if a mismatch was found and reported
 bool Parser::checkMismatchedClosingDelimiter() {
@@ -322,73 +268,46 @@ bool Parser::checkMismatchedClosingDelimiter() {
     auto unclosed = delimiterStack_.back();
     // // havel::TokenType expectedClose;
     switch (unclosed.type) {
-    case TokenType::OpenParen:
-      return false; // ) is handled by the caller
-    case TokenType::OpenBracket:
-      break;
-    case TokenType::OpenBrace:
-      break;
-    default:
-      return false;
+      case TokenType::OpenParen: return false; // ) is handled by the caller
+      case TokenType::OpenBracket: break;
+      case TokenType::OpenBrace: break;
+      default: return false;
     }
-
+    
     // Check if current token is a closing delimiter that doesn't match
     havel::TokenType currentType = at().type;
-    if ((unclosed.type == TokenType::OpenBracket &&
-         currentType == TokenType::CloseBrace) ||
-        (unclosed.type == TokenType::OpenBrace &&
-         currentType == TokenType::CloseBracket) ||
-        (unclosed.type == TokenType::OpenParen &&
-         (currentType == TokenType::CloseBracket ||
-          currentType == TokenType::CloseBrace))) {
-
+    if ((unclosed.type == TokenType::OpenBracket && currentType == TokenType::CloseBrace) ||
+        (unclosed.type == TokenType::OpenBrace && currentType == TokenType::CloseBracket) ||
+        (unclosed.type == TokenType::OpenParen && (currentType == TokenType::CloseBracket || currentType == TokenType::CloseBrace))) {
+      
       auto u = delimiterStack_.back();
       std::string expectedStr, foundStr, openStr;
-
+      
       // Determine expected and found strings
       switch (unclosed.type) {
-      case TokenType::OpenParen:
-        openStr = "'('";
-        expectedStr = "')'";
-        break;
-      case TokenType::OpenBracket:
-        openStr = "'['";
-        expectedStr = "']'";
-        break;
-      case TokenType::OpenBrace:
-        openStr = "'{'";
-        expectedStr = "'}'";
-        break;
-      default:
-        openStr = "delimiter";
-        expectedStr = "closing delimiter";
+        case TokenType::OpenParen: openStr = "'('"; expectedStr = "')'"; break;
+        case TokenType::OpenBracket: openStr = "'['"; expectedStr = "']'"; break;
+        case TokenType::OpenBrace: openStr = "'{'"; expectedStr = "'}'"; break;
+        default: openStr = "delimiter"; expectedStr = "closing delimiter";
       }
-
+      
       switch (at().type) {
-      case TokenType::CloseParen:
-        foundStr = "')'";
-        break;
-      case TokenType::CloseBracket:
-        foundStr = "']'";
-        break;
-      case TokenType::CloseBrace:
-        foundStr = "'}'";
-        break;
-      default:
-        foundStr = "'" + at().value + "'";
+        case TokenType::CloseParen: foundStr = "')'"; break;
+        case TokenType::CloseBracket: foundStr = "']'"; break;
+        case TokenType::CloseBrace: foundStr = "'}'"; break;
+        default: foundStr = "'" + at().value + "'";
       }
-
-      errorAt(at(), "Mismatched delimiter: expected " + expectedStr +
-                        " to close " + openStr + " (opened at line " +
-                        std::to_string(unclosed.line) + ", col " +
-                        std::to_string(unclosed.column) + "), but found " +
-                        foundStr);
+      
+      errorAt(at(),
+        "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+        " (opened at line " + std::to_string(unclosed.line) + ", col " + std::to_string(unclosed.column) + "), but found " + foundStr);
       return true;
     }
     return false;
   }
   return false;
 }
+
 
 [[noreturn]] void Parser::fail(const std::string &message) {
   failAt(at(), message);
@@ -405,8 +324,7 @@ void Parser::errorAt(const havel::Token &token, const std::string &message) {
   if (errors.size() >= MAX_PARSER_ERRORS) {
     if (errors.size() == MAX_PARSER_ERRORS) {
       CompilerError err(ErrorSeverity::Error, token.line, token.column,
-                        "too many errors, stopping (" +
-                            std::to_string(MAX_PARSER_ERRORS) + " limit)");
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
       errors.push_back(err);
     }
     throw ParseError(token.line, token.column, "parser error limit exceeded");
@@ -418,9 +336,8 @@ void Parser::errorAt(const havel::Token &token, const std::string &message) {
 const havel::Token &Parser::at(size_t offset) const {
   // Sanity check - offset should never be huge (indicates memory corruption)
   if (offset > 10000) {
-    havel::fatal("Parser::at() called with invalid offset: {} (position={}, "
-                 "tokens.size()={})",
-                 offset, position, tokens.size());
+        havel::fatal("Parser::at() called with invalid offset: {} (position={}, tokens.size()={})",
+                     offset, position, tokens.size());
     std::abort();
   }
 
@@ -442,9 +359,7 @@ const havel::Token &Parser::advance() {
   tokens_consumed_++;
   if (tokens_consumed_ > MAX_PARSER_TOKENS) {
     throw ParseError(tokens[position].line, tokens[position].column,
-                     "parser timeout: exceeded " +
-                         std::to_string(MAX_PARSER_TOKENS) +
-                         " tokens (possible infinite loop)");
+      "parser timeout: exceeded " + std::to_string(MAX_PARSER_TOKENS) + " tokens (possible infinite loop)");
   }
   return tokens[position++];
 }
@@ -592,9 +507,9 @@ bool Parser::isObjectLiteral() const {
   // Object keys can be: identifier, string, number, or certain keywords
   // followed by ':'
   bool couldBeKey = (firstToken.type == havel::TokenType::Identifier ||
-                     firstToken.type == havel::TokenType::String ||
-                     firstToken.type == havel::TokenType::MultilineString ||
-                     firstToken.type == havel::TokenType::RegexString ||
+firstToken.type == havel::TokenType::String ||
+firstToken.type == havel::TokenType::MultilineString ||
+firstToken.type == havel::TokenType::RegexString ||
                      firstToken.type == havel::TokenType::Number ||
                      firstToken.type == havel::TokenType::Config ||
                      firstToken.type == havel::TokenType::Devices ||
@@ -622,9 +537,9 @@ bool Parser::isObjectLiteral() const {
 // ============================================================================
 
 int Parser::getBindingPower(TokenType type) const {
-  switch (type) {
-  // Assignment (right-associative, low precedence)
-  case TokenType::Assign:
+switch (type) {
+// Assignment (right-associative, low precedence)
+case TokenType::Assign:
   case TokenType::PlusAssign:
   case TokenType::MinusAssign:
   case TokenType::MultiplyAssign:
@@ -640,94 +555,93 @@ int Parser::getBindingPower(TokenType type) const {
   case TokenType::ShiftRightAssign:
     return 10;
 
-  // Nullish coalescing
-  case TokenType::Nullish:
-    return 20;
+// Nullish coalescing
+case TokenType::Nullish:
+      return 20;
 
-  // Arrow (lambda) - low precedence like assignment
-  // Return 0 inside match expressions so Pratt parser exits the loop
-  // and lets parseMatchExpression handle the => as a match arm separator
-  case TokenType::Arrow:
-    if (context.inMatchExpression) {
-      if (debug.parser) {
-        havel::debug("BP: Arrow in match context, returning 0");
+    // Arrow (lambda) - low precedence like assignment
+    // Return 0 inside match expressions so Pratt parser exits the loop
+    // and lets parseMatchExpression handle the => as a match arm separator
+    case TokenType::Arrow:
+      if (context.inMatchExpression) {
+        if (debug.parser) {
+          havel::debug("BP: Arrow in match context, returning 0");
+        }
+        return 0;
       }
-      return 0;
-    }
-    return 10;
+      return 10;
 
-  // Logical OR
-  case TokenType::Or:
-    return 30;
+    // Logical OR
+    case TokenType::Or:
+      return 30;
 
-  // Logical AND
-  case TokenType::And:
-    return 40;
+    // Logical AND
+    case TokenType::And:
+      return 40;
 
-  // Equality
-  case TokenType::Equals:
-  case TokenType::NotEquals:
-  case TokenType::Is:
-  case TokenType::Tilde:
-  case TokenType::Matches:
-  case TokenType::As:
-    return 50;
+        // Equality
+        case TokenType::Equals:
+        case TokenType::NotEquals:
+      case TokenType::Is:
+      case TokenType::Tilde:
+      case TokenType::Matches:
+      case TokenType::As:
+      return 50;
 
-  // Membership (in / not in)
-  case TokenType::In:
-    return 55;
+    // Membership (in / not in)
+    case TokenType::In:
+      return 55;
 
-  // 'not' as infix for 'not in' - slightly lower than 'in' so 'not' binds to
-  // 'in' Only return infix BP when followed by 'in', otherwise 'not' is
-  // prefix-only
-  case TokenType::Not:
-    if (at(1).type == TokenType::In) {
-      return 52;
-    }
-    return 0;
+    // 'not' as infix for 'not in' - slightly lower than 'in' so 'not' binds to 'in'
+    // Only return infix BP when followed by 'in', otherwise 'not' is prefix-only
+    case TokenType::Not:
+        if (at(1).type == TokenType::In) {
+            return 52;
+        }
+        return 0;
 
-  // Comparison
-  case TokenType::Less:
-  case TokenType::Greater:
-  case TokenType::LessEquals:
-  case TokenType::GreaterEquals:
-    return 60;
+    // Comparison
+    case TokenType::Less:
+    case TokenType::Greater:
+    case TokenType::LessEquals:
+    case TokenType::GreaterEquals:
+      return 60;
 
-  // Range
-  case TokenType::DotDot:
-    return 70;
+    // Range
+    case TokenType::DotDot:
+      return 70;
 
-    // Pipe
-  case TokenType::Pipe:
-    return 75;
+// Pipe
+      case TokenType::Pipe:
+        return 75;
 
-  // |> pipeline operator (same precedence as |)
-  case TokenType::PipeRight:
-    return 75;
+      // |> pipeline operator (same precedence as |)
+      case TokenType::PipeRight:
+        return 75;
 
-    // Bitwise OR
-  case TokenType::BitwiseOr:
-    return 80;
+      // Bitwise OR
+case TokenType::BitwiseOr:
+return 80;
 
-  // Bitwise XOR
-  case TokenType::BitwiseXor:
-    return 90;
+// Bitwise XOR
+case TokenType::BitwiseXor:
+return 90;
 
-  // Bitwise AND
-  case TokenType::BitwiseAnd:
-    return 100;
+// Bitwise AND
+case TokenType::BitwiseAnd:
+return 100;
 
-  // Shift
-  case TokenType::ShiftLeft:
-  case TokenType::ShiftRight:
-    return 110;
+// Shift
+case TokenType::ShiftLeft:
+case TokenType::ShiftRight:
+return 110;
 
-    // Additive
-  case TokenType::Plus:
-  case TokenType::Minus:
-    return 70;
+// Additive
+    case TokenType::Plus:
+    case TokenType::Minus:
+      return 70;
 
-    // Multiplicative
+// Multiplicative
   case TokenType::Multiply:
   case TokenType::Divide:
   case TokenType::Modulo:
@@ -736,40 +650,40 @@ int Parser::getBindingPower(TokenType type) const {
   case TokenType::DoubleModulo:
     return 130;
 
-  // Power (right-associative)
-  case TokenType::Power:
-    return 135;
+    // Power (right-associative)
+    case TokenType::Power:
+      return 135;
 
-  // Postfix operators
-  case TokenType::PlusPlus:
-  case TokenType::MinusMinus:
-    return 150;
+    // Postfix operators
+    case TokenType::PlusPlus:
+    case TokenType::MinusMinus:
+      return 150;
 
-  // Member access, optional chaining, calls, indexing
-  case TokenType::Dot:
-  case TokenType::QuestionDot:
-  case TokenType::OpenParen:
-  case TokenType::OpenBracket:
-    return 170;
+    // Member access, optional chaining, calls, indexing
+    case TokenType::Dot:
+    case TokenType::QuestionDot:
+    case TokenType::OpenParen:
+    case TokenType::OpenBracket:
+      return 170;
 
-  // For expression/generator (expr for binding : iterable)
-  case TokenType::For:
-    return 15;
+    // For expression/generator (expr for binding : iterable)
+    case TokenType::For:
+      return 15;
 
-  // Ternary operator (?)
-  case TokenType::Question:
-    return 15;
+    // Ternary operator (?)
+    case TokenType::Question:
+      return 15;
 
-  default:
-    return 0;
+    default:
+      return 0;
   }
 }
 
 int Parser::getRightBindingPower(TokenType type) const {
   // For right-associative operators, return a lower right binding power
   switch (type) {
-  case TokenType::Assign:
-  case TokenType::PlusAssign:
+    case TokenType::Assign:
+case TokenType::PlusAssign:
   case TokenType::MinusAssign:
   case TokenType::MultiplyAssign:
   case TokenType::DivideAssign:
@@ -781,80 +695,77 @@ int Parser::getRightBindingPower(TokenType type) const {
   case TokenType::BitwiseOrAssign:
   case TokenType::BitwiseXorAssign:
   case TokenType::ShiftLeftAssign:
-  case TokenType::ShiftRightAssign:
-    return 5; // Right-associative: 10 - 1 = 9, but use lower for safety
+ case TokenType::ShiftRightAssign:
+ return 5; // Right-associative: 10 - 1 = 9, but use lower for safety
 
-  case TokenType::LeftArrow:
-    return 5; // Right-associative (await-assign)
+ case TokenType::LeftArrow:
+ return 5; // Right-associative (await-assign)
 
-  case TokenType::Arrow:
-    return 5; // Low right binding power for arrow body expressions
+    case TokenType::Arrow:
+      return 5;  // Low right binding power for arrow body expressions
 
-  case TokenType::Power:
-    return 130; // Right-associative: 135 - 5 = 130
+    case TokenType::Power:
+      return 130;  // Right-associative: 135 - 5 = 130
 
-  case TokenType::Nullish:
-    return 15; // Right-associative
+    case TokenType::Nullish:
+      return 15;  // Right-associative
 
-  case TokenType::Question:
-    return 10; // Right-associative (lbp=15, rbp=10)
+    case TokenType::Question:
+      return 10;  // Right-associative (lbp=15, rbp=10)
 
-  default:
-    return getBindingPower(type);
+    default:
+      return getBindingPower(type);
   }
 }
 
-// Optimized Pratt parser with lookup tables
-namespace {
-bool isHotkeyIdentifier(const std::string &value) {
-  if (value.size() >= 2 && value[0] == 'F' && std::isdigit(value[1]))
-    return true;
-  if (value == "numpad0" || value == "numpad1" || value == "numpad2" ||
-      value == "numpad3" || value == "numpad4" || value == "numpad5" ||
-      value == "numpad6" || value == "numpad7" || value == "numpad8" ||
-      value == "numpad9")
-    return true;
-  if (value == "space" || value == "enter" || value == "tab" ||
-      value == "escape" || value == "esc" || value == "backspace" ||
-      value == "delete" || value == "insert" || value == "home" ||
-      value == "end" || value == "pageup" || value == "pagedown" ||
-      value == "capslock" || value == "numlock" || value == "scrolllock" ||
-      value == "lshift" || value == "rshift" || value == "lctrl" ||
-      value == "rctrl" || value == "lalt" || value == "ralt" ||
-      value == "lmeta" || value == "rmeta" || value == "super" ||
-      value == "menu" || value == "print" || value == "pause" ||
-      value == "up" || value == "down" || value == "left" || value == "right" ||
-      value == "wheelup" || value == "wheeldown" || value == "wheelleft" ||
-      value == "wheelright" || value == "btn0" || value == "btn1" ||
-      value == "btn2" || value == "btn3" || value == "btn4" ||
-      value == "numpadmult" || value == "numpadadd" || value == "numpadsub" ||
-      value == "numpaddiv" || value == "numpadenter" || value == "numpadsep")
-    return true;
-  return false;
-}
-// Token count - must be >= max TokenType enum value
-constexpr size_t TOKEN_TYPE_COUNT = 256; // Power of 2 for cache efficiency
+  // Optimized Pratt parser with lookup tables
+  namespace {
+  bool isHotkeyIdentifier(const std::string &value) {
+    if (value.size() >= 2 && value[0] == 'F' && std::isdigit(value[1])) return true;
+    if (value == "numpad0" || value == "numpad1" || value == "numpad2" ||
+        value == "numpad3" || value == "numpad4" || value == "numpad5" ||
+        value == "numpad6" || value == "numpad7" || value == "numpad8" ||
+        value == "numpad9") return true;
+    if (value == "space" || value == "enter" || value == "tab" ||
+        value == "escape" || value == "esc" || value == "backspace" ||
+        value == "delete" || value == "insert" || value == "home" ||
+        value == "end" || value == "pageup" || value == "pagedown" ||
+        value == "capslock" || value == "numlock" || value == "scrolllock" ||
+        value == "lshift" || value == "rshift" || value == "lctrl" ||
+        value == "rctrl" || value == "lalt" || value == "ralt" ||
+        value == "lmeta" || value == "rmeta" || value == "super" ||
+        value == "menu" || value == "print" || value == "pause" ||
+        value == "up" || value == "down" || value == "left" || value == "right" ||
+        value == "wheelup" || value == "wheeldown" || value == "wheelleft" ||
+        value == "wheelright" || value == "btn0" || value == "btn1" ||
+        value == "btn2" || value == "btn3" || value == "btn4" ||
+        value == "numpadmult" || value == "numpadadd" ||
+        value == "numpadsub" || value == "numpaddiv" ||
+        value == "numpadenter" || value == "numpadsep") return true;
+    return false;
+  }
+  // Token count - must be >= max TokenType enum value
+  constexpr size_t TOKEN_TYPE_COUNT = 256;  // Power of 2 for cache efficiency
+  
+  // Binding power lookup table - initialized once at startup
+  struct BindingPowerTables {
+    std::array<uint8_t, TOKEN_TYPE_COUNT> left_bp{};   // Left binding power
+    std::array<uint8_t, TOKEN_TYPE_COUNT> right_bp{}; // Right binding power (for right-assoc)
+    std::array<bool, TOKEN_TYPE_COUNT> can_start{};    // Can token start expression?
+    
+    BindingPowerTables() {
+      // Initialize all to zero/false
+left_bp.fill(0);
+right_bp.fill(0);
+can_start.fill(false);
 
-// Binding power lookup table - initialized once at startup
-struct BindingPowerTables {
-  std::array<uint8_t, TOKEN_TYPE_COUNT> left_bp{}; // Left binding power
-  std::array<uint8_t, TOKEN_TYPE_COUNT>
-      right_bp{}; // Right binding power (for right-assoc)
-  std::array<bool, TOKEN_TYPE_COUNT> can_start{}; // Can token start expression?
-
-  BindingPowerTables() {
-    // Initialize all to zero/false
-    left_bp.fill(0);
-    right_bp.fill(0);
-    can_start.fill(false);
-
-    // Assignment operators (right-associative, lowest precedence)
-    setBoth(Assign, 10, 10);
-    setBoth(PlusAssign, 10, 10);
-    setBoth(MinusAssign, 10, 10);
-    setBoth(MultiplyAssign, 10, 10);
-    setBoth(DivideAssign, 10, 10);
-    setBoth(ModuloAssign, 10, 10);
+// Assignment operators (right-associative, lowest precedence)
+setBoth(Assign, 10, 10);
+setBoth(PlusAssign, 10, 10);
+setBoth(MinusAssign, 10, 10);
+setBoth(MultiplyAssign, 10, 10);
+setBoth(DivideAssign, 10, 10);
+setBoth(ModuloAssign, 10, 10);
     setBoth(PowerAssign, 10, 10);
     setBoth(BackslashAssign, 10, 10);
     setBoth(DoubleModuloAssign, 10, 10);
@@ -864,107 +775,107 @@ struct BindingPowerTables {
     setBoth(ShiftLeftAssign, 10, 10);
     setBoth(ShiftRightAssign, 10, 10);
 
-    // LeftArrow (<- await-assign) - same precedence as assignment
-    setBoth(LeftArrow, 10, 10);
+ // LeftArrow (<- await-assign) - same precedence as assignment
+ setBoth(LeftArrow, 10, 10);
 
-    // For comprehension (expr for binding : iterable)
-    setBoth(For, 15, 15);
+ // For comprehension (expr for binding : iterable)
+ setBoth(For, 15, 15);
 
-    // Nullish coalescing
-    setBoth(Nullish, 20, 20);
-
-    // Arrow (lambda) - low precedence like assignment
-    setBoth(Arrow, 10, 5);
-
-    // Logical OR
-    setBoth(Or, 30, 30);
-
-    // Logical AND
-    setBoth(And, 40, 40);
-
-    // Equality
-    setBoth(Equals, 50, 50);
-    setBoth(NotEquals, 50, 50);
-    setBoth(Is, 50, 50);      // Identity comparison
-    setBoth(Tilde, 50, 50);   // Regex match (~)
-    setBoth(Matches, 50, 50); // Regex match (matches)
-
-    // Relational
-    setBoth(Less, 60, 60);
-    setBoth(Greater, 60, 60);
-    setBoth(LessEquals, 60, 60);
-    setBoth(GreaterEquals, 60, 60);
-
-    // Range
-    setBoth(DotDot, 65, 66); // Right associative
-
-    // Additive
-    setBoth(Plus, 70, 70);
-    setBoth(Minus, 70, 70);
-
-    // Multiplicative
+// Nullish coalescing
+      setBoth(Nullish, 20, 20);
+      
+      // Arrow (lambda) - low precedence like assignment
+      setBoth(Arrow, 10, 5);
+      
+      // Logical OR
+      setBoth(Or, 30, 30);
+      
+      // Logical AND
+      setBoth(And, 40, 40);
+      
+        // Equality
+        setBoth(Equals, 50, 50);
+        setBoth(NotEquals, 50, 50);
+        setBoth(Is, 50, 50); // Identity comparison
+        setBoth(Tilde, 50, 50); // Regex match (~)
+        setBoth(Matches, 50, 50); // Regex match (matches)
+      
+      // Relational
+      setBoth(Less, 60, 60);
+      setBoth(Greater, 60, 60);
+      setBoth(LessEquals, 60, 60);
+      setBoth(GreaterEquals, 60, 60);
+      
+      // Range
+      setBoth(DotDot, 65, 66);  // Right associative
+      
+      // Additive
+      setBoth(Plus, 70, 70);
+      setBoth(Minus, 70, 70);
+      
+// Multiplicative
     setBoth(Multiply, 80, 80);
     setBoth(Divide, 80, 80);
     setBoth(Modulo, 80, 80);
     setBoth(Backslash, 80, 80);
     setBoth(DoubleBackslash, 80, 80);
     setBoth(DoubleModulo, 80, 80);
+      
+      // Power (right-associative)
+      setBoth(Power, 90, 91);
+      
+      // Prefix operators (handled in nud, not led)
+      // Pipeline
+      setBoth(Pipe, 35, 35);
+      setBoth(PipeRight, 35, 35);
 
-    // Power (right-associative)
-    setBoth(Power, 90, 91);
+        // Bitwise operators (inside (( )))
+        setBoth(BitwiseOr, 80, 80);
+        setBoth(BitwiseXor, 90, 90);
+        setBoth(BitwiseAnd, 100, 100);
+        setBoth(ShiftLeft, 110, 110);
+        setBoth(ShiftRight, 110, 110);
+      
+      // Postfix operators (very high left binding power, 0 right)
+      left_bp[static_cast<size_t>(PlusPlus)] = 100;
+      left_bp[static_cast<size_t>(MinusMinus)] = 100;
 
-    // Prefix operators (handled in nud, not led)
-    // Pipeline
-    setBoth(Pipe, 35, 35);
-    setBoth(PipeRight, 35, 35);
+      // Member access (highest)
+      left_bp[static_cast<size_t>(Dot)] = 110;
+      // Optional chaining ?. (same priority as Dot)
+      left_bp[static_cast<size_t>(Question)] = 110;
 
-    // Bitwise operators (inside (( )))
-    setBoth(BitwiseOr, 80, 80);
-    setBoth(BitwiseXor, 90, 90);
-    setBoth(BitwiseAnd, 100, 100);
-    setBoth(ShiftLeft, 110, 110);
-    setBoth(ShiftRight, 110, 110);
-
-    // Postfix operators (very high left binding power, 0 right)
-    left_bp[static_cast<size_t>(PlusPlus)] = 100;
-    left_bp[static_cast<size_t>(MinusMinus)] = 100;
-
-    // Member access (highest)
-    left_bp[static_cast<size_t>(Dot)] = 110;
-    // Optional chaining ?. (same priority as Dot)
-    left_bp[static_cast<size_t>(Question)] = 110;
-
-    // Function call and index
-    left_bp[static_cast<size_t>(OpenParen)] = 110;
-    left_bp[static_cast<size_t>(OpenBracket)] = 110;
-
-    // Tokens that can start expressions
-    can_start[static_cast<size_t>(Number)] = true;
-    can_start[static_cast<size_t>(String)] = true;
-    can_start[static_cast<size_t>(MultilineString)] = true;
-    can_start[static_cast<size_t>(RegexString)] = true;
-    can_start[static_cast<size_t>(InterpolatedString)] = true;
-    can_start[static_cast<size_t>(InterpolatedBacktick)] = true;
-    can_start[static_cast<size_t>(Identifier)] = true;
-    can_start[static_cast<size_t>(True)] = true;
-    can_start[static_cast<size_t>(False)] = true;
-    can_start[static_cast<size_t>(Null)] = true;
-    can_start[static_cast<size_t>(OpenParen)] = true;
-    can_start[static_cast<size_t>(OpenBracket)] = true;
-    can_start[static_cast<size_t>(OpenBrace)] = true;
-    can_start[static_cast<size_t>(Fn)] = true;
-    can_start[static_cast<size_t>(Match)] = true;
-    can_start[static_cast<size_t>(If)] = true;
-    can_start[static_cast<size_t>(Not)] = true;
-    can_start[static_cast<size_t>(Minus)] = true;
-    can_start[static_cast<size_t>(Plus)] = true;
-    can_start[static_cast<size_t>(PlusPlus)] = true;
-    can_start[static_cast<size_t>(MinusMinus)] = true;
-    can_start[static_cast<size_t>(Length)] = true;
-    can_start[static_cast<size_t>(Spread)] = true;
-    can_start[static_cast<size_t>(Hash)] = true;
-    can_start[static_cast<size_t>(Backtick)] = true;
-    can_start[static_cast<size_t>(DoubleOpenParen)] = true;
+      // Function call and index
+      left_bp[static_cast<size_t>(OpenParen)] = 110;
+      left_bp[static_cast<size_t>(OpenBracket)] = 110;
+      
+      // Tokens that can start expressions
+      can_start[static_cast<size_t>(Number)] = true;
+      can_start[static_cast<size_t>(String)] = true;
+      can_start[static_cast<size_t>(MultilineString)] = true;
+can_start[static_cast<size_t>(RegexString)] = true;
+      can_start[static_cast<size_t>(InterpolatedString)] = true;
+  can_start[static_cast<size_t>(InterpolatedBacktick)] = true;
+      can_start[static_cast<size_t>(Identifier)] = true;
+      can_start[static_cast<size_t>(True)] = true;
+      can_start[static_cast<size_t>(False)] = true;
+      can_start[static_cast<size_t>(Null)] = true;
+      can_start[static_cast<size_t>(OpenParen)] = true;
+      can_start[static_cast<size_t>(OpenBracket)] = true;
+      can_start[static_cast<size_t>(OpenBrace)] = true;
+      can_start[static_cast<size_t>(Fn)] = true;
+      can_start[static_cast<size_t>(Match)] = true;
+      can_start[static_cast<size_t>(If)] = true;
+      can_start[static_cast<size_t>(Not)] = true;
+      can_start[static_cast<size_t>(Minus)] = true;
+      can_start[static_cast<size_t>(Plus)] = true;
+      can_start[static_cast<size_t>(PlusPlus)] = true;
+      can_start[static_cast<size_t>(MinusMinus)] = true;
+      can_start[static_cast<size_t>(Length)] = true;
+      can_start[static_cast<size_t>(Spread)] = true;
+        can_start[static_cast<size_t>(Hash)] = true;
+        can_start[static_cast<size_t>(Backtick)] = true;
+        can_start[static_cast<size_t>(DoubleOpenParen)] = true;
     can_start[static_cast<size_t>(Tilde)] = true;
     can_start[static_cast<size_t>(BangOpenBrace)] = true;
     can_start[static_cast<size_t>(Thread)] = true;
@@ -972,20 +883,20 @@ struct BindingPowerTables {
     can_start[static_cast<size_t>(Update)] = true;
     can_start[static_cast<size_t>(Timeout)] = true;
     can_start[static_cast<size_t>(Async)] = true;
-    can_start[static_cast<size_t>(LeftArrow)] = true;
+ can_start[static_cast<size_t>(LeftArrow)] = true;
   }
-
-  void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
-    size_t idx = static_cast<size_t>(t);
-    if (idx < TOKEN_TYPE_COUNT) {
-      left_bp[idx] = lbp;
-      right_bp[idx] = rbp;
+    
+    void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
+      size_t idx = static_cast<size_t>(t);
+      if (idx < TOKEN_TYPE_COUNT) {
+        left_bp[idx] = lbp;
+        right_bp[idx] = rbp;
+      }
     }
-  }
-};
-
-// Static singleton - initialized once at program startup
-const BindingPowerTables BP_TABLES;
+  };
+  
+  // Static singleton - initialized once at program startup
+  const BindingPowerTables BP_TABLES;
 }
 
 bool Parser::canStartExpression(TokenType type) const {
@@ -997,14 +908,12 @@ bool Parser::isInfixOperator(TokenType type) const {
   return BP_TABLES.left_bp[static_cast<size_t>(type)] > 0;
 }
 
-// Note: getBindingPower and getRightBindingPower now use lookup tables (see
-// inline definitions below)
+// Note: getBindingPower and getRightBindingPower now use lookup tables (see inline definitions below)
 
 std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   DepthGuard depth_guard(recursion_depth_);
   if (debug.parser) {
-    havel::debug("PRATT: parseExpression START rbp={} at {}", rbp,
-                 at().toString());
+    havel::debug("PRATT: parseExpression START rbp={} at {}", rbp, at().toString());
   }
 
   // Get the first token (null denotation)
@@ -1033,14 +942,11 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
 
   // While the next token has higher binding power than our right binding power
   // Guard against infinite loops from malformed binding power tables
-  int infixIterations = 0;
-  while (rbp < getBindingPower(at().type)) {
-    infixIterations++;
+        int infixIterations = 0;
+        while (rbp < getBindingPower(at().type)) {
+            infixIterations++;
     if (infixIterations > 10000) {
-      throw std::runtime_error(
-          "Pratt infix loop exceeded at token " + std::to_string(position) +
-          ": " + at().toString() + " (rbp=" + std::to_string(rbp) +
-          ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
+      throw std::runtime_error("Pratt infix loop exceeded at token " + std::to_string(position) + ": " + at().toString() + " (rbp=" + std::to_string(rbp) + ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
     }
     Token op_token = at();
     try {
@@ -1055,34 +961,36 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
       synchronize();
       return left; // Return what we have so far
     }
-
+    
     // Update span for the compound expression
     if (left->line == start_token.line) {
-      // Single-line expression width
-      left->length = (op_token.column + op_token.length) - start_token.column;
+       // Single-line expression width
+       left->length = (op_token.column + op_token.length) - start_token.column;
     } else {
-      // Just fallback to the operator's length if multiline is unsupported here
-      left->length = op_token.length;
+       // Just fallback to the operator's length if multiline is unsupported here
+       left->length = op_token.length;
     }
   }
-
-  // Implicit call sugar: expr "string" -> expr("string")
-  // This handles function calls without parentheses like: print "hello"
-  // Also handles: print a ** 5 -> print(a ** 5)
-  // Also handles prefix operators: print @id, print !x, print #x
-  if (context.allowBraceSugar &&
-      (at().type == TokenType::String ||
-       at().type == TokenType::MultilineString ||
-       at().type == TokenType::RegexString || at().type == TokenType::Number ||
-       at().type == TokenType::Identifier ||
-       at().type == TokenType::InterpolatedString ||
-       at().type == TokenType::InterpolatedBacktick ||
-       at().type == TokenType::At || at().type == TokenType::AtAt ||
-       at().type == TokenType::Not || at().type == TokenType::Length)) {
+  
+    // Implicit call sugar: expr "string" -> expr("string")
+    // This handles function calls without parentheses like: print "hello"
+    // Also handles: print a ** 5 -> print(a ** 5)
+    // Also handles prefix operators: print @id, print !x, print #x
+    if (context.allowBraceSugar &&
+        (at().type == TokenType::String ||
+         at().type == TokenType::MultilineString ||
+         at().type == TokenType::RegexString ||
+         at().type == TokenType::Number ||
+         at().type == TokenType::Identifier ||
+         at().type == TokenType::InterpolatedString ||
+         at().type == TokenType::InterpolatedBacktick ||
+         at().type == TokenType::At ||
+         at().type == TokenType::AtAt ||
+         at().type == TokenType::Not ||
+         at().type == TokenType::Length)) {
     Token arg_token = at();
-    // Parse argument as full expression (with operators), but disable nested
-    // implicit calls to prevent infinite recursion and ensure operators like **
-    // bind tighter than the call
+    // Parse argument as full expression (with operators), but disable nested implicit calls
+    // to prevent infinite recursion and ensure operators like ** bind tighter than the call
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
     auto arg = parsePrattExpression(0);
@@ -1094,7 +1002,7 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
 
     std::vector<std::unique_ptr<ast::Expression>> args;
     args.push_back(std::move(arg));
-
+    
     // Support comma-separated arguments: print a, b, c -> print(a, b, c)
     while (at().type == TokenType::Comma) {
       advance(); // consume comma
@@ -1105,13 +1013,11 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
       }
       args.push_back(std::move(nextArg));
     }
-
-    auto call_expr =
-        makeNode<ast::CallExpression>(std::move(left), std::move(args));
+    
+    auto call_expr = makeNode<ast::CallExpression>(std::move(left), std::move(args));
     call_expr->line = start_token.line;
     call_expr->column = start_token.column;
-    call_expr->length =
-        (arg_token.column + arg_token.length) - start_token.column;
+    call_expr->length = (arg_token.column + arg_token.length) - start_token.column;
     left = std::move(call_expr);
   }
 
@@ -1125,72 +1031,67 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   }
 
   switch (token.type) {
-  case TokenType::Number:
-    return makeNodeAt<ast::NumberLiteral>(
-        token, parseNumberLiteral(token.value), hasDecimalPart(token.value));
+    case TokenType::Number:
+        return makeNodeAt<ast::NumberLiteral>(token, parseNumberLiteral(token.value), hasDecimalPart(token.value));
 
-  case TokenType::String:
-  case TokenType::MultilineString:
-    return makeNodeAt<ast::StringLiteral>(token, token.value, false);
+    case TokenType::String:
+    case TokenType::MultilineString:
+        return makeNodeAt<ast::StringLiteral>(token, token.value, false);
 
-  case TokenType::RegexString:
-  case TokenType::RegexLiteral:
-    return makeNodeAt<ast::StringLiteral>(token, token.value, true);
+ case TokenType::RegexString:
+ case TokenType::RegexLiteral:
+ return makeNodeAt<ast::StringLiteral>(token, token.value, true);
 
-  case TokenType::CharLiteral:
-    return makeNodeAt<ast::CharLiteral>(token, token.value[0]);
+    case TokenType::CharLiteral:
+        return makeNodeAt<ast::CharLiteral>(token, token.value[0]);
 
-  case TokenType::InterpolatedString: {
-    // Parse interpolated string into segments
-    std::vector<ast::InterpolatedStringExpression::Segment> segments;
-    const std::string &value = token.value;
-    size_t pos = 0;
-    std::string currentLiteral;
-
-    while (pos < value.length()) {
-      // Check for \x01...\x02 pattern (interpolation marker)
-      if (value[pos] == '\x01') {
-        // Found interpolation start
-        if (!currentLiteral.empty()) {
-          segments.emplace_back(currentLiteral);
-          currentLiteral.clear();
-        }
-        pos += 1; // skip \x01
-
-        // Find matching \x02 (accounting for nested markers)
-        size_t markerDepth = 1;
-        size_t exprStart = pos;
-        while (pos < value.length() && markerDepth > 0) {
-          if (value[pos] == '\x01')
-            markerDepth++;
-          else if (value[pos] == '\x02')
-            markerDepth--;
-          if (markerDepth > 0)
-            pos++;
-        }
-
-        if (markerDepth == 0) {
-          std::string exprStr = value.substr(exprStart, pos - exprStart);
-          auto expr = parseExpressionFromString(exprStr);
-          if (expr) {
-            segments.emplace_back(std::move(expr));
+    case TokenType::InterpolatedString: {
+      // Parse interpolated string into segments
+      std::vector<ast::InterpolatedStringExpression::Segment> segments;
+      const std::string &value = token.value;
+      size_t pos = 0;
+      std::string currentLiteral;
+      
+      while (pos < value.length()) {
+        // Check for \x01...\x02 pattern (interpolation marker)
+        if (value[pos] == '\x01') {
+          // Found interpolation start
+          if (!currentLiteral.empty()) {
+            segments.emplace_back(currentLiteral);
+            currentLiteral.clear();
           }
-          pos++; // skip \x02
+          pos += 1; // skip \x01
+          
+          // Find matching \x02 (accounting for nested markers)
+          size_t markerDepth = 1;
+          size_t exprStart = pos;
+          while (pos < value.length() && markerDepth > 0) {
+            if (value[pos] == '\x01') markerDepth++;
+            else if (value[pos] == '\x02') markerDepth--;
+            if (markerDepth > 0) pos++;
+          }
+          
+          if (markerDepth == 0) {
+            std::string exprStr = value.substr(exprStart, pos - exprStart);
+            auto expr = parseExpressionFromString(exprStr);
+            if (expr) {
+              segments.emplace_back(std::move(expr));
+            }
+            pos++; // skip \x02
+          } else {
+            currentLiteral += value.substr(exprStart - 1);
+            break;
+          }
         } else {
-          currentLiteral += value.substr(exprStart - 1);
-          break;
+          currentLiteral += value[pos++];
         }
-      } else {
-        currentLiteral += value[pos++];
       }
-    }
-
-    if (!currentLiteral.empty()) {
-      segments.emplace_back(currentLiteral);
-    }
-
-    return makeNodeAt<ast::InterpolatedStringExpression>(token,
-                                                         std::move(segments));
+      
+      if (!currentLiteral.empty()) {
+        segments.emplace_back(currentLiteral);
+      }
+      
+    return makeNodeAt<ast::InterpolatedStringExpression>(token, std::move(segments));
   }
 
   case TokenType::InterpolatedBacktick: {
@@ -1209,12 +1110,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
         size_t braceDepth = 1;
         size_t exprStart = pos;
         while (pos < value.length() && braceDepth > 0) {
-          if (value[pos] == '{')
-            braceDepth++;
-          else if (value[pos] == '}')
-            braceDepth--;
-          if (braceDepth > 0)
-            pos++;
+          if (value[pos] == '{') braceDepth++;
+          else if (value[pos] == '}') braceDepth--;
+          if (braceDepth > 0) pos++;
         }
         if (braceDepth == 0) {
           std::string exprStr = value.substr(exprStart, pos - exprStart);
@@ -1236,394 +1134,396 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       segments.emplace_back(currentLiteral);
     }
 
-    auto interpExpr = makeNodeAt<ast::InterpolatedStringExpression>(
-        token, std::move(segments));
-    auto shellExpr = makeNodeAt<ast::ShellCommandExpression>(
-        token, std::move(interpExpr), true);
+    auto interpExpr = makeNodeAt<ast::InterpolatedStringExpression>(token, std::move(segments));
+    auto shellExpr = makeNodeAt<ast::ShellCommandExpression>(token, std::move(interpExpr), true);
     return shellExpr;
   }
 
-  case TokenType::Identifier:
-  case TokenType::Config:
-  case TokenType::Devices:
-    return makeIdentifier(token);
+    case TokenType::Identifier:
+    case TokenType::Config:
+    case TokenType::Devices:
+      return makeIdentifier(token);
 
-  case TokenType::Is: {
-    errorAt(token, "'is' cannot start an expression - it must be used as infix "
-                   "operator (e.g., x is y)");
-    return nullptr;
-  }
-
-  case TokenType::This: {
-    // `this` keyword in expression context
-    auto thisExpr = makeNodeAt<ast::ThisExpression>(token);
-    thisExpr->line = token.line;
-    thisExpr->column = token.column;
-    // Allow this to have postfix operations like .field access
-    return parsePostfixExpression(std::move(thisExpr));
-  }
-
-  case TokenType::ColonColon: {
-    if (at().type != TokenType::Identifier) {
-      failAt(at(), "Expected identifier after '::'");
+    case TokenType::Is: {
+      errorAt(token, "'is' cannot start an expression - it must be used as infix operator (e.g., x is y)");
+      return nullptr;
     }
-    auto ident = makeIdentifier(advance());
-    ident->isGlobalScope = true;
-    return ident;
-  }
 
-  case TokenType::Colon: {
-    // Fallback for lexers that emit '::' as two ':' tokens.
-    if (at().type == TokenType::Colon && at(1).type == TokenType::Identifier) {
-      advance(); // consume second ':'
+    case TokenType::This: {
+      // `this` keyword in expression context
+      auto thisExpr = makeNodeAt<ast::ThisExpression>(token);
+      thisExpr->line = token.line;
+      thisExpr->column = token.column;
+      // Allow this to have postfix operations like .field access
+      return parsePostfixExpression(std::move(thisExpr));
+    }
+
+    case TokenType::ColonColon: {
+      if (at().type != TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '::'");
+      }
       auto ident = makeIdentifier(advance());
       ident->isGlobalScope = true;
       return ident;
     }
-    failAt(token, "Unexpected ':' in expression");
-  }
 
-  // Allow certain keywords to be used as identifiers in expression context
-  // This enables expressions like: mode == "work" && class == "code"
-  case TokenType::Class:
-  case TokenType::Struct:
-  case TokenType::Enum:
-  case TokenType::Mode:
-  case TokenType::Val:
-  case TokenType::Const:
-  case TokenType::Let:
-    return makeIdentifier(token);
-
-  case TokenType::True:
-    return makeNodeAt<ast::BooleanLiteral>(token, true);
-
-  case TokenType::False:
-    return makeNodeAt<ast::BooleanLiteral>(token, false);
-
-  case TokenType::Null:
-    return makeNodeAt<ast::NullLiteral>(token);
-
-  case TokenType::OpenParen:
-    return parseParenthesizedExpression();
-
-  case TokenType::OpenBracket:
-    // parsePrattExpression already consumed '[', but parseArrayLiteral
-    // expects to consume it. Back up one position.
-    position--;
-    return parseArrayLiteral();
-
-  case TokenType::OpenBrace: {
-    // parsePrattExpression already consumed '{', but parseObjectLiteral
-    // expects to consume it. Back up one position.
-    position--;
-    // Now check if it's a set or object literal
-    // Look ahead to determine which
-    size_t lookahead = 1; // Skip the '{' token
-    while (at(lookahead).type == havel::TokenType::NewLine) {
-      lookahead++;
-    }
-    auto nextTok = at(lookahead);
-
-    // Empty braces {} = empty object literal
-    if (nextTok.type == havel::TokenType::CloseBrace) {
-      return parseObjectLiteral();
-    }
-
-    // Check if it's an object literal (identifier/string followed by ':')
-    bool isObject = false;
-    auto isObjKeyType = [](havel::TokenType t) {
-      return t == havel::TokenType::Identifier ||
-             t == havel::TokenType::String ||
-             t == havel::TokenType::MultilineString ||
-             t == havel::TokenType::Number || t == havel::TokenType::Config ||
-             t == havel::TokenType::Devices || t == havel::TokenType::Modes ||
-             t == havel::TokenType::Mode || t == havel::TokenType::Timeout ||
-             t == havel::TokenType::Thread || t == havel::TokenType::Interval ||
-             t == havel::TokenType::Channel || t == havel::TokenType::Co ||
-             t == havel::TokenType::On || t == havel::TokenType::Off ||
-             t == havel::TokenType::Go || t == havel::TokenType::When ||
-             t == havel::TokenType::Class || t == havel::TokenType::Struct ||
-             t == havel::TokenType::Enum || t == havel::TokenType::Fn ||
-             t == havel::TokenType::If || t == havel::TokenType::For ||
-             t == havel::TokenType::Loop || t == havel::TokenType::While ||
-             t == havel::TokenType::Switch || t == havel::TokenType::Do ||
-             t == havel::TokenType::Return || t == havel::TokenType::Ret ||
-             t == havel::TokenType::Break || t == havel::TokenType::Continue ||
-             t == havel::TokenType::Let || t == havel::TokenType::Val ||
-             t == havel::TokenType::Const || t == havel::TokenType::Try ||
-             t == havel::TokenType::Catch || t == havel::TokenType::Finally ||
-             t == havel::TokenType::Throw || t == havel::TokenType::Del ||
-             t == havel::TokenType::True || t == havel::TokenType::False ||
-             t == havel::TokenType::Null || t == havel::TokenType::Repeat;
-    };
-    if (isObjKeyType(nextTok.type)) {
-      size_t colonLookahead = lookahead + 1;
-      while (at(colonLookahead).type == havel::TokenType::NewLine) {
-        colonLookahead++;
+    case TokenType::Colon: {
+      // Fallback for lexers that emit '::' as two ':' tokens.
+      if (at().type == TokenType::Colon && at(1).type == TokenType::Identifier) {
+        advance(); // consume second ':'
+        auto ident = makeIdentifier(advance());
+        ident->isGlobalScope = true;
+        return ident;
       }
-      if (at(colonLookahead).type == havel::TokenType::Colon ||
-          at(colonLookahead).type == havel::TokenType::Assign) {
-        isObject = true;
-      }
+      failAt(token, "Unexpected ':' in expression");
     }
 
-    if (isObject) {
-      return parseObjectLiteral();
-    }
+    // Allow certain keywords to be used as identifiers in expression context
+    // This enables expressions like: mode == "work" && class == "code"
+    case TokenType::Class:
+    case TokenType::Struct:
+case TokenType::Enum:
+    case TokenType::Mode:
+    case TokenType::Val:
+    case TokenType::Const:
+    case TokenType::Let:
+        return makeIdentifier(token);
 
-    // Check if it looks like a set literal
-    bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
-                       nextTok.type == havel::TokenType::String ||
-                       nextTok.type == havel::TokenType::MultilineString ||
-                       nextTok.type == havel::TokenType::RegexString ||
-                       nextTok.type == havel::TokenType::Number ||
-                       nextTok.type == havel::TokenType::OpenBracket ||
-                       nextTok.type == havel::TokenType::OpenParen ||
-                       nextTok.type == havel::TokenType::OpenBrace ||
-                       nextTok.type == havel::TokenType::Minus ||
-                       nextTok.type == havel::TokenType::Not ||
-                       nextTok.type == havel::TokenType::Plus ||
-                       nextTok.type == havel::TokenType::Length ||
-                       nextTok.type == havel::TokenType::True ||
-                       nextTok.type == havel::TokenType::False ||
-                       nextTok.type == havel::TokenType::Null);
+    case TokenType::True:
+        return makeNodeAt<ast::BooleanLiteral>(token, true);
 
-    if (couldBeSet) {
-      // Look ahead for comma
-      size_t setLookahead = lookahead + 1;
-      while (setLookahead < tokens.size() &&
-             at(setLookahead).type != havel::TokenType::Comma &&
-             at(setLookahead).type != havel::TokenType::Semicolon &&
-             at(setLookahead).type != havel::TokenType::CloseBrace &&
-             at(setLookahead).type != havel::TokenType::NewLine) {
-        setLookahead++;
+    case TokenType::False:
+        return makeNodeAt<ast::BooleanLiteral>(token, false);
+
+    case TokenType::Null:
+        return makeNodeAt<ast::NullLiteral>(token);
+
+    case TokenType::OpenParen:
+      return parseParenthesizedExpression();
+
+    case TokenType::OpenBracket:
+      // parsePrattExpression already consumed '[', but parseArrayLiteral
+      // expects to consume it. Back up one position.
+      position--;
+      return parseArrayLiteral();
+
+    case TokenType::OpenBrace: {
+      // parsePrattExpression already consumed '{', but parseObjectLiteral
+      // expects to consume it. Back up one position.
+      position--;
+      // Now check if it's a set or object literal
+      // Look ahead to determine which
+      size_t lookahead = 1; // Skip the '{' token
+      while (at(lookahead).type == havel::TokenType::NewLine) {
+        lookahead++;
       }
-
-      if (at(setLookahead).type == havel::TokenType::Comma) {
-        // Parse as set literal
-        advance(); // consume '{'
-
-        std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-          if (at().type == havel::TokenType::CloseBrace) {
-            break;
-          }
-
-          auto element = parseExpression();
-          elements.push_back(std::move(element));
-
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseBrace) {
-            failAt(at(), "Expected ',' or '}' in set literal");
-          }
+      auto nextTok = at(lookahead);
+      
+      // Empty braces {} = empty object literal
+      if (nextTok.type == havel::TokenType::CloseBrace) {
+        return parseObjectLiteral();
+      }
+      
+      // Check if it's an object literal (identifier/string followed by ':')
+      bool isObject = false;
+ auto isObjKeyType = [](havel::TokenType t) {
+ return t == havel::TokenType::Identifier ||
+ t == havel::TokenType::String ||
+ t == havel::TokenType::MultilineString ||
+ t == havel::TokenType::Number ||
+ t == havel::TokenType::Config ||
+               t == havel::TokenType::Devices ||
+               t == havel::TokenType::Modes ||
+               t == havel::TokenType::Mode ||
+               t == havel::TokenType::Timeout ||
+               t == havel::TokenType::Thread ||
+               t == havel::TokenType::Interval ||
+ t == havel::TokenType::Channel ||
+ t == havel::TokenType::Co ||
+               t == havel::TokenType::On ||
+               t == havel::TokenType::Off ||
+               t == havel::TokenType::Go ||
+               t == havel::TokenType::When ||
+               t == havel::TokenType::Class ||
+               t == havel::TokenType::Struct ||
+               t == havel::TokenType::Enum ||
+               t == havel::TokenType::Fn ||
+               t == havel::TokenType::If ||
+               t == havel::TokenType::For ||
+               t == havel::TokenType::Loop ||
+               t == havel::TokenType::While ||
+               t == havel::TokenType::Switch ||
+               t == havel::TokenType::Do ||
+               t == havel::TokenType::Return ||
+               t == havel::TokenType::Ret ||
+               t == havel::TokenType::Break ||
+t == havel::TokenType::Continue ||
+        t == havel::TokenType::Let ||
+        t == havel::TokenType::Val ||
+        t == havel::TokenType::Const ||
+               t == havel::TokenType::Try ||
+               t == havel::TokenType::Catch ||
+               t == havel::TokenType::Finally ||
+               t == havel::TokenType::Throw ||
+               t == havel::TokenType::Del ||
+               t == havel::TokenType::True ||
+               t == havel::TokenType::False ||
+               t == havel::TokenType::Null ||
+               t == havel::TokenType::Repeat;
+      };
+      if (isObjKeyType(nextTok.type)) {
+        size_t colonLookahead = lookahead + 1;
+        while (at(colonLookahead).type == havel::TokenType::NewLine) {
+          colonLookahead++;
         }
-
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' after set literal");
+        if (at(colonLookahead).type == havel::TokenType::Colon ||
+            at(colonLookahead).type == havel::TokenType::Assign) {
+          isObject = true;
         }
-        advance(); // consume '}'
-
+      }
+      
+      if (isObject) {
+        return parseObjectLiteral();
+      }
+      
+      // Check if it looks like a set literal
+      bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
+nextTok.type == havel::TokenType::String ||
+nextTok.type == havel::TokenType::MultilineString ||
+nextTok.type == havel::TokenType::RegexString ||
+                    nextTok.type == havel::TokenType::Number ||
+                    nextTok.type == havel::TokenType::OpenBracket ||
+                    nextTok.type == havel::TokenType::OpenParen ||
+                    nextTok.type == havel::TokenType::OpenBrace ||
+                    nextTok.type == havel::TokenType::Minus ||
+                    nextTok.type == havel::TokenType::Not ||
+                    nextTok.type == havel::TokenType::Plus ||
+                    nextTok.type == havel::TokenType::Length ||
+                    nextTok.type == havel::TokenType::True ||
+                    nextTok.type == havel::TokenType::False ||
+                    nextTok.type == havel::TokenType::Null);
+      
+      if (couldBeSet) {
+        // Look ahead for comma
+        size_t setLookahead = lookahead + 1;
+        while (setLookahead < tokens.size() && 
+               at(setLookahead).type != havel::TokenType::Comma &&
+               at(setLookahead).type != havel::TokenType::Semicolon &&
+               at(setLookahead).type != havel::TokenType::CloseBrace &&
+               at(setLookahead).type != havel::TokenType::NewLine) {
+          setLookahead++;
+        }
+        
+        if (at(setLookahead).type == havel::TokenType::Comma) {
+          // Parse as set literal
+          advance(); // consume '{'
+          
+          std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+          
+          while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            while (at().type == havel::TokenType::NewLine) {
+              advance();
+            }
+            if (at().type == havel::TokenType::CloseBrace) {
+              break;
+            }
+            
+            auto element = parseExpression();
+            elements.push_back(std::move(element));
+            
+            while (at().type == havel::TokenType::NewLine) {
+              advance();
+            }
+            
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+            } else if (at().type != havel::TokenType::CloseBrace) {
+              failAt(at(), "Expected ',' or '}' in set literal");
+            }
+          }
+          
+          if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected '}' after set literal");
+          }
+          advance(); // consume '}'
+          
         return makeNodeAt<ast::SetExpression>(token, std::move(elements));
+        }
       }
+      
+      // Default to object literal
+      return parseObjectLiteral();
     }
 
-    // Default to object literal
-    return parseObjectLiteral();
-  }
+    case TokenType::Fn:
+      return parseLambdaExpression();
 
-  case TokenType::Fn:
-    return parseLambdaExpression();
+    case TokenType::Match:
+      return parseMatchExpression();
 
-  case TokenType::Match:
-    return parseMatchExpression();
+    case TokenType::If:
+      return parseIfExpression();
 
-  case TokenType::If:
-    return parseIfExpression();
-
-  case TokenType::BangOpenBrace: {
-    // !{key: value} - unsorted object literal (single token from lexer)
-    auto obj = parseObjectLiteral(true);
-    if (!obj)
-      return nullptr;
-    return parsePostfixExpression(std::move(obj));
+case TokenType::BangOpenBrace: {
+  // !{key: value} - unsorted object literal (single token from lexer)
+  auto obj = parseObjectLiteral(true);
+  if (!obj) return nullptr;
+  return parsePostfixExpression(std::move(obj));
   }
 
   case TokenType::Not: {
-    // Check if this is !{} for unsorted object
-    if (at().type == havel::TokenType::OpenBrace) {
-      // Don't consume '{' - parseObjectLiteral expects to consume it
-      auto obj = parseObjectLiteral(true); // true = unsorted
-      if (!obj)
-        return nullptr;
-      return parsePostfixExpression(std::move(obj));
+  // Check if this is !{} for unsorted object
+      if (at().type == havel::TokenType::OpenBrace) {
+        // Don't consume '{' - parseObjectLiteral expects to consume it
+        auto obj = parseObjectLiteral(true); // true = unsorted
+        if (!obj) return nullptr;
+        return parsePostfixExpression(std::move(obj));
+      }
+        auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+        return makeNodeAt<ast::UnaryExpression>(token, ast::UnaryExpression::UnaryOperator::Not, std::move(operand));
     }
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UnaryExpression>(
-        token, ast::UnaryExpression::UnaryOperator::Not, std::move(operand));
-  }
 
-  case TokenType::Minus: {
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UnaryExpression>(
-        token, ast::UnaryExpression::UnaryOperator::Minus, std::move(operand));
-  }
-
-  case TokenType::Plus: {
-    return parsePrattExpression(bp(BindingPower::Prefix));
-  }
-
-  case TokenType::PlusPlus: {
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UpdateExpression>(
-        token, std::move(operand), ast::UpdateExpression::Operator::Increment,
-        true);
-  }
-
-  case TokenType::MinusMinus: {
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UpdateExpression>(
-        token, std::move(operand), ast::UpdateExpression::Operator::Decrement,
-        true);
-  }
-
-  case TokenType::Length: {
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UnaryExpression>(
-        token, ast::UnaryExpression::UnaryOperator::Length, std::move(operand));
-  }
-
-  case TokenType::At: {
-    if (!isFieldLikeToken(at())) {
-      // Standalone @ is self-reference (like 'this')
-      return makeNodeAt<ast::AtExpression>(token, nullptr);
+    case TokenType::Minus: {
+        auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+        return makeNodeAt<ast::UnaryExpression>(token, ast::UnaryExpression::UnaryOperator::Minus, std::move(operand));
     }
-    auto fieldName = makeIdentifier(advance());
-    return makeNodeAt<ast::AtExpression>(token, std::move(fieldName));
-  }
 
-  case TokenType::AtAt: {
-    if (!isFieldLikeToken(at())) {
-      errorAt(at(), "Expected field name after '@@'");
-      return nullptr;
+    case TokenType::Plus: {
+        return parsePrattExpression(bp(BindingPower::Prefix));
     }
-    auto fieldName = makeIdentifier(advance());
-    return makeNodeAt<ast::AtAtExpression>(token, std::move(fieldName));
-  }
 
-  case TokenType::SuperArrow: {
-    if (at().type != TokenType::Identifier) {
-      errorAt(at(), "Expected method name after '@->'");
-      return nullptr;
+    case TokenType::PlusPlus: {
+        auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+        return makeNodeAt<ast::UpdateExpression>(token, std::move(operand), ast::UpdateExpression::Operator::Increment, true);
     }
-    auto methodName = makeIdentifier(advance());
-    auto call = makeNodeAt<havel::ast::CallExpression>(
-        token, makeNodeAt<havel::ast::Identifier>(token, "__super__"));
-    call->isSuperCall = true;
-    call->superMethodName = methodName->symbol;
 
-    // Parse arguments if present
-    if (at().type == TokenType::OpenParen) {
-      advance(); // consume '('
-      while (at().type != TokenType::CloseParen && notEOF()) {
-        while (at().type == TokenType::NewLine)
-          advance();
-        if (at().type == TokenType::CloseParen)
-          break;
-        call->args.push_back(parsePrattExpression(0));
-        while (at().type == TokenType::NewLine)
-          advance();
-        if (at().type == TokenType::Comma)
-          advance();
-        else if (at().type != TokenType::CloseParen) {
-          errorAt(at(), "Expected ',' or ')' in super call arguments");
+    case TokenType::MinusMinus: {
+        auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+        return makeNodeAt<ast::UpdateExpression>(token, std::move(operand), ast::UpdateExpression::Operator::Decrement, true);
+    }
+
+    case TokenType::Length: {
+        auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+        return makeNodeAt<ast::UnaryExpression>(token, ast::UnaryExpression::UnaryOperator::Length, std::move(operand));
+    }
+
+        case TokenType::At: {
+            if (!isFieldLikeToken(at())) {
+                // Standalone @ is self-reference (like 'this')
+                return makeNodeAt<ast::AtExpression>(token, nullptr);
+            }
+            auto fieldName = makeIdentifier(advance());
+            return makeNodeAt<ast::AtExpression>(token, std::move(fieldName));
+        }
+
+    case TokenType::AtAt: {
+        if (!isFieldLikeToken(at())) {
+            errorAt(at(), "Expected field name after '@@'");
+            return nullptr;
+        }
+        auto fieldName = makeIdentifier(advance());
+        return makeNodeAt<ast::AtAtExpression>(token, std::move(fieldName));
+    }
+
+    case TokenType::SuperArrow: {
+        if (at().type != TokenType::Identifier) {
+            errorAt(at(), "Expected method name after '@->'");
+            return nullptr;
+        }
+        auto methodName = makeIdentifier(advance());
+        auto call = makeNodeAt<havel::ast::CallExpression>(token,
+            makeNodeAt<havel::ast::Identifier>(token, "__super__"));
+        call->isSuperCall = true;
+        call->superMethodName = methodName->symbol;
+
+      // Parse arguments if present
+      if (at().type == TokenType::OpenParen) {
+        advance(); // consume '('
+        while (at().type != TokenType::CloseParen && notEOF()) {
+          while (at().type == TokenType::NewLine) advance();
+          if (at().type == TokenType::CloseParen) break;
+          call->args.push_back(parsePrattExpression(0));
+          while (at().type == TokenType::NewLine) advance();
+          if (at().type == TokenType::Comma) advance();
+          else if (at().type != TokenType::CloseParen) {
+            errorAt(at(), "Expected ',' or ')' in super call arguments");
+            return nullptr;
+          }
+        }
+        if (at().type != TokenType::CloseParen) {
+          errorAt(at(), "Expected ')' after super call arguments");
           return nullptr;
         }
+        advance();
       }
-      if (at().type != TokenType::CloseParen) {
-        errorAt(at(), "Expected ')' after super call arguments");
-        return nullptr;
-      }
-      advance();
+      return std::move(call);
     }
-    return std::move(call);
-  }
 
-  case TokenType::Spread: {
-    // Spread expression: ...array
-    // Use same binding power as other prefix operators
-    auto operand =
-        parsePrattExpression(bp(havel::parser::BindingPower::Prefix));
-    return makeNodeAt<ast::SpreadExpression>(token, std::move(operand));
-  }
+    case TokenType::Spread: {
+      // Spread expression: ...array
+      // Use same binding power as other prefix operators
+      auto operand = parsePrattExpression(bp(havel::parser::BindingPower::Prefix));
+      return makeNodeAt<ast::SpreadExpression>(token, std::move(operand));
+    }
 
   case TokenType::Backtick:
     return makeNodeAt<ast::BacktickExpression>(token, token.value);
 
     // Concurrency Primitives
-  case TokenType::Thread:
+case TokenType::Thread:
     if (at().type == TokenType::OpenParen) {
-      return makeNodeAt<ast::MemberExpression>(
-          token, makeNodeAt<ast::Identifier>(token, token.value),
-          makeNodeAt<ast::Identifier>(token, "spawn"));
+        return makeNodeAt<ast::MemberExpression>(token, 
+            makeNodeAt<ast::Identifier>(token, token.value),
+            makeNodeAt<ast::Identifier>(token, "spawn"));
     }
     if (at().type == TokenType::Dot) {
-      return makeNodeAt<ast::Identifier>(token, token.value);
+        return makeNodeAt<ast::Identifier>(token, token.value);
     }
-    // Allow thread as a global object reference when not followed by { (thread
-    // expression)
+    // Allow thread as a global object reference when not followed by { (thread expression)
     if (at().type != TokenType::OpenBrace) {
-      return makeNodeAt<ast::Identifier>(token, token.value);
+        return makeNodeAt<ast::Identifier>(token, token.value);
     }
     return parseThreadExpression();
 
-  case TokenType::Interval:
+case TokenType::Interval:
     if (at().type == TokenType::OpenParen) {
-      return makeNodeAt<ast::MemberExpression>(
-          token, makeNodeAt<ast::Identifier>(token, token.value),
-          makeNodeAt<ast::Identifier>(token, "start"));
+        return makeNodeAt<ast::MemberExpression>(token, 
+            makeNodeAt<ast::Identifier>(token, token.value),
+            makeNodeAt<ast::Identifier>(token, "start"));
     }
     if (at().type == TokenType::Dot) {
-      return makeNodeAt<ast::Identifier>(token, token.value);
+        return makeNodeAt<ast::Identifier>(token, token.value);
     }
     return parseIntervalExpression();
 
-  case TokenType::Update:
+case TokenType::Update:
     if (at().type == TokenType::OpenParen) {
-      return makeNodeAt<ast::MemberExpression>(
-          token, makeNodeAt<ast::Identifier>(token, token.value),
-          makeNodeAt<ast::Identifier>(token, "register"));
+        return makeNodeAt<ast::MemberExpression>(token,
+            makeNodeAt<ast::Identifier>(token, token.value),
+            makeNodeAt<ast::Identifier>(token, "register"));
     }
     if (at().type == TokenType::Dot) {
-      return makeNodeAt<ast::Identifier>(token, token.value);
+        return makeNodeAt<ast::Identifier>(token, token.value);
     }
     return parseUpdateBlockExpression();
 
-  case TokenType::Timeout:
+case TokenType::Timeout:
     if (at().type == TokenType::OpenParen) {
-      return makeNodeAt<ast::MemberExpression>(
-          token, makeNodeAt<ast::Identifier>(token, token.value),
-          makeNodeAt<ast::Identifier>(token, "start"));
+        return makeNodeAt<ast::MemberExpression>(token, 
+            makeNodeAt<ast::Identifier>(token, token.value),
+            makeNodeAt<ast::Identifier>(token, "start"));
     }
     if (at().type == TokenType::Dot) {
-      return makeNodeAt<ast::Identifier>(token, token.value);
+        return makeNodeAt<ast::Identifier>(token, token.value);
     }
     return parseTimeoutExpression();
 
-  case TokenType::Async:
-    return makeNodeAt<ast::Identifier>(token, token.value);
+    case TokenType::Async:
+        return makeNodeAt<ast::Identifier>(token, token.value);
 
-  // Coroutines
-  case TokenType::Yield:
-    return parseYieldExpression();
+    // Coroutines
+    case TokenType::Yield:
+      return parseYieldExpression();
 
   case TokenType::Channel:
     return parseChannelExpression();
@@ -1634,168 +1534,130 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   case TokenType::Wait:
     return parseWaitExpression();
 
-  case TokenType::Go:
-    return parseGoExpression();
+ case TokenType::Go:
+ return parseGoExpression();
 
-  case TokenType::LeftArrow: {
-    auto argument = parsePrattExpression(bp(BindingPower::Prefix));
-    auto awaitExpr =
-        makeNodeAt<havel::ast::AwaitExpression>(token, std::move(argument));
-    awaitExpr->line = token.line;
-    awaitExpr->column = token.column;
-    return awaitExpr;
-  }
+ case TokenType::LeftArrow: {
+ auto argument = parsePrattExpression(bp(BindingPower::Prefix));
+ auto awaitExpr = makeNodeAt<havel::ast::AwaitExpression>(token, std::move(argument));
+ awaitExpr->line = token.line;
+ awaitExpr->column = token.column;
+ return awaitExpr;
+ }
 
-  case TokenType::Hotkey:
-    return parseHotkeyExpression(token);
+    case TokenType::Hotkey:
+      return parseHotkeyExpression(token);
 
-  case TokenType::ShellCommand:
-  case TokenType::ShellCommandCapture: {
-    bool captureOutput = (token.type == TokenType::ShellCommandCapture);
-    while (at().type == TokenType::NewLine) {
-      advance();
+    case TokenType::ShellCommand:
+    case TokenType::ShellCommandCapture: {
+        bool captureOutput = (token.type == TokenType::ShellCommandCapture);
+        while (at().type == TokenType::NewLine) {
+            advance();
+        }
+        std::unique_ptr<ast::Expression> cmdExpr;
+        if (at().type == TokenType::OpenParen ||
+            at().type == TokenType::OpenBracket) {
+            cmdExpr = parseExpression();
+        } else if (at().type == TokenType::Identifier ||
+                   at().type == TokenType::String ||
+                   at().type == TokenType::MultilineString) {
+            cmdExpr = parsePrimaryExpression();
+        } else {
+            failAt(token, "Shell command requires expression: $ (cmd), $! [array], or $! var");
+        }
+        return makeNodeAt<ast::ShellCommandExpression>(token, std::move(cmdExpr), captureOutput);
     }
-    std::unique_ptr<ast::Expression> cmdExpr;
-    if (at().type == TokenType::OpenParen ||
-        at().type == TokenType::OpenBracket) {
-      cmdExpr = parseExpression();
-    } else if (at().type == TokenType::Identifier ||
-               at().type == TokenType::String ||
-               at().type == TokenType::MultilineString) {
-      cmdExpr = parsePrimaryExpression();
-    } else {
-      failAt(
-          token,
-          "Shell command requires expression: $ (cmd), $! [array], or $! var");
-    }
-    return makeNodeAt<ast::ShellCommandExpression>(token, std::move(cmdExpr),
-                                                   captureOutput);
-  }
 
-  case TokenType::Tilde: {
-    if (at().type == TokenType::Identifier || at().type == TokenType::Hotkey) {
-      return parseTildeHotkeyExpression();
-    }
-    auto operand = parsePrattExpression(bp(BindingPower::Prefix));
-    return makeNodeAt<ast::UnaryExpression>(
-        token, ast::UnaryExpression::UnaryOperator::BitwiseNot,
-        std::move(operand));
-  }
+        case TokenType::Tilde: {
+            if (at().type == TokenType::Identifier ||
+                at().type == TokenType::Hotkey) {
+                return parseTildeHotkeyExpression();
+            }
+            auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+            return makeNodeAt<ast::UnaryExpression>(token, 
+                ast::UnaryExpression::UnaryOperator::BitwiseNot, std::move(operand));
+        }
 
-  case TokenType::DoubleOpenParen: {
-    auto inner = parsePrattExpression(bp(BindingPower::Assignment));
+    case TokenType::DoubleOpenParen: {
+        auto inner = parsePrattExpression(bp(BindingPower::Assignment));
     if (at().type != TokenType::DoubleCloseParen) {
-      errorAt(at(), "Expected '))' to close bitwise expression");
-    } else {
-      advance();
-    }
-    return inner;
-  }
-
-  case TokenType::CloseParen: {
-    if (auto unclosed = getUnclosedDelimiter()) {
-      auto u = unclosed.value();
-      std::string openStr;
-      switch (u.type) {
-      case TokenType::OpenParen:
-        openStr = "'('";
-        break;
-      case TokenType::OpenBracket:
-        openStr = "'['";
-        break;
-      case TokenType::OpenBrace:
-        openStr = "'{'";
-        break;
-      default:
-        openStr = "delimiter";
-      }
-      errorAt(token, "Mismatched delimiter: expected ')' to close " + openStr +
-                         " (opened at line " + std::to_string(u.line) +
-                         ", col " + std::to_string(u.column) + ")");
-    } else {
-      errorAt(token, "Unexpected ')' with no matching '('");
-    }
-    return nullptr;
-  }
-
-  case TokenType::CloseBracket: {
-    if (auto unclosed = getUnclosedDelimiter()) {
-      auto u = unclosed.value();
-      std::string openStr;
-      switch (u.type) {
-      case TokenType::OpenParen:
-        openStr = "'('";
-        break;
-      case TokenType::OpenBracket:
-        openStr = "'['";
-        break;
-      case TokenType::OpenBrace:
-        openStr = "'{'";
-        break;
-      default:
-        openStr = "delimiter";
-      }
-      // Check if the closing delimiter matches the opening delimiter
-      if (u.type != TokenType::OpenBracket) {
-        std::string expectedStr =
-            (u.type == TokenType::OpenParen) ? "')'" : "'}'";
-        errorAt(token, "Mismatched delimiter: expected " + expectedStr +
-                           " to close " + openStr + " (opened at line " +
-                           std::to_string(u.line) + ", col " +
-                           std::to_string(u.column) + "), but found ']'");
+        errorAt(at(), "Expected '))' to close bitwise expression");
       } else {
-        errorAt(token, "Mismatched delimiter: expected ']' to close " +
-                           openStr + " (opened at line " +
-                           std::to_string(u.line) + ", col " +
-                           std::to_string(u.column) + ")");
+        advance();
       }
-    } else {
-      errorAt(token, "Unexpected ']' with no matching '['");
+      return inner;
     }
-    return nullptr;
-  }
 
-  case TokenType::CloseBrace: {
-    if (auto unclosed = getUnclosedDelimiter()) {
-      auto u = unclosed.value();
-      std::string openStr;
-      switch (u.type) {
-      case TokenType::OpenParen:
-        openStr = "'('";
-        break;
-      case TokenType::OpenBracket:
-        openStr = "'['";
-        break;
-      case TokenType::OpenBrace:
-        openStr = "'{'";
-        break;
-      default:
-        openStr = "delimiter";
-      }
-      // Check if the closing delimiter matches the opening delimiter
-      if (u.type != TokenType::OpenBrace) {
-        std::string expectedStr =
-            (u.type == TokenType::OpenParen) ? "')'" : "']'";
-        errorAt(token, "Mismatched delimiter: expected " + expectedStr +
-                           " to close " + openStr + " (opened at line " +
-                           std::to_string(u.line) + ", col " +
-                           std::to_string(u.column) + "), but found '}'");
-      } else {
-        errorAt(token, "Mismatched delimiter: expected '}' to close " +
-                           openStr + " (opened at line " +
-                           std::to_string(u.line) + ", col " +
-                           std::to_string(u.column) + ")");
-      }
-    } else {
-      errorAt(token, "Unexpected '}' with no matching '{'");
-    }
-    return nullptr;
-  }
+        case TokenType::CloseParen: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              errorAt(token, "Mismatched delimiter: expected ')' to close " + openStr +
+                " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+            }
+            // If stack is empty, this ')' may belong to an outer context. Don't error here.
+            return nullptr;
+          }
 
-  default: {
-    errorAt(token, "Unexpected token in expression: " + token.value);
-    return nullptr;
-  }
+        case TokenType::CloseBracket: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              // Check if the closing delimiter matches the opening delimiter
+              if (u.type != TokenType::OpenBracket) {
+                  std::string expectedStr = (u.type == TokenType::OpenParen) ? "')'" : "'}'";
+                  errorAt(token, "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+                    " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found ']'");
+                } else {
+                    errorAt(token, "Mismatched delimiter: expected ']' to close " + openStr +
+                      " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+                }
+            }
+            // If stack is empty, this ']' may belong to an outer context. Don't error here.
+            return nullptr;
+          }
+
+        case TokenType::CloseBrace: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              // Check if the closing delimiter matches the opening delimiter
+              if (u.type != TokenType::OpenBrace) {
+                  std::string expectedStr = (u.type == TokenType::OpenParen) ? "')'" : "']'";
+                  errorAt(token, "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+                    " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found '}'");
+                } else {
+                    errorAt(token, "Mismatched delimiter: expected '}' to close " + openStr +
+                      " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+                }
+            }
+            // If stack is empty, this '}' belongs to a statement-level block (e.g., function body).
+            // Don't error here - let the statement parser handle it.
+            return nullptr;
+          }
+
+        default: {
+            errorAt(token, "Unexpected token in expression: " + token.value);
+            return nullptr;
+          }
   }
 }
 
@@ -1819,733 +1681,663 @@ std::unique_ptr<havel::ast::Expression> Parser::parseTildeHotkeyExpression() {
   }
 
   // Create a synthetic hotkey token and pass to parseHotkeyExpression
-  Token syntheticHotkey(combo, TokenType::Hotkey, combo, nextToken.line,
-                        nextToken.column);
+  Token syntheticHotkey(combo, TokenType::Hotkey, combo, nextToken.line, nextToken.column);
   return parseHotkeyExpression(syntheticHotkey);
 }
 
 // Left denotation - parse infix/postfix operators
-std::unique_ptr<ast::Expression>
-Parser::led(const Token &token, std::unique_ptr<ast::Expression> left) {
+std::unique_ptr<ast::Expression> Parser::led(const Token &token,
+                                              std::unique_ptr<ast::Expression> left) {
   if (debug.parser) {
     havel::debug("PRATT: led for {} with left operand", token.toString());
   }
 
-  switch (token.type) {
+switch (token.type) {
     // Assignment operators (right-associative)
-  case TokenType::Assign:
-  case TokenType::PlusAssign:
-  case TokenType::MinusAssign:
-  case TokenType::MultiplyAssign:
-  case TokenType::DivideAssign:
-  case TokenType::ModuloAssign:
-  case TokenType::PowerAssign:
-  case TokenType::BackslashAssign:
-  case TokenType::DoubleModuloAssign:
-  case TokenType::BitwiseAndAssign:
-  case TokenType::BitwiseOrAssign:
-  case TokenType::BitwiseXorAssign:
-  case TokenType::ShiftLeftAssign:
-  case TokenType::ShiftRightAssign: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    std::string op = token.value;
+case TokenType::Assign:
+    case TokenType::PlusAssign:
+    case TokenType::MinusAssign:
+    case TokenType::MultiplyAssign:
+    case TokenType::DivideAssign:
+    case TokenType::ModuloAssign:
+    case TokenType::PowerAssign:
+    case TokenType::BackslashAssign:
+    case TokenType::DoubleModuloAssign:
+    case TokenType::BitwiseAndAssign:
+    case TokenType::BitwiseOrAssign:
+    case TokenType::BitwiseXorAssign:
+ case TokenType::ShiftLeftAssign:
+ case TokenType::ShiftRightAssign: {
+ auto right = parsePrattExpression(getRightBindingPower(token.type));
+ std::string op = token.value;
 
-    // Check if left is an identifier and there might be more targets
-    // (comma-separated) This handles: a, b, c = value The comma case will
-    // collect targets and then hit '='
-    return makeNodeAt<ast::AssignmentExpression>(token, std::move(left),
-                                                 std::move(right), op, false);
-  }
+ // Check if left is an identifier and there might be more targets (comma-separated)
+ // This handles: a, b, c = value
+ // The comma case will collect targets and then hit '='
+ return makeNodeAt<ast::AssignmentExpression>(token, 
+ std::move(left), std::move(right), op, false);
+ }
 
-  case TokenType::LeftArrow: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    auto awaitExpr =
-        makeNodeAt<havel::ast::AwaitExpression>(token, std::move(right));
-    awaitExpr->line = token.line;
-    awaitExpr->column = token.column;
-    return makeNodeAt<ast::AssignmentExpression>(
-        token, std::move(left), std::move(awaitExpr), "=", false);
-  }
+ case TokenType::LeftArrow: {
+ auto right = parsePrattExpression(getRightBindingPower(token.type));
+ auto awaitExpr = makeNodeAt<havel::ast::AwaitExpression>(token, std::move(right));
+ awaitExpr->line = token.line;
+ awaitExpr->column = token.column;
+ return makeNodeAt<ast::AssignmentExpression>(token, 
+ std::move(left), std::move(awaitExpr), "=", false);
+ }
 
-  case TokenType::Plus: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Add, std::move(right));
-  }
+case TokenType::Plus: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Add, std::move(right));
+    }
 
-  case TokenType::Minus: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Sub, std::move(right));
-  }
+    case TokenType::Minus: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Sub, std::move(right));
+    }
 
-  case TokenType::Multiply: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Mul, std::move(right));
-  }
+    case TokenType::Multiply: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Mul, std::move(right));
+    }
 
-  case TokenType::Divide: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Div, std::move(right));
-  }
+    case TokenType::Divide: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Div, std::move(right));
+    }
 
-  case TokenType::Modulo: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Mod, std::move(right));
-  }
+    case TokenType::Modulo: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return makeNodeAt<ast::BinaryExpression>(token, 
+            std::move(left), ast::BinaryOperator::Mod, std::move(right));
+    }
 
-  case TokenType::Backslash: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
+    case TokenType::Backslash: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return makeNodeAt<ast::BinaryExpression>(token, 
+std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
   }
 
   case TokenType::DoubleBackslash: {
     auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::DivMod, std::move(right));
+    return makeNodeAt<ast::BinaryExpression>(token, 
+      std::move(left), ast::BinaryOperator::DivMod, std::move(right));
   }
 
   case TokenType::DoubleModulo: {
     auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::Remainder,
-                                             std::move(right));
+    return makeNodeAt<ast::BinaryExpression>(token, 
+      std::move(left), ast::BinaryOperator::Remainder, std::move(right));
   }
 
   case TokenType::Power: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Pow, std::move(right));
-  }
-
-  case TokenType::Equals: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Equal, std::move(right));
-  }
-
-  case TokenType::NotEquals: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::NotEqual,
-                                             std::move(right));
-  }
-
-  case TokenType::Is: {
-    if (at().type == TokenType::Not) {
-      advance();
       auto right = parsePrattExpression(getRightBindingPower(token.type));
-      return makeNodeAt<ast::BinaryExpression>(
-          token, std::move(left), ast::BinaryOperator::IsNot, std::move(right));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Pow, std::move(right));
     }
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Is, std::move(right));
-  }
 
-  case TokenType::Tilde: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Tilde, std::move(right));
-  }
-  case TokenType::Matches: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Matches, std::move(right));
-  }
-  case TokenType::As: {
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected type name after 'as'");
+    case TokenType::Equals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Equal, std::move(right));
     }
-    std::string targetType = advance().value;
-    return makeNodeAt<ast::CastExpression>(token, std::move(left), targetType);
-  }
 
-  case TokenType::In: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::In, std::move(right));
-  }
-
-  case TokenType::Less: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Less, std::move(right));
-  }
-
-  case TokenType::Greater: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Greater, std::move(right));
-  }
-
-  case TokenType::LessEquals: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::LessEqual,
-                                             std::move(right));
-  }
-
-  case TokenType::GreaterEquals: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::GreaterEqual,
-                                             std::move(right));
-  }
-
-  case TokenType::And: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::And, std::move(right));
-  }
-
-  case TokenType::Or: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Or, std::move(right));
-  }
-
-  case TokenType::Not: {
-    // Handle 'not in' as a compound infix operator
-    if (at().type == TokenType::In) {
-      advance(); // consume 'in'
-      auto right = parsePrattExpression(getRightBindingPower(TokenType::In));
-      return makeNodeAt<ast::BinaryExpression>(
-          token, std::move(left), ast::BinaryOperator::NotIn, std::move(right));
+    case TokenType::NotEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
-    // Regular 'not' as unary - but this shouldn't happen in infix position
-    // Just return left as-is (the not prefix is handled in nud)
-    return left;
+
+case TokenType::Is: {
+        if (at().type == TokenType::Not) {
+            advance();
+            auto right = parsePrattExpression(getRightBindingPower(token.type));
+            return makeNodeAt<ast::BinaryExpression>(token,
+                std::move(left), ast::BinaryOperator::IsNot, std::move(right));
+        }
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return makeNodeAt<ast::BinaryExpression>(token,
+            std::move(left), ast::BinaryOperator::Is, std::move(right));
+    }
+
+case TokenType::Tilde: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return makeNodeAt<ast::BinaryExpression>(token, 
+            std::move(left), ast::BinaryOperator::Tilde, std::move(right));
+    }
+    case TokenType::Matches: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Matches, std::move(right));
+    }
+    case TokenType::As: {
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected type name after 'as'");
+      }
+      std::string targetType = advance().value;
+      return makeNodeAt<ast::CastExpression>(token, std::move(left), targetType);
+    }
+
+    case TokenType::In: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::In, std::move(right));
+    }
+
+    case TokenType::Less: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Less, std::move(right));
+    }
+
+    case TokenType::Greater: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Greater, std::move(right));
+    }
+
+    case TokenType::LessEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::LessEqual, std::move(right));
+    }
+
+    case TokenType::GreaterEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::GreaterEqual, std::move(right));
+    }
+
+    case TokenType::And: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::And, std::move(right));
+    }
+
+    case TokenType::Or: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Or, std::move(right));
+    }
+
+    case TokenType::Not: {
+      // Handle 'not in' as a compound infix operator
+      if (at().type == TokenType::In) {
+        advance(); // consume 'in'
+        auto right = parsePrattExpression(getRightBindingPower(TokenType::In));
+        return makeNodeAt<ast::BinaryExpression>(token, 
+            std::move(left), ast::BinaryOperator::NotIn, std::move(right));
+      }
+      // Regular 'not' as unary - but this shouldn't happen in infix position
+      // Just return left as-is (the not prefix is handled in nud)
+  return left;
   }
 
   case TokenType::Nullish: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::Nullish, std::move(right));
-  }
-
-  case TokenType::For: {
-    // expr for binding : iterable (generator/comprehension)
-    if (at().type != TokenType::Identifier) {
-      failAt(at(), "Expected iterator variable after 'for'");
-    }
-    auto binding = makeIdentifier(advance());
-    if (at().type == TokenType::Colon || at().type == TokenType::In) {
-      advance();
-    } else {
-      failAt(at(), "Expected ':' or 'in' after iterator variable");
-    }
-    auto iterable = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::ForExpression>(
-        token, std::move(left), std::move(binding), std::move(iterable));
-  }
-
-  // Optional chaining: obj?.field or obj?.method()
-  case TokenType::QuestionDot: {
-    // Property names can be identifiers or certain keywords
-    if (at().type == TokenType::Identifier || at().type == TokenType::And ||
-        at().type == TokenType::Or || at().type == TokenType::Not ||
-        at().type == TokenType::Repeat || at().type == TokenType::Loop ||
-        at().type == TokenType::If || at().type == TokenType::Else ||
-        at().type == TokenType::While || at().type == TokenType::For ||
-        at().type == TokenType::Match || at().type == TokenType::Fn) {
-      auto property = makeIdentifier(advance());
-      auto member = makeNodeAt<ast::MemberExpression>(
-          token, std::move(left), std::move(property), true);
-      return member;
-    }
-    failAt(at(), "Expected identifier after '?.'");
-  }
-
-  // Ternary operator: cond ? trueExpr : falseExpr
-  case TokenType::Question: {
-    auto trueValue = parsePrattExpression(0);
-    if (at().type != TokenType::Colon) {
-      failAt(at(), "Expected ':' after ternary expression condition");
-    }
-    advance(); // consume ':'
-    auto falseValue =
-        parsePrattExpression(getRightBindingPower(TokenType::Question));
-    return makeNodeAt<ast::TernaryExpression>(
-        token, std::move(left), std::move(trueValue), std::move(falseValue));
-  }
-
-  case TokenType::DotDot: {
-    // Check if left is already a RangeExpression (e.g., 1..10..2)
-    // If so, parse the step and create a single range with step
-    if (left && left->kind == ast::NodeType::RangeExpression) {
-      auto &existingRange = static_cast<ast::RangeExpression &>(*left);
-      // If this range already has a step, it's an error or we just treat as
-      // nested Parse the step value; preserve the original end
-      auto step = parsePrattExpression(getRightBindingPower(token.type));
-      return makeNodeAt<ast::RangeExpression>(
-          token, std::move(existingRange.start), std::move(existingRange.end),
-          std::move(step));
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::Nullish, std::move(right));
     }
 
-    // Check for step: a..b..step - look ahead after parsing end
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-
-    // After parsing the right side, check if next token is another DotDot for
-    // step
-    if (at().type == TokenType::DotDot) {
-      advance(); // consume second ..
-      auto step = parsePrattExpression(getRightBindingPower(TokenType::DotDot));
-      return makeNodeAt<ast::RangeExpression>(
-          token, std::move(left), std::move(right), std::move(step));
-    }
-
-    return makeNodeAt<ast::RangeExpression>(token, std::move(left),
-                                            std::move(right));
-  }
-
-    // Member access
-  case TokenType::Dot: {
-    if (at().type == TokenType::Identifier ||
-        Lexer::KEYWORDS.count(at().value) > 0) {
-      auto property = makeIdentifier(advance());
-      return makeNodeAt<ast::MemberExpression>(token, std::move(left),
-                                               std::move(property));
-    }
-    // Operator method syntax: a.+(b), a.[](i), etc.
-    auto isOpToken = [](TokenType t) {
-      switch (t) {
-      case TokenType::Plus:
-      case TokenType::Minus:
-      case TokenType::Multiply:
-      case TokenType::Divide:
-      case TokenType::Modulo:
-      case TokenType::Power:
-      case TokenType::Equals:
-      case TokenType::NotEquals:
-      case TokenType::Less:
-      case TokenType::Greater:
-      case TokenType::LessEquals:
-      case TokenType::GreaterEquals:
-      case TokenType::And:
-      case TokenType::Or:
-      case TokenType::Not:
-      case TokenType::Tilde:
-      case TokenType::Length:
-      case TokenType::Pipe:
-      case TokenType::PlusAssign:
-      case TokenType::MinusAssign:
-      case TokenType::MultiplyAssign:
-      case TokenType::DivideAssign:
-      case TokenType::ModuloAssign:
-      case TokenType::PowerAssign:
-      case TokenType::BitwiseAndAssign:
-      case TokenType::BitwiseOrAssign:
-      case TokenType::BitwiseXorAssign:
-      case TokenType::ShiftLeftAssign:
-      case TokenType::ShiftRightAssign:
-      case TokenType::OpenBracket:
-      case TokenType::Backslash:
-      case TokenType::DoubleBackslash:
-      case TokenType::DoubleModulo:
-      case TokenType::BackslashAssign:
-      case TokenType::DoubleModuloAssign:
-      case TokenType::Is:
-      case TokenType::Matches:
-        return true;
-      default:
-        return false;
+    case TokenType::For: {
+      // expr for binding : iterable (generator/comprehension)
+      if (at().type != TokenType::Identifier) {
+        failAt(at(), "Expected iterator variable after 'for'");
       }
-    };
-    if (isOpToken(at().type)) {
-      std::string sym = advance().value;
-      // []= needs special handling: after [, check for ] then =
-      if (sym == "[" && at().type == TokenType::CloseBracket) {
-        advance(); // consume ]
-        sym = "[]";
-        if (at().type == TokenType::Assign) {
-          advance(); // consume =
-          sym = "[]=";
-        }
-      }
-      auto property = makeNodeAt<ast::Identifier>(token, sym);
-      return makeNodeAt<ast::MemberExpression>(token, std::move(left),
-                                               std::move(property));
-    }
-    failAt(at(), "Expected identifier after '.'");
-  }
-
-  // Function call
-  case TokenType::OpenParen: {
-    std::vector<std::unique_ptr<ast::Expression>> args;
-    std::vector<ast::KeywordArg> kwargs;
-
-    // Parse arguments
-    while (notEOF() && at().type != TokenType::CloseParen) {
-      // Skip newlines before each argument
-      while (at().type == TokenType::NewLine) {
+      auto binding = makeIdentifier(advance());
+      if (at().type == TokenType::Colon || at().type == TokenType::In) {
         advance();
-      }
-      if (at().type == TokenType::CloseParen) {
-        break;
-      }
-
-      if (!args.empty() || !kwargs.empty()) {
-        if (at().type == TokenType::Comma) {
-          advance();
-        }
-      }
-
-      // Skip newlines after comma
-      while (at().type == TokenType::NewLine) {
-        advance();
-      }
-      if (at().type == TokenType::CloseParen) {
-        break;
-      }
-
-      // Check for keyword argument: name=value
-      // Must check BEFORE calling parsePrattExpression to avoid treating
-      // '=' as an assignment operator
-      if (at().type == TokenType::Identifier &&
-          at(1).type == TokenType::Assign) {
-        std::string name = advance().value; // consume identifier
-        advance();                          // consume '='
-        auto value = parsePrattExpression(0);
-        kwargs.emplace_back(std::move(name), std::move(value));
       } else {
-        // Positional argument (possibly with spread)
-        std::unique_ptr<ast::Expression> arg;
-        if (at().type == TokenType::Spread) {
-          advance(); // consume '...'
-          auto target = parsePrattExpression(0);
-          arg = makeNodeAt<ast::SpreadExpression>(token, std::move(target));
-        } else {
-          arg = parsePrattExpression(0);
-        }
-        args.push_back(std::move(arg));
+        failAt(at(), "Expected ':' or 'in' after iterator variable");
       }
-
-      // Skip newlines after argument
-      while (at().type == TokenType::NewLine) {
-        advance();
-      }
+      auto iterable = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::ForExpression>(token, std::move(left),
+                                            std::move(binding),
+                                            std::move(iterable));
     }
 
-    // Check for mismatched closing delimiter
-    if (at().type == TokenType::CloseBracket ||
-        at().type == TokenType::CloseBrace) {
-      if (auto unclosed = getUnclosedDelimiter()) {
-        auto u = unclosed.value();
-        std::string openStr;
-        switch (u.type) {
-        case TokenType::OpenParen:
-          openStr = "'('";
-          break;
-        case TokenType::OpenBracket:
-          openStr = "'['";
-          break;
-        case TokenType::OpenBrace:
-          openStr = "'{'";
-          break;
-        default:
-          openStr = "delimiter";
+    // Optional chaining: obj?.field or obj?.method()
+    case TokenType::QuestionDot: {
+        // Property names can be identifiers or certain keywords
+        if (at().type == TokenType::Identifier ||
+            at().type == TokenType::And ||
+            at().type == TokenType::Or ||
+            at().type == TokenType::Not ||
+            at().type == TokenType::Repeat ||
+            at().type == TokenType::Loop ||
+            at().type == TokenType::If ||
+            at().type == TokenType::Else ||
+            at().type == TokenType::While ||
+            at().type == TokenType::For ||
+            at().type == TokenType::Match ||
+            at().type == TokenType::Fn) {
+          auto property = makeIdentifier(advance());
+          auto member = makeNodeAt<ast::MemberExpression>(token, 
+              std::move(left), std::move(property), true);
+          return member;
         }
-        std::string expectedStr, foundStr;
-        if (at().type == TokenType::CloseBracket) {
-          expectedStr = "')'";
-          foundStr = "']'";
-        } else if (at().type == TokenType::CloseBrace) {
-          expectedStr = "')'";
-          foundStr = "'}'";
-        } else {
-          expectedStr = "')'";
-          foundStr = "'" + at().value + "'";
-        }
-        errorAt(at(), "Mismatched delimiter: expected " + expectedStr +
-                          " to close " + openStr + " (opened at line " +
-                          std::to_string(u.line) + ", col " +
-                          std::to_string(u.column) + "), but found " +
-                          foundStr);
-      } else {
-        errorAt(at(), "Expected ')' after arguments, but found " +
-                          std::string(1, static_cast<char>(at().type)) +
-                          " (ASCII " +
-                          std::to_string(static_cast<int>(at().type)) + ")");
-      }
-    } else if (at().type != TokenType::CloseParen) {
-      failAt(at(), "Expected ')' after arguments");
-    }
-    advance(); // consume ')'
-
-    return makeNodeAt<ast::CallExpression>(token, std::move(left),
-                                           std::move(args), std::move(kwargs));
-  }
-
-  // Array/Object index or slice
-  case TokenType::OpenBracket: {
-    // Check if this is a slice expression: [start:end:step]
-    // At this point, '[' has been consumed by the Pratt parser.
-    // Do a proper lookahead scan to find ':' at the top bracket level.
-    bool isSlice = false;
-    {
-      size_t lookahead = 0;
-      int bracketDepth = 1;
-      while (position + lookahead < tokens.size()) {
-        const Token &tok = tokens[position + lookahead];
-        if (tok.type == TokenType::OpenBracket) {
-          bracketDepth++;
-        } else if (tok.type == TokenType::CloseBracket) {
-          bracketDepth--;
-          if (bracketDepth == 0)
-            break;
-        } else if (tok.type == TokenType::Colon && bracketDepth == 1) {
-          isSlice = true;
-          break;
-        } else if (tok.type == TokenType::ColonColon && lookahead > 0 &&
-                   bracketDepth == 1) {
-          // :: after lookahead > 0 means it's a slice step separator.
-          // :: at position 0 is the global scope prefix (e.g. arr[::pos]).
-          isSlice = true;
-          break;
-        } else if (tok.type == TokenType::EOF_TOKEN) {
-          break;
-        }
-        lookahead++;
-      }
+        failAt(at(), "Expected identifier after '?.'");
     }
 
-    if (isSlice) {
-      // Slice expression - desugar to target.slice(start, end, step)
-      std::unique_ptr<ast::Expression> start, end, step;
-
-      // Parse optional start (before first colon)
-      // Only parse if the current token is NOT a colon or ColonColon
-      if (at(0).type != TokenType::Colon &&
-          at(0).type != TokenType::ColonColon) {
-        start = parsePrattExpression(0);
-      }
-
-      // Handle ColonColon (::) as two colons
-      if (at().type == TokenType::ColonColon) {
-        // :: is start::step with no end, or start:end with no step
-        // We need to look ahead to determine which
-        advance(); // consume ::
-        // After ::, if we see a number (possibly negative), it's step
-        // If we see ], there's no step or end
-        if (at().type != TokenType::CloseBracket) {
-          // It's a step value
-          step = parsePrattExpression(0);
-        }
-      } else {
-        // Consume first colon
+    // Ternary operator: cond ? trueExpr : falseExpr
+    case TokenType::Question: {
+        auto trueValue = parsePrattExpression(0);
         if (at().type != TokenType::Colon) {
-          failAt(at(), "Expected ':' in slice expression, got " +
-                           std::to_string(static_cast<int>(at().type)));
+            failAt(at(), "Expected ':' after ternary expression condition");
         }
-        advance();
+        advance(); // consume ':'
+        auto falseValue = parsePrattExpression(getRightBindingPower(TokenType::Question));
+        return makeNodeAt<ast::TernaryExpression>(token, 
+            std::move(left), std::move(trueValue), std::move(falseValue));
+    }
 
-        // Parse optional end (between colons)
-        if (at().type != TokenType::Colon &&
-            at().type != TokenType::CloseBracket) {
-          end = parsePrattExpression(0);
+    case TokenType::DotDot: {
+      // Check if left is already a RangeExpression (e.g., 1..10..2)
+      // If so, parse the step and create a single range with step
+      if (left && left->kind == ast::NodeType::RangeExpression) {
+        auto &existingRange = static_cast<ast::RangeExpression &>(*left);
+        // If this range already has a step, it's an error or we just treat it as nested
+        // Parse the end value
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        // Treat as a new range: start..end (ignoring the previous range wrapper)
+        return makeNodeAt<ast::RangeExpression>(token, 
+            std::move(left), std::move(right));
+      }
+
+      // Check for step: a..b..step - look ahead after parsing end
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+
+      // After parsing the right side, check if next token is another DotDot for step
+      if (at().type == TokenType::DotDot) {
+        advance(); // consume second ..
+        auto step = parsePrattExpression(getRightBindingPower(TokenType::DotDot));
+        return makeNodeAt<ast::RangeExpression>(token, 
+            std::move(left), std::move(right), std::move(step));
+      }
+
+      return makeNodeAt<ast::RangeExpression>(token, 
+          std::move(left), std::move(right));
+    }
+
+// Member access
+  case TokenType::Dot: {
+    if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
+      auto property = makeIdentifier(advance());
+      return makeNodeAt<ast::MemberExpression>(token,
+        std::move(left), std::move(property));
+    }
+            // Operator method syntax: a.+(b), a.[](i), etc.
+            auto isOpToken = [](TokenType t) {
+                switch (t) {
+                case TokenType::Plus: case TokenType::Minus: case TokenType::Multiply:
+                case TokenType::Divide: case TokenType::Modulo: case TokenType::Power:
+                case TokenType::Equals: case TokenType::NotEquals:
+                case TokenType::Less: case TokenType::Greater: case TokenType::LessEquals: case TokenType::GreaterEquals:
+                case TokenType::And: case TokenType::Or: case TokenType::Not:
+                case TokenType::Tilde: case TokenType::Length: case TokenType::Pipe:
+                case TokenType::PlusAssign: case TokenType::MinusAssign:
+                case TokenType::MultiplyAssign: case TokenType::DivideAssign: case TokenType::ModuloAssign:
+                case TokenType::PowerAssign:
+                case TokenType::BitwiseAndAssign: case TokenType::BitwiseOrAssign: case TokenType::BitwiseXorAssign:
+                case TokenType::ShiftLeftAssign: case TokenType::ShiftRightAssign:
+                case TokenType::OpenBracket:
+                case TokenType::Backslash: case TokenType::DoubleBackslash: case TokenType::DoubleModulo:
+                case TokenType::BackslashAssign: case TokenType::DoubleModuloAssign:
+                case TokenType::Is: case TokenType::Matches:
+                    return true;
+                default:
+                    return false;
+                }
+            };
+            if (isOpToken(at().type)) {
+                std::string sym = advance().value;
+                // []= needs special handling: after [, check for ] then =
+                if (sym == "[" && at().type == TokenType::CloseBracket) {
+                    advance(); // consume ]
+                    sym = "[]";
+                    if (at().type == TokenType::Assign) {
+                        advance(); // consume =
+                        sym = "[]=";
+                    }
+                }
+                auto property = makeNodeAt<ast::Identifier>(token, sym);
+                return makeNodeAt<ast::MemberExpression>(token, 
+                    std::move(left), std::move(property));
+            }
+            failAt(at(), "Expected identifier after '.'");
         }
 
-        // Parse optional step (after second colon)
-        if (at().type == TokenType::Colon) {
-          advance();
+    // Function call
+    case TokenType::OpenParen: {
+        std::vector<std::unique_ptr<ast::Expression>> args;
+        std::vector<ast::KeywordArg> kwargs;
+
+        // Parse arguments
+        while (notEOF() && at().type != TokenType::CloseParen) {
+            // Skip newlines before each argument
+            while (at().type == TokenType::NewLine) { advance(); }
+            if (at().type == TokenType::CloseParen) { break; }
+
+            if (!args.empty() || !kwargs.empty()) {
+                if (at().type == TokenType::Comma) {
+                    advance();
+                }
+            }
+
+            // Skip newlines after comma
+            while (at().type == TokenType::NewLine) { advance(); }
+            if (at().type == TokenType::CloseParen) { break; }
+
+            // Check for keyword argument: name=value
+            // Must check BEFORE calling parsePrattExpression to avoid treating
+            // '=' as an assignment operator
+            if (at().type == TokenType::Identifier &&
+                at(1).type == TokenType::Assign) {
+                std::string name = advance().value; // consume identifier
+                advance(); // consume '='
+                auto value = parsePrattExpression(0);
+                kwargs.emplace_back(std::move(name), std::move(value));
+            } else {
+                // Positional argument (possibly with spread)
+                std::unique_ptr<ast::Expression> arg;
+                if (at().type == TokenType::Spread) {
+                    advance(); // consume '...'
+                    auto target = parsePrattExpression(0);
+                    arg = makeNodeAt<ast::SpreadExpression>(token, std::move(target));
+                } else {
+                    arg = parsePrattExpression(0);
+                }
+                args.push_back(std::move(arg));
+            }
+
+            // Skip newlines after argument
+            while (at().type == TokenType::NewLine) { advance(); }
+        }
+
+        // Check for mismatched closing delimiter
+        if (at().type == TokenType::CloseBracket || at().type == TokenType::CloseBrace) {
+          if (auto unclosed = getUnclosedDelimiter()) {
+            auto u = unclosed.value();
+            std::string openStr;
+            switch (u.type) {
+              case TokenType::OpenParen: openStr = "'('"; break;
+              case TokenType::OpenBracket: openStr = "'['"; break;
+              case TokenType::OpenBrace: openStr = "'{'"; break;
+              default: openStr = "delimiter";
+            }
+            std::string expectedStr, foundStr;
+            if (at().type == TokenType::CloseBracket) {
+              expectedStr = "')'";
+              foundStr = "']'";
+            } else if (at().type == TokenType::CloseBrace) {
+              expectedStr = "')'";
+              foundStr = "'}'";
+            } else {
+              expectedStr = "')'";
+              foundStr = "'" + at().value + "'";
+            }
+            errorAt(at(),
+              "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+              " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found " + foundStr);
+          } else {
+            errorAt(at(), "Expected ')' after arguments, but found " + std::string(1, static_cast<char>(at().type)) + " (ASCII " + std::to_string(static_cast<int>(at().type)) + ")");
+          }
+        } else if (at().type != TokenType::CloseParen) {
+            failAt(at(), "Expected ')' after arguments");
+        }
+        advance(); // consume ')'
+
+        return makeNodeAt<ast::CallExpression>(token, 
+            std::move(left), std::move(args), std::move(kwargs));
+    }
+
+    // Array/Object index or slice
+    case TokenType::OpenBracket: {
+        // Check if this is a slice expression: [start:end:step]
+        // At this point, '[' has been consumed by the Pratt parser.
+        // Do a proper lookahead scan to find ':' at the top bracket level.
+        bool isSlice = false;
+        {
+            size_t lookahead = 0;
+            int bracketDepth = 1;
+            while (position + lookahead < tokens.size()) {
+                const Token &tok = tokens[position + lookahead];
+                if (tok.type == TokenType::OpenBracket) {
+                    bracketDepth++;
+                } else if (tok.type == TokenType::CloseBracket) {
+                    bracketDepth--;
+                    if (bracketDepth == 0)
+                        break;
+                } else if (tok.type == TokenType::Colon && bracketDepth == 1) {
+                    isSlice = true;
+                    break;
+                } else if (tok.type == TokenType::ColonColon && lookahead > 0 && bracketDepth == 1) {
+                    // :: after lookahead > 0 means it's a slice step separator.
+                    // :: at position 0 is the global scope prefix (e.g. arr[::pos]).
+                    isSlice = true;
+                    break;
+                } else if (tok.type == TokenType::EOF_TOKEN) {
+                    break;
+                }
+                lookahead++;
+            }
+        }
+
+        if (isSlice) {
+        // Slice expression - desugar to target.slice(start, end, step)
+        std::unique_ptr<ast::Expression> start, end, step;
+        
+        // Parse optional start (before first colon)
+        // Only parse if the current token is NOT a colon or ColonColon
+if (at(0).type != TokenType::Colon && at(0).type != TokenType::ColonColon) {
+start = parsePrattExpression(0);
+}
+        
+        // Handle ColonColon (::) as two colons
+        if (at().type == TokenType::ColonColon) {
+          // :: is start::step with no end, or start:end with no step
+          // We need to look ahead to determine which
+          advance(); // consume ::
+          // After ::, if we see a number (possibly negative), it's step
+          // If we see ], there's no step or end
           if (at().type != TokenType::CloseBracket) {
+            // It's a step value
             step = parsePrattExpression(0);
           }
+        } else {
+          // Consume first colon
+          if (at().type != TokenType::Colon) {
+            failAt(at(), "Expected ':' in slice expression, got " + std::to_string(static_cast<int>(at().type)));
+          }
+          advance();
+          
+          // Parse optional end (between colons)
+          if (at().type != TokenType::Colon && at().type != TokenType::CloseBracket) {
+            end = parsePrattExpression(0);
+          }
+          
+          // Parse optional step (after second colon)
+          if (at().type == TokenType::Colon) {
+            advance();
+            if (at().type != TokenType::CloseBracket) {
+              step = parsePrattExpression(0);
+            }
+          }
         }
-      }
-
-      // Consume closing bracket
-      if (at().type != TokenType::CloseBracket) {
-        failAt(at(), "Expected ']' after slice expression, got " +
-                         std::to_string(static_cast<int>(at().type)));
-      }
-      advance();
-
-      // Build: target.slice(start, end, step)
-      auto sliceCall = makeNodeAt<ast::CallExpression>(
-          token,
-          makeNodeAt<ast::MemberExpression>(
-              token, std::move(left),
-              makeNodeAt<ast::Identifier>(token, "slice")),
-          std::vector<std::unique_ptr<ast::Expression>>{});
-
-      // Add slice arguments (use null for omitted values)
-      if (start) {
-        sliceCall->args.push_back(std::move(start));
-      } else {
-        sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
-      }
-
-      if (end) {
-        sliceCall->args.push_back(std::move(end));
-      } else {
-        sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
-      }
-
-      if (step) {
-        sliceCall->args.push_back(std::move(step));
-      } else {
-        // Always add step as null if not present
-        sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
-      }
-
-      return sliceCall;
-    }
-
-    // Regular index expression
-    auto index = parsePrattExpression(0);
-
-    if (at().type != TokenType::CloseBracket) {
-      failAt(at(), "Expected ']' after index");
-    }
-    advance(); // consume ']'
-
-    return makeNodeAt<ast::IndexExpression>(token, std::move(left),
-                                            std::move(index));
-  }
-
-  // Postfix increment/decrement
-  case TokenType::PlusPlus:
-    return makeNodeAt<ast::UpdateExpression>(
-        token, std::move(left), ast::UpdateExpression::Operator::Increment,
-        false);
-
-  case TokenType::MinusMinus:
-    return makeNodeAt<ast::UpdateExpression>(
-        token, std::move(left), ast::UpdateExpression::Operator::Decrement,
-        false);
-
-  case TokenType::Pipe:
-  case TokenType::PipeRight: {
-    auto pipeline = makeNodeAt<ast::PipelineExpression>(
-        token, std::vector<std::unique_ptr<ast::Expression>>{});
-    pipeline->stages.push_back(std::move(left));
-
-    auto stage = parseAssignmentExpression();
-    pipeline->stages.push_back(std::move(stage));
-    while (at().type == TokenType::Pipe || at().type == TokenType::PipeRight ||
-           at().type == TokenType::BitwiseOr) {
-      advance();
-      auto nextStage = parseAssignmentExpression();
-      pipeline->stages.push_back(std::move(nextStage));
-    }
-
-    return pipeline;
-  }
-
-  case TokenType::BitwiseOr: {
-    // Context-disambiguate: | after expression, followed by callable = pipeline
-    // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
-    auto nextType = at().type;
-    bool isPipeline =
-        (nextType == TokenType::Identifier ||
-         nextType == TokenType::OpenParen || nextType == TokenType::At ||
-         nextType == TokenType::AtAt);
-    if (isPipeline) {
-      auto pipeline = makeNodeAt<ast::PipelineExpression>(
-          token, std::vector<std::unique_ptr<ast::Expression>>{});
-      pipeline->stages.push_back(std::move(left));
-
-      auto stage = parseAssignmentExpression();
-      pipeline->stages.push_back(std::move(stage));
-      while (at().type == TokenType::BitwiseOr ||
-             at().type == TokenType::Pipe ||
-             at().type == TokenType::PipeRight) {
+        
+        // Consume closing bracket
+        if (at().type != TokenType::CloseBracket) {
+          failAt(at(), "Expected ']' after slice expression, got " + std::to_string(static_cast<int>(at().type)));
+        }
         advance();
-        auto nextStage = parseAssignmentExpression();
-        pipeline->stages.push_back(std::move(nextStage));
+        
+        // Build: target.slice(start, end, step)
+        auto sliceCall = makeNodeAt<ast::CallExpression>(token, 
+            makeNodeAt<ast::MemberExpression>(token, 
+                std::move(left), makeNodeAt<ast::Identifier>(token, "slice")),
+            std::vector<std::unique_ptr<ast::Expression>>{});
+        
+        // Add slice arguments (use null for omitted values)
+        if (start) {
+          sliceCall->args.push_back(std::move(start));
+        } else {
+          sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
+        }
+        
+        if (end) {
+          sliceCall->args.push_back(std::move(end));
+        } else {
+          sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
+        }
+        
+        if (step) {
+          sliceCall->args.push_back(std::move(step));
+        } else {
+          // Always add step as null if not present
+          sliceCall->args.push_back(makeNodeAt<ast::NullLiteral>(token));
+        }
+        
+        return sliceCall;
+      }
+      
+      // Regular index expression
+      auto index = parsePrattExpression(0);
+
+      if (at().type != TokenType::CloseBracket) {
+        failAt(at(), "Expected ']' after index");
+      }
+      advance(); // consume ']'
+
+      return makeNodeAt<ast::IndexExpression>(token, 
+          std::move(left), std::move(index));
+    }
+
+    // Postfix increment/decrement
+    case TokenType::PlusPlus:
+      return makeNodeAt<ast::UpdateExpression>(token, 
+          std::move(left), ast::UpdateExpression::Operator::Increment, false);
+
+    case TokenType::MinusMinus:
+      return makeNodeAt<ast::UpdateExpression>(token, 
+          std::move(left), ast::UpdateExpression::Operator::Decrement, false);
+
+      case TokenType::Pipe:
+      case TokenType::PipeRight: {
+        auto pipeline = makeNodeAt<ast::PipelineExpression>(token, std::vector<std::unique_ptr<ast::Expression>>{});
+        pipeline->stages.push_back(std::move(left));
+
+        auto stage = parseAssignmentExpression();
+        pipeline->stages.push_back(std::move(stage));
+        while (at().type == TokenType::Pipe || at().type == TokenType::PipeRight || at().type == TokenType::BitwiseOr) {
+          advance();
+          auto nextStage = parseAssignmentExpression();
+          pipeline->stages.push_back(std::move(nextStage));
+        }
+
+        return pipeline;
       }
 
-      return pipeline;
+    case TokenType::BitwiseOr: {
+      // Context-disambiguate: | after expression, followed by callable = pipeline
+      // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
+      auto nextType = at().type;
+      bool isPipeline = (nextType == TokenType::Identifier ||
+                         nextType == TokenType::OpenParen ||
+                         nextType == TokenType::At ||
+                         nextType == TokenType::AtAt);
+      if (isPipeline) {
+        auto pipeline = makeNodeAt<ast::PipelineExpression>(token, std::vector<std::unique_ptr<ast::Expression>>{});
+        pipeline->stages.push_back(std::move(left));
+
+        auto stage = parseAssignmentExpression();
+        pipeline->stages.push_back(std::move(stage));
+        while (at().type == TokenType::BitwiseOr || at().type == TokenType::Pipe || at().type == TokenType::PipeRight) {
+          advance();
+          auto nextStage = parseAssignmentExpression();
+          pipeline->stages.push_back(std::move(nextStage));
+        }
+
+        return pipeline;
+      }
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::BitwiseOr, std::move(right));
     }
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::BitwiseOr,
-                                             std::move(right));
-  }
 
-  case TokenType::BitwiseXor: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::BitwiseXor,
-                                             std::move(right));
-  }
-
-  case TokenType::BitwiseAnd: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(token, std::move(left),
-                                             ast::BinaryOperator::BitwiseAnd,
-                                             std::move(right));
-  }
-
-  case TokenType::ShiftLeft: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::BitwiseShiftLeft,
-        std::move(right));
-  }
-
-  case TokenType::ShiftRight: {
-    auto right = parsePrattExpression(getRightBindingPower(token.type));
-    return makeNodeAt<ast::BinaryExpression>(
-        token, std::move(left), ast::BinaryOperator::BitwiseShiftRight,
-        std::move(right));
-  }
-
-  case TokenType::Arrow: {
-    // Arrow function: identifier => body
-    if (debug.parser) {
-      havel::debug("Arrow: left={}, at={}, Arrow.type={}", left->toString(),
-                   at().toString(), static_cast<int>(TokenType::Arrow));
+    case TokenType::BitwiseXor: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::BitwiseXor, std::move(right));
     }
-    if (context.inMatchExpression) {
-      return nullptr;
-    }
-    if (left->kind != ast::NodeType::Identifier) {
-      errorAt(token, "Arrow function requires an identifier parameter");
-      return nullptr;
-    }
-    auto ident = std::unique_ptr<ast::Identifier>(
-        static_cast<ast::Identifier *>(left.release()));
 
-    // Parse body - use high rbp to prevent any infix ops after arrow body
-    std::unique_ptr<ast::BlockStatement> body;
-    if (at().type == TokenType::OpenBrace) {
-      body = parseBlockStatement();
-    } else {
-      // Expression body: wrap in return
-      auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
-      if (!bodyExpr)
+    case TokenType::BitwiseAnd: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::BitwiseAnd, std::move(right));
+    }
+
+    case TokenType::ShiftLeft: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::BitwiseShiftLeft, std::move(right));
+    }
+
+    case TokenType::ShiftRight: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::BinaryExpression>(token, 
+          std::move(left), ast::BinaryOperator::BitwiseShiftRight, std::move(right));
+    }
+
+    case TokenType::Arrow: {
+        // Arrow function: identifier => body
+        if (debug.parser) {
+            havel::debug("Arrow: left={}, at={}, Arrow.type={}",
+                left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
+        }
+      if (context.inMatchExpression) {
         return nullptr;
+      }
+      if (left->kind != ast::NodeType::Identifier) {
+        errorAt(token, "Arrow function requires an identifier parameter");
+        return nullptr;
+      }
+      auto ident = std::unique_ptr<ast::Identifier>(static_cast<ast::Identifier*>(left.release()));
 
-      body = makeNodeAt<ast::BlockStatement>(token);
-      body->body.push_back(
-          makeNodeAt<ast::ExpressionStatement>(token, std::move(bodyExpr)));
+      // Parse body - use high rbp to prevent any infix ops after arrow body
+      std::unique_ptr<ast::BlockStatement> body;
+      if (at().type == TokenType::OpenBrace) {
+        body = parseBlockStatement();
+      } else {
+        // Expression body: wrap in return
+        auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
+        if (!bodyExpr) return nullptr;
+        
+        body = makeNodeAt<ast::BlockStatement>(token);
+        body->body.push_back(makeNodeAt<ast::ExpressionStatement>(token, std::move(bodyExpr)));
+      }
+
+      std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+      params.push_back(makeNodeAt<ast::FunctionParameter>(token, 
+          std::move(ident), std::nullopt, std::nullopt, false));
+          
+      return makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
     }
 
-    std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-    params.push_back(makeNodeAt<ast::FunctionParameter>(
-        token, std::move(ident), std::nullopt, std::nullopt, false));
-
-    return makeNodeAt<ast::LambdaExpression>(token, std::move(params),
-                                             std::move(body));
-  }
-
-  default:
-    errorAt(token, "Unexpected token in infix position");
-    return nullptr;
+    default:
+      errorAt(token, "Unexpected token in infix position");
+      return nullptr;
   }
 }
 
 // Helper methods for Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   pushDelimiter(TokenType::OpenParen);
-
+  
   // Check for empty lambda: () => body
   if (at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
     advance(); // consume ')'
@@ -2556,13 +2348,10 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     if (at().type == TokenType::OpenBrace) {
       body = parseBlockStatement();
     } else {
-      auto bodyExpr =
-          parsePrattExpression(getRightBindingPower(TokenType::Arrow));
-      if (!bodyExpr)
-        return nullptr;
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(TokenType::Arrow));
+      if (!bodyExpr) return nullptr;
       auto block = makeNode<ast::BlockStatement>();
-      block->body.push_back(
-          makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
+      block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
     return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
@@ -2578,7 +2367,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     // Collect comma-separated identifiers
     while (true) {
       if (at().type != TokenType::Identifier) {
-        break;
+          break;
       }
       auto pattern = makeIdentifier(advance());
       lambdaParams.push_back(makeNode<ast::FunctionParameter>(
@@ -2590,8 +2379,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       }
     }
     // Check for ) =>
-    if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen &&
-        at(1).type == TokenType::Arrow) {
+    if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
       advance(); // consume ')'
       popDelimiter(TokenType::OpenParen);
       advance(); // consume '=>'
@@ -2605,17 +2393,13 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     if (at().type == TokenType::OpenBrace) {
       body = parseBlockStatement();
     } else {
-      auto bodyExpr =
-          parsePrattExpression(getRightBindingPower(TokenType::Arrow));
-      if (!bodyExpr)
-        return nullptr;
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(TokenType::Arrow));
+      if (!bodyExpr) return nullptr;
       auto block = makeNode<ast::BlockStatement>();
-      block->body.push_back(
-          makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
+      block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    return makeNode<ast::LambdaExpression>(std::move(lambdaParams),
-                                           std::move(body));
+    return makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
   }
 
   // Not a multi-param lambda, restore position and parse normally
@@ -2627,43 +2411,48 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   std::vector<std::unique_ptr<ast::FunctionParameter>> braceLambdaParams;
   bool isBraceLambda = false;
 
-  if (at().type == TokenType::Identifier) {
-    // Collect comma-separated identifiers
-    while (true) {
-      if (at().type != TokenType::Identifier) {
-        break;
+  // In control-flow conditions (if/while/for/switch/catch/match), a
+  // parenthesized expression followed by '{' is the condition + body block,
+  // NOT a brace-lambda such as (x) { body }. Suppress the shorthand there so
+  // `if (x) { ... }` parses as a condition and a block instead of a lambda.
+  if (!context.suppressBraceLambda &&
+      (at().type == TokenType::Identifier ||
+       at().type == TokenType::CloseParen)) {
+    if (at().type == TokenType::Identifier) {
+      // Collect comma-separated identifiers
+      while (true) {
+        if (at().type != TokenType::Identifier) {
+          break;
+        }
+        auto pattern = makeIdentifier(advance());
+        braceLambdaParams.push_back(makeNode<ast::FunctionParameter>(
+            std::move(pattern), std::nullopt, std::nullopt, false));
+        if (at().type == TokenType::Comma) {
+          advance();
+        } else {
+          break;
+        }
       }
-      auto pattern = makeIdentifier(advance());
-      braceLambdaParams.push_back(makeNode<ast::FunctionParameter>(
-          std::move(pattern), std::nullopt, std::nullopt, false));
-      if (at().type == TokenType::Comma) {
-        advance();
-      } else {
-        break;
+      // Check for ) {
+      if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+        advance(); // consume ')'
+        popDelimiter(TokenType::OpenParen);
+        // DON'T consume '{' - parseBlockStatement expects to see it
+        isBraceLambda = true;
       }
-    }
-    // Check for ) {
-    if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen &&
-        at(1).type == TokenType::OpenBrace) {
+    } else if (at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+      // Empty params: () { body }
       advance(); // consume ')'
       popDelimiter(TokenType::OpenParen);
       // DON'T consume '{' - parseBlockStatement expects to see it
       isBraceLambda = true;
     }
-  } else if (at().type == TokenType::CloseParen &&
-             at(1).type == TokenType::OpenBrace) {
-    // Empty params: () { body }
-    advance(); // consume ')'
-    popDelimiter(TokenType::OpenParen);
-    // DON'T consume '{' - parseBlockStatement expects to see it
-    isBraceLambda = true;
   }
 
   if (isBraceLambda) {
     // Parse lambda body as block (parseBlockStatement expects to see '{')
     std::unique_ptr<ast::Statement> body = parseBlockStatement();
-    return makeNode<ast::LambdaExpression>(std::move(braceLambdaParams),
-                                           std::move(body));
+    return makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
   }
 
   // Not a brace lambda, restore position and parse normally
@@ -2671,8 +2460,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
 
   // Parse first expression
   auto expr = parsePrattExpression(0);
-  if (!expr)
-    return nullptr;
+  if (!expr) return nullptr;
 
   // Check if this is a tuple (comma-separated expressions)
   if (at().type == TokenType::Comma) {
@@ -2683,8 +2471,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     while (at().type == TokenType::Comma) {
       advance(); // consume ','
       // Allow trailing comma
-      if (at().type == TokenType::CloseParen)
-        break;
+      if (at().type == TokenType::CloseParen) break;
       auto next = parsePrattExpression(0);
       elements.push_back(std::move(next));
     }
@@ -2714,15 +2501,15 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
 
   // Handle optional function name: fn name() { ... }
   // In expression context (e.g. go fn update() { ... }), the name token
-  // appears before the parameter list. The name can be an identifier or
-  // keyword.
+  // appears before the parameter list. The name can be an identifier or keyword.
   if (at().type != TokenType::OpenParen && at(1).type == TokenType::OpenParen) {
     advance(); // consume the function name
   }
 
   if (at().type == TokenType::OpenParen) {
+    Token openParen = at();
     advance(); // consume '('
-    pushDelimiter(TokenType::OpenParen);
+    pushDelimiter(TokenType::OpenParen, &openParen);
 
     while (notEOF() && at().type != TokenType::CloseParen) {
       if (!params.empty() && at().type == TokenType::Comma) {
@@ -2730,9 +2517,8 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
         continue;
       }
 
-      if (at().type == TokenType::Identifier ||
-          at().type == TokenType::Underscore || isKeywordToken(at().type)) {
-        auto pattern = makeIdentifier(advance());
+ if (at().type == TokenType::Identifier || at().type == TokenType::Underscore || isKeywordToken(at().type)) {
+ auto pattern = makeIdentifier(advance());
 
         std::optional<std::unique_ptr<ast::TypeAnnotation>> typeAnn;
         if (at().type == TokenType::Colon) {
@@ -2746,8 +2532,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
         }
 
         params.push_back(makeNode<ast::FunctionParameter>(
-            std::move(pattern), std::move(defaultVal), std::move(typeAnn),
-            false));
+            std::move(pattern), std::move(defaultVal), std::move(typeAnn), false));
       } else if (at().type == TokenType::Spread) {
         advance(); // consume '...'
         auto pattern = makeIdentifier(advance());
@@ -2761,7 +2546,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     advance(); // consume ')'
     popDelimiter(TokenType::OpenParen);
   }
-
+  
   // Parse body
   std::unique_ptr<ast::BlockStatement> body;
   if (at().type == TokenType::OpenBrace) {
@@ -2773,7 +2558,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     body = makeNode<ast::BlockStatement>();
     body->body.push_back(std::move(stmt));
   }
-
+  
   return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
 }
 
@@ -2783,31 +2568,27 @@ std::unique_ptr<ast::Expression> Parser::parseExpression() {
   return parsePrattExpression(0);
 }
 
-std::unique_ptr<ast::Expression>
-Parser::parseExpressionFromString(const std::string &expr) {
+std::unique_ptr<ast::Expression> Parser::parseExpressionFromString(const std::string &expr) {
   // Tokenize the expression string
   havel::Lexer lexer(expr, debug.lexer);
   auto savedTokens = tokens;
   auto savedPosition = position;
-
+  
   tokens = lexer.tokenize();
-  // Fix: hotkey token starting with # is actually a length operator in
-  // interpolated context
+  // Fix: hotkey token starting with # is actually a length operator in interpolated context
   if (!tokens.empty() && tokens[0].type == havel::TokenType::Hotkey &&
       !tokens[0].value.empty() && tokens[0].value[0] == '#') {
     std::string key = tokens[0].value.substr(1);
-    havel::Token lengthTok("#", havel::TokenType::Length, "#", tokens[0].line,
-                           tokens[0].column);
-    havel::Token identTok(key, havel::TokenType::Identifier, key,
-                          tokens[0].line, tokens[0].column + 1);
+    havel::Token lengthTok("#", havel::TokenType::Length, "#", tokens[0].line, tokens[0].column);
+    havel::Token identTok(key, havel::TokenType::Identifier, key, tokens[0].line, tokens[0].column + 1);
     tokens[0] = lengthTok;
     tokens.insert(tokens.begin() + 1, identTok);
   }
   position = 0;
-
+  
   // Collect lexer errors but don't propagate them
   // (they're for the expression context, not the main parser)
-
+  
   std::unique_ptr<ast::Expression> result = nullptr;
   try {
     if (notEOF()) {
@@ -2816,11 +2597,11 @@ Parser::parseExpressionFromString(const std::string &expr) {
   } catch (...) {
     // Ignore errors - if parsing fails, return nullptr
   }
-
+  
   // Restore parser state
   tokens = std::move(savedTokens);
   position = savedPosition;
-
+  
   return result;
 }
 
@@ -2835,12 +2616,11 @@ Parser::produceAST(const std::string &sourceCode) {
     errors.push_back(err);
   }
 
-  position = 0;
+    position = 0;
 
-  if (debug.parser) {
-    havel::debug("PARSE: Starting to parse program with {} tokens",
-                 tokens.size());
-  }
+    if (debug.parser) {
+        havel::debug("PARSE: Starting to parse program with {} tokens", tokens.size());
+    }
 
   // Create program AST node
   auto program = makeNode<havel::ast::Program>();
@@ -2863,9 +2643,7 @@ Parser::produceAST(const std::string &sourceCode) {
 
     iterations++;
     if (iterations > 50000) {
-      throw std::runtime_error("Parse exceeded iteration limit at token " +
-                               std::to_string(position) + "/" +
-                               std::to_string(tokens.size()));
+      throw std::runtime_error("Parse exceeded iteration limit at token " + std::to_string(position) + "/" + std::to_string(tokens.size()));
     }
 
     if (debug.parser) {
@@ -2910,35 +2688,34 @@ Parser::parseStrict(const std::string &sourceCode) {
   tokens = lexer.tokenize();
   position = 0;
 
-  auto program = makeNode<havel::ast::Program>();
-  int strictLoopCounter = 0;
-  while (notEOF()) {
-    checkParseLoop(strictLoopCounter, "parseStrict");
+    auto program = makeNode<havel::ast::Program>();
+    int strictLoopCounter = 0;
+    while (notEOF()) {
+        checkParseLoop(strictLoopCounter, "parseStrict");
 
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon) {
-      advance();
-      continue;
-    }
+        if (at().type == havel::TokenType::NewLine ||
+            at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+        }
 
-    size_t beforePos = position;
-    try {
-      auto stmt = parseStatement();
-      if (stmt) {
-        program->body.push_back(std::move(stmt));
-      }
-    } catch (const havel::parser::ParseError &) {
-      throw;
-    } catch (const std::exception &e) {
-      fail(e.what());
+        size_t beforePos = position;
+        try {
+            auto stmt = parseStatement();
+            if (stmt) {
+                program->body.push_back(std::move(stmt));
+            }
+        } catch (const havel::parser::ParseError &) {
+            throw;
+        } catch (const std::exception &e) {
+            fail(e.what());
+        }
+        // Forward progress guarantee
+        if (position == beforePos && notEOF() &&
+            at().type != havel::TokenType::NewLine && at().type != havel::TokenType::Semicolon) {
+            advance();
+        }
     }
-    // Forward progress guarantee
-    if (position == beforePos && notEOF() &&
-        at().type != havel::TokenType::NewLine &&
-        at().type != havel::TokenType::Semicolon) {
-      advance();
-    }
-  }
 
   return program;
 }
@@ -2964,10 +2741,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   switch (at().type) {
   case havel::TokenType::Colon:
     return parseSleepStatement();
-  case havel::TokenType::Let:
-  case havel::TokenType::Val:
-  case havel::TokenType::Const:
-    return parseLetDeclaration();
+    case havel::TokenType::Let:
+    case havel::TokenType::Val:
+    case havel::TokenType::Const:
+        return parseLetDeclaration();
   case havel::TokenType::If:
     return parseIfStatement();
   case havel::TokenType::While:
@@ -2985,17 +2762,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
     return parseReturnStatement();
-  case havel::TokenType::Fn:
-    if (at(1).type == havel::TokenType::OpenParen) {
-      advance(); // consume 'fn' before parseLambdaExpression
-      auto expr = parseLambdaExpression();
-      if (at().type == havel::TokenType::Semicolon)
-        advance();
-      return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
-    }
-    return parseFunctionDeclaration();
-  case havel::TokenType::Switch:
-    return parseSwitchStatement();
+case havel::TokenType::Fn:
+if (at(1).type == havel::TokenType::OpenParen) {
+advance(); // consume 'fn' before parseLambdaExpression
+auto expr = parseLambdaExpression();
+if (at().type == havel::TokenType::Semicolon) advance();
+return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+}
+return parseFunctionDeclaration();
+case havel::TokenType::Switch:
+return parseSwitchStatement();
   case havel::TokenType::Try:
     return parseTryStatement();
   case havel::TokenType::Catch:
@@ -3006,36 +2782,27 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
     return parseThrowStatement();
   case havel::TokenType::Del:
     return parseDelStatement();
-  default:
-    // Expression statement (including assignments, function calls, etc.)
-    auto expr = parseExpression();
-    // Handle multiple ; -separated statements on same line (e.g. advance();
-    // advance())
-    if (at().type == havel::TokenType::Semicolon) {
-      auto block = makeNode<havel::ast::BlockStatement>();
-      block->body.push_back(
-          makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
-      while (at().type == havel::TokenType::Semicolon) {
-        advance(); // skip ;
-        // Stop at newline or EOF
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::EOF_TOKEN)
-          break;
-        // Stop at keywords that belong to parent constructs
-        if (at().type == havel::TokenType::Else ||
-            at().type == havel::TokenType::Catch ||
-            at().type == havel::TokenType::Finally)
-          break;
-        auto next = parseInlineStatement();
-        if (next)
-          block->body.push_back(std::move(next));
-        else
-          break;
-      }
-      return block;
+    default:
+        // Expression statement (including assignments, function calls, etc.)
+        auto expr = parseExpression();
+        // Handle multiple ; -separated statements on same line (e.g. advance(); advance())
+        if (at().type == havel::TokenType::Semicolon) {
+            auto block = makeNode<havel::ast::BlockStatement>();
+            block->body.push_back(makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+            while (at().type == havel::TokenType::Semicolon) {
+                advance(); // skip ;
+                // Stop at newline or EOF
+                if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::EOF_TOKEN) break;
+                // Stop at keywords that belong to parent constructs
+                if (at().type == havel::TokenType::Else || at().type == havel::TokenType::Catch || at().type == havel::TokenType::Finally) break;
+                auto next = parseInlineStatement();
+                if (next) block->body.push_back(std::move(next));
+                else break;
+            }
+            return block;
+        }
+        return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
-    return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
-  }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
@@ -3052,9 +2819,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   }
 
   if (debug.parser) {
-    havel::debug("PARSE: parseStatement at token type={} value={}",
-                 static_cast<int>(at().type), at().value);
+    havel::debug("PARSE: parseStatement at token type={} value={}", static_cast<int>(at().type), at().value);
   }
+
 
   // Keywords that should NOT be parsed as statements
   // (they belong to parent constructs like if/else/while)
@@ -3064,143 +2831,126 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
 
-  // Context-sensitive decorator detection:
-  // [decorator] or [decorator(args)] at statement start = decorator
-  // Must be followed by a declaration (fn, class, etc.)
-  // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
-  // Distinguish from [a, b, c] = ... array destructuring by lookahead:
-  // Decorator: [identifier] followed by declaration
-  // Array: [expression, ...] or [pattern] = value
-  // Pattern: [a, b] (comma indicates array, not decorator)
-  if (at().type == havel::TokenType::OpenBracket &&
-      at(1).type == havel::TokenType::Identifier &&
-      (at(2).type == havel::TokenType::CloseBracket ||
-       at(2).type == havel::TokenType::OpenParen)) {
-    // Lookahead to find what comes after the [...] decorator(s)
-    // Save position and scan forward, consuming all stacked decorator brackets
-    size_t savePos = position;
+    // Context-sensitive decorator detection:
+    // [decorator] or [decorator(args)] at statement start = decorator
+    // Must be followed by a declaration (fn, class, etc.)
+    // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
+    // Distinguish from [a, b, c] = ... array destructuring by lookahead:
+    // Decorator: [identifier] followed by declaration
+    // Array: [expression, ...] or [pattern] = value
+    // Pattern: [a, b] (comma indicates array, not decorator)
+    if (at().type == havel::TokenType::OpenBracket &&
+        at(1).type == havel::TokenType::Identifier &&
+        (at(2).type == havel::TokenType::CloseBracket ||
+         at(2).type == havel::TokenType::OpenParen)) {
+        // Lookahead to find what comes after the [...] decorator(s)
+        // Save position and scan forward, consuming all stacked decorator brackets
+        size_t savePos = position;
 
-    bool isDecorator = false;
-    for (;;) {
-      advance(); // consume '['
-      // Only single identifier allowed in decorator brackets
-      // If we see comma, it's array destructuring not decorator
-      if (at().type == havel::TokenType::Identifier) {
-        advance(); // consume identifier
-        // Check for decorator arguments: [decorator(args)]
-        if (at().type == havel::TokenType::OpenParen) {
-          // Skip over parenthesized arguments
-          advance(); // consume '('
-          int parenDepth = 1;
-          while (notEOF() && parenDepth > 0) {
-            if (at().type == havel::TokenType::OpenParen)
-              parenDepth++;
-            else if (at().type == havel::TokenType::CloseParen)
-              parenDepth--;
-            advance();
-          }
+        bool isDecorator = false;
+        for (;;) {
+            advance(); // consume '['
+            // Only single identifier allowed in decorator brackets
+            // If we see comma, it's array destructuring not decorator
+            if (at().type == havel::TokenType::Identifier) {
+                advance(); // consume identifier
+                // Check for decorator arguments: [decorator(args)]
+                if (at().type == havel::TokenType::OpenParen) {
+                    // Skip over parenthesized arguments
+                    advance(); // consume '('
+                    int parenDepth = 1;
+                    while (notEOF() && parenDepth > 0) {
+                        if (at().type == havel::TokenType::OpenParen) parenDepth++;
+                        else if (at().type == havel::TokenType::CloseParen) parenDepth--;
+                        advance();
+                    }
+                }
+            }
+            // Expect closing bracket
+            if (at().type == havel::TokenType::CloseBracket) {
+                advance(); // consume ']'
+            } else {
+                // Not a valid decorator bracket, restore and fall through
+                break;
+            }
+            // Skip newlines between stacked decorators
+            while (at().type == havel::TokenType::NewLine) advance();
+            // Check if followed by declaration keywords
+            if (at().type == havel::TokenType::Fn ||
+                at().type == havel::TokenType::Class ||
+                at().type == havel::TokenType::Let ||
+                at().type == havel::TokenType::Val ||
+                at().type == havel::TokenType::Const) {
+                isDecorator = true;
+                break;
+            }
+            // Check if next token is another [deco] bracket group (stacked decorator)
+            if (at().type == havel::TokenType::OpenBracket &&
+                at(1).type == havel::TokenType::Identifier &&
+                (at(2).type == havel::TokenType::CloseBracket ||
+                 at(2).type == havel::TokenType::OpenParen)) {
+                continue; // loop to consume this bracket group too
+            }
+            // Not a decorator pattern, break out
+            break;
         }
-      }
-      // Expect closing bracket
-      if (at().type == havel::TokenType::CloseBracket) {
-        advance(); // consume ']'
-      } else {
-        // Not a valid decorator bracket, restore and fall through
-        break;
-      }
-      // Skip newlines between stacked decorators
-      while (at().type == havel::TokenType::NewLine)
-        advance();
-      // Check if followed by declaration keywords
-      if (at().type == havel::TokenType::Fn ||
-          at().type == havel::TokenType::Class ||
-          at().type == havel::TokenType::Let ||
-          at().type == havel::TokenType::Val ||
-          at().type == havel::TokenType::Const) {
-        isDecorator = true;
-        break;
-      }
-      // Check if next token is another [deco] bracket group (stacked decorator)
-      if (at().type == havel::TokenType::OpenBracket &&
-          at(1).type == havel::TokenType::Identifier &&
-          (at(2).type == havel::TokenType::CloseBracket ||
-           at(2).type == havel::TokenType::OpenParen)) {
-        continue; // loop to consume this bracket group too
-      }
-      // Not a decorator pattern, break out
-      break;
+
+position = savePos; // restore position
+        if (isDecorator) {
+            return parseDecoratorStatement();
+        }
     }
 
-    position = savePos; // restore position
-    if (isDecorator) {
-      return parseDecoratorStatement();
+    // @decorator syntax: @identifier at statement start followed by fn/class
+    // Only matches if @identifier (optionally with args) is followed by a declaration keyword.
+    // Does NOT match @ as a continuation (stacked decorator) because @field expressions
+    // would be ambiguous — use [dec1] [dec2] fn foo() bracket syntax for stacking.
+    if (at().type == havel::TokenType::At && at(1).type == havel::TokenType::Identifier) {
+        size_t savePos = position;
+        advance(); // consume '@'
+        advance(); // consume identifier
+        // Check for optional parenthesized args: @decorator(args)
+        if (at().type == havel::TokenType::OpenParen) {
+            advance(); // consume '('
+            int depth = 1;
+            while (notEOF() && depth > 0) {
+                if (at().type == havel::TokenType::OpenParen) depth++;
+                else if (at().type == havel::TokenType::CloseParen) depth--;
+                advance();
+            }
+        }
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Fn || at().type == havel::TokenType::Class || at().type == havel::TokenType::Let || at().type == havel::TokenType::Val || at().type == havel::TokenType::Const) {
+            position = savePos;
+            return parseAtDecoratorStatement();
+        }
+        position = savePos;
     }
-  }
 
-  // @decorator syntax: @identifier at statement start followed by fn/class
-  // Only matches if @identifier (optionally with args) is followed by a
-  // declaration keyword. Does NOT match @ as a continuation (stacked decorator)
-  // because @field expressions would be ambiguous — use [dec1] [dec2] fn foo()
-  // bracket syntax for stacking.
-  if (at().type == havel::TokenType::At &&
-      at(1).type == havel::TokenType::Identifier) {
-    size_t savePos = position;
-    advance(); // consume '@'
-    advance(); // consume identifier
-    // Check for optional parenthesized args: @decorator(args)
-    if (at().type == havel::TokenType::OpenParen) {
-      advance(); // consume '('
-      int depth = 1;
-      while (notEOF() && depth > 0) {
-        if (at().type == havel::TokenType::OpenParen)
-          depth++;
-        else if (at().type == havel::TokenType::CloseParen)
-          depth--;
-        advance();
-      }
-    }
-    while (at().type == havel::TokenType::NewLine)
-      advance();
-    if (at().type == havel::TokenType::Fn ||
-        at().type == havel::TokenType::Class ||
-        at().type == havel::TokenType::Let ||
-        at().type == havel::TokenType::Val ||
-        at().type == havel::TokenType::Const) {
-      position = savePos;
-      return parseAtDecoratorStatement();
-    }
-    position = savePos;
-  }
-
-  switch (at().type) {
+    switch (at().type) {
   case havel::TokenType::Hotkey: {
-    // Parse hotkey with potential prefix conditions (when/if before =>)
-    auto hotkeyToken = at(); // Store the hotkey token
-    advance();               // consume the hotkey
+      // Parse hotkey with potential prefix conditions (when/if before =>)
+      auto hotkeyToken = at(); // Store the hotkey token
+      advance(); // consume the hotkey
 
-    // Parse optional inline attributes: mode="name" policy="replace"
-    std::string modeAttr;
-    std::string policyAttr;
-    while (at().type == havel::TokenType::Identifier) {
-      auto attrName = at().value;
-      if (attrName != "mode" && attrName != "policy")
-        break;
-      advance(); // consume attribute name
-      if (at().type != havel::TokenType::Assign)
-        break;
-      advance(); // consume '='
-      if (at().type != havel::TokenType::String) {
-        failAt(at(),
-               "Expected string value for hotkey attribute '" + attrName + "'");
-        break;
+      // Parse optional inline attributes: mode="name" policy="replace"
+      std::string modeAttr;
+      std::string policyAttr;
+      while (at().type == havel::TokenType::Identifier) {
+        auto attrName = at().value;
+        if (attrName != "mode" && attrName != "policy") break;
+        advance(); // consume attribute name
+        if (at().type != havel::TokenType::Assign) break;
+        advance(); // consume '='
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected string value for hotkey attribute '" + attrName + "'");
+          break;
+        }
+        auto attrValue = at().value;
+        advance(); // consume string value
+        if (attrName == "mode") modeAttr = attrValue;
+        else if (attrName == "policy") policyAttr = attrValue;
       }
-      auto attrValue = at().value;
-      advance(); // consume string value
-      if (attrName == "mode")
-        modeAttr = attrValue;
-      else if (attrName == "policy")
-        policyAttr = attrValue;
-    }
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
@@ -3252,162 +3002,70 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                                                 std::move(suffixCondition));
         std::vector<std::unique_ptr<ast::Statement>> stmts;
         stmts.push_back(std::move(binding));
-        return makeNode<havel::ast::WhenBlock>(std::move(finalCondition),
-                                               std::move(stmts));
+        return makeNode<havel::ast::WhenBlock>(
+            std::move(finalCondition), std::move(stmts));
       }
 
       // No conditions, return normal binding
       return binding;
-    } else {
-      failAt(hotkeyToken, "Expected '=>' after hotkey literal");
-    }
-  }
-  case havel::TokenType::Identifier: {
-    // Check for multiple assignment: a, b, c = value
-    // Look ahead: identifier comma identifier ... =
-    if (at(1).type == havel::TokenType::Comma) {
-      std::vector<std::unique_ptr<havel::ast::Expression>> targets;
-      targets.push_back(makeIdentifier(advance()));
-
-      while (at().type == havel::TokenType::Comma) {
-        advance(); // consume comma
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(),
-                 "Expected identifier after comma in multiple assignment");
+        } else {
+            failAt(hotkeyToken, "Expected '=>' after hotkey literal");
         }
+    }
+    case havel::TokenType::Identifier: {
+    // Check for multiple assignment: a, b, c = value
+    // Look ahead: identifier comma identifier ... = 
+    if (at(1).type == havel::TokenType::Comma) {
+        std::vector<std::unique_ptr<havel::ast::Expression>> targets;
         targets.push_back(makeIdentifier(advance()));
-      }
-
-      if (at().type != havel::TokenType::Assign) {
-        failAt(at(), "Expected '=' after comma-separated identifiers");
-      }
-      advance(); // consume '='
-
-      auto value = parseExpression();
-
-      // Require statement terminator
-      if (at().type != havel::TokenType::Semicolon &&
-          at().type != havel::TokenType::NewLine &&
-          at().type != havel::TokenType::EOF_TOKEN &&
-          at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected ';' or newline after expression");
-      }
-      if (at().type == havel::TokenType::Semicolon) {
-        advance();
-      }
-
-      auto multiAssign = makeNode<havel::ast::MultipleAssignment>(
-          std::move(targets), std::move(value));
+        
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume comma
+            if (at().type != havel::TokenType::Identifier) {
+                failAt(at(), "Expected identifier after comma in multiple assignment");
+            }
+            targets.push_back(makeIdentifier(advance()));
+        }
+        
+        if (at().type != havel::TokenType::Assign) {
+            failAt(at(), "Expected '=' after comma-separated identifiers");
+        }
+        advance(); // consume '='
+        
+        auto value = parseExpression();
+        
+        // Require statement terminator
+        if (at().type != havel::TokenType::Semicolon &&
+            at().type != havel::TokenType::NewLine &&
+            at().type != havel::TokenType::EOF_TOKEN &&
+            at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected ';' or newline after expression");
+        }
+        if (at().type == havel::TokenType::Semicolon) {
+            advance();
+        }
+        
+        auto multiAssign = makeNode<havel::ast::MultipleAssignment>(
+            std::move(targets), std::move(value));
       return makeNode<havel::ast::ExpressionStatement>(std::move(multiAssign));
-    }
-
-    // Check for hotkey assignment: identifier = hotkey => action
-    // e.g., dhk = d => { print @id }
-    // Also handles identifier = hotkey if condition => action
-    if (at(1).type == havel::TokenType::Assign &&
-        (at(2).type == havel::TokenType::Hotkey ||
-         (at(2).type == havel::TokenType::Identifier &&
-          (at(3).type == havel::TokenType::Arrow ||
-           at(3).type == havel::TokenType::If ||
-           at(3).type == havel::TokenType::When)))) {
-      auto target = makeIdentifier(advance()); // consume LHS identifier
-      advance();                               // consume '='
-
-      // Parse the hotkey token
-      auto hotkeyToken = advance(); // consume hotkey/identifier
-      if (hotkeyToken.type == havel::TokenType::Identifier) {
-        hotkeyToken.type = havel::TokenType::Hotkey;
       }
 
-      // Check for prefix condition
-      std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+      // Check for hotkey assignment: identifier = hotkey => action
+      // e.g., dhk = d => { print @id }
+      // Also handles identifier = hotkey if condition => action
+      if (at(1).type == havel::TokenType::Assign &&
+          (at(2).type == havel::TokenType::Hotkey ||
+           (at(2).type == havel::TokenType::Identifier &&
+            (at(3).type == havel::TokenType::Arrow ||
+             at(3).type == havel::TokenType::If ||
+             at(3).type == havel::TokenType::When)))) {
+        auto target = makeIdentifier(advance()); // consume LHS identifier
+        advance(); // consume '='
 
-      if (at().type != havel::TokenType::Arrow) {
-        failAt(hotkeyToken, "Expected '=>' after hotkey in assignment");
-      }
-      advance(); // consume '=>'
-
-      std::unique_ptr<havel::ast::BlockStatement> action;
-      if (at().type == havel::TokenType::OpenBrace) {
-        action = parseBlockStatement(true);
-      } else {
-        auto expr = parseExpression();
-        action = makeNode<havel::ast::BlockStatement>();
-        action->body.push_back(
-            makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
-      }
-
-      auto binding = makeNode<havel::ast::HotkeyBinding>();
-      binding->hotkeys.push_back(
-          makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
-      binding->action = std::move(action);
-
-      if (prefixCondition) {
-        binding->conditionExpr = std::move(prefixCondition);
-      }
-
-      auto hkExpr = makeNode<havel::ast::HotkeyExpression>(std::move(binding));
-      auto assign = makeNode<havel::ast::AssignmentExpression>(
-          std::move(target), std::move(hkExpr), "=", false);
-      return makeNode<havel::ast::ExpressionStatement>(std::move(assign));
-    }
-
-    // Check for identifier-as-hotkey with optional attributes: F1 mode="x"
-    // policy="y" => { } This handles the case where the lexer tokenized F1 as
-    // Identifier (space after F-key)
-    {
-      size_t lookPos = 1;
-      bool foundAttr = false;
-      // Skip mode="..." and policy="..." attribute pairs
-      while (at(lookPos).type == havel::TokenType::Identifier &&
-             (at(lookPos).value == "mode" || at(lookPos).value == "policy") &&
-             at(lookPos + 1).type == havel::TokenType::Assign &&
-             at(lookPos + 2).type == havel::TokenType::String) {
-        lookPos += 3;
-        foundAttr = true;
-      }
-      // Skip optional when/if condition
-      if (at(lookPos).type == havel::TokenType::When ||
-          at(lookPos).type == havel::TokenType::If) {
-        // Can't easily skip condition expression without parsing, just check
-        // for => after
-      }
-      if ((foundAttr || at(lookPos).type == havel::TokenType::Arrow) &&
-          isHotkeyIdentifier(at().value)) {
-        // This identifier is actually a hotkey with attributes
-        auto hotkeyToken = at();
-        hotkeyToken.type = havel::TokenType::Hotkey;
-        advance(); // consume the identifier-as-hotkey
-
-        // Parse optional inline attributes: mode="name" policy="replace"
-        std::string modeAttr;
-        std::string policyAttr;
-        while (at().type == havel::TokenType::Identifier) {
-          auto attrName = at().value;
-          if (attrName != "mode" && attrName != "policy")
-            break;
-          advance(); // consume attribute name
-          if (at().type != havel::TokenType::Assign)
-            break;
-          advance(); // consume '='
-          if (at().type != havel::TokenType::String) {
-            failAt(at(), "Expected string value for hotkey attribute '" +
-                             attrName + "'");
-            break;
-          }
-          auto attrValue = at().value;
-          advance(); // consume string value
-          if (attrName == "mode")
-            modeAttr = attrValue;
-          else if (attrName == "policy")
-            policyAttr = attrValue;
+        // Parse the hotkey token
+        auto hotkeyToken = advance(); // consume hotkey/identifier
+        if (hotkeyToken.type == havel::TokenType::Identifier) {
+          hotkeyToken.type = havel::TokenType::Hotkey;
         }
 
         // Check for prefix condition
@@ -3420,179 +3078,91 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
           prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
         }
 
-        if (at().type == havel::TokenType::Arrow) {
-          advance(); // consume '=>'
-
-          std::unique_ptr<havel::ast::BlockStatement> action;
-          if (at().type == havel::TokenType::OpenBrace) {
-            action = parseBlockStatement(true);
-          } else {
-            auto expr = parseExpression();
-            action = makeNode<havel::ast::BlockStatement>();
-            action->body.push_back(
-                makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
-          }
-
-          std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
-          if (at().type == havel::TokenType::If) {
-            advance();
-            suffixCondition = parseExpression();
-          }
-
-          auto binding = makeNode<havel::ast::HotkeyBinding>();
-          binding->hotkeys.push_back(
-              makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
-          binding->action = std::move(action);
-          binding->mode = modeAttr;
-          binding->policy = policyAttr;
-
-          if (prefixCondition || suffixCondition) {
-            auto finalCondition = combineConditions(std::move(prefixCondition),
-                                                    std::move(suffixCondition));
-            std::vector<std::unique_ptr<ast::Statement>> stmts;
-            stmts.push_back(std::move(binding));
-            return makeNode<havel::ast::WhenBlock>(std::move(finalCondition),
-                                                   std::move(stmts));
-          }
-          return binding;
-        } else {
-          failAt(hotkeyToken, "Expected '=>' after hotkey with attributes");
+        if (at().type != havel::TokenType::Arrow) {
+          failAt(hotkeyToken, "Expected '=>' after hotkey in assignment");
         }
+        advance(); // consume '=>'
+
+        std::unique_ptr<havel::ast::BlockStatement> action;
+        if (at().type == havel::TokenType::OpenBrace) {
+          action = parseBlockStatement(true);
+        } else {
+          auto expr = parseExpression();
+          action = makeNode<havel::ast::BlockStatement>();
+          action->body.push_back(
+              makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+        }
+
+        auto binding = makeNode<havel::ast::HotkeyBinding>();
+        binding->hotkeys.push_back(
+            makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+        binding->action = std::move(action);
+
+        if (prefixCondition) {
+          binding->conditionExpr = std::move(prefixCondition);
+        }
+
+        auto hkExpr = makeNode<havel::ast::HotkeyExpression>(std::move(binding));
+        auto assign = makeNode<havel::ast::AssignmentExpression>(
+            std::move(target), std::move(hkExpr), "=", false);
+        return makeNode<havel::ast::ExpressionStatement>(std::move(assign));
       }
+
+  // Check for identifier-as-hotkey with optional attributes: F1 mode="x" policy="y" => { }
+  // This handles the case where the lexer tokenized F1 as Identifier (space after F-key)
+  {
+    size_t lookPos = 1;
+    bool foundAttr = false;
+    // Skip mode="..." and policy="..." attribute pairs
+    while (at(lookPos).type == havel::TokenType::Identifier &&
+           (at(lookPos).value == "mode" || at(lookPos).value == "policy") &&
+           at(lookPos + 1).type == havel::TokenType::Assign &&
+           at(lookPos + 2).type == havel::TokenType::String) {
+      lookPos += 3;
+      foundAttr = true;
     }
-
-    // Sugar forms:
-    // update <ms> { ... } -> update(<ms>, fn() { ... })
-    // thread { ... } -> thread(fn() { ... })
-    // interval <ms> { ... } -> interval(<ms>, fn() { ... })
-    // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
-    // ui { ... } -> desugared ui.create calls
-    if (at().value == "update" && at(1).type != havel::TokenType::OpenBrace &&
-        at(1).type != havel::TokenType::OpenParen) {
-      const std::string async_kind = at().value;
-      auto kw = at();
-      advance(); // consume "update"
-      auto delay = parseExpression();
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected block body after " + async_kind + " delay");
-      }
-      auto body = parseBlockStatement();
-      auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
-      lambda->body = std::move(body);
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(delay));
-      args.push_back(std::move(lambda));
-      auto call = makeNodeAt<havel::ast::CallExpression>(
-          kw, makeNodeAt<havel::ast::Identifier>(kw, async_kind),
-          std::move(args));
-      return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+    // Skip optional when/if condition
+    if (at(lookPos).type == havel::TokenType::When || at(lookPos).type == havel::TokenType::If) {
+      // Can't easily skip condition expression without parsing, just check for => after
     }
+    if ((foundAttr || at(lookPos).type == havel::TokenType::Arrow) &&
+        isHotkeyIdentifier(at().value)) {
+      // This identifier is actually a hotkey with attributes
+      auto hotkeyToken = at();
+      hotkeyToken.type = havel::TokenType::Hotkey;
+      advance(); // consume the identifier-as-hotkey
 
-    if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
-      auto kw = at();
-      advance(); // consume "thread"
-      auto body = parseBlockStatement();
-      auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
-      lambda->body = std::move(body);
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(lambda));
-      auto call = makeNodeAt<havel::ast::CallExpression>(
-          kw, makeNodeAt<havel::ast::Identifier>(kw, "thread"),
-          std::move(args));
-      return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
-    }
-
-    if (at().value == "ui" && at(1).type == havel::TokenType::OpenBrace) {
-      return parseUIDeclaration();
-    }
-
-    if ((at().value == "interval" || at().value == "timeout") &&
-        at(1).type != havel::TokenType::OpenBrace) {
-      const std::string async_kind = at().value;
-      auto kw = at();
-      advance(); // consume "interval" / "timeout"
-      auto delay = parseExpression();
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected block body after " + async_kind + " delay");
-      }
-      auto body = parseBlockStatement();
-      auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
-      lambda->body = std::move(body);
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(delay));
-      args.push_back(std::move(lambda));
-      auto call = makeNodeAt<havel::ast::CallExpression>(
-          kw, makeNodeAt<havel::ast::Identifier>(kw, async_kind),
-          std::move(args));
-      return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
-    }
-
-    // Check for config section: identifier [args...] { key = value }
-    if (at(1).type == havel::TokenType::OpenBrace ||
-        at(1).type == havel::TokenType::String ||
-        at(1).type == havel::TokenType::Number ||
-        (at(1).type == havel::TokenType::Identifier && at(1).value != "when" &&
-         at(1).value != "if")) {
-
-      // Look ahead to see if it's actually a config section
-      // Config sections are followed by {
-      size_t lookPos = 1;
-      while (at(lookPos).type == havel::TokenType::Identifier ||
-             at(lookPos).type == havel::TokenType::String ||
-             at(lookPos).type == havel::TokenType::Number) {
-        lookPos++;
-      }
-
-      if (at(lookPos).type == havel::TokenType::OpenBrace) {
-        return parseConfigSection();
-      }
-    }
-
-    // Check if this is a chord hotkey: identifier & identifier => action
-    // or a modifier hotkey: identifier:up => action, identifier:down => action
-    // Scan forward to see if we hit => before any statement terminator
-    if (at(1).type == havel::TokenType::BitwiseAnd ||
-        at(1).type == havel::TokenType::Colon) {
-      size_t scanPos = 1;
-      bool foundArrow = false;
-      while (at(scanPos).type != havel::TokenType::EOF_TOKEN &&
-             at(scanPos).type != havel::TokenType::Semicolon &&
-             at(scanPos).type != havel::TokenType::CloseBrace) {
-        if (at(scanPos).type == havel::TokenType::Arrow) {
-          foundArrow = true;
+      // Parse optional inline attributes: mode="name" policy="replace"
+      std::string modeAttr;
+      std::string policyAttr;
+      while (at().type == havel::TokenType::Identifier) {
+        auto attrName = at().value;
+        if (attrName != "mode" && attrName != "policy") break;
+        advance(); // consume attribute name
+        if (at().type != havel::TokenType::Assign) break;
+        advance(); // consume '='
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected string value for hotkey attribute '" + attrName + "'");
           break;
         }
-        scanPos++;
+        auto attrValue = at().value;
+        advance(); // consume string value
+        if (attrName == "mode") modeAttr = attrValue;
+        else if (attrName == "policy") policyAttr = attrValue;
       }
-      if (foundArrow) {
-        auto hotkeyToken = advance();
-        std::string hotkeyStr = hotkeyToken.value;
-        while (at().type != havel::TokenType::Arrow) {
-          if (at().type == havel::TokenType::BitwiseAnd) {
-            hotkeyStr += " & ";
-            advance();
-          } else if (at().type == havel::TokenType::Colon) {
-            hotkeyStr += ":";
-            advance();
-          } else if (at().type == havel::TokenType::Identifier ||
-                     at().type == havel::TokenType::Number ||
-                     at().type == havel::TokenType::Hotkey) {
-            hotkeyStr += at().value;
-            advance();
-          } else if (at().type == havel::TokenType::NewLine) {
-            advance();
-          } else {
-            hotkeyStr += at().value;
-            advance();
-          }
-        }
-        advance(); // consume =>
+
+      // Check for prefix condition
+      std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+      if (at().type == havel::TokenType::When) {
+        advance();
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+      } else if (at().type == havel::TokenType::If) {
+        advance();
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+      }
+
+      if (at().type == havel::TokenType::Arrow) {
+        advance(); // consume '=>'
 
         std::unique_ptr<havel::ast::BlockStatement> action;
         if (at().type == havel::TokenType::OpenBrace) {
@@ -3612,26 +3182,192 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
         auto binding = makeNode<havel::ast::HotkeyBinding>();
         binding->hotkeys.push_back(
-            makeNode<havel::ast::HotkeyLiteral>(hotkeyStr));
+            makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
         binding->action = std::move(action);
+        binding->mode = modeAttr;
+        binding->policy = policyAttr;
 
-        if (suffixCondition) {
-          auto finalCondition =
-              combineConditions(nullptr, std::move(suffixCondition));
+        if (prefixCondition || suffixCondition) {
+          auto finalCondition = combineConditions(std::move(prefixCondition),
+                                                   std::move(suffixCondition));
           std::vector<std::unique_ptr<ast::Statement>> stmts;
           stmts.push_back(std::move(binding));
-          return makeNode<havel::ast::WhenBlock>(std::move(finalCondition),
-                                                 std::move(stmts));
+          return makeNode<havel::ast::WhenBlock>(
+              std::move(finalCondition), std::move(stmts));
         }
         return binding;
+      } else {
+        failAt(hotkeyToken, "Expected '=>' after hotkey with attributes");
+      }
+    }
+  }
+
+  // Sugar forms:
+    // update <ms> { ... } -> update(<ms>, fn() { ... })
+    // thread { ... } -> thread(fn() { ... })
+    // interval <ms> { ... } -> interval(<ms>, fn() { ... })
+    // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
+    // ui { ... } -> desugared ui.create calls
+    if (at().value == "update" && at(1).type != havel::TokenType::OpenBrace && at(1).type != havel::TokenType::OpenParen) {
+        const std::string async_kind = at().value;
+        auto kw = at();
+        advance(); // consume "update"
+        auto delay = parseExpression();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        if (at().type != havel::TokenType::OpenBrace) {
+            failAt(at(), "Expected block body after " + async_kind + " delay");
+        }
+        auto body = parseBlockStatement();
+        auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+        lambda->body = std::move(body);
+        std::vector<std::unique_ptr<havel::ast::Expression>> args;
+        args.push_back(std::move(delay));
+        args.push_back(std::move(lambda));
+        auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+            makeNodeAt<havel::ast::Identifier>(kw, async_kind),
+            std::move(args));
+        return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+    }
+
+    if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
+        auto kw = at();
+        advance(); // consume "thread"
+        auto body = parseBlockStatement();
+        auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+        lambda->body = std::move(body);
+        std::vector<std::unique_ptr<havel::ast::Expression>> args;
+        args.push_back(std::move(lambda));
+        auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+            makeNodeAt<havel::ast::Identifier>(kw, "thread"), std::move(args));
+        return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+    }
+
+    if (at().value == "ui" && at(1).type == havel::TokenType::OpenBrace) {
+      return parseUIDeclaration();
+    }
+
+    if ((at().value == "interval" || at().value == "timeout") &&
+        at(1).type != havel::TokenType::OpenBrace) {
+    const std::string async_kind = at().value;
+    auto kw = at();
+    advance(); // consume "interval" / "timeout"
+    auto delay = parseExpression();
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected block body after " + async_kind + " delay");
+    }
+    auto body = parseBlockStatement();
+    auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+    lambda->body = std::move(body);
+    std::vector<std::unique_ptr<havel::ast::Expression>> args;
+    args.push_back(std::move(delay));
+    args.push_back(std::move(lambda));
+    auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+        makeNodeAt<havel::ast::Identifier>(kw, async_kind),
+        std::move(args));
+    return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+}
+
+    // Check for config section: identifier [args...] { key = value }
+    if (at(1).type == havel::TokenType::OpenBrace ||
+        at(1).type == havel::TokenType::String ||
+        at(1).type == havel::TokenType::Number ||
+        (at(1).type == havel::TokenType::Identifier && at(1).value != "when" && at(1).value != "if")) {
+      
+      // Look ahead to see if it's actually a config section
+      // Config sections are followed by {
+      size_t lookPos = 1;
+      while (at(lookPos).type == havel::TokenType::Identifier || 
+             at(lookPos).type == havel::TokenType::String || 
+             at(lookPos).type == havel::TokenType::Number) {
+        lookPos++;
+      }
+      
+      if (at(lookPos).type == havel::TokenType::OpenBrace) {
+        return parseConfigSection();
       }
     }
 
-    // Check if this is a hotkey (identifier followed by =>)
-    // or if it has prefix conditions like: a when mode == "gaming" => action
-    if (at(1).type == havel::TokenType::When ||
-        at(1).type == havel::TokenType::If ||
-        at(1).type == havel::TokenType::Arrow) {
+// Check if this is a chord hotkey: identifier & identifier => action
+// or a modifier hotkey: identifier:up => action, identifier:down => action
+// Scan forward to see if we hit => before any statement terminator
+if (at(1).type == havel::TokenType::BitwiseAnd || at(1).type == havel::TokenType::Colon) {
+size_t scanPos = 1;
+bool foundArrow = false;
+while (at(scanPos).type != havel::TokenType::EOF_TOKEN &&
+at(scanPos).type != havel::TokenType::Semicolon &&
+at(scanPos).type != havel::TokenType::CloseBrace) {
+if (at(scanPos).type == havel::TokenType::Arrow) {
+foundArrow = true;
+break;
+}
+scanPos++;
+}
+if (foundArrow) {
+auto hotkeyToken = advance();
+std::string hotkeyStr = hotkeyToken.value;
+while (at().type != havel::TokenType::Arrow) {
+if (at().type == havel::TokenType::BitwiseAnd) {
+hotkeyStr += " & ";
+advance();
+} else if (at().type == havel::TokenType::Colon) {
+hotkeyStr += ":";
+advance();
+} else if (at().type == havel::TokenType::Identifier ||
+at().type == havel::TokenType::Number ||
+at().type == havel::TokenType::Hotkey) {
+hotkeyStr += at().value;
+advance();
+} else if (at().type == havel::TokenType::NewLine) {
+advance();
+} else {
+hotkeyStr += at().value;
+advance();
+}
+}
+advance(); // consume =>
+
+std::unique_ptr<havel::ast::BlockStatement> action;
+if (at().type == havel::TokenType::OpenBrace) {
+action = parseBlockStatement(true);
+} else {
+auto expr = parseExpression();
+action = makeNode<havel::ast::BlockStatement>();
+action->body.push_back(
+makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+}
+
+std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
+if (at().type == havel::TokenType::If) {
+advance();
+suffixCondition = parseExpression();
+}
+
+auto binding = makeNode<havel::ast::HotkeyBinding>();
+binding->hotkeys.push_back(
+makeNode<havel::ast::HotkeyLiteral>(hotkeyStr));
+binding->action = std::move(action);
+
+if (suffixCondition) {
+auto finalCondition = combineConditions(nullptr, std::move(suffixCondition));
+std::vector<std::unique_ptr<ast::Statement>> stmts;
+stmts.push_back(std::move(binding));
+return makeNode<havel::ast::WhenBlock>(
+std::move(finalCondition), std::move(stmts));
+}
+return binding;
+}
+}
+
+// Check if this is a hotkey (identifier followed by =>)
+// or if it has prefix conditions like: a when mode == "gaming" => action
+if (at(1).type == havel::TokenType::When ||
+at(1).type == havel::TokenType::If ||
+at(1).type == havel::TokenType::Arrow) {
       auto hotkeyToken = advance(); // identifier as hotkey
 
       // Check for prefix condition (before =>)
@@ -3681,8 +3417,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                                                   std::move(suffixCondition));
           std::vector<std::unique_ptr<ast::Statement>> stmts;
           stmts.push_back(std::move(binding));
-          return makeNode<havel::ast::WhenBlock>(std::move(finalCondition),
-                                                 std::move(stmts));
+          return makeNode<havel::ast::WhenBlock>(
+              std::move(finalCondition), std::move(stmts));
         }
 
         // No conditions, return normal binding
@@ -3693,8 +3429,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
 
     // Colon-number DSL: :100 -> sleep(100)
-    if (at().type == havel::TokenType::Colon &&
-        at(1).type == havel::TokenType::Number) {
+    if (at().type == havel::TokenType::Colon && at(1).type == havel::TokenType::Number) {
       return parseDSLSleep();
     }
 
@@ -3717,15 +3452,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       advance();
     }
 
-    return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
-  }
-  case havel::TokenType::Let:
-    reportWarning("'let' is deprecated, use 'val' or plain assignment");
-    [[fallthrough]];
-  case havel::TokenType::Val:
-  case havel::TokenType::Const:
-    return parseLetDeclaration();
-  case havel::TokenType::If:
+  return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+    case havel::TokenType::Let:
+        reportWarning("'let' is deprecated, use 'val' or plain assignment");
+        [[fallthrough]];
+    case havel::TokenType::Val:
+    case havel::TokenType::Const:
+        return parseLetDeclaration();
+    case havel::TokenType::If:
     return parseIfStatement();
   case havel::TokenType::While:
     return parseWhileStatement();
@@ -3745,32 +3480,29 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseOnStatement();
   case havel::TokenType::Off:
     return parseOffModeStatement();
-  case havel::TokenType::Fn:
-    if (at(1).type == havel::TokenType::OpenParen) {
-      advance(); // consume 'fn' before parseLambdaExpression
-      auto expr = parseLambdaExpression();
-      if (at().type == havel::TokenType::Semicolon)
-        advance();
-      return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
-    }
-    return parseFunctionDeclaration();
-  case havel::TokenType::Co:
-    if (at(1).type == havel::TokenType::Fn) {
-      advance(); // consume 'co'
-      auto decl = parseFunctionDeclaration();
-      if (decl) {
-        static_cast<havel::ast::FunctionDeclaration *>(decl.get())
-            ->is_coroutine = true;
-      }
-      return decl;
-    }
-    failAt(at(), "Expected 'fn' after 'co'");
-  case havel::TokenType::Struct:
-    // struct.define(...) is a method call, struct Name { } is a declaration
+ case havel::TokenType::Fn:
+ if (at(1).type == havel::TokenType::OpenParen) {
+ advance(); // consume 'fn' before parseLambdaExpression
+ auto expr = parseLambdaExpression();
+ if (at().type == havel::TokenType::Semicolon) advance();
+ return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+ }
+ return parseFunctionDeclaration();
+ case havel::TokenType::Co:
+ if (at(1).type == havel::TokenType::Fn) {
+ advance(); // consume 'co'
+ auto decl = parseFunctionDeclaration();
+ if (decl) {
+ static_cast<havel::ast::FunctionDeclaration*>(decl.get())->is_coroutine = true;
+ }
+ return decl;
+ }
+ failAt(at(), "Expected 'fn' after 'co'");
+case havel::TokenType::Struct:
+// struct.define(...) is a method call, struct Name { } is a declaration
     if (at(1).type == havel::TokenType::Dot) {
       auto expr = parseExpression();
-      if (at().type == havel::TokenType::Semicolon)
-        advance();
+      if (at().type == havel::TokenType::Semicolon) advance();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
     return parseStructDeclaration();
@@ -3778,18 +3510,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // class.define(...) is a method call, class Name { } is a declaration
     if (at(1).type == havel::TokenType::Dot) {
       auto expr = parseExpression();
-      if (at().type == havel::TokenType::Semicolon)
-        advance();
+      if (at().type == havel::TokenType::Semicolon) advance();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
     return parseClassDeclaration();
   case havel::TokenType::Enum:
     return parseEnumDeclaration();
-  case havel::TokenType::Trait:
-    return parseTraitDeclaration();
-  case havel::TokenType::Prot:
-    return parseProtocolDeclaration();
-  case havel::TokenType::Impl:
+      case havel::TokenType::Trait:
+        return parseTraitDeclaration();
+      case havel::TokenType::Prot:
+        return parseProtocolDeclaration();
+      case havel::TokenType::Impl:
     return parseImplDeclaration();
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
@@ -3818,27 +3549,27 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Check if this is an object literal or destructuring pattern
     // Object literal: {key: value, ...}
     // Destructuring: {a, b} = obj or {a: b} = obj
-
+    
     // Look ahead to determine the context
     if (isObjectLiteral()) {
       // Parse as expression statement with object literal
       auto expr = parseExpression();
-
+      
       // Consume optional semicolon
       if (at().type == havel::TokenType::Semicolon) {
         advance();
       }
-
+      
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     } else if (isDestructuringPattern()) {
       // Parse as expression statement with object pattern (destructuring)
       auto expr = parseExpression();
-
+      
       // Consume optional semicolon
       if (at().type == havel::TokenType::Semicolon) {
         advance();
       }
-
+      
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
     return parseBlockStatement();
@@ -3870,9 +3601,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto expr = parseExpression();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
-  case havel::TokenType::Mode:
-    if (at(1).type == havel::TokenType::Identifier ||
-        at(1).type == havel::TokenType::String || isKeywordToken(at(1).type)) {
+    case havel::TokenType::Mode:
+        if (at(1).type == havel::TokenType::Identifier || at(1).type == havel::TokenType::String || isKeywordToken(at(1).type)) {
       // Check if this is a simple mode block or full mode definition
       // Full definition: mode name [priority N] { condition/enter/exit/on ... }
       // Simple block: mode name { statements }
@@ -3905,8 +3635,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         // condition/enter/exit/on)
         bool isFullDefinition =
             ((at().type == havel::TokenType::Identifier &&
-              (at().value == "condition" || at().value == "enter" ||
-               at().value == "exit" || at().value == "on")) ||
+             (at().value == "condition" || at().value == "enter" ||
+              at().value == "exit" || at().value == "on")) ||
              at().type == havel::TokenType::On);
         position = savedPos; // restore position
 
@@ -3931,7 +3661,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto expr = parseExpression();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
-  case havel::TokenType::Colon: {
+ case havel::TokenType::Colon: {
     return parseSleepStatement();
   }
   case havel::TokenType::ShellCommand:
@@ -3951,17 +3681,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     } else if (at().type == havel::TokenType::Identifier) {
       // Just an identifier - parse as primary expression (e.g., $ firefox)
       cmdExpr = parsePrimaryExpression();
-    } else if (at().type == havel::TokenType::String ||
-               at().type == havel::TokenType::MultilineString ||
-               at().type == havel::TokenType::RegexString) {
+} else if (at().type == havel::TokenType::String ||
+at().type == havel::TokenType::MultilineString ||
+at().type == havel::TokenType::RegexString) {
       cmdExpr = parsePrimaryExpression();
     } else {
       failAt(at(), "Shell command requires expression: $ firefox, $ (cmd), $! "
                    "[array], $! var, or $! \"string\"");
     }
 
-    auto stmt = makeNode<havel::ast::ShellCommandStatement>(std::move(cmdExpr),
-                                                            captureOutput);
+    auto stmt = makeNode<havel::ast::ShellCommandStatement>(
+        std::move(cmdExpr), captureOutput);
 
     // Check for pipe chain: $! cmd1 | cmd2 | cmd3
     while (at().type == havel::TokenType::Pipe) {
@@ -4041,9 +3771,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
             (at().type == havel::TokenType::Identifier &&
              (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
               at().value == "r" || at().value == "w"))) {
-
-          // Special case for 'w': check if it's wait (w expr) or wheel
-          // (w(args))
+          
+          // Special case for 'w': check if it's wait (w expr) or wheel (w(args))
           if (at().type == havel::TokenType::Identifier && at().value == "w") {
             if (at(1).type != havel::TokenType::OpenParen) {
               return parseWaitStatement();
@@ -4059,22 +3788,21 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       // treat the expression as an implicit input command and continue chaining
       if (expr && context.inInputContext) {
         bool isDslNext =
-            at().type == havel::TokenType::Colon ||    // :100 sleep
-            at().type == havel::TokenType::Less ||     // < get
-            at().type == havel::TokenType::Greater ||  // > send
-            at().type == havel::TokenType::Multiply || // * repeat
-            at().type == havel::TokenType::Question || // ? condition
+            at().type == havel::TokenType::Colon ||           // :100 sleep
+            at().type == havel::TokenType::Less ||            // < get
+            at().type == havel::TokenType::Greater ||         // > send
+            at().type == havel::TokenType::Multiply ||        // * repeat
+            at().type == havel::TokenType::Question ||        // ? condition
             (at().type == havel::TokenType::Identifier &&
-             (at().value == "lmb" || at().value == "rmb" ||
-              at().value == "mmb" || at().value == "m" || at().value == "r" ||
-              at().value == "w" || at().value == "c" || at().value == "type" ||
-              at().value == "click" || at().value == "move" ||
-              at().value == "scroll" || at().value == "key" ||
-              at().value == "keys" || at().value == "send")) ||
+             (at().value == "lmb" || at().value == "rmb" || at().value == "mmb" ||
+              at().value == "m" || at().value == "r" || at().value == "w" ||
+              at().value == "c" || at().value == "type" ||
+              at().value == "click" || at().value == "move" || at().value == "scroll" ||
+              at().value == "key" || at().value == "keys" || at().value == "send")) ||
             at().type == havel::TokenType::String ||
             at().type == havel::TokenType::MultilineString ||
-            at().type == havel::TokenType::OpenBrace; // {Key}
-
+            at().type == havel::TokenType::OpenBrace;         // {Key}
+        
         if (isDslNext) {
           // Convert expression to implicit input statement
           return buildImplicitInputStatement(std::move(expr));
@@ -4085,27 +3813,24 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       // Skip this check for match expressions since they're self-contained
       bool isMatchExpr = expr && expr->kind == ast::NodeType::MatchExpression;
       // In DSL input context, allow input commands to chain without separators
-      bool isInputChainable =
-          context.inInputContext &&
-          (at().type == havel::TokenType::Colon ||    // :100 sleep
-           at().type == havel::TokenType::Less ||     // < input get
-           at().type == havel::TokenType::Greater ||  // > send
-           at().type == havel::TokenType::Multiply || // * repeat
-           at().type == havel::TokenType::Question || // ? if
+      bool isInputChainable = context.inInputContext &&
+          (at().type == havel::TokenType::Colon ||           // :100 sleep
+           at().type == havel::TokenType::Less ||            // < input get
+           at().type == havel::TokenType::Greater ||         // > send
+           at().type == havel::TokenType::Multiply ||        // * repeat
+           at().type == havel::TokenType::Question ||        // ? if
            (at().type == havel::TokenType::Identifier &&
-            (at().value == "lmb" || at().value == "rmb" ||
-             at().value == "mmb" || at().value == "m" || at().value == "r" ||
-             at().value == "w" || at().value == "c" || at().value == "type" ||
-             at().value == "click" || at().value == "move" ||
-             at().value == "scroll" || at().value == "key" ||
-             at().value == "keys" || at().value == "send")));
+            (at().value == "lmb" || at().value == "rmb" || at().value == "mmb" ||
+             at().value == "m" || at().value == "r" || at().value == "w" ||
+             at().value == "c" || at().value == "type" ||
+             at().value == "click" || at().value == "move" || at().value == "scroll" ||
+             at().value == "key" || at().value == "keys" || at().value == "send")));
       if (!isMatchExpr && !isInputChainable &&
           at().type != havel::TokenType::NewLine &&
           at().type != havel::TokenType::Semicolon &&
           at().type != havel::TokenType::CloseBrace &&
           at().type != havel::TokenType::EOF_TOKEN) {
-        failAt(at(), "Expected ';' or newline after expression (Havel requires "
-                     "statement terminators)");
+        failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");
       }
 
       // Consume optional semicolon
@@ -4122,8 +3847,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
-  auto keyword = at();
-  advance(); // consume "fn"
+    auto keyword = at();
+    advance(); // consume "fn"
 
   if (!havel::Lexer::isSoftIdentifier(at().type)) {
     if (havel::Lexer::KEYWORDS.count(at().value)) {
@@ -4133,150 +3858,1561 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     failAt(at(), "Expected function name after 'fn'");
   }
 
-  // Parse function name (lexer already includes ? suffix if present)
-  auto name = makeIdentifier(advance());
+    // Parse function name (lexer already includes ? suffix if present)
+    auto name = makeIdentifier(advance());
 
-  // Parse optional type parameters: fn identity(T)(x: T): T
-  // or with bounds: fn calc(T: Number)(a: T, b: T): T
-  // Disambiguate: if all tokens between ( and ) are type-param-like
-  // (Identifier [: Bound [& Bound2...]] [, ...]) and followed by another (,
-  // it's a type parameter list
-  std::vector<ast::TypeParam> typeParams;
-  if (at().type == havel::TokenType::OpenParen) {
-    size_t savedPos = position;
-    advance(); // consume '('
-    pushDelimiter(TokenType::OpenParen);
-    std::vector<ast::TypeParam> candidateParams;
-    bool isTypeParamList = true;
-    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+	// Parse optional type parameters: fn identity(T)(x: T): T
+	// or with bounds: fn calc(T: Number)(a: T, b: T): T
+	// Disambiguate: if all tokens between ( and ) are type-param-like
+	// (Identifier [: Bound [& Bound2...]] [, ...]) and followed by another (,
+	// it's a type parameter list
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen) {
+		size_t savedPos = position;
+		Token openParen = at();
+		advance(); // consume '('
+		pushDelimiter(TokenType::OpenParen, &openParen);
+		std::vector<ast::TypeParam> candidateParams;
+		bool isTypeParamList = true;
+		while (at().type != havel::TokenType::CloseParen && notEOF()) {
+			if (at().type == havel::TokenType::Identifier) {
+				std::string pname = advance().value;
+				std::vector<std::string> bounds;
+				// Check for bound: T: Bound [& Bound2 ...]
+				if (at().type == havel::TokenType::Colon) {
+					advance(); // consume ':'
+					if (at().type == havel::TokenType::Identifier) {
+						bounds.push_back(advance().value);
+						while (at().type == havel::TokenType::BitwiseAnd) {
+							advance(); // consume '&'
+							if (at().type == havel::TokenType::Identifier) {
+								bounds.push_back(advance().value);
+							} else {
+								isTypeParamList = false;
+								break;
+							}
+						}
+					} else {
+						isTypeParamList = false;
+						break;
+					}
+				}
+				candidateParams.emplace_back(std::move(pname), std::move(bounds));
+				if (at().type == havel::TokenType::Comma) {
+					advance(); // consume ','
+				} else {
+					break;
+				}
+			} else {
+				isTypeParamList = false;
+				break;
+			}
+		}
+if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
+			advance(); // consume ')'
+			popDelimiter(TokenType::OpenParen);
+			if (at().type == havel::TokenType::OpenParen) {
+				typeParams = std::move(candidateParams);
+			} else {
+				// Rewind to '('; delimiter already popped above, do not pop again
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+			popDelimiter(TokenType::OpenParen);
+		}
+	}
+
+	if (at().type != havel::TokenType::OpenParen) {
+    failAt(at(), "Expected '(' after function name");
+  }
+  Token openParen = at();
+  advance(); // consume '('
+  pushDelimiter(TokenType::OpenParen, &openParen);
+
+  std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+  while (notEOF() && at().type != havel::TokenType::CloseParen) {
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseParen) {
+      break;
+    }
+
+    // Check for variadic parameter: ...args
+    bool isVariadic = false;
+    std::unique_ptr<havel::ast::Expression> pattern;
+
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in variadic parameter");
+      }
+      pattern = makeIdentifier(advance());
+      isVariadic = true;
+} else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore ||
+               havel::Lexer::isSoftIdentifier(at().type)) {
+  pattern = makeIdentifier(advance());
+ } else if (at().type == havel::TokenType::Fn) {
+ failAt(at(), "'fn' cannot be used as a parameter name (reserved for lambda syntax)");
+ } else {
+ failAt(at(), "Expected identifier or '...' in parameter list");
+    }
+
+    // Check for type annotation (paramName: Type)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      typeAnnotation = parseTypeAnnotation();
+    }
+
+    // Check for default value
+    std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+    if (at().type == havel::TokenType::Assign) {
+      advance(); // consume '='
+      defaultValue = parseExpression();
+    }
+
+    params.push_back(makeNode<havel::ast::FunctionParameter>(
+        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation),
+        isVariadic));
+
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    } else if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ',' or ')' in parameter list");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseParen) {
+    failAt(at(), "Expected ')' after parameter list");
+  }
+    advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
+
+    // Check for return type annotation (-> Type)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    if (at().type == havel::TokenType::ReturnType) {
+        advance(); // consume '->'
+        returnType = parseTypeAnnotation();
+    }
+
+    auto body = parseBlockStatement();
+
+    return makeNodeAt<havel::ast::FunctionDeclaration>(keyword,
+        std::move(name), std::move(params), std::move(body),
+        std::move(returnType), std::move(typeParams));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
+    auto keyword = at();
+    advance(); // consume "return"
+    std::unique_ptr<havel::ast::Expression> value = nullptr;
+
+    // Return value is optional — newline ends a bare return
+    if (at().type != havel::TokenType::Semicolon &&
+        at().type != havel::TokenType::CloseBrace &&
+        at().type != havel::TokenType::NewLine &&
+        at().type != havel::TokenType::EOF_TOKEN) {
+    // Special case: "return @" means "return this" (builder pattern)
+    if ((at().type == havel::TokenType::At ||
+         at().type == havel::TokenType::Hotkey) &&
+        at(1).type != havel::TokenType::Identifier &&
+        at(1).type != havel::TokenType::Arrow) {
+      advance(); // consume '@'
+      value = makeNode<havel::ast::ThisExpression>();
+    } else {
+      value = parseExpression();
+    }
+  }
+
+  // Optional semicolon
+  if (at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+
+    return makeNodeAt<havel::ast::ReturnStatement>(keyword, std::move(value));
+}
+
+// Parse sleep statement: :1500 or :1h30m or :3:10:25
+std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
+    auto keyword = at();
+    advance(); // consume ':'
+
+  // Parse duration - can be number, string, or time format
+  std::string duration;
+  if (at().type == havel::TokenType::Number ||
+      at().type == havel::TokenType::String ||
+      at().type == havel::TokenType::MultilineString) {
+    duration = advance().value;
+  } else {
+    // Try to parse as identifier (for unquoted strings like :1h30m)
+    // For now, just consume tokens until newline/semicolon
+    while (at().type != havel::TokenType::NewLine &&
+           at().type != havel::TokenType::Semicolon &&
+           at().type != havel::TokenType::EOF_TOKEN &&
+           at().type != havel::TokenType::CloseBrace) {
+      duration += at().value;
+      advance();
+    }
+  }
+
+    return makeNodeAt<havel::ast::SleepStatement>(keyword, duration);
+}
+
+// Parse input statement: > "text" or > {Enter} or > lmb or > m(100, 200)
+std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
+    auto keyword = at();
+    advance(); // consume '>'
+
+  std::vector<havel::ast::InputCommand> commands;
+
+  // Parse sequence of input commands until newline or end of block
+  while (at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+
+    havel::ast::InputCommand cmd;
+
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
       if (at().type == havel::TokenType::Identifier) {
-        std::string pname = advance().value;
-        std::vector<std::string> bounds;
-        // Check for bound: T: Bound [& Bound2 ...]
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          if (at().type == havel::TokenType::Identifier) {
-            bounds.push_back(advance().value);
-            while (at().type == havel::TokenType::BitwiseAnd) {
-              advance(); // consume '&'
-              if (at().type == havel::TokenType::Identifier) {
-                bounds.push_back(advance().value);
-              } else {
-                isTypeParamList = false;
-                break;
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+
+    // Check for identifier: lmb, rmb, m, r, w
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w") {
+        advance(); // consume identifier
+
+        // Parse function call: m(x, y)
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+
+          // Parse x argument - just capture the token value for now
+          if (at().type != havel::TokenType::CloseParen) {
+            cmd.xExprStr = at().value;
+            advance();
+          }
+
+          // Parse optional y argument
+          if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+            if (at().type != havel::TokenType::CloseParen) {
+              cmd.yExprStr = at().value;
+              advance();
+            }
+          }
+
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+
+          if (ident == "m") {
+            cmd.type = havel::ast::InputCommand::MouseMove;
+          } else if (ident == "r") {
+            cmd.type = havel::ast::InputCommand::MouseRelative;
+          } else if (ident == "w") {
+            cmd.type = havel::ast::InputCommand::MouseWheel;
+          }
+          commands.push_back(cmd);
+        }
+        continue;
+      }
+    }
+
+    // Skip unknown token
+    advance();
+  }
+
+    return makeNodeAt<havel::ast::InputStatement>(keyword, commands);
+}
+
+// Parse implicit input statement in hotkey blocks
+// Build an input statement starting from an already-parsed expression.
+// This handles cases like `m(0) :100` where the first command was parsed
+// as a regular expression before we realized we're in DSL context.
+std::unique_ptr<havel::ast::Statement> Parser::buildImplicitInputStatement(
+    std::unique_ptr<ast::Expression> leadingExpr) {
+  std::vector<havel::ast::InputCommand> commands;
+
+  // Convert the leading expression to an input command
+  if (leadingExpr->kind == ast::NodeType::CallExpression) {
+    const auto &call = static_cast<const ast::CallExpression &>(*leadingExpr);
+    if (call.callee && call.callee->kind == ast::NodeType::Identifier) {
+      const auto &ident = static_cast<const ast::Identifier &>(*call.callee);
+      havel::ast::InputCommand cmd;
+
+      if (ident.symbol == "m") {
+        cmd.type = havel::ast::InputCommand::MouseMove;
+      } else if (ident.symbol == "r") {
+        cmd.type = havel::ast::InputCommand::MouseRelative;
+      } else if (ident.symbol == "w") {
+        cmd.type = havel::ast::InputCommand::MouseWheel;
+      } else if (ident.symbol == "c") {
+        cmd.type = havel::ast::InputCommand::MouseClickAt;
+      } else {
+        // Unknown function call - treat as generic expression
+        cmd.type = havel::ast::InputCommand::SendText;
+        cmd.text = call.toString();
+        commands.push_back(cmd);
+        // Continue parsing more commands
+        return parseMoreInputCommands(std::move(commands));
+      }
+
+      // Extract arguments from call args
+      for (size_t i = 0; i < call.args.size(); i++) {
+        std::string val = call.args[i]->toString();
+        if (i == 0) cmd.xExprStr = val;
+        else if (i == 1) cmd.yExprStr = val;
+        else if (i == 2) cmd.speedExprStr = val;
+        else if (i == 3) cmd.accelExprStr = val;
+      }
+      commands.push_back(cmd);
+    } else {
+      // Non-identifier callee - treat as generic expression
+      havel::ast::InputCommand cmd;
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = leadingExpr->toString();
+      commands.push_back(cmd);
+      return parseMoreInputCommands(std::move(commands));
+    }
+  } else if (leadingExpr->kind == ast::NodeType::StringLiteral) {
+    havel::ast::InputCommand cmd;
+    cmd.type = havel::ast::InputCommand::SendText;
+    cmd.text = static_cast<const ast::StringLiteral &>(*leadingExpr).value;
+    commands.push_back(cmd);
+  } else {
+    // Generic expression - convert to text
+    havel::ast::InputCommand cmd;
+    cmd.type = havel::ast::InputCommand::SendText;
+    cmd.text = leadingExpr->toString();
+    commands.push_back(cmd);
+  }
+
+  return parseMoreInputCommands(std::move(commands));
+}
+
+// Continue parsing input commands after the first one has been added
+std::unique_ptr<havel::ast::Statement> Parser::parseMoreInputCommands(
+    std::vector<havel::ast::InputCommand> commands) {
+  while (notEOF() && at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+
+    havel::ast::InputCommand cmd;
+
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
+      if (at().type == havel::TokenType::Identifier) {
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+
+    // Check for identifier: lmb, rmb, m, r, w
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w") {
+        advance(); // consume identifier
+
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+          if (at().type != havel::TokenType::CloseParen) {
+            cmd.xExprStr = at().value;
+            advance();
+          }
+          if (at().type == havel::TokenType::Comma) {
+            advance();
+            if (at().type != havel::TokenType::CloseParen) {
+              cmd.yExprStr = at().value;
+              advance();
+            }
+          }
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+          if (ident == "m") cmd.type = havel::ast::InputCommand::MouseMove;
+          else if (ident == "r") cmd.type = havel::ast::InputCommand::MouseRelative;
+          else if (ident == "w") cmd.type = havel::ast::InputCommand::MouseWheel;
+          commands.push_back(cmd);
+        }
+        continue;
+      }
+    }
+
+    // Skip unknown token
+    advance();
+  }
+
+  return makeNode<havel::ast::InputStatement>(commands);
+}
+
+// Handles: "text", {Key}, lmb, rmb, mmb, side1, side2, btn4, btn5,
+// m(x,y,speed,accel), r(x,y,speed,accel), w(x,y,speed,accel),
+// c(x,y,btn,speed,accel), :500
+std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
+  std::vector<havel::ast::InputCommand> commands;
+
+  while (notEOF() && at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+
+    havel::ast::InputCommand cmd;
+
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
+      if (at().type == havel::TokenType::Identifier) {
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+
+    // Check for identifier: lmb, rmb, mmb, side1, side2, btn4, btn5, m, r, w, c
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+
+      // Mouse button shortcuts
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "mmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "middle";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "side1" || ident == "btn4") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "side1";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "side2" || ident == "btn5") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "side2";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w" || ident == "c") {
+        advance(); // consume identifier
+
+        // Parse function call: m(x, y, speed, accel) or c(x, y, button, speed,
+        // accel)
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+
+          // Helper to parse comma-separated arguments
+        auto parseArgs = [this](std::string &x, std::string &y,
+            std::string &speed, std::string &accel,
+            const std::string &button = "") {
+            // Parse x argument
+            if (at().type != havel::TokenType::CloseParen) {
+              x = at().value;
+              advance();
+            }
+
+            // Parse y argument
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                y = at().value;
+                advance();
               }
             }
+
+            // Parse speed argument
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                speed = at().value;
+                advance();
+              }
+            }
+
+            // Parse accel argument (or button for c())
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                accel = at().value;
+                advance();
+              }
+            }
+          };
+
+          if (ident == "c") {
+            // c(x, y, button, speed, accel)
+            std::string button;
+            parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr,
+                      cmd.accelExprStr, button);
+            cmd.buttonExprStr = button;
+            cmd.type = havel::ast::InputCommand::MouseClickAt;
           } else {
-            isTypeParamList = false;
-            break;
+            // m(x, y, speed, accel), r(x, y, speed, accel), w(x, y, speed,
+            // accel)
+            parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr,
+                      cmd.accelExprStr);
+
+            if (ident == "m") {
+              cmd.type = havel::ast::InputCommand::MouseMove;
+            } else if (ident == "r") {
+              cmd.type = havel::ast::InputCommand::MouseRelative;
+            } else if (ident == "w") {
+              cmd.type = havel::ast::InputCommand::MouseWheel;
+            }
           }
+
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+          commands.push_back(cmd);
         }
-        candidateParams.emplace_back(std::move(pname), std::move(bounds));
-        if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
-        } else {
-          break;
+        continue;
+      }
+    }
+
+    // Skip unknown token
+    advance();
+  }
+
+  return makeNode<havel::ast::InputStatement>(commands);
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
+    auto keyword = at();
+    advance(); // consume 'struct'
+
+    // Parse struct name
+    if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected struct name after 'struct'");
+    }
+    std::string structName = advance().value;
+
+	// Parse type parameters: struct List(T) { ... } or struct List(T: Comparable) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::Colon ||
+				 at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
+
+    // Parse protocol conformance: struct Name : ProtocolName [, ProtocolName2]
+  // Or colon body: struct Name :
+  // Disambiguate: ':' followed by identifier on same line = protocol conformance
+  // ':' followed by newline (or non-identifier) = colon body
+  std::vector<std::string> protocolNames;
+  bool isColonBody = false;
+  size_t colonBaseIndent = 0;
+
+  if (at().type == havel::TokenType::Colon) {
+    if (at(1).type == havel::TokenType::Identifier && at(1).line == at().line) {
+      // Protocol conformance
+      advance(); // consume ':'
+      protocolNames.push_back(advance().value);
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected protocol name after ','");
         }
+        protocolNames.push_back(advance().value);
+      }
+    } else {
+      // Colon body
+      isColonBody = true;
+    }
+  }
+
+  // Parse opening brace or colon body
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
       } else {
-        isTypeParamList = false;
         break;
       }
     }
-    if (isTypeParamList && at().type == havel::TokenType::CloseParen &&
-        !candidateParams.empty()) {
-      advance(); // consume ')'
-      popDelimiter(TokenType::OpenParen);
-      if (at().type == havel::TokenType::OpenParen &&
-          !candidateParams.empty()) {
-        typeParams = std::move(candidateParams);
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::Colon) {
+    // After protocol conformance, second ':' means colon body
+    isColonBody = true;
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
       } else {
-        // Check if it's a type parameter list: valid candidates, followed by
-        // ')', then another '('
-        if (isTypeParamList && at().type == havel::TokenType::CloseParen &&
-            !candidateParams.empty()) {
-          // Look ahead to see if there's another '(' after the ')'
-          size_t lookaheadPos = position + 1;
-          while (lookaheadPos < tokens.size() &&
-                 tokens[lookaheadPos].type == havel::TokenType::NewLine) {
-            lookaheadPos++;
-          }
-          if (lookaheadPos < tokens.size() &&
-              tokens[lookaheadPos].type == havel::TokenType::OpenParen) {
-            // It's a type parameter list - consume ')' and commit
-            advance(); // consume ')'
-            popDelimiter(TokenType::OpenParen);
-            typeParams = std::move(candidateParams);
-          } else {
-            // Not a type parameter list - rewind and pop the '(' we pushed
-            // above
->>>>>>> havel-2
-            position = savedPos;
-            popDelimiter(TokenType::OpenParen);
-          }
-        } else {
-          // Not a type parameter list at all - rewind and pop the '(' we pushed
-          // above
-          position = savedPos;
-          popDelimiter(TokenType::OpenParen);
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+  } else {
+    failAt(at(), "Expected '{' or ':' after struct name");
+  }
+
+  // Parse fields and methods
+  auto [fields, methods] = parseStructMembers(isColonBody, colonBaseIndent);
+
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close struct definition");
+    }
+    advance(); // consume '}'
+  }
+
+    // Create struct definition with fields and methods
+    ast::StructDefinition def(std::move(fields), std::move(methods));
+
+    return makeNodeAt<ast::StructDeclaration>(keyword, structName, std::move(def),
+                                               std::move(protocolNames),
+                                               std::move(typeParams));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
+    auto keyword = at();
+    advance(); // consume 'class'
+
+    // Parse class name
+    if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected class name after 'class'");
+    }
+    std::string className = advance().value;
+
+	// Parse type parameters: class Container(T) { ... } or class Calc(T: Number) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::Colon ||
+				 at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
+
+    // Check for inheritance syntax: class X : ParentClass [, Protocol1, ...]
+  // But also: class X : (colon body with no parent)
+  // Disambiguate: if ':' followed by Identifier, it's inheritance (possibly with protocols)
+  // If ':' followed by newline/not-identifier, it's colon body
+  std::string parentName;
+  std::vector<std::string> protocolNames;
+  bool isColonBody = false;
+  size_t colonBaseIndent = 0;
+
+  if (at().type == havel::TokenType::Colon) {
+    if (at(1).type == havel::TokenType::Identifier && at(1).line == at().line) {
+      // Inheritance: class X : ParentClass [, Protocol1, Protocol2, ...]
+      advance(); // consume ':'
+      parentName = advance().value;
+      // Additional comma-separated names after parent are protocol conformances
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected protocol name after ','");
         }
+        protocolNames.push_back(advance().value);
+      }
+    } else {
+      // Colon body: class X :
+      isColonBody = true;
+    }
+  }
+
+  // Parse opening brace or colon body
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::Colon) {
+    // After inheritance, second ':' means colon body
+    isColonBody = true;
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+  } else {
+    if (parentName.empty()) {
+      failAt(at(), "Expected '{' or ':' after class name");
+    } else {
+      failAt(at(), "Expected '{' or ':' after parent class name");
+    }
+  }
+
+  // Parse fields and methods
+  auto [fields, methods] = parseClassMembers(isColonBody, colonBaseIndent);
+
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close class definition");
+    }
+    advance(); // consume '}'
+  }
+
+  // Create class definition with fields and methods
+    ast::ClassDefinition def(std::move(fields), std::move(methods));
+
+    return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
+                                              parentName, std::move(protocolNames),
+                                              std::move(typeParams));
+}
+
+// Parse struct members (fields and methods)
+std::pair<std::vector<ast::StructFieldDef>,
+std::vector<std::unique_ptr<ast::StructMethodDef>>>
+Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
+  std::vector<ast::StructFieldDef> fields;
+  std::vector<std::unique_ptr<ast::StructMethodDef>> methods;
+
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return isSkippableToken(at())
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
+
+  while (!isEnd() && notEOF()) {
+    // Skip newlines and comments
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
+    }
+
+    // Check for method definition (fn keyword) or operator (op keyword)
+    if (at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::Op) {
+      bool isOperator = (at().type == havel::TokenType::Op);
+      advance(); // consume 'fn' or 'op'
+
+      // Skip whitespace/newlines after fn/op
+      while (isSkippableToken(at()) &&
+             notEOF()) {
+        advance();
       }
 
+      std::string methodName;
+
+      if (isOperator) {
+        // For operators, accept operator symbols (+, -, *, /, etc.)
+        // Check token value directly for reliability
+        const std::string &tokenVal = at().value;
+        if (tokenVal == "+") {
+          methodName = "op_add";
+          advance();
+        } else if (tokenVal == "-") {
+          methodName = "op_sub";
+          advance();
+        } else if (tokenVal == "*") {
+          methodName = "op_mul";
+          advance();
+        } else if (tokenVal == "/") {
+          methodName = "op_div";
+          advance();
+        } else if (tokenVal == "%") {
+          methodName = "op_mod";
+          advance();
+        } else if (tokenVal == "==") {
+          methodName = "op_eq";
+          advance();
+        } else if (tokenVal == "!=") {
+          methodName = "op_ne";
+          advance();
+        } else if (tokenVal == "<") {
+          methodName = "op_lt";
+          advance();
+        } else if (tokenVal == ">") {
+          methodName = "op_gt";
+          advance();
+        } else if (tokenVal == "<=") {
+          methodName = "op_le";
+          advance();
+        } else if (tokenVal == ">=") {
+          methodName = "op_ge";
+          advance();
+        } else if (tokenVal == "[") {
+          methodName = "op_index";
+          advance();
+ } else if (tokenVal == "[]=") {
+ methodName = "op_index_set";
+ advance();
+        } else if (tokenVal == "(") {
+          methodName = "op_call";
+          advance();
+        } else if (tokenVal == "**") {
+          methodName = "op_pow";
+          advance();
+        } else if (tokenVal == "|>") {
+          methodName = "op_pipe_right";
+          advance();
+        } else if (tokenVal == "|") {
+          methodName = "op_bit_or";
+          advance();
+        } else if (tokenVal == "&") {
+          methodName = "op_bit_and";
+          advance();
+        } else if (tokenVal == "^") {
+          methodName = "op_bit_xor";
+          advance();
+        } else if (tokenVal == "~") {
+          methodName = "op_bit_not";
+          advance();
+        } else if (tokenVal == ">>") {
+          methodName = "op_shift_right";
+          advance();
+        } else if (tokenVal == "<<") {
+          methodName = "op_shift_left";
+          advance();
+        } else if (tokenVal == "=") {
+            methodName = "op_copy";
+            advance();
+        } else if (tokenVal == "+=") {
+            methodName = "op_iadd";
+            advance();
+        } else if (tokenVal == "-=") {
+            methodName = "op_isub";
+            advance();
+        } else if (tokenVal == "*=") {
+            methodName = "op_imul";
+            advance();
+        } else if (tokenVal == "/=") {
+            methodName = "op_idiv";
+            advance();
+        } else if (tokenVal == "%=") {
+            methodName = "op_imod";
+            advance();
+        } else if (tokenVal == "**=") {
+            methodName = "op_ipow";
+            advance();
+        } else if (tokenVal == "&=") {
+            methodName = "op_iand";
+            advance();
+        } else if (tokenVal == "|=") {
+            methodName = "op_ior";
+            advance();
+        } else if (tokenVal == "^=") {
+            methodName = "op_ixor";
+            advance();
+        } else if (tokenVal == "<<=") {
+            methodName = "op_ilsh";
+            advance();
+        } else if (tokenVal == ">>=") {
+            methodName = "op_irsh";
+            advance();
+        } else {
+            failAt(at(),
+                "Expected operator symbol (+, -, *, /, ==, [], []=, +=, -=, etc.) after 'op'");
+        }
+      } else {
+        // After 'fn' - check for operator symbols or special syntax
+        TokenType ty = at().type;
+        const std::string &tokenVal = at().value;
+
+        // Check for constructor @() or destructor @-()
+        if (ty == havel::TokenType::At) {
+          advance(); // consume '@'
+          if (at().type == havel::TokenType::Minus) {
+            advance(); // consume '-'
+            methodName = "op_destructor";
+          } else {
+            methodName = "init"; // constructor @()
+          }
+	} else if (ty == havel::TokenType::Length || tokenVal == "#") {
+		advance();
+		methodName = "op_length";
+	} else if (ty == havel::TokenType::String && tokenVal.empty() && at().raw.empty()) {
+		advance();
+		methodName = "op_toString";
+	} else if (ty == havel::TokenType::OpenParen) {
+		advance();
+		methodName = "op_call";
+	} else if (ty == havel::TokenType::Not) {
+		advance();
+		methodName = "op_not";
+	} else if (ty == havel::TokenType::Minus) {
+		if (at(1).type == havel::TokenType::At) {
+			advance(); // consume '-'
+			advance(); // consume '@'
+			methodName = "op_negate";
+		} else {
+			methodName = "op_sub";
+			advance();
+		}
+	} else if (ty == havel::TokenType::OpenBracket) {
+		advance(); // consume '['
+		if (at().type == havel::TokenType::CloseBracket) {
+			advance(); // consume ']'
+			if (at().type == havel::TokenType::Assign) {
+				advance(); // consume '='
+				methodName = "op_index_set";
+			} else {
+				methodName = "op_index";
+			}
+		} else {
+			failAt(at(), "Expected ']' after '[' in index method");
+		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
+	} else {
+		// Check for operator symbols
+	bool isOp = false;
+	if (tokenVal == "+") { methodName = "op_add"; isOp = true; }
+	else if (tokenVal == "*") { methodName = "op_mul"; isOp = true; }
+		else if (tokenVal == "**") { methodName = "op_pow"; isOp = true; }
+		else if (tokenVal == "/") { methodName = "op_div"; isOp = true; }
+		else if (tokenVal == "%") { methodName = "op_mod"; isOp = true; }
+		else if (tokenVal == "==") { methodName = "op_eq"; isOp = true; }
+		else if (tokenVal == "!=") { methodName = "op_ne"; isOp = true; }
+		else if (tokenVal == "<") { methodName = "op_lt"; isOp = true; }
+		else if (tokenVal == ">") { methodName = "op_gt"; isOp = true; }
+		else if (tokenVal == "<=") { methodName = "op_le"; isOp = true; }
+		else if (tokenVal == ">=") { methodName = "op_ge"; isOp = true; }
+		else if (tokenVal == "|>") { methodName = "op_pipe_right"; isOp = true; }
+		else if (tokenVal == "|") { methodName = "op_bit_or"; isOp = true; }
+		else if (tokenVal == "&") { methodName = "op_bit_and"; isOp = true; }
+		else if (tokenVal == "^") { methodName = "op_bit_xor"; isOp = true; }
+		else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
+		else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
+		else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
+        else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "+=") { methodName = "op_iadd"; isOp = true; }
+        else if (tokenVal == "-=") { methodName = "op_isub"; isOp = true; }
+        else if (tokenVal == "*=") { methodName = "op_imul"; isOp = true; }
+        else if (tokenVal == "/=") { methodName = "op_idiv"; isOp = true; }
+        else if (tokenVal == "%=") { methodName = "op_imod"; isOp = true; }
+        else if (tokenVal == "**=") { methodName = "op_ipow"; isOp = true; }
+        else if (tokenVal == "&=") { methodName = "op_iand"; isOp = true; }
+        else if (tokenVal == "|=") { methodName = "op_ior"; isOp = true; }
+        else if (tokenVal == "^=") { methodName = "op_ixor"; isOp = true; }
+        else if (tokenVal == "<<=") { methodName = "op_ilsh"; isOp = true; }
+        else if (tokenVal == ">>=") { methodName = "op_irsh"; isOp = true; }
+
+        if (isOp) {
+			advance();
+		} else {
+			// Regular method - expect identifier or soft keyword
+			if (!havel::Lexer::isSoftIdentifier(at().type)) {
+				failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
+			}
+			methodName = advance().value;
+		}
+	}
+	}
+
+	// Check if this is a constructor (named 'init')
+      bool isConstructor = (methodName == "init" || methodName == "op_init");
+
+      // Parse parameters
       if (at().type != havel::TokenType::OpenParen) {
-        failAt(at(), "Expected '(' after function name");
+        failAt(at(), "Expected '(' after method name");
       }
       advance(); // consume '('
-      pushDelimiter(TokenType::OpenParen);
 
-      std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-      while (notEOF() && at().type != havel::TokenType::CloseParen) {
-        while (at().type == havel::TokenType::NewLine) {
+      std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        if (at().type == havel::TokenType::Identifier) {
+          auto paramName = makeIdentifier(advance());
+          params.push_back(
+              makeNode<ast::FunctionParameter>(std::move(paramName)));
+        }
+        if (at().type == havel::TokenType::Comma) {
           advance();
+        } else if (at().type != havel::TokenType::CloseParen) {
+          failAt(at(), "Expected ',' or ')' in parameter list");
         }
-        if (at().type == havel::TokenType::CloseParen) {
-          break;
-        }
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after parameters");
+      }
+      advance(); // consume ')'
 
-        // Check for variadic parameter: ...args
-        bool isVariadic = false;
-        std::unique_ptr<havel::ast::Expression> pattern;
+      // Parse body
+      auto body = parseBlockStatement();
 
-        if (at().type == havel::TokenType::Spread) {
-          advance(); // consume '...'
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(),
-                   "Expected identifier after '...' in variadic parameter");
-          }
-          pattern = makeIdentifier(advance());
-          isVariadic = true;
-        } else if (at().type == havel::TokenType::Identifier ||
-                   at().type == havel::TokenType::Underscore ||
-                   havel::Lexer::isSoftIdentifier(at().type)) {
-          pattern = makeIdentifier(advance());
-        } else if (at().type == havel::TokenType::Fn) {
-          failAt(at(), "'fn' cannot be used as a parameter name (reserved for "
-                       "lambda syntax)");
+      methods.push_back(makeNode<ast::StructMethodDef>(
+          methodName, std::move(params), std::move(body), isConstructor,
+          isOperator));
+      continue;
+    }
+
+    // Parse field name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected field name or 'fn' in struct");
+    }
+    std::string fieldName = advance().value;
+
+    // Optional type annotation
+    std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      fieldType = parseTypeDefinition();
+    }
+
+    // Optional default value
+    std::optional<std::unique_ptr<ast::Expression>> defaultValue;
+    if (at().type == havel::TokenType::Assign) {
+      advance(); // consume '='
+      defaultValue = parsePrimaryExpression();
+    }
+
+    fields.emplace_back(fieldName, std::move(fieldType),
+                        std::move(defaultValue)); // structs don't have class fields
+
+    // Optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+
+  return {std::move(fields), std::move(methods)};
+}
+
+// Parse class members (fields and methods)
+std::pair<std::vector<ast::ClassFieldDef>,
+std::vector<std::unique_ptr<ast::ClassMethodDef>>>
+Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
+  std::vector<ast::ClassFieldDef> fields;
+  std::vector<std::unique_ptr<ast::ClassMethodDef>> methods;
+
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return isSkippableToken(at())
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
+
+  while (!isEnd() && notEOF()) {
+    // Skip newlines and comments
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
+    }
+
+    // Check for class member marker (@@) or instance member marker (@)
+    bool isClassMember = false;
+    if (at().type == havel::TokenType::AtAt) {
+      advance(); // consume '@@'
+      isClassMember = true;
+    } else if (at().type == havel::TokenType::At) {
+      advance(); // consume '@' (optional for instance methods, required for methods with @fn)
+    }
+
+    // Check for method definition (fn keyword) or operator (op keyword)
+    if (at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::Op) {
+      bool isOperator = (at().type == havel::TokenType::Op);
+      advance(); // consume 'fn' or 'op'
+
+      // Skip whitespace/newlines after fn/op
+      while (isSkippableToken(at()) &&
+             notEOF()) {
+        advance();
+      }
+
+      std::string methodName;
+
+      if (isOperator) {
+        // For operators, accept operator symbols (+, -, *, /, etc.)
+        const std::string &tokenVal = at().value;
+        if (tokenVal == "+") {
+          methodName = "op_add";
+          advance();
+        } else if (tokenVal == "-") {
+          methodName = "op_sub";
+          advance();
+        } else if (tokenVal == "*") {
+          methodName = "op_mul";
+          advance();
+        } else if (tokenVal == "/") {
+          methodName = "op_div";
+          advance();
+        } else if (tokenVal == "%") {
+          methodName = "op_mod";
+          advance();
+        } else if (tokenVal == "==") {
+          methodName = "op_eq";
+          advance();
+        } else if (tokenVal == "!=") {
+          methodName = "op_ne";
+          advance();
+        } else if (tokenVal == "<") {
+          methodName = "op_lt";
+          advance();
+        } else if (tokenVal == ">") {
+          methodName = "op_gt";
+          advance();
+        } else if (tokenVal == "<=") {
+          methodName = "op_le";
+          advance();
+        } else if (tokenVal == ">=") {
+          methodName = "op_ge";
+          advance();
+        } else if (tokenVal == "[") {
+          methodName = "op_index";
+          advance();
+ } else if (tokenVal == "[]=") {
+ methodName = "op_index_set";
+ advance();
+        } else if (tokenVal == "(") {
+          methodName = "op_call";
+          advance();
+        } else if (tokenVal == "**") {
+          methodName = "op_pow";
+          advance();
+        } else if (tokenVal == "|>") {
+          methodName = "op_pipe_right";
+          advance();
+        } else if (tokenVal == "|") {
+          methodName = "op_bit_or";
+          advance();
+        } else if (tokenVal == "&") {
+          methodName = "op_bit_and";
+          advance();
+        } else if (tokenVal == "^") {
+          methodName = "op_bit_xor";
+          advance();
+        } else if (tokenVal == "~") {
+          methodName = "op_bit_not";
+          advance();
+        } else if (tokenVal == ">>") {
+          methodName = "op_shift_right";
+          advance();
+        } else if (tokenVal == "<<") {
+          methodName = "op_shift_left";
+          advance();
+        } else if (tokenVal == "=") {
+            methodName = "op_copy";
+            advance();
+        } else if (tokenVal == "+=") {
+            methodName = "op_iadd";
+            advance();
+        } else if (tokenVal == "-=") {
+            methodName = "op_isub";
+            advance();
+        } else if (tokenVal == "*=") {
+            methodName = "op_imul";
+            advance();
+        } else if (tokenVal == "/=") {
+            methodName = "op_idiv";
+            advance();
+        } else if (tokenVal == "%=") {
+            methodName = "op_imod";
+            advance();
+        } else if (tokenVal == "**=") {
+            methodName = "op_ipow";
+            advance();
+        } else if (tokenVal == "&=") {
+            methodName = "op_iand";
+            advance();
+        } else if (tokenVal == "|=") {
+            methodName = "op_ior";
+            advance();
+        } else if (tokenVal == "^=") {
+            methodName = "op_ixor";
+            advance();
+        } else if (tokenVal == "<<=") {
+            methodName = "op_ilsh";
+            advance();
+        } else if (tokenVal == ">>=") {
+            methodName = "op_irsh";
+            advance();
         } else {
-          failAt(at(), "Expected identifier or '...' in parameter list");
+            failAt(at(),
+                "Expected operator symbol (+, -, *, /, ==, [], []=, +=, -=, etc.) after 'op'");
         }
+      } else {
+        // After 'fn' - check for operator symbols or special syntax
+        TokenType ty = at().type;
+        const std::string &tokenVal = at().value;
 
-        // Check for type annotation (paramName: Type)
-        std::optional<std::unique_ptr<havel::ast::TypeAnnotation>>
-            typeAnnotation;
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          typeAnnotation = parseTypeAnnotation();
-        }
+        // Check for constructor @() or destructor @-()
+        if (ty == havel::TokenType::At) {
+          advance(); // consume '@'
+          if (at().type == havel::TokenType::Minus) {
+            advance(); // consume '-'
+            methodName = "op_destructor";
+          } else {
+            methodName = "init"; // constructor @()
+          }
+	} else if (ty == havel::TokenType::Length || tokenVal == "#") {
+		advance();
+		methodName = "op_length";
+	} else if (ty == havel::TokenType::String && tokenVal.empty() && at().raw.empty()) {
+		advance();
+		methodName = "op_toString";
+	} else if (ty == havel::TokenType::OpenParen) {
+		advance();
+		methodName = "op_call";
+	} else if (ty == havel::TokenType::Not) {
+		advance();
+		methodName = "op_not";
+	} else if (ty == havel::TokenType::Minus) {
+		if (at(1).type == havel::TokenType::At) {
+			advance(); // consume '-'
+			advance(); // consume '@'
+			methodName = "op_negate";
+		} else {
+			methodName = "op_sub";
+			advance();
+		}
+	} else if (ty == havel::TokenType::OpenBracket) {
+		advance(); // consume '['
+		if (at().type == havel::TokenType::CloseBracket) {
+			advance(); // consume ']'
+			if (at().type == havel::TokenType::Assign) {
+				advance(); // consume '='
+				methodName = "op_index_set";
+			} else {
+				methodName = "op_index";
+			}
+		} else {
+			failAt(at(), "Expected ']' after '[' in index method");
+		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
+	} else {
+		// Check for operator symbols
+		bool isOp = false;
+		if (tokenVal == "+") { methodName = "op_add"; isOp = true; }
+		else if (tokenVal == "*") { methodName = "op_mul"; isOp = true; }
+		else if (tokenVal == "**") { methodName = "op_pow"; isOp = true; }
+		else if (tokenVal == "/") { methodName = "op_div"; isOp = true; }
+		else if (tokenVal == "%") { methodName = "op_mod"; isOp = true; }
+		else if (tokenVal == "==") { methodName = "op_eq"; isOp = true; }
+		else if (tokenVal == "!=") { methodName = "op_ne"; isOp = true; }
+		else if (tokenVal == "<") { methodName = "op_lt"; isOp = true; }
+		else if (tokenVal == ">") { methodName = "op_gt"; isOp = true; }
+		else if (tokenVal == "<=") { methodName = "op_le"; isOp = true; }
+		else if (tokenVal == ">=") { methodName = "op_ge"; isOp = true; }
+		else if (tokenVal == "|>") { methodName = "op_pipe_right"; isOp = true; }
+		else if (tokenVal == "|") { methodName = "op_bit_or"; isOp = true; }
+		else if (tokenVal == "&") { methodName = "op_bit_and"; isOp = true; }
+		else if (tokenVal == "^") { methodName = "op_bit_xor"; isOp = true; }
+		else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
+		else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
+		else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
+        else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "+=") { methodName = "op_iadd"; isOp = true; }
+        else if (tokenVal == "-=") { methodName = "op_isub"; isOp = true; }
+        else if (tokenVal == "*=") { methodName = "op_imul"; isOp = true; }
+        else if (tokenVal == "/=") { methodName = "op_idiv"; isOp = true; }
+        else if (tokenVal == "%=") { methodName = "op_imod"; isOp = true; }
+        else if (tokenVal == "**=") { methodName = "op_ipow"; isOp = true; }
+        else if (tokenVal == "&=") { methodName = "op_iand"; isOp = true; }
+        else if (tokenVal == "|=") { methodName = "op_ior"; isOp = true; }
+        else if (tokenVal == "^=") { methodName = "op_ixor"; isOp = true; }
+        else if (tokenVal == "<<=") { methodName = "op_ilsh"; isOp = true; }
+        else if (tokenVal == ">>=") { methodName = "op_irsh"; isOp = true; }
 
-        // Check for default value
-        std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
-        if (at().type == havel::TokenType::Assign) {
-          advance(); // consume '='
-          defaultValue = parseExpression();
-        }
+        if (isOp) {
+			advance();
+		} else {
+			// Regular method - expect identifier or soft keyword
+			if (!havel::Lexer::isSoftIdentifier(at().type)) {
+				failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
+			}
+			methodName = advance().value;
+		}
+	}
+	}
 
-        params.push_back(makeNode<havel::ast::FunctionParameter>(
-            std::move(pattern), std::move(defaultValue),
-            std::move(typeAnnotation), isVariadic));
+// Parse parameters
+	if (at().type != havel::TokenType::OpenParen) {
+		failAt(at(), "Expected '(' after method name");
+	}
+	advance(); // consume '('
+
+	std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+	      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+	        // Skip newlines and comments
+	        if (isSkippableToken(at())) {
+	          advance();
+	          continue;
+	        }
+
+	        // Check for variadic parameter: ...args
+	        bool isVariadic = false;
+	        std::unique_ptr<havel::ast::Expression> pattern;
+
+	        if (at().type == havel::TokenType::Spread) {
+	          advance(); // consume '...'
+	          if (at().type != havel::TokenType::Identifier) {
+	            failAt(at(), "Expected identifier after '...' in variadic parameter");
+	          }
+	          pattern = makeIdentifier(advance());
+	          isVariadic = true;
+	} else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore ||
+	               havel::Lexer::isSoftIdentifier(at().type)) {
+	  pattern = makeIdentifier(advance());
+	 } else if (at().type == havel::TokenType::Fn) {
+	 failAt(at(), "'fn' cannot be used as a parameter name (reserved for lambda syntax)");
+	 } else {
+	 failAt(at(), "Expected identifier or '...' in parameter list");
+	    }
+
+	    // Check for type annotation (paramName: Type)
+	    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+	    if (at().type == havel::TokenType::Colon) {
+	      advance(); // consume ':'
+	      typeAnnotation = parseTypeAnnotation();
+	    }
+
+	    // Check for default value
+	    std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+	    if (at().type == havel::TokenType::Assign) {
+	      advance(); // consume '='
+	      defaultValue = parseExpression();
+	    }
+
+	    params.push_back(makeNode<havel::ast::FunctionParameter>(
+	        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation),
+	        isVariadic));
 
         while (at().type == havel::TokenType::NewLine) {
           advance();
@@ -4290,2156 +5426,545 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       }
 
       if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ')' after parameter list");
+        failAt(at(), "Expected ')' after parameters");
       }
       advance(); // consume ')'
-      popDelimiter(TokenType::OpenParen);
 
-      // Check for return type annotation (-> Type)
-      std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type == havel::TokenType::ReturnType) {
-        advance(); // consume '->'
-        returnType = parseTypeAnnotation();
-      }
-
+      // Parse body
       auto body = parseBlockStatement();
 
-      return makeNodeAt<havel::ast::FunctionDeclaration>(
-          keyword, std::move(name), std::move(params), std::move(body),
-          std::move(returnType), std::move(typeParams));
+      // Check if this is a constructor (method name is "init")
+      bool isConstructor = (methodName == "init");
+
+      methods.push_back(makeNode<ast::ClassMethodDef>(
+          methodName, std::move(params), std::move(body), isConstructor,
+          isOperator, isClassMember));
+      continue;
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
-      auto keyword = at();
-      advance(); // consume "return"
-      std::unique_ptr<havel::ast::Expression> value = nullptr;
+    // Parse field definition
+    // Note: isClassMember is already set from @@ or @ above
 
-      // Return value is optional — newline ends a bare return
-      if (at().type != havel::TokenType::Semicolon &&
-          at().type != havel::TokenType::CloseBrace &&
-          at().type != havel::TokenType::NewLine &&
-          at().type != havel::TokenType::EOF_TOKEN) {
-        // Special case: "return @" means "return this" (builder pattern)
-        if ((at().type == havel::TokenType::At ||
-             at().type == havel::TokenType::Hotkey) &&
-            at(1).type != havel::TokenType::Identifier &&
-            at(1).type != havel::TokenType::Arrow) {
-          advance(); // consume '@'
-          value = makeNode<havel::ast::ThisExpression>();
-        } else {
-          value = parseExpression();
+    // Support optional val/const/let prefix for fields.
+    // Only consume as prefix if the next non-newline token is an identifier,
+    // otherwise treat val/const/let as the field name itself.
+  bool isConst = false;
+  (void)isConst;
+  if (at().type == havel::TokenType::Val ||
+        at().type == havel::TokenType::Const ||
+        at().type == havel::TokenType::Let) {
+        // Peek ahead past newlines to see if an identifier follows
+        size_t lookahead = 1;
+        while (isSkippableToken(at(lookahead))) {
+          ++lookahead;
         }
-      }
-
-      // Optional semicolon
-      if (at().type == havel::TokenType::Semicolon) {
-        advance();
-      }
-
-      return makeNodeAt<havel::ast::ReturnStatement>(keyword, std::move(value));
+        if (at(lookahead).type == havel::TokenType::Identifier) {
+          // It's a prefix: val fieldName / const fieldName
+          isConst = (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const);
+          advance(); // consume val/const/let
+          // Skip newlines between prefix and field name
+          while (isSkippableToken(at())) {
+            advance();
+          }
+        }
+        // else: treat val/const/let as the field name (fall through to Identifier check below)
     }
 
-    // Parse sleep statement: :1500 or :1h30m or :3:10:25
-    std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
-      auto keyword = at();
+    // Parse field name - val/const/let tokens are also valid field names
+    std::string fieldName;
+    if (at().type == havel::TokenType::Identifier) {
+      fieldName = advance().value;
+    } else if (at().type == havel::TokenType::Val ||
+               at().type == havel::TokenType::Const ||
+               at().type == havel::TokenType::Let) {
+      fieldName = advance().value; // use keyword as field name
+    } else {
+      failAt(at(), "Expected field name or 'fn' in class");
+    }
+
+    // Optional type annotation
+    std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
+    if (at().type == havel::TokenType::Colon) {
       advance(); // consume ':'
-
-      // Parse duration - can be number, string, or time format
-      std::string duration;
-      if (at().type == havel::TokenType::Number ||
-          at().type == havel::TokenType::String ||
-          at().type == havel::TokenType::MultilineString) {
-        duration = advance().value;
-      } else {
-        // Try to parse as identifier (for unquoted strings like :1h30m)
-        // For now, just consume tokens until newline/semicolon
-        while (at().type != havel::TokenType::NewLine &&
-               at().type != havel::TokenType::Semicolon &&
-               at().type != havel::TokenType::EOF_TOKEN &&
-               at().type != havel::TokenType::CloseBrace) {
-          duration += at().value;
-          advance();
-        }
-      }
-
-      return makeNodeAt<havel::ast::SleepStatement>(keyword, duration);
+      fieldType = parseTypeDefinition();
     }
 
-    // Parse input statement: > "text" or > {Enter} or > lmb or > m(100, 200)
-    std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
-      auto keyword = at();
-      advance(); // consume '>'
-
-      std::vector<havel::ast::InputCommand> commands;
-
-      // Parse sequence of input commands until newline or end of block
-      while (at().type != havel::TokenType::NewLine &&
-             at().type != havel::TokenType::Semicolon &&
-             at().type != havel::TokenType::EOF_TOKEN &&
-             at().type != havel::TokenType::CloseBrace) {
-
-        havel::ast::InputCommand cmd;
-
-        // Check for sleep inline: :500
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          cmd.type = havel::ast::InputCommand::Sleep;
-          if (at().type == havel::TokenType::Number) {
-            cmd.duration = advance().value;
-          }
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for string: "text"
-        if (at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString) {
-          cmd.type = havel::ast::InputCommand::SendText;
-          cmd.text = advance().value;
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for key: {Enter}
-        if (at().type == havel::TokenType::OpenBrace) {
-          advance(); // consume '{'
-          if (at().type == havel::TokenType::Identifier) {
-            cmd.type = havel::ast::InputCommand::SendKey;
-            cmd.key = advance().value;
-            commands.push_back(cmd);
-          }
-          if (at().type == havel::TokenType::CloseBrace) {
-            advance(); // consume '}'
-          }
-          continue;
-        }
-
-        // Check for identifier: lmb, rmb, m, r, w
-        if (at().type == havel::TokenType::Identifier) {
-          std::string ident = at().value;
-
-          if (ident == "lmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "left";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "rmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "right";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "m" || ident == "r" || ident == "w") {
-            advance(); // consume identifier
-
-            // Parse function call: m(x, y)
-            if (at().type == havel::TokenType::OpenParen) {
-              advance(); // consume '('
-
-              // Parse x argument - just capture the token value for now
-              if (at().type != havel::TokenType::CloseParen) {
-                cmd.xExprStr = at().value;
-                advance();
-              }
-
-              // Parse optional y argument
-              if (at().type == havel::TokenType::Comma) {
-                advance(); // consume ','
-                if (at().type != havel::TokenType::CloseParen) {
-                  cmd.yExprStr = at().value;
-                  advance();
-                }
-              }
-
-              if (at().type == havel::TokenType::CloseParen) {
-                advance(); // consume ')'
-              }
-
-              if (ident == "m") {
-                cmd.type = havel::ast::InputCommand::MouseMove;
-              } else if (ident == "r") {
-                cmd.type = havel::ast::InputCommand::MouseRelative;
-              } else if (ident == "w") {
-                cmd.type = havel::ast::InputCommand::MouseWheel;
-              }
-              commands.push_back(cmd);
-            }
-            continue;
-          }
-        }
-
-        // Skip unknown token
-        advance();
-      }
-
-      return makeNodeAt<havel::ast::InputStatement>(keyword, commands);
+    // Optional default value
+    std::optional<std::unique_ptr<ast::Expression>> defaultValue;
+    if (at().type == havel::TokenType::Assign) {
+      advance(); // consume '='
+      defaultValue = parsePrimaryExpression();
     }
 
-    // Parse implicit input statement in hotkey blocks
-    // Build an input statement starting from an already-parsed expression.
-    // This handles cases like `m(0) :100` where the first command was parsed
-    // as a regular expression before we realized we're in DSL context.
-    std::unique_ptr<havel::ast::Statement> Parser::buildImplicitInputStatement(
-        std::unique_ptr<ast::Expression> leadingExpr) {
-      std::vector<havel::ast::InputCommand> commands;
+    fields.emplace_back(fieldName, std::move(fieldType),
+                        std::move(defaultValue), isClassMember);
 
-      // Convert the leading expression to an input command
-      if (leadingExpr->kind == ast::NodeType::CallExpression) {
-        const auto &call =
-            static_cast<const ast::CallExpression &>(*leadingExpr);
-        if (call.callee && call.callee->kind == ast::NodeType::Identifier) {
-          const auto &ident =
-              static_cast<const ast::Identifier &>(*call.callee);
-          havel::ast::InputCommand cmd;
-
-          if (ident.symbol == "m") {
-            cmd.type = havel::ast::InputCommand::MouseMove;
-          } else if (ident.symbol == "r") {
-            cmd.type = havel::ast::InputCommand::MouseRelative;
-          } else if (ident.symbol == "w") {
-            cmd.type = havel::ast::InputCommand::MouseWheel;
-          } else if (ident.symbol == "c") {
-            cmd.type = havel::ast::InputCommand::MouseClickAt;
-          } else {
-            // Unknown function call - treat as generic expression
-            cmd.type = havel::ast::InputCommand::SendText;
-            cmd.text = call.toString();
-            commands.push_back(cmd);
-            // Continue parsing more commands
-            return parseMoreInputCommands(std::move(commands));
-          }
-
-          // Extract arguments from call args
-          for (size_t i = 0; i < call.args.size(); i++) {
-            std::string val = call.args[i]->toString();
-            if (i == 0)
-              cmd.xExprStr = val;
-            else if (i == 1)
-              cmd.yExprStr = val;
-            else if (i == 2)
-              cmd.speedExprStr = val;
-            else if (i == 3)
-              cmd.accelExprStr = val;
-          }
-          commands.push_back(cmd);
-        } else {
-          // Non-identifier callee - treat as generic expression
-          havel::ast::InputCommand cmd;
-          cmd.type = havel::ast::InputCommand::SendText;
-          cmd.text = leadingExpr->toString();
-          commands.push_back(cmd);
-          return parseMoreInputCommands(std::move(commands));
-        }
-      } else if (leadingExpr->kind == ast::NodeType::StringLiteral) {
-        havel::ast::InputCommand cmd;
-        cmd.type = havel::ast::InputCommand::SendText;
-        cmd.text = static_cast<const ast::StringLiteral &>(*leadingExpr).value;
-        commands.push_back(cmd);
-      } else {
-        // Generic expression - convert to text
-        havel::ast::InputCommand cmd;
-        cmd.type = havel::ast::InputCommand::SendText;
-        cmd.text = leadingExpr->toString();
-        commands.push_back(cmd);
-      }
-
-      return parseMoreInputCommands(std::move(commands));
+    // Optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
     }
+  }
 
-    // Continue parsing input commands after the first one has been added
-    std::unique_ptr<havel::ast::Statement> Parser::parseMoreInputCommands(
-        std::vector<havel::ast::InputCommand> commands) {
-      while (notEOF() && at().type != havel::TokenType::NewLine &&
-             at().type != havel::TokenType::Semicolon &&
-             at().type != havel::TokenType::EOF_TOKEN &&
-             at().type != havel::TokenType::CloseBrace) {
+  return {std::move(fields), std::move(methods)};
+}
 
-        havel::ast::InputCommand cmd;
+std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
+    auto keyword = at();
+    advance(); // consume 'enum'
 
-        // Check for sleep inline: :500
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          cmd.type = havel::ast::InputCommand::Sleep;
-          if (at().type == havel::TokenType::Number) {
-            cmd.duration = advance().value;
-          }
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for string: "text"
-        if (at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString) {
-          cmd.type = havel::ast::InputCommand::SendText;
-          cmd.text = advance().value;
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for key: {Enter}
-        if (at().type == havel::TokenType::OpenBrace) {
-          advance(); // consume '{'
-          if (at().type == havel::TokenType::Identifier) {
-            cmd.type = havel::ast::InputCommand::SendKey;
-            cmd.key = advance().value;
-            commands.push_back(cmd);
-          }
-          if (at().type == havel::TokenType::CloseBrace) {
-            advance(); // consume '}'
-          }
-          continue;
-        }
-
-        // Check for identifier: lmb, rmb, m, r, w
-        if (at().type == havel::TokenType::Identifier) {
-          std::string ident = at().value;
-
-          if (ident == "lmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "left";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "rmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "right";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "m" || ident == "r" || ident == "w") {
-            advance(); // consume identifier
-
-            if (at().type == havel::TokenType::OpenParen) {
-              advance(); // consume '('
-              if (at().type != havel::TokenType::CloseParen) {
-                cmd.xExprStr = at().value;
-                advance();
-              }
-              if (at().type == havel::TokenType::Comma) {
-                advance();
-                if (at().type != havel::TokenType::CloseParen) {
-                  cmd.yExprStr = at().value;
-                  advance();
-                }
-              }
-              if (at().type == havel::TokenType::CloseParen) {
-                advance(); // consume ')'
-              }
-              if (ident == "m")
-                cmd.type = havel::ast::InputCommand::MouseMove;
-              else if (ident == "r")
-                cmd.type = havel::ast::InputCommand::MouseRelative;
-              else if (ident == "w")
-                cmd.type = havel::ast::InputCommand::MouseWheel;
-              commands.push_back(cmd);
-            }
-            continue;
-          }
-        }
-
-        // Skip unknown token
-        advance();
-      }
-
-      return makeNode<havel::ast::InputStatement>(commands);
-    }
-
-    // Handles: "text", {Key}, lmb, rmb, mmb, side1, side2, btn4, btn5,
-    // m(x,y,speed,accel), r(x,y,speed,accel), w(x,y,speed,accel),
-    // c(x,y,btn,speed,accel), :500
-    std::unique_ptr<havel::ast::Statement>
-    Parser::parseImplicitInputStatement() {
-      std::vector<havel::ast::InputCommand> commands;
-
-      while (notEOF() && at().type != havel::TokenType::NewLine &&
-             at().type != havel::TokenType::Semicolon &&
-             at().type != havel::TokenType::EOF_TOKEN &&
-             at().type != havel::TokenType::CloseBrace) {
-
-        havel::ast::InputCommand cmd;
-
-        // Check for sleep inline: :500
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          cmd.type = havel::ast::InputCommand::Sleep;
-          if (at().type == havel::TokenType::Number) {
-            cmd.duration = advance().value;
-          }
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for string: "text"
-        if (at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString) {
-          cmd.type = havel::ast::InputCommand::SendText;
-          cmd.text = advance().value;
-          commands.push_back(cmd);
-          continue;
-        }
-
-        // Check for key: {Enter}
-        if (at().type == havel::TokenType::OpenBrace) {
-          advance(); // consume '{'
-          if (at().type == havel::TokenType::Identifier) {
-            cmd.type = havel::ast::InputCommand::SendKey;
-            cmd.key = advance().value;
-            commands.push_back(cmd);
-          }
-          if (at().type == havel::TokenType::CloseBrace) {
-            advance(); // consume '}'
-          }
-          continue;
-        }
-
-        // Check for identifier: lmb, rmb, mmb, side1, side2, btn4, btn5, m, r,
-        // w, c
-        if (at().type == havel::TokenType::Identifier) {
-          std::string ident = at().value;
-
-          // Mouse button shortcuts
-          if (ident == "lmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "left";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "rmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "right";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "mmb") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "middle";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "side1" || ident == "btn4") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "side1";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "side2" || ident == "btn5") {
-            advance();
-            cmd.type = havel::ast::InputCommand::MouseClick;
-            cmd.text = "side2";
-            commands.push_back(cmd);
-            continue;
-          } else if (ident == "m" || ident == "r" || ident == "w" ||
-                     ident == "c") {
-            advance(); // consume identifier
-
-            // Parse function call: m(x, y, speed, accel) or c(x, y, button,
-            // speed, accel)
-            if (at().type == havel::TokenType::OpenParen) {
-              advance(); // consume '('
-
-              // Helper to parse comma-separated arguments
-              auto parseArgs = [this](std::string &x, std::string &y,
-                                      std::string &speed, std::string &accel,
-                                      const std::string &button = "") {
-                // Parse x argument
-                if (at().type != havel::TokenType::CloseParen) {
-                  x = at().value;
-                  advance();
-                }
-
-                // Parse y argument
-                if (at().type == havel::TokenType::Comma) {
-                  advance();
-                  if (at().type != havel::TokenType::CloseParen) {
-                    y = at().value;
-                    advance();
-                  }
-                }
-
-                // Parse speed argument
-                if (at().type == havel::TokenType::Comma) {
-                  advance();
-                  if (at().type != havel::TokenType::CloseParen) {
-                    speed = at().value;
-                    advance();
-                  }
-                }
-
-                // Parse accel argument (or button for c())
-                if (at().type == havel::TokenType::Comma) {
-                  advance();
-                  if (at().type != havel::TokenType::CloseParen) {
-                    accel = at().value;
-                    advance();
-                  }
-                }
-              };
-
-              if (ident == "c") {
-                // c(x, y, button, speed, accel)
-                std::string button;
-                parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr,
-                          cmd.accelExprStr, button);
-                cmd.buttonExprStr = button;
-                cmd.type = havel::ast::InputCommand::MouseClickAt;
-              } else {
-                // m(x, y, speed, accel), r(x, y, speed, accel), w(x, y, speed,
-                // accel)
-                parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr,
-                          cmd.accelExprStr);
-
-                if (ident == "m") {
-                  cmd.type = havel::ast::InputCommand::MouseMove;
-                } else if (ident == "r") {
-                  cmd.type = havel::ast::InputCommand::MouseRelative;
-                } else if (ident == "w") {
-                  cmd.type = havel::ast::InputCommand::MouseWheel;
-                }
-              }
-
-              if (at().type == havel::TokenType::CloseParen) {
-                advance(); // consume ')'
-              }
-              commands.push_back(cmd);
-            }
-            continue;
-          }
-        }
-
-        // Skip unknown token
-        advance();
-      }
-
-      return makeNode<havel::ast::InputStatement>(commands);
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
-      auto keyword = at();
-      advance(); // consume 'struct'
-
-      // Parse struct name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected struct name after 'struct'");
-      }
-      std::string structName = advance().value;
-
-      // Parse type parameters: struct List(T) { ... } or struct List(T:
-      // Comparable) { ... }
-      std::vector<ast::TypeParam> typeParams;
-      if (at().type == havel::TokenType::OpenParen &&
-          at(1).type == havel::TokenType::Identifier) {
-        size_t savedPos = position;
-        advance(); // consume '('
-        bool isTypeParamList = true;
-        std::vector<ast::TypeParam> candidateParams;
-        while (at().type == havel::TokenType::Identifier) {
-          std::string pname = advance().value;
-          std::vector<std::string> bounds;
-          if (at().type == havel::TokenType::Colon) {
-            advance(); // consume ':'
-            if (at().type == havel::TokenType::Identifier) {
-              bounds.push_back(advance().value);
-              while (at().type == havel::TokenType::BitwiseAnd) {
-                advance(); // consume '&'
-                if (at().type == havel::TokenType::Identifier) {
-                  bounds.push_back(advance().value);
-                } else {
-                  isTypeParamList = false;
-                  break;
-                }
-              }
-            } else {
-              isTypeParamList = false;
-              break;
-            }
-          }
-          candidateParams.emplace_back(std::move(pname), std::move(bounds));
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-          } else {
-            break;
-          }
-        }
-        if (at().type == havel::TokenType::CloseParen) {
-          advance(); // consume ')'
-          if (!candidateParams.empty() && isTypeParamList &&
-              (at().type == havel::TokenType::Colon ||
-               at().type == havel::TokenType::OpenBrace ||
-               at().type == havel::TokenType::NewLine)) {
-            typeParams = std::move(candidateParams);
-          } else {
-            position = savedPos;
-          }
-        } else {
-          position = savedPos;
-        }
-      }
-
-      // Parse protocol conformance: struct Name : ProtocolName [,
-      // ProtocolName2]
-      // Or colon body: struct Name :
-      // Disambiguate: ':' followed by identifier on same line = protocol
-      // conformance
-      // ':' followed by newline (or non-identifier) = colon body
-      std::vector<std::string> protocolNames;
-      bool isColonBody = false;
-      size_t colonBaseIndent = 0;
-
-      if (at().type == havel::TokenType::Colon) {
-        if (at(1).type == havel::TokenType::Identifier &&
-            at(1).line == at().line) {
-          // Protocol conformance
-          advance(); // consume ':'
-          protocolNames.push_back(advance().value);
-          while (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-            if (at().type != havel::TokenType::Identifier) {
-              failAt(at(), "Expected protocol name after ','");
-            }
-            protocolNames.push_back(advance().value);
-          }
-        } else {
-          // Colon body
-          isColonBody = true;
-        }
-      }
-
-      // Parse opening brace or colon body
-      if (isColonBody) {
-        size_t colonLine = at().line;
-        size_t headerIndent = at().column;
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
-        }
-        advance(); // consume ':'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        colonBaseIndent = headerIndent + 1;
-      } else if (at().type == havel::TokenType::Colon) {
-        // After protocol conformance, second ':' means colon body
-        isColonBody = true;
-        size_t colonLine = at().line;
-        size_t headerIndent = at().column;
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
-        }
-        advance(); // consume ':'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        colonBaseIndent = headerIndent + 1;
-      } else if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-      } else {
-        failAt(at(), "Expected '{' or ':' after struct name");
-      }
-
-      // Parse fields and methods
-      auto [fields, methods] = parseStructMembers(isColonBody, colonBaseIndent);
-
-      if (isColonBody) {
-        // Colon body ends by dedent — nothing to consume
-      } else {
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' to close struct definition");
-        }
-        advance(); // consume '}'
-      }
-
-      // Create struct definition with fields and methods
-      ast::StructDefinition def(std::move(fields), std::move(methods));
-
-      return makeNodeAt<ast::StructDeclaration>(
-          keyword, structName, std::move(def), std::move(protocolNames),
-          std::move(typeParams));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
-      auto keyword = at();
-      advance(); // consume 'class'
-
-      // Parse class name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected class name after 'class'");
-      }
-      std::string className = advance().value;
-
-      // Parse type parameters: class Container(T) { ... } or class Calc(T:
-      // Number) { ... }
-      std::vector<ast::TypeParam> typeParams;
-      if (at().type == havel::TokenType::OpenParen &&
-          at(1).type == havel::TokenType::Identifier) {
-        size_t savedPos = position;
-        advance(); // consume '('
-        bool isTypeParamList = true;
-        std::vector<ast::TypeParam> candidateParams;
-        while (at().type == havel::TokenType::Identifier) {
-          std::string pname = advance().value;
-          std::vector<std::string> bounds;
-          if (at().type == havel::TokenType::Colon) {
-            advance(); // consume ':'
-            if (at().type == havel::TokenType::Identifier) {
-              bounds.push_back(advance().value);
-              while (at().type == havel::TokenType::BitwiseAnd) {
-                advance(); // consume '&'
-                if (at().type == havel::TokenType::Identifier) {
-                  bounds.push_back(advance().value);
-                } else {
-                  isTypeParamList = false;
-                  break;
-                }
-              }
-            } else {
-              isTypeParamList = false;
-              break;
-            }
-          }
-          candidateParams.emplace_back(std::move(pname), std::move(bounds));
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-          } else {
-            break;
-          }
-        }
-        if (at().type == havel::TokenType::CloseParen) {
-          advance(); // consume ')'
-          if (!candidateParams.empty() && isTypeParamList &&
-              (at().type == havel::TokenType::Colon ||
-               at().type == havel::TokenType::OpenBrace ||
-               at().type == havel::TokenType::NewLine)) {
-            typeParams = std::move(candidateParams);
-          } else {
-            position = savedPos;
-          }
-        } else {
-          position = savedPos;
-        }
-      }
-
-      // Check for inheritance syntax: class X : ParentClass [, Protocol1, ...]
-      // But also: class X : (colon body with no parent)
-      // Disambiguate: if ':' followed by Identifier, it's inheritance (possibly
-      // with protocols) If ':' followed by newline/not-identifier, it's colon
-      // body
-      std::string parentName;
-      std::vector<std::string> protocolNames;
-      bool isColonBody = false;
-      size_t colonBaseIndent = 0;
-
-      if (at().type == havel::TokenType::Colon) {
-        if (at(1).type == havel::TokenType::Identifier &&
-            at(1).line == at().line) {
-          // Inheritance: class X : ParentClass [, Protocol1, Protocol2, ...]
-          advance(); // consume ':'
-          parentName = advance().value;
-          // Additional comma-separated names after parent are protocol
-          // conformances
-          while (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-            if (at().type != havel::TokenType::Identifier) {
-              failAt(at(), "Expected protocol name after ','");
-            }
-            protocolNames.push_back(advance().value);
-          }
-        } else {
-          // Colon body: class X :
-          isColonBody = true;
-        }
-      }
-
-      // Parse opening brace or colon body
-      if (isColonBody) {
-        size_t colonLine = at().line;
-        size_t headerIndent = at().column;
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
-        }
-        advance(); // consume ':'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        colonBaseIndent = headerIndent + 1;
-      } else if (at().type == havel::TokenType::Colon) {
-        // After inheritance, second ':' means colon body
-        isColonBody = true;
-        size_t colonLine = at().line;
-        size_t headerIndent = at().column;
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
-        }
-        advance(); // consume ':'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        colonBaseIndent = headerIndent + 1;
-      } else if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-      } else {
-        if (parentName.empty()) {
-          failAt(at(), "Expected '{' or ':' after class name");
-        } else {
-          failAt(at(), "Expected '{' or ':' after parent class name");
-        }
-      }
-
-      // Parse fields and methods
-      auto [fields, methods] = parseClassMembers(isColonBody, colonBaseIndent);
-
-      if (isColonBody) {
-        // Colon body ends by dedent — nothing to consume
-      } else {
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' to close class definition");
-        }
-        advance(); // consume '}'
-      }
-
-      // Create class definition with fields and methods
-      ast::ClassDefinition def(std::move(fields), std::move(methods));
-
-      return makeNodeAt<ast::ClassDeclaration>(
-          keyword, className, std::move(def), parentName,
-          std::move(protocolNames), std::move(typeParams));
-    }
-
-    // Parse struct members (fields and methods)
-    std::pair<std::vector<ast::StructFieldDef>,
-              std::vector<std::unique_ptr<ast::StructMethodDef>>>
-    Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
-      std::vector<ast::StructFieldDef> fields;
-      std::vector<std::unique_ptr<ast::StructMethodDef>> methods;
-
-      auto isEnd = [&]() -> bool {
-        if (isColonBody) {
-          return isSkippableToken(at()) ? false : at().column < colonBaseIndent;
-        }
-        return at().type == havel::TokenType::CloseBrace;
-      };
-
-      while (!isEnd() && notEOF()) {
-        // Skip newlines and comments
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Check for method definition (fn keyword) or operator (op keyword)
-        if (at().type == havel::TokenType::Fn ||
-            at().type == havel::TokenType::Op) {
-          bool isOperator = (at().type == havel::TokenType::Op);
-          advance(); // consume 'fn' or 'op'
-
-          // Skip whitespace/newlines after fn/op
-          while (isSkippableToken(at()) && notEOF()) {
-            advance();
-          }
-
-          std::string methodName;
-
-          if (isOperator) {
-            // For operators, accept operator symbols (+, -, *, /, etc.)
-            // Check token value directly for reliability
-            const std::string &tokenVal = at().value;
-            if (tokenVal == "+") {
-              methodName = "op_add";
-              advance();
-            } else if (tokenVal == "-") {
-              methodName = "op_sub";
-              advance();
-            } else if (tokenVal == "*") {
-              methodName = "op_mul";
-              advance();
-            } else if (tokenVal == "/") {
-              methodName = "op_div";
-              advance();
-            } else if (tokenVal == "%") {
-              methodName = "op_mod";
-              advance();
-            } else if (tokenVal == "==") {
-              methodName = "op_eq";
-              advance();
-            } else if (tokenVal == "!=") {
-              methodName = "op_ne";
-              advance();
-            } else if (tokenVal == "<") {
-              methodName = "op_lt";
-              advance();
-            } else if (tokenVal == ">") {
-              methodName = "op_gt";
-              advance();
-            } else if (tokenVal == "<=") {
-              methodName = "op_le";
-              advance();
-            } else if (tokenVal == ">=") {
-              methodName = "op_ge";
-              advance();
-            } else if (tokenVal == "[") {
-              methodName = "op_index";
-              advance();
-            } else if (tokenVal == "[]=") {
-              methodName = "op_index_set";
-              advance();
-            } else if (tokenVal == "(") {
-              methodName = "op_call";
-              advance();
-            } else if (tokenVal == "**") {
-              methodName = "op_pow";
-              advance();
-            } else if (tokenVal == "|>") {
-              methodName = "op_pipe_right";
-              advance();
-            } else if (tokenVal == "|") {
-              methodName = "op_bit_or";
-              advance();
-            } else if (tokenVal == "&") {
-              methodName = "op_bit_and";
-              advance();
-            } else if (tokenVal == "^") {
-              methodName = "op_bit_xor";
-              advance();
-            } else if (tokenVal == "~") {
-              methodName = "op_bit_not";
-              advance();
-            } else if (tokenVal == ">>") {
-              methodName = "op_shift_right";
-              advance();
-            } else if (tokenVal == "<<") {
-              methodName = "op_shift_left";
-              advance();
-            } else if (tokenVal == "=") {
-              methodName = "op_copy";
-              advance();
-            } else if (tokenVal == "+=") {
-              methodName = "op_iadd";
-              advance();
-            } else if (tokenVal == "-=") {
-              methodName = "op_isub";
-              advance();
-            } else if (tokenVal == "*=") {
-              methodName = "op_imul";
-              advance();
-            } else if (tokenVal == "/=") {
-              methodName = "op_idiv";
-              advance();
-            } else if (tokenVal == "%=") {
-              methodName = "op_imod";
-              advance();
-            } else if (tokenVal == "**=") {
-              methodName = "op_ipow";
-              advance();
-            } else if (tokenVal == "&=") {
-              methodName = "op_iand";
-              advance();
-            } else if (tokenVal == "|=") {
-              methodName = "op_ior";
-              advance();
-            } else if (tokenVal == "^=") {
-              methodName = "op_ixor";
-              advance();
-            } else if (tokenVal == "<<=") {
-              methodName = "op_ilsh";
-              advance();
-            } else if (tokenVal == ">>=") {
-              methodName = "op_irsh";
-              advance();
-            } else {
-              failAt(at(), "Expected operator symbol (+, -, *, /, ==, [], []=, "
-                           "+=, -=, etc.) after 'op'");
-            }
-          } else {
-            // After 'fn' - check for operator symbols or special syntax
-            TokenType ty = at().type;
-            const std::string &tokenVal = at().value;
-
-            // Check for constructor @() or destructor @-()
-            if (ty == havel::TokenType::At) {
-              advance(); // consume '@'
-              if (at().type == havel::TokenType::Minus) {
-                advance(); // consume '-'
-                methodName = "op_destructor";
-              } else {
-                methodName = "init"; // constructor @()
-              }
-            } else if (ty == havel::TokenType::Length || tokenVal == "#") {
-              advance();
-              methodName = "op_length";
-            } else if (ty == havel::TokenType::String && tokenVal.empty() &&
-                       at().raw.empty()) {
-              advance();
-              methodName = "op_toString";
-            } else if (ty == havel::TokenType::OpenParen) {
-              advance();
-              methodName = "op_call";
-            } else if (ty == havel::TokenType::Not) {
-              advance();
-              methodName = "op_not";
-            } else if (ty == havel::TokenType::Minus) {
-              if (at(1).type == havel::TokenType::At) {
-                advance(); // consume '-'
-                advance(); // consume '@'
-                methodName = "op_negate";
-              } else {
-                methodName = "op_sub";
-                advance();
-              }
-            } else if (ty == havel::TokenType::OpenBracket) {
-              advance(); // consume '['
-              if (at().type == havel::TokenType::CloseBracket) {
-                advance(); // consume ']'
-                if (at().type == havel::TokenType::Assign) {
-                  advance(); // consume '='
-                  methodName = "op_index_set";
-                } else {
-                  methodName = "op_index";
-                }
-              } else {
-                failAt(at(), "Expected ']' after '[' in index method");
-              }
-            } else if (ty == havel::TokenType::Identifier &&
-                       tokenVal == "repr") {
-              advance();
-              methodName = "op_repr";
-            } else if (ty == havel::TokenType::Identifier &&
-                       tokenVal == "code") {
-              advance();
-              methodName = "op_code";
-            } else {
-              // Check for operator symbols
-              bool isOp = false;
-              if (tokenVal == "+") {
-                methodName = "op_add";
-                isOp = true;
-              } else if (tokenVal == "*") {
-                methodName = "op_mul";
-                isOp = true;
-              } else if (tokenVal == "**") {
-                methodName = "op_pow";
-                isOp = true;
-              } else if (tokenVal == "/") {
-                methodName = "op_div";
-                isOp = true;
-              } else if (tokenVal == "%") {
-                methodName = "op_mod";
-                isOp = true;
-              } else if (tokenVal == "==") {
-                methodName = "op_eq";
-                isOp = true;
-              } else if (tokenVal == "!=") {
-                methodName = "op_ne";
-                isOp = true;
-              } else if (tokenVal == "<") {
-                methodName = "op_lt";
-                isOp = true;
-              } else if (tokenVal == ">") {
-                methodName = "op_gt";
-                isOp = true;
-              } else if (tokenVal == "<=") {
-                methodName = "op_le";
-                isOp = true;
-              } else if (tokenVal == ">=") {
-                methodName = "op_ge";
-                isOp = true;
-              } else if (tokenVal == "|>") {
-                methodName = "op_pipe_right";
-                isOp = true;
-              } else if (tokenVal == "|") {
-                methodName = "op_bit_or";
-                isOp = true;
-              } else if (tokenVal == "&") {
-                methodName = "op_bit_and";
-                isOp = true;
-              } else if (tokenVal == "^") {
-                methodName = "op_bit_xor";
-                isOp = true;
-              } else if (tokenVal == "~") {
-                methodName = "op_bit_not";
-                isOp = true;
-              } else if (tokenVal == ">>") {
-                methodName = "op_shift_right";
-                isOp = true;
-              } else if (tokenVal == "<<") {
-                methodName = "op_shift_left";
-                isOp = true;
-              } else if (tokenVal == "=") {
-                methodName = "op_copy";
-                isOp = true;
-              } else if (tokenVal == "+=") {
-                methodName = "op_iadd";
-                isOp = true;
-              } else if (tokenVal == "-=") {
-                methodName = "op_isub";
-                isOp = true;
-              } else if (tokenVal == "*=") {
-                methodName = "op_imul";
-                isOp = true;
-              } else if (tokenVal == "/=") {
-                methodName = "op_idiv";
-                isOp = true;
-              } else if (tokenVal == "%=") {
-                methodName = "op_imod";
-                isOp = true;
-              } else if (tokenVal == "**=") {
-                methodName = "op_ipow";
-                isOp = true;
-              } else if (tokenVal == "&=") {
-                methodName = "op_iand";
-                isOp = true;
-              } else if (tokenVal == "|=") {
-                methodName = "op_ior";
-                isOp = true;
-              } else if (tokenVal == "^=") {
-                methodName = "op_ixor";
-                isOp = true;
-              } else if (tokenVal == "<<=") {
-                methodName = "op_ilsh";
-                isOp = true;
-              } else if (tokenVal == ">>=") {
-                methodName = "op_irsh";
-                isOp = true;
-              }
-
-              if (isOp) {
-                advance();
-              } else {
-                // Regular method - expect identifier or soft keyword
-                if (!havel::Lexer::isSoftIdentifier(at().type)) {
-                  failAt(at(), "Expected method name, operator, or special "
-                               "syntax after 'fn'");
-                }
-                methodName = advance().value;
-              }
-            }
-          }
-
-          // Check if this is a constructor (named 'init')
-          bool isConstructor =
-              (methodName == "init" || methodName == "op_init");
-
-          // Parse parameters
-          if (at().type != havel::TokenType::OpenParen) {
-            failAt(at(), "Expected '(' after method name");
-          }
-          advance(); // consume '('
-
-          std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-          while (at().type != havel::TokenType::CloseParen && notEOF()) {
-            if (at().type == havel::TokenType::Identifier) {
-              auto paramName = makeIdentifier(advance());
-              params.push_back(
-                  makeNode<ast::FunctionParameter>(std::move(paramName)));
-            }
-            if (at().type == havel::TokenType::Comma) {
-              advance();
-            } else if (at().type != havel::TokenType::CloseParen) {
-              failAt(at(), "Expected ',' or ')' in parameter list");
-            }
-          }
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after parameters");
-          }
-          advance(); // consume ')'
-
-          // Parse body
-          auto body = parseBlockStatement();
-
-          methods.push_back(makeNode<ast::StructMethodDef>(
-              methodName, std::move(params), std::move(body), isConstructor,
-              isOperator));
-          continue;
-        }
-
-        // Parse field name
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected field name or 'fn' in struct");
-        }
-        std::string fieldName = advance().value;
-
-        // Optional type annotation
-        std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          fieldType = parseTypeDefinition();
-        }
-
-        // Optional default value
-        std::optional<std::unique_ptr<ast::Expression>> defaultValue;
-        if (at().type == havel::TokenType::Assign) {
-          advance(); // consume '='
-          defaultValue = parsePrimaryExpression();
-        }
-
-        fields.emplace_back(
-            fieldName, std::move(fieldType),
-            std::move(defaultValue)); // structs don't have class fields
-
-        // Optional comma
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        }
-      }
-
-      return {std::move(fields), std::move(methods)};
-    }
-
-    // Parse class members (fields and methods)
-    std::pair<std::vector<ast::ClassFieldDef>,
-              std::vector<std::unique_ptr<ast::ClassMethodDef>>>
-    Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
-      std::vector<ast::ClassFieldDef> fields;
-      std::vector<std::unique_ptr<ast::ClassMethodDef>> methods;
-
-      auto isEnd = [&]() -> bool {
-        if (isColonBody) {
-          return isSkippableToken(at()) ? false : at().column < colonBaseIndent;
-        }
-        return at().type == havel::TokenType::CloseBrace;
-      };
-
-      while (!isEnd() && notEOF()) {
-        // Skip newlines and comments
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Check for class member marker (@@) or instance member marker (@)
-        bool isClassMember = false;
-        if (at().type == havel::TokenType::AtAt) {
-          advance(); // consume '@@'
-          isClassMember = true;
-        } else if (at().type == havel::TokenType::At) {
-          advance(); // consume '@' (optional for instance methods, required for
-                     // methods with @fn)
-        }
-
-        // Check for method definition (fn keyword) or operator (op keyword)
-        if (at().type == havel::TokenType::Fn ||
-            at().type == havel::TokenType::Op) {
-          bool isOperator = (at().type == havel::TokenType::Op);
-          advance(); // consume 'fn' or 'op'
-
-          // Skip whitespace/newlines after fn/op
-          while (isSkippableToken(at()) && notEOF()) {
-            advance();
-          }
-
-          std::string methodName;
-
-          if (isOperator) {
-            // For operators, accept operator symbols (+, -, *, /, etc.)
-            const std::string &tokenVal = at().value;
-            if (tokenVal == "+") {
-              methodName = "op_add";
-              advance();
-            } else if (tokenVal == "-") {
-              methodName = "op_sub";
-              advance();
-            } else if (tokenVal == "*") {
-              methodName = "op_mul";
-              advance();
-            } else if (tokenVal == "/") {
-              methodName = "op_div";
-              advance();
-            } else if (tokenVal == "%") {
-              methodName = "op_mod";
-              advance();
-            } else if (tokenVal == "==") {
-              methodName = "op_eq";
-              advance();
-            } else if (tokenVal == "!=") {
-              methodName = "op_ne";
-              advance();
-            } else if (tokenVal == "<") {
-              methodName = "op_lt";
-              advance();
-            } else if (tokenVal == ">") {
-              methodName = "op_gt";
-              advance();
-            } else if (tokenVal == "<=") {
-              methodName = "op_le";
-              advance();
-            } else if (tokenVal == ">=") {
-              methodName = "op_ge";
-              advance();
-            } else if (tokenVal == "[") {
-              methodName = "op_index";
-              advance();
-            } else if (tokenVal == "[]=") {
-              methodName = "op_index_set";
-              advance();
-            } else if (tokenVal == "(") {
-              methodName = "op_call";
-              advance();
-            } else if (tokenVal == "**") {
-              methodName = "op_pow";
-              advance();
-            } else if (tokenVal == "|>") {
-              methodName = "op_pipe_right";
-              advance();
-            } else if (tokenVal == "|") {
-              methodName = "op_bit_or";
-              advance();
-            } else if (tokenVal == "&") {
-              methodName = "op_bit_and";
-              advance();
-            } else if (tokenVal == "^") {
-              methodName = "op_bit_xor";
-              advance();
-            } else if (tokenVal == "~") {
-              methodName = "op_bit_not";
-              advance();
-            } else if (tokenVal == ">>") {
-              methodName = "op_shift_right";
-              advance();
-            } else if (tokenVal == "<<") {
-              methodName = "op_shift_left";
-              advance();
-            } else if (tokenVal == "=") {
-              methodName = "op_copy";
-              advance();
-            } else if (tokenVal == "+=") {
-              methodName = "op_iadd";
-              advance();
-            } else if (tokenVal == "-=") {
-              methodName = "op_isub";
-              advance();
-            } else if (tokenVal == "*=") {
-              methodName = "op_imul";
-              advance();
-            } else if (tokenVal == "/=") {
-              methodName = "op_idiv";
-              advance();
-            } else if (tokenVal == "%=") {
-              methodName = "op_imod";
-              advance();
-            } else if (tokenVal == "**=") {
-              methodName = "op_ipow";
-              advance();
-            } else if (tokenVal == "&=") {
-              methodName = "op_iand";
-              advance();
-            } else if (tokenVal == "|=") {
-              methodName = "op_ior";
-              advance();
-            } else if (tokenVal == "^=") {
-              methodName = "op_ixor";
-              advance();
-            } else if (tokenVal == "<<=") {
-              methodName = "op_ilsh";
-              advance();
-            } else if (tokenVal == ">>=") {
-              methodName = "op_irsh";
-              advance();
-            } else {
-              failAt(at(), "Expected operator symbol (+, -, *, /, ==, [], []=, "
-                           "+=, -=, etc.) after 'op'");
-            }
-          } else {
-            // After 'fn' - check for operator symbols or special syntax
-            TokenType ty = at().type;
-            const std::string &tokenVal = at().value;
-
-            // Check for constructor @() or destructor @-()
-            if (ty == havel::TokenType::At) {
-              advance(); // consume '@'
-              if (at().type == havel::TokenType::Minus) {
-                advance(); // consume '-'
-                methodName = "op_destructor";
-              } else {
-                methodName = "init"; // constructor @()
-              }
-            } else if (ty == havel::TokenType::Length || tokenVal == "#") {
-              advance();
-              methodName = "op_length";
-            } else if (ty == havel::TokenType::String && tokenVal.empty() &&
-                       at().raw.empty()) {
-              advance();
-              methodName = "op_toString";
-            } else if (ty == havel::TokenType::OpenParen) {
-              advance();
-              methodName = "op_call";
-            } else if (ty == havel::TokenType::Not) {
-              advance();
-              methodName = "op_not";
-            } else if (ty == havel::TokenType::Minus) {
-              if (at(1).type == havel::TokenType::At) {
-                advance(); // consume '-'
-                advance(); // consume '@'
-                methodName = "op_negate";
-              } else {
-                methodName = "op_sub";
-                advance();
-              }
-            } else if (ty == havel::TokenType::OpenBracket) {
-              advance(); // consume '['
-              if (at().type == havel::TokenType::CloseBracket) {
-                advance(); // consume ']'
-                if (at().type == havel::TokenType::Assign) {
-                  advance(); // consume '='
-                  methodName = "op_index_set";
-                } else {
-                  methodName = "op_index";
-                }
-              } else {
-                failAt(at(), "Expected ']' after '[' in index method");
-              }
-            } else if (ty == havel::TokenType::Identifier &&
-                       tokenVal == "repr") {
-              advance();
-              methodName = "op_repr";
-            } else if (ty == havel::TokenType::Identifier &&
-                       tokenVal == "code") {
-              advance();
-              methodName = "op_code";
-            } else {
-              // Check for operator symbols
-              bool isOp = false;
-              if (tokenVal == "+") {
-                methodName = "op_add";
-                isOp = true;
-              } else if (tokenVal == "*") {
-                methodName = "op_mul";
-                isOp = true;
-              } else if (tokenVal == "**") {
-                methodName = "op_pow";
-                isOp = true;
-              } else if (tokenVal == "/") {
-                methodName = "op_div";
-                isOp = true;
-              } else if (tokenVal == "%") {
-                methodName = "op_mod";
-                isOp = true;
-              } else if (tokenVal == "==") {
-                methodName = "op_eq";
-                isOp = true;
-              } else if (tokenVal == "!=") {
-                methodName = "op_ne";
-                isOp = true;
-              } else if (tokenVal == "<") {
-                methodName = "op_lt";
-                isOp = true;
-              } else if (tokenVal == ">") {
-                methodName = "op_gt";
-                isOp = true;
-              } else if (tokenVal == "<=") {
-                methodName = "op_le";
-                isOp = true;
-              } else if (tokenVal == ">=") {
-                methodName = "op_ge";
-                isOp = true;
-              } else if (tokenVal == "|>") {
-                methodName = "op_pipe_right";
-                isOp = true;
-              } else if (tokenVal == "|") {
-                methodName = "op_bit_or";
-                isOp = true;
-              } else if (tokenVal == "&") {
-                methodName = "op_bit_and";
-                isOp = true;
-              } else if (tokenVal == "^") {
-                methodName = "op_bit_xor";
-                isOp = true;
-              } else if (tokenVal == "~") {
-                methodName = "op_bit_not";
-                isOp = true;
-              } else if (tokenVal == ">>") {
-                methodName = "op_shift_right";
-                isOp = true;
-              } else if (tokenVal == "<<") {
-                methodName = "op_shift_left";
-                isOp = true;
-              } else if (tokenVal == "=") {
-                methodName = "op_copy";
-                isOp = true;
-              } else if (tokenVal == "+=") {
-                methodName = "op_iadd";
-                isOp = true;
-              } else if (tokenVal == "-=") {
-                methodName = "op_isub";
-                isOp = true;
-              } else if (tokenVal == "*=") {
-                methodName = "op_imul";
-                isOp = true;
-              } else if (tokenVal == "/=") {
-                methodName = "op_idiv";
-                isOp = true;
-              } else if (tokenVal == "%=") {
-                methodName = "op_imod";
-                isOp = true;
-              } else if (tokenVal == "**=") {
-                methodName = "op_ipow";
-                isOp = true;
-              } else if (tokenVal == "&=") {
-                methodName = "op_iand";
-                isOp = true;
-              } else if (tokenVal == "|=") {
-                methodName = "op_ior";
-                isOp = true;
-              } else if (tokenVal == "^=") {
-                methodName = "op_ixor";
-                isOp = true;
-              } else if (tokenVal == "<<=") {
-                methodName = "op_ilsh";
-                isOp = true;
-              } else if (tokenVal == ">>=") {
-                methodName = "op_irsh";
-                isOp = true;
-              }
-
-              if (isOp) {
-                advance();
-              } else {
-                // Regular method - expect identifier or soft keyword
-                if (!havel::Lexer::isSoftIdentifier(at().type)) {
-                  failAt(at(), "Expected method name, operator, or special "
-                               "syntax after 'fn'");
-                }
-                methodName = advance().value;
-              }
-            }
-          }
-
-          // Parse parameters
-          if (at().type != havel::TokenType::OpenParen) {
-            failAt(at(), "Expected '(' after method name");
-          }
-          advance(); // consume '('
-
-          std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-          while (at().type != havel::TokenType::CloseParen && notEOF()) {
-            // Skip newlines and comments
-            if (isSkippableToken(at())) {
-              advance();
-              continue;
-            }
-
-            // Check for variadic parameter: ...args
-            bool isVariadic = false;
-            std::unique_ptr<havel::ast::Expression> pattern;
-
-            if (at().type == havel::TokenType::Spread) {
-              advance(); // consume '...'
-              if (at().type != havel::TokenType::Identifier) {
-                failAt(at(),
-                       "Expected identifier after '...' in variadic parameter");
-              }
-              pattern = makeIdentifier(advance());
-              isVariadic = true;
-            } else if (at().type == havel::TokenType::Identifier ||
-                       at().type == havel::TokenType::Underscore ||
-                       havel::Lexer::isSoftIdentifier(at().type)) {
-              pattern = makeIdentifier(advance());
-            } else if (at().type == havel::TokenType::Fn) {
-              failAt(at(), "'fn' cannot be used as a parameter name (reserved "
-                           "for lambda syntax)");
-            } else {
-              failAt(at(), "Expected identifier or '...' in parameter list");
-            }
-
-            // Check for type annotation (paramName: Type)
-            std::optional<std::unique_ptr<havel::ast::TypeAnnotation>>
-                typeAnnotation;
-            if (at().type == havel::TokenType::Colon) {
-              advance(); // consume ':'
-              typeAnnotation = parseTypeAnnotation();
-            }
-
-            // Check for default value
-            std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
-            if (at().type == havel::TokenType::Assign) {
-              advance(); // consume '='
-              defaultValue = parseExpression();
-            }
-
-            params.push_back(makeNode<havel::ast::FunctionParameter>(
-                std::move(pattern), std::move(defaultValue),
-                std::move(typeAnnotation), isVariadic));
-
-            while (at().type == havel::TokenType::NewLine) {
-              advance();
-            }
-
-            if (at().type == havel::TokenType::Comma) {
-              advance();
-            } else if (at().type != havel::TokenType::CloseParen) {
-              failAt(at(), "Expected ',' or ')' in parameter list");
-            }
-          }
-
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after parameters");
-          }
-          advance(); // consume ')'
-
-          // Parse body
-          auto body = parseBlockStatement();
-
-          // Check if this is a constructor (method name is "init")
-          bool isConstructor = (methodName == "init");
-
-          methods.push_back(makeNode<ast::ClassMethodDef>(
-              methodName, std::move(params), std::move(body), isConstructor,
-              isOperator, isClassMember));
-          continue;
-        }
-
-        // Parse field definition
-        // Note: isClassMember is already set from @@ or @ above
-
-        // Support optional val/const/let prefix for fields.
-        // Only consume as prefix if the next non-newline token is an
-        // identifier, otherwise treat val/const/let as the field name itself.
-        bool isConst = false;
-        (void)isConst;
-        if (at().type == havel::TokenType::Val ||
-            at().type == havel::TokenType::Const ||
-            at().type == havel::TokenType::Let) {
-          // Peek ahead past newlines to see if an identifier follows
-          size_t lookahead = 1;
-          while (isSkippableToken(at(lookahead))) {
-            ++lookahead;
-          }
-          if (at(lookahead).type == havel::TokenType::Identifier) {
-            // It's a prefix: val fieldName / const fieldName
-            isConst = (at().type == havel::TokenType::Val ||
-                       at().type == havel::TokenType::Const);
-            advance(); // consume val/const/let
-            // Skip newlines between prefix and field name
-            while (isSkippableToken(at())) {
-              advance();
-            }
-          }
-          // else: treat val/const/let as the field name (fall through to
-          // Identifier check below)
-        }
-
-        // Parse field name - val/const/let tokens are also valid field names
-        std::string fieldName;
-        if (at().type == havel::TokenType::Identifier) {
-          fieldName = advance().value;
-        } else if (at().type == havel::TokenType::Val ||
-                   at().type == havel::TokenType::Const ||
-                   at().type == havel::TokenType::Let) {
-          fieldName = advance().value; // use keyword as field name
-        } else {
-          failAt(at(), "Expected field name or 'fn' in class");
-        }
-
-        // Optional type annotation
-        std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          fieldType = parseTypeDefinition();
-        }
-
-        // Optional default value
-        std::optional<std::unique_ptr<ast::Expression>> defaultValue;
-        if (at().type == havel::TokenType::Assign) {
-          advance(); // consume '='
-          defaultValue = parsePrimaryExpression();
-        }
-
-        fields.emplace_back(fieldName, std::move(fieldType),
-                            std::move(defaultValue), isClassMember);
-
-        // Optional comma
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        }
-      }
-
-      return {std::move(fields), std::move(methods)};
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
-      auto keyword = at();
-      advance(); // consume 'enum'
-
-      // Parse enum name
-      if (at().type != havel::TokenType::Identifier) {
+    // Parse enum name
+    if (at().type != havel::TokenType::Identifier) {
         failAt(at(), "Expected enum name after 'enum'");
-      }
-      std::string enumName = advance().value;
+    }
+    std::string enumName = advance().value;
 
-      // Parse type parameters: enum Result(T, E) { ... } or enum Result(T:
-      // Hashable, E) { ... }
-      std::vector<ast::TypeParam> typeParams;
-      if (at().type == havel::TokenType::OpenParen &&
-          at(1).type == havel::TokenType::Identifier) {
-        size_t savedPos = position;
-        advance(); // consume '('
-        bool isTypeParamList = true;
-        std::vector<ast::TypeParam> candidateParams;
-        while (at().type == havel::TokenType::Identifier) {
-          std::string pname = advance().value;
-          std::vector<std::string> bounds;
-          if (at().type == havel::TokenType::Colon) {
-            advance(); // consume ':'
-            if (at().type == havel::TokenType::Identifier) {
-              bounds.push_back(advance().value);
-              while (at().type == havel::TokenType::BitwiseAnd) {
-                advance(); // consume '&'
-                if (at().type == havel::TokenType::Identifier) {
-                  bounds.push_back(advance().value);
-                } else {
-                  isTypeParamList = false;
-                  break;
-                }
-              }
-            } else {
-              isTypeParamList = false;
-              break;
-            }
-          }
-          candidateParams.emplace_back(std::move(pname), std::move(bounds));
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-          } else {
-            break;
-          }
-        }
-        if (at().type == havel::TokenType::CloseParen) {
-          advance(); // consume ')'
-          if (!candidateParams.empty() && isTypeParamList &&
-              (at().type == havel::TokenType::OpenBrace ||
-               at().type == havel::TokenType::NewLine)) {
-            typeParams = std::move(candidateParams);
-          } else {
-            position = savedPos;
-          }
-        } else {
-          position = savedPos;
-        }
-      }
+	// Parse type parameters: enum Result(T, E) { ... } or enum Result(T: Hashable, E) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
 
-      // Parse opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
+    // Parse opening brace
+    if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after enum name");
-      }
-      advance(); // consume '{'
+    }
+    advance(); // consume '{'
 
-      // Parse variants
-      auto variants = parseEnumVariants();
+    // Parse variants
+    auto variants = parseEnumVariants();
 
-      // Parse closing brace
-      if (at().type != havel::TokenType::CloseBrace) {
+    // Parse closing brace
+    if (at().type != havel::TokenType::CloseBrace) {
         failAt(at(), "Expected '}' to close enum definition");
-      }
-      advance(); // consume '}'
+    }
+    advance(); // consume '}'
 
-      // Create enum definition
-      ast::EnumDefinition def(std::move(variants));
+    // Create enum definition
+    ast::EnumDefinition def(std::move(variants));
 
-      return makeNodeAt<ast::EnumDeclaration>(keyword, enumName, std::move(def),
-                                              std::move(typeParams));
+    return makeNodeAt<ast::EnumDeclaration>(keyword, enumName, std::move(def),
+                                             std::move(typeParams));
+}
+
+std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
+  std::vector<ast::EnumVariantDef> variants;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
     }
 
-    std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
-      std::vector<ast::EnumVariantDef> variants;
-
-      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-        // Skip newlines and comments
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Parse variant name
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected variant name in enum");
-        }
-        std::string variantName = advance().value;
-
-        // Optional payload type
-        std::optional<std::unique_ptr<ast::TypeDefinition>> payloadType;
-        if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          payloadType = parseTypeDefinition();
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after payload type");
-          }
-          advance(); // consume ')'
-        }
-
-        variants.emplace_back(variantName, std::move(payloadType));
-
-        // Optional comma
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        }
-      }
-
-      return variants;
+    // Parse variant name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected variant name in enum");
     }
+    std::string variantName = advance().value;
 
-    // Parse trait declaration: trait Name { fn method1(); fn method2() {
-    // default impl } }
-    std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
-      advance(); // consume 'trait'
-
-      // Parse trait name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected trait name after 'trait'");
-      }
-      auto traitName = makeIdentifier(advance());
-
-      // Parse opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after trait name");
-      }
-      advance(); // consume '{'
-
-      // Parse trait methods
-      std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
-
-      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-        // Skip newlines and comments
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Expect 'fn' keyword
-        if (at().type != havel::TokenType::Fn) {
-          failAt(at(), "Expected 'fn' in trait body");
-        }
-        advance(); // consume 'fn'
-
-        // Parse method name
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected method name");
-        }
-        auto methodName = makeIdentifier(advance());
-
-        // Parse parameters
-        if (at().type != havel::TokenType::OpenParen) {
-          failAt(at(), "Expected '(' after method name");
-        }
-        advance(); // consume '('
-
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-        while (at().type != havel::TokenType::CloseParen && notEOF()) {
-          if (at().type == havel::TokenType::Identifier) {
-            auto paramName = makeIdentifier(advance());
-            params.push_back(
-                makeNode<havel::ast::FunctionParameter>(std::move(paramName)));
-          }
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ',' or ')' in parameter list");
-          }
-        }
-        if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after parameters");
-        }
-        advance(); // consume ')'
-
-        // Check for default implementation
-        std::unique_ptr<havel::ast::BlockStatement> defaultBody;
-        if (at().type == havel::TokenType::OpenBrace) {
-          defaultBody = parseBlockStatement();
-        }
-
-        methods.push_back(makeNode<havel::ast::TraitMethod>(
-            std::move(methodName), std::move(params), std::move(defaultBody)));
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close trait definition");
-      }
-      advance(); // consume '}'
-
-      return makeNode<havel::ast::TraitDeclaration>(std::move(traitName),
-                                                    std::move(methods));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
-      advance(); // consume 'prot'
-
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected protocol name after 'prot'");
-      }
-      auto protName = makeIdentifier(advance());
-
-      if (at().type != havel::TokenType::OpenBrace &&
-          at().type != havel::TokenType::Colon) {
-        failAt(at(), "Expected '{' or ':' after protocol name");
-      }
-
-      bool isColonBody = (at().type == havel::TokenType::Colon);
-      size_t colonBaseIndent = 0;
-      if (isColonBody) {
-        size_t colonLine = at().line;
-        size_t headerIndent = at().column;
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
-        }
-        advance(); // consume ':'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        colonBaseIndent = headerIndent + 1;
-      } else {
-        advance(); // consume '{'
-      }
-
-      auto isEnd = [&]() -> bool {
-        if (isColonBody) {
-          return isSkippableToken(at()) ? false : at().column < colonBaseIndent;
-        }
-        return at().type == havel::TokenType::CloseBrace;
-      };
-
-      std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
-
-      while (!isEnd() && notEOF()) {
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Expect 'fn' keyword
-        if (at().type != havel::TokenType::Fn) {
-          failAt(at(), "Expected 'fn' in protocol body");
-        }
-        advance(); // consume 'fn'
-
-        // Method name or operator (e.g. fn +, fn [])
-        if (at().type != havel::TokenType::Identifier &&
-            at().type != havel::TokenType::Plus &&
-            at().type != havel::TokenType::Minus &&
-            at().type != havel::TokenType::Multiply &&
-            at().type != havel::TokenType::Divide &&
-            at().type != havel::TokenType::Equals &&
-            at().type != havel::TokenType::Less &&
-            at().type != havel::TokenType::Greater &&
-            at().type != havel::TokenType::OpenBracket) {
-          failAt(at(), "Expected method or operator name in protocol");
-        }
-        auto methodName = makeIdentifier(advance());
-
-        // Parse parameters
-        if (at().type != havel::TokenType::OpenParen) {
-          failAt(at(), "Expected '(' after method name");
-        }
-        advance(); // consume '('
-
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-        while (at().type != havel::TokenType::CloseParen && notEOF()) {
-          if (at().type == havel::TokenType::Identifier) {
-            auto paramName = makeIdentifier(advance());
-            params.push_back(
-                makeNode<havel::ast::FunctionParameter>(std::move(paramName)));
-          }
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ',' or ')' in parameter list");
-          }
-        }
-        if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after parameters");
-        }
-        advance(); // consume ')'
-
-        // Check for default implementation
-        std::unique_ptr<havel::ast::BlockStatement> defaultBody;
-        if (at().type == havel::TokenType::OpenBrace) {
-          defaultBody = parseBlockStatement();
-        }
-
-        methods.push_back(makeNode<havel::ast::TraitMethod>(
-            std::move(methodName), std::move(params), std::move(defaultBody)));
-      }
-
-      if (isColonBody) {
-        // Colon body ends by dedent — nothing to consume
-      } else {
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' to close protocol definition");
-        }
-        advance(); // consume '}'
-      }
-
-      return makeNode<havel::ast::ProtocolDeclaration>(std::move(protName),
-                                                       std::move(methods));
-    }
-
-    // Parse impl declaration: impl Trait for Type { fn method() { ... } }
-    std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
-      auto keyword = at();
-      advance(); // consume 'impl'
-
-      // Parse trait name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected trait name after 'impl'");
-      }
-      auto traitName = makeIdentifier(advance());
-
-      // Expect 'for' keyword
-      if (at().type != havel::TokenType::For) {
-        failAt(at(), "Expected 'for' after trait name in impl declaration");
-      }
-      advance(); // consume 'for'
-
-      // Parse type name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected type name after 'for'");
-      }
-      auto typeName = makeIdentifier(advance());
-
-      // Parse opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after type name in impl declaration");
-      }
-      advance(); // consume '{'
-
-      // Parse method implementations
-      std::vector<std::unique_ptr<havel::ast::FunctionDeclaration>> methods;
-
-      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-        // Skip newlines and comments
-        if (isSkippableToken(at())) {
-          advance();
-          continue;
-        }
-
-        // Parse function declaration
-        if (at().type != havel::TokenType::Fn) {
-          failAt(at(), "Expected 'fn' in impl body");
-        }
-        auto funcStmt = parseFunctionDeclaration();
-        methods.push_back(std::unique_ptr<havel::ast::FunctionDeclaration>(
-            static_cast<havel::ast::FunctionDeclaration *>(
-                funcStmt.release())));
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close impl declaration");
-      }
-      advance(); // consume '}'
-
-      return makeNodeAt<havel::ast::ImplDeclaration>(
-          keyword, std::move(traitName), std::move(typeName),
-          std::move(methods));
-    }
-
-    std::vector<ast::TypeParam> Parser::parseTypeParameterList() {
-      std::vector<ast::TypeParam> typeParams;
-      if (at().type != havel::TokenType::OpenParen) {
-        return typeParams;
-      }
+    // Optional payload type
+    std::optional<std::unique_ptr<ast::TypeDefinition>> payloadType;
+    if (at().type == havel::TokenType::OpenParen) {
       advance(); // consume '('
-      while (at().type != havel::TokenType::CloseParen && notEOF()) {
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected type parameter name");
-          break;
-        }
-        std::string paramName = advance().value;
-        std::vector<std::string> bounds;
-        // Parse optional bounds: T: Bound or T: Bound1 & Bound2
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Expected bound name after ':' in type parameter");
-          } else {
-            bounds.push_back(advance().value);
-            while (at().type == havel::TokenType::BitwiseAnd) {
-              advance(); // consume '&'
-              if (at().type != havel::TokenType::Identifier) {
-                failAt(at(), "Expected bound name after '&' in type parameter");
-                break;
-              }
-              bounds.push_back(advance().value);
-            }
-          }
-        }
-        typeParams.emplace_back(std::move(paramName), std::move(bounds));
-        if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
-        }
-      }
+      payloadType = parseTypeDefinition();
       if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ')' to close type parameter list");
+        failAt(at(), "Expected ')' after payload type");
       }
       advance(); // consume ')'
-      return typeParams;
     }
 
-    std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
-      // Handle nullable type prefix: ?T means T or null
-      if (at().type == havel::TokenType::Question) {
+    variants.emplace_back(variantName, std::move(payloadType));
+
+    // Optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+
+  return variants;
+}
+
+// Parse trait declaration: trait Name { fn method1(); fn method2() { default
+// impl } }
+std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
+  advance(); // consume 'trait'
+
+  // Parse trait name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected trait name after 'trait'");
+  }
+  auto traitName = makeIdentifier(advance());
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after trait name");
+  }
+  advance(); // consume '{'
+
+  // Parse trait methods
+  std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
+    }
+
+    // Expect 'fn' keyword
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in trait body");
+    }
+    advance(); // consume 'fn'
+
+    // Parse method name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected method name");
+    }
+    auto methodName = makeIdentifier(advance());
+
+    // Parse parameters
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after method name");
+    }
+    advance(); // consume '('
+
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+      if (at().type == havel::TokenType::Identifier) {
+        auto paramName = makeIdentifier(advance());
+        params.push_back(makeNode<havel::ast::FunctionParameter>(
+            std::move(paramName)));
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in parameter list");
+      }
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after parameters");
+    }
+    advance(); // consume ')'
+
+    // Check for default implementation
+    std::unique_ptr<havel::ast::BlockStatement> defaultBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      defaultBody = parseBlockStatement();
+    }
+
+    methods.push_back(makeNode<havel::ast::TraitMethod>(
+        std::move(methodName), std::move(params), std::move(defaultBody)));
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close trait definition");
+  }
+  advance(); // consume '}'
+
+  return makeNode<havel::ast::TraitDeclaration>(std::move(traitName),
+                                                          std::move(methods));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
+  advance(); // consume 'prot'
+
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected protocol name after 'prot'");
+  }
+  auto protName = makeIdentifier(advance());
+
+  if (at().type != havel::TokenType::OpenBrace && at().type != havel::TokenType::Colon) {
+    failAt(at(), "Expected '{' or ':' after protocol name");
+  }
+
+  bool isColonBody = (at().type == havel::TokenType::Colon);
+  size_t colonBaseIndent = 0;
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else {
+    advance(); // consume '{'
+  }
+
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return isSkippableToken(at())
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
+
+  std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
+
+  while (!isEnd() && notEOF()) {
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
+    }
+
+    // Expect 'fn' keyword
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in protocol body");
+    }
+    advance(); // consume 'fn'
+
+    // Method name or operator (e.g. fn +, fn [])
+    if (at().type != havel::TokenType::Identifier &&
+        at().type != havel::TokenType::Plus &&
+        at().type != havel::TokenType::Minus &&
+        at().type != havel::TokenType::Multiply &&
+        at().type != havel::TokenType::Divide &&
+        at().type != havel::TokenType::Equals &&
+        at().type != havel::TokenType::Less &&
+        at().type != havel::TokenType::Greater &&
+        at().type != havel::TokenType::OpenBracket) {
+      failAt(at(), "Expected method or operator name in protocol");
+    }
+    auto methodName = makeIdentifier(advance());
+
+    // Parse parameters
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after method name");
+    }
+    advance(); // consume '('
+
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+      if (at().type == havel::TokenType::Identifier) {
+        auto paramName = makeIdentifier(advance());
+        params.push_back(makeNode<havel::ast::FunctionParameter>(
+            std::move(paramName)));
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in parameter list");
+      }
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after parameters");
+    }
+    advance(); // consume ')'
+
+    // Check for default implementation
+    std::unique_ptr<havel::ast::BlockStatement> defaultBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      defaultBody = parseBlockStatement();
+    }
+
+    methods.push_back(makeNode<havel::ast::TraitMethod>(
+        std::move(methodName), std::move(params), std::move(defaultBody)));
+  }
+
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close protocol definition");
+    }
+    advance(); // consume '}'
+  }
+
+  return makeNode<havel::ast::ProtocolDeclaration>(std::move(protName),
+                                                             std::move(methods));
+}
+
+// Parse impl declaration: impl Trait for Type { fn method() { ... } }
+std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
+    auto keyword = at();
+    advance(); // consume 'impl'
+
+  // Parse trait name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected trait name after 'impl'");
+  }
+  auto traitName = makeIdentifier(advance());
+
+  // Expect 'for' keyword
+  if (at().type != havel::TokenType::For) {
+    failAt(at(), "Expected 'for' after trait name in impl declaration");
+  }
+  advance(); // consume 'for'
+
+  // Parse type name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected type name after 'for'");
+  }
+  auto typeName = makeIdentifier(advance());
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after type name in impl declaration");
+  }
+  advance(); // consume '{'
+
+  // Parse method implementations
+  std::vector<std::unique_ptr<havel::ast::FunctionDeclaration>> methods;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (isSkippableToken(at())) {
+      advance();
+      continue;
+    }
+
+    // Parse function declaration
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in impl body");
+    }
+    auto funcStmt = parseFunctionDeclaration();
+    methods.push_back(std::unique_ptr<havel::ast::FunctionDeclaration>(
+        static_cast<havel::ast::FunctionDeclaration *>(funcStmt.release())));
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close impl declaration");
+  }
+  advance(); // consume '}'
+
+    return makeNodeAt<havel::ast::ImplDeclaration>(keyword,
+        std::move(traitName), std::move(typeName), std::move(methods));
+}
+
+std::vector<ast::TypeParam> Parser::parseTypeParameterList() {
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type != havel::TokenType::OpenParen) {
+		return typeParams;
+	}
+	advance(); // consume '('
+	while (at().type != havel::TokenType::CloseParen && notEOF()) {
+		if (at().type != havel::TokenType::Identifier) {
+			failAt(at(), "Expected type parameter name");
+			break;
+		}
+		std::string paramName = advance().value;
+		std::vector<std::string> bounds;
+		// Parse optional bounds: T: Bound or T: Bound1 & Bound2
+		if (at().type == havel::TokenType::Colon) {
+			advance(); // consume ':'
+			if (at().type != havel::TokenType::Identifier) {
+				failAt(at(), "Expected bound name after ':' in type parameter");
+			} else {
+				bounds.push_back(advance().value);
+				while (at().type == havel::TokenType::BitwiseAnd) {
+					advance(); // consume '&'
+					if (at().type != havel::TokenType::Identifier) {
+						failAt(at(), "Expected bound name after '&' in type parameter");
+						break;
+					}
+					bounds.push_back(advance().value);
+				}
+			}
+		}
+		typeParams.emplace_back(std::move(paramName), std::move(bounds));
+		if (at().type == havel::TokenType::Comma) {
+			advance(); // consume ','
+		}
+	}
+	if (at().type != havel::TokenType::CloseParen) {
+		failAt(at(), "Expected ')' to close type parameter list");
+	}
+	advance(); // consume ')'
+	return typeParams;
+}
+
+std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
+    // Handle nullable type prefix: ?T means T or null
+    if (at().type == havel::TokenType::Question) {
         advance(); // consume '?'
         auto inner = parseTypeDefinition();
         return makeNode<ast::NullableType>(std::move(inner));
-      }
+    }
 
-      std::string typeName;
-      switch (at().type) {
-      case havel::TokenType::Identifier:
+    std::string typeName;
+    switch (at().type) {
+    case havel::TokenType::Identifier:
         typeName = advance().value;
         break;
-      case havel::TokenType::Fn:
+    case havel::TokenType::Fn:
         typeName = "fn";
         advance();
         break;
-      case havel::TokenType::Struct:
+    case havel::TokenType::Struct:
         typeName = "struct";
         advance();
         break;
-      case havel::TokenType::Class:
+    case havel::TokenType::Class:
         typeName = "class";
         advance();
         break;
-      default:
+    default:
         failAt(at(), "Expected type name");
         return makeNode<ast::TypeReference>("Any");
-      }
+    }
 
-      // Parse generic type arguments: List(Int), Result(int, str), Map(str,
-      // int)
-      if (at().type == havel::TokenType::OpenParen) {
+    // Parse generic type arguments: List(Int), Result(int, str), Map(str, int)
+    if (at().type == havel::TokenType::OpenParen) {
         advance(); // consume '('
         std::vector<std::unique_ptr<ast::TypeDefinition>> typeArgs;
         while (at().type != havel::TokenType::CloseParen && notEOF()) {
-          typeArgs.push_back(parseTypeDefinition());
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-          }
+            typeArgs.push_back(parseTypeDefinition());
+            if (at().type == havel::TokenType::Comma) {
+                advance(); // consume ','
+            }
         }
         if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ')' to close generic type arguments");
+            failAt(at(), "Expected ')' to close generic type arguments");
         }
         advance(); // consume ')'
 
@@ -6447,575 +5972,579 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
         // Trailing ? makes it nullable: List(Int)? means List(Int) or null
         if (at().type == havel::TokenType::Question) {
-          advance(); // consume '?'
-          return makeNode<ast::NullableType>(std::move(ref));
+            advance(); // consume '?'
+            return makeNode<ast::NullableType>(std::move(ref));
         }
         return ref;
-      }
+    }
 
-      // Parse zero or more array suffixes: T[], T[][], ...
-      while (at().type == havel::TokenType::OpenBracket) {
+    // Parse zero or more array suffixes: T[], T[][], ...
+    while (at().type == havel::TokenType::OpenBracket) {
         advance(); // consume '['
         if (at().type != havel::TokenType::CloseBracket) {
-          failAt(at(), "Expected ']' in array type annotation");
+            failAt(at(), "Expected ']' in array type annotation");
         }
         advance(); // consume ']'
         typeName += "[]";
-      }
+    }
 
-      // For now, just create a type reference
-      auto ref = makeNode<ast::TypeReference>(typeName);
+    // For now, just create a type reference
+    auto ref = makeNode<ast::TypeReference>(typeName);
 
-      // Trailing ? makes it nullable: String? means String or null
-      if (at().type == havel::TokenType::Question) {
+    // Trailing ? makes it nullable: String? means String or null
+    if (at().type == havel::TokenType::Question) {
         advance(); // consume '?'
         return makeNode<ast::NullableType>(std::move(ref));
-      }
-
-      return ref;
     }
 
-    std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {
-      // Note: ':' should already be consumed by caller for parameter
-      // annotations For standalone type annotations, we consume the ':' here
-      if (at().type == havel::TokenType::Colon) {
-        advance(); // consume ':'
-      }
+    return ref;
+}
 
-      auto type = parseTypeDefinition();
-      return makeNode<ast::TypeAnnotation>(std::move(type));
-    }
+std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {
+  // Note: ':' should already be consumed by caller for parameter annotations
+  // For standalone type annotations, we consume the ':' here
+  if (at().type == havel::TokenType::Colon) {
+    advance(); // consume ':'
+  }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
-      auto keyword = at();
-      advance(); // consume 'throw'
-      auto value = parseExpression();
-      return makeNodeAt<havel::ast::ThrowStatement>(keyword, std::move(value));
-    }
+  auto type = parseTypeDefinition();
+  return makeNode<ast::TypeAnnotation>(std::move(type));
+}
 
-    // Parse del statement: del expression
-    // Supports: del variable, del obj.field, del arr[index]
-    // Also handles del(...) as a function call if followed by (
-    std::unique_ptr<havel::ast::Statement> Parser::parseDelStatement() {
-      // If followed by '(', treat as function call: del(args)
-      if (at(1).type == havel::TokenType::OpenParen) {
+std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
+    auto keyword = at();
+    advance(); // consume 'throw'
+    auto value = parseExpression();
+    return makeNodeAt<havel::ast::ThrowStatement>(keyword, std::move(value));
+}
+
+// Parse del statement: del expression
+// Supports: del variable, del obj.field, del arr[index]
+// Also handles del(...) as a function call if followed by (
+std::unique_ptr<havel::ast::Statement> Parser::parseDelStatement() {
+    // If followed by '(', treat as function call: del(args)
+    if (at(1).type == havel::TokenType::OpenParen) {
         // Parse as function call expression: del(args)
-        auto call = makeNodeAt<havel::ast::CallExpression>(
-            at(), makeNodeAt<havel::ast::Identifier>(at(), "del"));
+        auto call = makeNodeAt<havel::ast::CallExpression>(at(),
+            makeNodeAt<havel::ast::Identifier>(at(), "del"));
         advance(); // consume 'del'
         advance(); // consume '('
         while (at().type != havel::TokenType::CloseParen && notEOF()) {
-          call->args.push_back(parseExpression());
-          if (at().type == havel::TokenType::Comma)
-            advance();
+            call->args.push_back(parseExpression());
+            if (at().type == havel::TokenType::Comma) advance();
         }
-        if (at().type == havel::TokenType::CloseParen)
-          advance();
+        if (at().type == havel::TokenType::CloseParen) advance();
         return makeNode<havel::ast::ExpressionStatement>(std::move(call));
-      }
-      auto keyword = at();
-      advance(); // consume 'del'
-      auto target = parseExpression();
-      return makeNodeAt<havel::ast::DelStatement>(keyword, std::move(target));
     }
+    auto keyword = at();
+    advance(); // consume 'del'
+    auto target = parseExpression();
+    return makeNodeAt<havel::ast::DelStatement>(keyword, std::move(target));
+}
 
-    // Parse UI declarative block: ui { window "Title" { ... } }
-    // Desugars to imperative API calls
-    std::unique_ptr<havel::ast::Statement> Parser::parseUIDeclaration() {
-      auto keyword = at();
-      advance(); // consume "ui"
+// Parse UI declarative block: ui { window "Title" { ... } }
+// Desugars to imperative API calls
+std::unique_ptr<havel::ast::Statement> Parser::parseUIDeclaration() {
+    auto keyword = at();
+    advance(); // consume "ui"
 
-      if (at().type != havel::TokenType::OpenBrace) {
+    if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after 'ui'");
-      }
-      advance(); // consume '{'
+    }
+    advance(); // consume '{'
 
-      // Create a block to hold all the desugared statements
-      auto block = makeNodeAt<havel::ast::BlockStatement>(keyword);
+    // Create a block to hold all the desugared statements
+    auto block = makeNodeAt<havel::ast::BlockStatement>(keyword);
 
-      // Parse UI element declarations
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::CloseBrace) {
-          break;
-        }
-
-        // Parse each top-level UI element (like window, modal, etc.)
-        if (at().type == havel::TokenType::Identifier) {
-          parseUIElementDeclaration("", false, block->body);
-        } else {
-          // Unexpected token, skip it
-          advance();
-        }
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close ui block");
-      }
-      advance(); // consume '}'
-
-      return block;
+  // Parse UI element declarations
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
     }
 
-    // Parse a single UI element declaration and its children
-    // Returns statements to add to parent block
-    void Parser::parseUIElementDeclaration(
-        const std::string &parentVar, bool addToParent,
-        std::vector<std::unique_ptr<ast::Statement>> &statements) {
-
-      if (at().type != havel::TokenType::Identifier) {
-        return;
-      }
-
-      std::string elemType =
-          advance().value; // e.g., "window", "button", "column"
-
-      // Generate a unique variable name for this element
-      static int elemCounter = 0;
-      std::string varName =
-          "__ui_" + elemType + "_" + std::to_string(elemCounter++);
-
-      // Parse element arguments (title, label, etc.)
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-
-      // First argument is usually a string (title, label, placeholder)
-      if (at().type == havel::TokenType::String ||
-          at().type == havel::TokenType::MultilineString) {
-        args.push_back(makeNode<havel::ast::StringLiteral>(advance().value));
-      }
-
-      // Create the constructor call: ui.window("Title")
-      auto uiMember = makeNode<havel::ast::MemberExpression>(
-          makeNode<havel::ast::Identifier>("ui"),
-          makeNode<havel::ast::Identifier>(elemType));
-      auto constructorCall = makeNode<havel::ast::CallExpression>(
-          std::move(uiMember), std::move(args));
-
-      // Create the let declaration: let varName = ui.elemType(...)
-      auto letDecl = makeNode<havel::ast::LetDeclaration>(
-          makeNode<havel::ast::Identifier>(varName), std::move(constructorCall),
-          std::nullopt, false);
-      statements.push_back(std::move(letDecl));
-
-      // Parse children if there's a block
-      if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-
-        // Parse child elements and add them
-        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-          // Skip newlines
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          if (at().type == havel::TokenType::CloseBrace) {
-            break;
-          }
-
-          // Check for event handlers: onClick => { ... }
-          if (at().type == havel::TokenType::Identifier &&
-              at().value.rfind("on", 0) == 0 && // starts with "on"
-              at(1).type == havel::TokenType::Arrow) {
-            std::string eventName = advance().value; // e.g., "onClick"
-            advance();                               // consume '=>'
-
-            // Parse the handler (lambda or expression)
-            std::unique_ptr<havel::ast::Expression> handler;
-            if (at().type == havel::TokenType::OpenBrace) {
-              // Block handler: create lambda
-              auto body = parseBlockStatement();
-              auto lambda = makeNode<havel::ast::LambdaExpression>();
-              lambda->body = std::move(body);
-              handler = std::move(lambda);
-            } else {
-              // Expression handler
-              handler = parseExpression();
-            }
-
-            // Create: varName.onClick(handler)
-            std::vector<std::unique_ptr<havel::ast::Expression>> handlerArgs;
-            handlerArgs.push_back(std::move(handler));
-            auto eventMember = makeNode<havel::ast::MemberExpression>(
-                makeNode<havel::ast::Identifier>(varName),
-                makeNode<havel::ast::Identifier>(eventName));
-            auto eventCall = makeNode<havel::ast::CallExpression>(
-                std::move(eventMember), std::move(handlerArgs));
-
-            statements.push_back(makeNode<havel::ast::ExpressionStatement>(
-                std::move(eventCall)));
-          }
-          // Check for style method calls: pad(10), bg("#000"), etc.
-          else if (at().type == havel::TokenType::Identifier &&
-                   at(1).type == havel::TokenType::OpenParen) {
-            std::string methodName = advance().value;
-            advance(); // consume '('
-
-            std::vector<std::unique_ptr<havel::ast::Expression>> methodArgs;
-            while (notEOF() && at().type != havel::TokenType::CloseParen) {
-              methodArgs.push_back(parseExpression());
-              if (at().type == havel::TokenType::Comma) {
-                advance();
-              }
-            }
-            advance(); // consume ')'
-
-            // Create: varName.methodName(args)
-            auto methodMember = makeNode<havel::ast::MemberExpression>(
-                makeNode<havel::ast::Identifier>(varName),
-                makeNode<havel::ast::Identifier>(methodName));
-            auto methodCall = makeNode<havel::ast::CallExpression>(
-                std::move(methodMember), std::move(methodArgs));
-
-            statements.push_back(makeNode<havel::ast::ExpressionStatement>(
-                std::move(methodCall)));
-          }
-          // Regular child element
-          else if (at().type == havel::TokenType::Identifier) {
-            parseUIElementDeclaration(varName, true, statements);
-          } else {
-            advance(); // skip unexpected token
-          }
-
-          // Skip newlines
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-        }
-
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' to close element block");
-        }
-        advance(); // consume '}'
-      }
-
-      // If we have a parent, add the .add() call
-      if (addToParent && !parentVar.empty()) {
-        std::vector<std::unique_ptr<havel::ast::Expression>> addArgs;
-        addArgs.push_back(makeNode<havel::ast::Identifier>(varName));
-        auto addMember = makeNode<havel::ast::MemberExpression>(
-            makeNode<havel::ast::Identifier>(parentVar),
-            makeNode<havel::ast::Identifier>("add"));
-        auto addCall = makeNode<havel::ast::CallExpression>(
-            std::move(addMember), std::move(addArgs));
-
-        statements.push_back(
-            makeNode<havel::ast::ExpressionStatement>(std::move(addCall)));
-      }
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
-      auto keyword = at();
-      advance(); // consume 'try'
-
-      // Parse try body
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after 'try'");
-      }
-      auto tryBody = parseBlockStatement();
-
-      std::unique_ptr<havel::ast::Identifier> catchVariable = nullptr;
-      std::unique_ptr<havel::ast::Statement> catchBody = nullptr;
-
-      // Parse optional catch
-      if (at().type == havel::TokenType::Catch) {
-        advance(); // consume 'catch'
-
-        // Support both syntaxes: catch e { and catch (e) {
-        if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          if (at().type == havel::TokenType::Identifier) {
-            catchVariable = makeIdentifier(advance());
-          }
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after catch variable");
-          }
-          advance(); // consume ')'
-        } else if (at().type == havel::TokenType::Identifier) {
-          // Old syntax without parentheses
-          catchVariable = makeIdentifier(advance());
-        }
-
-        // Parse catch body
-        if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '{' after catch");
-        }
-        catchBody = parseBlockStatement();
-      }
-
-      // Parse optional finally
-      std::unique_ptr<havel::ast::Statement> finallyBlock = nullptr;
-      if (at().type == havel::TokenType::Finally) {
-        advance(); // consume 'finally'
-
-        if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '{' after 'finally'");
-        }
-        finallyBlock = parseBlockStatement();
-      }
-
-      return makeNodeAt<havel::ast::TryExpression>(
-          keyword, std::move(tryBody), std::move(catchVariable),
-          std::move(catchBody), std::move(finallyBlock));
+    // Parse each top-level UI element (like window, modal, etc.)
+    if (at().type == havel::TokenType::Identifier) {
+      parseUIElementDeclaration("", false, block->body);
+    } else {
+      // Unexpected token, skip it
+      advance();
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(
-        size_t effectiveColumn, size_t chainColumn) {
-      auto keyword = at();
-      size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
-      size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
-      advance(); // consume "if"
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
 
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto condition = parseExpression();
-      context.allowBraceSugar = prevAllow;
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close ui block");
+  }
+  advance(); // consume '}'
 
-      std::unique_ptr<havel::ast::Statement> consequence;
+  return block;
+}
 
-      // Skip newlines before body
+// Parse a single UI element declaration and its children
+// Returns statements to add to parent block
+void Parser::parseUIElementDeclaration(
+    const std::string &parentVar, bool addToParent,
+    std::vector<std::unique_ptr<ast::Statement>> &statements) {
+
+  if (at().type != havel::TokenType::Identifier) {
+    return;
+  }
+
+  std::string elemType = advance().value; // e.g., "window", "button", "column"
+
+  // Generate a unique variable name for this element
+  static int elemCounter = 0;
+  std::string varName =
+      "__ui_" + elemType + "_" + std::to_string(elemCounter++);
+
+  // Parse element arguments (title, label, etc.)
+  std::vector<std::unique_ptr<havel::ast::Expression>> args;
+
+  // First argument is usually a string (title, label, placeholder)
+  if (at().type == havel::TokenType::String ||
+      at().type == havel::TokenType::MultilineString) {
+    args.push_back(
+        makeNode<havel::ast::StringLiteral>(advance().value));
+  }
+
+  // Create the constructor call: ui.window("Title")
+  auto uiMember = makeNode<havel::ast::MemberExpression>(
+      makeNode<havel::ast::Identifier>("ui"),
+      makeNode<havel::ast::Identifier>(elemType));
+  auto constructorCall = makeNode<havel::ast::CallExpression>(
+      std::move(uiMember), std::move(args));
+
+  // Create the let declaration: let varName = ui.elemType(...)
+  auto letDecl = makeNode<havel::ast::LetDeclaration>(
+      makeNode<havel::ast::Identifier>(varName),
+      std::move(constructorCall), std::nullopt, false);
+  statements.push_back(std::move(letDecl));
+
+  // Parse children if there's a block
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+
+    // Parse child elements and add them
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+      // Skip newlines
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
 
-      // Block form ({ or : with indented block) or inline form (single
-      // statement)
-      if (at().type == havel::TokenType::OpenBrace ||
-          at().type == havel::TokenType::Colon) {
-        consequence = parseBlockStatement();
-      } else {
-        consequence = parseInlineStatement();
+      if (at().type == havel::TokenType::CloseBrace) {
+        break;
       }
 
-      // Skip newlines before checking for else
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
+      // Check for event handlers: onClick => { ... }
+      if (at().type == havel::TokenType::Identifier &&
+          at().value.rfind("on", 0) == 0 && // starts with "on"
+          at(1).type == havel::TokenType::Arrow) {
+        std::string eventName = advance().value; // e.g., "onClick"
+        advance();                               // consume '=>'
 
-      std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-      if (at().type == havel::TokenType::Else) {
-        if (at().column >= originalIfColumn) {
-          size_t elseCol = at().column;
-          advance(); // consume "else"
-
-          // Skip newlines before else body
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          if (at().type == havel::TokenType::If) {
-            alternative = parseIfStatement(elseCol, originalIfColumn);
-          } else if (at().type == havel::TokenType::OpenBrace ||
-                     at().type == havel::TokenType::Colon) {
-            alternative = parseBlockStatement();
-          } else {
-            alternative = parseInlineStatement();
-          }
-        }
-      }
-
-      return makeNodeAt<havel::ast::IfStatement>(keyword, std::move(condition),
-                                                 std::move(consequence),
-                                                 std::move(alternative));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
-      auto keyword = at();
-      advance(); // consume "while"
-
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto condition = parseExpression();
-      context.allowBraceSugar = prevAllow;
-
-      // Skip newlines before body
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      std::unique_ptr<havel::ast::Statement> body;
-
-      // Block form ({ or : with indented block) or inline form (single
-      // statement)
-      if (at().type == havel::TokenType::OpenBrace ||
-          at().type == havel::TokenType::Colon) {
-        body = parseBlockStatement();
-      } else {
-        body = parseInlineStatement();
-      }
-
-      return makeNodeAt<havel::ast::WhileStatement>(
-          keyword, std::move(condition), std::move(body));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
-      advance(); // consume "do"
-
-      // Parse the body block
-      std::unique_ptr<havel::ast::Statement> body;
-      if (at().type == havel::TokenType::OpenBrace) {
-        body = parseBlockStatement();
-      } else {
-        failAt(at(), "Expected '{' after 'do'");
-      }
-
-      // Expect "while" keyword
-      if (at().type != havel::TokenType::While) {
-        failAt(at(), "Expected 'while' after do-while body");
-      }
-      advance(); // consume "while"
-
-      // Parse the condition
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto condition = parseExpression();
-      context.allowBraceSugar = prevAllow;
-
-      return makeNode<havel::ast::DoWhileStatement>(std::move(body),
-                                                    std::move(condition));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
-      advance(); // consume "switch"
-
-      // Parse the switch expression
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto expression = parseExpression();
-      context.allowBraceSugar = prevAllow;
-
-      // Expect opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after switch expression");
-      }
-      advance(); // consume "{"
-
-      std::vector<std::unique_ptr<havel::ast::SwitchCase>> cases;
-
-      // Parse switch cases
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::CloseBrace) {
-          break;
-        }
-
-        // Parse case test expression or 'else'
-        std::unique_ptr<havel::ast::Expression> test = nullptr;
-
-        if (at().type == havel::TokenType::Else) {
-          advance(); // consume "else"
-        } else {
-          // Parse case test expression
-          test = parseExpression();
-        }
-
-        // Expect '=>'
-        if (at().type != havel::TokenType::Arrow) {
-          failAt(at(), "Expected '=>' after switch case test");
-        }
-        advance(); // consume "=>"
-
-        // Parse case body
-        std::unique_ptr<havel::ast::Statement> caseBody;
+        // Parse the handler (lambda or expression)
+        std::unique_ptr<havel::ast::Expression> handler;
         if (at().type == havel::TokenType::OpenBrace) {
-          caseBody = parseBlockStatement();
+          // Block handler: create lambda
+          auto body = parseBlockStatement();
+          auto lambda = makeNode<havel::ast::LambdaExpression>();
+          lambda->body = std::move(body);
+          handler = std::move(lambda);
         } else {
-          // Single expression statement
-          auto expr = parseExpression();
-          caseBody = makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+          // Expression handler
+          handler = parseExpression();
         }
 
-        cases.push_back(makeNode<havel::ast::SwitchCase>(std::move(test),
-                                                         std::move(caseBody)));
+        // Create: varName.onClick(handler)
+        std::vector<std::unique_ptr<havel::ast::Expression>> handlerArgs;
+        handlerArgs.push_back(std::move(handler));
+        auto eventMember = makeNode<havel::ast::MemberExpression>(
+            makeNode<havel::ast::Identifier>(varName),
+            makeNode<havel::ast::Identifier>(eventName));
+        auto eventCall = makeNode<havel::ast::CallExpression>(
+            std::move(eventMember), std::move(handlerArgs));
 
-        // Skip newlines after case
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
+        statements.push_back(makeNode<havel::ast::ExpressionStatement>(
+            std::move(eventCall)));
       }
+      // Check for style method calls: pad(10), bg("#000"), etc.
+      else if (at().type == havel::TokenType::Identifier &&
+               at(1).type == havel::TokenType::OpenParen) {
+        std::string methodName = advance().value;
+        advance(); // consume '('
 
-      // Expect closing brace
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close switch statement");
-      }
-      advance(); // consume "}"
-
-      return makeNode<havel::ast::SwitchStatement>(std::move(expression),
-                                                   std::move(cases));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
-      auto keyword = at();
-      advance(); // consume "for"
-
-      std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
-
-      // Check for multiple iterators in parentheses: for (key, value) in dict
-      if (at().type == havel::TokenType::OpenParen) {
-        advance(); // consume "("
-
-        // Parse first iterator - allow keywords as variable names
-        if (at().type != havel::TokenType::Identifier &&
-            at().type != havel::TokenType::Let &&
-            at().type != havel::TokenType::Val &&
-            at().type != havel::TokenType::Const &&
-            at().type != havel::TokenType::If &&
-            at().type != havel::TokenType::For &&
-            at().type != havel::TokenType::While &&
-            at().type != havel::TokenType::Match) {
-          failAt(at(), "Expected first iterator variable in parentheses");
-        }
-        iterators.push_back(makeIdentifier(advance()));
-
-        // Parse additional iterators separated by commas
-        while (at().type == havel::TokenType::Comma) {
-          advance(); // consume ","
-
-          // Skip newlines after comma
-          while (at().type == havel::TokenType::NewLine) {
+        std::vector<std::unique_ptr<havel::ast::Expression>> methodArgs;
+        while (notEOF() && at().type != havel::TokenType::CloseParen) {
+          methodArgs.push_back(parseExpression());
+          if (at().type == havel::TokenType::Comma) {
             advance();
           }
-
-          // Allow keywords as iterator names
-          if (at().type != havel::TokenType::Identifier &&
-              at().type != havel::TokenType::Let &&
-              at().type != havel::TokenType::Const &&
-              at().type != havel::TokenType::Const &&
-              at().type != havel::TokenType::If &&
-              at().type != havel::TokenType::For &&
-              at().type != havel::TokenType::While &&
-              at().type != havel::TokenType::Match) {
-            failAt(at(), "Expected iterator variable after comma");
-          }
-          iterators.push_back(makeIdentifier(advance()));
         }
+        advance(); // consume ')'
 
-        // Skip newlines before closing paren or 'in'
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
+        // Create: varName.methodName(args)
+        auto methodMember = makeNode<havel::ast::MemberExpression>(
+            makeNode<havel::ast::Identifier>(varName),
+            makeNode<havel::ast::Identifier>(methodName));
+        auto methodCall = makeNode<havel::ast::CallExpression>(
+            std::move(methodMember), std::move(methodArgs));
 
-        // Check for closing paren (for multiple iterators) or 'in' (for single
-        // iterator)
-        if (at().type == havel::TokenType::CloseParen) {
-          advance(); // consume ")"
-        } else if (at().type != havel::TokenType::In) {
-          failAt(at(), "Expected ')' or 'in' after iterator variable(s)");
-        }
+        statements.push_back(makeNode<havel::ast::ExpressionStatement>(
+            std::move(methodCall)));
+      }
+      // Regular child element
+      else if (at().type == havel::TokenType::Identifier) {
+        parseUIElementDeclaration(varName, true, statements);
       } else {
-        // Single or multiple iterators: for i, j in range (without parentheses)
+        advance(); // skip unexpected token
+      }
+
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+    }
+
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close element block");
+    }
+    advance(); // consume '}'
+  }
+
+  // If we have a parent, add the .add() call
+  if (addToParent && !parentVar.empty()) {
+    std::vector<std::unique_ptr<havel::ast::Expression>> addArgs;
+    addArgs.push_back(makeNode<havel::ast::Identifier>(varName));
+    auto addMember = makeNode<havel::ast::MemberExpression>(
+        makeNode<havel::ast::Identifier>(parentVar),
+        makeNode<havel::ast::Identifier>("add"));
+    auto addCall = makeNode<havel::ast::CallExpression>(
+        std::move(addMember), std::move(addArgs));
+
+    statements.push_back(
+        makeNode<havel::ast::ExpressionStatement>(std::move(addCall)));
+  }
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
+    auto keyword = at();
+    advance(); // consume 'try'
+
+  // Parse try body
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'try'");
+  }
+  auto tryBody = parseBlockStatement();
+
+  std::unique_ptr<havel::ast::Identifier> catchVariable = nullptr;
+  std::unique_ptr<havel::ast::Statement> catchBody = nullptr;
+
+  // Parse optional catch
+  if (at().type == havel::TokenType::Catch) {
+    advance(); // consume 'catch'
+
+    // Support both syntaxes: catch e { and catch (e) {
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      if (at().type == havel::TokenType::Identifier) {
+        catchVariable = makeIdentifier(advance());
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after catch variable");
+      }
+      advance(); // consume ')'
+    } else if (at().type == havel::TokenType::Identifier) {
+      // Old syntax without parentheses
+      catchVariable = makeIdentifier(advance());
+    }
+
+    // Parse catch body
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after catch");
+    }
+    catchBody = parseBlockStatement();
+  }
+
+  // Parse optional finally
+  std::unique_ptr<havel::ast::Statement> finallyBlock = nullptr;
+  if (at().type == havel::TokenType::Finally) {
+    advance(); // consume 'finally'
+
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after 'finally'");
+    }
+    finallyBlock = parseBlockStatement();
+  }
+
+    return makeNodeAt<havel::ast::TryExpression>(keyword,
+        std::move(tryBody), std::move(catchVariable), std::move(catchBody),
+        std::move(finallyBlock));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn) {
+  auto keyword = at();
+  size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
+  size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
+  advance(); // consume "if"
+
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    bool prevSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
+    auto condition = parseExpression();
+    context.suppressBraceLambda = prevSuppress;
+    context.allowBraceSugar = prevAllow;
+
+    std::unique_ptr<havel::ast::Statement> consequence;
+
+    // Skip newlines before body
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+
+    // Block form ({ or : with indented block) or inline form (single statement)
+    if (at().type == havel::TokenType::OpenBrace ||
+        at().type == havel::TokenType::Colon) {
+        consequence = parseBlockStatement();
+    } else {
+        consequence = parseInlineStatement();
+    }
+
+    // Skip newlines before checking for else
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+
+std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+  if (at().type == havel::TokenType::Else) {
+    if (at().column >= originalIfColumn) {
+    size_t elseCol = at().column;
+    advance(); // consume "else"
+
+    // Skip newlines before else body
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::If) {
+      alternative = parseIfStatement(elseCol, originalIfColumn);
+    } else if (at().type == havel::TokenType::OpenBrace ||
+               at().type == havel::TokenType::Colon) {
+      alternative = parseBlockStatement();
+    } else {
+      alternative = parseInlineStatement();
+    }
+    }
+  }
+
+    return makeNodeAt<havel::ast::IfStatement>(keyword,
+        std::move(condition), std::move(consequence), std::move(alternative));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
+    auto keyword = at();
+    advance(); // consume "while"
+
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  auto condition = parseExpression();
+  context.allowBraceSugar = prevAllow;
+
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+    return makeNodeAt<havel::ast::WhileStatement>(keyword, std::move(condition),
+        std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
+  advance(); // consume "do"
+
+  // Parse the body block
+  std::unique_ptr<havel::ast::Statement> body;
+  if (at().type == havel::TokenType::OpenBrace) {
+    body = parseBlockStatement();
+  } else {
+    failAt(at(), "Expected '{' after 'do'");
+  }
+
+  // Expect "while" keyword
+  if (at().type != havel::TokenType::While) {
+    failAt(at(), "Expected 'while' after do-while body");
+  }
+  advance(); // consume "while"
+
+  // Parse the condition
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  return makeNode<havel::ast::DoWhileStatement>(std::move(body),
+                                                        std::move(condition));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
+  advance(); // consume "switch"
+
+  // Parse the switch expression
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto expression = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  // Expect opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after switch expression");
+  }
+  advance(); // consume "{"
+
+  std::vector<std::unique_ptr<havel::ast::SwitchCase>> cases;
+
+  // Parse switch cases
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Parse case test expression or 'else'
+    std::unique_ptr<havel::ast::Expression> test = nullptr;
+
+    if (at().type == havel::TokenType::Else) {
+      advance(); // consume "else"
+    } else {
+      // Parse case test expression
+      test = parseExpression();
+    }
+
+    // Expect '=>'
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after switch case test");
+    }
+    advance(); // consume "=>"
+
+    // Parse case body
+    std::unique_ptr<havel::ast::Statement> caseBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      caseBody = parseBlockStatement();
+    } else {
+      // Single expression statement
+      auto expr = parseExpression();
+      caseBody =
+          makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+
+    cases.push_back(makeNode<havel::ast::SwitchCase>(
+        std::move(test), std::move(caseBody)));
+
+    // Skip newlines after case
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
+  // Expect closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close switch statement");
+  }
+  advance(); // consume "}"
+
+  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
+                                                       std::move(cases));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
+    auto keyword = at();
+    advance(); // consume "for"
+
+  std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
+
+  // Check for multiple iterators in parentheses: for (key, value) in dict
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume "("
+
+    // Parse first iterator - allow keywords as variable names
+    if (at().type != havel::TokenType::Identifier &&
+        at().type != havel::TokenType::Let &&
+        at().type != havel::TokenType::Val &&
+        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::If &&
+        at().type != havel::TokenType::For &&
+        at().type != havel::TokenType::While &&
+        at().type != havel::TokenType::Match) {
+      failAt(at(), "Expected first iterator variable in parentheses");
+    }
+    iterators.push_back(makeIdentifier(advance()));
+
+    // Parse additional iterators separated by commas
+    while (at().type == havel::TokenType::Comma) {
+      advance(); // consume ","
+
+      // Skip newlines after comma
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+
+      // Allow keywords as iterator names
+      if (at().type != havel::TokenType::Identifier &&
+          at().type != havel::TokenType::Let &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::If &&
+          at().type != havel::TokenType::For &&
+          at().type != havel::TokenType::While &&
+          at().type != havel::TokenType::Match) {
+        failAt(at(), "Expected iterator variable after comma");
+      }
+      iterators.push_back(makeIdentifier(advance()));
+    }
+
+    // Skip newlines before closing paren or 'in'
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    // Check for closing paren (for multiple iterators) or 'in' (for single
+    // iterator)
+    if (at().type == havel::TokenType::CloseParen) {
+      advance(); // consume ")"
+    } else if (at().type != havel::TokenType::In) {
+      failAt(at(), "Expected ')' or 'in' after iterator variable(s)");
+    }
+  } else {
+    // Single or multiple iterators: for i, j in range (without parentheses)
         // Allow keywords as iterator names
         if (at().type != havel::TokenType::Identifier &&
             at().type != havel::TokenType::Let &&
@@ -7023,48 +6552,119 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
             at().type != havel::TokenType::Const &&
             at().type != havel::TokenType::If &&
             at().type != havel::TokenType::For &&
-            at().type != havel::TokenType::For &&
-            at().type != havel::TokenType::While &&
-            at().type != havel::TokenType::Match) {
-          failAt(at(), "Expected iterator variable after 'for'");
-        }
-        iterators.push_back(makeIdentifier(advance()));
+        at().type != havel::TokenType::For &&
+        at().type != havel::TokenType::While &&
+        at().type != havel::TokenType::Match) {
+      failAt(at(), "Expected iterator variable after 'for'");
+    }
+    iterators.push_back(makeIdentifier(advance()));
 
-        // Parse additional iterators separated by commas
-        while (at().type == havel::TokenType::Comma) {
-          advance(); // consume ","
-          // Skip newlines after comma
-          while (at().type == havel::TokenType::NewLine) {
+    // Parse additional iterators separated by commas
+    while (at().type == havel::TokenType::Comma) {
+      advance(); // consume ","
+      // Skip newlines after comma
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      // Allow keywords as iterator names
+      if (at().type != havel::TokenType::Identifier &&
+          at().type != havel::TokenType::Let &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::If &&
+          at().type != havel::TokenType::For &&
+          at().type != havel::TokenType::While &&
+          at().type != havel::TokenType::Match) {
+        failAt(at(), "Expected iterator variable after comma");
+      }
+      iterators.push_back(makeIdentifier(advance()));
+    }
+  }
+
+  if (at().type != havel::TokenType::In) {
+    failAt(at(), "Expected 'in' after iterator variable(s)");
+  }
+  advance(); // consume "in"
+
+  // Disable brace call sugar to prevent for loop body { from being consumed
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto iterable = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+    auto stmt = makeNodeAt<havel::ast::ForStatement>(keyword,
+        std::move(iterators), std::move(iterable), std::move(body));
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
+    auto keyword = at();
+    advance(); // consume "loop"
+
+  // Check for optional count or "while condition"
+  std::unique_ptr<havel::ast::Expression> countExpr;
+  std::unique_ptr<havel::ast::Expression> condition;
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Check for loop count: loop 5 { ... } or loop n { ... }
+  // We need to peek ahead to see if the next token is a number or identifier
+  // followed by an opening brace (not an operator)
+  if ((at().type == havel::TokenType::Number ||
+       at().type == havel::TokenType::Identifier) &&
+      notEOF()) {
+    // Peek ahead to check if this is followed by { or an operator
+    size_t savedPos = position;
+
+    // Skip the count expression
+    if (at().type == havel::TokenType::Number ||
+        at().type == havel::TokenType::Identifier) {
+      advance();
+    }
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    // If followed by {, this is a count-based loop
+    if (at().type == havel::TokenType::OpenBrace) {
+      position = savedPos; // Restore position
+      // Parse just the count value, not a full expression that might consume
+// the brace
+        if (at().type == havel::TokenType::Number) {
+            countExpr =
+                makeNode<havel::ast::NumberLiteral>(parseNumberLiteral(at().value), hasDecimalPart(at().value));
             advance();
-          }
-          // Allow keywords as iterator names
-          if (at().type != havel::TokenType::Identifier &&
-              at().type != havel::TokenType::Let &&
-              at().type != havel::TokenType::Const &&
-              at().type != havel::TokenType::Const &&
-              at().type != havel::TokenType::If &&
-              at().type != havel::TokenType::For &&
-              at().type != havel::TokenType::While &&
-              at().type != havel::TokenType::Match) {
-            failAt(at(), "Expected iterator variable after comma");
-          }
-          iterators.push_back(makeIdentifier(advance()));
-        }
-      }
-
-      if (at().type != havel::TokenType::In) {
-        failAt(at(), "Expected 'in' after iterator variable(s)");
-      }
-      advance(); // consume "in"
-
-      // Disable brace call sugar to prevent for loop body { from being consumed
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto iterable = parseExpression();
-      context.allowBraceSugar = prevAllow;
-
-      // Skip newlines before body
-      while (at().type == havel::TokenType::NewLine) {
+      } else if (at().type == havel::TokenType::Identifier) {
+        countExpr = makeNode<havel::ast::Identifier>(
+            at().value, at().line, at().column);
         advance();
       }
 
@@ -7072,856 +6672,783 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
+    } else {
+      position = savedPos; // Restore position, not a count-based loop
+    }
+  }
 
-      std::unique_ptr<havel::ast::Statement> body;
+  // Check for "while condition"
+  if (at().type == havel::TokenType::While) {
+    advance(); // consume "while"
 
-      // Block form ({ or : with indented block) or inline form (single
-      // statement)
-      if (at().type == havel::TokenType::OpenBrace ||
-          at().type == havel::TokenType::Colon) {
-        body = parseBlockStatement();
-      } else {
-        body = parseInlineStatement();
+    // Parse condition expression
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    bool prevSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
+    condition = parseExpression();
+    context.suppressBraceLambda = prevSuppress;
+    context.allowBraceSugar = prevAllow;
+
+    // Skip newlines before body
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+    auto loopStmt = makeNodeAt<havel::ast::LoopStatement>(keyword,
+        std::move(body), std::move(condition));
+  loopStmt->countExpr = std::move(countExpr);
+  return loopStmt;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {
+    auto keyword = at();
+    advance(); // consume "break"
+    return makeNodeAt<havel::ast::BreakStatement>(keyword);
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseContinueStatement() {
+    auto keyword = at();
+    advance(); // consume "continue"
+    return makeNodeAt<havel::ast::ContinueStatement>(keyword);
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
+  advance(); // consume "on"
+
+  // Check what follows "on"
+  if (at().type == havel::TokenType::Mode) {
+    // on mode {name} { ... }
+    return parseOnModeStatementBody();
+  } else if (at().type == havel::TokenType::Identifier) {
+    std::string keyword = at().value;
+    if (keyword == "reload") {
+      advance(); // consume "reload"
+      return parseOnReloadStatement();
+    } else if (keyword == "start") {
+      advance(); // consume "start"
+      return parseOnStartStatement();
+    } else if (keyword == "tap" || keyword == "combo") {
+      // on tap(key) => { ... } or on combo(key) => { ... }
+      return parseOnTapOrComboStatement();
+    } else if (keyword == "keydown" || keyword == "keyup") {
+      // on keyDown { ... } or on keyDown(keys...) { ... }
+      return parseOnKeyDownOrKeyUpStatement();
+    } else {
+      // Generic message handler: on <identifier> { ... }
+      // This creates a message handler in the current scope
+      std::string msgVar = advance().value; // consume identifier
+      
+      // Expect block
+      if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after message variable");
+        return nullptr;
       }
-
-      auto stmt = makeNodeAt<havel::ast::ForStatement>(
-          keyword, std::move(iterators), std::move(iterable), std::move(body));
+      
+      auto body = parseBlockStatement();
+      
+      // Create a special OnMessageStatement
+      // For now, treat as a let declaration with a message binding
+      // This will create a variable available in the handler block
+      auto stmt = makeNode<havel::ast::OnMessageStatement>(msgVar, std::move(body));
+      stmt->line = at().line;
+      stmt->column = at().column;
       return stmt;
     }
+  }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
-      auto keyword = at();
-      advance(); // consume "loop"
+  failAt(at(), "Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', "
+               "'keyup', or message variable after 'on'");
+  return nullptr;
+}
 
-      // Check for optional count or "while condition"
-      std::unique_ptr<havel::ast::Expression> countExpr;
-      std::unique_ptr<havel::ast::Expression> condition;
+std::unique_ptr<havel::ast::Statement> Parser::parseOnModeStatementBody() {
+  // Expect "mode" keyword (already consumed "on")
+  advance(); // consume "mode"
 
+  // Get mode name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected mode name after 'on mode'");
+  }
+  std::string modeName = advance().value;
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse body block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  auto body = parseBlockStatement();
+
+  // Check for else block
+  std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+  if (at().type == havel::TokenType::Else) {
+    advance(); // consume "else"
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::OpenBrace) {
+      alternative = parseBlockStatement();
+    } else {
+      failAt(at(), "Expected '{' after else");
+    }
+  }
+
+  return makeNode<havel::ast::OnModeStatement>(
+      modeName, std::move(body), std::move(alternative));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnModeStatement() {
+  advance(); // consume "on"
+
+  // Expect "mode" keyword
+  if (at().type != havel::TokenType::Mode) {
+    failAt(at(), "Expected 'mode' after 'on'");
+  }
+  advance(); // consume "mode"
+
+  // Get mode name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected mode name after 'on mode'");
+  }
+  std::string modeName = advance().value;
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse body block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  auto body = parseBlockStatement();
+
+  // Check for else block
+  std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+  if (at().type == havel::TokenType::Else) {
+    advance(); // consume "else"
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::OpenBrace) {
+      alternative = parseBlockStatement();
+    } else {
+      failAt(at(), "Expected '{' after else");
+    }
+  }
+
+  return makeNode<havel::ast::OnModeStatement>(
+      modeName, std::move(body), std::move(alternative));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOffModeStatement() {
+  advance(); // consume "off"
+
+  // Expect "mode" keyword
+  if (at().type != havel::TokenType::Mode) {
+    failAt(at(), "Expected 'mode' after 'off'");
+  }
+  advance(); // consume "mode"
+
+  // Get mode name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected mode name after 'off mode'");
+  }
+  std::string modeName = advance().value;
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse body block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  auto body = parseBlockStatement();
+
+  return makeNode<havel::ast::OffModeStatement>(modeName,
+                                                        std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnReloadStatement() {
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse body block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'on reload'");
+  }
+  auto body = parseBlockStatement();
+
+  return makeNode<havel::ast::OnReloadStatement>(std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnStartStatement() {
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse body block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'on start'");
+  }
+  auto body = parseBlockStatement();
+
+  return makeNode<havel::ast::OnStartStatement>(std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnTapOrComboStatement() {
+  // We've consumed "on" and identified "tap" or "combo"
+  bool isTap = (at().value == "tap");
+  advance(); // consume "tap" or "combo"
+
+  // Expect opening parenthesis
+  if (at().type != havel::TokenType::OpenParen) {
+    failAt(at(), "Expected '(' after 'on " +
+                     std::string(isTap ? "tap" : "combo") + "'");
+  }
+  advance(); // consume '('
+
+  // Parse key (Hotkey token or Identifier)
+  std::string keyName;
+  if (at().type == havel::TokenType::Hotkey) {
+    keyName = advance().value;
+  } else if (at().type == havel::TokenType::Identifier) {
+    keyName = advance().value;
+  } else {
+    failAt(at(), "Expected key name (e.g., 'lwin', 'f1', 'escape')");
+  }
+
+  // Expect closing parenthesis
+  if (at().type != havel::TokenType::CloseParen) {
+    failAt(at(), "Expected ')' after key name");
+  }
+  advance(); // consume ')'
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Expect arrow operator
+  if (at().type != havel::TokenType::Arrow) {
+    failAt(at(), "Expected '=>' after key specification");
+  }
+  advance(); // consume '=>'
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse action block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' to start action block");
+  }
+  auto actionBlock = parseBlockStatement();
+
+  // Create the statement
+  if (isTap) {
+    return makeNode<havel::ast::OnTapStatement>(keyName,
+                                                        std::move(actionBlock));
+  } else {
+    return makeNode<havel::ast::OnComboStatement>(
+        keyName, std::move(actionBlock));
+  }
+}
+
+std::unique_ptr<havel::ast::Statement>
+Parser::parseOnKeyDownOrKeyUpStatement() {
+  // We've consumed "on" and identified "keydown" or "keyup"
+  bool isKeyDown = (at().value == "keydown");
+  advance(); // consume "keydown" or "keyup"
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Check if there's a key list in parentheses
+  std::vector<std::string> keys;
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume '('
+
+    // Parse comma-separated key names
+    while (true) {
       // Skip newlines
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
-
-      // Check for loop count: loop 5 { ... } or loop n { ... }
-      // We need to peek ahead to see if the next token is a number or
-      // identifier followed by an opening brace (not an operator)
-      if ((at().type == havel::TokenType::Number ||
-           at().type == havel::TokenType::Identifier) &&
-          notEOF()) {
-        // Peek ahead to check if this is followed by { or an operator
-        size_t savedPos = position;
-
-        // Skip the count expression
-        if (at().type == havel::TokenType::Number ||
-            at().type == havel::TokenType::Identifier) {
-          advance();
-        }
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        // If followed by {, this is a count-based loop
-        if (at().type == havel::TokenType::OpenBrace) {
-          position = savedPos; // Restore position
-          // Parse just the count value, not a full expression that might
-          // consume
-          // the brace
-          if (at().type == havel::TokenType::Number) {
-            countExpr = makeNode<havel::ast::NumberLiteral>(
-                parseNumberLiteral(at().value), hasDecimalPart(at().value));
-            advance();
-          } else if (at().type == havel::TokenType::Identifier) {
-            countExpr = makeNode<havel::ast::Identifier>(at().value, at().line,
-                                                         at().column);
-            advance();
-          }
-
-          // Skip newlines before body
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-        } else {
-          position = savedPos; // Restore position, not a count-based loop
-        }
-      }
-
-      // Check for "while condition"
-      if (at().type == havel::TokenType::While) {
-        advance(); // consume "while"
-
-        // Parse condition expression
-        bool prevAllow = context.allowBraceSugar;
-        context.allowBraceSugar = false;
-        condition = parseExpression();
-        context.allowBraceSugar = prevAllow;
-
-        // Skip newlines before body
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-      }
-
-      std::unique_ptr<havel::ast::Statement> body;
-
-      // Block form ({ or : with indented block) or inline form (single
-      // statement)
-      if (at().type == havel::TokenType::OpenBrace ||
-          at().type == havel::TokenType::Colon) {
-        body = parseBlockStatement();
-      } else {
-        body = parseInlineStatement();
-      }
-
-      auto loopStmt = makeNodeAt<havel::ast::LoopStatement>(
-          keyword, std::move(body), std::move(condition));
-      loopStmt->countExpr = std::move(countExpr);
-      return loopStmt;
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {
-      auto keyword = at();
-      advance(); // consume "break"
-      return makeNodeAt<havel::ast::BreakStatement>(keyword);
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseContinueStatement() {
-      auto keyword = at();
-      advance(); // consume "continue"
-      return makeNodeAt<havel::ast::ContinueStatement>(keyword);
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
-      advance(); // consume "on"
-
-      // Check what follows "on"
-      if (at().type == havel::TokenType::Mode) {
-        // on mode {name} { ... }
-        return parseOnModeStatementBody();
-      } else if (at().type == havel::TokenType::Identifier) {
-        std::string keyword = at().value;
-        if (keyword == "reload") {
-          advance(); // consume "reload"
-          return parseOnReloadStatement();
-        } else if (keyword == "start") {
-          advance(); // consume "start"
-          return parseOnStartStatement();
-        } else if (keyword == "tap" || keyword == "combo") {
-          // on tap(key) => { ... } or on combo(key) => { ... }
-          return parseOnTapOrComboStatement();
-        } else if (keyword == "keydown" || keyword == "keyup") {
-          // on keyDown { ... } or on keyDown(keys...) { ... }
-          return parseOnKeyDownOrKeyUpStatement();
-        } else {
-          // Generic message handler: on <identifier> { ... }
-          // This creates a message handler in the current scope
-          std::string msgVar = advance().value; // consume identifier
-
-          // Expect block
-          if (at().type != havel::TokenType::OpenBrace) {
-            failAt(at(), "Expected '{' after message variable");
-            return nullptr;
-          }
-
-          auto body = parseBlockStatement();
-
-          // Create a special OnMessageStatement
-          // For now, treat as a let declaration with a message binding
-          // This will create a variable available in the handler block
-          auto stmt =
-              makeNode<havel::ast::OnMessageStatement>(msgVar, std::move(body));
-          stmt->line = at().line;
-          stmt->column = at().column;
-          return stmt;
-        }
-      }
-
-      failAt(at(),
-             "Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', "
-             "'keyup', or message variable after 'on'");
-      return nullptr;
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOnModeStatementBody() {
-      // Expect "mode" keyword (already consumed "on")
-      advance(); // consume "mode"
-
-      // Get mode name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected mode name after 'on mode'");
-      }
-      std::string modeName = advance().value;
-
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse body block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after mode name");
-      }
-      auto body = parseBlockStatement();
-
-      // Check for else block
-      std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-      if (at().type == havel::TokenType::Else) {
-        advance(); // consume "else"
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::OpenBrace) {
-          alternative = parseBlockStatement();
-        } else {
-          failAt(at(), "Expected '{' after else");
-        }
-      }
-
-      return makeNode<havel::ast::OnModeStatement>(modeName, std::move(body),
-                                                   std::move(alternative));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOnModeStatement() {
-      advance(); // consume "on"
-
-      // Expect "mode" keyword
-      if (at().type != havel::TokenType::Mode) {
-        failAt(at(), "Expected 'mode' after 'on'");
-      }
-      advance(); // consume "mode"
-
-      // Get mode name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected mode name after 'on mode'");
-      }
-      std::string modeName = advance().value;
-
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse body block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after mode name");
-      }
-      auto body = parseBlockStatement();
-
-      // Check for else block
-      std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-      if (at().type == havel::TokenType::Else) {
-        advance(); // consume "else"
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::OpenBrace) {
-          alternative = parseBlockStatement();
-        } else {
-          failAt(at(), "Expected '{' after else");
-        }
-      }
-
-      return makeNode<havel::ast::OnModeStatement>(modeName, std::move(body),
-                                                   std::move(alternative));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOffModeStatement() {
-      advance(); // consume "off"
-
-      // Expect "mode" keyword
-      if (at().type != havel::TokenType::Mode) {
-        failAt(at(), "Expected 'mode' after 'off'");
-      }
-      advance(); // consume "mode"
-
-      // Get mode name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected mode name after 'off mode'");
-      }
-      std::string modeName = advance().value;
-
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse body block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after mode name");
-      }
-      auto body = parseBlockStatement();
-
-      return makeNode<havel::ast::OffModeStatement>(modeName, std::move(body));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOnReloadStatement() {
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse body block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after 'on reload'");
-      }
-      auto body = parseBlockStatement();
-
-      return makeNode<havel::ast::OnReloadStatement>(std::move(body));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseOnStartStatement() {
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse body block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after 'on start'");
-      }
-      auto body = parseBlockStatement();
-
-      return makeNode<havel::ast::OnStartStatement>(std::move(body));
-    }
-
-    std::unique_ptr<havel::ast::Statement>
-    Parser::parseOnTapOrComboStatement() {
-      // We've consumed "on" and identified "tap" or "combo"
-      bool isTap = (at().value == "tap");
-      advance(); // consume "tap" or "combo"
-
-      // Expect opening parenthesis
-      if (at().type != havel::TokenType::OpenParen) {
-        failAt(at(), "Expected '(' after 'on " +
-                         std::string(isTap ? "tap" : "combo") + "'");
-      }
-      advance(); // consume '('
 
       // Parse key (Hotkey token or Identifier)
-      std::string keyName;
       if (at().type == havel::TokenType::Hotkey) {
-        keyName = advance().value;
+        keys.push_back(advance().value);
       } else if (at().type == havel::TokenType::Identifier) {
-        keyName = advance().value;
+        keys.push_back(advance().value);
       } else {
-        failAt(at(), "Expected key name (e.g., 'lwin', 'f1', 'escape')");
+        failAt(at(), "Expected key name in key list");
       }
-
-      // Expect closing parenthesis
-      if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ')' after key name");
-      }
-      advance(); // consume ')'
 
       // Skip newlines
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
 
-      // Expect arrow operator
-      if (at().type != havel::TokenType::Arrow) {
-        failAt(at(), "Expected '=>' after key specification");
-      }
-      advance(); // consume '=>'
-
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Parse action block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' to start action block");
-      }
-      auto actionBlock = parseBlockStatement();
-
-      // Create the statement
-      if (isTap) {
-        return makeNode<havel::ast::OnTapStatement>(keyName,
-                                                    std::move(actionBlock));
+      // Check for comma or closing paren
+      if (at().type == havel::TokenType::CloseParen) {
+        advance(); // consume ')'
+        break;
+      } else if (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
       } else {
-        return makeNode<havel::ast::OnComboStatement>(keyName,
-                                                      std::move(actionBlock));
+        failAt(at(), "Expected ',' or ')' in key list");
       }
     }
+  }
 
-    std::unique_ptr<havel::ast::Statement>
-    Parser::parseOnKeyDownOrKeyUpStatement() {
-      // We've consumed "on" and identified "keydown" or "keyup"
-      bool isKeyDown = (at().value == "keydown");
-      advance(); // consume "keydown" or "keyup"
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
 
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
+  // Expect action block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' to start action block");
+  }
+  auto actionBlock = parseBlockStatement();
 
-      // Check if there's a key list in parentheses
-      std::vector<std::string> keys;
-      if (at().type == havel::TokenType::OpenParen) {
-        advance(); // consume '('
+  // Create the statement
+  if (isKeyDown) {
+    return makeNode<havel::ast::OnKeyDownStatement>(
+        keys, std::move(actionBlock));
+  } else {
+    return makeNode<havel::ast::OnKeyUpStatement>(
+        keys, std::move(actionBlock));
+  }
+}
 
-        // Parse comma-separated key names
-        while (true) {
-          // Skip newlines
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
+std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
+    bool isConst = false;
 
-          // Parse key (Hotkey token or Identifier)
-          if (at().type == havel::TokenType::Hotkey) {
-            keys.push_back(advance().value);
-          } else if (at().type == havel::TokenType::Identifier) {
-            keys.push_back(advance().value);
-          } else {
-            failAt(at(), "Expected key name in key list");
-          }
-
-          // Skip newlines
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          // Check for comma or closing paren
-          if (at().type == havel::TokenType::CloseParen) {
-            advance(); // consume ')'
-            break;
-          } else if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-          } else {
-            failAt(at(), "Expected ',' or ')' in key list");
-          }
-        }
-      }
-
-      // Skip newlines
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      // Expect action block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' to start action block");
-      }
-      auto actionBlock = parseBlockStatement();
-
-      // Create the statement
-      if (isKeyDown) {
-        return makeNode<havel::ast::OnKeyDownStatement>(keys,
-                                                        std::move(actionBlock));
-      } else {
-        return makeNode<havel::ast::OnKeyUpStatement>(keys,
-                                                      std::move(actionBlock));
-      }
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
-      bool isConst = false;
-
-      // Check if this is 'val', 'const', or 'let'
-      if (at().type == havel::TokenType::Val ||
-          at().type == havel::TokenType::Const) {
+    // Check if this is 'val', 'const', or 'let'
+    if (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const) {
         isConst = true;
-      }
-      auto keyword = at();
-      advance(); // consume "let" or "const"
+    }
+    auto keyword = at();
+    advance(); // consume "let" or "const"
 
-      std::unique_ptr<havel::ast::Expression> pattern;
+    std::unique_ptr<havel::ast::Expression> pattern;
 
-      // Check if we have a destructuring pattern
-      if (at().type == havel::TokenType::OpenBracket) {
+    // Check if we have a destructuring pattern
+    if (at().type == havel::TokenType::OpenBracket) {
         // Array destructuring: let [a, b] = arr
         pattern = parseArrayPattern();
-      } else if (at().type == havel::TokenType::OpenParen) {
+    } else if (at().type == havel::TokenType::OpenParen) {
         // Tuple destructuring: let (a, b) = tuple
         advance(); // consume '('
         std::vector<std::unique_ptr<havel::ast::Expression>> elements;
         while (notEOF() && at().type != havel::TokenType::CloseParen) {
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-          if (at().type == havel::TokenType::CloseParen) {
-            break;
-          }
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Tuple destructuring expects identifiers");
-          }
-          elements.push_back(makeIdentifier(advance()));
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ',' or ')' in tuple destructuring");
-          }
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            if (at().type == havel::TokenType::CloseParen) {
+                break;
+            }
+            if (at().type != havel::TokenType::Identifier) {
+                failAt(at(), "Tuple destructuring expects identifiers");
+            }
+            elements.push_back(makeIdentifier(advance()));
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            if (at().type == havel::TokenType::Comma) {
+                advance();
+            } else if (at().type != havel::TokenType::CloseParen) {
+                failAt(at(), "Expected ',' or ')' in tuple destructuring");
+            }
         }
         if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ')' to close tuple destructuring");
+            failAt(at(), "Expected ')' to close tuple destructuring");
         }
-        advance(); // consume ')'
-        pattern = makeNode<havel::ast::ArrayPattern>(std::move(elements),
-                                                     nullptr, true);
-      } else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume ')'
+    pattern = makeNode<havel::ast::ArrayPattern>(std::move(elements), nullptr, true);
+    } else if (at().type == havel::TokenType::OpenBrace) {
         // Object destructuring: let {x, y} = obj
         pattern = parseObjectPattern();
-      } else if (at().type == havel::TokenType::Identifier) {
+    } else if (at().type == havel::TokenType::Identifier) {
         // Regular variable: let x = value
         // Or comma-separated: let a, b, c = value
         pattern = makeIdentifier(advance());
-
+        
         // Check for comma-separated identifiers: let a, b, c = value
         if (at().type == havel::TokenType::Comma) {
-          std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-          elements.push_back(std::move(pattern));
-
-          while (at().type == havel::TokenType::Comma) {
-            advance(); // consume comma
-            if (at().type != havel::TokenType::Identifier) {
-              failAt(at(),
-                     "Expected identifier in comma-separated declaration");
+            std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+            elements.push_back(std::move(pattern));
+            
+            while (at().type == havel::TokenType::Comma) {
+                advance(); // consume comma
+                if (at().type != havel::TokenType::Identifier) {
+                    failAt(at(), "Expected identifier in comma-separated declaration");
+                }
+                elements.push_back(makeIdentifier(advance()));
             }
-            elements.push_back(makeIdentifier(advance()));
-          }
-
-          // Create an ArrayPattern to hold the multiple identifiers
-          pattern = makeNode<havel::ast::ArrayPattern>(std::move(elements));
+            
+            // Create an ArrayPattern to hold the multiple identifiers
+            pattern = makeNode<havel::ast::ArrayPattern>(std::move(elements));
         }
-      } else {
+    } else {
         failAt(at(), "Expected identifier, '[' or '{' after '" +
-                         std::string(isConst ? "const" : "let") + "'");
-      }
+        std::string(isConst ? "const" : "let") + "'");
+    }
 
-      // Check for type annotation (let x: int = 5)
-      std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
-      if (at().type == havel::TokenType::Colon) {
+    // Check for type annotation (let x: int = 5)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+    if (at().type == havel::TokenType::Colon) {
         typeAnnotation = parseTypeAnnotation();
-      }
+    }
 
-      if (at().type != havel::TokenType::Assign) {
+    if (at().type != havel::TokenType::Assign) {
         // Allow declarations without assignment, e.g., `let x;`
         if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-          return makeNodeAt<havel::ast::LetDeclaration>(
-              keyword, std::move(pattern), nullptr, std::move(typeAnnotation),
-              isConst);
+        return makeNodeAt<havel::ast::LetDeclaration>(keyword,
+            std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
         } else {
-          failAt(at(), "Destructuring patterns require initialization");
+            failAt(at(), "Destructuring patterns require initialization");
         }
-      }
-      advance(); // consume "="
-
-      auto value = parseExpression();
-
-      auto result = makeNodeAt<havel::ast::LetDeclaration>(
-          keyword, std::move(pattern), std::move(value),
-          std::move(typeAnnotation), isConst);
-      return result;
     }
+    advance(); // consume "="
 
-    // Parse hotkey as expression (for assignment: hk = ^t => { ... })
-    // Returns HotkeyExpression (wraps HotkeyBinding as expression)
-    std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(
-        const Token &hotkeyToken) {
-      // hotkeyToken was already consumed by the Pratt parser's nud()
+    auto value = parseExpression();
 
-      // Check for prefix condition (before =>)
-      std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
+    auto result = makeNodeAt<havel::ast::LetDeclaration>(keyword,
+        std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
+    return result;
+}
+
+// Parse hotkey as expression (for assignment: hk = ^t => { ... })
+// Returns HotkeyExpression (wraps HotkeyBinding as expression)
+std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Token &hotkeyToken) {
+    // hotkeyToken was already consumed by the Pratt parser's nud()
+
+    // Check for prefix condition (before =>)
+    std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+    if (at().type == havel::TokenType::When) {
         advance(); // consume 'when'
         prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
+    } else if (at().type == havel::TokenType::If) {
         advance(); // consume 'if'
         prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+    }
 
-      if (at().type != havel::TokenType::Arrow) {
+    if (at().type != havel::TokenType::Arrow) {
         failAt(hotkeyToken, "Expected '=>' after hotkey literal");
-        return nullptr;
+    return nullptr;
+  }
+  advance(); // consume '=>'
+
+  std::unique_ptr<havel::ast::BlockStatement> action;
+
+  // => can be followed by { } block or a single expression
+  if (at().type == havel::TokenType::OpenBrace) {
+    action = parseBlockStatement(true); // true = input context
+  } else {
+    // Single expression wrapped in a block
+    auto expr = parseExpression();
+    action = makeNode<havel::ast::BlockStatement>();
+    action->body.push_back(
+        makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+  }
+
+  // Check for suffix condition (after action)
+  std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
+  if (at().type == havel::TokenType::If) {
+    advance(); // consume 'if'
+    suffixCondition = parseExpression();
+  }
+
+  // Create the base hotkey binding
+  auto binding = makeNode<havel::ast::HotkeyBinding>();
+  binding->hotkeys.push_back(
+      makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+  binding->action = std::move(action);
+
+  // Combine conditions if needed
+  if (prefixCondition || suffixCondition) {
+    auto finalCondition = combineConditions(std::move(prefixCondition),
+                                            std::move(suffixCondition));
+    // Set condition on the binding
+    binding->conditionExpr = std::move(finalCondition);
+  }
+
+  // Return HotkeyExpression (condition is on binding->conditionExpr)
+  auto hkExpr = makeNode<havel::ast::HotkeyExpression>(std::move(binding));
+  hkExpr->line = hotkeyToken.line;
+  hkExpr->column = hotkeyToken.column;
+  return hkExpr;
+}
+
+std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
+  // Create the hotkey binding AST node
+  auto binding = makeNode<havel::ast::HotkeyBinding>();
+
+  // Parse the hotkey token (F1, Ctrl+V, etc.)
+  if (at().type != havel::TokenType::Hotkey) {
+    failAt(at(), "Expected hotkey token at start of hotkey binding");
+  }
+  auto hotkeyToken = advance();
+  binding->hotkeys.push_back(
+      makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+
+  // Check for conditional 'when' or 'if' clause
+  if (at().type == havel::TokenType::When) {
+    advance(); // consume 'when'
+
+    // Parse conditions (mode X && title Y)
+    while (true) {
+      // Parse condition type (mode, title, class, etc.)
+      if (at().type == havel::TokenType::Mode) {
+        advance(); // consume 'mode'
+        if (at().type == havel::TokenType::Identifier) {
+          binding->conditions.push_back("mode " + advance().value);
+        }
+      } else if (at().type == havel::TokenType::Identifier) {
+        std::string condType = advance().value;
+        if (condType == "title" || condType == "class" ||
+            condType == "process") {
+          if (at().type == havel::TokenType::String ||
+              at().type == havel::TokenType::MultilineString ||
+              at().type == havel::TokenType::Identifier) {
+            binding->conditions.push_back(condType + " " + advance().value);
+          }
+        }
       }
-      advance(); // consume '=>'
 
-      std::unique_ptr<havel::ast::BlockStatement> action;
-
-      // => can be followed by { } block or a single expression
-      if (at().type == havel::TokenType::OpenBrace) {
-        action = parseBlockStatement(true); // true = input context
-      } else {
-        // Single expression wrapped in a block
-        auto expr = parseExpression();
-        action = makeNode<havel::ast::BlockStatement>();
-        action->body.push_back(
-            makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+      // Check for && (AND operator)
+      if (at().type == havel::TokenType::And) {
+        advance(); // consume '&&'
+        continue;
       }
 
-      // Check for suffix condition (after action)
-      std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
-      if (at().type == havel::TokenType::If) {
-        advance(); // consume 'if'
-        suffixCondition = parseExpression();
-      }
-
-      // Create the base hotkey binding
-      auto binding = makeNode<havel::ast::HotkeyBinding>();
-      binding->hotkeys.push_back(
-          makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
-      binding->action = std::move(action);
-
-      // Combine conditions if needed
-      if (prefixCondition || suffixCondition) {
-        auto finalCondition = combineConditions(std::move(prefixCondition),
-                                                std::move(suffixCondition));
-        // Set condition on the binding
-        binding->conditionExpr = std::move(finalCondition);
-      }
-
-      // Return HotkeyExpression (condition is on binding->conditionExpr)
-      auto hkExpr = makeNode<havel::ast::HotkeyExpression>(std::move(binding));
-      hkExpr->line = hotkeyToken.line;
-      hkExpr->column = hotkeyToken.column;
-      return hkExpr;
+      break;
     }
+  } else if (at().type == havel::TokenType::If) {
+    // New: Complex condition expression
+    advance(); // consume 'if'
+    binding->conditionExpr = parseExpression();
+  }
 
-    std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
-      // Create the hotkey binding AST node
-      auto binding = makeNode<havel::ast::HotkeyBinding>();
+  // Expect and consume the arrow operator '=>'
+        if (at().type != havel::TokenType::Arrow) {
+            failAt(at(), "Expected '=>' after hotkey '" + hotkeyToken.value + "'");
+  }
+  advance(); // consume the '=>'
 
-      // Parse the hotkey token (F1, Ctrl+V, etc.)
-      if (at().type != havel::TokenType::Hotkey) {
-        failAt(at(), "Expected hotkey token at start of hotkey binding");
-      }
-      auto hotkeyToken = advance();
-      binding->hotkeys.push_back(
-          makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+  // Check for direct key mapping (e.g., Left => A)
+  if (at().type == havel::TokenType::Identifier ||
+      at().type == havel::TokenType::Hotkey) {
+    // Peek ahead to see if this is a simple key mapping
+    if (at(1).type == havel::TokenType::NewLine ||
+        at(1).type == havel::TokenType::Semicolon ||
+        at(1).type == havel::TokenType::EOF_TOKEN) {
+      // Direct key mapping
+      binding->isKeyMapping = true;
+      binding->mappedKey = advance().value;
 
-      // Check for conditional 'when' or 'if' clause
-      if (at().type == havel::TokenType::When) {
-        advance(); // consume 'when'
+      // Create a simple send action
+      auto sendCallee = makeNode<havel::ast::Identifier>("send");
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      args.push_back(
+          makeNode<havel::ast::StringLiteral>(binding->mappedKey));
+      auto sendExpr = makeNode<havel::ast::CallExpression>(
+          std::move(sendCallee), std::move(args));
 
-        // Parse conditions (mode X && title Y)
-        while (true) {
-          // Parse condition type (mode, title, class, etc.)
-          if (at().type == havel::TokenType::Mode) {
-            advance(); // consume 'mode'
-            if (at().type == havel::TokenType::Identifier) {
-              binding->conditions.push_back("mode " + advance().value);
-            }
-          } else if (at().type == havel::TokenType::Identifier) {
-            std::string condType = advance().value;
-            if (condType == "title" || condType == "class" ||
-                condType == "process") {
-              if (at().type == havel::TokenType::String ||
-                  at().type == havel::TokenType::MultilineString ||
-                  at().type == havel::TokenType::Identifier) {
-                binding->conditions.push_back(condType + " " + advance().value);
-              }
-            }
-          }
-
-          // Check for && (AND operator)
-          if (at().type == havel::TokenType::And) {
-            advance(); // consume '&&'
-            continue;
-          }
-
-          break;
-        }
-      } else if (at().type == havel::TokenType::If) {
-        // New: Complex condition expression
-        advance(); // consume 'if'
-        binding->conditionExpr = parseExpression();
-      }
-
-      // Expect and consume the arrow operator '=>'
-      if (at().type != havel::TokenType::Arrow) {
-        failAt(at(), "Expected '=>' after hotkey '" + hotkeyToken.value + "'");
-      }
-      advance(); // consume the '=>'
-
-      // Check for direct key mapping (e.g., Left => A)
-      if (at().type == havel::TokenType::Identifier ||
-          at().type == havel::TokenType::Hotkey) {
-        // Peek ahead to see if this is a simple key mapping
-        if (at(1).type == havel::TokenType::NewLine ||
-            at(1).type == havel::TokenType::Semicolon ||
-            at(1).type == havel::TokenType::EOF_TOKEN) {
-          // Direct key mapping
-          binding->isKeyMapping = true;
-          binding->mappedKey = advance().value;
-
-          // Create a simple send action
-          auto sendCallee = makeNode<havel::ast::Identifier>("send");
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          args.push_back(
-              makeNode<havel::ast::StringLiteral>(binding->mappedKey));
-          auto sendExpr = makeNode<havel::ast::CallExpression>(
-              std::move(sendCallee), std::move(args));
-
-          auto exprStmt = makeNode<havel::ast::ExpressionStatement>();
-          exprStmt->expression = std::move(sendExpr);
-          binding->action = std::move(exprStmt);
-
-          return binding;
-        }
-      }
-
-      // Parse the action - could be an expression or a block statement
-      if (at().type == havel::TokenType::OpenBrace) {
-        // It's a block statement - parse it with input context enabled
-        binding->action = parseBlockStatement(true);
-      } else {
-        // It's an expression - wrap it in an ExpressionStatement
-        auto expr = parseExpression();
-        if (!expr) {
-          failAt(at(), "Failed to parse action expression after '=>'");
-        }
-
-        auto exprStmt = makeNode<havel::ast::ExpressionStatement>();
-        exprStmt->expression = std::move(expr);
-        binding->action = std::move(exprStmt);
-      }
-
-      // Validate that we successfully created the binding
-      if (binding->hotkeys.empty() || !binding->action) {
-        failAt(at(), "Failed to create complete hotkey binding");
-      }
+      auto exprStmt = makeNode<havel::ast::ExpressionStatement>();
+      exprStmt->expression = std::move(sendExpr);
+      binding->action = std::move(exprStmt);
 
       return binding;
     }
+  }
 
-    std::unique_ptr<ast::Expression> Parser::combineConditions(
-        std::unique_ptr<ast::Expression> left,
-        std::unique_ptr<ast::Expression> right) {
-      if (!left)
-        return right;
-      if (!right)
-        return left;
-
-      // Create an AND expression combining both conditions
-      return makeNode<ast::BinaryExpression>(
-          std::move(left), ast::BinaryOperator::And, std::move(right));
+  // Parse the action - could be an expression or a block statement
+  if (at().type == havel::TokenType::OpenBrace) {
+    // It's a block statement - parse it with input context enabled
+    binding->action = parseBlockStatement(true);
+  } else {
+    // It's an expression - wrap it in an ExpressionStatement
+    auto expr = parseExpression();
+    if (!expr) {
+      failAt(at(), "Failed to parse action expression after '=>'");
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
-      advance(); // consume 'when'
+    auto exprStmt = makeNode<havel::ast::ExpressionStatement>();
+    exprStmt->expression = std::move(expr);
+    binding->action = std::move(exprStmt);
+  }
 
-      // Parse the condition
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto condition = parseExpression();
-      context.allowBraceSugar = prevAllow;
+  // Validate that we successfully created the binding
+  if (binding->hotkeys.empty() || !binding->action) {
+    failAt(at(), "Failed to create complete hotkey binding");
+  }
 
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after when condition");
-      }
+  return binding;
+}
 
-      advance(); // consume '{'
+std::unique_ptr<ast::Expression>
+Parser::combineConditions(std::unique_ptr<ast::Expression> left,
+                          std::unique_ptr<ast::Expression> right) {
+  if (!left)
+    return right;
+  if (!right)
+    return left;
 
-      std::vector<std::unique_ptr<ast::Statement>> statements;
+  // Create an AND expression combining both conditions
+  return makeNode<ast::BinaryExpression>(
+      std::move(left), ast::BinaryOperator::And, std::move(right));
+}
 
-      // Parse statements until closing brace
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines and semicolons (empty statements)
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-          continue;
-        }
+std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
+  advance(); // consume 'when'
 
-        try {
-          auto stmt = parseStatement();
-          if (stmt) {
-            // Simple version without condition inheritance for now
-            statements.push_back(std::move(stmt));
-          }
-        } catch (const std::exception &e) {
-          if (havel::debugging::debug_parser) {
-            havel::error("Parse error in when block: {} at position {}",
-                         e.what(), position);
-          }
+  // Parse the condition
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
 
-          // Synchronize to recover from the error
-          synchronize();
-          if (notEOF() == false) {
-            break; // Can't synchronize, so break out of the block
-          }
-        }
-      }
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after when condition");
+  }
 
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close when block");
-      }
-      advance(); // consume '}'
+  advance(); // consume '{'
 
-      return makeNode<havel::ast::WhenBlock>(std::move(condition),
-                                             std::move(statements));
+  std::vector<std::unique_ptr<ast::Statement>> statements;
+
+  // Parse statements until closing brace
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines and semicolons (empty statements)
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
     }
 
-    // Parse repeat statement: repeat count { body } or repeat count statement
-    std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
-      advance(); // consume 'repeat'
-
-      // Parse count expression - disable brace call sugar to avoid n {...}
-      // being parsed as call
-      bool prevAllowBraceCallSugar = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto countExpr = parseExpression();
-      context.allowBraceSugar = prevAllowBraceCallSugar;
-
-      // Skip newlines before body
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
+    try {
+      auto stmt = parseStatement();
+      if (stmt) {
+        // Simple version without condition inheritance for now
+        statements.push_back(std::move(stmt));
+      }
+    } catch (const std::exception &e) {
+      if (havel::debugging::debug_parser) {
+        havel::error("Parse error in when block: {} at position {}", e.what(),
+                     position);
       }
 
-      std::unique_ptr<havel::ast::Statement> body;
-
-      // Block form ({ or : with indented block) or inline form (single
-      // statement)
-      if (at().type == havel::TokenType::OpenBrace ||
-          at().type == havel::TokenType::Colon) {
-        body = parseBlockStatement();
-      } else {
-        body = parseInlineStatement();
+      // Synchronize to recover from the error
+      synchronize();
+      if (notEOF() == false) {
+        break; // Can't synchronize, so break out of the block
       }
-
-      return makeNode<ast::RepeatStatement>(std::move(countExpr),
-                                            std::move(body));
     }
+  }
 
-    std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(
-        bool inputContext) {
-      auto block = makeNode<havel::ast::BlockStatement>();
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close when block");
+  }
+  advance(); // consume '}'
 
-      // New grammar: support : (indented block), :: (hotkey block), and { }
-      // (brace block)
-      if (at().type == havel::TokenType::Colon) {
+  return makeNode<havel::ast::WhenBlock>(std::move(condition),
+                                                 std::move(statements));
+}
+
+// Parse repeat statement: repeat count { body } or repeat count statement
+std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
+  advance(); // consume 'repeat'
+
+  // Parse count expression - disable brace call sugar to avoid n {...} being
+  // parsed as call
+  bool prevAllowBraceCallSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto countExpr = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllowBraceCallSugar;
+
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+  return makeNode<ast::RepeatStatement>(std::move(countExpr),
+                                                  std::move(body));
+}
+
+std::unique_ptr<havel::ast::BlockStatement>
+Parser::parseBlockStatement(bool inputContext) {
+  auto block = makeNode<havel::ast::BlockStatement>();
+
+    // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
+    if (at().type == havel::TokenType::Colon) {
         // Colon block: consume ':' and parse indented statements
         // Find the indent of the header line (the line containing the colon)
         // by scanning backwards to the first token on the same line
         size_t colonLine = at().line;
         size_t headerIndent = at().column; // fallback: colon's own column
-        for (size_t i = position + 1; i-- > 0;) {
-          if (tokens[i].line == colonLine &&
-              tokens[i].type != havel::TokenType::NewLine) {
-            headerIndent = tokens[i].column;
-          } else {
-            break;
-          }
+        for (size_t i = position + 1; i-- > 0; ) {
+            if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+                headerIndent = tokens[i].column;
+            } else {
+                break;
+            }
         }
         advance(); // consume ':'
 
         // Skip newline after colon
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
+while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
 
-        // Save and set input context
+    // Save and set input context
         bool savedInputContext = context.inInputContext;
         context.inInputContext = inputContext;
 
@@ -7929,825 +7456,769 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
         // Anything at column >= headerIndent+1 is inside the block
         // Skip any leading newlines first
         while (at().type == havel::TokenType::NewLine) {
-          advance();
+            advance();
         }
         size_t baseIndentation = headerIndent + 1;
-
-        // Parse statements until we hit a dedent (token at lower column than
-        // base)
+    
+        // Parse statements until we hit a dedent (token at lower column than base)
         int blockLoopCounter = 0;
         while (notEOF()) {
-          checkParseLoop(blockLoopCounter, "parseBlockStatement (colon)");
+            checkParseLoop(blockLoopCounter, "parseBlockStatement (colon)");
 
-          // Skip empty lines
-          if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-          }
+            // Skip empty lines
+            if (at().type == havel::TokenType::NewLine) {
+                advance();
+                continue;
+            }
 
-          // Check for end of block conditions
-          if (at().type == havel::TokenType::CloseBrace ||
-              at().type == havel::TokenType::EOF_TOKEN) {
-            break;
-          }
+            // Check for end of block conditions
+            if (at().type == havel::TokenType::CloseBrace ||
+                at().type == havel::TokenType::EOF_TOKEN) {
+                break;
+            }
 
-          // Check if we're back at base indentation or lower (dedent)
-          // Note: we use < not <= because statements at same column as base are
-          // still in the block Only strictly lower column indicates dedent
-          if (at().column < baseIndentation) {
-            break;
-          }
+        // Check if we're back at base indentation or lower (dedent)
+        // Note: we use < not <= because statements at same column as base are still in the block
+        // Only strictly lower column indicates dedent
+		if (at().column < baseIndentation) {
+			break;
+		}
 
-          size_t beforePos = position;
-          auto stmt = parseStatement();
-          if (stmt) {
-            block->body.push_back(std::move(stmt));
-          }
-          if (position == beforePos && notEOF() &&
-              at().column >= baseIndentation &&
-              at().type != havel::TokenType::CloseBrace &&
-              at().type != havel::TokenType::EOF_TOKEN &&
-              at().type != havel::TokenType::NewLine) {
-            advance();
-          }
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            if (position == beforePos && notEOF() && at().column >= baseIndentation &&
+                at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN &&
+                at().type != havel::TokenType::NewLine) {
+                advance();
+            }
         }
-
-        // Restore input context
-        context.inInputContext = savedInputContext;
-
-      } else if (at().type == havel::TokenType::ColonColon) {
-        // Double colon block: consume '::' and parse indented statements
-        // (hotkey style)
-        advance(); // consume '::'
-
-        // Skip newline after ::
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        // Save and set input context (always true for :: blocks)
-        bool savedInputContext = context.inInputContext;
-        context.inInputContext =
-            true; // Hotkey blocks are always in input context
-
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+  } else if (at().type == havel::TokenType::ColonColon) {
+    // Double colon block: consume '::' and parse indented statements (hotkey style)
+    advance(); // consume '::'
+    
+    // Skip newline after ::
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
+    // Save and set input context (always true for :: blocks)
+    bool savedInputContext = context.inInputContext;
+    context.inInputContext = true; // Hotkey blocks are always in input context
+    
         // Parse statements until end of block
         int colonColonLoopCounter = 0;
         while (notEOF()) {
-          checkParseLoop(colonColonLoopCounter,
-                         "parseBlockStatement (coloncolon)");
+            checkParseLoop(colonColonLoopCounter, "parseBlockStatement (coloncolon)");
 
-          // Skip empty lines
-          if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-          }
+            // Skip empty lines
+            if (at().type == havel::TokenType::NewLine) {
+                advance();
+                continue;
+            }
 
-          // Check for end of block
-          if (at().type == havel::TokenType::CloseBrace ||
-              at().type == havel::TokenType::EOF_TOKEN) {
-            break;
-          }
+            // Check for end of block
+            if (at().type == havel::TokenType::CloseBrace ||
+                at().type == havel::TokenType::EOF_TOKEN) {
+                break;
+            }
 
-          size_t beforePos = position;
-          auto stmt = parseStatement();
-          if (stmt) {
-            block->body.push_back(std::move(stmt));
-          }
-          // Forward progress guarantee
-          if (position == beforePos && notEOF() &&
-              at().type != havel::TokenType::CloseBrace &&
-              at().type != havel::TokenType::EOF_TOKEN) {
-            advance();
-          }
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            // Forward progress guarantee
+            if (position == beforePos && notEOF() &&
+                at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN) {
+                advance();
+            }
         }
-
-        // Restore input context
-        context.inInputContext = savedInputContext;
-
-      } else if (at().type == havel::TokenType::OpenBrace) {
-        // Brace block: original behavior
-        advance(); // consume '{'
-        pushDelimiter(TokenType::OpenBrace);
-
-        // Save and set input context
-        bool savedInputContext = context.inInputContext;
-        context.inInputContext = inputContext;
-
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+} else if (at().type == havel::TokenType::OpenBrace) {
+    // Brace block: original behavior
+    Token openBrace = at();
+    advance(); // consume '{'
+    pushDelimiter(TokenType::OpenBrace, &openBrace);
+    
+    // Save and set input context
+    bool savedInputContext = context.inInputContext;
+    context.inInputContext = inputContext;
+    
         // Parse statements until closing brace
         int braceLoopCounter = 0;
         while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-          checkParseLoop(braceLoopCounter, "parseBlockStatement (brace)");
+            checkParseLoop(braceLoopCounter, "parseBlockStatement (brace)");
 
-          // Skip newlines and semicolons (empty statements)
-          if (at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Semicolon) {
-            advance();
-            continue;
-          }
+            // Skip newlines and semicolons (empty statements)
+            if (at().type == havel::TokenType::NewLine ||
+                at().type == havel::TokenType::Semicolon) {
+              advance();
+              continue;
+            }
 
-          size_t beforePos = position;
-          auto stmt = parseStatement();
-          if (stmt) {
-            block->body.push_back(std::move(stmt));
-          }
-          // Forward progress guarantee
-          if (position == beforePos && notEOF() &&
-              at().type != havel::TokenType::CloseBrace) {
-            advance();
-          }
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            // Forward progress guarantee
+            if (position == beforePos && notEOF() && at().type != havel::TokenType::CloseBrace) {
+                advance();
+            }
         }
-
-        // Restore input context
-        context.inInputContext = savedInputContext;
-
-        // Consume closing brace
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}'");
-        }
-        advance();
-        popDelimiter(TokenType::OpenBrace);
-
-      } else {
-        failAt(at(), "Expected ':', '::', or '{' to start block");
-      }
-
-      return block;
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+    // Consume closing brace
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}'");
     }
-    std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
-      auto keyword = at();
-      advance(); // consume 'import'
+    advance();
+    popDelimiter(TokenType::OpenBrace);
+    
+  } else {
+    failAt(at(), "Expected ':', '::', or '{' to start block");
+  }
 
-      std::vector<std::pair<std::string, std::string>> items;
+  return block;
+}
+std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
+    auto keyword = at();
+    advance(); // consume 'import'
 
-      // Handle `import *` for wildcard imports
+  std::vector<std::pair<std::string, std::string>> items;
+
+  // Handle `import *` for wildcard imports
+  if (at().type == havel::TokenType::Multiply) {
+    advance(); // consume '*'
+    items.push_back({"*", "*"});
+  }
+  // Handle comma-separated identifiers: `import a, b, c from "module"`
+  else if (at().type == havel::TokenType::Identifier) {
+    while (notEOF() && at().type == havel::TokenType::Identifier) {
+      std::string name = advance().value;
+      items.push_back({name, name});
+
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else {
+        break;
+      }
+    }
+  }
+  // `import { item1, item2 as alias } from "path"`
+  else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier in import list");
+      }
+      std::string originalName = advance().value;
+      std::string alias = originalName;
+
+      if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected alias name after 'as'");
+        }
+        alias = advance().value;
+      }
+      items.push_back({originalName, alias});
+
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseBrace) {
+        failAt(at(), "Expected ',' or '}' in import list");
+      }
+    }
+    if (at().type != havel::TokenType::CloseBrace)
+      failAt(at(), "Expected '}'");
+    advance(); // consume '}'
+  }
+
+  // Optional 'from' clause
+  if (at().type == havel::TokenType::From) {
+    advance(); // consume 'from'
+    if (at().type != havel::TokenType::String &&
+        at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected module path after 'from'");
+    }
+    std::string path = advance().value;
+        return makeNodeAt<havel::ast::ImportStatement>(keyword, path, items);
+    }
+    // No 'from': treat as importing built-in modules by name
+    return makeNodeAt<havel::ast::ImportStatement>(keyword, std::string(""), items);
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
+    auto keyword = at();
+    advance(); // consume 'use'
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+    if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+        std::vector<std::string> moduleNames;
+        moduleNames.push_back(advance().value);
+
+        while (at().type == havel::TokenType::NewLine) advance();
+        
+        if (at().type == havel::TokenType::Comma) {
+            while (at().type == havel::TokenType::Comma) {
+                advance(); // consume comma
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+                    moduleNames.push_back(advance().value);
+                    while (at().type == havel::TokenType::NewLine) advance();
+                } else {
+                    failAt(at(), "Expected module name after comma in use statement");
+                    return nullptr;
+                }
+            }
+            return makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
+        }
+        
+        std::string moduleName = moduleNames[0];
+        std::string alias = "";
+        if (at().type == havel::TokenType::As) {
+      advance();
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected alias after 'as'");
+        return nullptr;
+      }
+      alias = advance().value;
+    }
+
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::From) {
+      advance();
+      while (at().type == havel::TokenType::NewLine) advance();
+      std::string source;
+        if (at().type == havel::TokenType::String ||
+            at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::InterpolatedString) {
+            source = advance().value;
+        } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+            source = advance().value;
+        } else {
+            failAt(at(), "Expected module name or file path after 'from'");
+            return nullptr;
+        }
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, moduleName);
+        stmt->isFileImport = true;
+        if (!alias.empty()) {
+            stmt->alias = alias;
+        }
+      return stmt;
+    }
+
+    // Check for wildcard: use module.*
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Dot) {
+      advance(); // consume '.'
+      while (at().type == havel::TokenType::NewLine) advance();
       if (at().type == havel::TokenType::Multiply) {
         advance(); // consume '*'
-        items.push_back({"*", "*"});
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
+        stmt->isWildcard = true;
+        return stmt;
+      } else {
+        failAt(at(), "Expected '*' after '.' in use statement");
+        return nullptr;
       }
-      // Handle comma-separated identifiers: `import a, b, c from "module"`
-      else if (at().type == havel::TokenType::Identifier) {
-        while (notEOF() && at().type == havel::TokenType::Identifier) {
-          std::string name = advance().value;
-          items.push_back({name, name});
-
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else {
-            break;
-          }
-        }
-      }
-      // `import { item1, item2 as alias } from "path"`
-      else if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Expected identifier in import list");
-          }
-          std::string originalName = advance().value;
-          std::string alias = originalName;
-
-          if (at().type == havel::TokenType::As) {
-            advance(); // consume 'as'
-            if (at().type != havel::TokenType::Identifier) {
-              failAt(at(), "Expected alias name after 'as'");
-            }
-            alias = advance().value;
-          }
-          items.push_back({originalName, alias});
-
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseBrace) {
-            failAt(at(), "Expected ',' or '}' in import list");
-          }
-        }
-        if (at().type != havel::TokenType::CloseBrace)
-          failAt(at(), "Expected '}'");
-        advance(); // consume '}'
-      }
-
-      // Optional 'from' clause
-      if (at().type == havel::TokenType::From) {
-        advance(); // consume 'from'
-        if (at().type != havel::TokenType::String &&
-            at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected module path after 'from'");
-        }
-        std::string path = advance().value;
-        return makeNodeAt<havel::ast::ImportStatement>(keyword, path, items);
-      }
-      // No 'from': treat as importing built-in modules by name
-      return makeNodeAt<havel::ast::ImportStatement>(keyword, std::string(""),
-                                                     items);
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
-      auto keyword = at();
-      advance(); // consume 'use'
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
+    stmt->alias = alias;
+    return stmt;
+  }
+
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+    
+    std::vector<std::pair<std::string, std::string>> importNames; // name, alias
+    
+    while (at().type != havel::TokenType::CloseBrace) {
+      while (at().type == havel::TokenType::NewLine) advance();
+      
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected identifier in import list");
+            return nullptr;
+        }
+
+        std::string name = advance().value;
+      std::string alias = name; // default alias is same as name
+      
+      // Check for "as alias"
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected alias after 'as'");
+            return nullptr;
+        }
+        alias = advance().value;
+      }
+      
+      importNames.emplace_back(name, alias);
+      
+      // Skip comma
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        while (at().type == havel::TokenType::NewLine) advance();
+      }
+    }
+    
+    advance(); // consume '}'
+    
+    // Expect "from"
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type != havel::TokenType::From) {
+      failAt(at(), "Expected 'from' after import list");
+      return nullptr;
+    }
+    advance(); // consume 'from'
+    
+    // Get source
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string source;
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
+        source = advance().value;
+        } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+            source = advance().value; // module name
+        } else {
+            failAt(at(), "Expected module name or file path after 'from'");
+            return nullptr;
+        }
+
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, std::vector<std::string>{});
+    stmt->isFileImport = true;
+    stmt->isNamedImport = true;
+    for (auto& [name, alias] : importNames) {
+        stmt->importNames.push_back(name);
+        stmt->importAliases.push_back(alias);
+    }
+    return stmt;
+  }
+
+  // =========================================================================
+  // Syntax: use * from "path" or use * from module
+  // =========================================================================
+  if (at().type == havel::TokenType::Multiply) {
+    advance(); // consume '*'
+    
+    // Expect "from"
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type != havel::TokenType::From) {
+      failAt(at(), "Expected 'from' after '*'");
+      return nullptr;
+    }
+    advance(); // consume 'from'
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string source;
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
+        source = advance().value;
+    } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+        source = advance().value;
+    } else {
+        failAt(at(), "Expected module name or file path after 'from'");
+        return nullptr;
+    }
+
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, std::vector<std::string>{"*"});
+    stmt->isWildcard = true;
+    return stmt;
+}
+
+  // =========================================================================
+// Syntax: use "file.hv" or use "file.hv" as alias
+// =========================================================================
+if (at().type == havel::TokenType::String ||
+    at().type == havel::TokenType::MultilineString ||
+    at().type == havel::TokenType::InterpolatedString) {
+    std::string filePath = advance().value;
+    
+    // Check for "as alias"
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string alias = "";
+    if (at().type == havel::TokenType::As) {
+      advance(); // consume 'as'
+      while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected alias after 'as'");
+            return nullptr;
+        }
+        alias = advance().value;
+    }
+
+        if (!alias.empty()) {
+            auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, filePath, alias);
+            stmt->isFileImport = true;
+            return stmt;
+        }
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, filePath, std::string{});
+        stmt->isFileImport = true;
+        return stmt;
+    }
+
+    // =========================================================================
+    // Syntax: use module or use module.* - import module (Lua-style)
+    // =========================================================================
+    if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+    std::string moduleName = advance().value;
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    // Check for wildcard: module.*
+    if (at().type == havel::TokenType::Dot) {
+      advance(); // consume '.'
 
       // Skip newlines
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
 
-      if (at().type == havel::TokenType::Identifier ||
-          isKeywordToken(at().type)) {
-        std::vector<std::string> moduleNames;
-        moduleNames.push_back(advance().value);
-
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-
-        if (at().type == havel::TokenType::Comma) {
-          while (at().type == havel::TokenType::Comma) {
-            advance(); // consume comma
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::Identifier ||
-                isKeywordToken(at().type)) {
-              moduleNames.push_back(advance().value);
-              while (at().type == havel::TokenType::NewLine)
-                advance();
-            } else {
-              failAt(at(), "Expected module name after comma in use statement");
-              return nullptr;
-            }
-          }
-          return makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
-        }
-
-        std::string moduleName = moduleNames[0];
-        std::string alias = "";
-        if (at().type == havel::TokenType::As) {
-          advance();
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Expected alias after 'as'");
-            return nullptr;
-          }
-          alias = advance().value;
-        }
-
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type == havel::TokenType::From) {
-          advance();
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          std::string source;
-          if (at().type == havel::TokenType::String ||
-              at().type == havel::TokenType::MultilineString ||
-              at().type == havel::TokenType::InterpolatedString) {
-            source = advance().value;
-          } else if (at().type == havel::TokenType::Identifier ||
-                     isKeywordToken(at().type)) {
-            source = advance().value;
-          } else {
-            failAt(at(), "Expected module name or file path after 'from'");
-            return nullptr;
-          }
-          auto stmt =
-              makeNodeAt<havel::ast::UseStatement>(keyword, source, moduleName);
-          stmt->isFileImport = true;
-          if (!alias.empty()) {
-            stmt->alias = alias;
-          }
-          return stmt;
-        }
-
-        // Check for wildcard: use module.*
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type == havel::TokenType::Dot) {
-          advance(); // consume '.'
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          if (at().type == havel::TokenType::Multiply) {
-            advance(); // consume '*'
-            auto stmt =
-                makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
-            stmt->isWildcard = true;
-            return stmt;
-          } else {
-            failAt(at(), "Expected '*' after '.' in use statement");
-            return nullptr;
-          }
-        }
-
-        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
-        stmt->alias = alias;
-        return stmt;
-      }
-
-      if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-
-        std::vector<std::pair<std::string, std::string>>
-            importNames; // name, alias
-
-        while (at().type != havel::TokenType::CloseBrace) {
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-
-          if (at().type != havel::TokenType::Identifier &&
-              !isKeywordToken(at().type)) {
-            failAt(at(), "Expected identifier in import list");
-            return nullptr;
-          }
-
-          std::string name = advance().value;
-          std::string alias = name; // default alias is same as name
-
-          // Check for "as alias"
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          if (at().type == havel::TokenType::As) {
-            advance(); // consume 'as'
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type != havel::TokenType::Identifier &&
-                !isKeywordToken(at().type)) {
-              failAt(at(), "Expected alias after 'as'");
-              return nullptr;
-            }
-            alias = advance().value;
-          }
-
-          importNames.emplace_back(name, alias);
-
-          // Skip comma
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-          }
-        }
-
-        advance(); // consume '}'
-
-        // Expect "from"
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type != havel::TokenType::From) {
-          failAt(at(), "Expected 'from' after import list");
-          return nullptr;
-        }
-        advance(); // consume 'from'
-
-        // Get source
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        std::string source;
-        if (at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString ||
-            at().type == havel::TokenType::InterpolatedString) {
-          source = advance().value;
-        } else if (at().type == havel::TokenType::Identifier ||
-                   isKeywordToken(at().type)) {
-          source = advance().value; // module name
-        } else {
-          failAt(at(), "Expected module name or file path after 'from'");
-          return nullptr;
-        }
-
-        auto stmt = makeNodeAt<havel::ast::UseStatement>(
-            keyword, source, std::vector<std::string>{});
-        stmt->isFileImport = true;
-        stmt->isNamedImport = true;
-        for (auto &[name, alias] : importNames) {
-          stmt->importNames.push_back(name);
-          stmt->importAliases.push_back(alias);
-        }
-        return stmt;
-      }
-
-      // =========================================================================
-      // Syntax: use * from "path" or use * from module
-      // =========================================================================
       if (at().type == havel::TokenType::Multiply) {
         advance(); // consume '*'
-
-        // Expect "from"
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type != havel::TokenType::From) {
-          failAt(at(), "Expected 'from' after '*'");
-          return nullptr;
-        }
-        advance(); // consume 'from'
-
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        std::string source;
-        if (at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString ||
-            at().type == havel::TokenType::InterpolatedString) {
-          source = advance().value;
-        } else if (at().type == havel::TokenType::Identifier ||
-                   isKeywordToken(at().type)) {
-          source = advance().value;
-        } else {
-          failAt(at(), "Expected module name or file path after 'from'");
-          return nullptr;
-        }
-
-        auto stmt = makeNodeAt<havel::ast::UseStatement>(
-            keyword, source, std::vector<std::string>{"*"});
-        stmt->isWildcard = true;
+auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword,
+            std::vector<std::string>{moduleName});
+                stmt->isWildcard = true;
         return stmt;
+      } else {
+        failAt(at(), "Expected '*' after '.' in use statement");
+        return nullptr;
       }
+    }
 
-      // =========================================================================
-      // Syntax: use "file.hv" or use "file.hv" as alias
-      // =========================================================================
-      if (at().type == havel::TokenType::String ||
-          at().type == havel::TokenType::MultilineString ||
-          at().type == havel::TokenType::InterpolatedString) {
-        std::string filePath = advance().value;
+    // Simple module import - flatten into current scope
+    return makeNodeAt<havel::ast::UseStatement>(keyword,
+        std::vector<std::string>{moduleName});
+  }
 
-        // Check for "as alias"
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        std::string alias = "";
-        if (at().type == havel::TokenType::As) {
-          advance(); // consume 'as'
-          while (at().type == havel::TokenType::NewLine)
-            advance();
-          if (at().type != havel::TokenType::Identifier &&
-              !isKeywordToken(at().type)) {
-            failAt(at(), "Expected alias after 'as'");
-            return nullptr;
-          }
-          alias = advance().value;
-        }
+  failAt(at(), "Expected module name or file path after 'use'");
+  return nullptr;
+}
 
-        if (!alias.empty()) {
-          auto stmt =
-              makeNodeAt<havel::ast::UseStatement>(keyword, filePath, alias);
-          stmt->isFileImport = true;
-          return stmt;
-        }
-        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, filePath,
-                                                         std::string{});
-        stmt->isFileImport = true;
-        return stmt;
-      }
+std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {
+  std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
 
-      // =========================================================================
-      // Syntax: use module or use module.* - import module (Lua-style)
-      // =========================================================================
-      if (at().type == havel::TokenType::Identifier ||
-          isKeywordToken(at().type)) {
-        std::string moduleName = advance().value;
+  // Parse decorators in [decorator] or [decorator(args)] syntax (C#/Rust style)
+  while (at().type == havel::TokenType::OpenBracket) {
+    advance(); // consume '['
 
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        // Check for wildcard: module.*
-        if (at().type == havel::TokenType::Dot) {
-          advance(); // consume '.'
-
-          // Skip newlines
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          if (at().type == havel::TokenType::Multiply) {
-            advance(); // consume '*'
-            auto stmt = makeNodeAt<havel::ast::UseStatement>(
-                keyword, std::vector<std::string>{moduleName});
-            stmt->isWildcard = true;
-            return stmt;
-          } else {
-            failAt(at(), "Expected '*' after '.' in use statement");
-            return nullptr;
-          }
-        }
-
-        // Simple module import - flatten into current scope
-        return makeNodeAt<havel::ast::UseStatement>(
-            keyword, std::vector<std::string>{moduleName});
-      }
-
-      failAt(at(), "Expected module name or file path after 'use'");
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected decorator name after '['");
       return nullptr;
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {
-      std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
+    // Parse decorator name
+    auto decoName = makeIdentifier(advance());
+    std::unique_ptr<havel::ast::Expression> decoExpr = std::move(decoName);
 
-      // Parse decorators in [decorator] or [decorator(args)] syntax (C#/Rust
-      // style)
-      while (at().type == havel::TokenType::OpenBracket) {
-        advance(); // consume '['
-
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected decorator name after '['");
+    // Parse optional decorator arguments: [decorator(arg1, arg2)]
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      while (notEOF() && at().type != havel::TokenType::CloseParen) {
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::CloseParen) break;
+        args.push_back(parsePrattExpression(bp(BindingPower::Assignment)));
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Comma) advance();
+        else if (at().type != havel::TokenType::CloseParen) {
+          failAt(at(), "Expected ',' or ')' in decorator arguments");
           return nullptr;
         }
-
-        // Parse decorator name
-        auto decoName = makeIdentifier(advance());
-        std::unique_ptr<havel::ast::Expression> decoExpr = std::move(decoName);
-
-        // Parse optional decorator arguments: [decorator(arg1, arg2)]
-        if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          while (notEOF() && at().type != havel::TokenType::CloseParen) {
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::CloseParen)
-              break;
-            args.push_back(parsePrattExpression(bp(BindingPower::Assignment)));
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::Comma)
-              advance();
-            else if (at().type != havel::TokenType::CloseParen) {
-              failAt(at(), "Expected ',' or ')' in decorator arguments");
-              return nullptr;
-            }
-          }
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after decorator arguments");
-            return nullptr;
-          }
-          advance(); // consume ')'
-          decoExpr = makeNode<havel::ast::CallExpression>(std::move(decoExpr),
-                                                          std::move(args));
-        }
-
-        // Expect closing bracket
-        if (at().type != havel::TokenType::CloseBracket) {
-          failAt(at(), "Expected ']' after decorator");
-          return nullptr;
-        }
-        advance(); // consume ']'
-
-        decorators.push_back(std::move(decoExpr));
-
-        // Skip newlines between decorators
-        while (at().type == havel::TokenType::NewLine)
-          advance();
       }
-
-      auto target = parseStatement();
-      if (!target) {
-        failAt(at(), "Expected declaration after decorator");
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after decorator arguments");
         return nullptr;
       }
-
-      return makeNode<havel::ast::DecoratorStatement>(std::move(decorators),
-                                                      std::move(target));
+      advance(); // consume ')'
+      decoExpr = makeNode<havel::ast::CallExpression>(
+          std::move(decoExpr), std::move(args));
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
-      std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
+    // Expect closing bracket
+    if (at().type != havel::TokenType::CloseBracket) {
+      failAt(at(), "Expected ']' after decorator");
+      return nullptr;
+    }
+    advance(); // consume ']'
 
-      while (at().type == havel::TokenType::At &&
-             at(1).type == havel::TokenType::Identifier) {
+    decorators.push_back(std::move(decoExpr));
+
+    // Skip newlines between decorators
+    while (at().type == havel::TokenType::NewLine) advance();
+  }
+
+  auto target = parseStatement();
+  if (!target) {
+    failAt(at(), "Expected declaration after decorator");
+    return nullptr;
+  }
+
+return makeNode<havel::ast::DecoratorStatement>(
+        std::move(decorators), std::move(target));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
+    std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
+
+    while (at().type == havel::TokenType::At &&
+           at(1).type == havel::TokenType::Identifier) {
         advance(); // consume '@'
 
-        // @decorator: the @ is syntactic sugar, the name is a regular
-        // identifier (the decorator function), NOT a field access on 'this'
+        // @decorator: the @ is syntactic sugar, the name is a regular identifier
+        // (the decorator function), NOT a field access on 'this'
         auto decoName = makeIdentifier(advance());
         std::unique_ptr<havel::ast::Expression> decoExpr = std::move(decoName);
 
         if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          while (notEOF() && at().type != havel::TokenType::CloseParen) {
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::CloseParen)
-              break;
-            args.push_back(parsePrattExpression(bp(BindingPower::Assignment)));
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::Comma)
-              advance();
-            else if (at().type != havel::TokenType::CloseParen) {
-              failAt(at(), "Expected ',' or ')' in decorator arguments");
-              return nullptr;
+            advance(); // consume '('
+            std::vector<std::unique_ptr<havel::ast::Expression>> args;
+            while (notEOF() && at().type != havel::TokenType::CloseParen) {
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::CloseParen) break;
+                args.push_back(parsePrattExpression(bp(BindingPower::Assignment)));
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::Comma) advance();
+                else if (at().type != havel::TokenType::CloseParen) {
+                    failAt(at(), "Expected ',' or ')' in decorator arguments");
+                    return nullptr;
+                }
             }
-          }
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after decorator arguments");
-            return nullptr;
-          }
-          advance(); // consume ')'
-          decoExpr = makeNode<havel::ast::CallExpression>(std::move(decoExpr),
-                                                          std::move(args));
+            if (at().type != havel::TokenType::CloseParen) {
+                failAt(at(), "Expected ')' after decorator arguments");
+                return nullptr;
+            }
+            advance(); // consume ')'
+            decoExpr = makeNode<havel::ast::CallExpression>(
+                std::move(decoExpr), std::move(args));
         }
 
         decorators.push_back(std::move(decoExpr));
 
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-      }
-
-      auto target = parseStatement();
-      if (!target) {
-        failAt(at(), "Expected declaration after @decorator");
-        return nullptr;
-      }
-
-      return makeNode<havel::ast::DecoratorStatement>(std::move(decorators),
-                                                      std::move(target));
+        while (at().type == havel::TokenType::NewLine) advance();
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
-      advance(); // consume 'with'
+    auto target = parseStatement();
+    if (!target) {
+        failAt(at(), "Expected declaration after @decorator");
+        return nullptr;
+    }
 
-      auto object = parsePrattExpression(51); // stop before 'as' (BP 50)
+    return makeNode<havel::ast::DecoratorStatement>(
+        std::move(decorators), std::move(target));
+}
 
-      std::unique_ptr<havel::ast::Identifier> alias;
-      if (at().type == havel::TokenType::As) {
+std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
+    advance(); // consume 'with'
+
+    auto object = parsePrattExpression(51); // stop before 'as' (BP 50)
+
+    std::unique_ptr<havel::ast::Identifier> alias;
+    if (at().type == havel::TokenType::As) {
         advance(); // consume 'as'
         if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected identifier after 'as'");
+            failAt(at(), "Expected identifier after 'as'");
         }
         auto tok = advance();
         alias = std::make_unique<havel::ast::Identifier>(tok.value);
         alias->line = tok.line;
         alias->column = tok.column;
-      }
+    }
 
-      if (at().type != havel::TokenType::OpenBrace) {
+    if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after with expression");
-      }
+    }
 
-      advance(); // consume '{'
+    advance(); // consume '{'
 
-      std::vector<std::unique_ptr<havel::ast::Statement>> body;
+    std::vector<std::unique_ptr<havel::ast::Statement>> body;
 
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
         auto stmt = parseStatement();
         if (stmt) {
-          body.push_back(std::move(stmt));
+            body.push_back(std::move(stmt));
         }
 
         while (at().type == havel::TokenType::NewLine) {
-          advance();
+            advance();
         }
-      }
+    }
 
-      if (at().type != havel::TokenType::CloseBrace) {
+    if (at().type != havel::TokenType::CloseBrace) {
         failAt(at(), "Expected '}' to close with block");
-      }
-
-      advance(); // consume '}'
-
-      return makeNode<havel::ast::WithStatement>(
-          std::move(object), std::move(alias), std::move(body));
     }
 
-    // Parse LINQ-style query expression and desugar to pipeline
-    // from x in numbers where x > 2 select x * 2
-    // desugars to: numbers | filter(x => x > 2) | map(x => x * 2)
-    std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
-      advance(); // consume 'from'
+    advance(); // consume '}'
 
-      // Parse variable name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected variable name after 'from'");
-      }
-      std::string varName = advance().value;
+    return makeNode<havel::ast::WithStatement>(std::move(object),
+        std::move(alias), std::move(body));
+}
 
-      // Expect 'in'
-      if (at().type != havel::TokenType::In) {
-        failAt(at(), "Expected 'in' after variable name in query expression");
-      }
-      advance(); // consume 'in'
+// Parse LINQ-style query expression and desugar to pipeline
+// from x in numbers where x > 2 select x * 2
+// desugars to: numbers | filter(x => x > 2) | map(x => x * 2)
+std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
+  advance(); // consume 'from'
 
-      // Parse the source expression
-      auto source = parseAssignmentExpression();
+  // Parse variable name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected variable name after 'from'");
+  }
+  std::string varName = advance().value;
 
-      // Build pipeline stages
-      std::vector<std::unique_ptr<havel::ast::Expression>> stages;
-      stages.push_back(std::move(source));
+  // Expect 'in'
+  if (at().type != havel::TokenType::In) {
+    failAt(at(), "Expected 'in' after variable name in query expression");
+  }
+  advance(); // consume 'in'
 
-      // Parse optional where clause(s)
-      while (at().type == havel::TokenType::Where) {
-        advance(); // consume 'where'
-        auto condition = parseAssignmentExpression();
+  // Parse the source expression
+  auto source = parseAssignmentExpression();
 
-        // Create filter call: filter(varName => condition)
-        auto filterCall = makeNode<havel::ast::CallExpression>(
-            makeNode<havel::ast::Identifier>("filter"));
+  // Build pipeline stages
+  std::vector<std::unique_ptr<havel::ast::Expression>> stages;
+  stages.push_back(std::move(source));
 
-        // Build lambda: varName => condition
-        auto param = makeNode<havel::ast::FunctionParameter>(
-            makeNode<havel::ast::Identifier>(varName));
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-        params.push_back(std::move(param));
+  // Parse optional where clause(s)
+  while (at().type == havel::TokenType::Where) {
+    advance(); // consume 'where'
+    auto condition = parseAssignmentExpression();
 
-        // Wrap the condition expression in an ExpressionStatement
-        auto body =
-            makeNode<havel::ast::ExpressionStatement>(std::move(condition));
-        auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params),
-                                                             std::move(body));
+    // Create filter call: filter(varName => condition)
+    auto filterCall = makeNode<havel::ast::CallExpression>(
+        makeNode<havel::ast::Identifier>("filter"));
 
-        filterCall->args.push_back(std::move(lambda));
-        stages.push_back(std::move(filterCall));
-      }
+    // Build lambda: varName => condition
+    auto param = makeNode<havel::ast::FunctionParameter>(
+        makeNode<havel::ast::Identifier>(varName));
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    params.push_back(std::move(param));
 
-      // Parse optional select clause
-      if (at().type == havel::TokenType::Select) {
-        advance(); // consume 'select'
-        auto transform = parseAssignmentExpression();
+    // Wrap the condition expression in an ExpressionStatement
+    auto body =
+        makeNode<havel::ast::ExpressionStatement>(std::move(condition));
+    auto lambda = makeNode<havel::ast::LambdaExpression>(
+        std::move(params), std::move(body));
 
-        // Create map call: map(varName => transform)
-        auto mapCall = makeNode<havel::ast::CallExpression>(
-            makeNode<havel::ast::Identifier>("map"));
+    filterCall->args.push_back(std::move(lambda));
+    stages.push_back(std::move(filterCall));
+  }
 
-        // Build lambda: varName => transform
-        auto param = makeNode<havel::ast::FunctionParameter>(
-            makeNode<havel::ast::Identifier>(varName));
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-        params.push_back(std::move(param));
+  // Parse optional select clause
+  if (at().type == havel::TokenType::Select) {
+    advance(); // consume 'select'
+    auto transform = parseAssignmentExpression();
 
-        // Wrap the transform expression in an ExpressionStatement
-        auto body =
-            makeNode<havel::ast::ExpressionStatement>(std::move(transform));
-        auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params),
-                                                             std::move(body));
+    // Create map call: map(varName => transform)
+    auto mapCall = makeNode<havel::ast::CallExpression>(
+        makeNode<havel::ast::Identifier>("map"));
 
-        mapCall->args.push_back(std::move(lambda));
-        stages.push_back(std::move(mapCall));
-      }
+    // Build lambda: varName => transform
+    auto param = makeNode<havel::ast::FunctionParameter>(
+        makeNode<havel::ast::Identifier>(varName));
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    params.push_back(std::move(param));
 
-      // Create pipeline expression
-      auto pipeline = makeNode<havel::ast::PipelineExpression>();
-      pipeline->stages = std::move(stages);
+    // Wrap the transform expression in an ExpressionStatement
+    auto body =
+        makeNode<havel::ast::ExpressionStatement>(std::move(transform));
+    auto lambda = makeNode<havel::ast::LambdaExpression>(
+        std::move(params), std::move(body));
 
-      return std::move(pipeline);
-    }
+    mapCall->args.push_back(std::move(lambda));
+    stages.push_back(std::move(mapCall));
+  }
 
-    std::unique_ptr<havel::ast::Expression>
-    Parser::parseAssignmentExpression() {
-      auto left = parseTernaryExpression();
+  // Create pipeline expression
+  auto pipeline = makeNode<havel::ast::PipelineExpression>();
+  pipeline->stages = std::move(stages);
 
-      // Check for comma-separated targets: a, b, c = value
-      // But NOT when in match expression - the comma is the match arm separator
-      std::vector<std::unique_ptr<havel::ast::Expression>> targets;
-      bool hasComma = false;
+  return std::move(pipeline);
+}
 
-      if (at().type == havel::TokenType::Comma && !context.inMatchExpression) {
+std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
+    auto left = parseTernaryExpression();
+
+    // Check for comma-separated targets: a, b, c = value
+    // But NOT when in match expression - the comma is the match arm separator
+    std::vector<std::unique_ptr<havel::ast::Expression>> targets;
+    bool hasComma = false;
+    
+    if (at().type == havel::TokenType::Comma && !context.inMatchExpression) {
         hasComma = true;
         targets.push_back(std::move(left));
-
+        
         while (at().type == havel::TokenType::Comma) {
-          advance(); // consume comma
-          targets.push_back(parseTernaryExpression());
+            advance(); // consume comma
+            targets.push_back(parseTernaryExpression());
         }
-      }
+    }
 
-      // Check for assignment operators
-      if (at().type == havel::TokenType::Assign ||
-          at().type == havel::TokenType::PlusAssign ||
-          at().type == havel::TokenType::MinusAssign ||
-          at().type == havel::TokenType::MultiplyAssign ||
-          at().type == havel::TokenType::DivideAssign ||
-          at().type == havel::TokenType::ModuloAssign ||
-          at().type == havel::TokenType::PowerAssign ||
-          at().type == havel::TokenType::BackslashAssign ||
-          at().type == havel::TokenType::DoubleModuloAssign ||
-          at().type == havel::TokenType::BitwiseAndAssign ||
-          at().type == havel::TokenType::BitwiseOrAssign ||
-          at().type == havel::TokenType::BitwiseXorAssign ||
-          at().type == havel::TokenType::ShiftLeftAssign ||
-          at().type == havel::TokenType::ShiftRightAssign) {
-        auto opTok = advance(); // consume the operator
+    // Check for assignment operators
+if (at().type == havel::TokenType::Assign ||
+      at().type == havel::TokenType::PlusAssign ||
+      at().type == havel::TokenType::MinusAssign ||
+      at().type == havel::TokenType::MultiplyAssign ||
+      at().type == havel::TokenType::DivideAssign ||
+      at().type == havel::TokenType::ModuloAssign ||
+      at().type == havel::TokenType::PowerAssign ||
+      at().type == havel::TokenType::BackslashAssign ||
+      at().type == havel::TokenType::DoubleModuloAssign ||
+      at().type == havel::TokenType::BitwiseAndAssign ||
+      at().type == havel::TokenType::BitwiseOrAssign ||
+      at().type == havel::TokenType::BitwiseXorAssign ||
+ at().type == havel::TokenType::ShiftLeftAssign ||
+ at().type == havel::TokenType::ShiftRightAssign) {
+ auto opTok = advance(); // consume the operator
 
-        // Right-associative: a = b = c means a = (b = c)
-        auto value = parseAssignmentExpression();
+ // Right-associative: a = b = c means a = (b = c)
+ auto value = parseAssignmentExpression();
 
-        if (hasComma) {
-          // Multiple assignment: a, b, c = value
-          if (opTok.value != "=") {
-            failAt(opTok, "Compound assignment operators not supported for "
-                          "multiple targets");
-          }
-          auto multiAssign = makeNode<havel::ast::MultipleAssignment>(
-              std::move(targets), std::move(value));
-          multiAssign->line = opTok.line;
-          multiAssign->column = opTok.column;
-          return multiAssign;
+ if (hasComma) {
+            // Multiple assignment: a, b, c = value
+            if (opTok.value != "=") {
+                failAt(opTok, "Compound assignment operators not supported for multiple targets");
+            }
+            auto multiAssign = makeNode<havel::ast::MultipleAssignment>(
+                std::move(targets), std::move(value));
+            multiAssign->line = opTok.line;
+            multiAssign->column = opTok.column;
+            return multiAssign;
         }
 
         // Check if target is global scope (::identifier)
         bool isGlobalScope = false;
         if (left && left->kind == havel::ast::NodeType::Identifier) {
-          auto &ident = static_cast<havel::ast::Identifier &>(*left);
-          isGlobalScope = ident.isGlobalScope;
+            auto &ident = static_cast<havel::ast::Identifier &>(*left);
+            isGlobalScope = ident.isGlobalScope;
         }
 
         auto assign = makeNode<havel::ast::AssignmentExpression>(
@@ -8755,551 +8226,542 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
         assign->line = opTok.line;
         assign->column = opTok.column;
         return assign;
-      }
-
-      // If we had comma but no assignment, that's an error
-      if (hasComma) {
-        failAt(at(), "Expected '=' after comma-separated targets");
-      }
-
-      // <- as await-assign: target <- expr means target = <-expr
-      if (at().type == havel::TokenType::LeftArrow) {
-        auto arrowTok = advance();
-        auto rhs = parseAssignmentExpression();
-        auto awaitExpr = makeNode<havel::ast::AwaitExpression>(std::move(rhs));
-        awaitExpr->line = arrowTok.line;
-        awaitExpr->column = arrowTok.column;
-
-        bool isGlobalScope = false;
-        if (left && left->kind == havel::ast::NodeType::Identifier) {
-          auto &ident = static_cast<havel::ast::Identifier &>(*left);
-          isGlobalScope = ident.isGlobalScope;
-        }
-
-        auto assign = makeNode<havel::ast::AssignmentExpression>(
-            std::move(left), std::move(awaitExpr), "=", isGlobalScope);
-        assign->line = arrowTok.line;
-        assign->column = arrowTok.column;
-        return assign;
-      }
-
-      return left;
     }
 
-    // Parse cast expression: expr as Type
-    std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
-      auto left = parseMatchExpression();
+ // If we had comma but no assignment, that's an error
+ if (hasComma) {
+ failAt(at(), "Expected '=' after comma-separated targets");
+ }
 
-      // Check for 'as' keyword
-      if (at().type == havel::TokenType::As) {
-        advance(); // consume 'as'
+ // <- as await-assign: target <- expr means target = <-expr
+ if (at().type == havel::TokenType::LeftArrow) {
+ auto arrowTok = advance();
+ auto rhs = parseAssignmentExpression();
+ auto awaitExpr = makeNode<havel::ast::AwaitExpression>(std::move(rhs));
+ awaitExpr->line = arrowTok.line;
+ awaitExpr->column = arrowTok.column;
 
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected type name after 'as'");
-        }
+ bool isGlobalScope = false;
+ if (left && left->kind == havel::ast::NodeType::Identifier) {
+ auto &ident = static_cast<havel::ast::Identifier &>(*left);
+ isGlobalScope = ident.isGlobalScope;
+ }
 
-        std::string targetType = advance().value;
-        return makeNode<havel::ast::CastExpression>(std::move(left),
-                                                    targetType);
-      }
+ auto assign = makeNode<havel::ast::AssignmentExpression>(
+ std::move(left), std::move(awaitExpr), "=", isGlobalScope);
+ assign->line = arrowTok.line;
+ assign->column = arrowTok.column;
+ return assign;
+ }
 
-      return left;
+ return left;
+}
+
+// Parse cast expression: expr as Type
+std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
+  auto left = parseMatchExpression();
+
+  // Check for 'as' keyword
+  if (at().type == havel::TokenType::As) {
+    advance(); // consume 'as'
+
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected type name after 'as'");
     }
 
-    // Parse match expression: match value { pattern => expr, _ => default }
-    std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
-      // Note: the 'match' token has already been consumed by nud() before
-      // calling this. Do NOT check for Match token or advance here.
+    std::string targetType = advance().value;
+    return makeNode<havel::ast::CastExpression>(std::move(left),
+                                                        targetType);
+  }
 
-      // Save and set inMatchExpression flag for the ENTIRE match block.
-      // This prevents => from being parsed as arrow functions in match arms.
-      bool savedInMatchExpression = context.inMatchExpression;
-      context.inMatchExpression = true;
+  return left;
+}
 
-      // Parse comma-separated discriminants
-      std::vector<std::unique_ptr<havel::ast::Expression>> discriminants;
+// Parse match expression: match value { pattern => expr, _ => default }
+std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
+  // Note: the 'match' token has already been consumed by nud() before calling this.
+  // Do NOT check for Match token or advance here.
 
-      // Temporarily disable brace sugar to prevent { from being consumed as a
-      // lambda
-      bool savedBraceSugar = context.allowBraceSugar;
-      context.allowBraceSugar = false;
+  // Save and set inMatchExpression flag for the ENTIRE match block.
+  // This prevents => from being parsed as arrow functions in match arms.
+  bool savedInMatchExpression = context.inMatchExpression;
+  context.inMatchExpression = true;
 
-      discriminants.push_back(parseBinaryExpression());
+  // Parse comma-separated discriminants
+  std::vector<std::unique_ptr<havel::ast::Expression>> discriminants;
 
-      // Parse additional discriminants separated by commas
-      while (at().type == havel::TokenType::Comma) {
-        advance(); // consume ','
-        discriminants.push_back(parseBinaryExpression());
-      }
+  // Temporarily disable brace sugar to prevent { from being consumed as a lambda
+  bool savedBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool savedSuppressBraceLambda = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
 
-      auto match =
-          makeNode<havel::ast::MatchExpression>(std::move(discriminants));
+  discriminants.push_back(parseBinaryExpression());
+  context.suppressBraceLambda = savedSuppressBraceLambda;
 
-      // Expect opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after match value(s)");
-      }
-      advance(); // consume '{'
+  // Parse additional discriminants separated by commas
+  while (at().type == havel::TokenType::Comma) {
+    advance(); // consume ','
+    discriminants.push_back(parseBinaryExpression());
+  }
 
-      // Parse cases
-      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
+  auto match = makeNode<havel::ast::MatchExpression>(std::move(discriminants));
 
-        if (at().type == havel::TokenType::CloseBrace) {
-          break;
-        }
+  // Expect opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after match value(s)");
+  }
+  advance(); // consume '{'
 
-        // Parse comma-separated patterns using the new pattern parser
-        std::vector<std::unique_ptr<havel::ast::Expression>> patterns;
-        std::unique_ptr<havel::ast::Expression> guard;
-        bool isDefault = true;
-
-        // Parse first pattern
-        auto firstPat = parsePattern();
-        isDefault =
-            (firstPat && firstPat->kind == ast::NodeType::WildcardPattern);
-        patterns.push_back(std::move(firstPat));
-
-        // Parse additional patterns separated by commas
-        while (at().type == havel::TokenType::Comma) {
-          // Look ahead: if comma is followed by 'if', it's a guard, not another
-          // pattern
-          if (at(1).type == havel::TokenType::If) {
-            break; // Guard follows, stop consuming patterns
-          }
-          advance(); // consume ','
-          auto pat = parsePattern();
-          if (pat && pat->kind != ast::NodeType::WildcardPattern) {
-            isDefault = false;
-          }
-          patterns.push_back(std::move(pat));
-        }
-
-        // Check for optional guard condition: pattern if guard => result
-        if (at().type == havel::TokenType::If) {
-          advance(); // consume 'if'
-          // Use rbp=11 to prevent Arrow (bp=10) from being parsed as lambda
-          guard = parsePrattExpression(11);
-        }
-
-        // Skip newlines before checking for =>
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        // Expect =>
-        if (at().type != havel::TokenType::Arrow) {
-          failAt(at(), "Expected '=>' after pattern(s)");
-        }
-        advance(); // consume '=>'
-
-        // Parse result expression (use parseAssignmentExpression to handle
-        // assignments like x = true)
-        auto result = parseAssignmentExpression();
-
-        if (isDefault) {
-          match->defaultCase = std::move(result);
-        } else {
-          ast::MatchExpression::MatchArm arm;
-          arm.patterns = std::move(patterns);
-          arm.guard = std::move(guard);
-          arm.result = std::move(result);
-          match->cases.push_back(std::move(arm));
-        }
-
-        // Skip optional comma
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        }
-
-        // Skip newlines and semicolons (case separators)
-        while (at().type == havel::TokenType::NewLine ||
-               at().type == havel::TokenType::Semicolon) {
-          advance();
-        }
-      }
-
-      // Expect closing brace
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close match expression");
-      }
-      advance(); // consume '}'
-
-      // Restore context
-      context.allowBraceSugar = savedBraceSugar;
-      context.inMatchExpression = savedInMatchExpression;
-
-      return match;
+  // Parse cases
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
-      auto left = parseAssignmentExpression();
-
-      // Check for pipeline operator | or |>
-      if (at().type == havel::TokenType::Pipe ||
-          at().type == havel::TokenType::PipeRight) {
-        auto pipeline = makeNode<havel::ast::PipelineExpression>();
-        pipeline->stages.push_back(std::move(left));
-
-        while (at().type == havel::TokenType::Pipe ||
-               at().type == havel::TokenType::PipeRight) {
-          advance(); // consume '|' or '|>'
-          auto stage = parseAssignmentExpression();
-          pipeline->stages.push_back(std::move(stage));
-        }
-
-        return std::move(pipeline);
-      }
-
-      // Check for config append operator >>
-      if (at().type == havel::TokenType::ShiftRight) {
-        auto opTok = at();
-        advance();
-        auto right = parseLogicalOr();
-        auto bin = makeNode<havel::ast::BinaryExpression>(
-            std::move(left), havel::ast::BinaryOperator::ConfigAppend,
-            std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        return std::move(bin);
-      }
-
-      return left;
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseTernaryExpression() {
-      auto condition = parseNullishCoalescing();
+    // Parse comma-separated patterns using the new pattern parser
+    std::vector<std::unique_ptr<havel::ast::Expression>> patterns;
+    std::unique_ptr<havel::ast::Expression> guard;
+    bool isDefault = true;
 
-      // Check for ternary operator ?
-      if (at().type == havel::TokenType::Question) {
-        advance(); // consume '?'
+    // Parse first pattern
+    auto firstPat = parsePattern();
+    isDefault = (firstPat && firstPat->kind == ast::NodeType::WildcardPattern);
+    patterns.push_back(std::move(firstPat));
 
-        auto trueValue = parseBinaryExpression();
-
-        if (at().type != havel::TokenType::Colon) {
-          failAt(at(), "Expected ':' in ternary expression");
-        }
-        advance(); // consume ':'
-
-        auto falseValue = parseTernaryExpression(); // Right-associative
-
-        return makeNode<havel::ast::TernaryExpression>(
-            std::move(condition), std::move(trueValue), std::move(falseValue));
+    // Parse additional patterns separated by commas
+    while (at().type == havel::TokenType::Comma) {
+      // Look ahead: if comma is followed by 'if', it's a guard, not another pattern
+      if (at(1).type == havel::TokenType::If) {
+        break; // Guard follows, stop consuming patterns
       }
-
-      return condition;
+      advance(); // consume ','
+      auto pat = parsePattern();
+      if (pat && pat->kind != ast::NodeType::WildcardPattern) {
+        isDefault = false;
+      }
+      patterns.push_back(std::move(pat));
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseBinaryExpression() {
-      return parseLogicalOr();
+    // Check for optional guard condition: pattern if guard => result
+    if (at().type == havel::TokenType::If) {
+      advance(); // consume 'if'
+      // Use rbp=11 to prevent Arrow (bp=10) from being parsed as lambda
+      guard = parsePrattExpression(11);
     }
 
-    // Add these new methods for operator precedence
-    std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
-      auto left = parseLogicalAnd();
-
-      while (at().type == havel::TokenType::Or) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseLogicalAnd();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
-
-      return left;
+    // Skip newlines before checking for =>
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseNullishCoalescing() {
-      // Use logical or parsing for left side so binary operators like == work
-      // E.g., a == b ?? default, obj.field == value ?? default
-      auto left = parseLogicalOr();
+    // Expect =>
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after pattern(s)");
+    }
+    advance(); // consume '=>'
 
-      while (at().type == havel::TokenType::Nullish) {
-        auto opTok = at(); // Save operator token location
-        advance();         // consume ??
-        auto right = parseLogicalOr();
-        auto bin = makeNode<havel::ast::BinaryExpression>(
-            std::move(left), havel::ast::BinaryOperator::Nullish,
-            std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
+    // Parse result expression (use parseAssignmentExpression to handle assignments like x = true)
+    auto result = parseAssignmentExpression();
 
-      return left;
+    if (isDefault) {
+      match->defaultCase = std::move(result);
+    } else {
+      ast::MatchExpression::MatchArm arm;
+      arm.patterns = std::move(patterns);
+      arm.guard = std::move(guard);
+      arm.result = std::move(result);
+      match->cases.push_back(std::move(arm));
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
-      auto left = parseEquality();
-
-      while (at().type == havel::TokenType::And) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseEquality();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
-
-      return left;
+    // Skip optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
-      auto left = parseComparison();
+    // Skip newlines and semicolons (case separators)
+    while (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+      advance();
+    }
+  }
 
-      while (at().type == havel::TokenType::Equals ||
-             at().type == havel::TokenType::NotEquals) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseComparison();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
+  // Expect closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close match expression");
+  }
+  advance(); // consume '}'
 
-      return left;
+  // Restore context
+  context.allowBraceSugar = savedBraceSugar;
+  context.inMatchExpression = savedInMatchExpression;
+
+  return match;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
+  auto left = parseAssignmentExpression();
+
+  // Check for pipeline operator | or |>
+  if (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::PipeRight) {
+    auto pipeline = makeNode<havel::ast::PipelineExpression>();
+    pipeline->stages.push_back(std::move(left));
+
+    while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::PipeRight) {
+      advance(); // consume '|' or '|>'
+      auto stage = parseAssignmentExpression();
+      pipeline->stages.push_back(std::move(stage));
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
-      auto left = parseRange();
+    return std::move(pipeline);
+  }
 
-      // Membership operators: in, not in
-      // Check for "not in" first (two-token operator)
-      if (at().type == havel::TokenType::Not) {
-        if (at(1).type == havel::TokenType::In) {
-          auto notTok = at(); // Save location of 'not'
-          advance();          // consume 'not'
-          advance();          // consume 'in'
-          auto right = parseRange();
-          auto bin = makeNode<havel::ast::BinaryExpression>(
-              std::move(left), havel::ast::BinaryOperator::NotIn,
-              std::move(right));
-          bin->line = notTok.line;
-          bin->column = notTok.column;
-          left = std::move(bin);
-        }
-      }
+  // Check for config append operator >>
+    if (at().type == havel::TokenType::ShiftRight) {
+      auto opTok = at();
+      advance();
+      auto right = parseLogicalOr();
+      auto bin = makeNode<havel::ast::BinaryExpression>(
+          std::move(left), havel::ast::BinaryOperator::ConfigAppend, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    return std::move(bin);
+  }
 
-      // Check for "in" operator
-      if (at().type == havel::TokenType::In) {
-        auto inTok = at(); // Save location of 'in'
-        advance();         // consume 'in'
-        auto right = parseRange();
-        auto bin = makeNode<havel::ast::BinaryExpression>(
-            std::move(left), havel::ast::BinaryOperator::In, std::move(right));
-        bin->line = inTok.line;
-        bin->column = inTok.column;
-        left = std::move(bin);
-      }
+  return left;
+}
 
-      // Comparison operators: < > <= >=
-      // Left-associative: a < b < c parses as ((a < b) < c)
-      // Note: Python-style chaining (a < b && b < c) is NOT supported.
-      // For Python semantics, use explicit: (a < b) && (b < c)
-      while (at().type == havel::TokenType::Less ||
-             at().type == havel::TokenType::Greater ||
-             at().type == havel::TokenType::LessEquals ||
-             at().type == havel::TokenType::GreaterEquals) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseRange();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
+std::unique_ptr<havel::ast::Expression> Parser::parseTernaryExpression() {
+  auto condition = parseNullishCoalescing();
 
-      return left;
+  // Check for ternary operator ?
+  if (at().type == havel::TokenType::Question) {
+    advance(); // consume '?'
+
+    auto trueValue = parseBinaryExpression();
+
+    if (at().type != havel::TokenType::Colon) {
+      failAt(at(), "Expected ':' in ternary expression");
+    }
+    advance(); // consume ':'
+
+    auto falseValue = parseTernaryExpression(); // Right-associative
+
+    return makeNode<havel::ast::TernaryExpression>(
+        std::move(condition), std::move(trueValue), std::move(falseValue));
+  }
+
+  return condition;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseBinaryExpression() {
+  return parseLogicalOr();
+}
+
+// Add these new methods for operator precedence
+std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
+  auto left = parseLogicalAnd();
+
+  while (at().type == havel::TokenType::Or) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseLogicalAnd();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseNullishCoalescing() {
+  // Use logical or parsing for left side so binary operators like == work
+  // E.g., a == b ?? default, obj.field == value ?? default
+  auto left = parseLogicalOr();
+
+  while (at().type == havel::TokenType::Nullish) {
+    auto opTok = at(); // Save operator token location
+    advance();         // consume ??
+    auto right = parseLogicalOr();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), havel::ast::BinaryOperator::Nullish, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
+  auto left = parseEquality();
+
+  while (at().type == havel::TokenType::And) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseEquality();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
+    auto left = parseComparison();
+
+    while (at().type == havel::TokenType::Equals ||
+         at().type == havel::TokenType::NotEquals) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseComparison();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
+  auto left = parseRange();
+
+  // Membership operators: in, not in
+  // Check for "not in" first (two-token operator)
+  if (at().type == havel::TokenType::Not) {
+    if (at(1).type == havel::TokenType::In) {
+      auto notTok = at(); // Save location of 'not'
+      advance();          // consume 'not'
+      advance();          // consume 'in'
+      auto right = parseRange();
+      auto bin = makeNode<havel::ast::BinaryExpression>(
+          std::move(left), havel::ast::BinaryOperator::NotIn, std::move(right));
+      bin->line = notTok.line;
+      bin->column = notTok.column;
+      left = std::move(bin);
+    }
+  }
+
+  // Check for "in" operator
+  if (at().type == havel::TokenType::In) {
+    auto inTok = at(); // Save location of 'in'
+    advance();         // consume 'in'
+    auto right = parseRange();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), havel::ast::BinaryOperator::In, std::move(right));
+    bin->line = inTok.line;
+    bin->column = inTok.column;
+    left = std::move(bin);
+  }
+
+    // Comparison operators: < > <= >=
+  // Left-associative: a < b < c parses as ((a < b) < c)
+  // Note: Python-style chaining (a < b && b < c) is NOT supported.
+  // For Python semantics, use explicit: (a < b) && (b < c)
+  while (at().type == havel::TokenType::Less ||
+         at().type == havel::TokenType::Greater ||
+         at().type == havel::TokenType::LessEquals ||
+         at().type == havel::TokenType::GreaterEquals) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseRange();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseRange() {
+  auto left = parseAdditive();
+
+  // Range operator: ..
+  // Supports: start .. end  OR  start .. end .. step
+  if (at().type == havel::TokenType::DotDot) {
+    auto opTok = at(); // Save operator token location
+    advance();         // consume '..'
+    auto right = parseAdditive();
+
+    // Check for optional step value
+    std::unique_ptr<havel::ast::Expression> step;
+    if (at().type == havel::TokenType::DotDot) {
+      advance(); // consume second '..'
+      step = parseAdditive();
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseRange() {
-      auto left = parseAdditive();
+    auto range = makeNode<havel::ast::RangeExpression>(
+        std::move(left), std::move(right), std::move(step));
+    range->line = opTok.line;
+    range->column = opTok.column;
 
-      // Range operator: ..
-      // Supports: start .. end  OR  start .. end .. step
-      if (at().type == havel::TokenType::DotDot) {
-        auto opTok = at(); // Save operator token location
-        advance();         // consume '..'
-        auto right = parseAdditive();
+    return range;
+  }
 
-        // Check for optional step value
-        std::unique_ptr<havel::ast::Expression> step;
-        if (at().type == havel::TokenType::DotDot) {
-          advance(); // consume second '..'
-          step = parseAdditive();
-        }
+  return left;
+}
 
-        auto range = makeNode<havel::ast::RangeExpression>(
-            std::move(left), std::move(right), std::move(step));
-        range->line = opTok.line;
-        range->column = opTok.column;
+std::unique_ptr<havel::ast::Expression> Parser::parseAdditive() {
+  auto left = parseMultiplicative();
 
-        return range;
-      }
+  while (at().type == havel::TokenType::Plus ||
+         at().type == havel::TokenType::Minus) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseMultiplicative();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
 
-      return left;
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
+  auto left = parseUnary();
+
+  while (at().type == havel::TokenType::Multiply ||
+         at().type == havel::TokenType::Divide ||
+         at().type == havel::TokenType::Modulo ||
+         at().type == havel::TokenType::Power ||
+         at().type == havel::TokenType::Backslash) {
+    auto opTok = at(); // Save operator token location
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseUnary();
+    auto bin = makeNode<havel::ast::BinaryExpression>(
+        std::move(left), op, std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
+ if (at().type == havel::TokenType::Identifier && at().value == "await") {
+ auto awaitTok = advance();
+ auto argument = parseUnary();
+ auto awaitExpr =
+ makeNode<havel::ast::AwaitExpression>(std::move(argument));
+ awaitExpr->line = awaitTok.line;
+ awaitExpr->column = awaitTok.column;
+ return awaitExpr;
+ }
+ if (at().type == havel::TokenType::LeftArrow) {
+ auto arrowTok = advance();
+ auto argument = parseUnary();
+ auto awaitExpr =
+ makeNode<havel::ast::AwaitExpression>(std::move(argument));
+ awaitExpr->line = arrowTok.line;
+ awaitExpr->column = arrowTok.column;
+ return awaitExpr;
+ }
+
+  if (at().type == havel::TokenType::PlusPlus ||
+      at().type == havel::TokenType::MinusMinus) {
+    auto op = (at().type == havel::TokenType::PlusPlus)
+                  ? havel::ast::UpdateExpression::Operator::Increment
+                  : havel::ast::UpdateExpression::Operator::Decrement;
+    advance();
+    auto operand = parseUnary();
+    return makeNode<havel::ast::UpdateExpression>(std::move(operand),
+                                                          op, true);
+  }
+
+if (at().type == havel::TokenType::BangOpenBrace) {
+    // !{...} - unsorted object literal (single BangOpenBrace token)
+    return parseObjectLiteral(true); // true = unsorted
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseAdditive() {
-      auto left = parseMultiplicative();
-
-      while (at().type == havel::TokenType::Plus ||
-             at().type == havel::TokenType::Minus) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseMultiplicative();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
-
-      return left;
+    if (at().type == havel::TokenType::Not) {
+    // Check if this is !{} for unsorted object (fallback for separate ! and { tokens)
+    if (at(1).type == havel::TokenType::OpenBrace) {
+    // !{...} - unsorted object literal
+    advance(); // consume '!'
+    return parseObjectLiteral(true); // true = unsorted
+    }
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
-      auto left = parseUnary();
+    if (at().type == havel::TokenType::Not ||
+      at().type == havel::TokenType::Minus ||
+      at().type == havel::TokenType::Plus ||
+      at().type == havel::TokenType::Length) {
 
-      while (at().type == havel::TokenType::Multiply ||
-             at().type == havel::TokenType::Divide ||
-             at().type == havel::TokenType::Modulo ||
-             at().type == havel::TokenType::Power ||
-             at().type == havel::TokenType::Backslash) {
-        auto opTok = at(); // Save operator token location
-        auto op = tokenToBinaryOperator(at().type);
-        advance();
-        auto right = parseUnary();
-        auto bin = makeNode<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-        bin->line = opTok.line;
-        bin->column = opTok.column;
-        left = std::move(bin);
-      }
+    // Convert TokenType to UnaryOperator
+    havel::ast::UnaryExpression::UnaryOperator unaryOp;
 
-      return left;
+    switch (at().type) {
+    case havel::TokenType::Not:
+      unaryOp = havel::ast::UnaryExpression::UnaryOperator::Not;
+      break;
+    case havel::TokenType::Minus:
+      unaryOp = havel::ast::UnaryExpression::UnaryOperator::Minus;
+      break;
+    case havel::TokenType::Plus:
+      unaryOp = havel::ast::UnaryExpression::UnaryOperator::Plus;
+      break;
+    case havel::TokenType::Length:
+      unaryOp = havel::ast::UnaryExpression::UnaryOperator::Length;
+      break;
+    default:
+      failAt(at(), "Invalid unary operator");
     }
-    std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
-      if (at().type == havel::TokenType::Identifier && at().value == "await") {
-        auto awaitTok = advance();
-        auto argument = parseUnary();
-        auto awaitExpr =
-            makeNode<havel::ast::AwaitExpression>(std::move(argument));
-        awaitExpr->line = awaitTok.line;
-        awaitExpr->column = awaitTok.column;
-        return awaitExpr;
-      }
-      if (at().type == havel::TokenType::LeftArrow) {
-        auto arrowTok = advance();
-        auto argument = parseUnary();
-        auto awaitExpr =
-            makeNode<havel::ast::AwaitExpression>(std::move(argument));
-        awaitExpr->line = arrowTok.line;
-        awaitExpr->column = arrowTok.column;
-        return awaitExpr;
-      }
 
-      if (at().type == havel::TokenType::PlusPlus ||
-          at().type == havel::TokenType::MinusMinus) {
-        auto op = (at().type == havel::TokenType::PlusPlus)
-                      ? havel::ast::UpdateExpression::Operator::Increment
-                      : havel::ast::UpdateExpression::Operator::Decrement;
-        advance();
-        auto operand = parseUnary();
-        return makeNode<havel::ast::UpdateExpression>(std::move(operand), op,
-                                                      true);
-      }
+    advance(); // Consume the unary operator
+    auto operand =
+        parseUnary(); // Right associative - handle nested unary operators
 
-      if (at().type == havel::TokenType::BangOpenBrace) {
-        // !{...} - unsorted object literal (single BangOpenBrace token)
-        return parseObjectLiteral(true); // true = unsorted
-      }
+    return makeNode<havel::ast::UnaryExpression>(unaryOp,
+                                                         std::move(operand));
+  }
 
-      if (at().type == havel::TokenType::Not) {
-        // Check if this is !{} for unsorted object (fallback for separate ! and
-        // { tokens)
-        if (at(1).type == havel::TokenType::OpenBrace) {
-          // !{...} - unsorted object literal
-          advance();                       // consume '!'
-          return parseObjectLiteral(true); // true = unsorted
-        }
-      }
-
-      if (at().type == havel::TokenType::Not ||
-          at().type == havel::TokenType::Minus ||
-          at().type == havel::TokenType::Plus ||
-          at().type == havel::TokenType::Length) {
-
-        // Convert TokenType to UnaryOperator
-        havel::ast::UnaryExpression::UnaryOperator unaryOp;
-
-        switch (at().type) {
-        case havel::TokenType::Not:
-          unaryOp = havel::ast::UnaryExpression::UnaryOperator::Not;
-          break;
-        case havel::TokenType::Minus:
-          unaryOp = havel::ast::UnaryExpression::UnaryOperator::Minus;
-          break;
-        case havel::TokenType::Plus:
-          unaryOp = havel::ast::UnaryExpression::UnaryOperator::Plus;
-          break;
-        case havel::TokenType::Length:
-          unaryOp = havel::ast::UnaryExpression::UnaryOperator::Length;
-          break;
-        default:
-          failAt(at(), "Invalid unary operator");
-        }
-
-        advance(); // Consume the unary operator
-        auto operand =
-            parseUnary(); // Right associative - handle nested unary operators
-
-        return makeNode<havel::ast::UnaryExpression>(unaryOp,
-                                                     std::move(operand));
-      }
-
-      return parsePostfixExpression(parsePrimaryExpression());
-    }
-    havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
-      switch (op) {
-      case ast::BinaryOperator::Add:
-        return TokenType::Plus;
-      case ast::BinaryOperator::Sub:
-        return TokenType::Minus;
-      case ast::BinaryOperator::Mul:
-        return TokenType::Multiply;
-      case ast::BinaryOperator::Div:
-        return TokenType::Divide;
-      case ast::BinaryOperator::Equal:
-        return TokenType::Equals;
-      case ast::BinaryOperator::NotEqual:
-        return TokenType::NotEquals;
-      case ast::BinaryOperator::Is:
+  return parsePostfixExpression(parsePrimaryExpression());
+}
+havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
+  switch (op) {
+  case ast::BinaryOperator::Add:
+    return TokenType::Plus;
+  case ast::BinaryOperator::Sub:
+    return TokenType::Minus;
+  case ast::BinaryOperator::Mul:
+    return TokenType::Multiply;
+  case ast::BinaryOperator::Div:
+    return TokenType::Divide;
+  case ast::BinaryOperator::Equal:
+    return TokenType::Equals;
+  case ast::BinaryOperator::NotEqual:
+    return TokenType::NotEquals;
+case ast::BinaryOperator::Is:
         return TokenType::Is;
-      case ast::BinaryOperator::IsNot:
+    case ast::BinaryOperator::IsNot:
         return TokenType::Is;
-      case ast::BinaryOperator::Less:
-        return TokenType::Less;
-      case ast::BinaryOperator::Greater:
-        return TokenType::Greater;
-      case ast::BinaryOperator::And:
-        return TokenType::And;
+  case ast::BinaryOperator::Less:
+    return TokenType::Less;
+  case ast::BinaryOperator::Greater:
+    return TokenType::Greater;
+  case ast::BinaryOperator::And:
+    return TokenType::And;
       case ast::BinaryOperator::Or:
         return TokenType::Or;
       case ast::BinaryOperator::BitwiseAnd:
@@ -9310,748 +8772,204 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
         return TokenType::BitwiseXor;
       case ast::BinaryOperator::BitwiseShiftLeft:
         return TokenType::ShiftLeft;
-      case ast::BinaryOperator::BitwiseShiftRight:
-        return TokenType::ShiftRight;
-      case ast::BinaryOperator::DivMod:
-        return TokenType::DoubleBackslash;
-      case ast::BinaryOperator::Remainder:
-        return TokenType::DoubleModulo;
-      case ast::BinaryOperator::IntDivAssign:
-        return TokenType::BackslashAssign;
-      case ast::BinaryOperator::RemainderAssign:
-        return TokenType::DoubleModuloAssign;
-      case ast::BinaryOperator::BitwiseAndAssign:
-        return TokenType::BitwiseAndAssign;
-      case ast::BinaryOperator::BitwiseOrAssign:
-        return TokenType::BitwiseOrAssign;
-      case ast::BinaryOperator::BitwiseXorAssign:
-        return TokenType::BitwiseXorAssign;
-      case ast::BinaryOperator::BitwiseShiftLeftAssign:
-        return TokenType::ShiftLeftAssign;
-      case ast::BinaryOperator::BitwiseShiftRightAssign:
-        return TokenType::ShiftRightAssign;
-      default:
-        fail("Unknown binary operator");
-      }
-    }
-    // Add the helper method implementation
-    havel::ast::BinaryOperator Parser::tokenToBinaryOperator(
-        TokenType tokenType) {
-      switch (tokenType) {
-      case TokenType::Plus:
-        return havel::ast::BinaryOperator::Add;
-      case TokenType::Minus:
-        return havel::ast::BinaryOperator::Sub;
-      case TokenType::Multiply:
-        return havel::ast::BinaryOperator::Mul;
-      case TokenType::Divide:
-        return havel::ast::BinaryOperator::Div;
-      case TokenType::Modulo:
-        return havel::ast::BinaryOperator::Mod;
-      case TokenType::Power:
-        return havel::ast::BinaryOperator::Pow;
-      case TokenType::Backslash:
-        return havel::ast::BinaryOperator::IntDiv;
-      case TokenType::DoubleBackslash:
-        return havel::ast::BinaryOperator::DivMod;
-      case TokenType::DoubleModulo:
-        return havel::ast::BinaryOperator::Remainder;
-      case TokenType::BackslashAssign:
-        return havel::ast::BinaryOperator::IntDivAssign;
-      case TokenType::DoubleModuloAssign:
-        return havel::ast::BinaryOperator::RemainderAssign;
-      case TokenType::BitwiseAndAssign:
-        return havel::ast::BinaryOperator::BitwiseAndAssign;
-      case TokenType::BitwiseOrAssign:
-        return havel::ast::BinaryOperator::BitwiseOrAssign;
-      case TokenType::BitwiseXorAssign:
-        return havel::ast::BinaryOperator::BitwiseXorAssign;
-      case TokenType::ShiftLeftAssign:
-        return havel::ast::BinaryOperator::BitwiseShiftLeftAssign;
-      case TokenType::ShiftRightAssign:
-        return havel::ast::BinaryOperator::BitwiseShiftRightAssign;
-      case TokenType::Equals:
-        return havel::ast::BinaryOperator::Equal;
-      case TokenType::NotEquals:
-        return havel::ast::BinaryOperator::NotEqual;
-      case TokenType::Is:
-        return havel::ast::BinaryOperator::Is;
-      case TokenType::Less:
-        return havel::ast::BinaryOperator::Less;
-      case TokenType::Greater:
-        return havel::ast::BinaryOperator::Greater;
-      case TokenType::LessEquals:
-        return havel::ast::BinaryOperator::LessEqual;
-      case TokenType::GreaterEquals:
-        return havel::ast::BinaryOperator::GreaterEqual;
-      case TokenType::And:
-        return havel::ast::BinaryOperator::And;
-      case TokenType::Or:
-        return havel::ast::BinaryOperator::Or;
-      case TokenType::BitwiseAnd:
-        return havel::ast::BinaryOperator::BitwiseAnd;
-      case TokenType::BitwiseOr:
-        return havel::ast::BinaryOperator::BitwiseOr;
-      case TokenType::BitwiseXor:
-        return havel::ast::BinaryOperator::BitwiseXor;
-      case TokenType::ShiftLeft:
-        return havel::ast::BinaryOperator::BitwiseShiftLeft;
-      case TokenType::ShiftRight:
-        return havel::ast::BinaryOperator::BitwiseShiftRight;
-      case TokenType::Matches:
-      case TokenType::Tilde:
-        return havel::ast::BinaryOperator::Matches;
-      default:
-        fail("Invalid binary operator token: " +
-             std::to_string(static_cast<int>(tokenType)));
-      }
-    }
-    std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
-      havel::Token tk = at();
+case ast::BinaryOperator::BitwiseShiftRight:
+    return TokenType::ShiftRight;
+  case ast::BinaryOperator::DivMod:
+    return TokenType::DoubleBackslash;
+  case ast::BinaryOperator::Remainder:
+    return TokenType::DoubleModulo;
+  case ast::BinaryOperator::IntDivAssign:
+    return TokenType::BackslashAssign;
+  case ast::BinaryOperator::RemainderAssign:
+    return TokenType::DoubleModuloAssign;
+  case ast::BinaryOperator::BitwiseAndAssign:
+    return TokenType::BitwiseAndAssign;
+  case ast::BinaryOperator::BitwiseOrAssign:
+    return TokenType::BitwiseOrAssign;
+  case ast::BinaryOperator::BitwiseXorAssign:
+    return TokenType::BitwiseXorAssign;
+  case ast::BinaryOperator::BitwiseShiftLeftAssign:
+    return TokenType::ShiftLeftAssign;
+  case ast::BinaryOperator::BitwiseShiftRightAssign:
+    return TokenType::ShiftRightAssign;
+  default:
+    fail("Unknown binary operator");
+  }
+}
+// Add the helper method implementation
+havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
+  switch (tokenType) {
+  case TokenType::Plus:
+    return havel::ast::BinaryOperator::Add;
+  case TokenType::Minus:
+    return havel::ast::BinaryOperator::Sub;
+  case TokenType::Multiply:
+    return havel::ast::BinaryOperator::Mul;
+  case TokenType::Divide:
+    return havel::ast::BinaryOperator::Div;
+  case TokenType::Modulo:
+    return havel::ast::BinaryOperator::Mod;
+  case TokenType::Power:
+    return havel::ast::BinaryOperator::Pow;
+  case TokenType::Backslash:
+    return havel::ast::BinaryOperator::IntDiv;
+  case TokenType::DoubleBackslash:
+    return havel::ast::BinaryOperator::DivMod;
+  case TokenType::DoubleModulo:
+    return havel::ast::BinaryOperator::Remainder;
+  case TokenType::BackslashAssign:
+    return havel::ast::BinaryOperator::IntDivAssign;
+  case TokenType::DoubleModuloAssign:
+    return havel::ast::BinaryOperator::RemainderAssign;
+  case TokenType::BitwiseAndAssign:
+    return havel::ast::BinaryOperator::BitwiseAndAssign;
+  case TokenType::BitwiseOrAssign:
+    return havel::ast::BinaryOperator::BitwiseOrAssign;
+  case TokenType::BitwiseXorAssign:
+    return havel::ast::BinaryOperator::BitwiseXorAssign;
+  case TokenType::ShiftLeftAssign:
+    return havel::ast::BinaryOperator::BitwiseShiftLeftAssign;
+  case TokenType::ShiftRightAssign:
+    return havel::ast::BinaryOperator::BitwiseShiftRightAssign;
+  case TokenType::Equals:
+    return havel::ast::BinaryOperator::Equal;
+  case TokenType::NotEquals:
+    return havel::ast::BinaryOperator::NotEqual;
+  case TokenType::Is:
+    return havel::ast::BinaryOperator::Is;
+  case TokenType::Less:
+    return havel::ast::BinaryOperator::Less;
+  case TokenType::Greater:
+    return havel::ast::BinaryOperator::Greater;
+  case TokenType::LessEquals:
+    return havel::ast::BinaryOperator::LessEqual;
+  case TokenType::GreaterEquals:
+    return havel::ast::BinaryOperator::GreaterEqual;
+    case TokenType::And:
+      return havel::ast::BinaryOperator::And;
+    case TokenType::Or:
+      return havel::ast::BinaryOperator::Or;
+    case TokenType::BitwiseAnd:
+      return havel::ast::BinaryOperator::BitwiseAnd;
+    case TokenType::BitwiseOr:
+      return havel::ast::BinaryOperator::BitwiseOr;
+    case TokenType::BitwiseXor:
+      return havel::ast::BinaryOperator::BitwiseXor;
+    case TokenType::ShiftLeft:
+      return havel::ast::BinaryOperator::BitwiseShiftLeft;
+    case TokenType::ShiftRight:
+      return havel::ast::BinaryOperator::BitwiseShiftRight;
+    case TokenType::Matches:
+    case TokenType::Tilde:
+      return havel::ast::BinaryOperator::Matches;
+  default:
+    fail("Invalid binary operator token: " +
+         std::to_string(static_cast<int>(tokenType)));
+  }
+}
+std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
+  havel::Token tk = at();
 
-      switch (tk.type) {
-      case havel::TokenType::Number: {
-        advance();
+  switch (tk.type) {
+case havel::TokenType::Number: {
+            advance();
         double value = parseNumberLiteral(tk.value);
-        return makeNode<havel::ast::NumberLiteral>(value,
-                                                   hasDecimalPart(tk.value));
-      }
-
-      case havel::TokenType::String: {
-        advance();
-        auto strLit = makeNode<havel::ast::StringLiteral>(tk.value);
-        // Allow string literals to have postfix operations like
-        // indexing/slicing
-        return parsePostfixExpression(std::move(strLit));
-      }
-
-      case havel::TokenType::MultilineString: {
-        advance();
-        auto strLit = makeNode<havel::ast::StringLiteral>(tk.value);
-        // Allow string literals to have postfix operations like
-        // indexing/slicing
-        return parsePostfixExpression(std::move(strLit));
-      }
-
-      case havel::TokenType::Backtick: {
-        advance();
-        return makeNode<havel::ast::BacktickExpression>(tk.value);
-      }
-
-      case havel::TokenType::RegexLiteral: {
-        advance();
-        return makeNode<havel::ast::StringLiteral>(tk.value, true);
-      }
-
-      case havel::TokenType::RegexString: {
-        advance();
-        return makeNode<havel::ast::StringLiteral>(tk.value, true);
-      }
-
-      case havel::TokenType::ShellCommand:
-      case havel::TokenType::ShellCommandCapture: {
-        // Shell command in expression context: $! ["date"] or $ (cmd) or $! var
-        bool captureOutput = (tk.type == havel::TokenType::ShellCommandCapture);
-        advance(); // consume '$' or '$!'
-        // Skip whitespace
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
+        return makeNode<havel::ast::NumberLiteral>(value, hasDecimalPart(tk.value));
         }
-        // Expression forms: $! var, $! (expr), $! [array]
-        if (at().type == havel::TokenType::OpenParen ||
-            at().type == havel::TokenType::OpenBracket) {
-          auto cmdExpr = parseExpression();
-          return makeNode<havel::ast::ShellCommandExpression>(
-              std::move(cmdExpr), captureOutput);
-        } else if (at().type == havel::TokenType::Identifier) {
-          // Just an identifier - parse as primary expression
-          auto cmdExpr = parsePrimaryExpression();
-          return makeNode<havel::ast::ShellCommandExpression>(
-              std::move(cmdExpr), captureOutput);
-        } else {
-          failAt(tk, "Shell command requires expression: $ (cmd), $! [array], "
-                     "or $! var");
-        }
-      }
 
-      case havel::TokenType::This: {
-        advance();
-        auto thisExpr = makeNode<havel::ast::ThisExpression>();
-        // Allow this to have postfix operations like .field access
-        return parsePostfixExpression(std::move(thisExpr));
-      }
+  case havel::TokenType::String: {
+    advance();
+    auto strLit = makeNode<havel::ast::StringLiteral>(tk.value);
+    // Allow string literals to have postfix operations like indexing/slicing
+    return parsePostfixExpression(std::move(strLit));
+  }
 
-      case havel::TokenType::At: {
+  case havel::TokenType::MultilineString: {
+    advance();
+    auto strLit = makeNode<havel::ast::StringLiteral>(tk.value);
+    // Allow string literals to have postfix operations like indexing/slicing
+    return parsePostfixExpression(std::move(strLit));
+  }
+
+  case havel::TokenType::Backtick: {
+    advance();
+    return makeNode<havel::ast::BacktickExpression>(tk.value);
+  }
+
+ case havel::TokenType::RegexLiteral: {
+ advance();
+ return makeNode<havel::ast::StringLiteral>(
+ tk.value, true);
+ }
+
+case havel::TokenType::RegexString: {
+advance();
+return makeNode<havel::ast::StringLiteral>(tk.value, true);
+  }
+
+  case havel::TokenType::ShellCommand:
+  case havel::TokenType::ShellCommandCapture: {
+    // Shell command in expression context: $! ["date"] or $ (cmd) or $! var
+    bool captureOutput = (tk.type == havel::TokenType::ShellCommandCapture);
+    advance(); // consume '$' or '$!'
+    // Skip whitespace
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    // Expression forms: $! var, $! (expr), $! [array]
+    if (at().type == havel::TokenType::OpenParen ||
+        at().type == havel::TokenType::OpenBracket) {
+      auto cmdExpr = parseExpression();
+      return makeNode<havel::ast::ShellCommandExpression>(
+          std::move(cmdExpr), captureOutput);
+    } else if (at().type == havel::TokenType::Identifier) {
+      // Just an identifier - parse as primary expression
+      auto cmdExpr = parsePrimaryExpression();
+      return makeNode<havel::ast::ShellCommandExpression>(
+          std::move(cmdExpr), captureOutput);
+    } else {
+      failAt(
+          tk,
+          "Shell command requires expression: $ (cmd), $! [array], or $! var");
+    }
+  }
+
+  case havel::TokenType::This: {
+    advance();
+    auto thisExpr = makeNode<havel::ast::ThisExpression>();
+    // Allow this to have postfix operations like .field access
+    return parsePostfixExpression(std::move(thisExpr));
+  }
+
+    case havel::TokenType::At: {
         advance(); // consume '@'
         // Parse field name after @, or standalone @ as self-reference
         if (!isFieldLikeToken(at())) {
-          return makeNode<havel::ast::AtExpression>(nullptr);
+            return makeNode<havel::ast::AtExpression>(nullptr);
         }
         auto fieldName = makeIdentifier(advance());
         return makeNode<havel::ast::AtExpression>(std::move(fieldName));
-      }
-
-      case havel::TokenType::SuperArrow: {
-        advance(); // consume '@->'
-        // Parse method name after @->
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected method name after '@->'");
-        }
-        auto methodName = makeIdentifier(advance());
-        // Create a special SuperCallExpression (reuse CallExpression with
-        // isSuper flag)
-        auto call = makeNode<havel::ast::CallExpression>(
-            makeNode<havel::ast::Identifier>("__super__"));
-        call->isSuperCall = true;
-        call->superMethodName = methodName->symbol;
-
-        // Parse arguments if present
-        if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          while (at().type != havel::TokenType::CloseParen && notEOF()) {
-            // Skip newlines
-            while (at().type == havel::TokenType::NewLine) {
-              advance();
-            }
-            if (at().type == havel::TokenType::CloseParen) {
-              break;
-            }
-
-            auto arg = parseExpression();
-            call->args.push_back(std::move(arg));
-
-            while (at().type == havel::TokenType::NewLine) {
-              advance();
-            }
-
-            if (at().type == havel::TokenType::Comma) {
-              advance();
-            } else if (at().type != havel::TokenType::CloseParen) {
-              failAt(at(), "Expected ',' or ')' in super call arguments");
-            }
-          }
-
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after super call arguments");
-          }
-          advance(); // consume ')'
-        }
-
-        return call;
-      }
-
-      case havel::TokenType::InterpolatedString: {
-        advance();
-        std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
-        const std::string &value = tk.value;
-        size_t pos = 0;
-        std::string currentLiteral;
-
-        while (pos < value.length()) {
-          if (value[pos] == '\x01') {
-            if (!currentLiteral.empty()) {
-              segments.push_back(
-                  havel::ast::InterpolatedStringExpression::Segment(
-                      currentLiteral));
-              currentLiteral.clear();
-            }
-            pos += 1;
-            size_t markerDepth = 1;
-            size_t exprStart = pos;
-            while (pos < value.length() && markerDepth > 0) {
-              if (value[pos] == '\x01')
-                markerDepth++;
-              else if (value[pos] == '\x02')
-                markerDepth--;
-              if (markerDepth > 0)
-                pos++;
-            }
-            if (markerDepth == 0) {
-              std::string exprStr = value.substr(exprStart, pos - exprStart);
-              havel::Lexer exprLexer(exprStr);
-              auto exprTokens = exprLexer.tokenize();
-              // Fix: hotkey token starting with # is actually a length operator
-              // in interpolated context
-              if (!exprTokens.empty() &&
-                  exprTokens[0].type == havel::TokenType::Hotkey &&
-                  !exprTokens[0].value.empty() &&
-                  exprTokens[0].value[0] == '#') {
-                std::string key = exprTokens[0].value.substr(1);
-                havel::Token lengthTok("#", havel::TokenType::Length, "#",
-                                       exprTokens[0].line,
-                                       exprTokens[0].column);
-                havel::Token identTok(key, havel::TokenType::Identifier, key,
-                                      exprTokens[0].line,
-                                      exprTokens[0].column + 1);
-                exprTokens[0] = lengthTok;
-                exprTokens.insert(exprTokens.begin() + 1, identTok);
-              }
-              auto savedTokens = tokens;
-              auto savedPos = position;
-              tokens = exprTokens;
-              position = 0;
-              auto expr = parseExpression();
-              tokens = savedTokens;
-              position = savedPos;
-              if (expr) {
-                segments.push_back(
-                    havel::ast::InterpolatedStringExpression::Segment(
-                        std::move(expr)));
-              }
-              pos++;
-            } else {
-              currentLiteral += value.substr(exprStart - 1);
-              break;
-            }
-          } else {
-            currentLiteral += value[pos++];
-          }
-        }
-
-        if (!currentLiteral.empty()) {
-          segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-              currentLiteral));
-        }
-
-        return makeNode<havel::ast::InterpolatedStringExpression>(
-            std::move(segments));
-      }
-
-      case havel::TokenType::InterpolatedBacktick: {
-        advance();
-        std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
-        const std::string &value = tk.value;
-        size_t pos = 0;
-        std::string currentLiteral;
-
-        while (pos < value.length()) {
-          if (value[pos] == '{') {
-            if (!currentLiteral.empty()) {
-              segments.push_back(
-                  havel::ast::InterpolatedStringExpression::Segment(
-                      currentLiteral));
-              currentLiteral.clear();
-            }
-            pos += 1;
-            size_t braceDepth = 1;
-            size_t exprStart = pos;
-            while (pos < value.length() && braceDepth > 0) {
-              if (value[pos] == '{')
-                braceDepth++;
-              else if (value[pos] == '}')
-                braceDepth--;
-              if (braceDepth > 0)
-                pos++;
-            }
-            if (braceDepth == 0) {
-              std::string exprCode = value.substr(exprStart, pos - exprStart);
-              havel::Lexer exprLexer(exprCode);
-              auto exprTokens = exprLexer.tokenize();
-              if (!exprTokens.empty() &&
-                  exprTokens[0].type == havel::TokenType::Hotkey &&
-                  !exprTokens[0].value.empty() &&
-                  exprTokens[0].value[0] == '#') {
-                std::string key = exprTokens[0].value.substr(1);
-                havel::Token lengthTok("#", havel::TokenType::Length, "#",
-                                       exprTokens[0].line,
-                                       exprTokens[0].column);
-                havel::Token identTok(key, havel::TokenType::Identifier, key,
-                                      exprTokens[0].line,
-                                      exprTokens[0].column + 1);
-                exprTokens[0] = lengthTok;
-                exprTokens.insert(exprTokens.begin() + 1, identTok);
-              }
-              auto savedTokens = tokens;
-              auto savedPos = position;
-              tokens = exprTokens;
-              position = 0;
-              auto expr = parseExpression();
-              tokens = savedTokens;
-              position = savedPos;
-              if (expr) {
-                segments.push_back(
-                    havel::ast::InterpolatedStringExpression::Segment(
-                        std::move(expr)));
-              }
-              pos++;
-            } else {
-              currentLiteral += value.substr(exprStart - 1);
-              break;
-            }
-          } else {
-            currentLiteral += value[pos++];
-          }
-        }
-
-        if (!currentLiteral.empty()) {
-          segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-              currentLiteral));
-        }
-
-        auto interpExpr = makeNode<havel::ast::InterpolatedStringExpression>(
-            std::move(segments));
-        return makeNode<havel::ast::ShellCommandExpression>(
-            std::move(interpExpr), true);
-      }
-
-      case havel::TokenType::True: {
-        advance();
-        return makeNode<havel::ast::BooleanLiteral>(true);
-      }
-
-      case havel::TokenType::False: {
-        advance();
-        return makeNode<havel::ast::BooleanLiteral>(false);
-      }
-
-      case havel::TokenType::Null: {
-        advance();
-        return makeNode<havel::ast::NullLiteral>();
-      }
-
-      case havel::TokenType::ColonColon: {
-        // Explicit global-scope identifier expression: ::name
-        advance(); // consume '::'
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected identifier after '::'");
-        }
-        auto identTk = advance();
-        auto ident = makeIdentifier(identTk);
-        ident->isGlobalScope = true;
-        ident->line = identTk.line;
-        ident->column = identTk.column;
-        std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
-        return parsePostfixExpression(std::move(expr));
-      }
-
-      case havel::TokenType::Colon: {
-        // Fallback support for lexers that emit '::' as two ':' tokens.
-        if (at(1).type == havel::TokenType::Colon &&
-            at(2).type == havel::TokenType::Identifier) {
-          advance(); // first ':'
-          advance(); // second ':'
-          auto identTk = advance();
-          auto ident = makeIdentifier(identTk);
-          ident->isGlobalScope = true;
-          ident->line = identTk.line;
-          ident->column = identTk.column;
-          std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
-          return parsePostfixExpression(std::move(expr));
-        }
-        failAt(at(), "Unexpected ':' in expression");
-      }
-
-      case havel::TokenType::Mode:
-      case havel::TokenType::Config:
-      case havel::TokenType::Devices:
-      case havel::TokenType::Modes:
-      case havel::TokenType::Identifier: {
-        auto identTk = at();
-        // Arrow lambda with single parameter: x => expr
-        if (at(1).type == havel::TokenType::Arrow) {
-          // single identifier parameter
-          advance(); // consume identifier
-          advance(); // consume '=>'
-          std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-          auto paramName = makeIdentifier(identTk);
-          paramName->line = identTk.line;
-          paramName->column = identTk.column;
-          params.push_back(
-              makeNode<havel::ast::FunctionParameter>(std::move(paramName)));
-          return parseLambdaFromParams(std::move(params));
-        }
-        // Otherwise it's a normal identifier expression
-        identTk = advance();
-        std::unique_ptr<havel::ast::Expression> expr = makeIdentifier(identTk);
-        expr->line = identTk.line;
-        expr->column = identTk.column;
-
-        // Handle postfix operations in a loop to support chaining:
-        // arr[0].prop() etc. This is moved to a separate function to handle all
-        // expression types
-        return parsePostfixExpression(std::move(expr));
-      }
-
-      case havel::TokenType::Hotkey: {
-        advance();
-        return makeNode<havel::ast::HotkeyLiteral>(tk.value);
-      }
-
-      case havel::TokenType::Fn: {
-        advance(); // consume 'fn'
-
-        // Parse parameter list
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-
-        if (at().type != havel::TokenType::OpenParen) {
-          failAt(at(), "Expected '(' after 'fn' for function expression");
-        }
-        advance(); // consume '('
-
-        // Handle empty parameter list or parameters
-        while (notEOF() && at().type != havel::TokenType::CloseParen) {
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-          if (at().type == havel::TokenType::CloseParen) {
-            break;
-          }
-
-          // Parse parameter pattern: identifier, { pattern }, [ pattern ], or
-          // ...args
-          std::unique_ptr<havel::ast::Expression> pattern;
-          bool isVariadic = false;
-
-          // Check for variadic parameter: ...args
-          if (at().type == havel::TokenType::Spread) {
-            advance(); // consume '...'
-            if (at().type != havel::TokenType::Identifier) {
-              failAt(at(),
-                     "Expected identifier after '...' in variadic parameter");
-            }
-            pattern = makeIdentifier(advance());
-            isVariadic = true;
-          } else if (at().type == havel::TokenType::Identifier) {
-            pattern = makeIdentifier(advance());
-          } else if (at().type == havel::TokenType::OpenBrace) {
-            pattern = parseObjectPattern();
-          } else if (at().type == havel::TokenType::OpenBracket) {
-            pattern = parseArrayPattern();
-          } else {
-            failAt(at(), "Expected identifier, '{', '[', or '...' in function "
-                         "parameter list");
-          }
-
-          // Check for default value
-          std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
-          if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
-            defaultValue = parseExpression();
-          }
-
-          params.push_back(makeNode<havel::ast::FunctionParameter>(
-              std::move(pattern), std::move(defaultValue), std::nullopt,
-              isVariadic));
-
-          while (at().type == havel::TokenType::NewLine) {
-            advance();
-          }
-
-          if (at().type == havel::TokenType::Comma) {
-            advance();
-          } else if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ',' or ')' in function parameter list");
-          }
-        }
-
-        if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after function parameter list");
-        }
-        advance(); // consume ')'
-
-        // Parse function body
-        if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '{' for function body");
-        }
-        auto body = parseBlockStatement();
-
-        return makeNode<havel::ast::LambdaExpression>(std::move(params),
-                                                      std::move(body));
-      }
-
-      case havel::TokenType::OpenParen: {
-        // Delegate to parseParenthesizedExpression which handles:
-        // - Multi-param lambdas: (a, b) => body
-        // - Empty lambdas: () => body
-        // - Tuples: (1, 2, 3)
-        // - Grouped expressions: (1 + 2)
-        return parseParenthesizedExpression();
-      }
-
-      case havel::TokenType::OpenBracket: {
-        auto array = parseArrayLiteral();
-        // Handle postfix operations for array literals (moved to common
-        // function)
-        return parsePostfixExpression(std::move(array));
-      }
-
-      case havel::TokenType::BangOpenBrace: {
-        // !{key: value} - unsorted object literal
-        auto obj = parseObjectLiteral(true);
-        return parsePostfixExpression(std::move(obj));
-      }
-
-      case havel::TokenType::OpenBrace: {
-        // Could be:
-        // 1. Object literal {key: value}
-        // 2. Set literal {1, 2, 3} (Python-style)
-        // 3. Block expression {stmt; expr}
-        // Look ahead to determine which, skipping newlines
-        // Note: We haven't consumed '{' yet, so lookahead starts at next token
-        size_t savePos = position;
-        size_t lookahead = 1; // Skip the '{' token
-        // Skip newlines to find first significant token
-        while (at(lookahead).type == havel::TokenType::NewLine) {
-          lookahead++;
-        }
-        auto nextTok = at(lookahead);
-
-        // Empty braces {} in expression context = empty object literal
-        if (nextTok.type == havel::TokenType::CloseBrace) {
-          auto obj = parseObjectLiteral();
-          return parsePostfixExpression(std::move(obj));
-        }
-
-        // Object keys can be identifiers, strings, or keywords (like 'config')
-        // followed by ':'
-        bool isObject = false;
-        auto isObjKeyType2 = [](havel::TokenType t) {
-          return t == havel::TokenType::Identifier ||
-                 t == havel::TokenType::String ||
-                 t == havel::TokenType::MultilineString ||
-                 t == havel::TokenType::Number ||
-                 t == havel::TokenType::Config ||
-                 t == havel::TokenType::Devices ||
-                 t == havel::TokenType::Modes || t == havel::TokenType::Mode ||
-                 t == havel::TokenType::Timeout ||
-                 t == havel::TokenType::Thread ||
-                 t == havel::TokenType::Interval ||
-                 t == havel::TokenType::Channel || t == havel::TokenType::On ||
-                 t == havel::TokenType::Off || t == havel::TokenType::Go ||
-                 t == havel::TokenType::When || t == havel::TokenType::Class ||
-                 t == havel::TokenType::Struct || t == havel::TokenType::Enum ||
-                 t == havel::TokenType::Fn || t == havel::TokenType::If ||
-                 t == havel::TokenType::For || t == havel::TokenType::Loop ||
-                 t == havel::TokenType::While ||
-                 t == havel::TokenType::Switch || t == havel::TokenType::Do ||
-                 t == havel::TokenType::Return || t == havel::TokenType::Ret ||
-                 t == havel::TokenType::Break ||
-                 t == havel::TokenType::Continue ||
-                 t == havel::TokenType::Let || t == havel::TokenType::Val ||
-                 t == havel::TokenType::Const || t == havel::TokenType::Try ||
-                 t == havel::TokenType::Catch ||
-                 t == havel::TokenType::Finally ||
-                 t == havel::TokenType::Throw || t == havel::TokenType::Del ||
-                 t == havel::TokenType::True || t == havel::TokenType::False ||
-                 t == havel::TokenType::Null || t == havel::TokenType::Repeat;
-        };
-        if (isObjKeyType2(nextTok.type)) {
-          // Look for colon, skipping newlines
-          size_t colonLookahead = lookahead + 1;
-          while (at(colonLookahead).type == havel::TokenType::NewLine) {
-            colonLookahead++;
-          }
-          if (at(colonLookahead).type == havel::TokenType::Colon) {
-            isObject = true;
-          }
-        }
-
-        if (isObject) {
-          auto obj = parseObjectLiteral();
-          return parsePostfixExpression(std::move(obj));
-        }
-
-        // Not an object literal - could be set or block
-        // Check if this looks like a set literal: {expr, expr, ...}
-        // Sets contain expressions separated by commas
-        bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
-                           nextTok.type == havel::TokenType::String ||
-                           nextTok.type == havel::TokenType::MultilineString ||
-                           nextTok.type == havel::TokenType::Number ||
-                           nextTok.type == havel::TokenType::OpenBracket ||
-                           nextTok.type == havel::TokenType::OpenParen ||
-                           nextTok.type == havel::TokenType::OpenBrace ||
-                           nextTok.type == havel::TokenType::Minus ||
-                           nextTok.type == havel::TokenType::Not ||
-                           nextTok.type == havel::TokenType::Plus ||
-                           nextTok.type == havel::TokenType::Length ||
-                           nextTok.type == havel::TokenType::True ||
-                           nextTok.type == havel::TokenType::False ||
-                           nextTok.type == havel::TokenType::Null);
-
-        if (couldBeSet) {
-          // Try to parse as set literal
-          // Look ahead to see if there's a comma (indicating set) or
-          // semicolon/newline (indicating block)
-          size_t setLookahead = lookahead + 1;
-          // Skip the first expression tokens to find separator
-          // For simplicity, just check if there's a comma before any semicolon
-          // or newline
-          while (setLookahead < tokens.size() &&
-                 at(setLookahead).type != havel::TokenType::Comma &&
-                 at(setLookahead).type != havel::TokenType::Semicolon &&
-                 at(setLookahead).type != havel::TokenType::CloseBrace &&
-                 at(setLookahead).type != havel::TokenType::NewLine) {
-            setLookahead++;
-          }
-
-          // If we found a comma, it's likely a set
-          if (at(setLookahead).type == havel::TokenType::Comma) {
-            // Parse as set literal
-            advance(); // consume '{'
-
-            std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-            while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-              while (at().type == havel::TokenType::NewLine) {
-                advance();
-              }
-              if (at().type == havel::TokenType::CloseBrace) {
-                break;
-              }
-
-              auto element = parseExpression();
-              elements.push_back(std::move(element));
-
-              while (at().type == havel::TokenType::NewLine) {
-                advance();
-              }
-
-              if (at().type == havel::TokenType::Comma) {
-                advance();
-              } else if (at().type != havel::TokenType::CloseBrace) {
-                failAt(at(), "Expected ',' or '}' in set literal");
-              }
-            }
-
-            if (at().type != havel::TokenType::CloseBrace) {
-              failAt(at(), "Expected '}' after set literal");
-            }
-            advance(); // consume '}'
-
-            return makeNode<havel::ast::SetExpression>(std::move(elements));
-          }
-        }
-
-        // Block expression: { stmt; stmt; expr }
-        return parseBlockExpression();
-      }
-
-      case havel::TokenType::If: {
-        // If expression: if condition { expr } else { expr }
-        return parseIfExpression();
-      }
-
-      default:
-        failAt(tk, "Unexpected token in expression: " + tk.value);
-      }
     }
-    // Add these method declarations to Parser.h first, then implement in
-    // Parser.cpp
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseCallExpression(
-        std::unique_ptr<havel::ast::Expression> callee) {
+  case havel::TokenType::SuperArrow: {
+    advance(); // consume '@->'
+    // Parse method name after @->
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected method name after '@->'");
+    }
+    auto methodName = makeIdentifier(advance());
+    // Create a special SuperCallExpression (reuse CallExpression with isSuper
+    // flag)
+    auto call = makeNode<havel::ast::CallExpression>(
+        makeNode<havel::ast::Identifier>("__super__"));
+    call->isSuperCall = true;
+    call->superMethodName = methodName->symbol;
 
-      auto openParen = at(); // Save '(' token location
-      advance();             // consume '('
-
-      auto call = makeNode<havel::ast::CallExpression>(std::move(callee));
-      call->line = openParen.line;
-      call->column = openParen.column;
-
-      // Parse arguments
-      while (notEOF() && at().type != havel::TokenType::CloseParen) {
-        // Skip newlines before argument
+    // Parse arguments if present
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        // Skip newlines
         while (at().type == havel::TokenType::NewLine) {
           advance();
         }
@@ -10059,2185 +8977,2670 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
           break;
         }
 
-        // Check for keyword argument: name=value
-        if (at().type == havel::TokenType::Identifier &&
-            at(1).type == havel::TokenType::Assign) {
-          // This is a keyword argument
-          std::string name = advance().value; // consume identifier
-          advance();                          // consume '='
-          auto value = parseExpression();
-          call->kwargs.push_back(
-              havel::ast::KeywordArg(name, std::move(value)));
-        } else {
-          // Positional argument (possibly with spread)
-          std::unique_ptr<havel::ast::Expression> arg;
-          if (at().type == havel::TokenType::Spread) {
-            advance(); // consume '...'
-            auto target = parseExpression();
-            arg = makeNode<havel::ast::SpreadExpression>(std::move(target));
-          } else {
-            arg = parseExpression();
-          }
-          call->args.push_back(std::move(arg));
-        }
+        auto arg = parseExpression();
+        call->args.push_back(std::move(arg));
 
-        // Skip newlines after argument
         while (at().type == havel::TokenType::NewLine) {
           advance();
         }
 
         if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
+          advance();
         } else if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ',' or ')' in function call");
+          failAt(at(), "Expected ',' or ')' in super call arguments");
         }
       }
 
       if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ')' after function arguments");
+        failAt(at(), "Expected ')' after super call arguments");
       }
       advance(); // consume ')'
-
-      return call;
-    }
-    std::unique_ptr<havel::ast::Expression> Parser::parseMemberExpression(
-        std::unique_ptr<havel::ast::Expression> object) {
-
-      // Special case: if current token is '.' but next is '??', this is not a
-      // member access Let the nullish coalescing handler deal with it
-      if (at().type == havel::TokenType::Dot &&
-          at(1).type == havel::TokenType::Nullish) {
-        return object;
-      }
-
-      auto dotTok = at(); // Save token location before consuming
-      advance();          // consume '.'
-
-      // Special case: if next token is ??, this is not a member access
-      // Let the nullish coalescing handler deal with it
-      if (at().type == havel::TokenType::Nullish) {
-        return object;
-      }
-
-      // Property names can be identifiers or certain keywords
-      // Many keywords should be allowed as property names (e.g., clipboard.in,
-      // clipboard.out)
-      if (at().type != havel::TokenType::Identifier &&
-          at().type != havel::TokenType::Config &&
-          at().type != havel::TokenType::Devices &&
-          at().type != havel::TokenType::Modes &&
-          at().type != havel::TokenType::Mode &&
-          at().type != havel::TokenType::In &&
-          at().type != havel::TokenType::On &&
-          at().type != havel::TokenType::Off &&
-          at().type != havel::TokenType::When &&
-          at().type != havel::TokenType::Loop &&
-          at().type != havel::TokenType::For &&
-          at().type != havel::TokenType::While &&
-          at().type != havel::TokenType::If &&
-          at().type != havel::TokenType::Else &&
-          at().type != havel::TokenType::Return &&
-          at().type != havel::TokenType::Ret &&
-          at().type != havel::TokenType::Fn &&
-          at().type != havel::TokenType::Let &&
-          at().type != havel::TokenType::Break &&
-          at().type != havel::TokenType::Continue &&
-          at().type != havel::TokenType::Switch &&
-          at().type != havel::TokenType::Case &&
-          at().type != havel::TokenType::Default &&
-          at().type != havel::TokenType::Match &&
-          at().type != havel::TokenType::Struct &&
-          at().type != havel::TokenType::Enum &&
-          at().type != havel::TokenType::Try &&
-          at().type != havel::TokenType::Catch &&
-          at().type != havel::TokenType::Finally &&
-          at().type != havel::TokenType::Throw &&
-          at().type != havel::TokenType::And &&
-          at().type != havel::TokenType::Or &&
-          at().type != havel::TokenType::Not &&
-          at().type != havel::TokenType::Const &&
-          at().type != havel::TokenType::Val &&
-          at().type != havel::TokenType::Class) {
-        failAt(at(), "Expected property name after '.'");
-      }
-
-      auto property = advance();
-
-      auto member = makeNode<havel::ast::MemberExpression>();
-      member->object = std::move(object);
-      member->property = makeIdentifier(property);
-      member->line = dotTok.line;
-      member->column = dotTok.column;
-
-      return std::move(member);
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseIndexExpression(
-        std::unique_ptr<havel::ast::Expression> object) {
+    return call;
+  }
 
-      advance(); // consume '['
-      pushDelimiter(TokenType::OpenBracket);
+  case havel::TokenType::InterpolatedString: {
+    advance();
+    std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
+    const std::string &value = tk.value;
+    size_t pos = 0;
+    std::string currentLiteral;
 
-      // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
-      // We need to look ahead to see if there's a ':' in the index expression
-      bool isSlice = false;
-      size_t savedPos = position;
-      int bracketDepth = 1;
-
-      // Look ahead to find if there's a ':' at the top level
-      size_t lookahead = 0;
-      while (position + lookahead < tokens.size()) {
-        const Token &tok = tokens[position + lookahead];
-        if (tok.type == havel::TokenType::OpenBracket) {
-          bracketDepth++;
-        } else if (tok.type == havel::TokenType::CloseBracket) {
-          bracketDepth--;
-          if (bracketDepth == 0)
-            break;
-        } else if (tok.type == havel::TokenType::Colon && bracketDepth == 1) {
-          // Found a ':' at the top level - this is a slice
-          isSlice = true;
-          break;
-        } else if (tok.type == havel::TokenType::EOF_TOKEN) {
-          break;
+    while (pos < value.length()) {
+      if (value[pos] == '\x01') {
+        if (!currentLiteral.empty()) {
+          segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+          currentLiteral.clear();
         }
-        lookahead++;
-      }
-
-      // Restore position
-      position = savedPos;
-
-      std::unique_ptr<havel::ast::Expression> index;
-
-      if (isSlice) {
-        // Parse slice: [start:end]
-        std::unique_ptr<havel::ast::Expression> start;
-        std::unique_ptr<havel::ast::Expression> end;
-
-        // Check if slice starts with ':' (implicit start = 0)
-        if (at().type == havel::TokenType::Colon) {
-          // [:end] form - start is null (implicit 0)
-          advance(); // consume ':'
-          if (at().type != havel::TokenType::CloseBracket) {
-            end = parseExpression();
+        pos += 1;
+        size_t markerDepth = 1;
+        size_t exprStart = pos;
+        while (pos < value.length() && markerDepth > 0) {
+          if (value[pos] == '\x01') markerDepth++;
+          else if (value[pos] == '\x02') markerDepth--;
+          if (markerDepth > 0) pos++;
+        }
+        if (markerDepth == 0) {
+          std::string exprStr = value.substr(exprStart, pos - exprStart);
+          havel::Lexer exprLexer(exprStr);
+          auto exprTokens = exprLexer.tokenize();
+          // Fix: hotkey token starting with # is actually a length operator in interpolated context
+          if (!exprTokens.empty() && exprTokens[0].type == havel::TokenType::Hotkey &&
+              !exprTokens[0].value.empty() && exprTokens[0].value[0] == '#') {
+            std::string key = exprTokens[0].value.substr(1);
+            havel::Token lengthTok("#", havel::TokenType::Length, "#", exprTokens[0].line, exprTokens[0].column);
+            havel::Token identTok(key, havel::TokenType::Identifier, key, exprTokens[0].line, exprTokens[0].column + 1);
+            exprTokens[0] = lengthTok;
+            exprTokens.insert(exprTokens.begin() + 1, identTok);
           }
-          // If end is null, it's an open-ended slice [:]
-        } else {
-          // [start:end] or [start:] form
-          start = parseExpression();
-          if (at().type == havel::TokenType::Colon) {
-            advance(); // consume ':'
-            if (at().type != havel::TokenType::CloseBracket) {
-              end = parseExpression();
-            }
-            // If no expression after ':', it's [start:] (open-ended)
-          } else {
-            // No colon found after parsing start - this shouldn't happen given
-            // lookahead But handle it gracefully as simple index
-            index = std::move(start);
-          }
-        }
-
-        // Create a range expression for the slice
-        if (!index) {
-          index = makeNode<havel::ast::RangeExpression>(std::move(start),
-                                                        std::move(end));
-        }
-      } else {
-        // Simple index: [expr]
-        index = parseExpression();
-      }
-
-      if (at().type != havel::TokenType::CloseBracket) {
-        failAt(at(), "Expected ']' after array index or slice");
-      }
-      advance(); // consume ']'
-      popDelimiter(TokenType::OpenBracket);
-
-      return makeNode<havel::ast::IndexExpression>(std::move(object),
-                                                   std::move(index));
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
-      pushDelimiter(TokenType::OpenBracket);
-      std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-      advance(); // consume '['
-
-      // Parse array elements
-      int loopCounter = 0;
-      while (notEOF() && at().type != havel::TokenType::CloseBracket) {
-        checkParseLoop(loopCounter, "parseArrayLiteral");
-        // Skip newlines before element
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        // Handle trailing comma or closing bracket
-        if (at().type == havel::TokenType::CloseBracket) {
-          break;
-        }
-
-        // Check for spread operator
-        std::unique_ptr<havel::ast::Expression> element;
-        if (at().type == havel::TokenType::Spread) {
-          advance(); // consume '...'
-          auto target = parseExpression();
-          element = makeNode<havel::ast::SpreadExpression>(std::move(target));
-        } else {
-          element = parseExpression();
-        }
-        elements.push_back(std::move(element));
-
-        // Skip newlines before checking for comma or closing bracket
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
-        } else if (at().type != havel::TokenType::CloseBracket) {
-          // If we don't have a comma and we're not at the closing bracket,
-          // consume the unexpected token to avoid infinite loops
-          auto errTok = at();
-          advance();
-          failAt(errTok, "Expected ',' or ']' in array literal");
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBracket) {
-        failAt(at(), "Expected ']' to close array literal");
-      }
-      advance(); // consume ']'
-      popDelimiter(TokenType::OpenBracket);
-
-      return makeNode<havel::ast::ArrayLiteral>(std::move(elements));
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral(
-        bool unsorted) {
-      std::vector<havel::ast::ObjectLiteral::PairEntry> pairs;
-
-      // Consume opening token: '{' or '!{'
-      // Note: if called from nud() for BangOpenBrace, the token was already
-      // consumed by parsePrattExpression's advance(), so current token is
-      // already inside the object. Only advance if current token is the opener.
-      if (at().type == havel::TokenType::BangOpenBrace) {
-        advance(); // consume '!{'
-        pushDelimiter(TokenType::OpenBrace);
-        unsorted = true;
-      } else if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
-        pushDelimiter(TokenType::OpenBrace);
-      }
-      // else: opener was already consumed, we're past it
-
-      // Parse entries: key:value, positional value, [expr]:value, or ...spread
-      int loopCounter = 0;
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        checkParseLoop(loopCounter, "parseObjectLiteral");
-        size_t prevPos = position;
-        // Skip newlines/semicolons between entries
-        while (notEOF() && (at().type == havel::TokenType::NewLine ||
-                            at().type == havel::TokenType::Semicolon)) {
-          advance();
-        }
-        if (at().type == havel::TokenType::CloseBrace) {
-          break;
-        }
-
-        // Check for spread operator
-        if (at().type == havel::TokenType::Spread) {
-          advance(); // consume '...'
-          auto target = parseExpression();
-          auto spreadExpr =
-              makeNode<havel::ast::SpreadExpression>(std::move(target));
-          havel::ast::ObjectLiteral::PairEntry entry;
-          entry.key = "__spread__";
-          entry.value = std::move(spreadExpr);
-          pairs.push_back(std::move(entry));
-
-          // Allow comma, newline, or semicolon as separators
-          if (at().type == havel::TokenType::Comma ||
-              at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Semicolon) {
-            advance();
-          }
-          continue;
-        }
-
-        // Check for computed key: [expr]:
-        if (at().type == havel::TokenType::OpenBracket) {
-          advance(); // consume '['
-          auto keyExpr = parseExpression();
-          if (at().type != havel::TokenType::CloseBracket) {
-            failAt(at(), "Expected ']' after computed key expression");
-          }
-          advance(); // consume ']'
-          if (at().type != havel::TokenType::Colon) {
-            failAt(at(), "Expected ':' after computed key");
-          }
-          advance(); // consume ':'
-          auto value = parseExpression();
-          havel::ast::ObjectLiteral::PairEntry entry;
-          entry.isComputedKey = true;
-          entry.keyExpr = std::move(keyExpr);
-          entry.value = std::move(value);
-          pairs.push_back(std::move(entry));
-
-          // Allow comma, newline, or semicolon as separators
-          if (at().type == havel::TokenType::Comma ||
-              at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Semicolon) {
-            advance();
-          }
-          continue;
-        }
-
-        // Try to parse as key:value pair
-        // Check if next token after potential key is a colon
-        size_t savedPos = position;
-        bool hasColon = false;
-        std::string key;
-        bool validKey = false;
-
-        auto isKeyToken = [](havel::TokenType t) {
-          return t == havel::TokenType::Identifier ||
-                 t == havel::TokenType::Config ||
-                 t == havel::TokenType::Devices ||
-                 t == havel::TokenType::Modes || t == havel::TokenType::Mode ||
-                 t == havel::TokenType::Timeout ||
-                 t == havel::TokenType::Thread ||
-                 t == havel::TokenType::Interval ||
-                 t == havel::TokenType::Channel || t == havel::TokenType::On ||
-                 t == havel::TokenType::Off || t == havel::TokenType::Go ||
-                 t == havel::TokenType::When || t == havel::TokenType::Class ||
-                 t == havel::TokenType::Struct || t == havel::TokenType::Enum ||
-                 t == havel::TokenType::Fn || t == havel::TokenType::If ||
-                 t == havel::TokenType::For || t == havel::TokenType::Loop ||
-                 t == havel::TokenType::While ||
-                 t == havel::TokenType::Switch || t == havel::TokenType::Do ||
-                 t == havel::TokenType::Return || t == havel::TokenType::Ret ||
-                 t == havel::TokenType::Break ||
-                 t == havel::TokenType::Continue ||
-                 t == havel::TokenType::Let || t == havel::TokenType::Val ||
-                 t == havel::TokenType::Const || t == havel::TokenType::Try ||
-                 t == havel::TokenType::Catch ||
-                 t == havel::TokenType::Finally ||
-                 t == havel::TokenType::Throw || t == havel::TokenType::Del ||
-                 t == havel::TokenType::True || t == havel::TokenType::False ||
-                 t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
-                 t == havel::TokenType::String ||
-                 t == havel::TokenType::MultilineString ||
-                 t == havel::TokenType::RegexString ||
-                 t == havel::TokenType::Number;
-        };
-
-        if (isKeyToken(at().type)) {
-          key = advance().value;
-          validKey = true;
-          // Support dotted keys when using '=' (Lua/Nix style)
-          // We look ahead to see if '=' follows eventually to decide if we
-          // should consume dots
-          size_t lookPos = position;
-          bool followedByAssign = false;
-          while (lookPos < tokens.size()) {
-            if (tokens[lookPos].type == havel::TokenType::Dot) {
-              lookPos++;
-              if (lookPos < tokens.size() &&
-                  tokens[lookPos].type == havel::TokenType::Identifier) {
-                lookPos++;
-                continue;
-              }
-              break;
-            }
-            if (tokens[lookPos].type == havel::TokenType::NewLine) {
-              lookPos++;
-              continue;
-            }
-            if (tokens[lookPos].type == havel::TokenType::Assign) {
-              followedByAssign = true;
-            }
-            break;
-          }
-
-          if (followedByAssign) {
-            while (at().type == havel::TokenType::Dot) {
-              advance(); // consume '.'
-              if (at().type != havel::TokenType::Identifier) {
-                failAt(at(), "Expected identifier after '.' in key");
-              }
-              key += "." + advance().value;
-            }
-          }
-
-          // Skip newlines to find colon or equals
-          lookPos = position;
-          while (lookPos < tokens.size() &&
-                 tokens[lookPos].type == havel::TokenType::NewLine) {
-            lookPos++;
-          }
-          if (lookPos < tokens.size() &&
-              (tokens[lookPos].type == havel::TokenType::Colon ||
-               tokens[lookPos].type == havel::TokenType::Assign)) {
-            hasColon = true;
-          }
-        }
-
-        if (validKey && hasColon) {
-          // It's a key:value or key=value pair
-          auto sep = advance(); // consume ':' or '='
-
-          // If using '=' in an object literal, treat RHS bare identifiers as
-          // strings
-          std::unique_ptr<ast::Expression> value;
-          if (sep.type == havel::TokenType::Assign &&
-              at().type == havel::TokenType::Identifier) {
-            auto next = at(1).type;
-            if (next == havel::TokenType::NewLine ||
-                next == havel::TokenType::Comma ||
-                next == havel::TokenType::Semicolon ||
-                next == havel::TokenType::CloseBrace) {
-              value = makeNode<ast::StringLiteral>(advance().value, false);
-            } else {
-              value = parseExpression();
-            }
-          } else {
-            value = parseExpression();
-          }
-
-          havel::ast::ObjectLiteral::PairEntry entry;
-          entry.key = std::move(key);
-          entry.value = std::move(value);
-          pairs.push_back(std::move(entry));
-        } else {
-          // Restore position - it's a positional element, not a key
-          position = savedPos;
-          // Parse as positional element
-          auto value = parseExpression();
-          havel::ast::ObjectLiteral::PairEntry entry;
-          // key is empty = positional element
-          entry.value = std::move(value);
-          pairs.push_back(std::move(entry));
-        }
-
-        // Allow comma, newline, or semicolon as separators
-        if (at().type == havel::TokenType::Comma ||
-            at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-        } else if (at().type != havel::TokenType::CloseBrace) {
-          auto errTok = at();
-          advance();
-          failAt(errTok, "Expected ',', newline, or '}' in collection literal");
-        }
-
-        // Progress guard
-        if (position == prevPos) {
-          failAt(at(), "Parser made no progress in collection literal");
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close collection literal");
-      }
-      advance(); // consume '}'
-      popDelimiter(TokenType::OpenBrace);
-
-      return makeNode<havel::ast::ObjectLiteral>(std::move(pairs), unsorted);
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
-      auto blockExpr = makeNode<havel::ast::BlockExpression>();
-      blockExpr->line = at().line;
-      blockExpr->column = at().column;
-
-      advance(); // consume '{'
-      pushDelimiter(TokenType::OpenBrace);
-
-      // Parse statements until we hit an expression (last one becomes value)
-      // or closing brace
-      int loopCounter = 0;
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        checkParseLoop(loopCounter, "parseBlockExpression");
-        // Skip newlines and semicolons
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-          continue;
-        }
-
-        // Check if this is the final expression (no statement starter)
-        // Statement starters: let, fn, if, while, for, return, etc.
-        bool isStatementStarter = at().type == havel::TokenType::Let ||
-                                  at().type == havel::TokenType::Fn ||
-                                  at().type == havel::TokenType::If ||
-                                  at().type == havel::TokenType::While ||
-                                  at().type == havel::TokenType::For ||
-                                  at().type == havel::TokenType::Loop ||
-                                  at().type == havel::TokenType::Return ||
-                                  at().type == havel::TokenType::Break ||
-                                  at().type == havel::TokenType::Continue ||
-                                  at().type == havel::TokenType::Switch ||
-                                  at().type == havel::TokenType::Try ||
-                                  at().type == havel::TokenType::Del ||
-                                  at().type == havel::TokenType::Throw;
-
-        if (isStatementStarter) {
-          auto stmt = parseStatement();
-          if (stmt) {
-            blockExpr->body.push_back(std::move(stmt));
-          }
-        } else {
-          // This is the final expression
+          auto savedTokens = tokens;
+          auto savedPos = position;
+          tokens = exprTokens;
+          position = 0;
           auto expr = parseExpression();
-          blockExpr->value = std::move(expr);
+          tokens = savedTokens;
+          position = savedPos;
+          if (expr) {
+            segments.push_back(havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
+          }
+          pos++;
+        } else {
+          currentLiteral += value.substr(exprStart - 1);
           break;
         }
-      }
-
-      // Skip trailing newlines/semicolons before closing brace
-      while (at().type == havel::TokenType::NewLine ||
-             at().type == havel::TokenType::Semicolon) {
-        advance();
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        if (at().type == havel::TokenType::EOF_TOKEN) {
-          failAt(at(), "Unexpected end of file in block expression");
-        }
-        failAt(at(), "Expected '}' to close block expression");
-      }
-      advance(); // consume '}'
-      popDelimiter(TokenType::OpenBrace);
-
-      return blockExpr;
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
-      advance(); // consume 'if'
-
-      // Disable brace call sugar to prevent { from being parsed as part of
-      // condition
-      bool prevAllow = context.allowBraceSugar;
-      context.allowBraceSugar = false;
-      auto condition = parseExpression();
-
-      // Expect then branch (block or expression)
-      std::unique_ptr<havel::ast::Expression> thenBranch;
-      if (at().type == havel::TokenType::OpenBrace) {
-        thenBranch = parseBlockExpression();
       } else {
-        thenBranch = parseExpression();
+        currentLiteral += value[pos++];
       }
-
-      // Optional else branch
-      std::unique_ptr<havel::ast::Expression> elseBranch;
-      // Skip newlines before checking for else
-      while (at().type == havel::TokenType::NewLine ||
-             at().type == havel::TokenType::Semicolon) {
-        advance();
-      }
-      if (at().type == havel::TokenType::Else) {
-        advance(); // consume 'else'
-        if (at().type == havel::TokenType::OpenBrace) {
-          elseBranch = parseBlockExpression();
-        } else if (at().type == havel::TokenType::If) {
-          // else if chain
-          elseBranch = parseIfExpression();
-        } else {
-          elseBranch = parseExpression();
-        }
-      }
-
-      // Save location before moving
-      if (!condition) {
-        failAt(at(), "Expected condition after 'if'");
-      }
-      size_t line = condition->line;
-      size_t column = condition->column;
-
-      auto ifExpr = makeNode<havel::ast::IfExpression>(
-          std::move(condition), std::move(thenBranch), std::move(elseBranch));
-      ifExpr->line = line;
-      ifExpr->column = column;
-
-      return ifExpr;
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseArrayPattern() {
-      std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-      advance(); // consume '['
-
-      // Parse pattern elements
-      while (notEOF() && at().type != havel::TokenType::CloseBracket) {
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        if (at().type == havel::TokenType::CloseBracket) {
-          break;
-        }
-
-        // Pattern elements can be identifiers, rest patterns, nested patterns,
-        // or patterns with defaults
-        std::unique_ptr<havel::ast::Expression> element;
-
-        if (at().type == havel::TokenType::Spread) {
-          // Rest pattern: ...rest
-          advance(); // consume '...'
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Expected identifier after '...' in rest pattern");
-          }
-          auto restIdent = makeIdentifier(advance());
-          element =
-              makeNode<havel::ast::SpreadExpression>(std::move(restIdent));
-        } else if (at().type == havel::TokenType::Identifier) {
-          auto ident = makeIdentifier(advance());
-          // Check for default value: a = 10
-          if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
-            auto defaultValue = parseExpression();
-            // Wrap in AssignmentExpression to represent default
-            element = makeNode<havel::ast::AssignmentExpression>(
-                std::move(ident), std::move(defaultValue), "=", false);
-          } else {
-            element = std::move(ident);
-          }
-        } else if (at().type == havel::TokenType::OpenBracket) {
-          element = parseArrayPattern(); // Nested array pattern
-          // Check for default value after nested pattern
-          if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
-            auto defaultValue = parseExpression();
-            element = makeNode<havel::ast::AssignmentExpression>(
-                std::move(element), std::move(defaultValue), "=", false);
-          }
-        } else if (at().type == havel::TokenType::OpenBrace) {
-          element = parseObjectPattern(); // Nested object pattern
-          // Check for default value after nested pattern
-          if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
-            auto defaultValue = parseExpression();
-            element = makeNode<havel::ast::AssignmentExpression>(
-                std::move(element), std::move(defaultValue), "=", false);
-          }
-        } else {
-          failAt(at(),
-                 "Expected identifier, rest pattern, or nested pattern in "
-                 "array pattern");
-        }
-
-        elements.push_back(std::move(element));
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
-        } else if (at().type != havel::TokenType::CloseBracket) {
-          failAt(at(), "Expected ',' or ']' in array pattern");
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBracket) {
-        failAt(at(), "Expected ']' to close array pattern");
-      }
-      advance(); // consume ']'
-
-      return makeNode<havel::ast::ArrayPattern>(std::move(elements));
+    if (!currentLiteral.empty()) {
+      segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
-      std::vector<
-          std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-          properties;
+    return makeNode<havel::ast::InterpolatedStringExpression>(std::move(segments));
+  }
 
-      advance(); // consume '{'
-
-      // Parse object pattern properties
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines
-        while (notEOF() && (at().type == havel::TokenType::NewLine ||
-                            at().type == havel::TokenType::Semicolon)) {
-          advance();
-        }
-        if (at().type == havel::TokenType::CloseBrace) {
-          break;
-        }
-
-        // Check for rest pattern: ...rest
-        if (at().type == havel::TokenType::Spread) {
-          advance(); // consume '...'
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(),
-                   "Expected identifier after '...' in object rest pattern");
-          }
-          auto restIdent = makeIdentifier(advance());
-          auto restExpr =
-              makeNode<havel::ast::SpreadExpression>(std::move(restIdent));
-          // Use special key "..." to indicate rest pattern
-          properties.push_back({"...", std::move(restExpr)});
-
-          // Rest pattern must be last
-          while (at().type == havel::TokenType::NewLine ||
-                 at().type == havel::TokenType::Semicolon) {
+        case havel::TokenType::InterpolatedBacktick: {
             advance();
-          }
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume optional comma
-          }
-          // Skip any trailing newlines
-          while (at().type == havel::TokenType::NewLine ||
-                 at().type == havel::TokenType::Semicolon) {
-            advance();
-          }
-          break; // Rest pattern must be last
-        }
+            std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
+            const std::string &value = tk.value;
+            size_t pos = 0;
+            std::string currentLiteral;
 
-        // Parse property key
-        std::string key;
-        Token keyToken = at(); // Copy current token
-        if (at().type == havel::TokenType::Identifier) {
-          key = advance().value;
-        } else {
-          failAt(at(), "Expected identifier as object pattern key");
-        }
-
-        // Check for renamed pattern: { originalName: newName }
-        // or shorthand with default: { key = defaultValue }
-        std::unique_ptr<havel::ast::Expression> pattern;
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-
-          // Parse the pattern for this property
-          if (at().type == havel::TokenType::Identifier) {
-            pattern = makeIdentifier(advance());
-          } else if (at().type == havel::TokenType::OpenBracket) {
-            pattern = parseArrayPattern(); // Nested array pattern
-          } else if (at().type == havel::TokenType::OpenBrace) {
-            pattern = parseObjectPattern(); // Nested object pattern
-          } else {
-            failAt(
-                at(),
-                "Expected identifier or pattern after ':' in object pattern");
-          }
-
-          // Check for default value after renamed pattern: { key: pattern =
-          // default
-          // }
-          if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
-            auto defaultValue = parseExpression();
-            pattern = makeNode<havel::ast::AssignmentExpression>(
-                std::move(pattern), std::move(defaultValue), "=", false);
-          }
-        } else if (at().type == havel::TokenType::Assign) {
-          // Shorthand with default: { key = defaultValue }
-          advance(); // consume '='
-          auto defaultValue = parseExpression();
-          auto ident = makeIdentifier(keyToken);
-          // Wrap in AssignmentExpression to represent pattern with default
-          pattern = makeNode<havel::ast::AssignmentExpression>(
-              std::move(ident), std::move(defaultValue), "=", false);
-        } else {
-          // Default: property name becomes variable name
-          pattern = makeIdentifier(keyToken);
-        }
-
-        properties.push_back({key, std::move(pattern)});
-
-        // Skip newlines
-        while (at().type == havel::TokenType::NewLine ||
-               at().type == havel::TokenType::Semicolon) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::Comma) {
-          advance(); // consume ','
-        } else if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected ',' or '}' in object pattern");
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close object pattern");
-      }
-      advance(); // consume '}'
-
-      return makeNode<havel::ast::ObjectPattern>(std::move(properties));
-    }
-
-    // Parse a match pattern: literal | identifier | _ | { ... } | [ ... ] | pat
-    // | pat
-    std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
-      // Or patterns: try to parse first alternative, then check for |
-      std::vector<std::unique_ptr<havel::ast::Expression>> alternatives;
-
-      auto first = parsePatternAtom();
-      if (!first)
-        return nullptr;
-      alternatives.push_back(std::move(first));
-
-      while (at().type == havel::TokenType::Pipe ||
-             at().type == havel::TokenType::Or) {
-        advance(); // consume '|' or '||'
-        auto next = parsePatternAtom();
-        if (!next) {
-          failAt(at(), "Expected pattern after '|' or '||'");
-          return nullptr;
-        }
-        alternatives.push_back(std::move(next));
-      }
-
-      if (alternatives.size() == 1) {
-        return std::move(alternatives[0]);
-      }
-      return makeNode<havel::ast::OrPattern>(std::move(alternatives));
-    }
-
-    // Parse a single pattern atom (no | handling)
-    std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
-      // First, try to parse a literal expression
-      std::unique_ptr<havel::ast::Expression> literal;
-
-      // Wildcard
-      if (at().type == havel::TokenType::Underscore) {
-        advance();
-        return makeNode<havel::ast::WildcardPattern>();
-      }
-
-      // Array pattern
-      if (at().type == havel::TokenType::OpenBracket) {
-        return parseArrayPatternForMatch();
-      }
-
-      // Object pattern
-      if (at().type == havel::TokenType::OpenBrace) {
-        return parseObjectPatternForMatch();
-      }
-
-      // Boolean literals
-      if (at().type == havel::TokenType::True) {
-        advance();
-        literal = makeNode<havel::ast::BooleanLiteral>(true);
-      } else if (at().type == havel::TokenType::False) {
-        advance();
-        literal = makeNode<havel::ast::BooleanLiteral>(false);
-      }
-      // Null literal
-      else if (at().type == havel::TokenType::Null) {
-        advance();
-        literal = makeNode<havel::ast::NullLiteral>();
-      }
-      // Number literal
-      else if (at().type == havel::TokenType::Number) {
-        auto tok = advance();
-        try {
-          literal = makeNode<havel::ast::NumberLiteral>(
-              parseNumberLiteral(tok.value), hasDecimalPart(tok.value));
-        } catch (...) {
-          failAt(tok, "Invalid number literal");
-          return nullptr;
-        }
-      }
-      // String literal
-      else if (at().type == havel::TokenType::String) {
-        auto tok = advance();
-        literal = makeNode<havel::ast::StringLiteral>(tok.value);
-      }
-      // Regex literal /pattern/
-      else if (at().type == havel::TokenType::RegexLiteral) {
-        auto tok = advance();
-        literal = makeNode<havel::ast::StringLiteral>(tok.value, true);
-      }
-      // Char literal
-      else if (at().type == havel::TokenType::CharLiteral) {
-        auto tok = advance();
-        literal = makeNode<havel::ast::CharLiteral>(tok.value[0]);
-      }
-      // Identifier (variable binding or constructor pattern)
-      else if (at().type == havel::TokenType::Identifier) {
-        auto tok = advance();
-        // If followed by '(', parse as constructor pattern Name(p1, p2, ...)
-        if (at().type == havel::TokenType::OpenParen) {
-          advance(); // consume '('
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          while (at().type != havel::TokenType::CloseParen && notEOF()) {
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::CloseParen)
-              break;
-            auto arg = parsePattern();
-            if (!arg) {
-              failAt(at(), "Expected pattern in constructor pattern");
-              return nullptr;
+            while (pos < value.length()) {
+                if (value[pos] == '{') {
+                    if (!currentLiteral.empty()) {
+                        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+                        currentLiteral.clear();
+                    }
+                    pos += 1;
+                    size_t braceDepth = 1;
+                    size_t exprStart = pos;
+                    while (pos < value.length() && braceDepth > 0) {
+                        if (value[pos] == '{') braceDepth++;
+                        else if (value[pos] == '}') braceDepth--;
+                        if (braceDepth > 0) pos++;
+                    }
+                    if (braceDepth == 0) {
+                        std::string exprCode = value.substr(exprStart, pos - exprStart);
+                        havel::Lexer exprLexer(exprCode);
+                        auto exprTokens = exprLexer.tokenize();
+                        if (!exprTokens.empty() && exprTokens[0].type == havel::TokenType::Hotkey &&
+                            !exprTokens[0].value.empty() && exprTokens[0].value[0] == '#') {
+                          std::string key = exprTokens[0].value.substr(1);
+                          havel::Token lengthTok("#", havel::TokenType::Length, "#", exprTokens[0].line, exprTokens[0].column);
+                          havel::Token identTok(key, havel::TokenType::Identifier, key, exprTokens[0].line, exprTokens[0].column + 1);
+                          exprTokens[0] = lengthTok;
+                          exprTokens.insert(exprTokens.begin() + 1, identTok);
+                        }
+                        auto savedTokens = tokens;
+                        auto savedPos = position;
+                        tokens = exprTokens;
+                        position = 0;
+                        auto expr = parseExpression();
+                        tokens = savedTokens;
+                        position = savedPos;
+                        if (expr) {
+                            segments.push_back(
+                                havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
+                        }
+                        pos++;
+                    } else {
+                        currentLiteral += value.substr(exprStart - 1);
+                        break;
+                    }
+                } else {
+                    currentLiteral += value[pos++];
+                }
             }
-            args.push_back(std::move(arg));
-            while (at().type == havel::TokenType::NewLine)
-              advance();
-            if (at().type == havel::TokenType::Comma)
-              advance();
-          }
-          if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' to close constructor pattern");
-            return nullptr;
-          }
-          advance(); // consume ')'
-          literal = makeNode<havel::ast::ConstructorPattern>(tok.value,
-                                                             std::move(args));
-        } else {
-          literal = makeIdentifier(tok);
+
+            if (!currentLiteral.empty()) {
+                segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+            }
+
+            auto interpExpr = makeNode<havel::ast::InterpolatedStringExpression>(
+                std::move(segments));
+            return makeNode<havel::ast::ShellCommandExpression>(
+                std::move(interpExpr), true);
         }
-      }
-      // Wildcard pattern _
-      else if (at().type == havel::TokenType::Underscore) {
-        advance(); // consume '_'
-        literal = makeNode<havel::ast::WildcardPattern>();
-      }
 
-      if (!literal) {
-        failAt(at(), "Expected pattern");
-        return nullptr;
-      }
+        case havel::TokenType::True: {
+    advance();
+    return makeNode<havel::ast::BooleanLiteral>(true);
+  }
 
-      // Check for range pattern: literal..=literal
-      if (at().type == havel::TokenType::DotDotEquals) {
-        advance(); // consume '..='
-        auto endLit = parsePatternAtom();
-        if (!endLit) {
-          failAt(at(), "Expected pattern after '..='");
-          return nullptr;
-        }
-        return makeNode<havel::ast::RangePattern>(std::move(literal),
-                                                  std::move(endLit));
-      }
+  case havel::TokenType::False: {
+    advance();
+    return makeNode<havel::ast::BooleanLiteral>(false);
+  }
 
-      return literal;
+  case havel::TokenType::Null: {
+    advance();
+    return makeNode<havel::ast::NullLiteral>();
+  }
+
+  case havel::TokenType::ColonColon: {
+    // Explicit global-scope identifier expression: ::name
+    advance(); // consume '::'
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected identifier after '::'");
     }
+    auto identTk = advance();
+    auto ident = makeIdentifier(identTk);
+    ident->isGlobalScope = true;
+    ident->line = identTk.line;
+    ident->column = identTk.column;
+    std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
+    return parsePostfixExpression(std::move(expr));
+  }
 
-    // Parse array pattern for match (supports [x, y], [x, ..rest])
-    std::unique_ptr<havel::ast::Expression>
-    Parser::parseArrayPatternForMatch() {
-      std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-      std::unique_ptr<havel::ast::Expression> rest;
-
-      advance(); // consume '['
-
-      while (notEOF() && at().type != havel::TokenType::CloseBracket) {
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        if (at().type == havel::TokenType::CloseBracket)
-          break;
-
-        // Check for spread/rest: ..rest
-        if (at().type == havel::TokenType::DotDot) {
-          advance(); // consume '..'
-          if (at().type == havel::TokenType::Identifier) {
-            rest = makeIdentifier(advance());
-          } else {
-            // Anonymous rest: ..
-            rest = makeNode<havel::ast::Identifier>("_");
-          }
-          break;
-        }
-
-        elements.push_back(parsePattern());
-
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBracket) {
-        failAt(at(), "Expected ']' to close array pattern");
-      }
-      advance(); // consume ']'
-
-      return makeNode<havel::ast::ArrayPattern>(std::move(elements),
-                                                std::move(rest));
+  case havel::TokenType::Colon: {
+    // Fallback support for lexers that emit '::' as two ':' tokens.
+    if (at(1).type == havel::TokenType::Colon &&
+        at(2).type == havel::TokenType::Identifier) {
+      advance(); // first ':'
+      advance(); // second ':'
+      auto identTk = advance();
+      auto ident = makeIdentifier(identTk);
+      ident->isGlobalScope = true;
+      ident->line = identTk.line;
+      ident->column = identTk.column;
+      std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
+      return parsePostfixExpression(std::move(expr));
     }
+    failAt(at(), "Unexpected ':' in expression");
+  }
 
-    // Parse object pattern for match (supports {x, y: pat})
-    std::unique_ptr<havel::ast::Expression>
-    Parser::parseObjectPatternForMatch() {
-      std::vector<
-          std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-          properties;
+  case havel::TokenType::Mode:
+  case havel::TokenType::Config:
+  case havel::TokenType::Devices:
+  case havel::TokenType::Modes:
+  case havel::TokenType::Identifier: {
+    auto identTk = at();
+    // Arrow lambda with single parameter: x => expr
+    if (at(1).type == havel::TokenType::Arrow) {
+      // single identifier parameter
+      advance(); // consume identifier
+      advance(); // consume '=>'
+      std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+      auto paramName = makeIdentifier(identTk);
+      paramName->line = identTk.line;
+      paramName->column = identTk.column;
+      params.push_back(makeNode<havel::ast::FunctionParameter>(
+          std::move(paramName)));
+      return parseLambdaFromParams(std::move(params));
+    }
+    // Otherwise it's a normal identifier expression
+    identTk = advance();
+    std::unique_ptr<havel::ast::Expression> expr = makeIdentifier(identTk);
+    expr->line = identTk.line;
+    expr->column = identTk.column;
 
-      advance(); // consume '{'
+    // Handle postfix operations in a loop to support chaining: arr[0].prop()
+    // etc. This is moved to a separate function to handle all expression types
+    return parsePostfixExpression(std::move(expr));
+  }
 
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type == havel::TokenType::CloseBrace)
-          break;
+  case havel::TokenType::Hotkey: {
+    advance();
+    return makeNode<havel::ast::HotkeyLiteral>(tk.value);
+  }
 
+  case havel::TokenType::Fn: {
+    advance(); // consume 'fn'
+
+    // Parse parameter list
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after 'fn' for function expression");
+    }
+    advance(); // consume '('
+
+    // Handle empty parameter list or parameters
+    while (notEOF() && at().type != havel::TokenType::CloseParen) {
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      if (at().type == havel::TokenType::CloseParen) {
+        break;
+      }
+
+      // Parse parameter pattern: identifier, { pattern }, [ pattern ], or
+      // ...args
+      std::unique_ptr<havel::ast::Expression> pattern;
+      bool isVariadic = false;
+
+      // Check for variadic parameter: ...args
+      if (at().type == havel::TokenType::Spread) {
+        advance(); // consume '...'
         if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected identifier in object pattern");
-          return nullptr;
+          failAt(at(), "Expected identifier after '...' in variadic parameter");
         }
-        std::string key = advance().value;
-
-        std::unique_ptr<havel::ast::Expression> pattern;
-        if (at().type == havel::TokenType::Colon) {
-          advance(); // consume ':'
-          pattern = parsePattern();
-        } else {
-          // Shorthand: {x} binds x to x
-          pattern = makeNode<havel::ast::Identifier>(key);
-        }
-
-        properties.push_back({key, std::move(pattern)});
-
-        while (at().type == havel::TokenType::NewLine)
-          advance();
-        if (at().type == havel::TokenType::Comma)
-          advance();
+        pattern = makeIdentifier(advance());
+        isVariadic = true;
+      } else if (at().type == havel::TokenType::Identifier) {
+        pattern = makeIdentifier(advance());
+      } else if (at().type == havel::TokenType::OpenBrace) {
+        pattern = parseObjectPattern();
+      } else if (at().type == havel::TokenType::OpenBracket) {
+        pattern = parseArrayPattern();
+      } else {
+        failAt(at(), "Expected identifier, '{', '[', or '...' in function "
+                     "parameter list");
       }
 
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close object pattern");
-      }
-      advance(); // consume '}'
-
-      return makeNode<havel::ast::ObjectPattern>(std::move(properties));
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseLambdaFromParams(
-        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params) {
-      // Body can be block or expression
-      if (at().type == havel::TokenType::OpenBrace) {
-        auto block = parseBlockStatement();
-        return makeNode<havel::ast::LambdaExpression>(std::move(params),
-                                                      std::move(block));
-      }
-      // Expression body: wrap in Return inside a block
-      auto expr = parseExpression();
-      auto exprStmt =
-          makeNode<havel::ast::ExpressionStatement>(std::move(expr));
-      auto block = makeNode<havel::ast::BlockStatement>();
-      block->body.push_back(std::move(exprStmt));
-      return makeNode<havel::ast::LambdaExpression>(std::move(params),
-                                                    std::move(block));
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parsePostfixExpression(
-        std::unique_ptr<ast::Expression> expr) {
-      // Handle postfix operations in a loop to support chaining: arr[0].prop()
-      // etc. This handles chaining for all expression types (variables,
-      // function calls, arrays, etc.)
-      while (true) {
-        if (at().type == havel::TokenType::OpenParen) {
-          expr = parseCallExpression(std::move(expr));
-          // Trailing block as last argument: func(...){ ... }
-          // Only allow this if brace call sugar is enabled
-          if (at().type == havel::TokenType::OpenBrace &&
-              context.allowBraceSugar) {
-            // Decide if this is object-literal or block lambda by lookahead
-            size_t savePos = position;
-            auto next = at(1);
-            bool isObject = (next.type == havel::TokenType::Identifier ||
-                             next.type == havel::TokenType::String ||
-                             next.type == havel::TokenType::MultilineString) &&
-                            at(2).type == havel::TokenType::Colon;
-            position = savePos; // restore
-            if (!isObject) {
-              auto block = parseBlockStatement();
-              std::vector<std::unique_ptr<havel::ast::FunctionParameter>>
-                  noParams;
-              auto lambda = makeNode<havel::ast::LambdaExpression>(
-                  std::move(noParams), std::move(block));
-              // Append lambda to existing call args
-              if (auto *callPtr =
-                      dynamic_cast<havel::ast::CallExpression *>(expr.get())) {
-                callPtr->args.push_back(std::move(lambda));
-              }
-            }
-          }
-        } else if (at().type == havel::TokenType::Dot) {
-          // Look ahead: if next token after '.' is an operator, don't parse as
-          // member access This handles cases like expr ?? default where we want
-          // ?? to bind properly
-          auto nextAfterDot = at(1).type;
-          bool isOperatorAfterDot =
-              (nextAfterDot == havel::TokenType::Nullish ||
-               nextAfterDot == havel::TokenType::Question ||
-
-               nextAfterDot == havel::TokenType::Equals ||
-               nextAfterDot == havel::TokenType::NotEquals ||
-               nextAfterDot == havel::TokenType::Less ||
-               nextAfterDot == havel::TokenType::Greater ||
-               nextAfterDot == havel::TokenType::LessEquals ||
-               nextAfterDot == havel::TokenType::GreaterEquals ||
-               nextAfterDot == havel::TokenType::Plus ||
-               nextAfterDot == havel::TokenType::Minus ||
-               nextAfterDot == havel::TokenType::Multiply ||
-               nextAfterDot == havel::TokenType::Divide ||
-               nextAfterDot == havel::TokenType::OpenParen ||
-               nextAfterDot == havel::TokenType::OpenBracket ||
-               nextAfterDot == havel::TokenType::Assign ||
-               nextAfterDot == havel::TokenType::Semicolon ||
-               nextAfterDot == havel::TokenType::NewLine ||
-               nextAfterDot == havel::TokenType::Comma ||
-               nextAfterDot == havel::TokenType::Colon ||
-               nextAfterDot == havel::TokenType::CloseBrace ||
-               nextAfterDot == havel::TokenType::CloseParen ||
-               nextAfterDot == havel::TokenType::CloseBracket ||
-               nextAfterDot == havel::TokenType::Return ||
-               nextAfterDot == havel::TokenType::Ret);
-          if (!isOperatorAfterDot) {
-            expr = parseMemberExpression(std::move(expr));
-          } else {
-            break; // Stop parsing postfix, let parent handle the operator
-          }
-        } else if (at().type == havel::TokenType::OpenBracket) {
-          expr = parseIndexExpression(std::move(expr));
-        } else if (at().type == havel::TokenType::OpenBrace) {
-          if (!context.allowBraceSugar) {
-            break;
-          }
-          // Sugar: expr { ... } -> expr({ ... }) or expr(() => { ... })
-          // Lookahead to determine object vs block
-          size_t savePos = position;
-          auto next = at(1);
-          bool isObject = (next.type == havel::TokenType::Identifier ||
-                           next.type == havel::TokenType::String ||
-                           next.type == havel::TokenType::MultilineString) &&
-                          at(2).type == havel::TokenType::Colon;
-          position = savePos; // restore
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          if (isObject) {
-            auto obj = parseObjectLiteral();
-            args.push_back(std::move(obj));
-          } else {
-            auto block = parseBlockStatement();
-            std::vector<std::unique_ptr<havel::ast::FunctionParameter>>
-                noParams;
-            auto lambda = makeNode<havel::ast::LambdaExpression>(
-                std::move(noParams), std::move(block));
-            args.push_back(std::move(lambda));
-          }
-          expr = makeNode<havel::ast::CallExpression>(std::move(expr),
-                                                      std::move(args));
-        } else if ((at().type == havel::TokenType::String ||
-                    at().type == havel::TokenType::MultilineString ||
-                    at().type == havel::TokenType::Number ||
-                    at().type == havel::TokenType::Identifier ||
-                    at().type == havel::TokenType::InterpolatedString ||
-                    at().type == havel::TokenType::At ||
-                    at().type == havel::TokenType::AtAt ||
-                    at().type == havel::TokenType::Not ||
-                    at().type == havel::TokenType::Length) &&
-                   context.allowBraceSugar) {
-          // Implicit call: expression followed by a literal or prefix
-          // operator (e.g., print "Hello", print @id, print !x)
-          // Only allowed when brace call sugar is enabled
-          auto arg = parseUnary();
-          std::vector<std::unique_ptr<havel::ast::Expression>> args;
-          args.push_back(std::move(arg));
-          expr = makeNode<havel::ast::CallExpression>(std::move(expr),
-                                                      std::move(args));
-        } else if (at().type == havel::TokenType::PlusPlus ||
-                   at().type == havel::TokenType::MinusMinus) {
-          // Postfix increment/decrement: x++ or x--
-          auto op = (at().type == havel::TokenType::PlusPlus)
-                        ? havel::ast::UpdateExpression::Operator::Increment
-                        : havel::ast::UpdateExpression::Operator::Decrement;
-          advance();
-          expr = makeNode<havel::ast::UpdateExpression>(std::move(expr), op,
-                                                        false);
-        } else {
-          break;
-        }
+      // Check for default value
+      std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        defaultValue = parseExpression();
       }
 
-      return expr;
-    }
+      params.push_back(makeNode<havel::ast::FunctionParameter>(
+          std::move(pattern), std::move(defaultValue), std::nullopt,
+          isVariadic));
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseConfigBlock() {
-      advance(); // consume 'config'
-      return makeNode<havel::ast::ConfigBlock>(parseKeyValueBlock(true));
-    }
-
-    std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
-      advance(); // consume 'devices'
-      return makeNode<havel::ast::DevicesBlock>(parseKeyValueBlock(true));
-    }
-
-    // Parse single mode definition: mode name [priority N] { condition = ...;
-    // enter { ... }; exit { ... } }
-    std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
-      advance(); // consume 'mode'
-
-      // Parse mode name (identifier or string)
-      if (at().type != havel::TokenType::Identifier &&
-          !isKeywordToken(at().type) && at().type != havel::TokenType::String) {
-        failAt(at(), "Expected mode name after 'mode'");
-      }
-      std::string modeName = at().value;
-      advance();
-
-      // Parse optional priority
-      int priority = 0;
-      if (at().type == havel::TokenType::Identifier &&
-          at().value == "priority") {
-        advance(); // consume 'priority'
-        if (at().type != havel::TokenType::Number) {
-          failAt(at(), "Expected number after 'priority'");
-        }
-        priority = std::stoi(at().value);
+      while (at().type == havel::TokenType::NewLine) {
         advance();
       }
 
-      // Parse mode block { condition = ...; enter { ... }; exit { ... } }
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after mode name");
-      }
-      advance(); // consume '{'
-
-      std::unique_ptr<havel::ast::Expression> condition;
-      std::unique_ptr<havel::ast::BlockStatement> enterBlock;
-      std::unique_ptr<havel::ast::BlockStatement> exitBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onEnterFromBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onExitToBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onCloseBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onMinimizeBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onMaximizeBlock;
-      std::unique_ptr<havel::ast::BlockStatement> onOpenBlock;
-      std::string onEnterFromMode;
-      std::string onExitToMode;
-
-      // Parse condition, enter, exit, and transition hooks
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-          continue;
-        }
-
-        if (at().type != havel::TokenType::Identifier &&
-            at().type != havel::TokenType::On) {
-          break;
-        }
-
-        std::string keyword = at().value;
+      if (at().type == havel::TokenType::Comma) {
         advance();
-
-        if (keyword == "condition") {
-          if (at().type != havel::TokenType::Assign &&
-              at().type != havel::TokenType::Colon) {
-            failAt(at(), "Expected '=' or ':' after 'condition'");
-          }
-          advance(); // consume '=' or ':'
-          condition = parseExpression();
-        } else if (keyword == "enter") {
-          enterBlock = parseBlockStatement();
-        } else if (keyword == "exit") {
-          exitBlock = parseBlockStatement();
-        } else if (keyword == "on") {
-          // Parse transition hooks: on enter from "mode" { ... } or on exit to
-          // "mode" { ... } Or window events: on close { ... }, on minimize {
-          // ... }, etc.
-          if (at().type != havel::TokenType::Identifier) {
-            failAt(at(), "Expected 'enter', 'exit', 'close', 'minimize', "
-                         "'maximize', or 'open' after 'on'");
-          }
-          std::string eventType = at().value;
-          advance();
-
-          if (eventType == "enter") {
-            if (at().type == havel::TokenType::From ||
-                (at().type == havel::TokenType::Identifier &&
-                 at().value == "from")) {
-              advance(); // consume 'from'
-              if (at().type != havel::TokenType::String) {
-                failAt(at(), "Expected mode name string after 'from'");
-              }
-              onEnterFromMode = at().value;
-              advance();
-              onEnterFromBlock = parseBlockStatement();
-            } else {
-              // Simple 'on enter { ... }'
-              enterBlock = parseBlockStatement();
-            }
-          } else if (eventType == "exit") {
-            if (at().type == havel::TokenType::Identifier &&
-                at().value == "to") {
-              advance(); // consume 'to'
-              if (at().type != havel::TokenType::String) {
-                failAt(at(), "Expected mode name string after 'to'");
-              }
-              onExitToMode = at().value;
-              advance();
-              onExitToBlock = parseBlockStatement();
-            } else {
-              // Simple 'on exit { ... }'
-              exitBlock = parseBlockStatement();
-            }
-          } else if (eventType == "close") {
-            onCloseBlock = parseBlockStatement();
-          } else if (eventType == "minimize") {
-            onMinimizeBlock = parseBlockStatement();
-          } else if (eventType == "maximize") {
-            onMaximizeBlock = parseBlockStatement();
-          } else if (eventType == "open") {
-            onOpenBlock = parseBlockStatement();
-          } else {
-            failAt(at(), "Unknown event type: " + eventType);
-          }
-        } else {
-          failAt(at(), "Unknown keyword in mode definition: " + keyword);
-        }
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in function parameter list");
       }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close mode definition");
-      }
-      advance(); // consume '}'
-
-      std::vector<havel::ast::ModeDefinition> modes;
-      havel::ast::ModeDefinition modeDef(modeName, std::move(condition),
-                                         std::move(enterBlock),
-                                         std::move(exitBlock));
-      modeDef.priority = priority;
-      modeDef.onEnterFrom = onEnterFromMode;
-      modeDef.onExitTo = onExitToMode;
-      modeDef.onEnterFromBlock = std::move(onEnterFromBlock);
-      modeDef.onExitToBlock = std::move(onExitToBlock);
-      modeDef.onCloseBlock = std::move(onCloseBlock);
-      modeDef.onMinimizeBlock = std::move(onMinimizeBlock);
-      modeDef.onMaximizeBlock = std::move(onMaximizeBlock);
-      modeDef.onOpenBlock = std::move(onOpenBlock);
-      modes.push_back(std::move(modeDef));
-      return makeNode<havel::ast::ModesBlock>(std::move(modes));
     }
 
-    // Parse simple mode block: mode name { statements }
-    // Shorthand for: when mode == "name" { statements }
-    std::unique_ptr<havel::ast::Statement> Parser::parseModeBlock() {
-      advance(); // consume 'mode'
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after function parameter list");
+    }
+    advance(); // consume ')'
 
-      // Parse mode name
-      if (at().type != havel::TokenType::Identifier &&
-          !isKeywordToken(at().type)) {
-        failAt(at(), "Expected mode name after 'mode'");
-      }
-      std::string modeName = at().value;
-      advance();
+    // Parse function body
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' for function body");
+    }
+    auto body = parseBlockStatement();
 
-      // Parse opening brace
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after mode name");
-      }
-      advance(); // consume '{'
+    return makeNode<havel::ast::LambdaExpression>(std::move(params),
+                                                          std::move(body));
+  }
 
-      // Parse statements until closing brace
-      std::vector<std::unique_ptr<havel::ast::Statement>> statements;
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-          continue;
-        }
+  case havel::TokenType::OpenParen: {
+    // Delegate to parseParenthesizedExpression which handles:
+    // - Multi-param lambdas: (a, b) => body
+    // - Empty lambdas: () => body
+    // - Tuples: (1, 2, 3)
+    // - Grouped expressions: (1 + 2)
+    return parseParenthesizedExpression();
+  }
 
-        try {
-          auto stmt = parseStatement();
-          if (stmt) {
-            statements.push_back(std::move(stmt));
-          }
-        } catch (const std::exception &e) {
-          if (havel::debugging::debug_parser) {
-            havel::error("Parse error in mode block: {} at position {}",
-                         e.what(), position);
-          }
-          synchronize();
-          if (notEOF() == false) {
-            break;
-          }
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close mode block");
-      }
-      advance(); // consume '}'
-
-      return makeNode<havel::ast::ModeBlock>(modeName, std::move(statements));
+  case havel::TokenType::OpenBracket: {
+    auto array = parseArrayLiteral();
+    // Handle postfix operations for array literals (moved to common function)
+return parsePostfixExpression(std::move(array));
     }
 
-    // Parse modes block (legacy): modes { name { ... } }
-    std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
-      advance(); // consume 'modes'
+    case havel::TokenType::BangOpenBrace: {
+    // !{key: value} - unsorted object literal
+    auto obj = parseObjectLiteral(true);
+    return parsePostfixExpression(std::move(obj));
+    }
 
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after 'modes'");
+    case havel::TokenType::OpenBrace: {
+    // Could be:
+    // 1. Object literal {key: value}
+    // 2. Set literal {1, 2, 3} (Python-style)
+    // 3. Block expression {stmt; expr}
+    // Look ahead to determine which, skipping newlines
+    // Note: We haven't consumed '{' yet, so lookahead starts at next token
+    size_t savePos = position;
+    size_t lookahead = 1; // Skip the '{' token
+    // Skip newlines to find first significant token
+    while (at(lookahead).type == havel::TokenType::NewLine) {
+      lookahead++;
+    }
+    auto nextTok = at(lookahead);
+
+    // Empty braces {} in expression context = empty object literal
+    if (nextTok.type == havel::TokenType::CloseBrace) {
+      auto obj = parseObjectLiteral();
+      return parsePostfixExpression(std::move(obj));
+    }
+
+    // Object keys can be identifiers, strings, or keywords (like 'config')
+    // followed by ':'
+    bool isObject = false;
+ auto isObjKeyType2 = [](havel::TokenType t) {
+ return t == havel::TokenType::Identifier ||
+ t == havel::TokenType::String ||
+ t == havel::TokenType::MultilineString ||
+ t == havel::TokenType::Number ||
+ t == havel::TokenType::Config ||
+             t == havel::TokenType::Devices ||
+             t == havel::TokenType::Modes ||
+             t == havel::TokenType::Mode ||
+             t == havel::TokenType::Timeout ||
+             t == havel::TokenType::Thread ||
+             t == havel::TokenType::Interval ||
+             t == havel::TokenType::Channel ||
+             t == havel::TokenType::On ||
+             t == havel::TokenType::Off ||
+             t == havel::TokenType::Go ||
+             t == havel::TokenType::When ||
+             t == havel::TokenType::Class ||
+             t == havel::TokenType::Struct ||
+             t == havel::TokenType::Enum ||
+             t == havel::TokenType::Fn ||
+             t == havel::TokenType::If ||
+             t == havel::TokenType::For ||
+             t == havel::TokenType::Loop ||
+             t == havel::TokenType::While ||
+             t == havel::TokenType::Switch ||
+             t == havel::TokenType::Do ||
+             t == havel::TokenType::Return ||
+             t == havel::TokenType::Ret ||
+             t == havel::TokenType::Break ||
+             t == havel::TokenType::Continue ||
+    t == havel::TokenType::Let ||
+        t == havel::TokenType::Val ||
+        t == havel::TokenType::Const ||
+             t == havel::TokenType::Try ||
+             t == havel::TokenType::Catch ||
+             t == havel::TokenType::Finally ||
+             t == havel::TokenType::Throw ||
+             t == havel::TokenType::Del ||
+             t == havel::TokenType::True ||
+             t == havel::TokenType::False ||
+             t == havel::TokenType::Null ||
+             t == havel::TokenType::Repeat;
+    };
+    if (isObjKeyType2(nextTok.type)) {
+      // Look for colon, skipping newlines
+      size_t colonLookahead = lookahead + 1;
+      while (at(colonLookahead).type == havel::TokenType::NewLine) {
+        colonLookahead++;
       }
-      advance(); // consume '{'
+      if (at(colonLookahead).type == havel::TokenType::Colon) {
+        isObject = true;
+      }
+    }
+    
+    if (isObject) {
+      auto obj = parseObjectLiteral();
+      return parsePostfixExpression(std::move(obj));
+    }
 
-      std::vector<havel::ast::ModeDefinition> modes;
-
-      // Parse mode definitions
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines
-        if (at().type == havel::TokenType::NewLine) {
-          advance();
-          continue;
-        }
-
-        // Parse mode name (identifier or string)
-        if (at().type != havel::TokenType::Identifier &&
-            !isKeywordToken(at().type) &&
-            at().type != havel::TokenType::String) {
-          failAt(at(), "Expected mode name after 'mode'");
-        }
-        std::string modeName = at().value;
-        advance();
-
-        // Parse mode block { condition = ...; enter { ... }; exit { ... } }
-        if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '{' after mode name");
-        }
+    // Not an object literal - could be set or block
+    // Check if this looks like a set literal: {expr, expr, ...}
+    // Sets contain expressions separated by commas
+    bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
+                  nextTok.type == havel::TokenType::String ||
+                  nextTok.type == havel::TokenType::MultilineString ||
+                  nextTok.type == havel::TokenType::Number ||
+                  nextTok.type == havel::TokenType::OpenBracket ||
+                  nextTok.type == havel::TokenType::OpenParen ||
+                  nextTok.type == havel::TokenType::OpenBrace ||
+                  nextTok.type == havel::TokenType::Minus ||
+                  nextTok.type == havel::TokenType::Not ||
+                  nextTok.type == havel::TokenType::Plus ||
+                  nextTok.type == havel::TokenType::Length ||
+                  nextTok.type == havel::TokenType::True ||
+                  nextTok.type == havel::TokenType::False ||
+                  nextTok.type == havel::TokenType::Null);
+    
+    if (couldBeSet) {
+      // Try to parse as set literal
+      // Look ahead to see if there's a comma (indicating set) or semicolon/newline (indicating block)
+      size_t setLookahead = lookahead + 1;
+      // Skip the first expression tokens to find separator
+      // For simplicity, just check if there's a comma before any semicolon or newline
+      while (setLookahead < tokens.size() && 
+             at(setLookahead).type != havel::TokenType::Comma &&
+             at(setLookahead).type != havel::TokenType::Semicolon &&
+             at(setLookahead).type != havel::TokenType::CloseBrace &&
+             at(setLookahead).type != havel::TokenType::NewLine) {
+        setLookahead++;
+      }
+      
+      // If we found a comma, it's likely a set
+      if (at(setLookahead).type == havel::TokenType::Comma) {
+        // Parse as set literal
         advance(); // consume '{'
-
-        std::unique_ptr<havel::ast::Expression> condition;
-        std::unique_ptr<havel::ast::BlockStatement> enterBlock;
-        std::unique_ptr<havel::ast::BlockStatement> exitBlock;
-
-        // Parse condition, enter, exit
+        
+        std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+        
         while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-          if (at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Semicolon) {
+          while (at().type == havel::TokenType::NewLine) {
             advance();
-            continue;
           }
-
-          if (at().type != havel::TokenType::Identifier) {
+          if (at().type == havel::TokenType::CloseBrace) {
             break;
           }
-
-          std::string keyword = at().value;
-          advance();
-
-          if (keyword == "condition") {
-            if (at().type != havel::TokenType::Assign &&
-                at().type != havel::TokenType::Colon) {
-              failAt(at(), "Expected '=' or ':' after 'condition'");
-            }
-            advance(); // consume '=' or ':'
-            condition = parseExpression();
-          } else if (keyword == "enter") {
-            enterBlock = parseBlockStatement();
-          } else if (keyword == "exit") {
-            exitBlock = parseBlockStatement();
-          } else {
-            failAt(at(), "Unknown keyword in mode definition: " + keyword);
+          
+          auto element = parseExpression();
+          elements.push_back(std::move(element));
+          
+          while (at().type == havel::TokenType::NewLine) {
+            advance();
+          }
+          
+          if (at().type == havel::TokenType::Comma) {
+            advance();
+          } else if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected ',' or '}' in set literal");
           }
         }
-
+        
         if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' to close mode definition");
+          failAt(at(), "Expected '}' after set literal");
         }
         advance(); // consume '}'
-
-        modes.emplace_back(modeName, std::move(condition),
-                           std::move(enterBlock), std::move(exitBlock));
+        
+        return makeNode<havel::ast::SetExpression>(std::move(elements));
       }
+    }
+    
+    // Block expression: { stmt; stmt; expr }
+    return parseBlockExpression();
+  }
 
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close modes block");
-      }
-      advance(); // consume '}'
+  case havel::TokenType::If: {
+    // If expression: if condition { expr } else { expr }
+    return parseIfExpression();
+  }
 
-      return makeNode<havel::ast::ModesBlock>(std::move(modes));
+ default:
+ failAt(tk, "Unexpected token in expression: " + tk.value);
+  }
+}
+// Add these method declarations to Parser.h first, then implement in Parser.cpp
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
+
+  auto openParen = at(); // Save '(' token location
+  advance();             // consume '('
+
+  auto call = makeNode<havel::ast::CallExpression>(std::move(callee));
+  call->line = openParen.line;
+  call->column = openParen.column;
+
+  // Parse arguments
+  while (notEOF() && at().type != havel::TokenType::CloseParen) {
+    // Skip newlines before argument
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseParen) {
+      break;
     }
 
-    // Parse generic config section: identifier [args...] { key = value }
-    std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
-      std::string sectionName = at().value;
-      advance(); // consume identifier
+    // Check for keyword argument: name=value
+    if (at().type == havel::TokenType::Identifier &&
+        at(1).type == havel::TokenType::Assign) {
+      // This is a keyword argument
+      std::string name = advance().value; // consume identifier
+      advance();                          // consume '='
+      auto value = parseExpression();
+      call->kwargs.push_back(havel::ast::KeywordArg(name, std::move(value)));
+    } else {
+      // Positional argument (possibly with spread)
+      std::unique_ptr<havel::ast::Expression> arg;
+      if (at().type == havel::TokenType::Spread) {
+        advance(); // consume '...'
+        auto target = parseExpression();
+        arg = makeNode<havel::ast::SpreadExpression>(std::move(target));
+      } else {
+        arg = parseExpression();
+      }
+      call->args.push_back(std::move(arg));
+    }
 
-      // Parse optional arguments (Hyprland-style: monitor HDMI-0 { ... })
-      std::vector<std::string> args;
-      while (notEOF() && at().type != havel::TokenType::OpenBrace &&
-             at().type != havel::TokenType::NewLine) {
-        if (at().type == havel::TokenType::Identifier ||
-            at().type == havel::TokenType::String ||
-            at().type == havel::TokenType::MultilineString ||
-            at().type == havel::TokenType::Number) {
-          args.push_back(at().value);
-          advance();
-        } else {
-          break;
+    // Skip newlines after argument
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::Comma) {
+      advance(); // consume ','
+    } else if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ',' or ')' in function call");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseParen) {
+    failAt(at(), "Expected ')' after function arguments");
+  }
+  advance(); // consume ')'
+
+    return call;
+}
+std::unique_ptr<havel::ast::Expression>
+Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
+
+  // Special case: if current token is '.' but next is '??', this is not a member access
+  // Let the nullish coalescing handler deal with it
+  if (at().type == havel::TokenType::Dot && at(1).type == havel::TokenType::Nullish) {
+    return object;
+  }
+
+  auto dotTok = at(); // Save token location before consuming
+  advance(); // consume '.'
+
+  // Special case: if next token is ??, this is not a member access
+  // Let the nullish coalescing handler deal with it
+  if (at().type == havel::TokenType::Nullish) {
+    return object;
+  }
+
+  // Property names can be identifiers or certain keywords
+  // Many keywords should be allowed as property names (e.g., clipboard.in,
+  // clipboard.out)
+  if (at().type != havel::TokenType::Identifier &&
+      at().type != havel::TokenType::Config &&
+      at().type != havel::TokenType::Devices &&
+      at().type != havel::TokenType::Modes &&
+      at().type != havel::TokenType::Mode &&
+      at().type != havel::TokenType::In && at().type != havel::TokenType::On &&
+      at().type != havel::TokenType::Off &&
+      at().type != havel::TokenType::When &&
+      at().type != havel::TokenType::Loop &&
+      at().type != havel::TokenType::For &&
+      at().type != havel::TokenType::While &&
+      at().type != havel::TokenType::If &&
+      at().type != havel::TokenType::Else &&
+      at().type != havel::TokenType::Return &&
+      at().type != havel::TokenType::Ret && at().type != havel::TokenType::Fn &&
+      at().type != havel::TokenType::Let &&
+      at().type != havel::TokenType::Break &&
+      at().type != havel::TokenType::Continue &&
+      at().type != havel::TokenType::Switch &&
+      at().type != havel::TokenType::Case &&
+      at().type != havel::TokenType::Default &&
+      at().type != havel::TokenType::Match &&
+      at().type != havel::TokenType::Struct &&
+      at().type != havel::TokenType::Enum &&
+      at().type != havel::TokenType::Try &&
+      at().type != havel::TokenType::Catch &&
+      at().type != havel::TokenType::Finally &&
+      at().type != havel::TokenType::Throw &&
+    at().type != havel::TokenType::And &&
+    at().type != havel::TokenType::Or &&
+    at().type != havel::TokenType::Not &&
+      at().type != havel::TokenType::Const &&
+      at().type != havel::TokenType::Val &&
+      at().type != havel::TokenType::Class) {
+    failAt(at(), "Expected property name after '.'");
+  }
+
+  auto property = advance();
+
+  auto member = makeNode<havel::ast::MemberExpression>();
+  member->object = std::move(object);
+  member->property = makeIdentifier(property);
+  member->line = dotTok.line;
+  member->column = dotTok.column;
+
+  return std::move(member);
+}
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
+
+  Token openBracket = at();
+  advance(); // consume '['
+  pushDelimiter(TokenType::OpenBracket, &openBracket);
+
+  // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
+  // We need to look ahead to see if there's a ':' in the index expression
+  bool isSlice = false;
+  size_t savedPos = position;
+  int bracketDepth = 1;
+
+  // Look ahead to find if there's a ':' at the top level
+  size_t lookahead = 0;
+  while (position + lookahead < tokens.size()) {
+    const Token &tok = tokens[position + lookahead];
+    if (tok.type == havel::TokenType::OpenBracket) {
+      bracketDepth++;
+    } else if (tok.type == havel::TokenType::CloseBracket) {
+      bracketDepth--;
+      if (bracketDepth == 0)
+        break;
+    } else if (tok.type == havel::TokenType::Colon && bracketDepth == 1) {
+      // Found a ':' at the top level - this is a slice
+      isSlice = true;
+      break;
+    } else if (tok.type == havel::TokenType::EOF_TOKEN) {
+      break;
+    }
+    lookahead++;
+  }
+
+  // Restore position
+  position = savedPos;
+
+  std::unique_ptr<havel::ast::Expression> index;
+
+  if (isSlice) {
+    // Parse slice: [start:end]
+    std::unique_ptr<havel::ast::Expression> start;
+    std::unique_ptr<havel::ast::Expression> end;
+
+    // Check if slice starts with ':' (implicit start = 0)
+    if (at().type == havel::TokenType::Colon) {
+      // [:end] form - start is null (implicit 0)
+      advance(); // consume ':'
+      if (at().type != havel::TokenType::CloseBracket) {
+        end = parseExpression();
+      }
+      // If end is null, it's an open-ended slice [:]
+    } else {
+      // [start:end] or [start:] form
+      start = parseExpression();
+      if (at().type == havel::TokenType::Colon) {
+        advance(); // consume ':'
+        if (at().type != havel::TokenType::CloseBracket) {
+          end = parseExpression();
         }
+        // If no expression after ':', it's [start:] (open-ended)
+      } else {
+        // No colon found after parsing start - this shouldn't happen given
+        // lookahead But handle it gracefully as simple index
+        index = std::move(start);
       }
-
-      return makeNode<havel::ast::ConfigSection>(
-          sectionName, parseKeyValueBlock(true), args);
     }
 
-    std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-    Parser::parseKeyValueBlock(bool configContext) {
-      // Save old context
-      bool oldInConfig = context.inConfigContext;
-      context.inConfigContext = configContext;
-      // Skip optional newlines
-      while (notEOF() && at().type == havel::TokenType::NewLine) {
+    // Create a range expression for the slice
+    if (!index) {
+      index = makeNode<havel::ast::RangeExpression>(std::move(start),
+                                                            std::move(end));
+    }
+  } else {
+    // Simple index: [expr]
+    index = parseExpression();
+  }
+
+  if (at().type != havel::TokenType::CloseBracket) {
+    failAt(at(), "Expected ']' after array index or slice");
+  }
+  advance(); // consume ']'
+  popDelimiter(TokenType::OpenBracket);
+
+  return makeNode<havel::ast::IndexExpression>(std::move(object),
+                                                       std::move(index));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
+  pushDelimiter(TokenType::OpenBracket);
+  std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+
+  advance(); // consume '['
+
+  // Parse array elements
+  int loopCounter = 0;
+  while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+    checkParseLoop(loopCounter, "parseArrayLiteral");
+    // Skip newlines before element
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    // Handle trailing comma or closing bracket
+    if (at().type == havel::TokenType::CloseBracket) {
+      break;
+    }
+
+    // Check for spread operator
+    std::unique_ptr<havel::ast::Expression> element;
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      auto target = parseExpression();
+      element =
+          makeNode<havel::ast::SpreadExpression>(std::move(target));
+    } else {
+      element = parseExpression();
+    }
+    elements.push_back(std::move(element));
+
+    // Skip newlines before checking for comma or closing bracket
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::Comma) {
+      advance(); // consume ','
+    } else if (at().type != havel::TokenType::CloseBracket) {
+      // If we don't have a comma and we're not at the closing bracket,
+      // consume the unexpected token to avoid infinite loops
+      auto errTok = at();
+      advance();
+      failAt(errTok, "Expected ',' or ']' in array literal");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBracket) {
+    failAt(at(), "Expected ']' to close array literal");
+  }
+  advance(); // consume ']'
+  popDelimiter(TokenType::OpenBracket);
+
+  return makeNode<havel::ast::ArrayLiteral>(std::move(elements));
+}
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parseObjectLiteral(bool unsorted) {
+    std::vector<havel::ast::ObjectLiteral::PairEntry> pairs;
+
+    // Consume opening token: '{' or '!{'
+    // Note: if called from nud() for BangOpenBrace, the token was already
+    // consumed by parsePrattExpression's advance(), so current token is
+    // already inside the object. Only advance if current token is the opener.
+    if (at().type == havel::TokenType::BangOpenBrace) {
+        Token openBrace = at();
+        advance(); // consume '!{'
+        pushDelimiter(TokenType::OpenBrace, &openBrace);
+        unsorted = true;
+    } else if (at().type == havel::TokenType::OpenBrace) {
+        Token openBrace = at();
+        advance(); // consume '{'
+        pushDelimiter(TokenType::OpenBrace, &openBrace);
+    }
+    // else: opener was already consumed, we're past it
+
+  // Parse entries: key:value, positional value, [expr]:value, or ...spread
+  int loopCounter = 0;
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    checkParseLoop(loopCounter, "parseObjectLiteral");
+    size_t prevPos = position;
+    // Skip newlines/semicolons between entries
+    while (notEOF() && (at().type == havel::TokenType::NewLine ||
+                        at().type == havel::TokenType::Semicolon)) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Check for spread operator
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      auto target = parseExpression();
+      auto spreadExpr =
+          makeNode<havel::ast::SpreadExpression>(std::move(target));
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.key = "__spread__";
+      entry.value = std::move(spreadExpr);
+      pairs.push_back(std::move(entry));
+
+      // Allow comma, newline, or semicolon as separators
+      if (at().type == havel::TokenType::Comma ||
+          at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
         advance();
       }
+      continue;
+    }
 
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after block keyword");
+    // Check for computed key: [expr]:
+    if (at().type == havel::TokenType::OpenBracket) {
+      advance(); // consume '['
+      auto keyExpr = parseExpression();
+      if (at().type != havel::TokenType::CloseBracket) {
+        failAt(at(), "Expected ']' after computed key expression");
       }
+      advance(); // consume ']'
+      if (at().type != havel::TokenType::Colon) {
+        failAt(at(), "Expected ':' after computed key");
+      }
+      advance(); // consume ':'
+      auto value = parseExpression();
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.isComputedKey = true;
+      entry.keyExpr = std::move(keyExpr);
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
 
-      std::vector<
-          std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-          pairs;
+      // Allow comma, newline, or semicolon as separators
+      if (at().type == havel::TokenType::Comma ||
+          at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      continue;
+    }
 
-      advance(); // consume '{'
+    // Try to parse as key:value pair
+    // Check if next token after potential key is a colon
+    size_t savedPos = position;
+    bool hasColon = false;
+    std::string key;
+    bool validKey = false;
 
-      // Parse key-value pairs
-      while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-        // Skip newlines
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-          continue;
-        }
+    auto isKeyToken = [](havel::TokenType t) {
+      return t == havel::TokenType::Identifier ||
+             t == havel::TokenType::Config || t == havel::TokenType::Devices ||
+             t == havel::TokenType::Modes || t == havel::TokenType::Mode ||
+             t == havel::TokenType::Timeout || t == havel::TokenType::Thread ||
+             t == havel::TokenType::Interval || t == havel::TokenType::Channel ||
+             t == havel::TokenType::On || t == havel::TokenType::Off ||
+             t == havel::TokenType::Go || t == havel::TokenType::When ||
+             t == havel::TokenType::Class || t == havel::TokenType::Struct ||
+             t == havel::TokenType::Enum || t == havel::TokenType::Fn ||
+             t == havel::TokenType::If || t == havel::TokenType::For ||
+             t == havel::TokenType::Loop || t == havel::TokenType::While ||
+             t == havel::TokenType::Switch || t == havel::TokenType::Do ||
+             t == havel::TokenType::Return || t == havel::TokenType::Ret ||
+             t == havel::TokenType::Break || t == havel::TokenType::Continue ||
+             t == havel::TokenType::Let || t == havel::TokenType::Val || t == havel::TokenType::Const ||
+             t == havel::TokenType::Try || t == havel::TokenType::Catch ||
+             t == havel::TokenType::Finally || t == havel::TokenType::Throw ||
+             t == havel::TokenType::Del ||
+             t == havel::TokenType::True || t == havel::TokenType::False ||
+             t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
+t == havel::TokenType::String ||
+t == havel::TokenType::MultilineString ||
+t == havel::TokenType::RegexString ||
+             t == havel::TokenType::Number;
+    };
 
-        // Handle closing brace
-        if (at().type == havel::TokenType::CloseBrace) {
+    if (isKeyToken(at().type)) {
+      key = advance().value;
+      validKey = true;
+      // Support dotted keys when using '=' (Lua/Nix style)
+      // We look ahead to see if '=' follows eventually to decide if we should consume dots
+      size_t lookPos = position;
+      bool followedByAssign = false;
+      while (lookPos < tokens.size()) {
+        if (tokens[lookPos].type == havel::TokenType::Dot) {
+          lookPos++;
+          if (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::Identifier) {
+            lookPos++;
+            continue;
+          }
           break;
         }
+        if (tokens[lookPos].type == havel::TokenType::NewLine) {
+          lookPos++;
+          continue;
+        }
+        if (tokens[lookPos].type == havel::TokenType::Assign) {
+          followedByAssign = true;
+        }
+        break;
+      }
 
-        // Parse key - can be identifier, keyword, or string
-        // Keywords are allowed as keys (e.g., "default = HDMI-0")
-        std::string key;
-        if (at().type == havel::TokenType::Identifier ||
-            at().type == havel::TokenType::Default ||
-            at().type == havel::TokenType::For ||
-            at().type == havel::TokenType::While ||
-            at().type == havel::TokenType::If ||
-            at().type == havel::TokenType::Else ||
-            at().type == havel::TokenType::Match ||
-            at().type == havel::TokenType::Case ||
-            at().type == havel::TokenType::Switch ||
-            at().type == havel::TokenType::Try ||
-            at().type == havel::TokenType::Catch ||
-            at().type == havel::TokenType::Finally ||
-            at().type == havel::TokenType::Throw ||
-            at().type == havel::TokenType::Del ||
-            at().type == havel::TokenType::Return ||
-            at().type == havel::TokenType::Ret ||
-            at().type == havel::TokenType::Break ||
-            at().type == havel::TokenType::Continue ||
-            at().type == havel::TokenType::Fn ||
-            at().type == havel::TokenType::Struct ||
-            at().type == havel::TokenType::Enum ||
-            at().type == havel::TokenType::Trait ||
-            at().type == havel::TokenType::Prot ||
-            at().type == havel::TokenType::Impl ||
-            at().type == havel::TokenType::Let ||
+      if (followedByAssign) {
+        while (at().type == havel::TokenType::Dot) {
+          advance(); // consume '.'
+          if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected identifier after '.' in key");
+          }
+          key += "." + advance().value;
+        }
+      }
+
+      // Skip newlines to find colon or equals
+      lookPos = position;
+      while (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::NewLine) {
+        lookPos++;
+      }
+      if (lookPos < tokens.size() && (tokens[lookPos].type == havel::TokenType::Colon || tokens[lookPos].type == havel::TokenType::Assign)) {
+        hasColon = true;
+      }
+    }
+
+    if (validKey && hasColon) {
+      // It's a key:value or key=value pair
+      auto sep = advance(); // consume ':' or '='
+      
+      // If using '=' in an object literal, treat RHS bare identifiers as strings
+      std::unique_ptr<ast::Expression> value;
+      if (sep.type == havel::TokenType::Assign && at().type == havel::TokenType::Identifier) {
+        auto next = at(1).type;
+        if (next == havel::TokenType::NewLine || next == havel::TokenType::Comma || 
+            next == havel::TokenType::Semicolon || next == havel::TokenType::CloseBrace) {
+          value = makeNode<ast::StringLiteral>(advance().value, false);
+        } else {
+          value = parseExpression();
+        }
+      } else {
+        value = parseExpression();
+      }
+
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.key = std::move(key);
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
+    } else {
+      // Restore position - it's a positional element, not a key
+      position = savedPos;
+      // Parse as positional element
+      auto value = parseExpression();
+      havel::ast::ObjectLiteral::PairEntry entry;
+      // key is empty = positional element
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
+    }
+
+    // Allow comma, newline, or semicolon as separators
+    if (at().type == havel::TokenType::Comma ||
+        at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+    } else if (at().type != havel::TokenType::CloseBrace) {
+      auto errTok = at();
+      advance();
+      failAt(errTok, "Expected ',', newline, or '}' in collection literal");
+    }
+
+    // Progress guard
+    if (position == prevPos) {
+      failAt(at(), "Parser made no progress in collection literal");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close collection literal");
+  }
+  advance(); // consume '}'
+  popDelimiter(TokenType::OpenBrace);
+
+  return makeNode<havel::ast::ObjectLiteral>(std::move(pairs),
+                                                     unsorted);
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
+  auto blockExpr = makeNode<havel::ast::BlockExpression>();
+  blockExpr->line = at().line;
+  blockExpr->column = at().column;
+
+  Token openBrace = at();
+  advance(); // consume '{'
+  pushDelimiter(TokenType::OpenBrace, &openBrace);
+
+  // Parse statements until we hit an expression (last one becomes value)
+  // or closing brace
+  int loopCounter = 0;
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    checkParseLoop(loopCounter, "parseBlockExpression");
+    // Skip newlines and semicolons
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    // Check if this is the final expression (no statement starter)
+    // Statement starters: let, fn, if, while, for, return, etc.
+    bool isStatementStarter = at().type == havel::TokenType::Let ||
+                              at().type == havel::TokenType::Fn ||
+                              at().type == havel::TokenType::If ||
+                              at().type == havel::TokenType::While ||
+                              at().type == havel::TokenType::For ||
+                              at().type == havel::TokenType::Loop ||
+                              at().type == havel::TokenType::Return ||
+                              at().type == havel::TokenType::Break ||
+                              at().type == havel::TokenType::Continue ||
+                              at().type == havel::TokenType::Switch ||
+                              at().type == havel::TokenType::Try ||
+                              at().type == havel::TokenType::Del ||
+                              at().type == havel::TokenType::Throw;
+
+    if (isStatementStarter) {
+      auto stmt = parseStatement();
+      if (stmt) {
+        blockExpr->body.push_back(std::move(stmt));
+      }
+    } else {
+      // This is the final expression
+      auto expr = parseExpression();
+      blockExpr->value = std::move(expr);
+      break;
+    }
+  }
+
+  // Skip trailing newlines/semicolons before closing brace
+  while (at().type == havel::TokenType::NewLine ||
+         at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::EOF_TOKEN) {
+      failAt(at(), "Unexpected end of file in block expression");
+    }
+    failAt(at(), "Expected '}' to close block expression");
+  }
+  advance(); // consume '}'
+  popDelimiter(TokenType::OpenBrace);
+
+  return blockExpr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
+  advance(); // consume 'if'
+
+  // Disable brace call sugar to prevent { from being parsed as part of
+  // condition
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  // Expect then branch (block or expression)
+  std::unique_ptr<havel::ast::Expression> thenBranch;
+  if (at().type == havel::TokenType::OpenBrace) {
+    thenBranch = parseBlockExpression();
+  } else {
+    thenBranch = parseExpression();
+  }
+
+  // Optional else branch
+  std::unique_ptr<havel::ast::Expression> elseBranch;
+  // Skip newlines before checking for else
+  while (at().type == havel::TokenType::NewLine ||
+         at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+  if (at().type == havel::TokenType::Else) {
+    advance(); // consume 'else'
+    if (at().type == havel::TokenType::OpenBrace) {
+      elseBranch = parseBlockExpression();
+    } else if (at().type == havel::TokenType::If) {
+      // else if chain
+      elseBranch = parseIfExpression();
+    } else {
+      elseBranch = parseExpression();
+    }
+  }
+
+  // Save location before moving
+  if (!condition) {
+    failAt(at(), "Expected condition after 'if'");
+  }
+  size_t line = condition->line;
+  size_t column = condition->column;
+
+  auto ifExpr = makeNode<havel::ast::IfExpression>(
+      std::move(condition), std::move(thenBranch), std::move(elseBranch));
+  ifExpr->line = line;
+  ifExpr->column = column;
+
+  return ifExpr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseArrayPattern() {
+  std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+
+  advance(); // consume '['
+
+  // Parse pattern elements
+  while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBracket) {
+      break;
+    }
+
+    // Pattern elements can be identifiers, rest patterns, nested patterns, or
+    // patterns with defaults
+    std::unique_ptr<havel::ast::Expression> element;
+
+    if (at().type == havel::TokenType::Spread) {
+      // Rest pattern: ...rest
+      advance(); // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in rest pattern");
+      }
+      auto restIdent = makeIdentifier(advance());
+      element =
+          makeNode<havel::ast::SpreadExpression>(std::move(restIdent));
+    } else if (at().type == havel::TokenType::Identifier) {
+      auto ident = makeIdentifier(advance());
+      // Check for default value: a = 10
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        // Wrap in AssignmentExpression to represent default
+        element = makeNode<havel::ast::AssignmentExpression>(
+            std::move(ident), std::move(defaultValue), "=", false);
+      } else {
+        element = std::move(ident);
+      }
+    } else if (at().type == havel::TokenType::OpenBracket) {
+      element = parseArrayPattern(); // Nested array pattern
+      // Check for default value after nested pattern
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        element = makeNode<havel::ast::AssignmentExpression>(
+            std::move(element), std::move(defaultValue), "=", false);
+      }
+    } else if (at().type == havel::TokenType::OpenBrace) {
+      element = parseObjectPattern(); // Nested object pattern
+      // Check for default value after nested pattern
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        element = makeNode<havel::ast::AssignmentExpression>(
+            std::move(element), std::move(defaultValue), "=", false);
+      }
+    } else {
+      failAt(at(), "Expected identifier, rest pattern, or nested pattern in "
+                   "array pattern");
+    }
+
+    elements.push_back(std::move(element));
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::Comma) {
+      advance(); // consume ','
+    } else if (at().type != havel::TokenType::CloseBracket) {
+      failAt(at(), "Expected ',' or ']' in array pattern");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBracket) {
+    failAt(at(), "Expected ']' to close array pattern");
+  }
+  advance(); // consume ']'
+
+  return makeNode<havel::ast::ArrayPattern>(std::move(elements));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
+  std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
+      properties;
+
+  advance(); // consume '{'
+
+  // Parse object pattern properties
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    while (notEOF() && (at().type == havel::TokenType::NewLine ||
+                        at().type == havel::TokenType::Semicolon)) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Check for rest pattern: ...rest
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in object rest pattern");
+      }
+      auto restIdent = makeIdentifier(advance());
+      auto restExpr =
+          makeNode<havel::ast::SpreadExpression>(std::move(restIdent));
+      // Use special key "..." to indicate rest pattern
+      properties.push_back({"...", std::move(restExpr)});
+
+      // Rest pattern must be last
+      while (at().type == havel::TokenType::NewLine ||
+             at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance(); // consume optional comma
+      }
+      // Skip any trailing newlines
+      while (at().type == havel::TokenType::NewLine ||
+             at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      break; // Rest pattern must be last
+    }
+
+    // Parse property key
+    std::string key;
+    Token keyToken = at(); // Copy current token
+    if (at().type == havel::TokenType::Identifier) {
+      key = advance().value;
+    } else {
+      failAt(at(), "Expected identifier as object pattern key");
+    }
+
+    // Check for renamed pattern: { originalName: newName }
+    // or shorthand with default: { key = defaultValue }
+    std::unique_ptr<havel::ast::Expression> pattern;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+
+      // Parse the pattern for this property
+      if (at().type == havel::TokenType::Identifier) {
+        pattern = makeIdentifier(advance());
+      } else if (at().type == havel::TokenType::OpenBracket) {
+        pattern = parseArrayPattern(); // Nested array pattern
+      } else if (at().type == havel::TokenType::OpenBrace) {
+        pattern = parseObjectPattern(); // Nested object pattern
+      } else {
+        failAt(at(),
+               "Expected identifier or pattern after ':' in object pattern");
+      }
+
+      // Check for default value after renamed pattern: { key: pattern = default
+      // }
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        pattern = makeNode<havel::ast::AssignmentExpression>(
+            std::move(pattern), std::move(defaultValue), "=", false);
+      }
+    } else if (at().type == havel::TokenType::Assign) {
+      // Shorthand with default: { key = defaultValue }
+      advance(); // consume '='
+      auto defaultValue = parseExpression();
+      auto ident = makeIdentifier(keyToken);
+      // Wrap in AssignmentExpression to represent pattern with default
+      pattern = makeNode<havel::ast::AssignmentExpression>(
+          std::move(ident), std::move(defaultValue), "=", false);
+    } else {
+      // Default: property name becomes variable name
+      pattern = makeIdentifier(keyToken);
+    }
+
+    properties.push_back({key, std::move(pattern)});
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine ||
+           at().type == havel::TokenType::Semicolon) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::Comma) {
+      advance(); // consume ','
+    } else if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected ',' or '}' in object pattern");
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close object pattern");
+  }
+  advance(); // consume '}'
+
+  return makeNode<havel::ast::ObjectPattern>(std::move(properties));
+}
+
+// Parse a match pattern: literal | identifier | _ | { ... } | [ ... ] | pat | pat
+std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
+  // Or patterns: try to parse first alternative, then check for |
+  std::vector<std::unique_ptr<havel::ast::Expression>> alternatives;
+  
+  auto first = parsePatternAtom();
+  if (!first) return nullptr;
+  alternatives.push_back(std::move(first));
+  
+  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or) {
+    advance(); // consume '|' or '||'
+    auto next = parsePatternAtom();
+    if (!next) {
+      failAt(at(), "Expected pattern after '|' or '||'");
+      return nullptr;
+    }
+    alternatives.push_back(std::move(next));
+  }
+  
+  if (alternatives.size() == 1) {
+    return std::move(alternatives[0]);
+  }
+  return makeNode<havel::ast::OrPattern>(std::move(alternatives));
+}
+
+// Parse a single pattern atom (no | handling)
+std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
+  // First, try to parse a literal expression
+  std::unique_ptr<havel::ast::Expression> literal;
+  
+  // Wildcard
+  if (at().type == havel::TokenType::Underscore) {
+    advance();
+    return makeNode<havel::ast::WildcardPattern>();
+  }
+  
+  // Array pattern
+  if (at().type == havel::TokenType::OpenBracket) {
+    return parseArrayPatternForMatch();
+  }
+  
+  // Object pattern
+  if (at().type == havel::TokenType::OpenBrace) {
+    return parseObjectPatternForMatch();
+  }
+  
+  // Boolean literals
+  if (at().type == havel::TokenType::True) {
+    advance();
+    literal = makeNode<havel::ast::BooleanLiteral>(true);
+  } else if (at().type == havel::TokenType::False) {
+    advance();
+    literal = makeNode<havel::ast::BooleanLiteral>(false);
+  }
+  // Null literal
+  else if (at().type == havel::TokenType::Null) {
+    advance();
+    literal = makeNode<havel::ast::NullLiteral>();
+  }
+  // Number literal
+  else if (at().type == havel::TokenType::Number) {
+    auto tok = advance();
+try {
+        literal = makeNode<havel::ast::NumberLiteral>(parseNumberLiteral(tok.value), hasDecimalPart(tok.value));
+        } catch (...) {
+            failAt(tok, "Invalid number literal");
+            return nullptr;
+        }
+  }
+ // String literal
+ else if (at().type == havel::TokenType::String) {
+ auto tok = advance();
+ literal = makeNode<havel::ast::StringLiteral>(tok.value);
+ }
+ // Regex literal /pattern/
+ else if (at().type == havel::TokenType::RegexLiteral) {
+ auto tok = advance();
+ literal = makeNode<havel::ast::StringLiteral>(tok.value, true);
+ }
+  // Char literal
+  else if (at().type == havel::TokenType::CharLiteral) {
+    auto tok = advance();
+    literal = makeNode<havel::ast::CharLiteral>(tok.value[0]);
+  }
+  // Identifier (variable binding or constructor pattern)
+  else if (at().type == havel::TokenType::Identifier) {
+    auto tok = advance();
+    // If followed by '(', parse as constructor pattern Name(p1, p2, ...)
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::CloseParen) break;
+        auto arg = parsePattern();
+        if (!arg) {
+          failAt(at(), "Expected pattern in constructor pattern");
+          return nullptr;
+        }
+        args.push_back(std::move(arg));
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Comma) advance();
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' to close constructor pattern");
+        return nullptr;
+      }
+      advance(); // consume ')'
+      literal = makeNode<havel::ast::ConstructorPattern>(tok.value, std::move(args));
+    } else {
+      literal = makeIdentifier(tok);
+    }
+  }
+  // Wildcard pattern _
+  else if (at().type == havel::TokenType::Underscore) {
+    advance(); // consume '_'
+    literal = makeNode<havel::ast::WildcardPattern>();
+  }
+
+  if (!literal) {
+    failAt(at(), "Expected pattern");
+    return nullptr;
+  }
+
+  // Check for range pattern: literal..=literal
+  if (at().type == havel::TokenType::DotDotEquals) {
+    advance(); // consume '..='
+    auto endLit = parsePatternAtom();
+    if (!endLit) {
+      failAt(at(), "Expected pattern after '..='");
+      return nullptr;
+    }
+    return makeNode<havel::ast::RangePattern>(std::move(literal), std::move(endLit));
+  }
+  
+  return literal;
+}
+
+// Parse array pattern for match (supports [x, y], [x, ..rest])
+std::unique_ptr<havel::ast::Expression> Parser::parseArrayPatternForMatch() {
+  std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+  std::unique_ptr<havel::ast::Expression> rest;
+  
+  advance(); // consume '['
+  
+  while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBracket) break;
+    
+    // Check for spread/rest: ..rest
+    if (at().type == havel::TokenType::DotDot) {
+      advance(); // consume '..'
+      if (at().type == havel::TokenType::Identifier) {
+        rest = makeIdentifier(advance());
+      } else {
+        // Anonymous rest: ..
+        rest = makeNode<havel::ast::Identifier>("_");
+      }
+      break;
+    }
+    
+    elements.push_back(parsePattern());
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+  
+  if (at().type != havel::TokenType::CloseBracket) {
+    failAt(at(), "Expected ']' to close array pattern");
+  }
+  advance(); // consume ']'
+  
+  return makeNode<havel::ast::ArrayPattern>(std::move(elements), std::move(rest));
+}
+
+// Parse object pattern for match (supports {x, y: pat})
+std::unique_ptr<havel::ast::Expression> Parser::parseObjectPatternForMatch() {
+  std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> properties;
+  
+  advance(); // consume '{'
+  
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::CloseBrace) break;
+    
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected identifier in object pattern");
+      return nullptr;
+    }
+    std::string key = advance().value;
+    
+    std::unique_ptr<havel::ast::Expression> pattern;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      pattern = parsePattern();
+    } else {
+      // Shorthand: {x} binds x to x
+      pattern = makeNode<havel::ast::Identifier>(key);
+    }
+    
+    properties.push_back({key, std::move(pattern)});
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Comma) advance();
+  }
+  
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close object pattern");
+  }
+  advance(); // consume '}'
+  
+  return makeNode<havel::ast::ObjectPattern>(std::move(properties));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseLambdaFromParams(
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params) {
+  // Body can be block or expression
+  if (at().type == havel::TokenType::OpenBrace) {
+    auto block = parseBlockStatement();
+    return makeNode<havel::ast::LambdaExpression>(std::move(params),
+                                                          std::move(block));
+  }
+  // Expression body: wrap in Return inside a block
+  auto expr = parseExpression();
+  auto exprStmt =
+      makeNode<havel::ast::ExpressionStatement>(std::move(expr));
+  auto block = makeNode<havel::ast::BlockStatement>();
+  block->body.push_back(std::move(exprStmt));
+  return makeNode<havel::ast::LambdaExpression>(std::move(params),
+                                                        std::move(block));
+}
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
+  // Handle postfix operations in a loop to support chaining: arr[0].prop() etc.
+  // This handles chaining for all expression types (variables, function calls,
+  // arrays, etc.)
+  while (true) {
+    if (at().type == havel::TokenType::OpenParen) {
+      expr = parseCallExpression(std::move(expr));
+      // Trailing block as last argument: func(...){ ... }
+      // Only allow this if brace call sugar is enabled
+      if (at().type == havel::TokenType::OpenBrace && context.allowBraceSugar) {
+        // Decide if this is object-literal or block lambda by lookahead
+        size_t savePos = position;
+        auto next = at(1);
+        bool isObject = (next.type == havel::TokenType::Identifier ||
+                         next.type == havel::TokenType::String ||
+                         next.type == havel::TokenType::MultilineString) &&
+                        at(2).type == havel::TokenType::Colon;
+        position = savePos; // restore
+        if (!isObject) {
+          auto block = parseBlockStatement();
+          std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
+          auto lambda = makeNode<havel::ast::LambdaExpression>(
+              std::move(noParams), std::move(block));
+          // Append lambda to existing call args
+          if (auto *callPtr =
+                  dynamic_cast<havel::ast::CallExpression *>(expr.get())) {
+            callPtr->args.push_back(std::move(lambda));
+          }
+        }
+      }
+    } else if (at().type == havel::TokenType::Dot) {
+      // Look ahead: if next token after '.' is an operator, don't parse as member access
+      // This handles cases like expr ?? default where we want ?? to bind properly
+      auto nextAfterDot = at(1).type;
+      bool isOperatorAfterDot = (nextAfterDot == havel::TokenType::Nullish ||
+                                  nextAfterDot == havel::TokenType::Question ||
+
+                                  nextAfterDot == havel::TokenType::Equals ||
+                                  nextAfterDot == havel::TokenType::NotEquals ||
+                                  nextAfterDot == havel::TokenType::Less ||
+                                  nextAfterDot == havel::TokenType::Greater ||
+                                  nextAfterDot == havel::TokenType::LessEquals ||
+                                  nextAfterDot == havel::TokenType::GreaterEquals ||
+                                  nextAfterDot == havel::TokenType::Plus ||
+                                  nextAfterDot == havel::TokenType::Minus ||
+                                  nextAfterDot == havel::TokenType::Multiply ||
+                                  nextAfterDot == havel::TokenType::Divide ||
+                                  nextAfterDot == havel::TokenType::OpenParen ||
+                                  nextAfterDot == havel::TokenType::OpenBracket ||
+                                  nextAfterDot == havel::TokenType::Assign ||
+                                  nextAfterDot == havel::TokenType::Semicolon ||
+                                  nextAfterDot == havel::TokenType::NewLine ||
+                                  nextAfterDot == havel::TokenType::Comma ||
+                                  nextAfterDot == havel::TokenType::Colon ||
+                                  nextAfterDot == havel::TokenType::CloseBrace ||
+                                  nextAfterDot == havel::TokenType::CloseParen ||
+                                  nextAfterDot == havel::TokenType::CloseBracket ||
+                                  nextAfterDot == havel::TokenType::Return ||
+                                  nextAfterDot == havel::TokenType::Ret);
+      if (!isOperatorAfterDot) {
+        expr = parseMemberExpression(std::move(expr));
+      } else {
+        break; // Stop parsing postfix, let parent handle the operator
+      }
+    } else if (at().type == havel::TokenType::OpenBracket) {
+      expr = parseIndexExpression(std::move(expr));
+    } else if (at().type == havel::TokenType::OpenBrace) {
+      if (!context.allowBraceSugar) {
+        break;
+      }
+      // Sugar: expr { ... } -> expr({ ... }) or expr(() => { ... })
+      // Lookahead to determine object vs block
+      size_t savePos = position;
+      auto next = at(1);
+      bool isObject = (next.type == havel::TokenType::Identifier ||
+                       next.type == havel::TokenType::String ||
+                       next.type == havel::TokenType::MultilineString) &&
+                      at(2).type == havel::TokenType::Colon;
+      position = savePos; // restore
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      if (isObject) {
+        auto obj = parseObjectLiteral();
+        args.push_back(std::move(obj));
+      } else {
+        auto block = parseBlockStatement();
+        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
+        auto lambda = makeNode<havel::ast::LambdaExpression>(
+            std::move(noParams), std::move(block));
+        args.push_back(std::move(lambda));
+      }
+      expr = makeNode<havel::ast::CallExpression>(std::move(expr),
+                                                          std::move(args));
+} else if ((at().type == havel::TokenType::String ||
+               at().type == havel::TokenType::MultilineString ||
+               at().type == havel::TokenType::Number ||
+               at().type == havel::TokenType::Identifier ||
+               at().type == havel::TokenType::InterpolatedString ||
+               at().type == havel::TokenType::At ||
+               at().type == havel::TokenType::AtAt ||
+               at().type == havel::TokenType::Not ||
+               at().type == havel::TokenType::Length) &&
+              context.allowBraceSugar) {
+            // Implicit call: expression followed by a literal or prefix
+            // operator (e.g., print "Hello", print @id, print !x)
+            // Only allowed when brace call sugar is enabled
+            auto arg = parseUnary();
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      args.push_back(std::move(arg));
+      expr = makeNode<havel::ast::CallExpression>(std::move(expr),
+                                                          std::move(args));
+    } else if (at().type == havel::TokenType::PlusPlus ||
+               at().type == havel::TokenType::MinusMinus) {
+      // Postfix increment/decrement: x++ or x--
+      auto op = (at().type == havel::TokenType::PlusPlus)
+                    ? havel::ast::UpdateExpression::Operator::Increment
+                    : havel::ast::UpdateExpression::Operator::Decrement;
+      advance();
+      expr = makeNode<havel::ast::UpdateExpression>(std::move(expr), op,
+                                                            false);
+    } else {
+      break;
+    }
+  }
+
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseConfigBlock() {
+  advance(); // consume 'config'
+  return makeNode<havel::ast::ConfigBlock>(parseKeyValueBlock(true));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
+  advance(); // consume 'devices'
+  return makeNode<havel::ast::DevicesBlock>(parseKeyValueBlock(true));
+}
+
+// Parse single mode definition: mode name [priority N] { condition = ...; enter
+// { ... }; exit { ... } }
+std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
+    advance(); // consume 'mode'
+
+    // Parse mode name (identifier or string)
+    if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type) &&
+        at().type != havel::TokenType::String) {
+        failAt(at(), "Expected mode name after 'mode'");
+    }
+    std::string modeName = at().value;
+    advance();
+
+    // Parse optional priority
+  int priority = 0;
+  if (at().type == havel::TokenType::Identifier && at().value == "priority") {
+    advance(); // consume 'priority'
+    if (at().type != havel::TokenType::Number) {
+      failAt(at(), "Expected number after 'priority'");
+    }
+    priority = std::stoi(at().value);
+    advance();
+  }
+
+  // Parse mode block { condition = ...; enter { ... }; exit { ... } }
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  advance(); // consume '{'
+
+  std::unique_ptr<havel::ast::Expression> condition;
+  std::unique_ptr<havel::ast::BlockStatement> enterBlock;
+  std::unique_ptr<havel::ast::BlockStatement> exitBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onEnterFromBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onExitToBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onCloseBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onMinimizeBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onMaximizeBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onOpenBlock;
+  std::string onEnterFromMode;
+  std::string onExitToMode;
+
+  // Parse condition, enter, exit, and transition hooks
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    if (at().type != havel::TokenType::Identifier && at().type != havel::TokenType::On) {
+      break;
+    }
+
+    std::string keyword = at().value;
+    advance();
+
+    if (keyword == "condition") {
+      if (at().type != havel::TokenType::Assign &&
+          at().type != havel::TokenType::Colon) {
+        failAt(at(), "Expected '=' or ':' after 'condition'");
+      }
+      advance(); // consume '=' or ':'
+      condition = parseExpression();
+    } else if (keyword == "enter") {
+      enterBlock = parseBlockStatement();
+    } else if (keyword == "exit") {
+      exitBlock = parseBlockStatement();
+    } else if (keyword == "on") {
+      // Parse transition hooks: on enter from "mode" { ... } or on exit to
+      // "mode" { ... } Or window events: on close { ... }, on minimize { ... },
+      // etc.
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected 'enter', 'exit', 'close', 'minimize', "
+                     "'maximize', or 'open' after 'on'");
+      }
+      std::string eventType = at().value;
+      advance();
+
+        if (eventType == "enter") {
+            if (at().type == havel::TokenType::From ||
+                (at().type == havel::TokenType::Identifier && at().value == "from")) {
+                advance(); // consume 'from'
+                if (at().type != havel::TokenType::String) {
+                    failAt(at(), "Expected mode name string after 'from'");
+                }
+                onEnterFromMode = at().value;
+                advance();
+                onEnterFromBlock = parseBlockStatement();
+            } else {
+                // Simple 'on enter { ... }'
+                enterBlock = parseBlockStatement();
+            }
+        } else if (eventType == "exit") {
+            if (at().type == havel::TokenType::Identifier && at().value == "to") {
+                advance(); // consume 'to'
+                if (at().type != havel::TokenType::String) {
+                    failAt(at(), "Expected mode name string after 'to'");
+                }
+                onExitToMode = at().value;
+                advance();
+                onExitToBlock = parseBlockStatement();
+        } else {
+          // Simple 'on exit { ... }'
+          exitBlock = parseBlockStatement();
+        }
+      } else if (eventType == "close") {
+        onCloseBlock = parseBlockStatement();
+      } else if (eventType == "minimize") {
+        onMinimizeBlock = parseBlockStatement();
+      } else if (eventType == "maximize") {
+        onMaximizeBlock = parseBlockStatement();
+      } else if (eventType == "open") {
+        onOpenBlock = parseBlockStatement();
+      } else {
+        failAt(at(), "Unknown event type: " + eventType);
+      }
+    } else {
+      failAt(at(), "Unknown keyword in mode definition: " + keyword);
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close mode definition");
+  }
+  advance(); // consume '}'
+
+  std::vector<havel::ast::ModeDefinition> modes;
+  havel::ast::ModeDefinition modeDef(modeName, std::move(condition),
+                                     std::move(enterBlock),
+                                     std::move(exitBlock));
+  modeDef.priority = priority;
+  modeDef.onEnterFrom = onEnterFromMode;
+  modeDef.onExitTo = onExitToMode;
+  modeDef.onEnterFromBlock = std::move(onEnterFromBlock);
+  modeDef.onExitToBlock = std::move(onExitToBlock);
+  modeDef.onCloseBlock = std::move(onCloseBlock);
+  modeDef.onMinimizeBlock = std::move(onMinimizeBlock);
+  modeDef.onMaximizeBlock = std::move(onMaximizeBlock);
+  modeDef.onOpenBlock = std::move(onOpenBlock);
+  modes.push_back(std::move(modeDef));
+  return makeNode<havel::ast::ModesBlock>(std::move(modes));
+}
+
+// Parse simple mode block: mode name { statements }
+// Shorthand for: when mode == "name" { statements }
+std::unique_ptr<havel::ast::Statement> Parser::parseModeBlock() {
+  advance(); // consume 'mode'
+
+  // Parse mode name
+  if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+    failAt(at(), "Expected mode name after 'mode'");
+  }
+  std::string modeName = at().value;
+  advance();
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  advance(); // consume '{'
+
+  // Parse statements until closing brace
+  std::vector<std::unique_ptr<havel::ast::Statement>> statements;
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    try {
+      auto stmt = parseStatement();
+      if (stmt) {
+        statements.push_back(std::move(stmt));
+      }
+    } catch (const std::exception &e) {
+      if (havel::debugging::debug_parser) {
+        havel::error("Parse error in mode block: {} at position {}", e.what(),
+                     position);
+      }
+      synchronize();
+      if (notEOF() == false) {
+        break;
+      }
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close mode block");
+  }
+  advance(); // consume '}'
+
+  return makeNode<havel::ast::ModeBlock>(modeName,
+                                                 std::move(statements));
+}
+
+
+
+// Parse modes block (legacy): modes { name { ... } }
+std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
+  advance(); // consume 'modes'
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'modes'");
+  }
+  advance(); // consume '{'
+
+  std::vector<havel::ast::ModeDefinition> modes;
+
+  // Parse mode definitions
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    if (at().type == havel::TokenType::NewLine) {
+      advance();
+      continue;
+    }
+
+    // Parse mode name (identifier or string)
+    if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type) &&
+        at().type != havel::TokenType::String) {
+        failAt(at(), "Expected mode name after 'mode'");
+    }
+    std::string modeName = at().value;
+    advance();
+
+    // Parse mode block { condition = ...; enter { ... }; exit { ... } }
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after mode name");
+    }
+    advance(); // consume '{'
+
+    std::unique_ptr<havel::ast::Expression> condition;
+    std::unique_ptr<havel::ast::BlockStatement> enterBlock;
+    std::unique_ptr<havel::ast::BlockStatement> exitBlock;
+
+    // Parse condition, enter, exit
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+      if (at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
+        advance();
+        continue;
+      }
+
+      if (at().type != havel::TokenType::Identifier) {
+        break;
+      }
+
+      std::string keyword = at().value;
+      advance();
+
+      if (keyword == "condition") {
+        if (at().type != havel::TokenType::Assign &&
+            at().type != havel::TokenType::Colon) {
+          failAt(at(), "Expected '=' or ':' after 'condition'");
+        }
+        advance(); // consume '=' or ':'
+        condition = parseExpression();
+      } else if (keyword == "enter") {
+        enterBlock = parseBlockStatement();
+      } else if (keyword == "exit") {
+        exitBlock = parseBlockStatement();
+      } else {
+        failAt(at(), "Unknown keyword in mode definition: " + keyword);
+      }
+    }
+
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close mode definition");
+    }
+    advance(); // consume '}'
+
+    modes.emplace_back(modeName, std::move(condition), std::move(enterBlock),
+                       std::move(exitBlock));
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close modes block");
+  }
+  advance(); // consume '}'
+
+  return makeNode<havel::ast::ModesBlock>(std::move(modes));
+}
+
+// Parse generic config section: identifier [args...] { key = value }
+std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
+  std::string sectionName = at().value;
+  advance(); // consume identifier
+
+  // Parse optional arguments (Hyprland-style: monitor HDMI-0 { ... })
+  std::vector<std::string> args;
+  while (notEOF() && at().type != havel::TokenType::OpenBrace &&
+         at().type != havel::TokenType::NewLine) {
+    if (at().type == havel::TokenType::Identifier ||
+        at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::Number) {
+      args.push_back(at().value);
+      advance();
+    } else {
+      break;
+    }
+  }
+
+  return makeNode<havel::ast::ConfigSection>(
+      sectionName, parseKeyValueBlock(true), args);
+}
+
+std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
+Parser::parseKeyValueBlock(bool configContext) {
+  // Save old context
+  bool oldInConfig = context.inConfigContext;
+  context.inConfigContext = configContext;
+  // Skip optional newlines
+  while (notEOF() && at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after block keyword");
+  }
+
+  std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
+      pairs;
+
+  advance(); // consume '{'
+
+  // Parse key-value pairs
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    // Handle closing brace
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Parse key - can be identifier, keyword, or string
+    // Keywords are allowed as keys (e.g., "default = HDMI-0")
+    std::string key;
+    if (at().type == havel::TokenType::Identifier ||
+        at().type == havel::TokenType::Default ||
+        at().type == havel::TokenType::For ||
+        at().type == havel::TokenType::While ||
+        at().type == havel::TokenType::If ||
+        at().type == havel::TokenType::Else ||
+        at().type == havel::TokenType::Match ||
+        at().type == havel::TokenType::Case ||
+        at().type == havel::TokenType::Switch ||
+        at().type == havel::TokenType::Try ||
+        at().type == havel::TokenType::Catch ||
+        at().type == havel::TokenType::Finally ||
+        at().type == havel::TokenType::Throw ||
+        at().type == havel::TokenType::Del ||
+        at().type == havel::TokenType::Return ||
+        at().type == havel::TokenType::Ret ||
+        at().type == havel::TokenType::Break ||
+        at().type == havel::TokenType::Continue ||
+        at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::Struct ||
+        at().type == havel::TokenType::Enum ||
+      at().type == havel::TokenType::Trait ||
+      at().type == havel::TokenType::Prot ||
+      at().type == havel::TokenType::Impl ||
+    at().type == havel::TokenType::Let ||
             at().type == havel::TokenType::Val ||
             at().type == havel::TokenType::Const ||
-            at().type == havel::TokenType::In ||
-            at().type == havel::TokenType::Loop ||
-            at().type == havel::TokenType::When ||
-            at().type == havel::TokenType::Mode ||
-            at().type == havel::TokenType::On ||
-            at().type == havel::TokenType::Off ||
-            at().type == havel::TokenType::Config ||
-            at().type == havel::TokenType::Devices ||
-            at().type == havel::TokenType::Modes) {
-          key = advance().value;
-          // Support dotted keys in config context: IO.Executor = ...
-          if (configContext) {
-            while (at().type == havel::TokenType::Dot) {
-              advance(); // consume '.'
-              if (at().type != havel::TokenType::Identifier) {
-                failAt(at(), "Expected identifier after '.' in config key");
-              }
-              key += "." + advance().value;
-            }
+        at().type == havel::TokenType::In ||
+        at().type == havel::TokenType::Loop ||
+        at().type == havel::TokenType::When ||
+        at().type == havel::TokenType::Mode ||
+        at().type == havel::TokenType::On ||
+        at().type == havel::TokenType::Off ||
+        at().type == havel::TokenType::Config ||
+        at().type == havel::TokenType::Devices ||
+        at().type == havel::TokenType::Modes) {
+      key = advance().value;
+      // Support dotted keys in config context: IO.Executor = ...
+      if (configContext) {
+        while (at().type == havel::TokenType::Dot) {
+          advance(); // consume '.'
+          if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected identifier after '.' in config key");
           }
-        } else if (at().type == havel::TokenType::String ||
-                   at().type == havel::TokenType::MultilineString) {
-          key = advance().value;
-        } else {
-          failAt(at(), "Expected identifier, keyword, or string as key");
-        }
-
-        // Expect '=' or ':' (support both for compatibility)
-        // Optional if the value is a nested block starting with '{'
-        if (at().type == havel::TokenType::Assign ||
-            at().type == havel::TokenType::Colon) {
-          advance(); // consume '=' or ':'
-        } else if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '=' or ':' after key");
-        }
-
-        // Check if value is a nested block
-        if (at().type == havel::TokenType::OpenBrace) {
-          // Nested block - parse recursively and wrap in an ObjectLiteral
-          auto nestedPairs = parseKeyValueBlock(configContext);
-
-          // Convert old pair style to new PairEntry
-          std::vector<havel::ast::ObjectLiteral::PairEntry> convertedEntries;
-          convertedEntries.reserve(nestedPairs.size());
-          for (auto &p : nestedPairs) {
-            havel::ast::ObjectLiteral::PairEntry e;
-            e.key = std::move(p.first);
-            e.value = std::move(p.second);
-            convertedEntries.push_back(std::move(e));
-          }
-          auto nestedObj =
-              makeNode<havel::ast::ObjectLiteral>(std::move(convertedEntries));
-          pairs.push_back({std::move(key), std::move(nestedObj)});
-        } else {
-          // Parse value expression(s) - support comma-separated lists as arrays
-          // in config context
-          std::vector<std::unique_ptr<ast::Expression>> values;
-
-          auto parseSingleValue = [&]() {
-            // If we are in a config-like block, handle bare identifiers as
-            // strings Bare means: identifier followed by newline, comma,
-            // semicolon or }
-            auto isBareStringToken = [](havel::TokenType t) {
-              return t == TokenType::Identifier || t == TokenType::Val ||
-                     t == TokenType::Const || t == TokenType::Let ||
-                     t == TokenType::Mode || t == TokenType::Modes ||
-                     t == TokenType::Devices || t == TokenType::Config ||
-                     t == TokenType::Struct || t == TokenType::Class ||
-                     t == TokenType::Enum || t == TokenType::True ||
-                     t == TokenType::False || t == TokenType::On ||
-                     t == TokenType::Off;
-            };
-
-            if (configContext && isBareStringToken(at().type)) {
-              auto nextType = at(1).type;
-              if (nextType == TokenType::NewLine ||
-                  nextType == TokenType::Comma ||
-                  nextType == TokenType::Semicolon ||
-                  nextType == TokenType::CloseBrace) {
-                return std::unique_ptr<ast::Expression>(
-                    makeNode<ast::StringLiteral>(advance().value, false));
-              }
-            }
-            return parseExpression();
-          };
-
-          values.push_back(parseSingleValue());
-
-          while (at().type == TokenType::Comma) {
-            advance(); // consume ','
-            // Allow trailing comma by checking if we're at a separator or end
-            // of block
-            if (at().type == TokenType::NewLine ||
-                at().type == TokenType::Semicolon ||
-                at().type == TokenType::CloseBrace) {
-              break;
-            }
-            values.push_back(parseSingleValue());
-          }
-
-          std::unique_ptr<ast::Expression> finalValue;
-          if (values.size() == 1) {
-            finalValue = std::move(values[0]);
-          } else {
-            finalValue = makeNode<ast::ArrayLiteral>(std::move(values));
-          }
-
-          pairs.push_back({std::move(key), std::move(finalValue)});
-        }
-
-        // Handle comma or newline as separator
-        if (at().type == havel::TokenType::Comma ||
-            at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Semicolon) {
-          advance();
-        } else if (at().type != havel::TokenType::CloseBrace) {
-          // If no separator is found and not at closing brace, advance to avoid
-          // infinite loop
-          auto errTok = at();
-          advance(); // Skip whatever unexpected token we encountered
-          failAt(errTok, "Expected ',', newline, or '}' in block");
+          key += "." + advance().value;
         }
       }
-
-      if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected '}' to close block");
-      }
-      advance(); // consume '}'
-
-      // Restore context
-      context.inConfigContext = oldInConfig;
-
-      return pairs;
+    } else if (at().type == havel::TokenType::String ||
+               at().type == havel::TokenType::MultilineString) {
+      key = advance().value;
+    } else {
+      failAt(at(), "Expected identifier, keyword, or string as key");
     }
 
-    // ============================================================================
-    // CONCURRENCY & COROUTINE PARSING
-    // ============================================================================
+    // Expect '=' or ':' (support both for compatibility)
+    // Optional if the value is a nested block starting with '{'
+    if (at().type == havel::TokenType::Assign ||
+        at().type == havel::TokenType::Colon) {
+      advance(); // consume '=' or ':'
+    } else if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '=' or ':' after key");
+    }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseThreadExpression() {
-      auto threadToken = at();
-      // Note: parsePrattExpression already consumed 'thread' via advance()
 
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after 'thread'");
+    // Check if value is a nested block
+    if (at().type == havel::TokenType::OpenBrace) {
+      // Nested block - parse recursively and wrap in an ObjectLiteral
+      auto nestedPairs = parseKeyValueBlock(configContext);
+
+      // Convert old pair style to new PairEntry
+      std::vector<havel::ast::ObjectLiteral::PairEntry> convertedEntries;
+      convertedEntries.reserve(nestedPairs.size());
+      for (auto &p : nestedPairs) {
+        havel::ast::ObjectLiteral::PairEntry e;
+        e.key = std::move(p.first);
+        e.value = std::move(p.second);
+        convertedEntries.push_back(std::move(e));
+      }
+      auto nestedObj =
+          makeNode<havel::ast::ObjectLiteral>(std::move(convertedEntries));
+      pairs.push_back({std::move(key), std::move(nestedObj)});
+    } else {
+      // Parse value expression(s) - support comma-separated lists as arrays in config context
+      std::vector<std::unique_ptr<ast::Expression>> values;
+      
+      auto parseSingleValue = [&]() {
+        // If we are in a config-like block, handle bare identifiers as strings
+        // Bare means: identifier followed by newline, comma, semicolon or }
+        auto isBareStringToken = [](havel::TokenType t) {
+          return t == TokenType::Identifier ||
+                 t == TokenType::Val ||
+                 t == TokenType::Const ||
+                 t == TokenType::Let ||
+                 t == TokenType::Mode ||
+                 t == TokenType::Modes ||
+                 t == TokenType::Devices ||
+                 t == TokenType::Config ||
+                 t == TokenType::Struct ||
+                 t == TokenType::Class ||
+                 t == TokenType::Enum ||
+                 t == TokenType::True ||
+                 t == TokenType::False ||
+                 t == TokenType::On ||
+                 t == TokenType::Off;
+        };
+
+        if (configContext && isBareStringToken(at().type)) {
+          auto nextType = at(1).type;
+          if (nextType == TokenType::NewLine || nextType == TokenType::Comma || 
+              nextType == TokenType::Semicolon || nextType == TokenType::CloseBrace) {
+            return std::unique_ptr<ast::Expression>(makeNode<ast::StringLiteral>(advance().value, false));
+          }
+        }
+        return parseExpression();
+      };
+
+      values.push_back(parseSingleValue());
+
+      while (at().type == TokenType::Comma) {
+        advance(); // consume ','
+        // Allow trailing comma by checking if we're at a separator or end of block
+        if (at().type == TokenType::NewLine || at().type == TokenType::Semicolon || at().type == TokenType::CloseBrace) {
+          break;
+        }
+        values.push_back(parseSingleValue());
       }
 
-      auto body = parseBlockStatement();
-      auto expr = makeNode<havel::ast::ThreadExpression>(
-          std::unique_ptr<havel::ast::BlockStatement>(
-              static_cast<havel::ast::BlockStatement *>(body.release())));
-      expr->line = threadToken.line;
-      expr->column = threadToken.column;
-      return expr;
+      std::unique_ptr<ast::Expression> finalValue;
+      if (values.size() == 1) {
+        finalValue = std::move(values[0]);
+      } else {
+        finalValue = makeNode<ast::ArrayLiteral>(std::move(values));
+      }
+      
+      pairs.push_back({std::move(key), std::move(finalValue)});
     }
-    std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
-      // Note: parsePrattExpression already consumed 'interval' via advance()
-      // So at() is already the duration token
 
-      // Disable brace sugar so it doesn't consume the duration expression
-      auto savedBraceSugar = context.allowBraceSugar;
-      context.allowBraceSugar = false;
+    // Handle comma or newline as separator
+    if (at().type == havel::TokenType::Comma ||
+        at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+    } else if (at().type != havel::TokenType::CloseBrace) {
+      // If no separator is found and not at closing brace, advance to avoid
+      // infinite loop
+      auto errTok = at();
+      advance(); // Skip whatever unexpected token we encountered
+      failAt(errTok, "Expected ',', newline, or '}' in block");
+    }
+  }
 
-      std::unique_ptr<ast::Expression> intervalMs;
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close block");
+  }
+  advance(); // consume '}'
 
-      // Parse duration: can be number, parenthesized expression, or any
-      // expression
-      if (at().type == TokenType::OpenParen) {
+  // Restore context
+  context.inConfigContext = oldInConfig;
+
+  return pairs;
+}
+
+// ============================================================================
+// CONCURRENCY & COROUTINE PARSING
+// ============================================================================
+
+std::unique_ptr<havel::ast::Expression> Parser::parseThreadExpression() {
+  auto threadToken = at();
+  // Note: parsePrattExpression already consumed 'thread' via advance()
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'thread'");
+  }
+  
+  auto body = parseBlockStatement();
+  auto expr = makeNode<havel::ast::ThreadExpression>(
+    std::unique_ptr<havel::ast::BlockStatement>(
+      static_cast<havel::ast::BlockStatement*>(body.release())
+    )
+  );
+  expr->line = threadToken.line;
+  expr->column = threadToken.column;
+  return expr;
+}
+std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
+    // Note: parsePrattExpression already consumed 'interval' via advance()
+    // So at() is already the duration token
+
+    // Disable brace sugar so it doesn't consume the duration expression
+    auto savedBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    bool savedSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
+
+    std::unique_ptr<ast::Expression> intervalMs;
+
+    // Parse duration: can be number, parenthesized expression, or any expression
+    if (at().type == TokenType::OpenParen) {
         advance(); // consume '('
         intervalMs = parseExpression();
         if (at().type != TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after interval duration");
+            failAt(at(), "Expected ')' after interval duration");
         }
         advance(); // consume ')'
-      } else if (at().type == TokenType::OpenBrace) {
+    } else if (at().type == TokenType::OpenBrace) {
         failAt(at(), "Expected number or expression for interval duration");
-      } else {
+    } else {
         intervalMs = parseExpression();
-      }
+    }
 
-      context.allowBraceSugar = savedBraceSugar;
+    context.allowBraceSugar = savedBraceSugar;
+    context.suppressBraceLambda = savedSuppress;
 
-      if (at().type != TokenType::OpenBrace) {
+    if (at().type != TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after interval duration");
-      }
-
-      auto body = parseBlockStatement();
-
-      return makeNode<ast::IntervalExpression>(std::move(intervalMs),
-                                               std::move(body));
     }
 
-    std::unique_ptr<ast::Expression> Parser::parseUpdateBlockExpression() {
-      // Note: parsePrattExpression already consumed 'update' via advance()
-      auto savedBraceSugar = context.allowBraceSugar;
-      context.allowBraceSugar = false;
+    auto body = parseBlockStatement();
 
-      std::unique_ptr<ast::Expression> intervalMs;
+    return makeNode<ast::IntervalExpression>(std::move(intervalMs), std::move(body));
+}
 
-      if (at().type == TokenType::OpenParen) {
+std::unique_ptr<ast::Expression> Parser::parseUpdateBlockExpression() {
+    // Note: parsePrattExpression already consumed 'update' via advance()
+    auto savedBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    bool savedSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
+
+    std::unique_ptr<ast::Expression> intervalMs;
+
+    if (at().type == TokenType::OpenParen) {
         advance();
         intervalMs = parseExpression();
         if (at().type != TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after update duration");
+            failAt(at(), "Expected ')' after update duration");
         }
         advance();
-      } else if (at().type == TokenType::OpenBrace) {
+    } else if (at().type == TokenType::OpenBrace) {
         failAt(at(), "Expected number or expression for update duration");
-      } else {
+    } else {
         intervalMs = parseExpression();
-      }
+    }
 
-      context.allowBraceSugar = savedBraceSugar;
+    context.allowBraceSugar = savedBraceSugar;
+    context.suppressBraceLambda = savedSuppress;
 
-      if (at().type != TokenType::OpenBrace) {
+    if (at().type != TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after update duration");
-      }
-
-      auto body = parseBlockStatement();
-
-      return makeNode<ast::UpdateBlockExpression>(std::move(intervalMs),
-                                                  std::move(body));
     }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
-      // Note: parsePrattExpression already consumed 'timeout' via advance()
-      // So at() is already the duration token
+    auto body = parseBlockStatement();
 
-      // Disable brace sugar so it doesn't consume the duration expression
-      auto savedBraceSugar = context.allowBraceSugar;
-      context.allowBraceSugar = false;
+    return makeNode<ast::UpdateBlockExpression>(std::move(intervalMs), std::move(body));
+}
 
-      std::unique_ptr<ast::Expression> timeoutMs;
+std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
+  // Note: parsePrattExpression already consumed 'timeout' via advance()
+  // So at() is already the duration token
 
-      // Parse duration: can be number, parenthesized expression, or any
-      // expression
-      if (at().type == TokenType::OpenParen) {
-        advance(); // consume '('
-        timeoutMs = parseExpression();
-        if (at().type != TokenType::CloseParen) {
-          failAt(at(), "Expected ')' after timeout duration");
-        }
-        advance(); // consume ')'
-      } else if (at().type == TokenType::OpenBrace) {
-        failAt(at(), "Expected number or expression for timeout duration");
-      } else {
-        // Parse any expression (number literal, variable, function call, etc.)
-        timeoutMs = parseExpression();
-      }
+  // Disable brace sugar so it doesn't consume the duration expression
+  auto savedBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool savedSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
 
-      context.allowBraceSugar = savedBraceSugar;
+  std::unique_ptr<ast::Expression> timeoutMs;
 
-      if (at().type != TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after timeout duration");
-      }
-
-      auto body = parseBlockStatement();
-
-      return makeNode<ast::TimeoutExpression>(std::move(timeoutMs),
-                                              std::move(body));
+  // Parse duration: can be number, parenthesized expression, or any expression
+  if (at().type == TokenType::OpenParen) {
+    advance(); // consume '('
+    timeoutMs = parseExpression();
+    if (at().type != TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after timeout duration");
     }
+    advance(); // consume ')'
+  } else if (at().type == TokenType::OpenBrace) {
+    failAt(at(), "Expected number or expression for timeout duration");
+  } else {
+    // Parse any expression (number literal, variable, function call, etc.)
+    timeoutMs = parseExpression();
+  }
 
-    std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {
-      auto yieldToken = at();
+  context.allowBraceSugar = savedBraceSugar;
+  context.suppressBraceLambda = savedSuppress;
 
-      // Check if yield has an argument (value or delay in ms)
-      // Note: 'yield' token was already consumed by parsePrattExpression
-      std::unique_ptr<havel::ast::Expression> value;
-      if (at().type != havel::TokenType::Semicolon &&
-          at().type != havel::TokenType::NewLine &&
-          at().type != havel::TokenType::CloseBrace &&
-          at().type != havel::TokenType::CloseParen) {
-        value = parsePrattExpression(0);
-      }
+  if (at().type != TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after timeout duration");
+  }
+  
+  auto body = parseBlockStatement();
+  
+  return makeNode<ast::TimeoutExpression>(std::move(timeoutMs), std::move(body));
+}
 
-      auto expr = makeNode<havel::ast::YieldExpression>(std::move(value));
-      expr->line = yieldToken.line;
-      expr->column = yieldToken.column;
-      return expr;
-    }
+std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {
+  auto yieldToken = at();
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
-      auto goToken = at();
-      advance(); // consume 'go'
+  // Check if yield has an argument (value or delay in ms)
+  // Note: 'yield' token was already consumed by parsePrattExpression
+  std::unique_ptr<havel::ast::Expression> value;
+  if (at().type != havel::TokenType::Semicolon &&
+      at().type != havel::TokenType::NewLine &&
+      at().type != havel::TokenType::CloseBrace &&
+      at().type != havel::TokenType::CloseParen) {
+    value = parsePrattExpression(0);
+  }
 
-      std::unique_ptr<ast::Expression> call;
+  auto expr = makeNode<havel::ast::YieldExpression>(std::move(value));
+  expr->line = yieldToken.line;
+  expr->column = yieldToken.column;
+  return expr;
+}
 
-      // Check for block syntax: go { ... }
-      if (at().type == havel::TokenType::OpenBrace) {
-        advance(); // consume '{'
+std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
+  auto goToken = at();
+  advance(); // consume 'go'
 
-        auto blockStmt = makeNode<ast::BlockStatement>();
-        while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-          if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-          }
-          blockStmt->body.push_back(parseStatement());
-        }
+  std::unique_ptr<ast::Expression> call;
 
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' after go block");
-          return nullptr;
-        }
-        advance(); // consume '}'
+  // Check for block syntax: go { ... }
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
 
-        // Create lambda expression with no parameters and the block as body
-        call = makeNode<havel::ast::LambdaExpression>(
-            std::vector<std::unique_ptr<ast::FunctionParameter>>(),
-            std::move(blockStmt));
-      } else {
-        // Parse the function call expression: go fn()
-        call = parseExpression();
-      }
-
-      auto stmt = makeNode<havel::ast::GoStatement>(std::move(call));
-      stmt->line = goToken.line;
-      stmt->column = goToken.column;
-      return stmt;
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
-      auto goToken = at();
-      // Note: parsePrattExpression already consumed 'go' via advance()
-      // So at() is already the next token after 'go'
-
-      // Parse the function call or block expression
-      std::unique_ptr<ast::Expression> call;
-
-      if (at().type == havel::TokenType::OpenBrace) {
-        // go { ... } - treat as anonymous lambda function
-        advance(); // consume '{'
-
-        auto blockStmt = makeNode<ast::BlockStatement>();
-        while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-          if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-          }
-          blockStmt->body.push_back(parseStatement());
-        }
-
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' after block");
-          return nullptr;
-        }
-        advance(); // consume '}'
-
-        // Create lambda expression with no parameters and the block as body
-        call = makeNode<havel::ast::LambdaExpression>(
-            std::vector<std::unique_ptr<ast::FunctionParameter>>(),
-            std::move(blockStmt));
-
-      } else {
-        // go func() or go identifier - function call
-        call = parseExpression();
-      }
-
-      // Wrap in GoExpression node
-      auto expr = makeNode<havel::ast::GoExpression>(std::move(call));
-      expr->line = goToken.line;
-      expr->column = goToken.column;
-      return expr;
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
-      auto channelToken = at();
-      // Note: parsePrattExpression already consumed 'channel' via advance()
-      // So at() is already the next token after 'channel'
-
-      // Check for parentheses: channel()
-      if (at().type == havel::TokenType::OpenParen) {
-        advance(); // consume '('
-        if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected '()' after channel");
-        }
-        advance(); // consume ')'
-      }
-
-      auto expr = makeNode<havel::ast::ChannelExpression>();
-      expr->line = channelToken.line;
-      expr->column = channelToken.column;
-      return expr;
-    }
-
-    void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
-      std::string padding(indent * 2, ' ');
-      havel::info("{}{}", padding, node.toString());
-
-      // Print children based on node type
-      if (node.kind == havel::ast::NodeType::Program) {
-        const auto &program = static_cast<const havel::ast::Program &>(node);
-        for (const auto &stmt : program.body) {
-          printAST(*stmt, indent + 1);
-        }
-      } else if (node.kind == havel::ast::NodeType::BlockStatement) {
-        const auto &block =
-            static_cast<const havel::ast::BlockStatement &>(node);
-        for (const auto &stmt : block.body) {
-          printAST(*stmt, indent + 1);
-        }
-      } else if (node.kind == havel::ast::NodeType::HotkeyBinding) {
-        const auto &binding =
-            static_cast<const havel::ast::HotkeyBinding &>(node);
-        for (size_t i = 0; i < binding.hotkeys.size(); ++i) {
-          havel::info("{}Hotkey[{}]: ", padding, i);
-          printAST(*binding.hotkeys[i], indent + 1);
-        }
-        printAST(*binding.action, indent + 1);
-      } else if (node.kind == havel::ast::NodeType::PipelineExpression) {
-        const auto &pipeline =
-            static_cast<const havel::ast::PipelineExpression &>(node);
-        for (const auto &stage : pipeline.stages) {
-          printAST(*stage, indent + 1);
-        }
-      } else if (node.kind == havel::ast::NodeType::BinaryExpression) {
-        const auto &binary =
-            static_cast<const havel::ast::BinaryExpression &>(node);
-        printAST(*binary.left, indent + 1);
-        printAST(*binary.right, indent + 1);
-      } else if (node.kind == havel::ast::NodeType::MemberExpression) {
-        const auto &member =
-            static_cast<const havel::ast::MemberExpression &>(node);
-        printAST(*member.object, indent + 1);
-        printAST(*member.property, indent + 1);
-      } else if (node.kind == havel::ast::NodeType::CallExpression) {
-        const auto &call =
-            static_cast<const havel::ast::CallExpression &>(node);
-        printAST(*call.callee, indent + 1);
-        for (const auto &arg : call.args) {
-          printAST(*arg, indent + 1);
-        }
-      }
-    }
-
-    bool Parser::atStatementStart() {
-      // Common statement start tokens
-      switch (at().type) {
-      case havel::TokenType::Let:
-      case havel::TokenType::Val:
-      case havel::TokenType::Const:
-      case havel::TokenType::If:
-      case havel::TokenType::While:
-      case havel::TokenType::For:
-      case havel::TokenType::Loop:
-      case havel::TokenType::Break:
-      case havel::TokenType::Continue:
-      case havel::TokenType::On:
-      case havel::TokenType::Off:
-      case havel::TokenType::Fn:
-      case havel::TokenType::Return:
-      case havel::TokenType::Throw:
-      case havel::TokenType::Try:
-      case havel::TokenType::OpenBrace:
-      case havel::TokenType::Import:
-      case havel::TokenType::Config:
-      case havel::TokenType::Devices:
-      case havel::TokenType::Modes:
-      case havel::TokenType::Hotkey:     // Added the hotkey token
-      case havel::TokenType::Identifier: // Could be variable assignment or
-                                         // function call
-        return true;
-      default:
-        return false;
-      }
-    }
-
-    bool Parser::isAtEndOfBlock() {
-      // Check if we're at the end of a block
-      return at().type == havel::TokenType::CloseBrace ||
-             at().type == havel::TokenType::EOF_TOKEN;
-    }
-
-    std::unique_ptr<ast::Expression> Parser::parseGetInputExpression() {
-      advance();
-      return makeNode<ast::Identifier>("__get_input_stub__");
-    }
-
-    std::unique_ptr<ast::Statement> Parser::parseWaitStatement() {
-      advance();
-      auto expr = parseExpression();
-      return makeNode<ast::ExpressionStatement>(std::move(expr));
-    }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseWaitGroupExpression() {
-      auto wgToken = at();
-
-      if (at().type == havel::TokenType::WaitGroup) {
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
         advance();
+        continue;
       }
-
-      if (at().type == havel::TokenType::OpenParen) {
-        advance();
-        if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected '()' after waitgroup");
-        }
-        advance();
-      }
-
-      auto expr = makeNode<havel::ast::WaitGroupExpression>();
-      expr->line = wgToken.line;
-      expr->column = wgToken.column;
-      return expr;
+      blockStmt->body.push_back(parseStatement());
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
-      auto deferToken = at();
-      advance();
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after go block");
+      return nullptr;
+    }
+    advance(); // consume '}'
 
-      std::unique_ptr<ast::Expression> expr;
+    // Create lambda expression with no parameters and the block as body
+    call = makeNode<havel::ast::LambdaExpression>(
+        std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+        std::move(blockStmt)
+    );
+  } else {
+    // Parse the function call expression: go fn()
+    call = parseExpression();
+  }
 
-      if (at().type == havel::TokenType::OpenBrace) {
+  auto stmt = makeNode<havel::ast::GoStatement>(std::move(call));
+  stmt->line = goToken.line;
+  stmt->column = goToken.column;
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
+  auto goToken = at();
+  // Note: parsePrattExpression already consumed 'go' via advance()
+  // So at() is already the next token after 'go'
+
+  // Parse the function call or block expression
+  std::unique_ptr<ast::Expression> call;
+
+  if (at().type == havel::TokenType::OpenBrace) {
+    // go { ... } - treat as anonymous lambda function
+    advance(); // consume '{'
+    
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
         advance();
-        auto blockStmt = makeNode<ast::BlockStatement>();
-        while (at().type != havel::TokenType::CloseBrace && notEOF()) {
-          if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-          }
-          blockStmt->body.push_back(parseStatement());
-        }
-        if (at().type != havel::TokenType::CloseBrace) {
-          failAt(at(), "Expected '}' after defer block");
-          return nullptr;
-        }
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after block");
+      return nullptr;
+    }
+    advance(); // consume '}'
+    
+    // Create lambda expression with no parameters and the block as body
+    call = makeNode<havel::ast::LambdaExpression>(
+        std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+        std::move(blockStmt)
+    );
+    
+  } else {
+    // go func() or go identifier - function call
+    call = parseExpression();
+  }
+  
+  // Wrap in GoExpression node
+  auto expr = makeNode<havel::ast::GoExpression>(std::move(call));
+  expr->line = goToken.line;
+  expr->column = goToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
+  auto channelToken = at();
+  // Note: parsePrattExpression already consumed 'channel' via advance()
+  // So at() is already the next token after 'channel'
+
+  // Check for parentheses: channel()
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume '('
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected '()' after channel");
+    }
+    advance(); // consume ')'
+  }
+  
+  auto expr = makeNode<havel::ast::ChannelExpression>();
+  expr->line = channelToken.line;
+  expr->column = channelToken.column;
+  return expr;
+}
+
+void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
+  std::string padding(indent * 2, ' ');
+  havel::info("{}{}", padding, node.toString());
+
+  // Print children based on node type
+  if (node.kind == havel::ast::NodeType::Program) {
+    const auto &program = static_cast<const havel::ast::Program &>(node);
+    for (const auto &stmt : program.body) {
+      printAST(*stmt, indent + 1);
+    }
+  } else if (node.kind == havel::ast::NodeType::BlockStatement) {
+    const auto &block = static_cast<const havel::ast::BlockStatement &>(node);
+    for (const auto &stmt : block.body) {
+      printAST(*stmt, indent + 1);
+    }
+  } else if (node.kind == havel::ast::NodeType::HotkeyBinding) {
+    const auto &binding = static_cast<const havel::ast::HotkeyBinding &>(node);
+    for (size_t i = 0; i < binding.hotkeys.size(); ++i) {
+      havel::info("{}Hotkey[{}]: ", padding, i);
+      printAST(*binding.hotkeys[i], indent + 1);
+    }
+    printAST(*binding.action, indent + 1);
+  } else if (node.kind == havel::ast::NodeType::PipelineExpression) {
+    const auto &pipeline =
+        static_cast<const havel::ast::PipelineExpression &>(node);
+    for (const auto &stage : pipeline.stages) {
+      printAST(*stage, indent + 1);
+    }
+  } else if (node.kind == havel::ast::NodeType::BinaryExpression) {
+    const auto &binary =
+        static_cast<const havel::ast::BinaryExpression &>(node);
+    printAST(*binary.left, indent + 1);
+    printAST(*binary.right, indent + 1);
+  } else if (node.kind == havel::ast::NodeType::MemberExpression) {
+    const auto &member =
+        static_cast<const havel::ast::MemberExpression &>(node);
+    printAST(*member.object, indent + 1);
+    printAST(*member.property, indent + 1);
+  } else if (node.kind == havel::ast::NodeType::CallExpression) {
+    const auto &call = static_cast<const havel::ast::CallExpression &>(node);
+    printAST(*call.callee, indent + 1);
+    for (const auto &arg : call.args) {
+      printAST(*arg, indent + 1);
+    }
+  }
+}
+
+bool Parser::atStatementStart() {
+  // Common statement start tokens
+  switch (at().type) {
+    case havel::TokenType::Let:
+    case havel::TokenType::Val:
+    case havel::TokenType::Const:
+  case havel::TokenType::If:
+  case havel::TokenType::While:
+  case havel::TokenType::For:
+  case havel::TokenType::Loop:
+  case havel::TokenType::Break:
+  case havel::TokenType::Continue:
+  case havel::TokenType::On:
+  case havel::TokenType::Off:
+  case havel::TokenType::Fn:
+  case havel::TokenType::Return:
+  case havel::TokenType::Throw:
+  case havel::TokenType::Try:
+  case havel::TokenType::OpenBrace:
+  case havel::TokenType::Import:
+  case havel::TokenType::Config:
+  case havel::TokenType::Devices:
+  case havel::TokenType::Modes:
+  case havel::TokenType::Hotkey:     // Added the hotkey token
+  case havel::TokenType::Identifier: // Could be variable assignment or function
+                                     // call
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool Parser::isAtEndOfBlock() {
+  // Check if we're at the end of a block
+  return at().type == havel::TokenType::CloseBrace ||
+         at().type == havel::TokenType::EOF_TOKEN;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseGetInputExpression() {
+advance();
+return makeNode<ast::Identifier>("__get_input_stub__");
+}
+
+std::unique_ptr<ast::Statement> Parser::parseWaitStatement() {
+  advance();
+  auto expr = parseExpression();
+  return makeNode<ast::ExpressionStatement>(std::move(expr));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseWaitGroupExpression() {
+  auto wgToken = at();
+
+  if (at().type == havel::TokenType::WaitGroup) {
+    advance();
+  }
+
+  if (at().type == havel::TokenType::OpenParen) {
+    advance();
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected '()' after waitgroup");
+    }
+    advance();
+  }
+
+  auto expr = makeNode<havel::ast::WaitGroupExpression>();
+  expr->line = wgToken.line;
+  expr->column = wgToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
+  auto deferToken = at();
+  advance();
+
+  std::unique_ptr<ast::Expression> expr;
+
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance();
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
         advance();
-        expr = makeNode<havel::ast::LambdaExpression>(
-            std::vector<std::unique_ptr<ast::FunctionParameter>>(),
-            std::move(blockStmt));
-      } else {
-        expr = parseExpression();
+        continue;
       }
-
-      auto stmt = makeNode<havel::ast::DeferStatement>(std::move(expr));
-      stmt->line = deferToken.line;
-      stmt->column = deferToken.column;
-      return stmt;
+      blockStmt->body.push_back(parseStatement());
     }
-
-    std::unique_ptr<havel::ast::Expression> Parser::parseWaitExpression() {
-      // Note: parsePrattExpression already consumed 'wait' via advance()
-      // So at() is already the next token after 'wait'
-      auto target = parsePrattExpression(bp(BindingPower::Prefix));
-      auto expr = makeNode<havel::ast::WaitExpression>(std::move(target));
-      return expr;
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after defer block");
+      return nullptr;
     }
+    advance();
+    expr = makeNode<havel::ast::LambdaExpression>(
+      std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+      std::move(blockStmt)
+    );
+  } else {
+    expr = parseExpression();
+  }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseDSLSleep() {
-      advance(); // consume ':'
-      auto msToken = at();
-      advance(); // consume number
-      int64_t ms = std::stoll(msToken.value);
+  auto stmt = makeNode<havel::ast::DeferStatement>(std::move(expr));
+  stmt->line = deferToken.line;
+  stmt->column = deferToken.column;
+  return stmt;
+}
 
-      // sleep(NUMBER) call
-      std::vector<std::unique_ptr<havel::ast::Expression>> sleepArgs;
-      sleepArgs.push_back(makeNode<havel::ast::NumberLiteral>((double)ms));
-      auto sleepCall = makeNode<havel::ast::CallExpression>(
-          makeNode<havel::ast::Identifier>("sleep"), std::move(sleepArgs));
+std::unique_ptr<havel::ast::Expression> Parser::parseWaitExpression() {
+  // Note: parsePrattExpression already consumed 'wait' via advance()
+  // So at() is already the next token after 'wait'
+  auto target = parsePrattExpression(bp(BindingPower::Prefix));
+  auto expr = makeNode<havel::ast::WaitExpression>(std::move(target));
+  return expr;
+}
 
-      // If there's no more tokens on this line, return just sleep()
-      if (at().type == havel::TokenType::NewLine ||
-          at().type == havel::TokenType::Semicolon ||
-          at().type == havel::TokenType::EOF_TOKEN ||
-          at().type == havel::TokenType::CloseBrace) {
-        auto stmt =
-            makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall));
-        if (at().type == havel::TokenType::Semicolon)
-          advance();
-        return stmt;
-      }
+std::unique_ptr<havel::ast::Statement> Parser::parseDSLSleep() {
+  advance(); // consume ':'
+  auto msToken = at();
+  advance(); // consume number
+  int64_t ms = std::stoll(msToken.value);
 
-      // Parse the rest of the line as a command expression
-      // e.g., :100 lmb -> sleep(100) then lmb as separate expression
-      auto cmdExpr = parseExpression();
+  // sleep(NUMBER) call
+  std::vector<std::unique_ptr<havel::ast::Expression>> sleepArgs;
+  sleepArgs.push_back(
+      makeNode<havel::ast::NumberLiteral>((double)ms));
+  auto sleepCall = makeNode<havel::ast::CallExpression>(
+      makeNode<havel::ast::Identifier>("sleep"), std::move(sleepArgs));
 
-      // Wrap both in a block: { sleep(ms); cmdExpr }
-      auto block = makeNode<havel::ast::BlockStatement>();
-      block->body.push_back(
-          makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall)));
-      block->body.push_back(
-          makeNode<havel::ast::ExpressionStatement>(std::move(cmdExpr)));
+  // If there's no more tokens on this line, return just sleep()
+  if (at().type == havel::TokenType::NewLine ||
+      at().type == havel::TokenType::Semicolon ||
+      at().type == havel::TokenType::EOF_TOKEN ||
+      at().type == havel::TokenType::CloseBrace) {
+    auto stmt = makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall));
+    if (at().type == havel::TokenType::Semicolon) advance();
+    return stmt;
+  }
 
-      if (at().type == havel::TokenType::Semicolon)
-        advance();
+  // Parse the rest of the line as a command expression
+  // e.g., :100 lmb -> sleep(100) then lmb as separate expression
+  auto cmdExpr = parseExpression();
 
-      return block;
-    }
+  // Wrap both in a block: { sleep(ms); cmdExpr }
+  auto block = makeNode<havel::ast::BlockStatement>();
+  block->body.push_back(
+      makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall)));
+  block->body.push_back(
+      makeNode<havel::ast::ExpressionStatement>(std::move(cmdExpr)));
 
-    std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
-      if (!delimiterStack_.empty()) {
-        return delimiterStack_.back();
-      }
-      return std::nullopt;
-    }
-  } // namespace havel::parser
+  if (at().type == havel::TokenType::Semicolon) advance();
+
+  return block;
+}
+
+std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
+  if (!delimiterStack_.empty()) {
+    return delimiterStack_.back();
+  }
+  return std::nullopt;
+}
+} // namespace havel::parser
+
+
+

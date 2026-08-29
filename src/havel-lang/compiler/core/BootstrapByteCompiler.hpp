@@ -149,7 +149,8 @@ void optimizeJumps();  // Jump threading optimization
   void compileClassMethod(const std::string &class_name,
   const ast::ClassMethodDef &method,
   const std::vector<ast::ClassFieldDef> &fields,
-  const std::string &parent_class_name);
+  const std::string &parent_class_name,
+  const std::unordered_set<std::string> &method_names);
 	void compileStructMethod(const std::string &struct_name,
 		const ast::StructMethodDef &method,
 		const std::vector<ast::StructFieldDef> &fields);
@@ -293,6 +294,16 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   std::unordered_map<std::string, uint32_t> module_class_indices_by_name_;
   std::string current_class_name_;
   std::string current_parent_class_name_;
+  std::unordered_set<std::string> current_class_field_names_;
+  std::unordered_set<std::string> current_class_method_names_;
+
+  // Inherited member names per class (for bare member access in derived classes).
+  struct ClassMemberNames {
+    std::string parent_name; // direct parent class name, empty if none
+    std::unordered_set<std::string> fields;
+    std::unordered_set<std::string> methods;
+  };
+  std::unordered_map<std::string, ClassMemberNames> class_members_by_name_;
 
 
     // Tail call optimization state

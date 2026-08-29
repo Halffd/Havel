@@ -6859,4 +6859,44 @@ void VM::trimInlineCaches() {
   }
 }
 
+// Print inline cache statistics
+void VM::printInlineCacheStats() const {
+  ::havel::debug("=== Inline Cache Statistics ===");
+  
+  size_t total_hits = 0;
+  size_t total_misses = 0;
+  for (const auto& [key, cache] : array_inline_cache_) {
+    total_hits += cache.hits;
+    total_misses += cache.misses;
+  }
+  ::havel::debug("Array Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 array_inline_cache_.size(), total_hits, total_misses,
+                 total_hits + total_misses > 0 
+                   ? (100.0 * total_hits) / (total_hits + total_misses) 
+                   : 0.0);
+  
+  total_hits = 0;
+  total_misses = 0;
+  for (const auto& [key, cache] : property_inline_cache_) {
+    total_hits += cache.hits;
+    total_misses += cache.misses;
+  }
+  ::havel::debug("Property Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 property_inline_cache_.size(), total_hits, total_misses,
+                 total_hits + total_misses > 0 
+                   ? (100.0 * total_hits) / (total_hits + total_misses) 
+                   : 0.0);
+  
+  size_t iterator_hits = 0, iterator_misses = 0;
+  for (const auto& [key, cache] : iterator_inline_cache_) {
+    iterator_hits += cache.hits;
+    iterator_misses += cache.misses;
+  }
+  ::havel::debug("Iterator Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 iterator_inline_cache_.size(), iterator_hits, iterator_misses,
+                 iterator_hits + iterator_misses > 0 
+                   ? (100.0 * iterator_hits) / (iterator_hits + iterator_misses) 
+                   : 0.0);
+}
+
 } // namespace havel::compiler

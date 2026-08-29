@@ -949,29 +949,48 @@ Token Lexer::scanShellCommand(bool captureOutput) {
                    captureOutput ? "$!" : "$");
 }
 
+// Fast path for ASCII-only identifiers (common case)
+static inline bool isAsciiIdentChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+           (c >= '0' && c <= '9') || c == '_';
+}
+
 Token Lexer::scanIdentifier() {
-    std::string identifier;
-
-    char first = source[position - 1];
-    identifier += first;
-
+    // Fast path: scan ASCII-only identifier without function call overhead
+    size_t start = position - 1;
+    
+    // Fast path: scan ASCII-only identifier in a tight loop
     while (!isAtEnd()) {
-        unsigned char c = static_cast<unsigned char>(peek());
-        if (c < 0x80) {
-            if (!isAlphaNumeric(c) && c != '_') break;
-            identifier += advance();
-        } else {
-            uint32_t cp = peekCodepoint();
-            if (!isUnicodeLetter(cp) && !isUnicodeDigit(cp)) break;
-            size_t len = codepointLength(peek());
-            for (size_t i = 0; i < len && !isAtEnd(); i++) {
-                identifier += advance();
+        char c = peek();
+        if (static_cast<unsigned char>(c) >= 0x80) break;
+        if (!isAsciiIdentChar(c)) break;
+        advance();
+    }
+    
+    // Slow path: handle Unicode identifiers
+    if (!isAtEnd()) {
+        while (!isAtEnd()) {
+            unsigned char c = static_cast<unsigned char>(peek());
+            if (c < 0x80) {
+                if (!isAsciiIdentChar(c)) break;
+                advance();
+            } else {
+                uint32_t cp = peekCodepoint();
+                if (!isUnicodeLetter(cp) && !isUnicodeDigit(cp)) break;
+                size_t len = codepointLength(peek());
+                for (size_t i = 0; i < len && !isAtEnd(); i++) {
+                    advance();
+                }
             }
         }
     }
 
+    // Extract identifier from source (avoids incremental string building)
+    size_t end = position;
+    std::string identifier = source.substr(start, end - start);
+
     if (!isAtEnd() && peek() == '?' && peek(1) != '.') {
-        identifier += advance();
+        advance(); // consume '?'
     }
 
     auto keywordIt = KEYWORDS.find(identifier);

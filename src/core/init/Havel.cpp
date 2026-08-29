@@ -51,11 +51,12 @@ constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
 constexpr int CONFIG_CHECK_INTERVAL_S = 5;
 
 Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
-             const std::vector<std::string> &args)
+             const std::vector<std::string> &args, bool headless)
     : lastCheck(std::chrono::steady_clock::now()),
       lastWindowCheck(std::chrono::steady_clock::now()),
       guiMode(gui),
       replMode(repl),
+      headlessMode(headless),
       scriptFile(scriptFile),
       commandLineArgs(args) {
 
@@ -110,9 +111,11 @@ void Havel::initialize(bool isStartup) {
         throw std::runtime_error("Failed to create HotkeyManager");
     }
 
-    windowManager = std::make_shared<WindowManager>();
-    havel::startup_timing_report("WindowManager-create", t);
-    t = havel::startup_now();
+    if (!headlessMode) {
+        windowManager = std::make_shared<WindowManager>();
+        havel::startup_timing_report("WindowManager-create", t);
+        t = havel::startup_now();
+    }
     audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
     havel::startup_timing_report("AudioManager-init", t);
     t = havel::startup_now();
@@ -121,9 +124,11 @@ void Havel::initialize(bool isStartup) {
     havel::startup_timing_report("AutomationManager-create", t);
     t = havel::startup_now();
 
-    brightnessManager = std::make_shared<BrightnessManager>();
-    havel::startup_timing_report("BrightnessManager-create", t);
-    t = havel::startup_now();
+    if (!headlessMode) {
+        brightnessManager = std::make_shared<BrightnessManager>();
+        havel::startup_timing_report("BrightnessManager-create", t);
+        t = havel::startup_now();
+    }
 
     // Initialize NetworkManager (singleton)
     networkManager = std::shared_ptr<net::NetworkManager>(

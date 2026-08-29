@@ -624,6 +624,98 @@ if (container.isSetId()) {
     COMPILER_THROW("ARRAY_SET expects array/set/object container");
   }
 
+  case OpCode::ARRAY_GET_FAST: {
+    // Fast path for array get with inline cache
+    // Operands: [array_id (int), instruction_ip (int)]
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isInt() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("ARRAY_GET_FAST expects operands: <array_id, instruction_ip>");
+    }
+    uint32_t array_id = instruction.operands[0].asInt();
+    uint32_t instruction_ip = instruction.operands[1].asInt();
+
+    // Pop index from stack
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+      COMPILER_THROW("ARRAY_GET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    auto *array = heap_.array(array_id);
+    if (!array) {
+      COMPILER_THROW("ARRAY_GET_FAST unknown array id");
+    }
+
+    // Handle negative indices
+    if (idx < 0) {
+      idx = static_cast<int64_t>(array->size()) + idx;
+    }
+
+    Value result;
+    if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
+      result = Value::makeNull();
+    } else {
+      result = (*array)[static_cast<size_t>(idx)];
+    }
+    pushStack(result);
+    break;
+  }
+
+  case OpCode::ARRAY_SET_FAST: {
+    // Fast path for array set with inline cache
+    // Operands: [array_id (int), instruction_ip (int)]
+    // Stack: value, index
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isInt() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("ARRAY_SET_FAST expects operands: <array_id, instruction_ip>");
+    }
+    uint32_t array_id = instruction.operands[0].asInt();
+    uint32_t instruction_ip = instruction.operands[1].asInt();
+
+    Value value = popStack();
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+      COMPILER_THROW("ARRAY_SET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    auto *array = heap_.array(array_id);
+    if (!array) {
+      COMPILER_THROW("ARRAY_SET_FAST unknown array id");
+    }
+    if (array->frozen) {
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
+    }
+
+    // Handle negative indices
+    if (idx < 0) {
+      idx = static_cast<int64_t>(array->size()) + idx;
+      if (idx < 0) {
+        COMPILER_THROW("ARRAY_SET_FAST index out of bounds: " + std::to_string(*index));
+      }
+    }
+    const auto idx_size = static_cast<size_t>(idx);
+    if (idx_size >= 100'000'000) {
+      COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
+    }
+    auto old_size = array->size();
+    if (idx_size >= old_size) {
+      array->resize(idx_size + 1, Value::makeNull());
+    }
+    (*array)[idx_size] = value;
+    heap_.writeArrayBarrier(array->data, value);
+    heap_.bumpArrayVersion(array_id);
+    emitVariableChanged("@A" + std::to_string(array_id) + ":[" + std::to_string(idx) + "]");
+    if (old_size != array->size()) {
+      emitVariableChanged("@A" + std::to_string(array_id) + ":length");
+    }
+    break;
+  }
+
   case OpCode::OBJECT_NEW: {
     pushStack(Value::makeObjectId(heap_.allocateObject(true).id)); // sorted = true
     maybeCollectGarbage();

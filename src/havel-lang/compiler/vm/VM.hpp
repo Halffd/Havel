@@ -1614,6 +1614,7 @@ private:
     
     // Clean up old cache entries if cache grows too large
     void trimInlineCaches();
+    void printInlineCacheStats() const;
 
   public:
 bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }

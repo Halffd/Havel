@@ -158,6 +158,10 @@ CALL,
   ARRAY_LEN,
   ARRAY_FREEZE, // Mark top-of-stack array as frozen (for tuples)
 
+  // Fast array access (with inline caching)
+  ARRAY_GET_FAST, // Fast array get with inline caching (array_id, ip in operands)
+  ARRAY_SET_FAST, // Fast array set with inline caching
+
   // Set operations
   SET_SET, // Set[key] = value (stack: value, key, set)
   SET_DEL, // Set.del(key) or del set[key] (stack: key, set)

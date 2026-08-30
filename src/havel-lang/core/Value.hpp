@@ -383,11 +383,6 @@ public:
   }
 
 bool isRangeId() const {
-    uint64_t tag = static_cast<uint64_t>(extractTag(bits_));
-    uint64_t extTag = static_cast<uint64_t>(extractExtendedTag(bits_));
-    fprintf(stderr, "DEBUG isRangeId: tag=%llu extTag=%llu isBoxed=%d\n", 
-            (unsigned long long)tag, (unsigned long long)extTag, isBoxed(bits_));
-    fflush(stderr);
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::RANGE_ID;
   }

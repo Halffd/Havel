@@ -1610,7 +1610,6 @@ op_STRING_GET_FAST: {
         }
         goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
-    }
 }
 
 op_STRING_SET_FAST: {
@@ -2162,8 +2161,10 @@ op_default: {
         goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
 }
-
-#undef DISPATCH_NEXT
+ 
+ }
+ 
+ #undef DISPATCH_NEXT
 #undef DISPATCH_OP
 }
 

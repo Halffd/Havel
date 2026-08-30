@@ -1614,11 +1614,18 @@ set_target_properties(havel_api_test PROPERTIES
 )
 target_compile_options(havel_api_test PRIVATE -fno-lto)
 target_link_options(havel_api_test PRIVATE -fno-lto)
+target_compile_definitions(havel_api_test PRIVATE
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+)
 target_include_directories(havel_api_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
+endif()
 target_link_libraries(havel_api_test PRIVATE
     -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
@@ -2161,6 +2168,10 @@ add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/F
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
 add_havel_module_plugin(math ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+add_havel_module_plugin(math_native ${CMAKE_SOURCE_DIR}/src/modules/math/MathModule.cpp)
+target_include_directories(havel_mod_math_native PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime
+)
 add_havel_module_plugin(object       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ObjectModule.cpp)
 add_havel_module_plugin(option       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/OptionModule.cpp)
 add_havel_module_plugin(pack         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PackModule.cpp)

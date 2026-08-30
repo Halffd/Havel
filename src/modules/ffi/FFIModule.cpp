@@ -125,11 +125,16 @@ static Value ffiCall(const compiler::VMApi& api, const std::vector<Value>& rawAr
             }
             param_types.push_back(t);
         }
+    } else {
+        ::havel::error("ffi.call: param_types (arg 3) is not an array; {} args were passed",
+                       args.size());
+        return Value::makeNull();
     }
 
     size_t havel_arg_offset = 3;
     if (param_types.size() != args.size() - havel_arg_offset) {
-        ::havel::error("ffi.call: expected {} args, got {}", param_types.size(), args.size() - havel_arg_offset);
+        ::havel::error("ffi.call: expected {} args, got {} (param_types declares {} types)",
+                       param_types.size(), args.size() - havel_arg_offset, param_types.size());
         return Value::makeNull();
     }
 

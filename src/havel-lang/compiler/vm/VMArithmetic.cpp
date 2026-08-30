@@ -247,6 +247,31 @@ void VM::execBinaryOp(const Instruction &instruction) {
 			pushStack(l >> shift);
 			break;
 		}
+		case OpCode::ADD_INT:
+		case OpCode::SUB_INT:
+		case OpCode::MUL_INT:
+		case OpCode::DIV_INT:
+		case OpCode::MOD_INT: {
+			// Fast integer arithmetic - operate directly on unboxed integers
+			int64_t result = 0;
+			switch (instruction.opcode) {
+				case OpCode::ADD_INT: result = l + r; break;
+				case OpCode::SUB_INT: result = l - r; break;
+				case OpCode::MUL_INT: result = l * r; break;
+				case OpCode::DIV_INT:
+					if (r == 0) COMPILER_THROW_AT("Division by zero", instruction);
+					result = l / r;
+					break;
+				case OpCode::MOD_INT:
+					if (r == 0) COMPILER_THROW_AT("Modulo by zero", instruction);
+					result = l % r;
+					break;
+				default:
+					COMPILER_THROW("Unsupported fast integer operation");
+			}
+			pushStack(result);
+			return;
+		}
 		default: COMPILER_THROW("Unsupported integer operation");
 		}
 		return;

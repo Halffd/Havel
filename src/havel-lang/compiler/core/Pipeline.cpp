@@ -40,6 +40,13 @@
 namespace havel::compiler {
 
 namespace {
+static const std::initializer_list<const char*> stdModuleGlobals = {
+    "fs", "shell", "app", "bc", "readline", "string", "time", "display",
+    "window", "process", "math", "array", "type", "ffi", "bit", "sys",
+    "object", "hotkey", "io", "state", "gui", "image", "ocr", "audio",
+    "setFlag", "isOn", "dumpBytecodeSummary", "dumpBytecode", "traceBytecode"
+};
+
 std::string bindingKindName(ResolvedBindingKind kind) {
   switch (kind) {
   case ResolvedBindingKind::Local:
@@ -851,6 +858,13 @@ for (const auto &err : parser.getErrors()) {
   for (const auto& [name, fn] : options.host_functions) {
     (void)fn;
     semOptions.knownGlobals.insert(name);
+    auto dotPos = name.find('.');
+    if (dotPos != std::string::npos) {
+      semOptions.knownGlobals.insert(name.substr(0, dotPos));
+    }
+  }
+  for (const auto* modName : stdModuleGlobals) {
+    semOptions.knownGlobals.insert(modName);
   }
   // Also add known globals that are not host functions but are available at runtime
   semOptions.knownGlobals.insert("process");
@@ -1147,6 +1161,13 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   for (const auto& [name, fn] : options.host_functions) {
     (void)fn;
     semOptions.knownGlobals.insert(name);
+    auto dotPos = name.find('.');
+    if (dotPos != std::string::npos) {
+      semOptions.knownGlobals.insert(name.substr(0, dotPos));
+    }
+  }
+  for (const auto* modName : stdModuleGlobals) {
+    semOptions.knownGlobals.insert(modName);
   }
   // Also add known globals that are not host functions but are available at runtime
   semOptions.knownGlobals.insert("process");

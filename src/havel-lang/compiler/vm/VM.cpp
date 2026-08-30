@@ -4755,18 +4755,9 @@ return cachedVal;
   }
 
   if (!resolved) {
-    // Check lazy modules — activate if registered
-    auto lazyIt = lazy_modules_.find(path);
-    if (lazyIt != lazy_modules_.end()) {
-      activateLazyModule(path);
-      auto it = globals.find(path);
-      if (it != globals.end()) {
-        moduleLoader_.putCache(canonicalKey, it->second);
-        pinModuleCacheExports(canonicalKey, it->second);
-        return it->second;
-      }
-    }
-
+    // FIRST: Check if eager plugins have already registered functions for this module.
+    // Eager plugins (like FFI) register during VM init, before any module loading.
+    // This must come BEFORE lazy module fallback to avoid returning a lazy proxy.
     std::string prefix = path + ".";
     std::string usPrefix = path + "_";
     bool hasNamespace = false;
@@ -4778,6 +4769,39 @@ return cachedVal;
     }
     if (hasNamespace || (context_ && context_->modules &&
                          context_->modules->loadModule(path))) {
+      auto exportsObj = createHostObject();
+      auto *obj = heap_.object(exportsObj.id);
+      for (const auto &[name, value] : host_function_globals_) {
+        std::string localName;
+        if (name.rfind(prefix, 0) == 0) {
+          localName = name.substr(prefix.size());
+        } else if (name.rfind(usPrefix, 0) == 0) {
+          localName = name.substr(usPrefix.size());
+        }
+        if (!localName.empty() && !obj->get(localName)) {
+          (*obj)[localName] = value;
+        }
+      }
+      Value exports = Value::makeObjectId(exportsObj.id);
+      moduleLoader_.putCache(canonicalKey, exports);
+      pinModuleCacheExports(canonicalKey, exports);
+      return exports;
+    }
+
+    // Check lazy modules — activate if registered (fallback for modules not registered as eager plugins)
+    auto lazyIt = lazy_modules_.find(path);
+    if (lazyIt != lazy_modules_.end()) {
+      activateLazyModule(path);
+      auto it = globals.find(path);
+      if (it != globals.end()) {
+        moduleLoader_.putCache(canonicalKey, it->second);
+        pinModuleCacheExports(canonicalKey, it->second);
+        return it->second;
+      }
+    }
+
+    if (context_ && context_->modules &&
+        context_->modules->loadModule(path)) {
       auto exportsObj = createHostObject();
       auto *obj = heap_.object(exportsObj.id);
       for (const auto &[name, value] : host_function_globals_) {

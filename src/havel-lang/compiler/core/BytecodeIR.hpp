@@ -228,8 +228,18 @@ CALL,
 
   // String operations
   STRING_CONCAT,
-  STRING_GET_FAST,  // Fast string get with inline caching (string_id, ip in operands)
-  STRING_SET_FAST,  // Fast string set with inline caching
+  STRING_GET_FAST,   // Fast string get with inline caching (string_id, ip in operands)
+  STRING_SET_FAST,   // Fast string set with inline caching
+  STRING_GET_FAST_IP, // Fast string get with inline caching + IP in operands
+  STRING_SET_FAST_IP, // Fast string set with inline caching + IP in operands
+  // String cursor (native UTF-8 cursor with position state)
+  STRING_CURSOR_NEW,     // Create cursor from string: string_id -> cursor
+  STRING_CURSOR_CURRENT, // Get current codepoint: cursor -> int/char
+  STRING_CURSOR_ADVANCE, // Advance cursor: cursor -> bool (false if at end)
+  STRING_CURSOR_PEEK,    // Peek at next codepoint without advancing: cursor -> int/char
+  STRING_CURSOR_RESET,   // Reset cursor to start: cursor -> void
+  STRING_CURSOR_GET_POS, // Get byte position: cursor -> int
+  STRING_CURSOR_SET_POS, // Set byte position: cursor, int -> void
 
   // Spread operator
   SPREAD,
@@ -353,6 +363,10 @@ struct FunctionObject {
 };
 
 struct StringRef {
+  uint32_t id = 0;
+};
+
+struct StringCursorRef {
   uint32_t id = 0;
 };
 

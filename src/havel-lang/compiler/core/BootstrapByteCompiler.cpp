@@ -251,11 +251,117 @@ std::optional<Value> tryEvaluateConstantImpl(const ast::Expression &expr, const 
   }
 }
 
+// Get the inferred type of an expression from type checking results
+std::optional<std::string>
+getExpressionType(const ast::Expression &expr, const TypeCheckResult &type_check_result) {
+  // For identifiers, check knownTypes map
+  if (expr.kind == ast::NodeType::Identifier) {
+    const auto &ident = static_cast<const ast::Identifier &>(expr);
+    auto it = type_check_result.knownTypes.find(&ident);
+    if (it != type_check_result.knownTypes.end()) {
+      return it->second;
+    }
+  }
+  // For number literals that are integers
+  if (expr.kind == ast::NodeType::NumberLiteral) {
+    const auto &num = static_cast<const ast::NumberLiteral &>(expr);
+    if (!num.was_written_as_float && isIntegerLiteral(num.value)) {
+      return "int";
+    }
+    return "number";
+  }
+  // For string literals
+  if (expr.kind == ast::NodeType::StringLiteral) {
+    return "string";
+  }
+  // For boolean literals
+  if (expr.kind == ast::NodeType::BooleanLiteral) {
+    return "bool";
+  }
+  // For array literals
+  if (expr.kind == ast::NodeType::ArrayLiteral) {
+    return "array";
+  }
+  // For null literals
+  if (expr.kind == ast::NodeType::NullLiteral) {
+    return "null";
+  }
+  // For binary expressions - infer from operands
+  if (expr.kind == ast::NodeType::BinaryExpression) {
+    const auto &bin = static_cast<const ast::BinaryExpression &>(expr);
+    if (bin.left && bin.right) {
+      auto leftType = getExpressionType(*bin.left, type_check_result);
+      auto rightType = getExpressionType(*bin.right, type_check_result);
+      // Arithmetic on ints returns int
+      if (leftType && rightType && *leftType == "int" && *rightType == "int") {
+        if (bin.operator_ == ast::BinaryOperator::Add ||
+            bin.operator_ == ast::BinaryOperator::Sub ||
+            bin.operator_ == ast::BinaryOperator::Mul ||
+            bin.operator_ == ast::BinaryOperator::IntDiv ||
+            bin.operator_ == ast::BinaryOperator::Mod ||
+            bin.operator_ == ast::BinaryOperator::Remainder ||
+            bin.operator_ == ast::BinaryOperator::BitwiseAnd ||
+            bin.operator_ == ast::BinaryOperator::BitwiseOr ||
+            bin.operator_ == ast::BinaryOperator::BitwiseXor ||
+            bin.operator_ == ast::BinaryOperator::BitwiseShiftLeft ||
+            bin.operator_ == ast::BinaryOperator::BitwiseShiftRight) {
+          return "int";
+        }
+        // Div returns number
+        if (bin.operator_ == ast::BinaryOperator::Div) {
+          return "number";
+        }
+        // Comparison returns bool
+        if (bin.operator_ == ast::BinaryOperator::Equal ||
+            bin.operator_ == ast::BinaryOperator::NotEqual ||
+            bin.operator_ == ast::BinaryOperator::Less ||
+            bin.operator_ == ast::BinaryOperator::LessEqual ||
+            bin.operator_ == ast::BinaryOperator::Greater ||
+            bin.operator_ == ast::BinaryOperator::GreaterEqual) {
+          return "bool";
+        }
+      }
+    }
+  }
+  // For call expressions - could check registry but complex
+  return std::nullopt;
+}
+
+// Get fast integer opcode for binary operator
+std::optional<OpCode>
+getFastIntegerOpCode(ast::BinaryOperator op) {
+  switch (op) {
+    case ast::BinaryOperator::Add: return OpCode::ADD_INT;
+    case ast::BinaryOperator::Sub: return OpCode::SUB_INT;
+    case ast::BinaryOperator::Mul: return OpCode::MUL_INT;
+    case ast::BinaryOperator::Div: return OpCode::DIV_INT;
+    case ast::BinaryOperator::Mod: return OpCode::MOD_INT;
+    case ast::BinaryOperator::IntDiv: return OpCode::DIV_INT; // Use DIV_INT for integer division
+    case ast::BinaryOperator::Remainder: return OpCode::MOD_INT; // Use MOD_INT for remainder
+    case ast::BinaryOperator::BitwiseAnd: return OpCode::BIT_AND; // Already fast
+    case ast::BinaryOperator::BitwiseOr: return OpCode::BIT_OR;
+    case ast::BinaryOperator::BitwiseXor: return OpCode::BIT_XOR;
+    case ast::BinaryOperator::BitwiseShiftLeft: return OpCode::BIT_LSH;
+    case ast::BinaryOperator::BitwiseShiftRight: return OpCode::BIT_RSH;
+    default: return std::nullopt;
+  }
+}
+
 } // namespace
 
 // Member function wrapper
 std::optional<Value> ByteCompiler::tryEvaluateConstant(const ast::Expression &expr) const {
   return tryEvaluateConstantImpl(expr, this);
+}
+
+std::optional<std::string>
+ByteCompiler::getExpressionType(const ast::Expression &expr) const {
+  return ::havel::compiler::getExpressionType(expr, type_check_result_);
+}
+
+std::optional<OpCode>
+ByteCompiler::getFastIntegerOpCode(ast::BinaryOperator op) const {
+  return ::havel::compiler::getFastIntegerOpCode(op);
 }
 
 std::unique_ptr<BytecodeChunk>
@@ -4021,9 +4127,9 @@ case ast::NodeType::AtExpression: {
         compileExpression(*binary.right);
         in_tail_position_ = saved_tail;
         patchJump(jumpPastRight, static_cast<uint32_t>(current_function->instructions.size()));
-    } else {
+} else {
             // Try recursive constant evaluation first (handles nested expressions like 1+2+3)
-if (auto constVal = tryEvaluateConstant(expression); constVal) {
+            if (auto constVal = tryEvaluateConstant(expression); constVal) {
                 emit(OpCode::LOAD_CONST, addConstant(*constVal));
                 break;
             }
@@ -4033,12 +4139,32 @@ if (auto constVal = tryEvaluateConstant(expression); constVal) {
                 break;
             }
             
+            // Check if we can use fast integer opcodes
+            bool use_fast_int = false;
+            std::optional<OpCode> fast_opcode;
+            
+            if (binary.left && binary.right) {
+                auto leftType = getExpressionType(*binary.left);
+                auto rightType = getExpressionType(*binary.right);
+                if (leftType && rightType && *leftType == "int" && *rightType == "int") {
+                    fast_opcode = getFastIntegerOpCode(binary.operator_);
+                    if (fast_opcode) {
+                        use_fast_int = true;
+                    }
+                }
+            }
+            
             bool saved_tail = in_tail_position_;
             in_tail_position_ = false;
             compileExpression(*binary.left);
             compileExpression(*binary.right);
             in_tail_position_ = saved_tail;
-            emit(toBytecodeOperator(binary.operator_));
+            
+            if (use_fast_int && fast_opcode) {
+                emit(*fast_opcode);
+            } else {
+                emit(toBytecodeOperator(binary.operator_));
+            }
     }
       break;
   }
@@ -4838,9 +4964,49 @@ case ast::NodeType::CallExpression:
     if (!index.object || !index.index) {
       COMPILER_THROW("Malformed index expression");
     }
+
+    // Check if we can use fast path based on type info
+    bool use_fast_path = false;
+    std::string object_type;
+    const ast::Identifier *obj_ident = nullptr;
+
+    // Check if object is an identifier with known type
+    if (index.object->kind == ast::NodeType::Identifier) {
+      obj_ident = static_cast<const ast::Identifier *>(index.object.get());
+      auto it = type_check_result_.knownTypes.find(obj_ident);
+      if (it != type_check_result_.knownTypes.end()) {
+        object_type = it->second;
+        // Use fast path for array and string types
+        if (object_type == "array" || object_type == "string") {
+          use_fast_path = true;
+        }
+      }
+    }
+
+    if (use_fast_path && obj_ident) {
+      // Use fast path opcodes with inline caching
+      // We need to allocate the array/string ID at runtime, so we still
+      // compile the object expression but then use ARRAY_GET_FAST/STRING_GET_FAST
+      // with the object's heap ID (which we don't know at compile time)
+      // For now, fall back to regular path if we can't determine ID statically
+      // The fast path requires the array/string ID as operand
+      
+      // Check if the object is a local variable that we can track
+      // For now, use regular path - fast path needs the actual heap ID
+    }
+
     compileExpression(*index.object);
     compileExpression(*index.index);
-    emit(OpCode::ARRAY_GET);
+    
+    // Emit fast string get if we know it's a string
+    if (object_type == "string") {
+      // We need to get the string ID from the value on stack
+      // For now, use regular ARRAY_GET which handles strings too
+      // TODO: Add STRING_GET_FAST with dynamic ID from stack
+      emit(OpCode::ARRAY_GET);
+    } else {
+      emit(OpCode::ARRAY_GET);
+    }
     break;
   }
 

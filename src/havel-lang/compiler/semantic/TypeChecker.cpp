@@ -709,9 +709,11 @@ void TypeChecker::checkWhenStatement(const ast::WhenStatement &whenStmt) {
 
 void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
     std::string varName;
+    const ast::Identifier *identPtr = nullptr;
     if (let.pattern &&
         let.pattern->kind == ast::NodeType::Identifier) {
-        varName = static_cast<const ast::Identifier &>(*let.pattern).symbol;
+        identPtr = static_cast<const ast::Identifier *>(let.pattern.get());
+        varName = identPtr->symbol;
     }
 
     if (let.typeAnnotation) {
@@ -719,6 +721,7 @@ void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
             resolveTypeAnnotation((*let.typeAnnotation).get());
         if (resolved && !varName.empty()) {
             env_.set(varName, *resolved);
+            if (identPtr) result_.knownTypes[identPtr] = *resolved;
             if (let.value) {
                 std::string valType = exprTypeName(*let.value);
                 if (!valType.empty() && valType != *resolved) {
@@ -755,6 +758,7 @@ void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
                 // ?UnknownType — just register as nullable dynamic
                 if (!varName.empty()) {
                     env_.set(varName, "?dynamic");
+                    if (identPtr) result_.knownTypes[identPtr] = "?dynamic";
                 }
             } else {
                 const auto *ref =
@@ -769,6 +773,7 @@ void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
         std::string valType = exprTypeName(*let.value);
         if (!valType.empty()) {
             env_.set(varName, valType);
+            if (identPtr) result_.knownTypes[identPtr] = valType;
         }
     }
 }
@@ -796,6 +801,7 @@ void TypeChecker::checkFunctionDeclaration(
             auto resolved = resolveTypeAnnotation((*param->typeAnnotation).get());
             if (resolved) {
                 env_.set(ident->symbol, *resolved);
+                result_.knownTypes[ident] = *resolved;
             }
         }
     }

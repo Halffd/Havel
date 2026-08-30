@@ -1638,6 +1638,11 @@ target_link_libraries(havel_api_test PRIVATE
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
   add_test(NAME hvtest-smoke COMMAND hvtest --smoke)
+  # Module globals drift guard: fails if a setGlobal() module global is not
+  # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
+  # for --build/--full-aot depends on.
+  add_test(NAME module-globals-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)

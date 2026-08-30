@@ -8,6 +8,7 @@
 #include "../semantic/TypeChecker.hpp"
 #include "../semantic/SemanticAnalyzer.hpp"
 #include "../vm/VM.hpp"
+#include "ModuleGlobals.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "BootstrapByteCompiler.hpp"
 #include "../runtime/RuntimeSupport.hpp"
@@ -866,15 +867,19 @@ for (const auto &err : parser.getErrors()) {
   for (const auto* modName : stdModuleGlobals) {
     semOptions.knownGlobals.insert(modName);
   }
+  for (const char *moduleGlobal : kModuleGlobals) {
+    semOptions.knownGlobals.insert(moduleGlobal);
+  }
   // Also add known globals that are not host functions but are available at runtime
   semOptions.knownGlobals.insert("process");
   semOptions.knownGlobals.insert("sys");
   semOptions.knownGlobals.insert("shell");
   // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
   semOptions.knownGlobals.insert("_nativeTokenize");
-  // Include host functions actually registered on the target VM (print, sleep,
-  // int, num, exit, ...). These are real runtime globals dispatched via
-  // CALL + HostFunctionRef; strict-mode resolution must accept them.
+  // Include host functions and globals actually registered on the target VM
+  // (print, sleep, int, num, exit, system, fs, shell, ...). These are real
+  // runtime globals dispatched via CALL + HostFunctionRef or plain global
+  // lookup; strict-mode resolution must accept them.
   if (options.vm_override) {
     for (const auto &hfName : options.vm_override->getHostFunctionNames()) {
       if (hfName.empty()) continue;
@@ -882,6 +887,15 @@ for (const auto &err : parser.getErrors()) {
       auto dotPos = hfName.find('.');
       if (dotPos != std::string::npos) {
         semOptions.knownGlobals.insert(hfName.substr(0, dotPos));
+      }
+    }
+    for (const auto &[globalName, val] : options.vm_override->getAllGlobals()) {
+      (void)val;
+      if (globalName.empty()) continue;
+      semOptions.knownGlobals.insert(globalName);
+      auto dotPos = globalName.find('.');
+      if (dotPos != std::string::npos) {
+        semOptions.knownGlobals.insert(globalName.substr(0, dotPos));
       }
     }
   }
@@ -1184,15 +1198,19 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   for (const auto* modName : stdModuleGlobals) {
     semOptions.knownGlobals.insert(modName);
   }
+  for (const char *moduleGlobal : kModuleGlobals) {
+    semOptions.knownGlobals.insert(moduleGlobal);
+  }
   // Also add known globals that are not host functions but are available at runtime
   semOptions.knownGlobals.insert("process");
   semOptions.knownGlobals.insert("sys");
   semOptions.knownGlobals.insert("shell");
   // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
   semOptions.knownGlobals.insert("_nativeTokenize");
-  // Include host functions actually registered on the target VM (print, sleep,
-  // int, num, exit, ...). These are real runtime globals dispatched via
-  // CALL + HostFunctionRef; strict-mode resolution must accept them.
+  // Include host functions and globals actually registered on the target VM
+  // (print, sleep, int, num, exit, system, fs, shell, ...). These are real
+  // runtime globals dispatched via CALL + HostFunctionRef or plain global
+  // lookup; strict-mode resolution must accept them.
   if (options.vm_override) {
     for (const auto &hfName : options.vm_override->getHostFunctionNames()) {
       if (hfName.empty()) continue;
@@ -1200,6 +1218,15 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
       auto dotPos = hfName.find('.');
       if (dotPos != std::string::npos) {
         semOptions.knownGlobals.insert(hfName.substr(0, dotPos));
+      }
+    }
+    for (const auto &[globalName, val] : options.vm_override->getAllGlobals()) {
+      (void)val;
+      if (globalName.empty()) continue;
+      semOptions.knownGlobals.insert(globalName);
+      auto dotPos = globalName.find('.');
+      if (dotPos != std::string::npos) {
+        semOptions.knownGlobals.insert(globalName.substr(0, dotPos));
       }
     }
   }

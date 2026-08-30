@@ -58,8 +58,7 @@ Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
       replMode(repl),
       headlessMode(headless),
       scriptFile(scriptFile),
-      commandLineArgs(args),
-      headlessMode(headless) {
+      commandLineArgs(args) {
 
   if (instance) {
     throw std::runtime_error("Havel instance already exists");

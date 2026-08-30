@@ -2,6 +2,12 @@
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
+use { parse, parseTokens } from "pratt"
+use { tokenize } from "lexer"
+use { Emitter, compileProgram } from "emitter"
+use { inferProgram } from "types"
+use { setFlag, isOn, dumpBytecodeSummary, dumpBytecode, traceBytecode } from "debug"
+
 fn now() {
     time.now()
 }
@@ -11,25 +17,6 @@ fn measure(label, t0) {
 }
 
 fn loadCompiler() {
-    t0 = now()
-    use { parse, parseTokens } from "pratt"
-    measure("load pratt", t0)
-
-    t0 = now()
-    use { tokenize } from "lexer"
-    measure("load lexer", t0)
-
-    t0 = now()
-    use { Emitter, compileProgram } from "emitter"
-    measure("load emitter", t0)
-
-    t0 = now()
-    use { inferProgram } from "types"
-    measure("load types", t0)
-
-    t0 = now()
-    use { setFlag, isOn, dumpBytecodeSummary, dumpBytecode, traceBytecode } from "debug"
-    measure("load debug", t0)
 }
 
 loadCompiler()
@@ -523,7 +510,12 @@ fn replLoop(cfg) {
                 if stripped == ":bytecode" || stripped == ":bc" {
                     setFlag("bytecode", !isOn("bytecode"))
                     bcFlag = isOn("bytecode")
-                    print("Bytecode debug: ${(bcFlag ? \"ON\" : \"OFF\")}")
+                    if bcFlag {
+                        print("Bytecode debug: ON")
+                    }
+                    else {
+                        print("Bytecode debug: OFF")
+                    }
                     if isOn("bytecode") {
                         dumpBytecodeSummary()
                     }
@@ -534,7 +526,8 @@ fn replLoop(cfg) {
                         print("No globals defined")
                     }
                     else {
-                        print("Known globals: ${knownGlobals.join(\", \")}")
+                        globals_str = knownGlobals.join(", ")
+                        print("Known globals: ${globals_str}")
                     }
                     continue
                 }

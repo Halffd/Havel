@@ -290,8 +290,18 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
         vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
       }
     }
-vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
+    vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
+    // extension object
+    auto extensionObj = vm.createHostObject();
+    for (const auto &name : {"load", "isLoaded", "list", "addSearchPath"}) {
+      std::string fn = std::string("extension.") + name;
+      int idx = vm.getHostFunctionIndex(fn);
+      if (idx >= 0) {
+        vm.setHostObjectField(extensionObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
+      }
+    }
+    vm.setGlobal("extension", Value::makeObjectId(extensionObj.id));
   });
 
   options_.host_functions["extension.load"] =

@@ -79,7 +79,7 @@ public:
         auto t0 = havel::startup_now();
 
         host::ServiceRegistry::instance().clear();
-        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
+        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes, config_.headlessMode);
         auto t = havel::startup_now();
         havel::startup_timing_report("service-registry", t0);
 

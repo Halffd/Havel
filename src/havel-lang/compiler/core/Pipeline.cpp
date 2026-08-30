@@ -866,6 +866,10 @@ for (const auto &err : parser.getErrors()) {
   for (const auto* modName : stdModuleGlobals) {
     semOptions.knownGlobals.insert(modName);
   }
+  // Also add known globals that are not host functions but are available at runtime
+  semOptions.knownGlobals.insert("process");
+  semOptions.knownGlobals.insert("sys");
+  semOptions.knownGlobals.insert("shell");
   
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
@@ -1165,6 +1169,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   for (const auto* modName : stdModuleGlobals) {
     semOptions.knownGlobals.insert(modName);
   }
+  // Also add known globals that are not host functions but are available at runtime
+  semOptions.knownGlobals.insert("process");
+  semOptions.knownGlobals.insert("sys");
+  semOptions.knownGlobals.insert("shell");
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
   

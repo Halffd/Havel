@@ -133,3 +133,9 @@ fn pipe(cmd1, cmd2) {
  if !r1.success { return {success: false, error: r1.stderr} }
  __proc.run("echo '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
 }
+
+// Exit the current process with the given exit code
+fn exit(code) {
+  _exit_fn = ffi.sym(_c, "exit")
+  ffi.call(_exit_fn, "void", ["int32"], code)
+}

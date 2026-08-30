@@ -54,7 +54,8 @@ void declareAllServices() {
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
-							   const host::ServiceFilter& excludes) {
+							   const host::ServiceFilter& excludes,
+							   bool headlessMode) {
 	if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;

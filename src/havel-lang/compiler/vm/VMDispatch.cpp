@@ -508,29 +508,34 @@ if (cell->is_open) {
     break;
   }
 
-    case OpCode::ADD:
-    case OpCode::SUB:
-    case OpCode::MUL:
-    case OpCode::DIV:
-    case OpCode::INT_DIV:
-    case OpCode::MOD:
-    case OpCode::DIVMOD:
-    case OpCode::REMAINDER:
-    case OpCode::POW:
-    case OpCode::EQ:
-    case OpCode::NEQ:
-    case OpCode::IS:
-    case OpCode::LT:
-    case OpCode::LTE:
-    case OpCode::GT:
-    case OpCode::GTE:
-    case OpCode::BIT_AND:
-    case OpCode::BIT_OR:
-    case OpCode::BIT_XOR:
-    case OpCode::BIT_LSH:
-    case OpCode::BIT_RSH:
-      execBinaryOp(instruction);
-      break;
+case OpCode::ADD:
+  case OpCode::SUB:
+  case OpCode::MUL:
+  case OpCode::DIV:
+  case OpCode::INT_DIV:
+  case OpCode::MOD:
+  case OpCode::DIVMOD:
+  case OpCode::REMAINDER:
+  case OpCode::POW:
+  case OpCode::EQ:
+  case OpCode::NEQ:
+  case OpCode::IS:
+  case OpCode::LT:
+  case OpCode::LTE:
+  case OpCode::GT:
+  case OpCode::GTE:
+  case OpCode::BIT_AND:
+  case OpCode::BIT_OR:
+  case OpCode::BIT_XOR:
+  case OpCode::BIT_LSH:
+  case OpCode::BIT_RSH:
+  case OpCode::ADD_INT:
+  case OpCode::SUB_INT:
+  case OpCode::MUL_INT:
+  case OpCode::DIV_INT:
+  case OpCode::MOD_INT:
+    execBinaryOp(instruction);
+    break;
 
   case OpCode::AND:
   case OpCode::OR:

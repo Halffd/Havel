@@ -158,6 +158,17 @@ CALL,
   ARRAY_LEN,
   ARRAY_FREEZE, // Mark top-of-stack array as frozen (for tuples)
 
+  // Fast array access (with inline caching)
+  ARRAY_GET_FAST, // Fast array get with inline caching (array_id, ip in operands)
+  ARRAY_SET_FAST, // Fast array set with inline caching
+
+  // Fast integer arithmetic (unboxed)
+  ADD_INT,
+  SUB_INT,
+  MUL_INT,
+  DIV_INT,
+  MOD_INT,
+
   // Set operations
   SET_SET, // Set[key] = value (stack: value, key, set)
   SET_DEL, // Set.del(key) or del set[key] (stack: key, set)
@@ -217,6 +228,8 @@ CALL,
 
   // String operations
   STRING_CONCAT,
+  STRING_GET_FAST,  // Fast string get with inline caching (string_id, ip in operands)
+  STRING_SET_FAST,  // Fast string set with inline caching
 
   // Spread operator
   SPREAD,

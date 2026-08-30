@@ -6785,4 +6785,135 @@ void VM::detachDebugger() {
   debug_breakpoints_.clear();
 }
 
+// ============================================================================
+// Inline Cache Implementation
+// ============================================================================
+
+VM::ArrayInlineCache& VM::getArrayInlineCache(uint32_t array_id, uint32_t ip) {
+  uint64_t key = (static_cast<uint64_t>(array_id) << 32) | ip;
+  auto& cache = array_inline_cache_[key];
+  return cache;
+}
+
+VM::PropertyInlineCache& VM::getPropertyInlineCache(uint32_t object_id, uint32_t name_id) {
+  uint64_t key = (static_cast<uint64_t>(object_id) << 32) | name_id;
+  auto& cache = property_inline_cache_[key];
+  return cache;
+}
+
+VM::IteratorInlineCache& VM::getIteratorInlineCache(uint32_t iterator_id) {
+  uint64_t key = iterator_id;
+  auto& cache = iterator_inline_cache_[key];
+  return cache;
+}
+
+VM::StringInlineCache& VM::getStringInlineCache(uint32_t string_id, uint32_t ip) {
+  uint64_t key = (static_cast<uint64_t>(string_id) << 32) | ip;
+  auto& cache = string_inline_cache_[key];
+  return cache;
+}
+
+void VM::invalidateArrayInlineCache(uint32_t array_id) {
+  for (auto it = array_inline_cache_.begin(); it != array_inline_cache_.end();) {
+    if ((it->first >> 32) == array_id) {
+      it = array_inline_cache_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void VM::invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id) {
+  uint64_t key = (static_cast<uint64_t>(object_id) << 32) | name_id;
+  property_inline_cache_.erase(key);
+}
+
+void VM::invalidateIteratorInlineCache(uint32_t iterator_id) {
+  iterator_inline_cache_.erase(iterator_id);
+}
+
+void VM::trimInlineCaches() {
+  if (array_inline_cache_.size() > MAX_INLINE_CACHE_SIZE) {
+    // Remove entries with fewest hits
+    std::vector<std::pair<uint64_t, uint32_t>> entries;
+    entries.reserve(array_inline_cache_.size());
+    for (auto& [key, cache] : array_inline_cache_) {
+      entries.emplace_back(key, cache.hits);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    
+    size_t to_remove = array_inline_cache_.size() - MAX_INLINE_CACHE_SIZE / 2;
+    for (size_t i = 0; i < to_remove; ++i) {
+      array_inline_cache_.erase(entries[i].first);
+    }
+  }
+  
+  if (property_inline_cache_.size() > MAX_INLINE_CACHE_SIZE) {
+    std::vector<std::pair<uint64_t, uint32_t>> entries;
+    entries.reserve(property_inline_cache_.size());
+    for (auto& [key, cache] : property_inline_cache_) {
+      entries.emplace_back(key, cache.hits);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    
+    size_t to_remove = property_inline_cache_.size() - MAX_INLINE_CACHE_SIZE / 2;
+    for (size_t i = 0; i < to_remove; ++i) {
+      property_inline_cache_.erase(entries[i].first);
+    }
+  }
+}
+
+// Print inline cache statistics
+void VM::printInlineCacheStats() const {
+  ::havel::debug("=== Inline Cache Statistics ===");
+  
+  size_t total_hits = 0;
+  size_t total_misses = 0;
+  for (const auto& [key, cache] : array_inline_cache_) {
+    total_hits += cache.hits;
+    total_misses += cache.misses;
+  }
+  ::havel::debug("Array Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 array_inline_cache_.size(), total_hits, total_misses,
+                 total_hits + total_misses > 0 
+                   ? (100.0 * total_hits) / (total_hits + total_misses) 
+                   : 0.0);
+  
+  total_hits = 0;
+  total_misses = 0;
+  for (const auto& [key, cache] : property_inline_cache_) {
+    total_hits += cache.hits;
+    total_misses += cache.misses;
+  }
+  ::havel::debug("Property Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 property_inline_cache_.size(), total_hits, total_misses,
+                 total_hits + total_misses > 0 
+                   ? (100.0 * total_hits) / (total_hits + total_misses) 
+                   : 0.0);
+  
+  size_t iterator_hits = 0, iterator_misses = 0;
+  for (const auto& [key, cache] : iterator_inline_cache_) {
+    iterator_hits += cache.hits;
+    iterator_misses += cache.misses;
+  }
+  ::havel::debug("Iterator Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 iterator_inline_cache_.size(), iterator_hits, iterator_misses,
+                 iterator_hits + iterator_misses > 0 
+                   ? (100.0 * iterator_hits) / (iterator_hits + iterator_misses) 
+                   : 0.0);
+  
+  size_t string_hits = 0, string_misses = 0;
+  for (const auto& [key, cache] : string_inline_cache_) {
+    string_hits += cache.hits;
+    string_misses += cache.misses;
+  }
+  ::havel::debug("String Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 string_inline_cache_.size(), string_hits, string_misses,
+                 string_hits + string_misses > 0 
+                   ? (100.0 * string_hits) / (string_hits + string_misses) 
+                   : 0.0);
+}
+
 } // namespace havel::compiler

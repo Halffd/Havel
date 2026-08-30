@@ -2168,6 +2168,10 @@ add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/F
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
 add_havel_module_plugin(math ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+add_havel_module_plugin(math_native ${CMAKE_SOURCE_DIR}/src/modules/math/MathModule.cpp)
+target_include_directories(havel_mod_math_native PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime
+)
 add_havel_module_plugin(object       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ObjectModule.cpp)
 add_havel_module_plugin(option       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/OptionModule.cpp)
 add_havel_module_plugin(pack         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PackModule.cpp)

@@ -60,6 +60,7 @@ bool debugIo = false;
   bool stopOnError = false;
   bool fullRepl = false;
   bool minimalMode = false;
+  bool headlessMode = false;
   bool pureStdlib = false;
   bool lintOnly = false;
   bool buildOnly = false;

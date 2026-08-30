@@ -734,6 +734,9 @@ extern "C" void* havel_vm_init_standalone_with_functions(
     const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
     const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
     uint32_t total_upvalues,
+    const uint32_t* func_const_counts, const uint64_t* func_const_data,
+    const uint32_t* func_instr_counts, const uint64_t* func_instr_data,
+    uint32_t num_functions,
     const char* build_dir
 ) {
     static ::havel::HavelEngine engine;
@@ -800,6 +803,8 @@ extern "C" void* havel_vm_init_standalone_with_functions(
             
             // Parse upvalue data
             uint32_t upvalue_offset = 0;
+            uint64_t const_data_offset = 0;
+            uint64_t instr_data_offset = 0;
             for (uint32_t fi = 0; fi < func_count; ++fi) {
                 std::string name(func_names[fi]);
                 uint32_t param_count = func_param_counts[fi];
@@ -818,6 +823,30 @@ extern "C" void* havel_vm_init_standalone_with_functions(
                     func.upvalues.push_back(desc);
                 }
                 upvalue_offset += upvalue_count;
+                
+                // Deserialize constants
+                if (func_const_counts && func_const_data && fi < num_functions) {
+                    uint32_t const_count = func_const_counts[fi];
+                    func.constants.reserve(const_count);
+                    for (uint32_t ci = 0; ci < const_count; ++ci) {
+                        func.constants.push_back(Value::fromRawBits(func_const_data[const_data_offset++]));
+                    }
+                }
+                
+                // Deserialize instructions
+                if (func_instr_counts && func_instr_data && fi < num_functions) {
+                    uint32_t instr_count = func_instr_counts[fi];
+                    for (uint32_t ii = 0; ii < instr_count; ++ii) {
+                        uint32_t opcode = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+                        uint32_t num_operands = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+                        std::vector<Value> operands;
+                        operands.reserve(num_operands);
+                        for (uint32_t oi = 0; oi < num_operands; ++oi) {
+                            operands.push_back(Value::fromRawBits(func_instr_data[instr_data_offset++]));
+                        }
+                        func.instructions.emplace_back(static_cast<OpCode>(opcode), std::move(operands));
+                    }
+                }
                 
                 chunk->addFunction(std::move(func));
             }
@@ -838,16 +867,9 @@ uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits
   Value start, end;
   std::memcpy(&start, &start_bits, sizeof(uint64_t));
   std::memcpy(&end, &end_bits, sizeof(uint64_t));
-  // DEBUG
-  fprintf(stderr, "DEBUG havel_vm_range_new: start_bits=0x%lx end_bits=0x%lx\n", start_bits, end_bits);
-  fprintf(stderr, "DEBUG havel_vm_range_new: start.isInt()=%d end.isInt()=%d\n", start.isInt(), end.isInt());
-  fflush(stderr);
   if (!start.isInt() || !end.isInt()) return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateRange(start.asInt(), end.asInt(), 1);
-  uint64_t result = Value::makeRangeId(ref.id).rawBits();
-  fprintf(stderr, "DEBUG havel_vm_range_new: returning range_id=%u, raw_bits=0x%lx\n", ref.id, result);
-  fflush(stderr);
-  return result;
+  return Value::makeRangeId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_iter_new(void* vm_ptr, uint64_t coll_bits) {
@@ -871,12 +893,6 @@ uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
   auto* iter_ref = vm->getHeap().iterator(iter_id);
   if (iter_ref && iter_ref->iterable.isRangeId()) {
     auto* r = vm->getHeap().range(iter_ref->iterable.asRangeId());
-    if (r) {
-      fprintf(stderr, "DEBUG iter_next: index=%u, start=%ld, end=%ld, step=%ld, current=%ld\n",
-              iter_ref->index, r->start, r->end, r->step, 
-              r->start + (iter_ref->index * r->step));
-      fflush(stderr);
-    }
   }
   
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
@@ -1535,10 +1551,6 @@ uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end
     int64_t start_val = vm->toIntPublic(start);
     int64_t end_val = vm->toIntPublic(end);
     int64_t step_val = vm->toIntPublic(step);
-    // DEBUG
-    fprintf(stderr, "DEBUG havel_vm_range_step_new: start=%ld end=%ld step=%ld\n", 
-            start_val, end_val, step_val);
-    fflush(stderr);
     auto ref = vm->getHeap().allocateRange(start_val, end_val, step_val);
     return Value::makeRangeId(ref.id).rawBits();
 }
@@ -1791,10 +1803,6 @@ uint64_t havel_vm_string_promote(void* vm_ptr, uint64_t str_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
-  // DEBUG
-  fprintf(stderr, "DEBUG havel_vm_string_promote: isString=%d isRange=%d isInt=%d\n",
-          v.isStringValId(), v.isRangeId(), v.isInt());
-  fflush(stderr);
   if (!v.isStringValId()) return str_bits;
   std::string s = vm->toString(v);
   auto ref = vm->createRuntimeString(std::move(s));

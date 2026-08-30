@@ -83,6 +83,9 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
     const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
     const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
     uint32_t total_upvalues,
+    const uint32_t* func_const_counts, const uint64_t* func_const_data,
+    const uint32_t* func_instr_counts, const uint64_t* func_instr_data,
+    uint32_t num_functions,
     const char* build_dir
 ) {
     using namespace havel;
@@ -163,6 +166,8 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
         
         // Parse upvalue data
         uint32_t upvalue_offset = 0;
+        uint64_t const_data_offset = 0;
+        uint64_t instr_data_offset = 0;
         for (uint32_t fi = 0; fi < func_count; ++fi) {
             std::string name(func_names[fi]);
             uint32_t param_count = func_param_counts[fi];
@@ -182,7 +187,39 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
             }
             upvalue_offset += upvalue_count;
             
+            // Deserialize constants
+            if (func_const_counts && func_const_data && fi < num_functions) {
+                uint32_t const_count = func_const_counts[fi];
+                func.constants.reserve(const_count);
+                for (uint32_t ci = 0; ci < const_count; ++ci) {
+                    func.constants.push_back(compiler::Value::fromRawBits(func_const_data[const_data_offset++]));
+                }
+            }
+            
+            // Deserialize instructions
+            if (func_instr_counts && func_instr_data && fi < num_functions) {
+                uint32_t instr_count = func_instr_counts[fi];
+                for (uint32_t ii = 0; ii < instr_count; ++ii) {
+                    uint32_t opcode = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+                    uint32_t num_operands = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+                    std::vector<compiler::Value> operands;
+                    operands.reserve(num_operands);
+                    for (uint32_t oi = 0; oi < num_operands; ++oi) {
+                        operands.push_back(compiler::Value::fromRawBits(func_instr_data[instr_data_offset++]));
+                    }
+                    func.instructions.emplace_back(static_cast<compiler::OpCode>(opcode), std::move(operands));
+                }
+            }
+            
             chunk->addFunction(std::move(func));
+        }
+        
+        // Register AOT-compiled functions as globals so LOAD_GLOBAL works
+        for (uint32_t fi = 0; fi < func_count; ++fi) {
+            std::string name(func_names[fi]);
+            if (!name.empty()) {
+                vm->setGlobal(name, compiler::Value::makeFunctionObjId(fi));
+            }
         }
         
         vm->setCurrentChunkPublic(chunk.get());

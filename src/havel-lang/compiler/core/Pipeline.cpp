@@ -872,7 +872,20 @@ for (const auto &err : parser.getErrors()) {
   semOptions.knownGlobals.insert("shell");
   // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
   semOptions.knownGlobals.insert("_nativeTokenize");
-  
+  // Include host functions actually registered on the target VM (print, sleep,
+  // int, num, exit, ...). These are real runtime globals dispatched via
+  // CALL + HostFunctionRef; strict-mode resolution must accept them.
+  if (options.vm_override) {
+    for (const auto &hfName : options.vm_override->getHostFunctionNames()) {
+      if (hfName.empty()) continue;
+      semOptions.knownGlobals.insert(hfName);
+      auto dotPos = hfName.find('.');
+      if (dotPos != std::string::npos) {
+        semOptions.knownGlobals.insert(hfName.substr(0, dotPos));
+      }
+    }
+  }
+
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
 
@@ -1177,6 +1190,19 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   semOptions.knownGlobals.insert("shell");
   // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
   semOptions.knownGlobals.insert("_nativeTokenize");
+  // Include host functions actually registered on the target VM (print, sleep,
+  // int, num, exit, ...). These are real runtime globals dispatched via
+  // CALL + HostFunctionRef; strict-mode resolution must accept them.
+  if (options.vm_override) {
+    for (const auto &hfName : options.vm_override->getHostFunctionNames()) {
+      if (hfName.empty()) continue;
+      semOptions.knownGlobals.insert(hfName);
+      auto dotPos = hfName.find('.');
+      if (dotPos != std::string::npos) {
+        semOptions.knownGlobals.insert(hfName.substr(0, dotPos));
+      }
+    }
+  }
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
   

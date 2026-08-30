@@ -685,6 +685,40 @@ endif()
             COMPILE_FLAGS "${LLVM_INCLUDE_FLAGS}"
         )
     endif()
+
+    # -----------------------------------------------------------------------
+    # Generate the canonical module-global name header from the actual
+    # setGlobal("name") declarations in source. This is the Rust-like source
+    # of truth for strict-mode resolution: the compiler's known-globals list
+    # is DERIVED from the declarations it validates against, so a runtime
+    # setGlobal("x") can never silently go unknown to --build/--full-aot.
+    # The generated header is checked in; the custom command below regenerates
+    # it whenever any scanned source changes, and the checked-in copy is what
+    # compilation uses when Python is unavailable (e.g. a readonly checkout),
+    # keeping stale-copy risk covered by the module-globals-drift-guard test.
+    # -----------------------------------------------------------------------
+    set(MODULE_GLOB_GEN_SCRIPT
+        "${CMAKE_SOURCE_DIR}/scripts/gen_module_globals.py")
+    set(MODULE_GLOB_OUTPUT
+        "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core/ModuleGlobals.generated.hpp")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        file(GLOB_RECURSE MODULE_GLOB_DEP_SOURCES
+            "${CMAKE_SOURCE_DIR}/src/*.cpp")
+        add_custom_command(
+            OUTPUT ${MODULE_GLOB_OUTPUT}
+            COMMAND ${Python3_EXECUTABLE} ${MODULE_GLOB_GEN_SCRIPT}
+                    ${CMAKE_SOURCE_DIR}/src ${MODULE_GLOB_OUTPUT}
+            DEPENDS ${MODULE_GLOB_DEP_SOURCES} ${MODULE_GLOB_GEN_SCRIPT}
+            COMMENT "Generating ModuleGlobals.generated.hpp from setGlobal() declarations"
+            VERBATIM
+        )
+        add_custom_target(gen_module_globals DEPENDS ${MODULE_GLOB_OUTPUT})
+    else()
+        # No Python3: rely on the checked-in generated header. The drift-guard
+        # test is skipped when Python is absent (see test registration below).
+        message(STATUS "Python3 not found: ModuleGlobals.generated.hpp will not be regenerated")
+    endif()
 endif()
 
 # Host modules (language bindings to system managers)
@@ -1404,6 +1438,9 @@ target_include_directories(havel_core
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
+if(ENABLE_HAVEL_LANG AND TARGET gen_module_globals)
+  add_dependencies(havel_core gen_module_globals)
+endif()
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -2013,6 +2050,11 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
   ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
 )
     add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
+
+    if(TARGET gen_module_globals)
+      add_dependencies(havel_lang gen_module_globals)
+      add_dependencies(havel_lang_core gen_module_globals)
+    endif()
 
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src

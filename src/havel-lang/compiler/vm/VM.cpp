@@ -6807,6 +6807,12 @@ VM::IteratorInlineCache& VM::getIteratorInlineCache(uint32_t iterator_id) {
   return cache;
 }
 
+VM::StringInlineCache& VM::getStringInlineCache(uint32_t string_id, uint32_t ip) {
+  uint64_t key = (static_cast<uint64_t>(string_id) << 32) | ip;
+  auto& cache = string_inline_cache_[key];
+  return cache;
+}
+
 void VM::invalidateArrayInlineCache(uint32_t array_id) {
   for (auto it = array_inline_cache_.begin(); it != array_inline_cache_.end();) {
     if ((it->first >> 32) == array_id) {
@@ -6896,6 +6902,17 @@ void VM::printInlineCacheStats() const {
                  iterator_inline_cache_.size(), iterator_hits, iterator_misses,
                  iterator_hits + iterator_misses > 0 
                    ? (100.0 * iterator_hits) / (iterator_hits + iterator_misses) 
+                   : 0.0);
+  
+  size_t string_hits = 0, string_misses = 0;
+  for (const auto& [key, cache] : string_inline_cache_) {
+    string_hits += cache.hits;
+    string_misses += cache.misses;
+  }
+  ::havel::debug("String Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
+                 string_inline_cache_.size(), string_hits, string_misses,
+                 string_hits + string_misses > 0 
+                   ? (100.0 * string_hits) / (string_hits + string_misses) 
                    : 0.0);
 }
 

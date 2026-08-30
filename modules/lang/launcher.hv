@@ -690,3 +690,4 @@ else {
 // processGoroutines()).
 if result != 0 { shell.exit(result) }
 result
+}

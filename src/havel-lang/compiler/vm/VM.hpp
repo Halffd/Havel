@@ -1599,6 +1599,27 @@ private:
     
     std::unordered_map<uint64_t, IteratorInlineCache> iterator_inline_cache_;
     
+    // Inline cache for string operations (STRING_GET_FAST)
+    // Keyed by (string_id << 32) | instruction_ip
+    struct StringInlineCache {
+        uint64_t key = 0;
+        bool is_valid = false;
+        const std::string* string_ptr = nullptr;
+        int64_t num_codepoints = 0;
+        uint32_t hits = 0;
+        uint32_t misses = 0;
+        
+        void invalidate() {
+            is_valid = false;
+            string_ptr = nullptr;
+            num_codepoints = 0;
+        }
+    };
+    
+    // Inline cache for string operations (STRING_GET_FAST)
+    // Keyed by (string_id << 32) | instruction_ip
+    std::unordered_map<uint64_t, StringInlineCache> string_inline_cache_;
+    
     // Global inline cache configuration
     static constexpr size_t MAX_INLINE_CACHE_SIZE = 4096;
     static constexpr uint32_t INLINE_CACHE_THRESHOLD = 10; // Start caching after N executions
@@ -1607,10 +1628,12 @@ private:
     ArrayInlineCache& getArrayInlineCache(uint32_t array_id, uint32_t ip);
     PropertyInlineCache& getPropertyInlineCache(uint32_t object_id, uint32_t name_id);
     IteratorInlineCache& getIteratorInlineCache(uint32_t iterator_id);
+    StringInlineCache& getStringInlineCache(uint32_t string_id, uint32_t ip);
     
     void invalidateArrayInlineCache(uint32_t array_id);
     void invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id);
     void invalidateIteratorInlineCache(uint32_t iterator_id);
+    void invalidateStringInlineCache(uint32_t string_id);
     
     // Clean up old cache entries if cache grows too large
     void trimInlineCaches();

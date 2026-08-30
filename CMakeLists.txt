@@ -396,6 +396,10 @@ add_library(wayland-protos STATIC ${ALL_PROTO_SOURCES})
 target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
 target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES} ${XKBCOMMON_LIBRARIES})
 target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
+# Keep real object files in the archive (no ThinLTO bitcode), so the AOT
+# native -shared link, which invokes the system linker (/usr/bin/ld) directly,
+# can pull members like the wayland interface objects without an LTO plugin.
+set_target_properties(wayland-protos PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
 
 # Audio: PulseAudio removed; ALSA (optional Linux-only)
 set(PULSEAUDIO_FOUND FALSE)

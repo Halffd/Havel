@@ -3915,28 +3915,15 @@ case OpCode::INCLOCAL:
         vstack.push_back(B.CreateCall(fnReplace, {vmArg, str, oldVal, newVal}));
         break;
     }
-case OpCode::STRING_PROMOTE: {
+    case OpCode::STRING_PROMOTE: {
         llvm::Value* str = vstack.back(); vstack.pop_back();
-        
-        // Check if value is already a string (STRING_ID tag)
-        // If not a string, pass through unchanged (for ranges, etc.)
-        llvm::Value* isString = B.CreateICmpEQ(
-            B.CreateAnd(str, B.getInt64(0x7ull << 48)),  // Tag mask for EXTENDED types
-            B.getInt64(0x7ull << 48 | (static_cast<uint64_t>(core::ValueTag::STRING_ID) << 48))
-        );
-        
-        // If string, promote; otherwise pass through unchanged
         llvm::Function* fnPromote = module.getFunction("havel_vm_string_promote");
         if (!fnPromote) {
             fnPromote = llvm::Function::Create(
                 llvm::FunctionType::get(i64, {i8p, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_string_promote", &module);
         }
-        llvm::Value* promoted = B.CreateCall(fnPromote, {vmArg, str});
-        
-        // Use select to choose between promoted value and original value
-        llvm::Value* result = B.CreateSelect(isString, B.CreateCall(fnPromote, {vmArg, str}), str);
-        vstack.push_back(result);
+        vstack.push_back(B.CreateCall(fnPromote, {vmArg, str}));
         break;
     }
 

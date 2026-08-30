@@ -1037,6 +1037,18 @@ private:
                                    const HostContext *ctx);
   static Value handleSetShadowLift(const std::vector<Value> &args,
                                    const HostContext *ctx);
+  static Value handleIncreaseBrightness(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value handleDecreaseBrightness(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value handleIncreaseTemperature(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value handleDecreaseTemperature(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value handleIncreaseGamma(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+  static Value handleDecreaseGamma(const std::vector<Value> &args,
+                                   const HostContext *ctx);
   static Value handleGetMonitors(const std::vector<Value> &args,
                                  const HostContext *ctx);
 };

@@ -142,6 +142,7 @@ private:
     bool inInputContext =
         false; // Inside hotkey block (bare expressions are input)
     bool allowBraceSugar = true; // Allow expr { ... } as call sugar
+    bool suppressBraceLambda = false; // In control-flow conditions: (x) { is not a lambda
     bool inMatchExpression = false; // Inside match expression (disable arrow functions)
     bool inConfigContext = false; // Inside config block (bare identifiers are strings)
   };

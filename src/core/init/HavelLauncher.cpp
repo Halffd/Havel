@@ -271,6 +271,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugAst = cfg.debugAst,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
+          .headlessMode = cfg.headlessMode,
           .pureStdlib = cfg.pureStdlib,
           .vmConfig = cfg.vmConfig,
           .serviceIncludes = cfg.serviceIncludes,
@@ -673,7 +674,7 @@ public:
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       auto hostAPI = createHostAPI(havel_inst);
       havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                       cfg.serviceExcludes);
+                                       cfg.serviceExcludes, cfg.headlessMode);
       hostAPI->SetVM(bytecodeVM);
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
@@ -895,7 +896,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
   havel::repl::REPL repl(makeREPLConfig(cfg));
   auto hostAPI = createHostAPI(havel_inst);
   havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                   cfg.serviceExcludes);
+                                   cfg.serviceExcludes, cfg.headlessMode);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
               collectKnownGlobals(bytecodeVM));

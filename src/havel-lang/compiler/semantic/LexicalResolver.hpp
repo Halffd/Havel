@@ -16,7 +16,8 @@ enum class ResolvedBindingKind {
   Upvalue,
   Global,       // Global variable
   Function,     // User-defined function
-  HostFunction  // Built-in host function (print, type, etc.)
+  HostFunction, // Built-in host function (print, type, etc.)
+  ClassMember   // Bare identifier resolved to class field/method (implicit @)
 };
 
 struct ResolvedBinding {
@@ -79,6 +80,20 @@ private:
     uint32_t next_slot = 0;
   };
 
+  struct ClassContext {
+    std::unordered_set<std::string> field_names;
+    std::unordered_set<std::string> method_names;
+  };
+
+  // Own + inherited member names per class, populated in a pre-pass so derived
+  // classes can resolve bare members inherited from ancestors.
+  struct ClassMembers {
+    std::string parent_name;
+    std::unordered_set<std::string> fields;
+    std::unordered_set<std::string> methods;
+  };
+  std::unordered_map<std::string, ClassMembers> class_members_;
+
   LexicalResolutionResult result_;
   std::vector<std::string> errors_;
   std::unordered_set<std::string> top_level_functions_;
@@ -86,6 +101,7 @@ private:
   std::unordered_set<std::string> global_variables_;  // Top-level let declarations
   std::unordered_set<std::string> known_globals_;  // Pre-known globals (from previous REPL lines)
   std::vector<FunctionContext> function_stack_;
+  std::vector<ClassContext> class_stack_;  // Stack of class contexts for nested classes
   bool strict_mode_ = false;
 
   // Simple resolution: if not local/upvalue, it's a global
@@ -93,6 +109,7 @@ private:
 
   void collectTopLevelFunctions(const ast::Program &program);
   void collectTopLevelStructs(const ast::Program &program);
+  void collectClassMembers(const ast::Program &program);
 
   void beginFunction(const ast::ASTNode *function);
   void endFunction();

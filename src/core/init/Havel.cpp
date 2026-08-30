@@ -58,7 +58,8 @@ Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
       replMode(repl),
       headlessMode(headless),
       scriptFile(scriptFile),
-      commandLineArgs(args) {
+      commandLineArgs(args),
+      headlessMode(headless) {
 
   if (instance) {
     throw std::runtime_error("Havel instance already exists");
@@ -94,6 +95,9 @@ void Havel::initialize(bool isStartup) {
 
     // Initialize in dependency order
     io = std::make_shared<IO>();
+    if (headlessMode) {
+      io->SetHeadlessMode(true);
+    }
     if (replMode) {
       io->SetEventListenerThreaded(false);
     }

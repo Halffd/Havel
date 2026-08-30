@@ -256,9 +256,6 @@ public:
   }
 
   static Value makeRangeId(uint32_t id) {
-    // DEBUG
-    fprintf(stderr, "DEBUG makeRangeId: id=%u, result=0x%lx\n", id, makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
-    fflush(stderr);
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
   }
 

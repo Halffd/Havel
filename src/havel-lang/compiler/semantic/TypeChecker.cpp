@@ -22,6 +22,23 @@ void TypeChecker::registerBuiltins() {
   }
 }
 
+namespace {
+// Counts parameters that lack a default value. These form the minimum
+// required argument count for a call; the rest up to the full parameter list
+// are filled by defaults at runtime, so an exact-arity check would reject
+// valid calls like `f()` for `fn f(a = 1, b = 2)`.
+size_t countRequiredParams(
+    const std::vector<std::unique_ptr<ast::FunctionParameter>> &params) {
+  size_t n = 0;
+  for (const auto &p : params) {
+    if (p && !p->defaultValue && !p->isVariadic) {
+      ++n;
+    }
+  }
+  return n;
+}
+} // namespace
+
 TypeCheckResult TypeChecker::check(const ast::Program &program) {
   result_ = TypeCheckResult();
   program_ = &program;
@@ -146,6 +163,7 @@ void TypeChecker::collectStructDeclaration(
 		std::string mname = method->name;
 		FunctionSignature sig;
 		sig.arity = method->parameters.size();
+		sig.minRequiredParams = countRequiredParams(method->parameters);
 		info.methods[mname] = sig;
 	}
 
@@ -176,6 +194,7 @@ void TypeChecker::collectClassDeclaration(const ast::ClassDeclaration &decl) {
         std::string mname = method->name;
         FunctionSignature sig;
         sig.arity = method->parameters.size();
+        sig.minRequiredParams = countRequiredParams(method->parameters);
         info.methods[mname] = sig;
     }
 
@@ -246,6 +265,7 @@ void TypeChecker::collectImplDeclaration(const ast::ImplDeclaration &impl) {
     if (typeIt != result_.registry.end()) {
       FunctionSignature sig;
       sig.arity = func->parameters.size();
+      sig.minRequiredParams = countRequiredParams(func->parameters);
       typeIt->second.methods[func->name->symbol] = sig;
     }
   }
@@ -340,6 +360,7 @@ TypeChecker::signatureFromMethod(const ast::TraitMethod &method) const {
       sig.paramTypes.push_back("");
     }
   }
+  sig.minRequiredParams = countRequiredParams(method.parameters);
   return sig;
 }
 
@@ -359,6 +380,7 @@ TypeChecker::signatureFromFunction(const ast::FunctionDeclaration &fn) const {
     auto resolved = resolveTypeAnnotation((*fn.returnType).get());
     sig.returnType = resolved.value_or("");
   }
+  sig.minRequiredParams = countRequiredParams(fn.parameters);
   return sig;
 }
 
@@ -935,10 +957,11 @@ void TypeChecker::checkCallExpression(const ast::CallExpression &call) {
     auto newIt = typeInfo.methods.find("new");
     if (newIt != typeInfo.methods.end()) {
       const auto &sig = newIt->second;
-      if (call.args.size() != sig.paramTypes.size()) {
+      if (call.args.size() < sig.minRequiredParams ||
+          call.args.size() > sig.paramTypes.size()) {
         result_.errors.push_back(
-            "function '" + calleeName + ".new' expects " +
-            std::to_string(sig.paramTypes.size()) + " arguments, got " +
+            "function '" + calleeName + ".new' expects at least " +
+            std::to_string(sig.minRequiredParams) + " argument(s), got " +
             std::to_string(call.args.size()));
       } else {
         // Check argument types
@@ -961,10 +984,11 @@ void TypeChecker::checkCallExpression(const ast::CallExpression &call) {
     auto fnIt = typeInfo.methods.find(calleeName);
     if (fnIt != typeInfo.methods.end()) {
       const auto &sig = fnIt->second;
-      if (call.args.size() != sig.paramTypes.size()) {
+      if (call.args.size() < sig.minRequiredParams ||
+          call.args.size() > sig.paramTypes.size()) {
         result_.errors.push_back(
-            "function '" + calleeName + "' expects " +
-            std::to_string(sig.paramTypes.size()) + " arguments, got " +
+            "function '" + calleeName + "' expects at least " +
+            std::to_string(sig.minRequiredParams) + " argument(s), got " +
             std::to_string(call.args.size()));
       } else {
 // Check argument types

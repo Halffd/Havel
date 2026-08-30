@@ -1233,6 +1233,25 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
   
+  // Pre-populate known globals with live registered host functions so they
+  // don't trigger "Unresolved identifier" errors in strict mode. Sources are
+  // the host-bridge registrations in options.host_functions plus, when a VM
+  // is provided, the VM's own registered host function names. Both are
+  // derived from real registrations, so the set cannot desync like a
+  // hand-maintained list. No hardcoded host_global_names.
+  for (const auto &kv : options.host_functions) {
+    semOptions.knownGlobals.insert(kv.first);
+  }
+  if (options.vm_override) {
+    const auto &vmNames = options.vm_override->getHostFunctionNames();
+    semOptions.knownGlobals.insert(vmNames.begin(), vmNames.end());
+    // Namespace-object globals (process, shell, os, ...) set via
+    // VM::setGlobal are also real, live global names.
+    for (const auto &kv : options.vm_override->getGlobals()) {
+      semOptions.knownGlobals.insert(kv.first);
+    }
+  }
+
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
 

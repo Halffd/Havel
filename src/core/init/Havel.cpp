@@ -94,6 +94,9 @@ void Havel::initialize(bool isStartup) {
 
     // Initialize in dependency order
     io = std::make_shared<IO>();
+    if (headlessMode) {
+      io->SetHeadlessMode(true);
+    }
     if (replMode) {
       io->SetEventListenerThreaded(false);
     }

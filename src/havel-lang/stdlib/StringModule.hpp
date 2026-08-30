@@ -8,7 +8,7 @@
 
 namespace havel::stdlib {
 
-void registerStringModule(const havel::compiler::VMApi &api);
-void finalizeStringNamespace(const havel::compiler::VMApi &api);
+void registerStringModule(havel::compiler::VMApi &api);
+void finalizeStringNamespace(havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

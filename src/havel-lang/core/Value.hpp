@@ -75,10 +75,11 @@ enum class ExtendedTag : uint64_t {
   THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
-    TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
-    REGEX_VAL_ID = 0x11, // Regex string literal (stores index into string pool)
+  TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
+  REGEX_VAL_ID = 0x11, // Regex string literal (stores index into string pool)
   BOUND_METHOD_ID = 0x12, // Bound method (stores index into GC heap)
   WAITGROUP_ID = 0x13, // WaitGroup object (stores index into GC heap)
+  STRING_CURSOR_ID = 0x14, // UTF-8 string cursor with position state
 };
 
 // Bool payload values
@@ -329,6 +330,10 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::COROUTINE_ID), id));
   }
 
+  static Value makeStringCursorId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRING_CURSOR_ID), id));
+  }
+
   // Construct from raw bits (for deserialization)
   static Value fromRawBits(uint64_t bits) { return Value(bits); }
 
@@ -378,11 +383,6 @@ public:
   }
 
 bool isRangeId() const {
-    uint64_t tag = static_cast<uint64_t>(extractTag(bits_));
-    uint64_t extTag = static_cast<uint64_t>(extractExtendedTag(bits_));
-    fprintf(stderr, "DEBUG isRangeId: tag=%llu extTag=%llu isBoxed=%d\n", 
-            (unsigned long long)tag, (unsigned long long)extTag, isBoxed(bits_));
-    fflush(stderr);
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::RANGE_ID;
   }
@@ -460,6 +460,11 @@ bool isRangeId() const {
   bool isCoroutineId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::COROUTINE_ID;
+  }
+
+  bool isStringCursorId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::STRING_CURSOR_ID;
   }
 
   // Convenience: check if numeric
@@ -586,6 +591,10 @@ bool isRangeId() const {
   }
 
   uint32_t asCoroutineId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asStringCursorId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

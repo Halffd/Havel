@@ -184,6 +184,27 @@ std::lock_guard<std::recursive_mutex> lock(mutex_);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
+GCHeap::StringCursorRef GCHeap::allocateStringCursor(uint32_t string_id) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  const uint32_t id = next_string_cursor_id_++;
+  string_cursors_.emplace(id, StringCursor{.string_id = string_id, .byte_pos = 0, .codepoint_index = 0});
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return StringCursorRef{.id = id};
+}
+
+GCHeap::StringCursor *GCHeap::stringCursor(uint32_t id) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = string_cursors_.find(id);
+  return it == string_cursors_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::StringCursor *GCHeap::stringCursor(uint32_t id) const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = string_cursors_.find(id);
+  return it == string_cursors_.end() ? nullptr : &it->second;
+}
+
 ArrayRef GCHeap::allocateArray() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   size_t est = sizeof(ArrayEntry);
@@ -748,12 +769,13 @@ void GCHeap::startIncrementalCollection(
     root_extra_roots_snapshot_ = extra_roots;
     open_local_reader_snapshot_ = open_local_reader;
 
-    mark_worklist_.clear();
+mark_worklist_.clear();
     marked_arrays_.clear();
     marked_objects_.clear();
     marked_sets_.clear();
     marked_closures_.clear();
     marked_strings_.clear();
+    marked_string_cursors_.clear();
     marked_iterators_.clear();
     marked_bound_methods_.clear();
     marked_ranges_.clear();
@@ -764,7 +786,7 @@ void GCHeap::startIncrementalCollection(
     marked_intervals_.clear();
     marked_timeouts_.clear();
     marked_channels_.clear();
-    marked_waitgroups_.clear();
+  marked_waitgroups_.clear();
 
     recovered_in_cycle_ = 0;
     collection_requested_ = false;
@@ -814,6 +836,10 @@ void GCHeap::markReference(const Value &value) {
     }
     if (value.isStringId()) {
         marked_strings_.insert(value.asStringId());
+        return;
+    }
+    if (value.isStringCursorId()) {
+        marked_string_cursors_.insert(value.asStringCursorId());
         return;
     }
     if (value.isRangeId()) {
@@ -1273,6 +1299,44 @@ void GCHeap::sweepStep(size_t &work_budget) {
     }
   }
   if (sweep_index_ >= sweep_keys_.size()) {
+            gc_state_ = IncrementalState::SweepStringCursors;
+            sweep_index_ = 0;
+        }
+        break;
+
+  case IncrementalState::SweepStringCursors:
+        if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
+            sweep_keys_.clear();
+            for (const auto &kv : string_cursors_) {
+                sweep_keys_.push_back(kv.first);
+            }
+            sweep_index_ = 0;
+            sweep_phase_ = gc_state_;
+        }
+        while (work_budget > 0 && sweep_index_ < sweep_keys_.size()) {
+            uint32_t id = sweep_keys_[sweep_index_++];
+            work_budget--;
+
+            auto it = string_cursors_.find(id);
+            if (it == string_cursors_.end()) {
+                continue;
+            }
+
+            const bool is_old = old_string_cursors_.find(id) != old_string_cursors_.end();
+            const bool can_collect = current_collection_full_ || !is_old;
+
+            if (can_collect && marked_string_cursors_.find(id) == marked_string_cursors_.end()) {
+                string_cursors_.erase(it);
+                old_string_cursors_.erase(id);
+                cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+                subHeapBytes(64);
+                recovered_in_cycle_++;
+            } else if (!is_old) {
+                // Age the string cursor (no ages map needed, just promote to old)
+                old_string_cursors_.insert(id);
+            }
+        }
+        if (sweep_index_ >= sweep_keys_.size()) {
             gc_state_ = IncrementalState::SweepIterators;
             sweep_index_ = 0;
         }
@@ -1590,6 +1654,7 @@ void GCHeap::completeCollection() {
     marked_sets_.clear();
     marked_closures_.clear();
     marked_strings_.clear();
+    marked_string_cursors_.clear();
     marked_iterators_.clear();
     marked_bound_methods_.clear();
     marked_ranges_.clear();

@@ -206,6 +206,9 @@ void optimizeJumps();  // Jump threading optimization
   void compileForExpression(const ast::ForExpression &expression);
   void compileLoopStatement(const ast::LoopStatement &statement);
   void compileBlockStatement(const ast::BlockStatement &block);
+  // Type inference for fast path optimizations
+  std::optional<std::string> getExpressionType(const ast::Expression &expr) const;
+  std::optional<OpCode> getFastIntegerOpCode(ast::BinaryOperator op) const;
 // Closure body compilation helpers
   void compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot = std::nullopt, const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr);
   void collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues);

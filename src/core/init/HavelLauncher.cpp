@@ -2292,7 +2292,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       bool mainCompiled = false;
       for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
         const auto *func = chunk->getFunction(i);
-        if (func && !shouldSkip[i]) {
+        bool skip = shouldSkip[i];
+        if (func && !skip) {
           jit->translate(*func, *module);
           anyCompiled = true;
           if (func->name == "__main__") {
@@ -2468,7 +2469,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           }
           info("Native shared binary written to: {}", soPath);
         }
-
+        
         if (cfg.emitElf) {
           const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
           std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
@@ -2537,6 +2538,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               stub << "    const uint32_t*, const uint32_t*,\n";
               stub << "    const uint32_t*, const uint32_t*,\n";
               stub << "    const uint32_t*, const uint32_t*, uint32_t,\n";
+              stub << "    const uint32_t*, const uint64_t*,\n";
+              stub << "    const uint32_t*, const uint64_t*, uint32_t,\n";
               stub << "    const char*);\n";
               stub << "int main() {\n";
               stub << "    const char* strings[] = {\n";
@@ -2607,6 +2610,54 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               }
               stub << "    };\n";
               
+              // Function constants - serialize for interpreter fallback
+              stub << "    // Function constants (serialized)\n";
+              stub << "    const uint32_t func_const_counts[] = {\n";
+              for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+                const auto* func = chunk->getFunction(i);
+                uint32_t count = func ? static_cast<uint32_t>(func->constants.size()) : 0;
+                stub << "        " << count << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Flattened constant data: raw bits for each constant
+              stub << "    const uint64_t func_const_data[] = {\n";
+              for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+                const auto* func = chunk->getFunction(i);
+                if (func) {
+                  for (const auto& c : func->constants) {
+                    stub << "        " << c.rawBits() << ",\n";
+                  }
+                }
+              }
+              stub << "    };\n";
+              
+              // Function instructions - serialize for interpreter fallback
+              stub << "    // Function instructions (serialized)\n";
+              stub << "    const uint32_t func_instr_counts[] = {\n";
+              for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+                const auto* func = chunk->getFunction(i);
+                uint32_t count = func ? static_cast<uint32_t>(func->instructions.size()) : 0;
+                stub << "        " << count << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Flattened instruction data: [opcode, num_operands, operand1, operand2, ...] for each instruction
+              stub << "    const uint64_t func_instr_data[] = {\n";
+              for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+                const auto* func = chunk->getFunction(i);
+                if (func) {
+                  for (const auto& instr : func->instructions) {
+                    stub << "        " << static_cast<uint32_t>(instr.opcode) << ",\n";
+                    stub << "        " << instr.operands.size() << ",\n";
+                    for (const auto& op : instr.operands) {
+                      stub << "        " << op.rawBits() << ",\n";
+                    }
+                  }
+                }
+              }
+              stub << "    };\n";
+              
               std::string escapedBuildDir = buildDir;
               for (char& c : escapedBuildDir) {
                   if (c == '"') escapedBuildDir += '\\';
@@ -2620,6 +2671,9 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               stub << "        func_upvalue_counts, func_is_generator,\n";
               stub << "        upvalue_indices, upvalue_captures_local, "
                    << upvalueIndices.size() << ",\n";
+              stub << "        func_const_counts, func_const_data,\n";
+              stub << "        func_instr_counts, func_instr_data, "
+                   << chunk->getFunctionCount() << ",\n";
               stub << "        \"" << escapedBuildDir << "\");\n";
               stub << "    uint64_t dummy_args[1024];\n";
               stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
@@ -2682,7 +2736,6 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             return 1;
           }
           info("Native AOT executable written to: {}", binPath);
-          // std::filesystem::remove(stubPath);
         }
       }
 

@@ -313,6 +313,13 @@ struct VMApi {
         return vm().registerEnumType(name, variants);
     }
 
+    // String cursor functions
+    uint32_t getStringId(const Value &str) const {
+        return vm().getStringId(str);
+    }
+    auto getHeap() const -> const GCHeap& { return vm().getHeap(); }
+    auto getHeap() -> GCHeap& { return vm().getHeap(); }
+
     uint32_t getEnumTag(Value val) const {
         if (!val.isEnumId()) return 0;
         return vm().getEnumTag(havel::compiler::EnumRef{val.asEnumId()});

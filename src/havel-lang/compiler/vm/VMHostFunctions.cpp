@@ -18,6 +18,8 @@
 #include "stdlib/HotkeyModule.hpp"
 #include "stdlib/StateModule.hpp"
 #include "stdlib/StringModule.hpp"
+#include "stdlib/TokenTypeNames.hpp"
+#include "../../lexer/BootstrapLexer.hpp"
 
 #include <chrono>
 #include <climits>
@@ -48,6 +50,30 @@ void VM::registerDefaultHostFunctions() {
   {
     VMApi api(*this);
     havel::stdlib::registerHotkeyModule(api);
+  }
+  // Native tokenizer: wraps the C++ BootstrapLexer for fast self-hosted lexing
+  {
+    VMApi api(*this);
+        api.registerFunction("_nativeTokenize", [api](const std::vector<Value> &args) -> Value {
+      if (args.empty()) throw std::runtime_error("_nativeTokenize() requires 1 argument (source string)");
+      std::string source = api.toString(args[0]);
+      havel::Lexer lexer(source);
+      auto tokens = lexer.tokenize();
+      Value resultArray = api.makeArray();
+      auto *arr = api.vm().getHeap().array(resultArray.asArrayId());
+      if (!arr) throw std::runtime_error("_nativeTokenize: failed to create result array");
+      for (const auto &tok : tokens) {
+        Value tokObj = api.makeObject();
+        auto it = havel::stdlib::TOKEN_TYPE_NAMES.find(tok.type);
+        std::string typeName = (it != havel::stdlib::TOKEN_TYPE_NAMES.end()) ? it->second : "Unknown";
+        api.setField(tokObj, "type", api.makeString(typeName));
+        api.setField(tokObj, "value", api.makeString(tok.value));
+        api.setField(tokObj, "line", Value(static_cast<int64_t>(tok.line)));
+        api.setField(tokObj, "col", Value(static_cast<int64_t>(tok.column)));
+        arr->push_back(tokObj);
+      }
+      return resultArray;
+    });
   }
   // IO bridge functions — registered at startup so pure-Havel io module can
   // reference them via the auto-export fallback (use "io" ->

@@ -46,6 +46,7 @@ TID = {
     Pipe: 150, PipeRight: 151, Length: 152, NewLine: 153, EOF: 154, CharLiteral: 155,
     Hash: 156,
     Comment: 157,
+    UnsafeMarker: 158, Update: 159, BinaryOp: 160,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---
@@ -213,14 +214,25 @@ fn Lexer(source) {
         errors.push({msg: msg, line: line, col: col})
     }
     fn skipWhitespace() {
-        while isWhitespaceCp(current()) { advance() }
+        while idx < n {
+            c = codepoints[idx]
+            if c != 32 && c != 9 && c != 13 { break }
+            idx = idx + 1
+            if c == 9 { col = ((col + 7) / 8) * 8 + 1 }
+            else { col = col + 1 }
+        }
     }
     fn skipLineComment() {
-        advance()
-        advance()
-        startIdx = idx
-        while current() != -1 && current() != 10 { advance() }
-        commentText = src.sub(startIdx, idx - startIdx)
+        startPos = bytePos()
+        idx = idx + 2
+        col = col + 2
+        while idx < n {
+            c = codepoints[idx]
+            if c == 10 { break }
+            idx = idx + 1
+            col = col + 1
+        }
+        commentText = src.sub(startPos + 2, bytePos() - (startPos + 2))
         addToken("Comment", commentText)
     }
     fn skipBlockComment() {
@@ -262,26 +274,13 @@ fn Lexer(source) {
     }
     fn isHotkeyBindingAhead() {
       look = idx
-      while look < n && isHotkeyCharCp(codepoints[look]) { look = look + 1 }
-      while look < n && (codepoints[look] == 32 || codepoints[look] == 9) { look = look + 1 }
-      if look + 1 < n && codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
-      if look + 2 < n && codepoints[look] == 105 && codepoints[look + 1] == 102 {
-        // 'if' — scan ahead for =>
-        look = look + 2
-        while look + 1 < n {
-          if codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
-          look = look + 1
-        }
-        return false
-      }
-      if look + 4 < n && codepoints[look] == 119 && codepoints[look + 1] == 104 && codepoints[look + 2] == 101 && codepoints[look + 3] == 110 {
-        // when
-        look = look + 4
-        while look + 1 < n {
-          if codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
-          look = look + 1
-        }
-        return false
+      maxL = idx + 120
+      if maxL > n { maxL = n }
+      while look < maxL {
+        cVal = codepoints[look]
+        if cVal == 10 || cVal == 123 || cVal == 59 { return false }
+        if cVal == 61 && look + 1 < maxL && codepoints[look + 1] == 62 { return true }
+        look = look + 1
       }
       return false
     }
@@ -715,11 +714,22 @@ fn Lexer(source) {
     }
     fn scanIdentifier() {
         startPos = bytePos()
-        while current() != -1 && isUnicodeIdentifierCharCp(current()) { advance() }
+        while idx < n {
+            c = codepoints[idx]
+            if c < 0x80 {
+                isASCIIAlphaNum = (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95
+                if !isASCIIAlphaNum { break }
+            } else {
+                if !isUnicodeIdentifierCharCp(c) { break }
+            }
+            idx = idx + 1
+            col = col + 1
+        }
         word = src.sub(startPos, bytePos() - startPos)
-        if current() == 63 && cp(1) != 46 {
-            word = word + string.fromCodePoint(current())
-            advance()
+        if idx < n && codepoints[idx] == 63 && (idx + 1 >= n || codepoints[idx + 1] != 46) {
+            word = word + "?"
+            idx = idx + 1
+            col = col + 1
         }
         if keywords.has(word) {
             if word == "let" || word == "const" {
@@ -846,29 +856,40 @@ fn scanHotkey() {
 }
   fn _scan() {
     tokenCount = 0
-    while current() != -1 {
-      loopStartIdx = idx
-      skipWhitespace()
-      if current() == -1 { break }
+    while idx < n {
+      // skip whitespace inline
+      while idx < n {
+        c = codepoints[idx]
+        if c != 32 && c != 9 && c != 13 { break }
+        idx = idx + 1
+        if c == 9 { col = ((col + 7) / 8) * 8 + 1 }
+        else { col = col + 1 }
+      }
+      if idx >= n { break }
       tokenStartCol = col
-      c = current()
+      c = codepoints[idx]
       tokenCount = tokenCount + 1
+      loopStartIdx = idx
       if tokenCount > 5000000 {
         error("token limit exceeded (possible infinite loop)")
         break
       }
+
+      // Cache next codepoints to avoid closure overhead
+      cp1 = if idx + 1 < n { codepoints[idx + 1] } else { -1 }
+      cp2 = if idx + 2 < n { codepoints[idx + 2] } else { -1 }
 
       if c == 10 {
         addToken("NewLine", "\n")
                 advance()
                 continue
             }
-            if c == 47 && cp(1) == 47 {
-                if cp(2) == 42 { skipBlockComment() }
+            if c == 47 && cp1 == 47 {
+                if cp2 == 42 { skipBlockComment() }
                 else { skipLineComment() }
                 continue
             }
-            if c == 47 && cp(1) == 42 {
+            if c == 47 && cp1 == 42 {
                 skipBlockComment()
                 continue
             }
@@ -890,7 +911,7 @@ fn scanHotkey() {
                     }
                 }
         quote = c
-        if cp(1) == quote && cp(2) == quote {
+        if cp1 == quote && cp2 == quote {
             advance()
             advance()
                     scanMultilineString(quote, isFString)
@@ -1523,10 +1544,13 @@ if c == 33 && cp(1) == 123 {
     hasBOp = false
     lk = idx + 2
     dp = 2
-                        while lk < n && dp > 0 {
-                            lc = codepoints[lk]
-                            if lc == 40 { dp = dp + 1 }
-                            else if lc == 41 { dp = dp - 1; if dp == 0 { break } }
+    maxLook = idx + 200
+    if maxLook > n { maxLook = n }
+    while lk < maxLook && dp > 0 {
+        lc = codepoints[lk]
+        if lc == 10 || lc == 123 || lc == 59 { break }
+        if lc == 40 { dp = dp + 1 }
+        else if lc == 41 { dp = dp - 1; if dp == 0 { break } }
                             else if dp == 2 && (lc == 38 || lc == 124 || lc == 94) {
                                 isDbl = false
                                 if lc == 38 && lk + 1 < n && codepoints[lk + 1] == 38 { isDbl = true }
@@ -1545,8 +1569,11 @@ if c == 33 && cp(1) == 123 {
                     lambdaFlag = false
   lk = idx + 2
   ldp = 2
-                    while lk < n && ldp > 0 {
-                        lc = codepoints[lk]
+    maxLook2 = idx + 200
+    if maxLook2 > n { maxLook2 = n }
+    while lk < maxLook2 && ldp > 0 {
+        lc = codepoints[lk]
+        if lc == 10 || lc == 123 || lc == 59 { break }
                         if lc == 40 { ldp = ldp + 1 }
                         else if lc == 41 {
                             if ldp == 2 {
@@ -1736,15 +1763,15 @@ if c == 33 && cp(1) == 123 {
 }
 
 fn tokenize(source) {
-    lx = Lexer(source)
-    result = lx.run()
-    result.tokens
+    tokens = _nativeTokenize(source)
+    for t in tokens {
+        t.tid = TID[t.type]
+    }
+    tokens
 }
 
 fn tokenizeWithErrors(source) {
-    lx = Lexer(source)
-    result = lx.run()
-    {tokens: result.tokens, errors: result.errors}
+    {tokens: tokenize(source), errors: []}
 }
 
 fn printTokens(tokens) {

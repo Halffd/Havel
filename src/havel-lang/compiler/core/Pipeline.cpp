@@ -870,6 +870,8 @@ for (const auto &err : parser.getErrors()) {
   semOptions.knownGlobals.insert("process");
   semOptions.knownGlobals.insert("sys");
   semOptions.knownGlobals.insert("shell");
+  // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
+  semOptions.knownGlobals.insert("_nativeTokenize");
   
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
@@ -1173,6 +1175,8 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   semOptions.knownGlobals.insert("process");
   semOptions.knownGlobals.insert("sys");
   semOptions.knownGlobals.insert("shell");
+  // Native host functions registered in registerDefaultHostFunctions (VM bootstrap)
+  semOptions.knownGlobals.insert("_nativeTokenize");
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
   

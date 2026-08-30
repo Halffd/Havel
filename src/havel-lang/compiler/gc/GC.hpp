@@ -256,10 +256,20 @@ ObjectEntry &operator=(const ObjectEntry &) = delete;
 };
 
 struct WaitGroup {
-  std::atomic<int64_t> counter{0};
-  std::mutex mutex;
-  std::condition_variable cv;
-};
+    std::atomic<int64_t> counter{0};
+    std::mutex mutex;
+    std::condition_variable cv;
+  };
+
+  struct StringCursorRef {
+    uint32_t id = 0;
+  };
+
+  struct StringCursor {
+    uint32_t string_id = 0;
+    size_t byte_pos = 0;
+    int64_t codepoint_index = 0;
+  };
 
     void reset();
 
@@ -308,6 +318,10 @@ struct WaitGroup {
 
   using WaitGroupRef = ChannelRef; // reuse {id} pattern
   WaitGroupRef allocateWaitGroup();
+
+    StringCursorRef allocateStringCursor(uint32_t string_id);
+    StringCursor *stringCursor(uint32_t id);
+    const StringCursor *stringCursor(uint32_t id) const;
 
     uint32_t allocateThread();
     uint32_t allocateInterval();
@@ -466,6 +480,7 @@ private:
         SweepSets,
         SweepClosures,
         SweepStrings,
+    SweepStringCursors,
     SweepIterators,
     SweepBoundMethods,
     SweepRanges,
@@ -528,6 +543,9 @@ void snapshotSweepKeys();
 
     std::unordered_map<uint32_t, Coroutine> coroutines_;
 
+    std::unordered_map<uint32_t, StringCursor> string_cursors_;
+    uint32_t next_string_cursor_id_ = 1;
+
     std::vector<EnumType> enumTypes_;
 
     uint32_t next_closure_id_ = 1;
@@ -575,6 +593,7 @@ size_t full_collection_interval_ = 4;
     std::unordered_set<uint32_t> marked_sets_;
     std::unordered_set<uint32_t> marked_closures_;
     std::unordered_set<uint32_t> marked_strings_;
+    std::unordered_set<uint32_t> marked_string_cursors_;
     std::unordered_set<uint32_t> marked_iterators_;
     std::unordered_set<uint32_t> marked_bound_methods_;
     std::unordered_set<uint32_t> marked_ranges_;
@@ -597,6 +616,7 @@ size_t full_collection_interval_ = 4;
     std::unordered_set<uint32_t> old_sets_;
     std::unordered_set<uint32_t> old_closures_;
     std::unordered_set<uint32_t> old_strings_;
+    std::unordered_set<uint32_t> old_string_cursors_;
 
     std::vector<Value> root_stack_snapshot_;
     std::vector<Value> root_locals_snapshot_;

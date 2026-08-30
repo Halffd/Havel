@@ -8,7 +8,7 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-void registerStringModule(const VMApi &api) {
+void registerStringModule(VMApi &api) {
     api.registerFunction("string._fromCodePoint", [api](const std::vector<Value> &args) {
         if (args.empty())
             throw std::runtime_error("string._fromCodePoint() requires 1 argument");
@@ -325,6 +325,148 @@ void registerStringModule(const VMApi &api) {
         return Value::makeInt(static_cast<int64_t>(lo));
     });
 
+    // Native cursor functions using VM STRING_CURSOR_* opcodes
+    api.registerFunction("string.cursor", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor() requires 1 argument");
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+        // Create cursor using VM native cursor
+        auto cursorRef = api.getHeap().allocateStringCursor(
+            strPtr ? api.getStringId(args[0]) : 0);
+        if (!strPtr) {
+            // Need to allocate string first
+            auto strRef = api.getHeap().allocateString(str);
+            cursorRef = api.getHeap().allocateStringCursor(strRef.id);
+        }
+        return Value::makeStringCursorId(cursorRef.id);
+    });
+
+    api.registerFunction("string.cursor_current", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor_current() requires cursor");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_current() requires string cursor");
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        const std::string *str = api.getHeap().string(cursor->string_id);
+        if (!str) throw std::runtime_error("string not found");
+        if (cursor->byte_pos >= str->size())
+            return Value::makeNull();
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) cpLen = 1;
+        else if ((c & 0xE0) == 0xC0) cpLen = 2;
+        else if ((c & 0xF0) == 0xE0) cpLen = 3;
+        else if ((c & 0xF8) == 0xF0) cpLen = 4;
+        if (cursor->byte_pos + cpLen > str->size()) cpLen = 1;
+        auto ref = api.getHeap().allocateString(str->substr(cursor->byte_pos, cpLen));
+        return Value::makeStringId(ref.id);
+    });
+
+    api.registerFunction("string.cursor_advance", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor_advance() requires cursor");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_advance() requires string cursor");
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        const std::string *str = api.getHeap().string(cursor->string_id);
+        if (!str) throw std::runtime_error("string not found");
+        if (cursor->byte_pos >= str->size())
+            return Value::makeBool(false);
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) cpLen = 1;
+        else if ((c & 0xE0) == 0xC0) cpLen = 2;
+        else if ((c & 0xF0) == 0xE0) cpLen = 3;
+        else if ((c & 0xF8) == 0xF0) cpLen = 4;
+        if (cursor->byte_pos + cpLen > str->size()) cpLen = 1;
+        cursor->byte_pos += cpLen;
+        cursor->codepoint_index++;
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("string.cursor_peek", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor_peek() requires cursor");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_peek() requires string cursor");
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        const std::string *str = api.getHeap().string(cursor->string_id);
+        if (!str) throw std::runtime_error("string not found");
+        if (cursor->byte_pos >= str->size())
+            return Value::makeNull();
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) cpLen = 1;
+        else if ((c & 0xE0) == 0xC0) cpLen = 2;
+        else if ((c & 0xF0) == 0xE0) cpLen = 3;
+        else if ((c & 0xF8) == 0xF0) cpLen = 4;
+        if (cursor->byte_pos + cpLen > str->size()) cpLen = 1;
+        auto ref = api.getHeap().allocateString(str->substr(cursor->byte_pos, cpLen));
+        return Value::makeStringId(ref.id);
+    });
+
+    api.registerFunction("string.cursor_reset", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor_reset() requires cursor");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_reset() requires string cursor");
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        cursor->byte_pos = 0;
+        cursor->codepoint_index = 0;
+        return Value::makeNull();
+    });
+
+    api.registerFunction("string.cursor_getPos", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.empty())
+            throw std::runtime_error("string.cursor_getPos() requires cursor");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_getPos() requires string cursor");
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        return Value::makeInt(static_cast<int64_t>(cursor->byte_pos));
+    });
+
+    api.registerFunction("string.cursor_setPos", [api](const std::vector<Value> &args) mutable -> Value {
+        if (args.size() < 2)
+            throw std::runtime_error("string.cursor_setPos() requires cursor and position");
+        if (!args[0].isStringCursorId())
+            throw std::runtime_error("string.cursor_setPos() requires string cursor");
+        int64_t pos = args[1].isInt() ? args[1].asInt() : 0;
+        uint32_t cursor_id = args[0].asStringCursorId();
+        auto *cursor = api.getHeap().stringCursor(cursor_id);
+        if (!cursor) throw std::runtime_error("cursor not found");
+        const std::string *str = api.getHeap().string(cursor->string_id);
+        if (!str) throw std::runtime_error("string not found");
+        size_t new_pos = static_cast<size_t>(pos);
+        if (new_pos > str->size()) new_pos = str->size();
+        cursor->byte_pos = new_pos;
+        cursor->codepoint_index = 0;
+        size_t bytePos = 0;
+        while (bytePos < new_pos && bytePos < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+            size_t cpLen = 1;
+            if (c < 0x80) cpLen = 1;
+            else if ((c & 0xE0) == 0xC0) cpLen = 2;
+            else if ((c & 0xF0) == 0xE0) cpLen = 3;
+            else if ((c & 0xF8) == 0xF0) cpLen = 4;
+            if (bytePos + cpLen > str->size()) cpLen = 1;
+            bytePos += cpLen;
+            cursor->codepoint_index++;
+        }
+        return Value::makeNull();
+    });
+
     api.registerFunction("string._regexReplace", [api](const std::vector<Value>& args) {
         if (args.size() < 3)
             throw std::runtime_error("string._regexReplace() requires string, pattern, and replacement");
@@ -405,7 +547,7 @@ void registerStringModule(const VMApi &api) {
     finalizeStringNamespace(api);
 }
 
-void finalizeStringNamespace(const VMApi &api) {
+void finalizeStringNamespace(VMApi &api) {
     auto &vm = api.vm();
     auto it = vm.getGlobals().find("string");
     if (it == vm.getGlobals().end()) return;

@@ -78,6 +78,13 @@ size_t VM::getRuntimeStringLength(StringRef string_ref) {
   return str ? str->length() : 0;
 }
 
+uint32_t VM::getStringId(const Value &str) {
+  if (str.isStringId()) {
+    return str.asStringId();
+  }
+  return 0;
+}
+
  void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
  Value value) {
  auto *object = heap_.object(object_ref.id);

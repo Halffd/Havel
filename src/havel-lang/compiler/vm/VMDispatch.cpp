@@ -703,6 +703,15 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         dispatch_table[static_cast<uint8_t>(OpCode::BIT_RSH)] = &&op_BIT_RSH;
         dispatch_table[static_cast<uint8_t>(OpCode::BIT_NOT)] = &&op_BIT_NOT;
         dispatch_table[static_cast<uint8_t>(OpCode::LENGTH)] = &&op_LENGTH;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_GET_FAST)] = &&op_STRING_GET_FAST;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_SET_FAST)] = &&op_STRING_SET_FAST;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_NEW)] = &&op_STRING_CURSOR_NEW;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_CURRENT)] = &&op_STRING_CURSOR_CURRENT;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_ADVANCE)] = &&op_STRING_CURSOR_ADVANCE;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_PEEK)] = &&op_STRING_CURSOR_PEEK;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] = &&op_STRING_CURSOR_RESET;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_GET_POS)] = &&op_STRING_CURSOR_GET_POS;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_SET_POS)] = &&op_STRING_CURSOR_SET_POS;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] = &&op_JUMP_IF_FALSE;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE;
@@ -1523,11 +1532,448 @@ op_NEGATE: {
     }
 }
 
+op_STRING_GET_FAST: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    {
+        auto &frm = frame_arena_[frame_count_ - 1];
+        const auto &inst = frm.function->instructions[frm.ip];
+        frm.ip++;
+    // STRING_GET_FAST expects operands: [string_id (int), instruction_ip (int)]
+    // Stack: index
+    if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
+        COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
+    }
+    uint32_t string_id = inst.operands[0].asInt();
+
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+        COMPILER_THROW("STRING_GET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    const std::string *str = heap_.string(string_id);
+    if (!str) {
+        COMPILER_THROW("STRING_GET_FAST unknown string id");
+    }
+
+    int64_t numCodepoints = 0;
+    size_t bytePos = 0;
+    while (bytePos < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (bytePos + cpLen > str->size()) { cpLen = 1; }
+        numCodepoints++;
+        bytePos += cpLen;
+    }
+
+    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints) {
+        pushStack(Value::makeNull());
+    } else {
+        size_t targetByte = 0;
+        int64_t cpIdx = 0;
+        while (cpIdx < idx && targetByte < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+            size_t cpLen = 1;
+            if (c < 0x80) { cpLen = 1; }
+            else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+            else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+            else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+            if (targetByte + cpLen > str->size()) { cpLen = 1; }
+            targetByte += cpLen;
+            cpIdx++;
+        }
+        size_t cpLen = 1;
+        if (targetByte < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+            if (c < 0x80) { cpLen = 1; }
+            else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+            else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+            else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+            if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        }
+        auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
+        pushStack(Value::makeStringId(ref.id));
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+    }
+}
+
+op_STRING_SET_FAST: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    {
+        auto &frm = frame_arena_[frame_count_ - 1];
+        const auto &inst = frm.function->instructions[frm.ip];
+        frm.ip++;
+    // STRING_SET_FAST expects operands: [string_id (int), instruction_ip (int)]
+    // Stack: value, index
+    if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
+        COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
+    }
+    uint32_t string_id = inst.operands[0].asInt();
+
+    Value value = popStack();
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+        COMPILER_THROW("STRING_SET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    auto *str_obj = heap_.object(string_id);
+    if (!str_obj) {
+        COMPILER_THROW("STRING_SET_FAST unknown string id");
+    }
+    auto *val = str_obj->get("__string_value");
+    if (!val || !val->isStringId()) {
+        COMPILER_THROW("STRING_SET_FAST invalid string object");
+    }
+    std::string *str = heap_.string(val->asStringId());
+    if (!str) {
+        COMPILER_THROW("STRING_SET_FAST string not found in heap");
+    }
+
+    // Use a block to limit scope of new_char for goto compatibility
+    {
+        std::string new_char = toString(value);
+        if (new_char.size() != 1) {
+            COMPILER_THROW("STRING_SET_FAST value must be a single character");
+        }
+
+        int64_t numCodepoints = 0;
+    size_t bytePos = 0;
+    while (bytePos < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (bytePos + cpLen > str->size()) { cpLen = 1; }
+        numCodepoints++;
+        bytePos += cpLen;
+    }
+
+    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints) {
+        COMPILER_THROW("STRING_SET_FAST index out of bounds");
+    }
+
+    size_t targetByte = 0;
+    int64_t cpIdx = 0;
+    while (cpIdx < idx && targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        targetByte += cpLen;
+        cpIdx++;
+    }
+    size_t cpLen = 1;
+    if (targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+    }
+
+    str->replace(targetByte, cpLen, new_char);
+    }
+    heap_.bumpArrayVersion(string_id);
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+    }
+}
+
 op_LENGTH: {
     if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
     auto &frm = frame_arena_[frame_count_ - 1];
     frm.ip++;
     pushStack(execLengthOp(popStack()));
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_NEW: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    if (inst.operands.size() != 1 || !inst.operands[0].isInt()) {
+        COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
+    }
+    uint32_t string_id = inst.operands[0].asInt();
+    auto cursorRef = heap_.allocateStringCursor(string_id);
+    pushStack(Value::makeStringCursorId(cursorRef.id));
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_CURRENT: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeNull());
+    } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+        pushStack(Value::makeStringId(ref.id));
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_ADVANCE: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeBool(false));
+    } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+        cursor->byte_pos += cpLen;
+        cursor->codepoint_index++;
+        pushStack(Value::makeBool(true));
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_PEEK: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+        COMPILER_THROW("STRING_CURSOR_PEEK string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeNull());
+    } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+        pushStack(Value::makeStringId(ref.id));
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_RESET: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
+    }
+    cursor->byte_pos = 0;
+    cursor->codepoint_index = 0;
+    pushStack(Value::makeNull());
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_GET_POS: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
+    }
+    pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CURSOR_SET_POS: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value pos_val = popStack();
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
+    }
+    auto pos = indexFromValue(pos_val);
+    if (!pos) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
+    }
+    size_t new_pos = static_cast<size_t>(*pos);
+    if (new_pos > str->size()) {
+        new_pos = str->size();
+    }
+    cursor->byte_pos = new_pos;
+    cursor->codepoint_index = 0;
+    size_t bytePos = 0;
+    while (bytePos < new_pos && bytePos < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (bytePos + cpLen > str->size()) { cpLen = 1; }
+        bytePos += cpLen;
+        cursor->codepoint_index++;
+    }
+    pushStack(Value::makeNull());
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];

@@ -1193,6 +1193,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   ArrayRef createHostArray();
   StringRef createRuntimeString(std::string value);
   size_t getRuntimeStringLength(StringRef string_ref);
+  uint32_t getStringId(const Value &str);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
   void pushHostArrayValue(ArrayRef array_ref, Value value);

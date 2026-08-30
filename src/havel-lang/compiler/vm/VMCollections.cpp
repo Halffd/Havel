@@ -716,6 +716,360 @@ if (container.isSetId()) {
     break;
   }
 
+  case OpCode::STRING_GET_FAST: {
+    // Fast path for string get with inline cache
+    // Operands: [string_id (int), instruction_ip (int)]
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isInt() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
+    }
+    uint32_t string_id = instruction.operands[0].asInt();
+    uint32_t instruction_ip = instruction.operands[1].asInt();
+
+    // Pop index from stack
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+      COMPILER_THROW("STRING_GET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    // Get string from heap
+    const std::string *str = heap_.string(string_id);
+    if (!str) {
+      COMPILER_THROW("STRING_GET_FAST unknown string id");
+    }
+
+    // Count codepoints to handle negative indices
+    int64_t numCodepoints = 0;
+    size_t bytePos = 0;
+    while (bytePos < str->size()) {
+      unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      numCodepoints++;
+      bytePos += cpLen;
+    }
+
+    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints) {
+      pushStack(Value::makeNull());
+    } else {
+      // Find the byte position of the codepoint
+      size_t targetByte = 0;
+      int64_t cpIdx = 0;
+      while (cpIdx < idx && targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+        size_t cpLen = 1;
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        targetByte += cpLen;
+        cpIdx++;
+      }
+      size_t cpLen = 1;
+      if (targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+        if (c < 0x80) { cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+      }
+      auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
+      pushStack(Value::makeStringId(ref.id));
+    }
+    break;
+  }
+
+  case OpCode::STRING_SET_FAST: {
+    // Fast path for string set with inline cache
+    // Operands: [string_id (int), instruction_ip (int)]
+    // Stack: value, index
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isInt() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
+    }
+    uint32_t string_id = instruction.operands[0].asInt();
+    uint32_t instruction_ip = instruction.operands[1].asInt();
+
+    Value value = popStack();
+    Value index_val = popStack();
+    auto index = indexFromValue(index_val);
+    if (!index) {
+      COMPILER_THROW("STRING_SET_FAST expects integer index");
+    }
+    int64_t idx = *index;
+
+    // Get string from heap
+    auto *str_obj = heap_.object(string_id);
+    if (!str_obj) {
+      COMPILER_THROW("STRING_SET_FAST unknown string id");
+    }
+    // Strings are stored as objects with a __string_value field
+    auto *val = str_obj->get("__string_value");
+    if (!val || !val->isStringId()) {
+      COMPILER_THROW("STRING_SET_FAST invalid string object");
+    }
+    std::string *str = heap_.string(val->asStringId());
+    if (!str) {
+      COMPILER_THROW("STRING_SET_FAST string not found in heap");
+    }
+
+    // Convert value to string
+    std::string new_char = toString(value);
+    if (new_char.size() != 1) {
+      COMPILER_THROW("STRING_SET_FAST value must be a single character");
+    }
+
+    // Count codepoints to handle negative indices
+    int64_t numCodepoints = 0;
+    size_t bytePos = 0;
+    while (bytePos < str->size()) {
+      unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      numCodepoints++;
+      bytePos += cpLen;
+    }
+
+    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints) {
+      COMPILER_THROW("STRING_SET_FAST index out of bounds");
+    }
+
+    // Find the byte position of the codepoint
+    size_t targetByte = 0;
+    int64_t cpIdx = 0;
+    while (cpIdx < idx && targetByte < str->size()) {
+      unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (targetByte + cpLen > str->size()) { cpLen = 1; }
+      targetByte += cpLen;
+      cpIdx++;
+    }
+    size_t cpLen = 1;
+    if (targetByte < str->size()) {
+      unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (targetByte + cpLen > str->size()) { cpLen = 1; }
+    }
+
+    // Replace the codepoint
+    str->replace(targetByte, cpLen, new_char);
+    // Bump version for invalidation
+    heap_.bumpArrayVersion(string_id); // Reuse array version for strings
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_NEW: {
+    // Create a cursor from a string: string_id -> cursor
+    if (instruction.operands.size() != 1 ||
+        !instruction.operands[0].isInt()) {
+      COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
+    }
+    uint32_t string_id = instruction.operands[0].asInt();
+    auto cursorRef = heap_.allocateStringCursor(string_id);
+    pushStack(Value::makeStringCursorId(cursorRef.id));
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_CURRENT: {
+    // Get current codepoint: cursor -> int/char
+    // Stack: cursor
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+      COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+      pushStack(Value::makeNull());
+    } else {
+      // Get the codepoint at current position
+      unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+      pushStack(Value::makeStringId(ref.id));
+    }
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_ADVANCE: {
+    // Advance cursor: cursor -> bool (false if at end)
+    // Stack: cursor
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+      COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+      pushStack(Value::makeBool(false));
+    } else {
+      // Advance by one codepoint
+      unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      cursor->byte_pos += cpLen;
+      cursor->codepoint_index++;
+      pushStack(Value::makeBool(true));
+    }
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_PEEK: {
+    // Peek at next codepoint without advancing: cursor -> int/char
+    // Stack: cursor
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+      COMPILER_THROW("STRING_CURSOR_PEEK string not found");
+    }
+    if (cursor->byte_pos >= str->size()) {
+      pushStack(Value::makeNull());
+    } else {
+      unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+      pushStack(Value::makeStringId(ref.id));
+    }
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_RESET: {
+    // Reset cursor to start: cursor -> void
+    // Stack: cursor
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
+    }
+    cursor->byte_pos = 0;
+    cursor->codepoint_index = 0;
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_GET_POS: {
+    // Get byte position: cursor -> int
+    // Stack: cursor
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
+    }
+    pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
+    break;
+  }
+
+  case OpCode::STRING_CURSOR_SET_POS: {
+    // Set byte position: cursor, int -> void
+    // Stack: cursor, position
+    Value pos_val = popStack();
+    Value cursor_val = popStack();
+    if (!cursor_val.isStringCursorId()) {
+      COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
+    }
+    auto pos = indexFromValue(pos_val);
+    if (!pos) {
+      COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
+    }
+    uint32_t cursor_id = cursor_val.asStringCursorId();
+    auto *cursor = heap_.stringCursor(cursor_id);
+    if (!cursor) {
+      COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
+    }
+    const std::string *str = heap_.string(cursor->string_id);
+    if (!str) {
+      COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
+    }
+    size_t new_pos = static_cast<size_t>(*pos);
+    if (new_pos > str->size()) {
+      new_pos = str->size();
+    }
+    cursor->byte_pos = new_pos;
+    // Recalculate codepoint index
+    cursor->codepoint_index = 0;
+    size_t bytePos = 0;
+    while (bytePos < new_pos && bytePos < str->size()) {
+      unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+      size_t cpLen = 1;
+      if (c < 0x80) { cpLen = 1; }
+      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      bytePos += cpLen;
+      cursor->codepoint_index++;
+    }
+    pushStack(Value::makeNull());
+    break;
+  }
+
   case OpCode::OBJECT_NEW: {
     pushStack(Value::makeObjectId(heap_.allocateObject(true).id)); // sorted = true
     maybeCollectGarbage();

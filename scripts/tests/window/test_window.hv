@@ -1,0 +1,70 @@
+// Test: window module — validates both the native C++ module path and the
+// self-hosted `use window` path expose the same API with sane return types.
+
+fn assert_true(cond, msg) {
+    if !cond {
+        print("FAIL: " + msg)
+        exit(1)
+    }
+}
+
+fn assert_type(val, expected, msg) {
+    actual = type(val)
+    assert_true(actual == expected, msg + " (expected " + expected + ", got " + actual + ")")
+}
+
+fn test_window_api(w, label) {
+    print(label + ": window.active() result:")
+    print(w)
+
+    assert_true(w != nil, label + ": window.active() returned nil")
+    assert_type(w.title, "string", label + ": w.title")
+    assert_type(w.class, "string", label + ": w.class")
+    assert_type(w.id, "int", label + ": w.id")
+    assert_type(w.pid, "int", label + ": w.pid")
+    assert_true(w.pid > 0, label + ": w.pid should be positive")
+
+    print(label + ": title:", w.title)
+    print(label + ": class:", w.class)
+    print(label + ": id:", w.id)
+    print(label + ": pid:", w.pid)
+    print(label + ": cmdline:", w.cmdline)
+
+    active_id = window.activeId()
+    assert_type(active_id, "int", label + ": window.activeId()")
+    assert_true(active_id == w.id, label + ": activeId() should match active().id")
+
+    found = window.find("title Konsole")
+    print(label + ": window.find(title Konsole):", found)
+    // found may legitimately be nil if Konsole isn't open — don't assert presence,
+    // just assert it doesn't throw and returns nil or a window-like value
+    assert_true(found == nil || type(found) == "object", label + ": window.find() bad return type")
+
+    list = window.list()
+    assert_type(list, "array", label + ": window.list()")
+    list_len = list.len()
+    assert_true(list_len > 0, label + ": window.list() should return at least one window")
+    print(label + ": window.list():", type(list), " len", list_len)
+
+    title = window.title()
+    class_ = window.class()
+    assert_type(title, "string", label + ": window.title()")
+    assert_type(class_, "string", label + ": window.class()")
+    assert_true(title == w.title, label + ": window.title() should match active().title")
+    assert_true(class_ == w.class, label + ": window.class() should match active().class")
+
+    print(label + ": PASS")
+}
+
+// --- Path 1: native C++ module (implicit global `window`) ---
+print("=== window C++ module ===")
+w1 = window.active()
+test_window_api(w1, "cpp-module")
+
+// --- Path 2: self-hosted module via explicit `use` ---
+use window
+print("=== Havel window.hv (use window) ===")
+w2 = window.active()
+test_window_api(w2, "self-hosted")
+
+print("ALL PASS")

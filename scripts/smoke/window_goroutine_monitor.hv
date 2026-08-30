@@ -1,0 +1,39 @@
+// Test: goroutine-based window monitoring with scheduler
+// Regression: goroutine calling window.active() must not crash
+// Verifies: goroutine + window.active() + sleep + loop
+
+use window
+use time
+
+done = false
+count = 0
+max_iter = 3
+
+go fn update() {
+    loop {
+        val w = window.active()
+        if w == nil {
+            print("[FAIL] window.active() returned null")
+            exit(1)
+        }
+        count = count + 1
+        print("[goroutine] iteration " + count + " ok")
+        if count >= max_iter { 
+            done = true
+            exit(0) 
+        }
+        sleep(100)
+    }
+}
+
+// Wait for goroutine to complete (up to 5 seconds)
+sleep(5000)
+
+if !done {
+    print("[FAIL] goroutine did not complete in time")
+    exit(1)
+}
+
+print("[main] goroutine completed " + count + " iterations")
+print("PASS: window_goroutine_monitor")
+exit(0)

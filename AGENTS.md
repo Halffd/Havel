@@ -169,14 +169,34 @@ gdb --args ./build-debug/havel run test.hv -d -dbc -da -dp -dl -batch -q -ex ...
 8. Fix one thing, confirm it works, then move to next.
 9. Do not add abstraction layers over broken abstraction layers.
 10. No hardcoded placeholder values. Real values from real APIs.
+11. **No hand-maintained duplicate lists of registered names.** If a set of
+    names (host functions, module names, opcodes, hotkey identifiers, etc.) is
+    already registered somewhere at runtime via a macro, decorator, or registry
+    call (e.g. `HAVEL_MODULE_PLUGIN_EAGER`, `registerHostFunction`, etc.), no
+    other part of the codebase may re-declare that same set as a separate
+    hardcoded literal list (e.g. a `std::vector<std::string>` of names typed
+    out by hand). Instead:
+    - Derive it: pull the list from the actual registry/macro-expansion where
+      it's needed (iterate a static registration container, or call
+      `vm->getHostFunctionNames()` / equivalent), even if that requires
+      exposing a lightweight accessor for VM-less code paths.
+    - If deriving is genuinely not possible (e.g. a build-time-only path with
+      no VM instance available), the hardcoded list MUST ship with an automated
+      drift check: a test or CI script that greps the real registration sites
+      and diffs against the list, failing the build on mismatch. A comment
+      saying "keep this in sync" does not satisfy this rule; only an automated
+      check does.
+    - Before adding any new name to such a list by hand, verify it against the
+      actual registration source (grep the macro invocations), not from memory
+      or pattern-matching on what "sounds like it should be there."
 
 ## Commit Rules
 
-11. No capslock in commit messages.
-12. No emoji in commits.
-13. Commit messages are for humans, not marketing.
-14. No hype words (synergy, paradigm, revolutionary, ecosystem, zero-cost abstraction).
-15. No emoji in code comments unless the bug is genuinely funny.
+12. No capslock in commit messages.
+13. No emoji in commits.
+14. Commit messages are for humans, not marketing.
+15. No hype words (synergy, paradigm, revolutionary, ecosystem, zero-cost abstraction).
+16. No emoji in code comments unless the bug is genuinely funny.
 
 # Blocking Bugs
 

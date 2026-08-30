@@ -9,6 +9,7 @@
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
+#include "havel-lang/compiler/core/ModuleGlobals.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "lexer/BootstrapLexer.hpp"
@@ -2184,6 +2185,14 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         "note", "warning", "deprecated", "experimental", "unstable",
         "internal", "private", "public", "protected", "internal"
       };
+      // Module globals registered via setGlobal() at VM/module load time.
+      // These exist as globals when a built script runs, so strict-mode
+      // resolution must accept them here too. Sourced from the single
+      // canonical kModuleGlobals list (validated by the module-globals
+      // drift-guard test) rather than a hand-maintained copy.
+      for (const char *g : havel::compiler::kModuleGlobals) {
+        knownGlobals.insert(g);
+      }
       compiler.setKnownGlobals(knownGlobals);
     }
     try {

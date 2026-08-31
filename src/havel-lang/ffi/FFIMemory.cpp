@@ -33,9 +33,14 @@ void* FFIMemory::alloc_bytes(size_t size) {
     Allocation& a = allocations_[ptr];
     a.ptr = ptr;
     a.size = size;
-    a.is_managed = false;
+    a.is_managed = true;
     total_allocated_ += size;
     total_used_ += size;
+    
+    // Attach a finalizer to automatically free on GC sweep
+    a.finalizer = [](void* p) {
+        std::free(p);
+    };
     
     return ptr;
 }
@@ -74,12 +79,13 @@ void FFIMemory::free(void* ptr) {
 	std::lock_guard<std::mutex> lock(alloc_mutex_);
 	auto it = allocations_.find(ptr);
 	if (it != allocations_.end()) {
-		auto fin = std::move(it->second.finalizer);
+		// Mark as freed to prevent double-free in sweep
+		it->second.freed = true;
+		// Clear finalizer since we're freeing manually here
 		it->second.finalizer = nullptr;
 		total_used_ -= it->second.size;
 		allocations_.erase(it);
 		std::free(ptr);
-		if (fin) fin(ptr);
 	}
 }
 
@@ -98,7 +104,7 @@ void FFIMemory::mark(void* ptr) {
 void FFIMemory::sweep() {
 	std::lock_guard<std::mutex> lock(alloc_mutex_);
 	for (auto it = allocations_.begin(); it != allocations_.end(); ) {
-		if (it->second.gc_mark == 0) {
+		if (it->second.gc_mark == 0 && !it->second.freed) {
 			auto fin = std::move(it->second.finalizer);
 			it->second.finalizer = nullptr;
 			total_used_ -= it->second.size;

@@ -670,11 +670,18 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
   suspendGC();
 
-  // Save globals state (we may be inside a module closure that swapped
-  // globals). The persistent execution needs root-level globals that
-  // contain all host-registered globals (Type.isArray, math.PI, etc).
-  auto saved_globals = globals;
-  auto saved_globals_stack = globals_stack_;
+  // Nested executePersistent calls (bc_execute_depth_ > 0) share globals
+  // with the caller. Only the outermost call saves/restores globals.
+  const bool isNested = bc_execute_depth_ > 0;
+  std::unordered_map<std::string, Value> saved_globals;
+  std::vector<std::unordered_map<std::string, Value>> saved_globals_stack;
+  if (!isNested) {
+    // Save globals state (we may be inside a module closure that swapped
+    // globals). The persistent execution needs root-level globals that
+    // contain all host-registered globals (Type.isArray, math.PI, etc).
+    saved_globals = globals;
+    saved_globals_stack = globals_stack_;
+  }
 
   // The caller (bc.execute_persistent host function) saves/restores
   // locals, stack, and frames. We only clear them here for the
@@ -759,13 +766,15 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
   // Merge post-execution globals back into saved_globals so new REPL
   // definitions (functions, variables) persist across executePersistent calls.
-  for (auto &[name, val] : globals) {
-    saved_globals[name] = std::move(val);
-  }
+  if (!isNested) {
+    for (auto &[name, val] : globals) {
+      saved_globals[name] = std::move(val);
+    }
 
-  // Restore globals state so the calling module context is unbroken
-  globals = std::move(saved_globals);
-  globals_stack_ = std::move(saved_globals_stack);
+    // Restore globals state so the calling module context is unbroken
+    globals = std::move(saved_globals);
+    globals_stack_ = std::move(saved_globals_stack);
+  }
 
   // Propagate lazy module objects to the restored globals
   for (const auto &[name, value] : lazyModuleUpdates) {

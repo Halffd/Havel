@@ -59,14 +59,8 @@ fn emitError(msg, line, col) {
  emitterError(msg, line, col)
  }
 fn globalIdx(emitter, name) {
-    cidx = emitter.globals[name]
-    if cidx != null {
-        return cidx
-    }
     cidx = bc.add_chunk_string(name)
-    emitter.globals[name] = cidx
     cidx
-
 }
 fn collectAssignTargetNames(emitter, target) {
   if target != null {

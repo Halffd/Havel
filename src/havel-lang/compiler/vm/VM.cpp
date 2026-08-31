@@ -4045,11 +4045,21 @@ Value VM::deepWrapModuleFunctions(
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper enter name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
+            // Prevent stack overflow from deeply nested module wrapper executions
+            int execDepth = module_wrapper_execution_depth_.fetch_add(1);
+            if (execDepth >= MAX_MODULE_WRAPPER_EXECUTION_DEPTH) {
+              module_wrapper_execution_depth_.fetch_sub(1);
+              COMPILER_THROW("Module wrapper execution depth exceeded (max " +
+                             std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
+                             "). Possible infinite recursion in module function calls.");
+            }
             runDispatchLoop(frame_count_ - 1);
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (locals.size() > savedLocalsSize) {
               locals.resize(savedLocalsSize);
             }
@@ -4208,11 +4218,21 @@ Value VM::deepWrapModuleFunctions(
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper enter frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
+            // Prevent stack overflow from deeply nested module wrapper executions
+            int execDepth = module_wrapper_execution_depth_.fetch_add(1);
+            if (execDepth >= MAX_MODULE_WRAPPER_EXECUTION_DEPTH) {
+              module_wrapper_execution_depth_.fetch_sub(1);
+              COMPILER_THROW("Module wrapper execution depth exceeded (max " +
+                             std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
+                             "). Possible infinite recursion in module function calls.");
+            }
             runDispatchLoop(frame_count_ - 1);
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (locals.size() > base) {
               locals.resize(base);
             }

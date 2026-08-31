@@ -186,6 +186,22 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             vm_->moduleLoader().addModuleSoPath(mpRoot.string());
         }
 
+        // Add build directory's modules folder for development builds
+        // (e.g., build-debug/modules/havel_mod_<name>.so)
+        {
+            const auto exePath = Env::executable();
+            if (!exePath.empty()) {
+                auto siblingModulesDir = std::filesystem::path(exePath).parent_path() / "modules";
+                std::error_code ec;
+                if (std::filesystem::exists(siblingModulesDir, ec)) {
+                    auto canonical = std::filesystem::canonical(siblingModulesDir, ec);
+                    if (!ec) {
+                        vm_->moduleLoader().addModuleSoPath(canonical.string());
+                    }
+                }
+            }
+        }
+
   vm_->suspendGC();
   if (leanStartup) {
     if (config_.pureStdlib) {

@@ -4651,17 +4651,33 @@ Value VM::loadModule(const std::string &path) {
         std::string keyB1 = resolvedB1 ? resolvedB1->canonicalPath : path;
         fixupCachedClosures(keyB1, cachedVal, cachedGlobals);
       }
-return cachedVal;
+    }
+  return cachedVal;
+  }
+
+  // Check for eager plugin functions registered in host_function_globals_ BEFORE native plugin check.
+  // Eager plugins (registered via HAVEL_MODULE_PLUGIN_EAGER) register their functions in
+  // host_function_globals_ during VM init with prefix "moduleName." (e.g., "ffi.open").
+  // These must be handled before the native plugin check to avoid "library not found" errors
+  // for modules like "ffi" that are eager plugins, not shared libraries.
+  std::string prefix = path + ".";
+  std::string usPrefix = path + "_";
+  bool hasEagerPluginFunctions = false;
+  for (const auto &[name, value] : host_function_globals_) {
+    if (name.rfind(prefix, 0) == 0 || name.rfind(usPrefix, 0) == 0) {
+      hasEagerPluginFunctions = true;
+      break;
     }
   }
 
   // Check native modules FIRST (before Havel module resolution)
   // This ensures native modules like "time" take precedence over .hvc files
-  // But skip native plugin check if the module exists as a Havel module (has .hvc/.hv)
-  // to avoid "library not found" errors for Havel sidecar modules like math/math, math/physics, etc.
-  // Also skip if this is a registered lazy module (like bytecodeBuilder)
-  bool skipNativePluginCheck = false;
-  if (context_ && context_->modules) {
+  // But skip native plugin check if:
+  // 1. The module has eager plugin functions registered in host_function_globals_
+  // 2. The module exists as a Havel module (has .hvc/.hv)
+  // 3. This is a registered lazy module (like bytecodeBuilder)
+  bool skipNativePluginCheck = hasEagerPluginFunctions;
+  if (!skipNativePluginCheck && context_ && context_->modules) {
     // Quick check: does this module exist as a Havel module in self-hosted path?
     // If so, skip native plugin check to avoid "library not found" spam
     if (!native_plugin_in_progress_.count(path)) {

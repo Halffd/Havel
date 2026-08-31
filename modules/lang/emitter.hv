@@ -3712,7 +3712,8 @@ for stmt in body {
  // Pre-scan top-level assignment targets as implicit globals so lambdas
  // that assign to module-level variables (e.g. goroutine writing title_)
  // emit STORE_GLOBAL instead of shadowing the global with a local.
-collectTopLevelGlobals(emitter, body)
+ // NOTE: Use topStmts (non-function statements) not body (which includes funcDecls)
+collectTopLevelGlobals(emitter, topStmts)
   // Pre-scan for class/struct/enum declarations so they're known during function compilation
   for stmt in body {
     if stmt.kind == "ClassDeclaration" {
@@ -3752,7 +3753,12 @@ while fi < #funcDecls {
  // Pass 2: compile __main__
  mainChunkIdx = bc.func_new(entryName, 0, 64)
  traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
- emitter.scope = moduleScope
+ // Create proper function scope for __main__ with moduleScope as parent
+ // Use a unique funcId to distinguish __main__ from moduleScope
+ mainFuncId = emitter.nextFuncId
+ emitter.nextFuncId = mainFuncId + 1
+ mainScope = Scope(moduleScope, mainFuncId, mainChunkIdx)
+ emitter.scope = mainScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0
   while fi2 < #funcDecls {

@@ -619,11 +619,13 @@ vm_->addIntervalResult(timer_id, result);
 
     // Load and execute pre-compiled bytecode file (.hvc)
     // This avoids recompiling the launcher from source on every invocation.
+    // Spawns the entry function as a goroutine and runs processGoroutines(),
+    // matching the behavior of execute() for the native pipeline.
     void executeBytecode(const std::string& hvcPath,
                          const std::string& entryPoint = "__main__",
                          const std::string& compileUnitName = "unit",
                          const std::vector<std::string>& appArgs = {},
-                         bool processGoroutinesAfter = false) {
+                         bool processGoroutinesAfter = true) {
         if (!initialized_) {
             throw std::runtime_error("HavelEngine not initialized");
         }
@@ -650,7 +652,7 @@ vm_->addIntervalResult(timer_id, result);
         auto shared_chunk = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk_opt));
         vm_->storeMainChunk(shared_chunk);
 
-        // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)
+        // Get the entry function and spawn as goroutine
         auto* entryFunc = vm_->getMainChunk()->getFunction(entryPoint);
         if (!entryFunc) {
             throw std::runtime_error("Entry function not found: " + entryPoint);
@@ -687,8 +689,8 @@ vm_->addIntervalResult(timer_id, result);
             vm_->setAppArgs(arrRef.id);
         }
 
-        // Call the entry function synchronously - it may spawn goroutines via host functions
-        compiler::Value result = vm_->callFunctionSync(entryCallable, {});
+        // Spawn the entry function as a goroutine (matching execute() behavior)
+        vm_->spawnGoroutine(entryCallable, {});
 
         // If requested, process all goroutines until they're done
         if (processGoroutinesAfter) {

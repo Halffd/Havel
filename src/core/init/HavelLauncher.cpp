@@ -1208,7 +1208,7 @@ public:
       // Try to load pre-compiled launcher bytecode first
       if (!launcherHvcPath.empty()) {
         info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
-        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList, true);
+        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList);
       } else {
         std::string launcherCode = readScriptFile(launcherPath);
         if (launcherCode.empty()) {
@@ -1268,7 +1268,7 @@ private:
       auto exec_t0 = havel::startup_now();
       if (useBytecode && !launcherHvcPath.empty()) {
         info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
-        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList);
+        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList, false);
       } else {
         std::string launcherCode = readScriptFile(launcherPath);
         if (launcherCode.empty()) {

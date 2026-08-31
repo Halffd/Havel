@@ -1047,7 +1047,7 @@ public:
 
 class SelfHostedStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig &cfg, int, char *[]) override {
+  int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
     info("Engine: self-hosted (Havel)");
 
     char selfBuf[PATH_MAX];
@@ -1056,6 +1056,22 @@ public:
     if (len > 0) {
       selfBuf[len] = '\0';
       binDir = std::filesystem::path(selfBuf).parent_path().string();
+    }
+
+    // Try to find pre-compiled launcher bytecode
+    std::string launcherHvcPath;
+    std::vector<std::string> hvcSearchPaths = {
+        binDir + "/../cache/havel/launcher.hvc",
+        binDir + "/../../cache/havel/launcher.hvc",
+        std::string(std::getenv("HOME")) + "/.cache/havel/launcher.hvc",
+        "/tmp/havel/launcher.hvc",
+    };
+    for (const auto &candidate : hvcSearchPaths) {
+      std::error_code ec;
+      if (std::filesystem::exists(candidate, ec) && !ec) {
+        launcherHvcPath = candidate;
+        break;
+      }
     }
 
     std::vector<std::string> searchPaths = {
@@ -1084,11 +1100,30 @@ public:
     if (!ec)
       launcherPath = absPath.string();
 
-    std::string launcherCode = readScriptFile(launcherPath);
-    if (launcherCode.empty()) {
-      error("Cannot read launcher.hv at {}", launcherPath);
-      return 1;
+    // Load user script files to check for hotkeys (like ScriptStrategy does)
+    std::string combinedCode;
+    std::string combinedNames;
+    for (const auto &f : cfg.scriptFiles) {
+      std::string content = readScriptFile(f);
+      if (content.empty()) {
+        error("Failed to read script file: {}", f);
+        return 1;
+      }
+      combinedCode += content + "\n";
+      if (!combinedNames.empty())
+        combinedNames += " + ";
+      combinedNames += f;
     }
+    if (!cfg.evalString.empty()) {
+      combinedCode += cfg.evalString + "\n";
+      if (!combinedNames.empty())
+        combinedNames += " + ";
+      combinedNames += "<eval>";
+    }
+
+    // Parse user scripts to check for hotkeys
+    auto program = parseScript(combinedCode, cfg);
+    bool hasHotkeys = program && programHasHotkeys(*program);
 
     std::vector<std::string> appArgList;
 
@@ -1149,6 +1184,12 @@ public:
 
     installMinimalSignalHandlers();
 
+    // If user script has hotkeys and not headless, run with UI event loop
+    if (hasHotkeys && !cfg.headlessMode) {
+      return executeWithUIBackend(cfg, argc, argv, launcherHvcPath, launcherPath, appArgList, combinedNames, true);
+    }
+
+    // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
@@ -1163,12 +1204,98 @@ public:
       vm.setAppArgs(arrRef.id);
 
       auto exec_t0 = havel::startup_now();
-      engine.execute(launcherCode, "__main__", launcherPath);
+      
+      // Try to load pre-compiled launcher bytecode first
+      if (!launcherHvcPath.empty()) {
+        info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
+        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList, true);
+      } else {
+        std::string launcherCode = readScriptFile(launcherPath);
+        if (launcherCode.empty()) {
+          error("Cannot read launcher.hv at {}", launcherPath);
+          return 1;
+        }
+        engine.execute(launcherCode, "__main__", launcherPath);
+      }
+      
       havel::startup_timing_report("engine.execute", exec_t0);
       engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
       error("Self-hosted error: {}", e.what());
+      return 1;
+    }
+  }
+
+private:
+  int executeWithUIBackend(const havel::init::LaunchConfig &cfg,
+                           int argc, char *argv[],
+                           const std::string& launcherHvcPath,
+                           const std::string& launcherPath,
+                           const std::vector<std::string>& appArgList,
+                           const std::string& combinedNames,
+                           bool useBytecode) {
+    auto *backend = host::UIManager::instance().backend();
+    if (!backend) {
+      error("No UI backend available to run hotkey scripts. Install a UI "
+            "backend (Qt6 or GTK4) or run with --headless for "
+            "headless execution (hotkeys will not register).");
+      return 1;
+    }
+    host::UIBackend::ApplicationMetadata meta;
+    meta.argc = &argc;
+    meta.argv = argv;
+    meta.applicationName = "havel";
+    meta.applicationVersion = "1.0";
+    meta.organizationName = "havel";
+    meta.quitOnLastWindowClosed = true;
+    backend->setApplicationMetadata(meta);
+
+    try {
+      havel::HavelEngine engine(makeEngineConfig(cfg));
+      engine.initializeMinimal();
+
+      auto &vm = *engine.vm();
+      auto arrRef = vm.createHostArray();
+      for (const auto &arg : appArgList) {
+        auto strRef = vm.createRuntimeString(arg);
+        vm.pushHostArrayValue(arrRef,
+                              havel::compiler::Value::makeStringId(strRef.id));
+      }
+      vm.setAppArgs(arrRef.id);
+
+      // Compile and run launcher - use bytecode if available
+      auto exec_t0 = havel::startup_now();
+      if (useBytecode && !launcherHvcPath.empty()) {
+        info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
+        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList);
+      } else {
+        std::string launcherCode = readScriptFile(launcherPath);
+        if (launcherCode.empty()) {
+          error("Cannot read launcher.hv at {}", launcherPath);
+          return 1;
+        }
+        engine.compileAndRunMainSync(launcherCode, "__main__", launcherPath);
+      }
+      havel::startup_timing_report("engine.execute", exec_t0);
+
+      // If script requested exit during launcher execution, don't enter event loop
+      if (engine.vm()->exitRequested()) {
+        return engine.vm()->exitCode();
+      }
+
+      // Set up idle callback to drive goroutine scheduler and check for exit
+      backend->setIdleCallback([&engine, backend]() {
+        engine.tickGoroutines();
+        if (engine.vm()->exitRequested()) {
+          backend->quitEventLoop(engine.vm()->exitCode());
+        }
+      });
+
+      info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+      return backend->runEventLoop();
+    } catch (const std::exception &e) {
+      error("Self-hosted UI error: {}", e.what());
       return 1;
     }
   }

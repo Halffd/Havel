@@ -2557,7 +2557,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // silently drop STORE_GLOBAL writeback because the temporary closure
     // had module_globals=nullptr.
     std::shared_ptr<std::unordered_map<std::string, Value>> foid_globals;
-    uint32_t parent_cid = currentFrame().closure_id;
+    uint32_t parent_cid = 0;
+    if (frame_count_ > 0) {
+      parent_cid = currentFrame().closure_id;
+    }
     if (parent_cid != 0) {
       auto *pclosure = heap_.closure(parent_cid);
       if (pclosure && pclosure->module_globals) {

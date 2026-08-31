@@ -5,6 +5,7 @@
 #include "../compiler/runtime/EventQueue.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
+#include "../compiler/runtime/RuntimeSupport.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "../compiler/BytecodeOrcJIT.h"
 #endif
@@ -546,6 +547,153 @@ vm_->addIntervalResult(timer_id, result);
 
         // Return null for now (result capture would need more infrastructure)
         return compiler::Value::makeNull();
+    }
+
+    // Compile and run the entry function synchronously (not as a goroutine).
+    // Does NOT call processGoroutines() - caller is responsible for driving the scheduler.
+    // Useful for running a launcher script that spawns user script goroutines,
+    // then driving those goroutines via an external event loop.
+    compiler::Value compileAndRunMainSync(const std::string& source,
+                                          const std::string& entryPoint = "__main__",
+                                          const std::string& compileUnitName = "unit",
+                                          bool strictSemantics = true) {
+        if (!initialized_) {
+            throw std::runtime_error("HavelEngine not initialized");
+        }
+
+        compiler::PipelineOptions options = modules_->options();
+        options.compile_unit_name = compileUnitName;
+        options.vm_override = vm_.get();
+        options.strictSemantics = strictSemantics;
+        for (const auto &[name, fn] : vm_->getHostFunctions()) {
+            options.host_functions[name] = fn;
+        }
+        options.debugBytecode = config_.debugBytecode;
+        if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
+            options.max_instructions = config_.vmConfig.max_instructions;
+        }
+
+        // Compile to bytecode chunk
+        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
+        if (!chunk) {
+            throw std::runtime_error("Compilation returned null chunk");
+        }
+
+        // Store chunk in VM
+        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        vm_->storeMainChunk(shared_chunk);
+
+        // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)
+        auto* entryFunc = vm_->getMainChunk()->getFunction(entryPoint);
+        if (!entryFunc) {
+            throw std::runtime_error("Entry function not found: " + entryPoint);
+        }
+        uint32_t funcIndex = vm_->getMainChunk()->getFunctionIndex(entryFunc);
+        compiler::Value entryCallable = compiler::Value::makeFunctionObjId(funcIndex);
+
+        // Set the script directory for relative imports
+        if (!compileUnitName.empty() && compileUnitName != "unit" && compileUnitName != "script") {
+            namespace fs = std::filesystem;
+            std::string name = compileUnitName;
+            auto plusPos = name.find(" + ");
+            if (plusPos != std::string::npos)
+                name = name.substr(0, plusPos);
+            fs::path p(name);
+            if (p.is_absolute() && fs::exists(p)) {
+                vm_->setCurrentScriptDir(fs::canonical(p).parent_path().string());
+            } else if (!p.is_absolute()) {
+                fs::path resolved = fs::current_path() / p;
+                if (fs::exists(resolved)) {
+                    vm_->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
+                }
+            }
+        }
+
+        // Call the entry function synchronously - it may spawn goroutines via host functions
+        compiler::Value result = vm_->callFunctionSync(entryCallable, {});
+
+        // NOTE: Does NOT call processGoroutines(). Caller must drive the scheduler
+        // (e.g., via tickGoroutines() in an event loop) to run spawned goroutines.
+        return result;
+    }
+
+    // Load and execute pre-compiled bytecode file (.hvc)
+    // This avoids recompiling the launcher from source on every invocation.
+    void executeBytecode(const std::string& hvcPath,
+                         const std::string& entryPoint = "__main__",
+                         const std::string& compileUnitName = "unit",
+                         const std::vector<std::string>& appArgs = {},
+                         bool processGoroutinesAfter = false) {
+        if (!initialized_) {
+            throw std::runtime_error("HavelEngine not initialized");
+        }
+
+        // Read and deserialize bytecode
+        std::ifstream file(hvcPath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            throw std::runtime_error("Cannot open bytecode file: " + hvcPath);
+        }
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> buffer(size);
+        if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+            throw std::runtime_error("Failed to read bytecode file: " + hvcPath);
+        }
+
+        compiler::ValueSerializer serializer;
+        auto chunk_opt = serializer.deserializeChunk(buffer);
+        if (!chunk_opt) {
+            throw std::runtime_error("Failed to deserialize bytecode: " + hvcPath);
+        }
+
+        // Store chunk in VM
+        auto shared_chunk = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk_opt));
+        vm_->storeMainChunk(shared_chunk);
+
+        // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)
+        auto* entryFunc = vm_->getMainChunk()->getFunction(entryPoint);
+        if (!entryFunc) {
+            throw std::runtime_error("Entry function not found: " + entryPoint);
+        }
+        uint32_t funcIndex = vm_->getMainChunk()->getFunctionIndex(entryFunc);
+        compiler::Value entryCallable = compiler::Value::makeFunctionObjId(funcIndex);
+
+        // Set the script directory for relative imports
+        if (!compileUnitName.empty() && compileUnitName != "unit" && compileUnitName != "script") {
+            namespace fs = std::filesystem;
+            std::string name = compileUnitName;
+            auto plusPos = name.find(" + ");
+            if (plusPos != std::string::npos)
+                name = name.substr(0, plusPos);
+            fs::path p(name);
+            if (p.is_absolute() && fs::exists(p)) {
+                vm_->setCurrentScriptDir(fs::canonical(p).parent_path().string());
+            } else if (!p.is_absolute()) {
+                fs::path resolved = fs::current_path() / p;
+                if (fs::exists(resolved)) {
+                    vm_->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
+                }
+            }
+        }
+
+        // Set app args if provided
+        if (!appArgs.empty()) {
+            auto arrRef = vm_->createHostArray();
+            for (const auto& arg : appArgs) {
+                auto strRef = vm_->createRuntimeString(arg);
+                vm_->pushHostArrayValue(arrRef,
+                    compiler::Value::makeStringId(strRef.id));
+            }
+            vm_->setAppArgs(arrRef.id);
+        }
+
+        // Call the entry function synchronously - it may spawn goroutines via host functions
+        compiler::Value result = vm_->callFunctionSync(entryCallable, {});
+
+        // If requested, process all goroutines until they're done
+        if (processGoroutinesAfter) {
+            processGoroutines();
+        }
     }
 
     void tickGoroutines() {

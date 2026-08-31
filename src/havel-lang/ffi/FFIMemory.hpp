@@ -19,6 +19,7 @@ struct Allocation {
     bool is_managed = false;
     uint64_t gc_mark = 0;
     std::function<void(void*)> finalizer;
+    bool freed = false;
 };
 
 class FFIMemory {

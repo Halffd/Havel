@@ -79,7 +79,33 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     Value container = popStack();
 
     if (!container.isArrayId()) {
-      COMPILER_THROW("ARRAY_PUSH expects array container");
+      std::string typeInfo = "unknown";
+      if (container.isNull()) typeInfo = "null";
+      else if (container.isInt()) typeInfo = "int";
+      else if (container.isDouble()) typeInfo = "double";
+      else if (container.isBool()) typeInfo = "bool";
+      else if (container.isStringId()) typeInfo = "string_id";
+      else if (container.isStringValId()) typeInfo = "string_val_id";
+      else if (container.isObjectId()) typeInfo = "object_id";
+      else if (container.isArrayId()) typeInfo = "array_id";
+      else if (container.isFunctionObjId()) typeInfo = "function_obj_id";
+      else if (container.isClosureId()) typeInfo = "closure_id";
+      else if (container.isHostFuncId()) typeInfo = "host_func_id";
+      else if (container.isBoundMethodId()) typeInfo = "bound_method_id";
+      else if (container.isCoroutineId()) typeInfo = "coroutine_id";
+      else if (container.isIntervalId()) typeInfo = "interval_id";
+      else if (container.isTimeoutId()) typeInfo = "timeout_id";
+      else if (container.isThreadId()) typeInfo = "thread_id";
+      else if (container.isSetId()) typeInfo = "set_id";
+      else if (container.isRangeId()) typeInfo = "range_id";
+      else if (container.isEnumId()) typeInfo = "enum_id";
+      else if (container.isIteratorId()) typeInfo = "iterator_id";
+      else if (container.isStringCursorId()) typeInfo = "string_cursor_id";
+      else if (container.isErrorId()) typeInfo = "error_id";
+      else if (container.isWaitGroupId()) typeInfo = "waitgroup_id";
+      else if (container.isChannelId()) typeInfo = "channel_id";
+      else if (container.isPtr()) typeInfo = "ptr";
+      COMPILER_THROW("ARRAY_PUSH expects array container, got " + typeInfo);
     }
     uint32_t id = container.asArrayId();
     auto *array = heap_.array(id);

@@ -180,9 +180,124 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     stdlibPath_ = path;
 }
 
-std::optional<ModuleLoader::ResolvedModule>
-ModuleLoader::resolve(const std::string& modulePath,
-                      const std::string& scriptDir) const {
+// Compute canonical path for a module without using cache (for cache key generation)
+  std::string ModuleLoader::computeCanonicalPathNoCache(const std::string& modulePath,
+                                                         const std::string& scriptDir) const {
+    namespace fs = std::filesystem;
+    std::string name = modulePath;
+
+    // Check if path is absolute
+    if (fs::path(modulePath).is_absolute()) {
+      if (fs::exists(modulePath)) {
+        try {
+          return fs::canonical(modulePath).string();
+        } catch (...) {
+          return "";
+        }
+      }
+      return "";
+    }
+
+    // Handle explicit relative paths starting with ./ or ../
+    if (modulePath.starts_with("./") || modulePath.starts_with("../")) {
+      fs::path resolved = fs::path(scriptDir) / modulePath;
+      if (fs::exists(resolved)) {
+        try {
+          return fs::canonical(resolved).string();
+        } catch (...) {
+          return "";
+        }
+      }
+      return "";
+    }
+
+    // For bare module names, try priority search (same logic as resolve but without cache)
+    std::string cacheDir = getCacheDir();
+    std::string canonicalPath;
+
+    // 1. lang.<name>.hvc (lang modules take priority)
+    if (fs::exists(fs::path(cacheDir) / ("lang." + name + ".hv"))) {
+      try {
+        return fs::canonical(fs::path(cacheDir) / ("lang." + name + ".hv")).string();
+      } catch (...) {}
+    }
+
+    // 2. std.<name>.hvc (stdlib modules)
+    if (fs::exists(fs::path(cacheDir) / ("std." + name + ".hv"))) {
+      try {
+        return fs::canonical(fs::path(cacheDir) / ("std." + name + ".hv")).string();
+      } catch (...) {}
+    }
+
+    // 3. Check script directory for local .hv modules
+    if (!scriptDir.empty()) {
+      fs::path scriptDirPath(scriptDir);
+      fs::path hvPath = scriptDirPath / (name + ".hv");
+      if (fs::exists(hvPath)) {
+        try {
+          return fs::canonical(hvPath).string();
+        } catch (...) {}
+      }
+      // Package-style: scriptDir/name/name.hv
+      fs::path pkgDir = scriptDirPath / name;
+      fs::path pkgHvPath = pkgDir / (name + ".hv");
+      if (fs::exists(pkgHvPath)) {
+        try {
+          return fs::canonical(pkgHvPath).string();
+        } catch (...) {}
+      }
+    }
+
+    // 4. Check stdlibPath_ for name.hv
+    if (!stdlibPath_.empty()) {
+      fs::path stdlibHv = fs::path(stdlibPath_) / (name + ".hv");
+      if (fs::exists(stdlibHv)) {
+        try {
+          return fs::canonical(stdlibHv).string();
+        } catch (...) {}
+      }
+    }
+
+    // 5. Check search paths for .hv files
+    for (const auto& sp : searchPaths_) {
+      fs::path spDir(sp);
+      fs::path hvPath = spDir / (name + ".hv");
+      if (fs::exists(hvPath)) {
+        try {
+          return fs::canonical(hvPath).string();
+        } catch (...) {}
+      }
+    }
+
+    // 6. Check for native plugins (.so files)
+    for (const auto& sp : searchPaths_) {
+      fs::path spDir(sp);
+      fs::path soPath = spDir / (name + ".so");
+      if (fs::exists(soPath)) {
+        try {
+          return fs::canonical(soPath).string();
+        } catch (...) {}
+      }
+      fs::path libPath = spDir / ("libhavel_" + name + ".so");
+      if (fs::exists(libPath)) {
+        try {
+          return fs::canonical(libPath).string();
+        } catch (...) {}
+      }
+      fs::path pluginPath = spDir / ("havel_mod_" + name + ".so");
+      if (fs::exists(pluginPath)) {
+        try {
+          return fs::canonical(pluginPath).string();
+        } catch (...) {}
+      }
+    }
+
+    return "";
+  }
+
+  std::optional<ModuleLoader::ResolvedModule>
+  ModuleLoader::resolve(const std::string& modulePath,
+                        const std::string& scriptDir) const {
   namespace fs = std::filesystem;
 
   std::string name = modulePath;
@@ -261,15 +376,18 @@ ModuleLoader::resolve(const std::string& modulePath,
 
 // For bare module names, try priority search
 
-  // 1. Check cache (already loaded?)
+  // Compute canonical path for cache key (consistent with loadModule's canonicalizePath)
+  std::string canonicalKey = computeCanonicalPathNoCache(modulePath, scriptDir);
+
+  // 1. Check cache (already loaded?) using canonical path as key
   // If already in cache, return Cached type — BUT first drop the entry if the
   // underlying source filename has been touched since we cached it.
-  if (cache_.count(modulePath) > 0) {
-    if (!isFreshLocked(modulePath)) {
-      cache_.erase(modulePath);
-      freshness_.erase(modulePath);
+  if (!canonicalKey.empty() && cache_.count(canonicalKey) > 0) {
+    if (!isFreshLocked(canonicalKey)) {
+      cache_.erase(canonicalKey);
+      freshness_.erase(canonicalKey);
     } else {
-      return ResolvedModule{ResolvedModule::Cached, "", modulePath, ""};
+      return ResolvedModule{ResolvedModule::Cached, "", canonicalKey, ""};
     }
   }
 

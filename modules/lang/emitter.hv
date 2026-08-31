@@ -59,14 +59,8 @@ fn emitError(msg, line, col) {
  emitterError(msg, line, col)
  }
 fn globalIdx(emitter, name) {
-    cidx = emitter.globals[name]
-    if cidx != null {
-        return cidx
-    }
     cidx = bc.add_chunk_string(name)
-    emitter.globals[name] = cidx
     cidx
-
 }
 fn collectAssignTargetNames(emitter, target) {
   if target != null {
@@ -143,7 +137,9 @@ fn emitLoadVar(emitter, name) {
 
 }
 fn emitStoreVar(emitter, name) {
+  print("emitStoreVar: name=" + name)
   resolved = scopeResolve(emitter.scope, name)
+  print("  resolved=" + str(resolved))
   if resolved != null {
     if resolved.kind == "local" {
       bc.emit("STORE_VAR", resolved.index)
@@ -154,8 +150,10 @@ fn emitStoreVar(emitter, name) {
       return
     }
   }
+  print("  not resolved in scope")
   // Variable not found in scope — bare assignment creates local inside function, global at top level
   funcRoot = scopeFindFuncRoot(emitter.scope)
+  print("  funcRoot.parent=" + str(funcRoot.parent))
   if funcRoot.parent != null {
     if emitter.global_names[name] == true {
       bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
@@ -166,6 +164,7 @@ fn emitStoreVar(emitter, name) {
     bc.emit("STORE_VAR", idx)
     return
   }
+  print("  emitting STORE_GLOBAL for top-level")
   bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
 
  }
@@ -770,12 +769,15 @@ return
     if k == "AssignmentExpression" {
         target = node.target
     if target.kind == "Identifier" {
+        print("ASSIGN_DEBUG: target=" + target.name + " globalScope=" + str(target.globalScope) + " type=" + type(target.globalScope) + " isNull=" + str(target.globalScope == null))
         if target.globalScope == true {
+            print("ASSIGN_GLOBAL: target=" + target.name)
             emitExpr(emitter, node.value)
             bc.emit("DUP")
             bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
             return
         }
+        print("ASSIGN_LOCAL: target=" + target.name)
         emitExpr(emitter, node.value)
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)

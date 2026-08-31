@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-08-30T22:48:14Z",
+  "system_info": {
+    "cores": 16,
+    "hostname": "half-pc",
+    "os": "Linux"
+  },
+  "benchmarks": {
+    "arithmetic": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "arrays": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "closures": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "functions": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "gc": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "objects": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+,
+    "strings": {
+      "runs": [0, 0, 0],
+      "min_ms": 0,
+      "avg_ms": 0,
+      "max_ms": 0
+    }
+  }
+}

@@ -446,7 +446,7 @@ struct SourceLocation {
   uint32_t length = 0;
 };
 
-// Bytecode instruction
+// Bytecode instruction - defined early for use in vectors
 struct Instruction {
   OpCode opcode;
   std::vector<Value> operands;
@@ -456,6 +456,306 @@ struct Instruction {
   Instruction(OpCode op, std::vector<Value> ops = {})
       : opcode(op), operands(std::move(ops)) {}
 };
+
+// ===== CFG-based IR: Basic Block, Terminator, Place =====
+
+// Terminator kinds - explicit control flow
+enum class TerminatorKind : uint8_t {
+  None,              // Fallthrough to next block (only valid for last block)
+  Return,            // Return from function
+  Jump,              // Unconditional jump to block
+  JumpIfFalse,       // Conditional jump: pop bool, jump if false
+  JumpIfTrue,        // Conditional jump: pop bool, jump if true
+  JumpIfNull,        // Conditional jump: pop value, jump if null
+  Throw,             // Throw exception: pop exception value
+  CallReturn,        // Call function and return its result (tail call)
+  Unreachable,       // Unreachable code (after return/throw)
+};
+
+// Terminator - explicit control flow target
+struct Terminator {
+  TerminatorKind kind = TerminatorKind::None;
+  std::vector<uint32_t> targets;  // Target block indices
+  std::optional<SourceLocation> location;
+
+  Terminator() = default;
+  Terminator(TerminatorKind k) : kind(k) {}
+  Terminator(TerminatorKind k, uint32_t target) : kind(k), targets({target}) {}
+  Terminator(TerminatorKind k, uint32_t t1, uint32_t t2) : kind(k), targets({t1, t2}) {}
+  Terminator(TerminatorKind k, std::optional<SourceLocation> loc) : kind(k), location(loc) {}
+  Terminator(TerminatorKind k, uint32_t target, std::optional<SourceLocation> loc) : kind(k), targets({target}), location(loc) {}
+  
+  static Terminator ret(std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::Return);
+    t.location = loc;
+    return t;
+  }
+  static Terminator jump(uint32_t target, std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::Jump, target);
+    t.location = loc;
+    return t;
+  }
+  static Terminator jumpIfFalse(uint32_t target, std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::JumpIfFalse, target);
+    t.location = loc;
+    return t;
+  }
+  static Terminator jumpIfTrue(uint32_t target, std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::JumpIfTrue, target);
+    t.location = loc;
+    return t;
+  }
+  static Terminator jumpIfNull(uint32_t target, std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::JumpIfNull, target);
+    t.location = loc;
+    return t;
+  }
+  static Terminator throw_(std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::Throw);
+    t.location = loc;
+    return t;
+  }
+  static Terminator unreachable(std::optional<SourceLocation> loc = {}) {
+    Terminator t(TerminatorKind::Unreachable);
+    t.location = loc;
+    return t;
+  }
+};
+
+// Place - LValue abstraction for typed local/upvalue/global access
+enum class PlaceKind : uint8_t {
+  Local,      // Local variable (slot index)
+  Upvalue,    // Captured variable (upvalue index)
+  Global,     // Global variable (name)
+  Field,      // Field of object/struct (base place + field name)
+  ArrayIndex, // Array/string element (base place + index place)
+};
+
+struct Place {
+  PlaceKind kind = PlaceKind::Local;
+  uint32_t index = 0;                    // For Local/Upvalue
+  std::string name;                      // For Global/Field
+  std::shared_ptr<Place> base;           // For Field/ArrayIndex
+  std::shared_ptr<Place> index_place;    // For ArrayIndex
+  // Type hint for optimization
+  uint64_t type_hint = 0;
+  bool has_type_hint = false;
+  
+  // Factory methods
+  static Place local(uint32_t idx, uint64_t type_hint = 0) {
+    Place p;
+    p.kind = PlaceKind::Local;
+    p.index = idx;
+    p.type_hint = type_hint;
+    p.has_type_hint = type_hint != 0;
+    return p;
+  }
+  static Place upvalue(uint32_t idx, uint64_t type_hint = 0) {
+    Place p;
+    p.kind = PlaceKind::Upvalue;
+    p.index = idx;
+    p.type_hint = type_hint;
+    p.has_type_hint = type_hint != 0;
+    return p;
+  }
+  static Place global(std::string n, uint64_t type_hint = 0) {
+    Place p;
+    p.kind = PlaceKind::Global;
+    p.name = std::move(n);
+    p.type_hint = type_hint;
+    p.has_type_hint = type_hint != 0;
+    return p;
+  }
+  static Place field(std::shared_ptr<Place> b, std::string n, uint64_t type_hint = 0) {
+    Place p;
+    p.kind = PlaceKind::Field;
+    p.base = std::move(b);
+    p.name = std::move(n);
+    p.type_hint = type_hint;
+    p.has_type_hint = type_hint != 0;
+    return p;
+  }
+  static Place arrayIndex(std::shared_ptr<Place> b, std::shared_ptr<Place> i, uint64_t type_hint = 0) {
+    Place p;
+    p.kind = PlaceKind::ArrayIndex;
+    p.base = std::move(b);
+    p.index_place = std::move(i);
+    p.type_hint = type_hint;
+    p.has_type_hint = type_hint != 0;
+    return p;
+  }
+};
+
+// Typed local variable info
+struct LocalInfo {
+  uint64_t type_hint = 0;  // TYPE_HINT_* bits
+  bool is_mutable = true;  // false for `val`, true for `var`
+  bool is_param = false;
+  std::string name;        // For debug
+};
+
+// Basic block in CFG
+struct BasicBlock {
+  uint32_t id = 0;
+  std::vector<Instruction> instructions;
+  Terminator terminator;
+  std::vector<uint32_t> predecessors;  // For reverse traversal
+  std::vector<uint32_t> successors;    // Computed from terminator
+  std::optional<SourceLocation> location; // Block entry location
+  bool is_landing_pad = false;         // Exception handler entry
+  
+  BasicBlock() = default;
+  BasicBlock(uint32_t i) : id(i) {}
+  
+  // Check if block ends with a terminator
+  bool is_terminated() const {
+    return terminator.kind != TerminatorKind::None;
+  }
+  
+  // Get target blocks from terminator
+  std::vector<uint32_t> get_targets() const {
+    return terminator.targets;
+  }
+  
+  // Add instruction to block
+  void push(Instruction inst) {
+    instructions.push_back(std::move(inst));
+  }
+  
+  // Add multiple instructions
+  void extend(const std::vector<Instruction>& insts) {
+    instructions.insert(instructions.end(), insts.begin(), insts.end());
+  }
+};
+
+// Forward declaration for BytecodeFunction (used in FunctionBuilder)
+struct BytecodeFunction;
+
+// ===== Builder Monad: BlockAnd<()> =====
+// Provides structured CFG construction with type-safe block management
+
+class FunctionBuilder {
+  struct Impl;
+  std::unique_ptr<Impl> impl;
+  
+public:
+  FunctionBuilder(std::string name, uint32_t param_count, uint32_t local_count);
+  ~FunctionBuilder();
+  
+  // Block management
+  uint32_t current_block() const;
+  void set_current_block(uint32_t block_id);
+  uint32_t create_block(std::optional<SourceLocation> loc = {});
+  uint32_t create_landing_pad(std::optional<SourceLocation> loc = {});
+  
+  // Control flow - these set terminator and return new current block
+  uint32_t jump(uint32_t target, std::optional<SourceLocation> loc = {});
+  uint32_t jump_if_false(uint32_t target, std::optional<SourceLocation> loc = {});
+  uint32_t jump_if_true(uint32_t target, std::optional<SourceLocation> loc = {});
+  uint32_t jump_if_null(uint32_t target, std::optional<SourceLocation> loc = {});
+  uint32_t ret(std::optional<SourceLocation> loc = {});
+  uint32_t throw_(std::optional<SourceLocation> loc = {});
+  uint32_t unreachable(std::optional<SourceLocation> loc = {});
+  
+  // Branching helpers - create blocks and branch
+  // Returns pair of (then_block, else_block) for if-else
+  std::pair<uint32_t, uint32_t> branch(uint32_t cond_block, uint32_t true_target, uint32_t false_target);
+  
+  // Loop helpers - returns (header_block, body_block, exit_block)
+  std::tuple<uint32_t, uint32_t, uint32_t> loop(
+      std::function<void(uint32_t header)> init,
+      std::function<void(uint32_t body)> body_fn);
+  
+  // Switch helper - returns (dispatch_block, cases[], default_block)
+  std::tuple<uint32_t, std::vector<uint32_t>, uint32_t> switch_(
+      uint32_t value_block, const std::vector<uint64_t>& cases, uint32_t default_target);
+  
+  // Instruction emission
+  void push(Instruction inst);
+  void push(OpCode op, std::vector<Value> ops = {}, std::optional<SourceLocation> loc = {});
+  
+  // Convenience for common patterns
+  void load_const(Value val, std::optional<SourceLocation> loc = {});
+  void load_var(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void store_var(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void load_global(std::string name, std::optional<SourceLocation> loc = {});
+  void store_global(std::string name, std::optional<SourceLocation> loc = {});
+  void load_upvalue(uint32_t idx, std::optional<SourceLocation> loc = {});
+  void store_upvalue(uint32_t idx, std::optional<SourceLocation> loc = {});
+  
+  // Arithmetic with type hint
+  void add(uint64_t type_hint = 0, std::optional<SourceLocation> loc = {});
+  void sub(uint64_t type_hint = 0, std::optional<SourceLocation> loc = {});
+  void mul(uint64_t type_hint = 0, std::optional<SourceLocation> loc = {});
+  void div(uint64_t type_hint = 0, std::optional<SourceLocation> loc = {});
+  void mod(uint64_t type_hint = 0, std::optional<SourceLocation> loc = {});
+  
+  // Comparison
+  void eq(std::optional<SourceLocation> loc = {});
+  void neq(std::optional<SourceLocation> loc = {});
+  void lt(std::optional<SourceLocation> loc = {});
+  void lte(std::optional<SourceLocation> loc = {});
+  void gt(std::optional<SourceLocation> loc = {});
+  void gte(std::optional<SourceLocation> loc = {});
+  
+  // Logical
+  void and_(std::optional<SourceLocation> loc = {});
+  void or_(std::optional<SourceLocation> loc = {});
+  void not_(std::optional<SourceLocation> loc = {});
+  
+  // Fast integer ops
+  void add_int(std::optional<SourceLocation> loc = {});
+  void sub_int(std::optional<SourceLocation> loc = {});
+  void mul_int(std::optional<SourceLocation> loc = {});
+  void div_int(std::optional<SourceLocation> loc = {});
+  void mod_int(std::optional<SourceLocation> loc = {});
+  
+  // String cursor ops
+  void string_cursor_new(std::optional<SourceLocation> loc = {});
+  void string_cursor_current(std::optional<SourceLocation> loc = {});
+  void string_cursor_advance(std::optional<SourceLocation> loc = {});
+  void string_cursor_peek(std::optional<SourceLocation> loc = {});
+  void string_cursor_reset(std::optional<SourceLocation> loc = {});
+  void string_cursor_get_pos(std::optional<SourceLocation> loc = {});
+  void string_cursor_set_pos(std::optional<SourceLocation> loc = {});
+  
+  // Call
+  void call(uint32_t arg_count, std::optional<SourceLocation> loc = {});
+  void tail_call(uint32_t arg_count, std::optional<SourceLocation> loc = {});
+  
+  // Build final function
+  BytecodeFunction build();
+  
+  // Access to blocks for advanced manipulation
+  std::vector<BasicBlock>& blocks();
+  const std::vector<BasicBlock>& blocks() const;
+  
+  // Local variable management
+  uint32_t add_local(LocalInfo info);
+  uint32_t add_upvalue(uint32_t index);
+  void set_local_type(uint32_t local_idx, uint64_t type_hint);
+  
+  // Debug
+  void set_location(SourceLocation loc);
+};
+
+// ===== CFG Validation =====
+struct CFGValidationResult {
+  bool valid = true;
+  std::vector<std::string> errors;
+  std::vector<std::string> warnings;
+};
+
+CFGValidationResult validate_cfg(const std::vector<BasicBlock>& blocks, uint32_t entry_block = 0);
+
+// ===== Flatten CFG to Linear Instructions (for interpreter/JIT) =====
+// Converts CFG to linear instruction list with computed jump offsets
+struct LinearFunction {
+  std::vector<Instruction> instructions;
+  std::vector<uint32_t> block_start_ips;  // block_id -> instruction index
+};
+
+LinearFunction flatten_cfg(const std::vector<BasicBlock>& blocks, uint32_t entry_block = 0);
 
 
 struct UpvalueDescriptor {

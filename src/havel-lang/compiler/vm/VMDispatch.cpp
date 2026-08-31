@@ -57,6 +57,7 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
+  fprintf(stderr, "VM LOAD_GLOBAL: name='%s' globals_size=%zu\n", name.c_str(), globals.size());
   auto it = globals.find(name);
   if (it != globals.end()) {
         if (it->second.isObjectId()) {
@@ -120,7 +121,10 @@ case OpCode::STORE_GLOBAL: {
             }
 Value value = popStack();
 
-             // Materialize StringValId to heap StringId so cross-chunk reads work
+            // DEBUG
+            fprintf(stderr, "VM STORE_GLOBAL: name='%s' globals_size=%zu\n", name.c_str(), globals.size());
+
+            // Materialize StringValId to heap StringId so cross-chunk reads work
             if (value.isStringValId() || value.isRegexValId()) {
                 const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
                 if (matChunk) {
@@ -135,13 +139,21 @@ Value value = popStack();
             }
 
             if (immutable_globals_.count(name)) {
+                fprintf(stderr, "VM STORE_GLOBAL: name='%s' is immutable, existing=%d\n", name.c_str(), globals.count(name));
                 auto existing = globals.find(name);
                 if (existing != globals.end() && existing->second == value) {
+                    fprintf(stderr, "VM STORE_GLOBAL: immutable but same value, breaking\n");
                     break;
                 }
                 COMPILER_THROW("Cannot reassign val global: " + name);
             }
-            globals[name] = value;
+            fprintf(stderr, "VM STORE_GLOBAL: storing name='%s'\n", name.c_str());
+            auto insert_result = globals.insert({name, value});
+            fprintf(stderr, "VM STORE_GLOBAL: insert_result.second=%d, globals_size=%zu\n", insert_result.second, globals.size());
+            if (!insert_result.second) {
+                // Key already existed, update it
+                globals[name] = value;
+            }
 
             // Persist to the shared module_globals map so subsequent calls
             // see the updated value. Gate on closure_id only: module function

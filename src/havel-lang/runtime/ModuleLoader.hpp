@@ -102,6 +102,11 @@ public:
     // Returns empty string if the module cannot be resolved.
     std::string canonicalizePath(const std::string& modulePath, const std::string& scriptDir) const;
 
+    // Compute canonical path for a module without using cache (for cache key generation).
+    // Returns empty string if the module cannot be resolved.
+    std::string computeCanonicalPathNoCache(const std::string& modulePath,
+                                             const std::string& scriptDir) const;
+
     // Compute SHA-256 hash of a file (for persistent cache index)
     static std::string sha256FileHex(const std::string& path);
 

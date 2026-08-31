@@ -1157,6 +1157,12 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         // and wedges the frame; deferral is mandatory in that case.
         std::atomic<int> deep_wrap_module_functions_depth_{0};
 
+        // Track nested module wrapper executions to prevent stack overflow
+        // from deeply nested dispatch loops. Each wrapped module function
+        // runs runDispatchLoop, which can call other wrapped functions.
+        std::atomic<int> module_wrapper_execution_depth_{0};
+        static constexpr int MAX_MODULE_WRAPPER_EXECUTION_DEPTH = 50;
+
         // Drain callback invoked by host-side getters that read state derived
         // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine
         // sets this to its drainPendingVarChanges(): if the caller just
@@ -1177,6 +1183,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     bool exitRequested() const { return exit_requested_.load(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
+    int exitCode() const { return exit_code_.load(); }
   
     void setGlobal(std::string name, Value value) {
         auto key = name;

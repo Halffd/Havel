@@ -6,6 +6,7 @@
 #include <limits>
 #include "utils/Logger.hpp"
 #include "common/Debug.hpp"
+#include "../../ffi/FFIMemory.hpp"
 
 namespace havel::compiler {
 
@@ -1684,6 +1685,9 @@ void GCHeap::completeCollection() {
         compactIfShrunk(strings_, 4);
         compactIfShrunk(closures_, 4);
     }
+
+    // Sweep FFI allocations
+    havel::ffi::FFIMemory::sweep();
 
     if (debugging::debug_gc)
         std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_

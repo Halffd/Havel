@@ -1,0 +1,15 @@
+// Test: bc.tick() manually advances scheduler by one tick
+// Verifies scheduler tick function works
+
+// Load bc module (built-in)
+bc.tick()
+print("tick 1 complete")
+
+bc.tick()
+print("tick 2 complete")
+
+bc.tick()
+print("tick 3 complete")
+
+print("PASS: scheduler_tick")
+exit(0)

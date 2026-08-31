@@ -1,0 +1,24 @@
+// Test: window.active() returns current active window
+// Verifies active window tracking works
+
+use window
+
+val active = window.active()
+print("window.active() = " + active)
+
+if active != nil {
+    print("active window: " + active.title)
+    assert(active.id != nil, "active window must have id")
+    assert(active.title != nil, "active window must have title")
+    assert(active.class != nil, "active window must have class")
+    assert(active.exe != nil, "active window must have exe")
+    assert(active.pid != nil, "active window must have pid")
+    print("active window class: " + active.class)
+    print("active window exe: " + active.exe)
+    print("active window pid: " + active.pid)
+} else {
+    print("no active window (headless env)")
+}
+
+print("PASS: window_active")
+exit(0)

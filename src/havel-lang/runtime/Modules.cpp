@@ -11,6 +11,8 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
+#include "../../modules/ffi/FFIModule.hpp"
+#include "../../modules/config/ConfigModule.hpp"
 // ffi module loaded via plugin
 #include <algorithm>
 
@@ -434,32 +436,7 @@ void Modules::installStdLib() {
         }
     }
 
-    // Brightness module loaded dynamically as .so plugin
-    // Fallback: register ffi and config as lazy modules via plugin loader if scan missed them
-    auto foundFfi = std::find_if(available.begin(), available.end(),
-        [](const auto &m) { return m.name == "ffi"; });
-    if (foundFfi == available.end()) {
-        std::string ffiName = "ffi";
-        vm.registerLazyModule(ffiName, [this, ffiName](compiler::VMApi &a) {
-            auto plugin = extensionLoader_->loadModulePlugin(ffiName);
-            if (plugin) {
-                plugin->register_fn(static_cast<void *>(&a));
-            }
-        });
     }
-
-    auto foundConfig = std::find_if(available.begin(), available.end(),
-        [](const auto &m) { return m.name == "config"; });
-    if (foundConfig == available.end()) {
-        std::string configName = "config";
-        vm.registerLazyModule(configName, [this, configName](compiler::VMApi &a) {
-            auto plugin = extensionLoader_->loadModulePlugin(configName);
-            if (plugin) {
-                plugin->register_fn(static_cast<void *>(&a));
-            }
-        }, {"cfg", "conf"});
-    }
-}
 
   void Modules::install(InstallProfile profile, bool eagerBridges) {
     profile_ = profile;

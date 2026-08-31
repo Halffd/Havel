@@ -1,0 +1,25 @@
+// Test: window.list() returns array of window objects
+// Verifies WindowModule basic enumeration works
+
+use window
+
+val all = window.list()
+print("window.list() type: " + type(all))
+assert(type(all) == "array", "window.list() must return array")
+
+val count = all.length()
+print("window count: " + count)
+assert(count >= 0, "window count must be non-negative")
+
+if count > 0 {
+    val first = all[0]
+    print("first window: " + first.title)
+    assert(first.id != nil, "window must have id")
+    assert(first.title != nil, "window must have title")
+    assert(first.class != nil, "window must have class")
+    assert(first.exe != nil, "window must have exe")
+    assert(first.pid != nil, "window must have pid")
+}
+
+print("PASS: window_list")
+exit(0)

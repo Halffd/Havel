@@ -2566,7 +2566,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // silently drop STORE_GLOBAL writeback because the temporary closure
     // had module_globals=nullptr.
     std::shared_ptr<std::unordered_map<std::string, Value>> foid_globals;
-    uint32_t parent_cid = currentFrame().closure_id;
+    uint32_t parent_cid = 0;
+    if (frame_count_ > 0) {
+      parent_cid = currentFrame().closure_id;
+    }
     if (parent_cid != 0) {
       auto *pclosure = heap_.closure(parent_cid);
       if (pclosure && pclosure->module_globals) {
@@ -4054,11 +4057,21 @@ Value VM::deepWrapModuleFunctions(
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper enter name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
+            // Prevent stack overflow from deeply nested module wrapper executions
+            int execDepth = module_wrapper_execution_depth_.fetch_add(1);
+            if (execDepth >= MAX_MODULE_WRAPPER_EXECUTION_DEPTH) {
+              module_wrapper_execution_depth_.fetch_sub(1);
+              COMPILER_THROW("Module wrapper execution depth exceeded (max " +
+                             std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
+                             "). Possible infinite recursion in module function calls.");
+            }
             runDispatchLoop(frame_count_ - 1);
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (locals.size() > savedLocalsSize) {
               locals.resize(savedLocalsSize);
             }
@@ -4217,11 +4230,21 @@ Value VM::deepWrapModuleFunctions(
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper enter frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
+            // Prevent stack overflow from deeply nested module wrapper executions
+            int execDepth = module_wrapper_execution_depth_.fetch_add(1);
+            if (execDepth >= MAX_MODULE_WRAPPER_EXECUTION_DEPTH) {
+              module_wrapper_execution_depth_.fetch_sub(1);
+              COMPILER_THROW("Module wrapper execution depth exceeded (max " +
+                             std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
+                             "). Possible infinite recursion in module function calls.");
+            }
             runDispatchLoop(frame_count_ - 1);
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
+            module_wrapper_execution_depth_.fetch_sub(1);
             if (locals.size() > base) {
               locals.resize(base);
             }
@@ -4660,17 +4683,33 @@ Value VM::loadModule(const std::string &path) {
         std::string keyB1 = resolvedB1 ? resolvedB1->canonicalPath : path;
         fixupCachedClosures(keyB1, cachedVal, cachedGlobals);
       }
-return cachedVal;
+    }
+  return cachedVal;
+  }
+
+  // Check for eager plugin functions registered in host_function_globals_ BEFORE native plugin check.
+  // Eager plugins (registered via HAVEL_MODULE_PLUGIN_EAGER) register their functions in
+  // host_function_globals_ during VM init with prefix "moduleName." (e.g., "ffi.open").
+  // These must be handled before the native plugin check to avoid "library not found" errors
+  // for modules like "ffi" that are eager plugins, not shared libraries.
+  std::string prefix = path + ".";
+  std::string usPrefix = path + "_";
+  bool hasEagerPluginFunctions = false;
+  for (const auto &[name, value] : host_function_globals_) {
+    if (name.rfind(prefix, 0) == 0 || name.rfind(usPrefix, 0) == 0) {
+      hasEagerPluginFunctions = true;
+      break;
     }
   }
 
   // Check native modules FIRST (before Havel module resolution)
   // This ensures native modules like "time" take precedence over .hvc files
-  // But skip native plugin check if the module exists as a Havel module (has .hvc/.hv)
-  // to avoid "library not found" errors for Havel sidecar modules like math/math, math/physics, etc.
-  // Also skip if this is a registered lazy module (like bytecodeBuilder)
-  bool skipNativePluginCheck = false;
-  if (context_ && context_->modules) {
+  // But skip native plugin check if:
+  // 1. The module has eager plugin functions registered in host_function_globals_
+  // 2. The module exists as a Havel module (has .hvc/.hv)
+  // 3. This is a registered lazy module (like bytecodeBuilder)
+  bool skipNativePluginCheck = hasEagerPluginFunctions;
+  if (!skipNativePluginCheck && context_ && context_->modules) {
     // Quick check: does this module exist as a Havel module in self-hosted path?
     // If so, skip native plugin check to avoid "library not found" spam
     if (!native_plugin_in_progress_.count(path)) {
@@ -4764,18 +4803,9 @@ return cachedVal;
   }
 
   if (!resolved) {
-    // Check lazy modules — activate if registered
-    auto lazyIt = lazy_modules_.find(path);
-    if (lazyIt != lazy_modules_.end()) {
-      activateLazyModule(path);
-      auto it = globals.find(path);
-      if (it != globals.end()) {
-        moduleLoader_.putCache(canonicalKey, it->second);
-        pinModuleCacheExports(canonicalKey, it->second);
-        return it->second;
-      }
-    }
-
+    // FIRST: Check if eager plugins have already registered functions for this module.
+    // Eager plugins (like FFI) register during VM init, before any module loading.
+    // This must come BEFORE lazy module fallback to avoid returning a lazy proxy.
     std::string prefix = path + ".";
     std::string usPrefix = path + "_";
     bool hasNamespace = false;
@@ -4787,6 +4817,39 @@ return cachedVal;
     }
     if (hasNamespace || (context_ && context_->modules &&
                          context_->modules->loadModule(path))) {
+      auto exportsObj = createHostObject();
+      auto *obj = heap_.object(exportsObj.id);
+      for (const auto &[name, value] : host_function_globals_) {
+        std::string localName;
+        if (name.rfind(prefix, 0) == 0) {
+          localName = name.substr(prefix.size());
+        } else if (name.rfind(usPrefix, 0) == 0) {
+          localName = name.substr(usPrefix.size());
+        }
+        if (!localName.empty() && !obj->get(localName)) {
+          (*obj)[localName] = value;
+        }
+      }
+      Value exports = Value::makeObjectId(exportsObj.id);
+      moduleLoader_.putCache(canonicalKey, exports);
+      pinModuleCacheExports(canonicalKey, exports);
+      return exports;
+    }
+
+    // Check lazy modules — activate if registered (fallback for modules not registered as eager plugins)
+    auto lazyIt = lazy_modules_.find(path);
+    if (lazyIt != lazy_modules_.end()) {
+      activateLazyModule(path);
+      auto it = globals.find(path);
+      if (it != globals.end()) {
+        moduleLoader_.putCache(canonicalKey, it->second);
+        pinModuleCacheExports(canonicalKey, it->second);
+        return it->second;
+      }
+    }
+
+    if (context_ && context_->modules &&
+        context_->modules->loadModule(path)) {
       auto exportsObj = createHostObject();
       auto *obj = heap_.object(exportsObj.id);
       for (const auto &[name, value] : host_function_globals_) {

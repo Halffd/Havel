@@ -1183,6 +1183,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     bool exitRequested() const { return exit_requested_.load(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
+    int exitCode() const { return exit_code_.load(); }
   
     void setGlobal(std::string name, Value value) {
         auto key = name;

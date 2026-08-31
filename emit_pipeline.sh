@@ -57,6 +57,21 @@ for hv in "$SRC_DIR"/*.hv; do
     emit_one "$hv" "lang." "lang.$(basename "$hv" .hv)" "$OUT_DIR"
 done
 
+# Also build the launcher itself (self-hosted compiler driver)
+echo "emit_pipeline: building launcher -> $CACHE_DIR (launcher)"
+LAUNCHER_HV="$SRC_DIR/launcher.hv"
+LAUNCHER_CACHE="$CACHE_DIR/launcher.hvc"
+if "$HAVEL" --build "$LAUNCHER_HV" -o "$LAUNCHER_CACHE" --no-strict-semantics 2>/dev/null; then
+    sz=$(stat -c%s "$LAUNCHER_CACHE" 2>/dev/null || echo 0)
+    VERSION_HASHES="${VERSION_HASHES}launcher:${sz}\n"
+    PASS=$((PASS + 1))
+else
+    echo "emit_pipeline: FAILED launcher" >&2
+    FAIL=$((FAIL + 1))
+fi
+cp "$LAUNCHER_HV" "$CACHE_DIR/launcher.hv"
+cp "$LAUNCHER_HV" "$OUT_DIR/launcher.hv"
+
 echo "emit_pipeline: building std modules -> $CACHE_DIR (std.*)"
 for hv in "$STD_SRC_DIR"/*.hv; do
     emit_one "$hv" "std." "std.$(basename "$hv" .hv)" "$STD_OUT_DIR"

@@ -1,0 +1,41 @@
+// Test: goroutine scheduling behavior with bc.tick()
+// Verifies goroutines are scheduled and run when bc.tick() advances time
+
+counter = 0
+done = false
+
+// Spawn a goroutine that increments counter and signals done
+fn worker() {
+    counter = counter + 1
+    sleep(10)
+    counter = counter + 10
+    sleep(10)
+    counter = counter + 100
+    done = true
+}
+
+// Start the goroutine - go returns a thread ID
+val tid = go worker()
+print("spawned thread")
+
+// Initially counter is 0, goroutine not run yet
+assert(counter == 0, "counter must be 0 before tick")
+
+// First tick - goroutine runs until first sleep
+bc.tick()
+print("after tick 1: counter = " + counter)
+
+// Second tick - goroutine runs until second sleep
+bc.tick()
+print("after tick 2: counter = " + counter)
+
+// Third tick - goroutine completes
+bc.tick()
+print("after tick 3: counter = " + counter)
+print("done = " + done)
+
+assert(done == true, "goroutine must complete after 3 ticks")
+assert(counter == 111, "counter must be 111 (1 + 10 + 100)")
+
+print("PASS: scheduler_goroutine")
+exit(0)

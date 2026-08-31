@@ -248,3 +248,8 @@ log-critical-returns-null	1	log_critical_returns_null.hv
 log-history-returns-array	1	log_history_returns_array.hv
 debug-toggle-verbose-condition	1	debug_toggle_verbose_condition.hv
 debug-toggle-verbose-key	1	debug_toggle_verbose_key.hv
+window-list	5	window_list.hv
+window-active	5	window_active.hv
+scheduler-tick	3	scheduler_tick.hv
+scheduler-goroutine	5	scheduler_goroutine.hv
+window-goroutine-monitor	10	window_goroutine_monitor.hv

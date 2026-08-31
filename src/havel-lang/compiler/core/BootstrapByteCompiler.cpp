@@ -1188,14 +1188,23 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
 
   enterFunction(std::move(bf), index_it->second);
 
-  // Clear class context so @field compiles to LOAD_GLOBAL "this"
-  // instead of LOAD_VAR 0 (lambda's uninitialized slot 0)
-  const std::string saved_class_name = std::move(current_class_name_);
-  current_class_name_.clear();
+  // If we're inside a class method, preserve class context so @field works correctly.
+  // Also capture "self" (slot 0 of enclosing class method) as an upvalue.
+  bool in_class_method = !current_class_name_.empty();
+  const std::string saved_class_name = current_class_name_;  // Keep class context
 
   auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
   if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
+  }
+
+  // If lambda is inside a class method, capture "self" (slot 0 of class method) as upvalue
+  if (in_class_method) {
+    // Add upvalue descriptor for "self" (slot 0 of enclosing class method)
+    UpvalueDescriptor self_upvalue;
+    self_upvalue.index = 0;  // "self" is at slot 0 in class method
+    self_upvalue.captures_local = true;
+    current_function->upvalues.push_back(self_upvalue);
   }
 
   // Collect default parameter values and variadic info for lambda
@@ -3847,8 +3856,11 @@ break;
       COMPILER_THROW("Missing function index for lambda expression");
     }
     auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
-    if (upvalues_it != lexical_resolution_.lambda_upvalues.end() &&
-        !upvalues_it->second.empty()) {
+    bool has_resolver_upvalues = (upvalues_it != lexical_resolution_.lambda_upvalues.end() &&
+                                  !upvalues_it->second.empty());
+    // Also emit CLOSURE if we're in a class method (to capture "self")
+    bool in_class_method = !current_class_name_.empty();
+    if (has_resolver_upvalues || in_class_method) {
       emit(OpCode::CLOSURE, it->second);
     } else {
       emit(OpCode::LOAD_CONST,
@@ -4001,8 +4013,15 @@ case ast::NodeType::AtExpression: {
 
     // Load 'this' (slot 0 for instance methods, or LOAD_GLOBAL for non-class methods)
     if (!current_class_name_.empty()) {
-      // Class instance method: 'this' is in local slot 0
-      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      // Check if we're in a lambda inside a class method
+      if (current_function && current_function->name == "<lambda>") {
+        // Lambda inside class method: "self" is captured as the last upvalue
+        uint32_t self_upvalue_index = static_cast<uint32_t>(current_function->upvalues.size() - 1);
+        emit(OpCode::LOAD_UPVALUE, self_upvalue_index);
+      } else {
+        // Class instance method: 'this' is in local slot 0
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      }
     } else if (isDirective && current_function->is_timer_closure) {
       // Inside interval/timeout closure: interval ID is in the first upvalue
       emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));

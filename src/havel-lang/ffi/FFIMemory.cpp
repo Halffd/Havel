@@ -81,11 +81,12 @@ void FFIMemory::free(void* ptr) {
 	if (it != allocations_.end()) {
 		// Mark as freed to prevent double-free in sweep
 		it->second.freed = true;
-		// Clear finalizer since we're freeing manually here
+		// Use finalizer to free the memory
+		auto fin = std::move(it->second.finalizer);
 		it->second.finalizer = nullptr;
 		total_used_ -= it->second.size;
 		allocations_.erase(it);
-		std::free(ptr);
+		if (fin) fin(ptr);
 	}
 }
 
@@ -110,7 +111,7 @@ void FFIMemory::sweep() {
 			total_used_ -= it->second.size;
 			void* ptr = it->first;
 			it = allocations_.erase(it);
-			std::free(ptr);
+			// The finalizer is responsible for freeing the memory
 			if (fin) fin(ptr);
 		} else {
 			it->second.gc_mark = 0;

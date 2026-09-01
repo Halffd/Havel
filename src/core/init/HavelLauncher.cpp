@@ -269,6 +269,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugLexer = cfg.debugLexer,
           .debugParser = cfg.debugParser,
           .debugAst = cfg.debugAst,
+          .debugEmitter = cfg.debugEmitter,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
           .headlessMode = cfg.headlessMode,
@@ -1058,22 +1059,6 @@ public:
       binDir = std::filesystem::path(selfBuf).parent_path().string();
     }
 
-    // Try to find pre-compiled launcher bytecode
-    std::string launcherHvcPath;
-    std::vector<std::string> hvcSearchPaths = {
-        binDir + "/../cache/havel/launcher.hvc",
-        binDir + "/../../cache/havel/launcher.hvc",
-        std::string(std::getenv("HOME")) + "/.cache/havel/launcher.hvc",
-        "/tmp/havel/launcher.hvc",
-    };
-    for (const auto &candidate : hvcSearchPaths) {
-      std::error_code ec;
-      if (std::filesystem::exists(candidate, ec) && !ec) {
-        launcherHvcPath = candidate;
-        break;
-      }
-    }
-
     std::vector<std::string> searchPaths = {
         binDir + "/../modules/lang/launcher.hv",
         binDir + "/../../modules/lang/launcher.hv",
@@ -1124,6 +1109,12 @@ public:
     // Parse user scripts to check for hotkeys
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
+
+    std::string launcherCode = readScriptFile(launcherPath);
+    if (launcherCode.empty()) {
+      error("Cannot read launcher.hv at {}", launcherPath);
+      return 1;
+    }
 
     std::vector<std::string> appArgList;
 
@@ -1186,7 +1177,7 @@ public:
 
     // If user script has hotkeys and not headless, run with UI event loop
     if (hasHotkeys && !cfg.headlessMode) {
-      return executeWithUIBackend(cfg, argc, argv, launcherHvcPath, launcherPath, appArgList, combinedNames, true);
+      return executeWithUIBackend(cfg, argc, argv, launcherCode, launcherPath, appArgList, combinedNames);
     }
 
     // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
@@ -1204,20 +1195,7 @@ public:
       vm.setAppArgs(arrRef.id);
 
       auto exec_t0 = havel::startup_now();
-      
-      // Try to load pre-compiled launcher bytecode first
-      if (!launcherHvcPath.empty()) {
-        info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
-        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList);
-      } else {
-        std::string launcherCode = readScriptFile(launcherPath);
-        if (launcherCode.empty()) {
-          error("Cannot read launcher.hv at {}", launcherPath);
-          return 1;
-        }
-        engine.execute(launcherCode, "__main__", launcherPath);
-      }
-      
+      engine.execute(launcherCode, "__main__", launcherPath);
       havel::startup_timing_report("engine.execute", exec_t0);
       engine.shutdown();
       return 0;
@@ -1230,11 +1208,10 @@ public:
 private:
   int executeWithUIBackend(const havel::init::LaunchConfig &cfg,
                            int argc, char *argv[],
-                           const std::string& launcherHvcPath,
+                           const std::string& launcherCode,
                            const std::string& launcherPath,
                            const std::vector<std::string>& appArgList,
-                           const std::string& combinedNames,
-                           bool useBytecode) {
+                           const std::string& combinedNames) {
     auto *backend = host::UIManager::instance().backend();
     if (!backend) {
       error("No UI backend available to run hotkey scripts. Install a UI "
@@ -1264,20 +1241,10 @@ private:
       }
       vm.setAppArgs(arrRef.id);
 
-      // Compile and run launcher - use bytecode if available
+      // Compile and run launcher synchronously - it spawns user script goroutines
       auto exec_t0 = havel::startup_now();
-      if (useBytecode && !launcherHvcPath.empty()) {
-        info("Loading pre-compiled launcher bytecode from {}", launcherHvcPath);
-        engine.executeBytecode(launcherHvcPath, "__main__", launcherPath, appArgList, false);
-      } else {
-        std::string launcherCode = readScriptFile(launcherPath);
-        if (launcherCode.empty()) {
-          error("Cannot read launcher.hv at {}", launcherPath);
-          return 1;
-        }
-        engine.compileAndRunMainSync(launcherCode, "__main__", launcherPath);
-      }
-      havel::startup_timing_report("engine.execute", exec_t0);
+      engine.compileAndRunMainSync(launcherCode, "__main__", launcherPath);
+      havel::startup_timing_report("engine.compileAndRunMainSync", exec_t0);
 
       // If script requested exit during launcher execution, don't enter event loop
       if (engine.vm()->exitRequested()) {
@@ -1590,6 +1557,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugLexer = true;
     } else if (arg == "--debug-bytecode" || arg == "-dbc") {
       cfg.debugBytecode = true;
+    } else if (arg == "--debug-emitter") {
+      cfg.debugEmitter = true;
     } else if (arg == "--debug-gc" || arg == "-dgc") {
       debugging::debug_gc = true;
       cfg.debugGc = true;

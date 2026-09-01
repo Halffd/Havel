@@ -44,6 +44,7 @@ struct EngineConfig {
     bool debugLexer = false;
     bool debugParser = false;
     bool debugAst = false;
+    bool debugEmitter = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
     bool headlessMode = false;
@@ -501,6 +502,7 @@ vm_->addIntervalResult(timer_id, result);
             options.host_functions[name] = fn;
         }
         options.debugBytecode = config_.debugBytecode;
+        options.debugEmitter = config_.debugEmitter;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;
         }
@@ -569,6 +571,7 @@ vm_->addIntervalResult(timer_id, result);
             options.host_functions[name] = fn;
         }
         options.debugBytecode = config_.debugBytecode;
+        options.debugEmitter = config_.debugEmitter;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;
         }

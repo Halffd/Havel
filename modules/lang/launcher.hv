@@ -54,6 +54,7 @@ fn parseArgs(args) {
         debugLexer: false,
         debugParser: false,
         debugAst: false,
+        debugEmitter: false,
         stopOnError: false,
         headless: false,
     }
@@ -108,6 +109,9 @@ fn parseArgs(args) {
         }
         else if arg == "--debug-ast" || arg == "-da" {
             cfg.debugAst = true
+        }
+        else if arg == "--debug-emitter" || arg == "-de" {
+            cfg.debugEmitter = true
         }
         else if arg == "--error" || arg == "-e" {
             cfg.stopOnError = true
@@ -227,6 +231,14 @@ fn runScript(cfg) {
     if sourceFile == null { sourceFile = combinedNames }
     bcChunk = compileProgram(emitter, result.ast, true, sourceFile)
     measure("emit", t)
+
+    // Debug: dump user script bytecode
+    if isOn("emitter") {
+        bc.set_current_func(bcChunk)
+        print("=== USER SCRIPT BYTECODE (func " + str(bcChunk) + ") ===")
+        print(bc.disasm())
+        print("=== END ===")
+    }
 
     // Point the VM script dir at the user script's own directory so bare
     // module imports (use "name") resolve against scriptDir/name.hv and

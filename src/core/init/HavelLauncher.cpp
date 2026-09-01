@@ -269,6 +269,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugLexer = cfg.debugLexer,
           .debugParser = cfg.debugParser,
           .debugAst = cfg.debugAst,
+          .debugEmitter = cfg.debugEmitter,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
           .headlessMode = cfg.headlessMode,
@@ -1556,6 +1557,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugLexer = true;
     } else if (arg == "--debug-bytecode" || arg == "-dbc") {
       cfg.debugBytecode = true;
+    } else if (arg == "--debug-emitter") {
+      cfg.debugEmitter = true;
     } else if (arg == "--debug-gc" || arg == "-dgc") {
       debugging::debug_gc = true;
       cfg.debugGc = true;

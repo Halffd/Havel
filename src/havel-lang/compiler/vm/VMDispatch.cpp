@@ -47,9 +47,12 @@ case OpCode::LOAD_GLOBAL: {
                 COMPILER_THROW("LOAD_GLOBAL expects string operand");
             }
             uint32_t strIndex = instruction.operands[0].asStringValId();
-            const auto& cf = currentFrame();
-            const auto* func = cf.function;
-            const BytecodeChunk* resolveChunk = cf.chunk ? cf.chunk : current_chunk;
+            // Use main_chunk_ for global name string resolution.
+            // Global names must be resolved from a shared chunk's string table
+            // so that STORE_GLOBAL and LOAD_GLOBAL use the same string table.
+            // This ensures the same string index maps to the same global name
+            // regardless of which chunk is currently executing.
+            const BytecodeChunk* resolveChunk = main_chunk_.get();
             std::string name;
             if (resolveChunk) {
                 name = resolveChunk->getString(strIndex);
@@ -111,11 +114,16 @@ case OpCode::STORE_GLOBAL: {
                 COMPILER_THROW("STORE_GLOBAL expects string operand");
             }
             uint32_t strIndex = instruction.operands[0].asStringValId();
+            // Use main_chunk_ for global name string resolution.
+            // Global names must be resolved from a shared chunk's string table
+            // so that STORE_GLOBAL and LOAD_GLOBAL use the same string table.
+            // This ensures the same string index maps to the same global name
+            // regardless of which chunk is currently executing.
             const auto& cf_store = currentFrame();
-            const BytecodeChunk* resolveChunkStore = cf_store.chunk ? cf_store.chunk : current_chunk;
+            const BytecodeChunk* resolveChunk = main_chunk_.get();
             std::string name;
-            if (resolveChunkStore) {
-                name = resolveChunkStore->getString(strIndex);
+            if (resolveChunk) {
+                name = resolveChunk->getString(strIndex);
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }

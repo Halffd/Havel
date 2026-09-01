@@ -437,14 +437,27 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
 		return Value::makeInt(static_cast<int64_t>(idx));
 	});
 
-	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
+api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.add_chunk_string: requires string");
     }
     auto str = api.resolveString(args[0]);
-		auto idx = g_builder.chunk->addString(str);
-		return Value::makeInt(static_cast<int64_t>(idx));
-	});
+    auto idx = g_builder.chunk->addString(str);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
+
+api.registerFunction("bc.add_global_string", [api](const std::vector<Value> &args) -> Value {
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.add_global_string: requires string");
+    }
+    auto str = api.resolveString(args[0]);
+    auto &vm = api.vm();
+    if (!vm.main_chunk_) {
+        throw std::runtime_error("bc.add_global_string: no main chunk");
+    }
+    auto idx = vm.main_chunk_->addString(str);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
 
 api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
 auto *fn = g_builder.currentFunc();
@@ -1208,6 +1221,7 @@ return result;
 	api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
 	api.setField(bcObj, "add_regex", api.makeFunctionRef("bc.add_regex"));
 	api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
+	api.setField(bcObj, "add_global_string", api.makeFunctionRef("bc.add_global_string"));
     api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
     api.setField(bcObj, "patch_operand", api.makeFunctionRef("bc.patch_operand"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));

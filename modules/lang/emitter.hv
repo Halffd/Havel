@@ -59,7 +59,7 @@ fn emitError(msg, line, col) {
  emitterError(msg, line, col)
  }
 fn globalIdx(emitter, name) {
-    cidx = bc.add_chunk_string(name)
+    cidx = bc.add_global_string(name)
     cidx
 }
 fn collectAssignTargetNames(emitter, target) {
@@ -771,13 +771,11 @@ return
     if target.kind == "Identifier" {
         print("ASSIGN_DEBUG: target=" + target.name + " globalScope=" + str(target.globalScope) + " type=" + type(target.globalScope) + " isNull=" + str(target.globalScope == null))
         if target.globalScope == true {
-            print("ASSIGN_GLOBAL: target=" + target.name)
             emitExpr(emitter, node.value)
             bc.emit("DUP")
             bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
             return
         }
-        print("ASSIGN_LOCAL: target=" + target.name)
         emitExpr(emitter, node.value)
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)

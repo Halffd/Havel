@@ -10,11 +10,6 @@
 
 namespace havel::ffi {
 
-std::unordered_map<void*, Allocation> FFIMemory::allocations_;
-std::mutex FFIMemory::alloc_mutex_;
-size_t FFIMemory::total_allocated_ = 0;
-size_t FFIMemory::total_used_ = 0;
-
 void* FFIMemory::alloc(std::shared_ptr<FFIType> type) {
     if (!type) return nullptr;
     size_t size = FFITypeRegistry::size_of(type);
@@ -28,66 +23,20 @@ void* FFIMemory::alloc_bytes(size_t size) {
     if (!ptr) return nullptr;
     
     std::memset(ptr, 0, size);
-    
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    Allocation& a = allocations_[ptr];
-    a.ptr = ptr;
-    a.size = size;
-    a.is_managed = true;
-    total_allocated_ += size;
-    total_used_ += size;
-    
-    // Attach a finalizer to automatically free on GC sweep
-    a.finalizer = [](void* p) {
-        std::free(p);
-    };
-    
     return ptr;
 }
 
 void* FFIMemory::realloc(void* ptr, size_t new_size) {
 	if (!ptr) return alloc_bytes(new_size);
-	if (new_size == 0) { free(ptr); return nullptr; }
+	if (new_size == 0) { std::free(ptr); return nullptr; }
 
-	std::lock_guard<std::mutex> lock(alloc_mutex_);
-	auto it = allocations_.find(ptr);
-	if (it == allocations_.end()) {
-		return std::realloc(ptr, new_size);
-	}
-
-	size_t old_size = it->second.size;
 	void* new_ptr = std::realloc(ptr, new_size);
-	if (new_ptr) {
-		if (new_ptr != ptr) {
-			Allocation a = std::move(it->second);
-			a.ptr = new_ptr;
-			a.size = new_size;
-			allocations_.erase(it);
-			allocations_[new_ptr] = std::move(a);
-		} else {
-			it->second.size = new_size;
-		}
-		total_used_ -= old_size;
-		total_used_ += new_size;
-	}
 	return new_ptr;
 }
 
 void FFIMemory::free(void* ptr) {
 	if (!ptr) return;
-
-	std::lock_guard<std::mutex> lock(alloc_mutex_);
-	auto it = allocations_.find(ptr);
-	if (it != allocations_.end()) {
-		// Mark as freed to prevent double-free in sweep
-		it->second.freed = true;
-		// Use finalizer to free the memory
-		auto fin = std::move(it->second.finalizer);
-		it->second.finalizer = nullptr;
-		total_used_ -= it->second.size;
-		allocations_.erase(it);
-		if (fin) fin(ptr);
-	}
+	std::free(ptr);
 }
 
 void* FFIMemory::cast(void* ptr, std::shared_ptr<FFIType> new_type) {
@@ -95,37 +44,15 @@ void* FFIMemory::cast(void* ptr, std::shared_ptr<FFIType> new_type) {
 }
 
 void FFIMemory::mark(void* ptr) {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    auto it = allocations_.find(ptr);
-    if (it != allocations_.end()) {
-        it->second.gc_mark = 1;
-    }
+    // No-op without tracking
 }
 
 void FFIMemory::sweep() {
-	std::lock_guard<std::mutex> lock(alloc_mutex_);
-	for (auto it = allocations_.begin(); it != allocations_.end(); ) {
-		if (it->second.gc_mark == 0 && !it->second.freed) {
-			auto fin = std::move(it->second.finalizer);
-			it->second.finalizer = nullptr;
-			total_used_ -= it->second.size;
-			void* ptr = it->first;
-			it = allocations_.erase(it);
-			// The finalizer is responsible for freeing the memory
-			if (fin) fin(ptr);
-		} else {
-			it->second.gc_mark = 0;
-			++it;
-		}
-	}
+    // No-op without tracking
 }
 
 void FFIMemory::attach_finalizer(void* ptr, std::function<void(void*)> finalizer) {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    auto it = allocations_.find(ptr);
-    if (it != allocations_.end()) {
-        it->second.finalizer = finalizer;
-    }
+    // No-op without tracking
 }
 
 void* FFIMemory::to_native(const Value& v, std::shared_ptr<FFIType> type) {
@@ -271,26 +198,18 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
 }
 
 void FFIMemory::dump_stats() {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    ::havel::info("FFI Memory Stats:");
-    ::havel::info(" Allocations: {}", allocations_.size());
-    ::havel::info(" Total allocated: {} bytes", total_allocated_);
-    ::havel::info(" Total used: {} bytes", total_used_);
 }
 
 bool FFIMemory::is_valid(void* ptr) {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    return allocations_.find(ptr) != allocations_.end();
+    return ptr != nullptr;
 }
 
 size_t FFIMemory::total_allocated() {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    return total_allocated_;
+    return 0;
 }
 
 size_t FFIMemory::total_used() {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    return total_used_;
+    return 0;
 }
 
 } // namespace havel::ffi

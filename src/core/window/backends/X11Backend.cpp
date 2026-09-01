@@ -302,8 +302,6 @@ std::string X11Backend::getWindowClass(wID id) {
     XFree(classHint.res_class);
   }
   if (classHint.res_name) {
-    if (!windowClass.empty()) windowClass += ":";
-    windowClass += classHint.res_name;
     XFree(classHint.res_name);
   }
 

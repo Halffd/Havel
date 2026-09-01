@@ -81,9 +81,16 @@ public:
     static void register_typedef(const std::string& name, std::shared_ptr<FFIType> type);
     
 private:
-    static std::unordered_map<std::string, std::shared_ptr<FFIType>> named_types_;
-    static std::vector<std::shared_ptr<FFIType>> type_registry_;
-    static bool initialized_;
+    // Storage lives in block-scope statics inside these accessors. FFITypes.cpp
+    // is compiled into BOTH the main binary and the ffi host-module plugin .so.
+    // Default-visibility static members interpose across that boundary and their
+    // static destructors run twice (once per translation unit / once per .so),
+    // double-freeing the shared_ptr<FFIType> values at exit. Block-scope statics
+    // have internal linkage, so each TU keeps its own registry and destroys it
+    // exactly once.
+    static std::unordered_map<std::string, std::shared_ptr<FFIType>>& named_types();
+    static std::vector<std::shared_ptr<FFIType>>& type_registry();
+    static bool& initialized();
     static void init_builtins();
 };
 

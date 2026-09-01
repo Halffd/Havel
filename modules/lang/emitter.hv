@@ -742,6 +742,7 @@ return
 			emitter.inTailPosition = savedTail
 			if emitter.inTailPosition && emitter.tryDepth == 0 {
 				bc.emit("TAIL_CALL", savedArgc)
+				emitter.emittedTailCall = true
 			}
 			else {
 				bc.emit("CALL", savedArgc)
@@ -760,6 +761,7 @@ return
 		emitter.inTailPosition = savedTail
 		if emitter.inTailPosition && emitter.tryDepth == 0 {
 			bc.emit("TAIL_CALL", savedArgc)
+			emitter.emittedTailCall = true
 		}
 		else {
 			bc.emit("CALL", savedArgc)
@@ -1972,7 +1974,7 @@ bc.emit("OBJECT_GET")
 			bc.emit("CALL_IF_FUNCTION")
 		}
 		isYield = node.expr.kind == "YieldExpression"
-		if !emitter.inTailPosition && !isYield {
+		if !isYield {
 			bc.emit("POP")
 		}
 		return
@@ -2017,6 +2019,7 @@ bc.emit("OBJECT_GET")
 				emitter.emittedTailCall = false
 			}
 		}
+		emitter.inTailPosition = wasTail
 		return
 
 	}
@@ -3251,17 +3254,23 @@ return
 		}
 		emitStmt(emitter, last)
 bc.emit("PUSH_NULL")
+emitter.inTailPosition = savedTail
 oldScope.count = blockScope.count
 emitter.scope = oldScope
 return
 }
   if node.kind == "IfStatement" {
-emitIfExpr(emitter, node)
-return
-}
+      emitIfExpr(emitter, node)
+      emitter.inTailPosition = savedTail
+      return
+    }
 if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
+      // Discard expression result when used as a statement
+      if node.expr.kind != "YieldExpression" {
+        bc.emit("POP")
+      }
     }
     else {
       bc.emit("PUSH_NULL")
@@ -3299,6 +3308,8 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   if isInstanceMethod == null { isInstanceMethod = false }
   if isGenerator == null { isGenerator = false }
   oldScope = emitter.scope
+  oldInTailPosition = emitter.inTailPosition
+  emitter.inTailPosition = false
   fid = emitter.nextFuncId
   emitter.nextFuncId = fid + 1
   newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
@@ -3387,10 +3398,11 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
     rootCheck = scopeFindFuncRoot(newScope)
     actualLocals = scopeLocalCount(newScope)
 bc.set_local_count(actualLocals)
- upcount = newScope.upcount
- bc.func_pop()
- emitter.scope = oldScope
- [upcount, actualIdx]
+upcount = newScope.upcount
+  bc.func_pop()
+  emitter.scope = oldScope
+  emitter.inTailPosition = oldInTailPosition
+  [upcount, actualIdx]
 
  }
 fn compileLambda(emitter, name, parameters, bodyNode, sourceLine, isGenerator) {
@@ -3674,9 +3686,10 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
   if !noReset {
     bc.reset()
   }
- if sourceFile != null {
+  if sourceFile != null {
   bc.set_source_file(sourceFile)
- }
+  }
+  oldInTailPosition = emitter.inTailPosition
     // parse() returns {errors, ast} — unwrap if needed
     if program.ast != null {
         program = program.ast
@@ -3700,17 +3713,18 @@ for stmt in body {
     }
   }
   else {
-            topStmts.push(stmt)
+        topStmts.push(stmt)
 
-        }
     }
+  }
  // Module scope — used as parent for top-level functions
     moduleScope = Scope(null, null, null)
  emitter.scope = moduleScope
  // Pre-scan top-level assignment targets as implicit globals so lambdas
  // that assign to module-level variables (e.g. goroutine writing title_)
  // emit STORE_GLOBAL instead of shadowing the global with a local.
-collectTopLevelGlobals(emitter, body)
+ // NOTE: Use topStmts (non-function statements) not body (which includes funcDecls)
+collectTopLevelGlobals(emitter, topStmts)
   // Pre-scan for class/struct/enum declarations so they're known during function compilation
   for stmt in body {
     if stmt.kind == "ClassDeclaration" {
@@ -3750,7 +3764,12 @@ while fi < #funcDecls {
  // Pass 2: compile __main__
  mainChunkIdx = bc.func_new(entryName, 0, 64)
  traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
- emitter.scope = moduleScope
+ // Create proper function scope for __main__ with moduleScope as parent
+ // Use a unique funcId to distinguish __main__ from moduleScope
+ mainFuncId = emitter.nextFuncId
+ emitter.nextFuncId = mainFuncId + 1
+ mainScope = Scope(moduleScope, mainFuncId, mainChunkIdx)
+ emitter.scope = mainScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0
   while fi2 < #funcDecls {
@@ -3759,22 +3778,22 @@ fi2 = 0
   fkey = decl.name
   if implFor != null { fkey = "impl:" + str(implFor) + "." + decl.name }
   fidx = emitter.func_map[fkey]
-  if funcUpcounts[fi2] > 0 {
-  bc.emit("CLOSURE", fidx)
+if funcUpcounts[fi2] > 0 {
+    bc.emit("CLOSURE", fidx)
+    }
+    else {
+    fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
+    bc.emit("LOAD_CONST", fnConstIdx)
+    }
+  bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+  fi2 = fi2 + 1
   }
-  else {
-  fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
-  bc.emit("LOAD_CONST", fnConstIdx)
-  }
-bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
-fi2 = fi2 + 1
-}
 // Emit top-level statements (all except last)
 n = #topStmts
 si = 0
 while si < n - 1 {
-emitStmt(emitter, topStmts[si])
-si = si + 1
+    emitStmt(emitter, topStmts[si])
+    si = si + 1
 }
 // Last expression is the return rvalue
   if n > 0 {
@@ -3782,6 +3801,10 @@ si = si + 1
     lastExpr = last.expr
     if last.kind == "ExpressionStatement" {
       emitExpr(emitter, lastExpr)
+      // Discard expression result when used as a statement (like emitStmt does)
+      if lastExpr.kind != "YieldExpression" {
+        bc.emit("POP")
+      }
       bc.emit("RETURN")
     }
     else if last.kind == "IfStatement" {
@@ -3813,6 +3836,7 @@ si = si + 1
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
+    emitter.inTailPosition = oldInTailPosition
     if !skip_execute {
       traceEmitter("execute_persistent " + entryName + " BEFORE")
       result = bc.execute_persistent(entryName)

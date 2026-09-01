@@ -771,18 +771,17 @@ return
     if k == "AssignmentExpression" {
         target = node.target
     if target.kind == "Identifier" {
-        print("ASSIGN_DEBUG: target=" + target.name + " globalScope=" + str(target.globalScope) + " type=" + type(target.globalScope) + " isNull=" + str(target.globalScope == null))
         if target.globalScope == true {
-            print("ASSIGN_GLOBAL: target=" + target.name)
             emitExpr(emitter, node.value)
             bc.emit("DUP")
             bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+            bc.emit("POP")
             return
         }
-        print("ASSIGN_LOCAL: target=" + target.name)
         emitExpr(emitter, node.value)
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)
+        bc.emit("POP")
         return
     }
         if target.kind == "MemberExpression" {
@@ -1975,11 +1974,12 @@ bc.emit("OBJECT_GET")
 		if node.expr.kind == "Identifier" {
 			bc.emit("CALL_IF_FUNCTION")
 		}
-		isYield = node.expr.kind == "YieldExpression"
-		if !isYield {
-			bc.emit("POP")
-		}
-		return
+isYield = node.expr.kind == "YieldExpression"
+        // AssignmentExpression already emits POP, so skip for assignments
+        if !isYield && node.expr.kind != "AssignmentExpression" {
+            bc.emit("POP")
+        }
+        return
 
 	}
 	if k == "IfStatement" {
@@ -3270,7 +3270,8 @@ if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
       // Discard expression result when used as a statement
-      if node.expr.kind != "YieldExpression" {
+      // AssignmentExpression already emits POP, so skip for assignments
+      if node.expr.kind != "YieldExpression" && node.expr.kind != "AssignmentExpression" {
         bc.emit("POP")
       }
     }

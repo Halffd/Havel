@@ -1070,14 +1070,8 @@ bool BrightnessManager::setTemperature(int kelvin) {
 
 bool BrightnessManager::setTemperature(const std::string &monitor, int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
-  RGBColor rgb = kelvinToRGB(kelvin);
-
-  bool success = setGammaRGB(monitor, rgb.red, rgb.green, rgb.blue);
-  if (success) {
-    temperature[monitor] = kelvin;
-  }
-
-  return success;
+  temperature[monitor] = kelvin;
+  return applyAllSettings(monitor);
 }
 
 // === COMBINED OPERATIONS ===
@@ -1215,6 +1209,12 @@ double BrightnessManager::getBrightness() const {
 }
 
 double BrightnessManager::getBrightness(const std::string& monitor) const {
+  // Return stored brightness value if available (user-set value),
+  // otherwise fall back to gamma computation for backwards compatibility
+  auto it = brightness.find(monitor);
+  if (it != brightness.end()) {
+    return it->second;
+  }
   if (WindowManagerDetector::IsX11()) {
     return getBrightnessGamma(monitor);
   }

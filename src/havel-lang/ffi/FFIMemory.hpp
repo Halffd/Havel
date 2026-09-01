@@ -44,10 +44,7 @@ public:
     static size_t total_used();
     
 private:
-    static std::unordered_map<void*, Allocation> allocations_;
-    static std::mutex alloc_mutex_;
-    static size_t total_allocated_;
-    static size_t total_used_;
+    // No static tracking - use simple malloc/free to avoid double-free at exit
 };
 
 }

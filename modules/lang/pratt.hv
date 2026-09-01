@@ -478,6 +478,19 @@ fn parseExpr(rbp) {
  // Not across newlines — NewLine has bp=0 so the Pratt loop exits before we get here
  // and NewLine is not in IMPLICIT_CALL_STARTERS
  if allowBraceSugar and getImplicitCallStarters()[current().tid] != null {
+            // Guard: implicit-call sugar must not cross a statement boundary.
+            // advance() silently consumes newlines, so at(-1) may be the
+            // swallowed NewLine. Scan back past newlines/comments to the last
+            // real token; if the next token is on a different line, it starts a
+            // new statement and must NOT be absorbed as an implicit call arg.
+            back = 1
+            while pos - back >= 0 and (at(-back).tid == TID.NewLine or at(-back).tid == TID.Comment or at(-back).tid == TID.UnsafeMarker) {
+                back = back + 1
+            }
+            sameLine = current().line == at(-back).line
+            if !sameLine {
+                return left
+            }
             prevSugar = allowBraceSugar
             allowBraceSugar = false
             arg = parseExpr(0)

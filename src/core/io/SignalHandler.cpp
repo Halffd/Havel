@@ -3,6 +3,7 @@
 #include "InputBackend.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
+#include "utils/ExitHandler.hpp"
 #include <cerrno>
 #include <csignal>
 #include <cstring>
@@ -33,6 +34,13 @@ void SignalHandler::SignalCleanupHandler(int sig) {
   gSignalFlag.store(sig, std::memory_order_relaxed);
 }
 
+static void SignalExitHandler(int sig) {
+  ExitReason reason = ExitReason::SignalInt;
+  if (sig == SIGTERM) reason = ExitReason::SignalTerm;
+  else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
+  havel::exit(reason, 0);
+}
+
 static void FatalSignalHandler(int sig) {
     EmergencyUngrabAllEvdevSignalSafe();
     signal(sig, SIG_DFL);
@@ -61,10 +69,17 @@ void SignalHandler::InstallAsyncHandlers() {
   sigaction(SIGFPE, &sa, nullptr);    // Floating point exception
   sigaction(SIGBUS, &sa, nullptr);    // Bus error
 
-  // Non-fatal signals: just set flag
-  sa.sa_handler = SignalCleanupHandler;
+  // SIGTERM/SIGQUIT must actually terminate. When the signalfd loop is not
+  // active (headless scripts parked in processGoroutines, hotkey scripts whose
+  // bindings are registered at runtime, startup window before SetupSignalfd),
+  // the old flag-only handler left havel alive forever: `timeout N havel ...`
+  // never killed it, so every timed-out test leaked a process. Exit directly.
+  sa.sa_handler = SignalExitHandler;
   sigaction(SIGTERM, &sa, nullptr);   // Termination
   sigaction(SIGQUIT, &sa, nullptr);   // Quit
+
+  // Other non-fatal signals: just set flag
+  sa.sa_handler = SignalCleanupHandler;
   sigaction(SIGPIPE, &sa, nullptr);   // Broken pipe
   sigaction(SIGALRM, &sa, nullptr);   // Alarm clock
   sigaction(SIGUSR1, &sa, nullptr);   // User-defined 1

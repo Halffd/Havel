@@ -345,8 +345,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
 	if (left.isStringValId() || left.isStringId() || right.isStringValId() || right.isStringId()) {
 		std::string l;
 		if (left.isStringValId()) {
-			if (current_chunk) {
-				l = current_chunk->getString(left.asStringValId());
+			if (main_chunk_) {
+				l = main_chunk_->getString(left.asStringValId());
 			} else {
 				l = "<string:" + std::to_string(left.asStringValId()) + ">";
 			}
@@ -362,8 +362,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
 
 		std::string r;
 		if (right.isStringValId()) {
-			if (current_chunk) {
-				r = current_chunk->getString(right.asStringValId());
+			if (main_chunk_) {
+				r = main_chunk_->getString(right.asStringValId());
 			} else {
 				r = "<string:" + std::to_string(right.asStringValId()) + ">";
 			}

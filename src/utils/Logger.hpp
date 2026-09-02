@@ -113,93 +113,221 @@ public:
         HavelLogger_clearOriginFilter(handle());
     }
 
-    // Standard logging methods
+    // Non-template core logging methods (single implementation)
     void debug(const std::string& message) {
         HavelLogger_debug(handle(), message.c_str());
     }
+    void info(const std::string& message) {
+        HavelLogger_info(handle(), message.c_str());
+    }
+    void warning(const std::string& message) {
+        HavelLogger_warning(handle(), message.c_str());
+    }
+    void error(const std::string& message) {
+        HavelLogger_error(handle(), message.c_str());
+    }
+    void fatal(const std::string& message) {
+        HavelLogger_fatal(handle(), message.c_str());
+    }
+    void critical(const std::string& message) {
+        HavelLogger_critical(handle(), message.c_str());
+    }
 
-    // Origin-based debug logging with filtering support
-    template<typename... Args>
-    void debugOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+    // Formatted logging - non-template core implementation
+    void debug_fmt(std::string_view fmt,
+#ifdef __cpp_lib_format
+                   std::format_args args
+#else
+                   fmt::format_args args
+#endif
+                   ) {
         try {
-            #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
-            #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
-            #endif
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
+            HavelLogger_debug(handle(), msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in debug(): %s | Original format: %s", e.what(), fmt.data());
+        }
+    }
+    void info_fmt(std::string_view fmt,
+#ifdef __cpp_lib_format
+                  std::format_args args
+#else
+                  fmt::format_args args
+#endif
+                  ) {
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
+            HavelLogger_info(handle(), msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in info(): %s | Original format: %s", e.what(), fmt.data());
+        }
+    }
+    void warning_fmt(std::string_view fmt,
+#ifdef __cpp_lib_format
+                     std::format_args args
+#else
+                     fmt::format_args args
+#endif
+                     ) {
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
+            HavelLogger_warning(handle(), msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in warning(): %s | Original format: %s", e.what(), fmt.data());
+        }
+    }
+    void error_fmt(std::string_view fmt,
+#ifdef __cpp_lib_format
+                   std::format_args args
+#else
+                   fmt::format_args args
+#endif
+                   ) {
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
+            HavelLogger_error(handle(), msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in error(): %s | Original format: %s", e.what(), fmt.data());
+        }
+    }
+    void fatal_fmt(std::string_view fmt,
+#ifdef __cpp_lib_format
+                   std::format_args args
+#else
+                   fmt::format_args args
+#endif
+                   ) {
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
+            HavelLogger_fatal(handle(), msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in fatal(): %s | Original format: %s", e.what(), fmt.data());
+        }
+    }
+
+    // Origin-based logging - non-template core
+    void debugOrigin_fmt(const Origin& origin, std::string_view fmt,
+#ifdef __cpp_lib_format
+                         std::format_args args
+#else
+                         fmt::format_args args
+#endif
+                         ) {
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, args);
+#else
+            auto msg = fmt::vformat(fmt, args);
+#endif
             HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
                                       origin.category, origin.subsystem, origin.priority};
             HavelLogger_debugOrigin(handle(), &cOrigin, "%s", msg.c_str());
         } catch (const std::exception& e) {
-            HavelLogger_errorf(handle(), "Logger format error in debugOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+            HavelLogger_errorf(handle(), "Logger format error in debugOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
     }
-
-    template<typename... Args>
-    void infoOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
-        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
-                                  origin.category, origin.subsystem, origin.priority};
+    void infoOrigin_fmt(const Origin& origin, std::string_view fmt,
+#ifdef __cpp_lib_format
+                        std::format_args args
+#else
+                        fmt::format_args args
+#endif
+                        ) {
         try {
 #ifdef __cpp_lib_format
-            auto msg = std::vformat(fmt, std::make_format_args(args...));
+            auto msg = std::vformat(fmt, args);
 #else
-            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+            auto msg = fmt::vformat(fmt, args);
 #endif
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
             HavelLogger_infoOrigin(handle(), &cOrigin, msg.c_str());
         } catch (const std::exception& e) {
-            HavelLogger_errorf(handle(), "Logger format error in infoOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+            HavelLogger_errorf(handle(), "Logger format error in infoOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
     }
-
-    template<typename... Args>
-    void warningOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
-        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
-                                  origin.category, origin.subsystem, origin.priority};
+    void warningOrigin_fmt(const Origin& origin, std::string_view fmt,
+#ifdef __cpp_lib_format
+                           std::format_args args
+#else
+                           fmt::format_args args
+#endif
+                           ) {
         try {
 #ifdef __cpp_lib_format
-            auto msg = std::vformat(fmt, std::make_format_args(args...));
+            auto msg = std::vformat(fmt, args);
 #else
-            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+            auto msg = fmt::vformat(fmt, args);
 #endif
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
             HavelLogger_warningOrigin(handle(), &cOrigin, msg.c_str());
         } catch (const std::exception& e) {
-            HavelLogger_errorf(handle(), "Logger format error in warningOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+            HavelLogger_errorf(handle(), "Logger format error in warningOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
     }
-
-    template<typename... Args>
-    void errorOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
-        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
-                                  origin.category, origin.subsystem, origin.priority};
+    void errorOrigin_fmt(const Origin& origin, std::string_view fmt,
+#ifdef __cpp_lib_format
+                         std::format_args args
+#else
+                         fmt::format_args args
+#endif
+                         ) {
         try {
 #ifdef __cpp_lib_format
-            auto msg = std::vformat(fmt, std::make_format_args(args...));
+            auto msg = std::vformat(fmt, args);
 #else
-            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+            auto msg = fmt::vformat(fmt, args);
 #endif
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
             HavelLogger_errorOrigin(handle(), &cOrigin, msg.c_str());
         } catch (const std::exception& e) {
-            HavelLogger_errorf(handle(), "Logger format error in errorOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+            HavelLogger_errorf(handle(), "Logger format error in errorOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
     }
-
-    template<typename... Args>
-    void fatalOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
-        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
-                                  origin.category, origin.subsystem, origin.priority};
+    void fatalOrigin_fmt(const Origin& origin, std::string_view fmt,
+#ifdef __cpp_lib_format
+                         std::format_args args
+#else
+                         fmt::format_args args
+#endif
+                         ) {
         try {
 #ifdef __cpp_lib_format
-            auto msg = std::vformat(fmt, std::make_format_args(args...));
+            auto msg = std::vformat(fmt, args);
 #else
-            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+            auto msg = fmt::vformat(fmt, args);
 #endif
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
             HavelLogger_fatalOrigin(handle(), &cOrigin, msg.c_str());
         } catch (const std::exception& e) {
-            HavelLogger_errorf(handle(), "Logger format error in fatalOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+            HavelLogger_errorf(handle(), "Logger format error in fatalOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
     }
 
-    // Non-template overloads for pre-formatted messages
+    // Origin-based non-template overloads for pre-formatted messages
     void debugOrigin(const Origin& origin, const std::string& message) {
         HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
                                   origin.category, origin.subsystem, origin.priority};
@@ -226,115 +354,161 @@ public:
         HavelLogger_fatalOrigin(handle(), &cOrigin, "%s", message.c_str());
     }
 
-    void info(const std::string& message) {
-        HavelLogger_info(handle(), message.c_str());
-    }
-
-    void warning(const std::string& message) {
-        HavelLogger_warning(handle(), message.c_str());
-    }
-
-    void error(const std::string& message) {
-        HavelLogger_error(handle(), message.c_str());
-    }
-
-    void fatal(const std::string& message) {
-        HavelLogger_fatal(handle(), message.c_str());
-    }
-
-    void critical(const std::string& message) {
-        HavelLogger_critical(handle(), message.c_str());
-    }
-
+    // Thin template wrappers that construct format_args
     template<typename... Args>
-    void debug(const std::string& fmt, Args&&... args) {
+    void debug(std::string_view fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            HavelLogger_debug(handle(), fmt.c_str());
+            HavelLogger_debug(handle(), fmt.data());
         } else {
-            try {
+            debug_fmt(fmt,
 #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
+                std::make_format_args(args...)
 #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+                fmt::make_format_args(args...)
 #endif
-                HavelLogger_debug(handle(), msg.c_str());
-            } catch (const std::exception& e) {
-                HavelLogger_errorf(handle(), "Logger format error in debug(): %s | Original format: %s", e.what(), fmt.c_str());
-            }
+            );
         }
     }
-
     template<typename... Args>
-    void info(const std::string& fmt, Args&&... args) {
+    void info(std::string_view fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            HavelLogger_info(handle(), fmt.c_str());
+            HavelLogger_info(handle(), fmt.data());
         } else {
-            try {
+            info_fmt(fmt,
 #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
+                std::make_format_args(args...)
 #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+                fmt::make_format_args(args...)
 #endif
-                HavelLogger_info(handle(), msg.c_str());
-            } catch (const std::exception& e) {
-                HavelLogger_errorf(handle(), "Logger format error in info(): %s | Original format: %s", e.what(), fmt.c_str());
-            }
+            );
         }
     }
-
     template<typename... Args>
-    void warning(const std::string& fmt, Args&&... args) {
+    void warning(std::string_view fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            HavelLogger_warning(handle(), fmt.c_str());
+            HavelLogger_warning(handle(), fmt.data());
         } else {
-            try {
+            warning_fmt(fmt,
 #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
+                std::make_format_args(args...)
 #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+                fmt::make_format_args(args...)
 #endif
-                HavelLogger_warning(handle(), msg.c_str());
-            } catch (const std::exception& e) {
-                HavelLogger_errorf(handle(), "Logger format error in warning(): %s | Original format: %s", e.what(), fmt.c_str());
-            }
+            );
         }
     }
-
     template<typename... Args>
-    void error(const std::string& fmt, Args&&... args) {
+    void error(std::string_view fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            HavelLogger_error(handle(), fmt.c_str());
+            HavelLogger_error(handle(), fmt.data());
         } else {
-            try {
+            error_fmt(fmt,
 #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
+                std::make_format_args(args...)
 #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+                fmt::make_format_args(args...)
 #endif
-                HavelLogger_error(handle(), msg.c_str());
-            } catch (const std::exception& e) {
-                HavelLogger_errorf(handle(), "Logger format error in error(): %s | Original format: %s", e.what(), fmt.c_str());
-                HavelLogger_error(handle(), fmt.c_str());
-            }
+            );
         }
     }
-
     template<typename... Args>
-    void fatal(const std::string& fmt, Args&&... args) {
+    void fatal(std::string_view fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            HavelLogger_fatal(handle(), fmt.c_str());
+            HavelLogger_fatal(handle(), fmt.data());
         } else {
-            try {
+            fatal_fmt(fmt,
 #ifdef __cpp_lib_format
-                auto msg = std::vformat(fmt, std::make_format_args(args...));
+                std::make_format_args(args...)
 #else
-                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+                fmt::make_format_args(args...)
 #endif
-                HavelLogger_fatal(handle(), msg.c_str());
-            } catch (const std::exception& e) {
-                HavelLogger_errorf(handle(), "Logger format error in fatal(): %s | Original format: %s", e.what(), fmt.c_str());
-                HavelLogger_fatal(handle(), fmt.c_str());
-            }
+            );
+        }
+    }
+    template<typename... Args>
+    void critical(std::string_view fmt, Args&&... args) {
+        fatal(fmt, std::forward<Args>(args)...);
+    }
+
+    // Origin-based thin wrappers
+    template<typename... Args>
+    void debugOrigin(const Origin& origin, std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(args) == 0) {
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_debugOrigin(handle(), &cOrigin, "%s", fmt.data());
+        } else {
+            debugOrigin_fmt(origin, fmt,
+#ifdef __cpp_lib_format
+                std::make_format_args(args...)
+#else
+                fmt::make_format_args(args...)
+#endif
+            );
+        }
+    }
+    template<typename... Args>
+    void infoOrigin(const Origin& origin, std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(args) == 0) {
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_infoOrigin(handle(), &cOrigin, "%s", fmt.data());
+        } else {
+            infoOrigin_fmt(origin, fmt,
+#ifdef __cpp_lib_format
+                std::make_format_args(args...)
+#else
+                fmt::make_format_args(args...)
+#endif
+            );
+        }
+    }
+    template<typename... Args>
+    void warningOrigin(const Origin& origin, std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(args) == 0) {
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_warningOrigin(handle(), &cOrigin, "%s", fmt.data());
+        } else {
+            warningOrigin_fmt(origin, fmt,
+#ifdef __cpp_lib_format
+                std::make_format_args(args...)
+#else
+                fmt::make_format_args(args...)
+#endif
+            );
+        }
+    }
+    template<typename... Args>
+    void errorOrigin(const Origin& origin, std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(args) == 0) {
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_errorOrigin(handle(), &cOrigin, "%s", fmt.data());
+        } else {
+            errorOrigin_fmt(origin, fmt,
+#ifdef __cpp_lib_format
+                std::make_format_args(args...)
+#else
+                fmt::make_format_args(args...)
+#endif
+            );
+        }
+    }
+    template<typename... Args>
+    void fatalOrigin(const Origin& origin, std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(args) == 0) {
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_fatalOrigin(handle(), &cOrigin, "%s", fmt.data());
+        } else {
+            fatalOrigin_fmt(origin, fmt,
+#ifdef __cpp_lib_format
+                std::make_format_args(args...)
+#else
+                fmt::make_format_args(args...)
+#endif
+            );
         }
     }
 
@@ -396,23 +570,23 @@ inline void fatal(const std::string& message) {
     Logger::getInstance().fatal(message);
 }
 template<typename... Args>
-inline void debug(const std::string& fmt, Args&&... args) {
+inline void debug(std::string_view fmt, Args&&... args) {
     Logger::getInstance().debug(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void info(const std::string& fmt, Args&&... args) {
+inline void info(std::string_view fmt, Args&&... args) {
     Logger::getInstance().info(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void warning(const std::string& fmt, Args&&... args) {
+inline void warning(std::string_view fmt, Args&&... args) {
     Logger::getInstance().warning(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void error(const std::string& fmt, Args&&... args) {
+inline void error(std::string_view fmt, Args&&... args) {
     Logger::getInstance().error(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void fatal(const std::string& fmt, Args&&... args) {
+inline void fatal(std::string_view fmt, Args&&... args) {
     Logger::getInstance().fatal(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
@@ -423,11 +597,11 @@ inline void warn(const std::string& message) {
     Logger::getInstance().warning(message);
 }
 template<typename... Args>
-inline void critical(const std::string& fmt, Args&&... args) {
-    Logger::getInstance().fatal(fmt, std::forward<Args>(args)...);
+inline void critical(std::string_view fmt, Args&&... args) {
+    Logger::getInstance().critical(fmt, std::forward<Args>(args)...);
 }
 inline void critical(const std::string& message) {
-    Logger::getInstance().fatal(message);
+    Logger::getInstance().critical(message);
 }
 
 } // namespace havel

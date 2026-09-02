@@ -2252,14 +2252,27 @@ add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboa
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
 add_havel_module_plugin(config       ${CMAKE_SOURCE_DIR}/src/modules/config/ConfigModule.cpp)
 add_havel_module_plugin(display      ${CMAKE_SOURCE_DIR}/src/modules/display/DisplayModule.cpp)
+# Shared library for FFI types registry — must be single instance shared
+# between main binary and ffi plugin to avoid double-free at exit.
+add_library(havel_ffi_types SHARED
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFITypes.cpp
+)
+target_include_directories(havel_ffi_types PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/include
+  ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(havel_ffi_types PRIVATE ${LIBFFI_LIBRARIES})
+# Link into main binary (via havel_lang)
+target_link_libraries(havel_lang PRIVATE havel_ffi_types)
+
 add_havel_module_plugin(ffi          ${CMAKE_SOURCE_DIR}/src/modules/ffi/FFIModule.cpp
   EXTRA_DEFS $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>)
 target_sources(havel_mod_ffi PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFIMemory.cpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFICall.cpp
-  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFITypes.cpp
 )
-target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES})
+target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES} havel_ffi_types)
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)

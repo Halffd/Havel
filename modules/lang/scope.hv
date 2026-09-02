@@ -59,7 +59,8 @@ null
 
 }
 fn scopeResolveUpvalue(scope, name) {
-  existing = scope.upvalues[name]
+    // Check if already cached
+    existing = scope.upvalues[name]
     if existing != null {
         return existing
     }
@@ -150,11 +151,11 @@ fn scopeResolveUpvalue(scope, name) {
     scope.upvalues[name] = myUpidx
     scope.upcount = myUpidx + 1
     if scope.bcFuncIdx != null {
-            bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
-        }
-        else {
-            bc.add_upvalue(parentUpidx, 0)
-        }
+        bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
+    }
+    else {
+        bc.add_upvalue(parentUpidx, 0)
+    }
     return myUpidx
 }
 
@@ -190,7 +191,6 @@ fn scopeResolve(scope, name) {
         }
     }
     null
-
 }
 fn scopeFindFuncRoot(scope) {
     root = scope

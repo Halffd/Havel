@@ -71,7 +71,6 @@ ProcessResult Launcher::run(const std::string &commandLine,
   if (params.method == Method::Shell || isShellCommand(commandLine)) {
     LaunchParams shellParams = params;
     shellParams.method = Method::Shell;
-    printf("DEBUG: Shell command detected: %s\n", commandLine.c_str());
     debug("Running command as shell: " + commandLine);
     return executeShell(commandLine, shellParams);
   }

@@ -148,14 +148,14 @@ fn emitStoreVar(emitter, name) {
       return
     }
   }
-  // Variable not found in scope — bare assignment creates local inside function, global at top level
+  // Variable not found in scope -- bare assignment creates local inside function, global at top level
   funcRoot = scopeFindFuncRoot(emitter.scope)
   if funcRoot.parent != null {
     if emitter.global_names[name] == true {
       bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
       return
     }
-    // Inside a function — declare as local in the current scope
+    // Inside a function -- declare as local in the current scope
     idx = scopeDeclare(emitter.scope, name)
     bc.emit("STORE_VAR", idx)
     return
@@ -767,13 +767,6 @@ return
     if k == "AssignmentExpression" {
         target = node.target
     if target.kind == "Identifier" {
-        if target.globalScope == true {
-            emitExpr(emitter, node.value)
-            bc.emit("DUP")
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
-            bc.emit("POP")
-            return
-        }
         emitExpr(emitter, node.value)
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)

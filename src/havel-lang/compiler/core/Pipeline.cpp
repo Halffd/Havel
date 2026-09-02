@@ -785,6 +785,9 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
 BytecodeSmokeResult runBytecodePipeline(const std::string &source,
                                         const std::string &entry_function,
                                         const PipelineOptions &options) {
+  fflush(stderr);
+  fprintf(stderr, "[RUNBYTECODE-DEBUG] options.traceExecution=%d, options.debugBytecode=%d\n", options.traceExecution, options.debugBytecode);
+  fflush(stderr);
   auto writeSnapshotArtifact = [&](const BytecodeSmokeResult &result,
                                    const std::string &error) {
     if (!options.write_snapshot_artifact || options.snapshot_dir.empty()) {
@@ -1083,7 +1086,7 @@ for (const auto &err : parser.getErrors()) {
   }
   try {
     vm->setMaxInstructions(options.max_instructions);
-    if (options.debugBytecode) {
+    if (options.debugBytecode || options.traceExecution) {
       vm->setTraceExecution(true);
     }
     // Set up a yield callback to process events and wake sleeping goroutines

@@ -60,7 +60,6 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
-  fprintf(stderr, "VM LOAD_GLOBAL: name='%s' globals_size=%zu\n", name.c_str(), globals.size());
   auto it = globals.find(name);
   if (it != globals.end()) {
         if (it->second.isObjectId()) {
@@ -129,9 +128,6 @@ case OpCode::STORE_GLOBAL: {
             }
 Value value = popStack();
 
-            // DEBUG
-            fprintf(stderr, "VM STORE_GLOBAL: name='%s' globals_size=%zu\n", name.c_str(), globals.size());
-
             // Materialize StringValId to heap StringId so cross-chunk reads work
             if (value.isStringValId() || value.isRegexValId()) {
                 const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
@@ -147,17 +143,13 @@ Value value = popStack();
             }
 
             if (immutable_globals_.count(name)) {
-                fprintf(stderr, "VM STORE_GLOBAL: name='%s' is immutable, existing=%d\n", name.c_str(), globals.count(name));
                 auto existing = globals.find(name);
                 if (existing != globals.end() && existing->second == value) {
-                    fprintf(stderr, "VM STORE_GLOBAL: immutable but same value, breaking\n");
                     break;
                 }
                 COMPILER_THROW("Cannot reassign val global: " + name);
             }
-            fprintf(stderr, "VM STORE_GLOBAL: storing name='%s'\n", name.c_str());
             auto insert_result = globals.insert({name, value});
-            fprintf(stderr, "VM STORE_GLOBAL: insert_result.second=%d, globals_size=%zu\n", insert_result.second, globals.size());
             if (!insert_result.second) {
                 // Key already existed, update it
                 globals[name] = value;
@@ -732,6 +724,7 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] = &&op_STRING_CURSOR_RESET;
         dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_GET_POS)] = &&op_STRING_CURSOR_GET_POS;
         dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_SET_POS)] = &&op_STRING_CURSOR_SET_POS;
+        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CONCAT)] = &&op_STRING_CONCAT;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] = &&op_JUMP_IF_FALSE;
         dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE;
@@ -754,6 +747,9 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
             stack.push(nullptr);
             executeInstruction(Instruction{OpCode::RETURN});
             return;
+        }
+        if (trace_execution_) {
+          traceInstruction(frm.function->instructions[frm.ip], frm.function, frame_count_ - 1, frm.ip);
         }
         goto *dispatch_table[static_cast<uint8_t>(frm.function->instructions[frm.ip].opcode)];
     }
@@ -992,12 +988,15 @@ op_RETURN: {
 if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
         {
             auto &f2 = frame_arena_[frame_count_ - 1];
-            if (f2.ip >= f2.function->instructions.size()) {
-                stack.push(nullptr);
-                executeInstruction(Instruction{OpCode::RETURN});
-                return;
-            }
-            goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        if (trace_execution_) {
+          traceInstruction(f2.function->instructions[f2.ip], f2.function, frame_count_ - 1, f2.ip);
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
         }
 }
 
@@ -1993,6 +1992,26 @@ op_STRING_CURSOR_SET_POS: {
         cursor->codepoint_index++;
     }
     pushStack(Value::makeNull());
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+op_STRING_CONCAT: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value right = popStack();
+    Value left = popStack();
+    auto str_ref = heap_.allocateString(toString(left) + toString(right));
+    pushStack(Value::makeStringId(str_ref.id));
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];

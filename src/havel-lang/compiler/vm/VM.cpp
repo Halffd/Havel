@@ -1001,6 +1001,11 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       executed_instructions_++;
     }
 
+    // Trace instruction if tracing is enabled
+    if (trace_execution_) {
+      traceInstruction(instruction, function, frame_count_ - 1, ip);
+    }
+
     // Execute the instruction
     executeInstruction(instruction);
 
@@ -1761,9 +1766,6 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool use_fast_path = !debugger_attached_ && !has_profiling &&
                              !has_tracing && !has_instruction_limit;
 
-  if (_trace) {
-  }
-
   if (std::getenv("HAVEL_TRACE_SLEEP")) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n", stop_frame_depth, frame_count_, (int)last_suspension_reason_, (int)suspension_requested_);
     if (last_suspension_reason_ != 0) {
@@ -1832,6 +1834,11 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         // Slow loop advances ip AFTER executeInstruction, so the return
         // address for a coroutine resume inside this instruction is ip + 1.
         pending_call_return_ip_ = static_cast<int32_t>(ip) + 1;
+        // Trace instruction if tracing is enabled
+        if (trace_execution_) {
+          fprintf(stderr, "[RDL-TRACE] About to call traceInstruction: ip=%zu\n", ip);
+          traceInstruction(instruction, function, frame_count_ - 1, ip);
+        }
         executeInstruction(instruction);
         // The switch-based executeInstruction (used by the slow dispatch
         // loop) does not propagate suspension_requested_ into last_suspension_*.
@@ -1976,16 +1983,7 @@ slow_path:
         executed_instructions_++;
       }
       if (has_tracing && current_chunk) {
-        auto funcName =
-            function->name.empty() ? std::string("<anon>") : function->name;
-        BytecodeDisassembler::Options opts;
-        opts.showLineNumbers = false;
-        opts.showSourceLocations = true;
-        opts.showConstantPool = false;
-        opts.showFunctionInfo = false;
-        opts.useLabels = true;
-        auto disasm = BytecodeDisassembler(*current_chunk)
-                          .formatInstruction(ip, instruction, opts);
+        traceInstruction(instruction, function, frame_count_ - 1, ip);
       }
       // Slow loop advances ip AFTER executeInstruction (see end of loop body),
       // so the return address for a coroutine resume inside this instruction
@@ -4687,6 +4685,20 @@ Value VM::loadModule(const std::string &path) {
   return cachedVal;
   }
 
+  // Check for lazy module (like bytecodeBuilder) BEFORE native plugin check
+  auto lazyIt = lazy_modules_.find(path);
+  if (lazyIt != lazy_modules_.end() && !lazyIt->second.loaded) {
+    activateLazyModule(path);
+    // After activation, the module should be cached
+    if (moduleLoader_.isCached(canonicalKey)) {
+      Value cachedVal;
+      std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
+      if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+        return cachedVal;
+      }
+    }
+  }
+
   // Check for eager plugin functions registered in host_function_globals_ BEFORE native plugin check.
   // Eager plugins (registered via HAVEL_MODULE_PLUGIN_EAGER) register their functions in
   // host_function_globals_ during VM init with prefix "moduleName." (e.g., "ffi.open").
@@ -6951,55 +6963,49 @@ void VM::trimInlineCaches() {
   }
 }
 
-// Print inline cache statistics
-void VM::printInlineCacheStats() const {
-  ::havel::debug("=== Inline Cache Statistics ===");
-  
-  size_t total_hits = 0;
-  size_t total_misses = 0;
-  for (const auto& [key, cache] : array_inline_cache_) {
-    total_hits += cache.hits;
-    total_misses += cache.misses;
+void VM::traceInstruction(const Instruction& inst, const BytecodeFunction* func, size_t frame_depth, size_t ip) const {
+  if (!trace_execution_) return;
+
+  std::string funcName = func ? func->name : "<unknown>";
+  std::string opcodeName = ::havel::compiler::BytecodeDisassembler::opcodeToString(inst.opcode);
+
+  // Get current fiber/goroutine info
+  std::string fiberInfo;
+  if (current_executing_fiber_) {
+    fiberInfo = std::format(" goroutine={}({})", current_executing_fiber_->id, current_executing_fiber_->name);
   }
-  ::havel::debug("Array Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
-                 array_inline_cache_.size(), total_hits, total_misses,
-                 total_hits + total_misses > 0 
-                   ? (100.0 * total_hits) / (total_hits + total_misses) 
-                   : 0.0);
-  
-  total_hits = 0;
-  total_misses = 0;
-  for (const auto& [key, cache] : property_inline_cache_) {
-    total_hits += cache.hits;
-    total_misses += cache.misses;
+
+  // Get source location
+  std::string sourceLoc;
+  if (func && ip < func->instruction_locations.size()) {
+    const auto& loc = func->instruction_locations[ip];
+    if (loc.line > 0) {
+      if (!loc.filename.empty()) {
+        sourceLoc = std::format(" @{}:{}:{}", loc.filename, loc.line, loc.column);
+      } else {
+        sourceLoc = std::format(" @{}:{}", loc.line, loc.column);
+      }
+    }
   }
-  ::havel::debug("Property Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
-                 property_inline_cache_.size(), total_hits, total_misses,
-                 total_hits + total_misses > 0 
-                   ? (100.0 * total_hits) / (total_hits + total_misses) 
-                   : 0.0);
-  
-  size_t iterator_hits = 0, iterator_misses = 0;
-  for (const auto& [key, cache] : iterator_inline_cache_) {
-    iterator_hits += cache.hits;
-    iterator_misses += cache.misses;
+
+  // Print frame depth prefix
+  std::string indent(frame_depth * 2, ' ');
+
+  // Print opcode
+  std::ostringstream oss;
+  oss << indent << "[TRACE]" << fiberInfo << " frame=" << frame_depth << " ip=" << ip << " " << opcodeName << sourceLoc;
+
+  // Print operands if any
+  if (!inst.operands.empty()) {
+    oss << " operands=[";
+    for (size_t i = 0; i < inst.operands.size(); ++i) {
+      if (i > 0) oss << ", ";
+      oss << inst.operands[i].toString();
+    }
+    oss << "]";
   }
-  ::havel::debug("Iterator Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
-                 iterator_inline_cache_.size(), iterator_hits, iterator_misses,
-                 iterator_hits + iterator_misses > 0 
-                   ? (100.0 * iterator_hits) / (iterator_hits + iterator_misses) 
-                   : 0.0);
-  
-  size_t string_hits = 0, string_misses = 0;
-  for (const auto& [key, cache] : string_inline_cache_) {
-    string_hits += cache.hits;
-    string_misses += cache.misses;
-  }
-  ::havel::debug("String Inline Cache: {} entries, {} hits, {} misses, hit rate: {:.2f}%",
-                 string_inline_cache_.size(), string_hits, string_misses,
-                 string_hits + string_misses > 0 
-                   ? (100.0 * string_hits) / (string_hits + string_misses) 
-                   : 0.0);
+
+  ::havel::debug(oss.str());
 }
 
 } // namespace havel::compiler

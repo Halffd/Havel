@@ -53,10 +53,11 @@ struct LaunchConfig {
   bool debugLexer = false;
   bool debugBytecode = false;
   bool debugEmitter = false;
-  bool debugGc = false;
+bool debugGc = false;
   bool debugEngine = false;
-bool debugIo = false;
+  bool debugIo = false;
   bool debugHotkeys = false;
+  bool traceExecution = false;
   bool diffBytecode = false;
   bool stopOnError = false;
   bool fullRepl = false;

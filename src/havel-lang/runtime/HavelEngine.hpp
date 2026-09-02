@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../compiler/vm/VM.hpp"
+#include "../core/Value.hpp"
+#include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
 #include "../compiler/core/Pipeline.hpp"
@@ -45,6 +46,7 @@ struct EngineConfig {
     bool debugParser = false;
     bool debugAst = false;
     bool debugEmitter = false;
+    bool traceExecution = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
     bool headlessMode = false;
@@ -94,9 +96,19 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             vm_->setSelfHostedModulesPath(config_.self_hosted_modules_path);
         }
         vm_->setHeadlessMode(config_.headlessMode);
+        if (config_.traceExecution) {
+            vm_->setTraceExecution(true);
+        }
         hostContext_->vm = vm_.get();
         hostAPI->SetVM(vm_.get());
         vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals
+  // Register traceBytecode as a host function so it's always available for self-hosted compiler
+  vm_->registerHostFunction("traceBytecode", [](const std::vector<havel::core::Value> &args) -> havel::core::Value {
+    if (args.empty()) return havel::core::Value::makeNull();
+    std::string msg = args[0].toString();
+    ::havel::debug("[traceBytecode] " + msg);
+    return havel::core::Value::makeNull();
+  });
         havel::startup_timing_report("vm-create", t);
         t = havel::startup_now();
 
@@ -231,6 +243,12 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
     }, {"bc"});
   }
   vm_->resumeGC();
+  // Ensure debug module is available for self-hosted compiler (traceBytecode)
+  try {
+    vm_->loadModule("debug");
+  } catch (const std::exception &e) {
+    warning("Failed to load debug module: {}", e.what());
+  }
         modules_->install(
             leanStartup ? havel::InstallProfile::Core
                         : havel::InstallProfile::Full,
@@ -503,6 +521,7 @@ vm_->addIntervalResult(timer_id, result);
         }
         options.debugBytecode = config_.debugBytecode;
         options.debugEmitter = config_.debugEmitter;
+        options.traceExecution = config_.traceExecution;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;
         }

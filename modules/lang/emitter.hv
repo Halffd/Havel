@@ -367,7 +367,7 @@ if opr == "not in" {
   if opr == "is not" {
     if node.right.kind == "Identifier" {
       emitExpr(emitter, node.left)
-      protIdx = bc.add_string(node.right.name)
+      protIdx = bc.add_chunk_string(node.right.name)
       bc.emit("PROT_CHECK", bc.str_id(protIdx))
       bc.emit("NOT")
     }
@@ -382,7 +382,7 @@ if opr == "not in" {
   if opr == "is" {
     if node.right.kind == "Identifier" {
       emitExpr(emitter, node.left)
-      protIdx = bc.add_string(node.right.name)
+      protIdx = bc.add_chunk_string(node.right.name)
       bc.emit("PROT_CHECK", bc.str_id(protIdx))
     }
     else {

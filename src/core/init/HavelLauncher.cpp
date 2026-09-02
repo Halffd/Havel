@@ -270,6 +270,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugParser = cfg.debugParser,
           .debugAst = cfg.debugAst,
           .debugEmitter = cfg.debugEmitter,
+          .traceExecution = cfg.traceExecution,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
           .headlessMode = cfg.headlessMode,
@@ -405,11 +406,15 @@ static void installMinimalSignalHandlers() {
   sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = [](int sig) {
-    havel::exit(
-        sig == SIGSEGV ? ExitReason::SignalCrash : ExitReason::SignalInt, 0);
+    ExitReason reason = ExitReason::SignalInt;
+    if (sig == SIGTERM) reason = ExitReason::SignalTerm;
+    else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
+    else if (sig == SIGSEGV) reason = ExitReason::SignalCrash;
+    havel::exit(reason, 0);
   };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
+  sigaction(SIGQUIT, &sa, nullptr);
   sigaction(SIGSEGV, &sa, nullptr);
 }
 
@@ -577,6 +582,7 @@ public:
             options.compile_unit_name = combinedNames;
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
+            options.traceExecution = cfg.traceExecution;
             auto *ee = havel_inst.getExecutionEngine();
             if (ee) {
               ee->setScriptReady(true);
@@ -689,6 +695,7 @@ public:
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
+        options.traceExecution = cfg.traceExecution;
         if (ee) {
           // Pump goroutine scheduler from the main fiber yield hook so a
           // goroutine spawned by a hotkey script runs while main blocks in
@@ -973,6 +980,7 @@ public:
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
+        options.traceExecution = cfg.traceExecution;
         if (ee)
           options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
@@ -1463,6 +1471,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return diffPipeline(cfg);
     }
 
+    fprintf(stderr, "[DEBUG] Creating strategy for mode=%d\n", (int)cfg.mode);
     auto strategy = createStrategy(cfg);
     return strategy->execute(cfg, argc, argv);
   } catch (const std::exception &e) {
@@ -1571,6 +1580,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--trace" || arg == "-t") {
+      cfg.traceExecution = true;
     } else if (arg == "--log-level" && i + 1 < argc) {
       std::string level = argv[++i];
       if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
@@ -1983,6 +1994,7 @@ Options:
   -da, --debug-ast    Enable AST debugging
   -dl, --debug-lexer  Enable lexer debugging
   -dbc, --debug-bytecode  Enable bytecode debugging
+  -t, --trace         Trace bytecode execution (show each instruction)
   -dgc, --debug-gc    Enable GC debugging
   -de, --debug-engine Enable engine debugging
   -dio, --debug-io    Enable IO debugging

@@ -656,12 +656,6 @@ auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
         // In a module context, the top-level function frame has no parent blocks
         const bool is_program_root =
             (function_stack_.back().scopes.size() == 1);
-        std::cerr << "[LEXICAL] LetDeclaration: " << identifier->symbol 
-                  << " isConst=" << let.isConst
-                  << " function_stack_size=" << function_stack_.size()
-                  << " scopes_size=" << function_stack_.back().scopes.size()
-                  << " is_program_root=" << is_program_root
-                  << "\n";
         if (is_program_root) {
           global_variables_.insert(identifier->symbol);
           noteIdentifierBinding(

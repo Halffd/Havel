@@ -20,6 +20,7 @@ namespace havel::stdlib {
 
 struct BuilderState {
     std::unique_ptr<BytecodeChunk> chunk;
+    std::unique_ptr<BytecodeChunk> main_chunk;
     int32_t current_func_idx = -1;
     std::vector<int32_t> saved_func_stack;
     std::unordered_map<std::string, OpCode> opcode_map;
@@ -36,6 +37,7 @@ struct BuilderState {
 
 	BuilderState() {
 		chunk = std::make_unique<BytecodeChunk>();
+		main_chunk = std::make_unique<BytecodeChunk>();
 		opcode_map = {
 		{"LOAD_CONST", OpCode::LOAD_CONST},
 		{"LOAD_GLOBAL", OpCode::LOAD_GLOBAL},
@@ -402,22 +404,23 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 });
 
 api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
-  auto *fn = g_builder.currentFunc();
-  if (!fn) throw std::runtime_error("bc.add_string: no current function");
-  if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-    throw std::runtime_error("bc.add_string: requires string value");
-  }
-  auto resolved = api.resolveString(args[0]);
-  uint32_t strId = g_builder.chunk->addString(resolved);
-  Value constVal = Value::makeStringValId(strId);
-  auto &consts = fn->constants;
-  for (uint32_t i = 0; i < consts.size(); ++i) {
-    if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
-  }
-  uint32_t idx = static_cast<uint32_t>(consts.size());
-  consts.push_back(constVal);
-  return Value::makeInt(static_cast<int64_t>(idx));
-	});
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.add_string: no current function");
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+      throw std::runtime_error("bc.add_string: requires string value");
+    }
+    auto resolved = api.resolveString(args[0]);
+    // Use main_chunk for shared string table so StringValId is valid across all chunks
+    uint32_t strId = g_builder.main_chunk->addString(resolved);
+    Value constVal = Value::makeStringValId(strId);
+    auto &consts = fn->constants;
+    for (uint32_t i = 0; i < consts.size(); ++i) {
+      if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
+    }
+    uint32_t idx = static_cast<uint32_t>(consts.size());
+    consts.push_back(constVal);
+    return Value::makeInt(static_cast<int64_t>(idx));
+  });
 
 	api.registerFunction("bc.add_regex", [api](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
@@ -426,7 +429,8 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
 			throw std::runtime_error("bc.add_regex: requires string value");
 		}
 		auto resolved = api.resolveString(args[0]);
-		uint32_t strId = g_builder.chunk->addString(resolved);
+		// Use main_chunk for shared string table so RegexValId is valid across all chunks
+		uint32_t strId = g_builder.main_chunk->addString(resolved);
 		Value constVal = Value::makeRegexValId(strId);
 		auto &consts = fn->constants;
 		for (uint32_t i = 0; i < consts.size(); ++i) {
@@ -437,14 +441,27 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
 		return Value::makeInt(static_cast<int64_t>(idx));
 	});
 
-	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
+api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.add_chunk_string: requires string");
     }
     auto str = api.resolveString(args[0]);
-		auto idx = g_builder.chunk->addString(str);
-		return Value::makeInt(static_cast<int64_t>(idx));
-	});
+    auto idx = g_builder.chunk->addString(str);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
+
+api.registerFunction("bc.add_global_string", [api](const std::vector<Value> &args) -> Value {
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.add_global_string: requires string");
+    }
+    auto str = api.resolveString(args[0]);
+    auto &vm = api.vm();
+    if (!vm.main_chunk_) {
+        throw std::runtime_error("bc.add_global_string: no main chunk");
+    }
+    auto idx = vm.main_chunk_->addString(str);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
 
 api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
 auto *fn = g_builder.currentFunc();
@@ -1208,6 +1225,7 @@ return result;
 	api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
 	api.setField(bcObj, "add_regex", api.makeFunctionRef("bc.add_regex"));
 	api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
+	api.setField(bcObj, "add_global_string", api.makeFunctionRef("bc.add_global_string"));
     api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
     api.setField(bcObj, "patch_operand", api.makeFunctionRef("bc.patch_operand"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));

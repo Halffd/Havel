@@ -1107,8 +1107,13 @@ void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::mov
 
   void setMaxCallDepth(size_t value);
     void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
-    void setTraceExecution(bool enabled) { trace_execution_ = enabled; }
+    void setTraceExecution(bool enabled) { 
+      trace_execution_ = enabled; 
+    }
     bool isTraceExecution() const { return trace_execution_; }
+
+    // Instruction tracing for --trace flag
+    void traceInstruction(const Instruction& inst, const BytecodeFunction* func, size_t frame_depth, size_t ip) const;
     uint64_t executedInstructionCount() const { return executed_instructions_; }
     void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
     uint64_t maxInstructions() const { return max_instructions_; }

@@ -1,0 +1,27 @@
+// Regression test: newline-separated top-level statements must not fuse.
+//
+// Bug: the self-hosted pratt.hv parser relied on `advance()` silently eating
+// newlines, then the implicit-call sugar absorbed the next line's expression as
+// a call argument. "print(\"a\")\nprint(\"b\")" became the single nested call
+// print("a")(print("b")), so the teardown of __main__ tried to call the null
+// result -> "Attempted to call non-callable value of type null".
+// Semicolons worked; newlines did not.
+//
+// Expected: each newline-separated statement runs independently, ordering is
+// preserved, and teardown returns cleanly (exit 0).
+
+acc = []
+
+acc.push(1)
+acc.push(2)
+acc.push(3)
+
+assert(#acc == 3, "newline-separated statements did not all run")
+assert(acc[0] == 1 && acc[1] == 2 && acc[2] == 3, "statement order not preserved")
+
+x = 5
+y = x + 2
+z = y * 3
+assert(x == 5 && y == 7 && z == 21, "newline-separated assignments failed")
+
+print("newline stmt boundary ok")

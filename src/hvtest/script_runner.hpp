@@ -2,13 +2,16 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <atomic>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <poll.h>
 #include <signal.h>
 #include <string>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -276,30 +279,63 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     std::vector<ScriptResult> results;
     auto suite_start = std::chrono::high_resolution_clock::now();
 
-    for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
-        results.push_back(result);
-        auto name = fs::path(script).stem().string();
+    // Each script runs in its own subprocess whose self-hosted boot costs
+    // ~4s, so a sequential suite takes 20+ minutes. Run them concurrently.
+    const unsigned workers = std::min<unsigned>(
+        std::max(std::thread::hardware_concurrency(), 1u), 8u);
+    std::atomic<size_t> next{0};
+    std::vector<ScriptResult> results_par(scripts.size());
+    std::mutex io_mtx;
+    auto worker = [&]() {
+      for (;;) {
+        size_t i = next.fetch_add(1);
+        if (i >= scripts.size()) break;
+        auto result =
+            run_script(havel_bin, scripts[i], timeout_seconds, pre_flags);
+        results_par[i] = result;
+        auto name = fs::path(scripts[i]).stem().string();
+        std::lock_guard<std::mutex> lk(io_mtx);
         if (result.passed) {
-            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
-            pass++;
+          if (verbose)
+            std::cout << "[PASS] " << name << " (" << result.elapsed_ms
+                      << "ms)" << std::endl
+                      << std::flush;
+          pass++;
         } else if (result.timed_out) {
-            std::cout << "[FAIL] " << name << " (timeout)" << std::endl << std::flush;
-            fail++;
+          std::cout << "[FAIL] " << name << " (timeout)" << std::endl
+                    << std::flush;
+          fail++;
         } else if (result.exit_code == -6 || result.exit_code == -11) {
-            if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl << std::flush;
-            skip++;
+          if (verbose)
+            std::cout << "[SKIP] " << name << " (crash, needs event loop)"
+                      << std::endl
+                      << std::flush;
+          skip++;
         } else if (!pre_flags.empty() && result.exit_code != 255) {
-            // Self-hosted mode: script return value becomes exit code.
-            // exit=255 means process.exit(255) was called (assertion failure).
-            // Any other exit code is the script's return value (success).
-            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
-            pass++;
+          // Self-hosted mode: script return value becomes exit code.
+          // exit=255 means process.exit(255) was called (assertion failure).
+          // Any other exit code is the script's return value (success).
+          if (verbose)
+            std::cout << "[PASS] " << name << " (" << result.elapsed_ms
+                      << "ms)" << std::endl
+                      << std::flush;
+          pass++;
         } else {
-            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl << std::flush;
-            fail++;
+          std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
+                    << ")" << std::endl
+                    << std::flush;
+          fail++;
         }
-    }
+      }
+    };
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned w = 0; w < workers; ++w)
+      threads.emplace_back(worker);
+    for (auto &t : threads)
+      t.join();
+    for (auto &r : results_par)
+      results.push_back(r);
 
     auto suite_end = std::chrono::high_resolution_clock::now();
     double suite_total_ms = std::chrono::duration<double, std::milli>(suite_end - suite_start).count();

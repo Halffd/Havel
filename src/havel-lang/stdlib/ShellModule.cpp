@@ -115,7 +115,8 @@ static const std::vector<std::string> ALLOWED_SHELL_COMMANDS = {
     "git", "cargo", "npm", "make", "cmake", "clang", "gcc",
     "python3", "python", "node", "deno", "bun",
     "ssh", "scp", "rsync", "curl", "wget", "ping", "dig",
-    "tar", "gzip", "gunzip", "zip", "unzip", "bzip2", "bunzip2"
+    "tar", "gzip", "gunzip", "zip", "unzip", "bzip2", "bunzip2",
+    "timeout"
 };
 
 static bool isCommandAllowed(const std::string& command) {

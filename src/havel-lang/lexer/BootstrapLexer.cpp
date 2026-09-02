@@ -997,6 +997,7 @@ Token Lexer::scanIdentifier() {
 
     if (!isAtEnd() && peek() == '?' && peek(1) != '.') {
         advance(); // consume '?'
+        identifier += '?'; // predicate method suffix: run? is the name, not run + ternary
     }
 
     auto keywordIt = KEYWORDS.find(identifier);

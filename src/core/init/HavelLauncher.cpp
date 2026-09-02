@@ -406,11 +406,15 @@ static void installMinimalSignalHandlers() {
   sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = [](int sig) {
-    havel::exit(
-        sig == SIGSEGV ? ExitReason::SignalCrash : ExitReason::SignalInt, 0);
+    ExitReason reason = ExitReason::SignalInt;
+    if (sig == SIGTERM) reason = ExitReason::SignalTerm;
+    else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
+    else if (sig == SIGSEGV) reason = ExitReason::SignalCrash;
+    havel::exit(reason, 0);
   };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
+  sigaction(SIGQUIT, &sa, nullptr);
   sigaction(SIGSEGV, &sa, nullptr);
 }
 

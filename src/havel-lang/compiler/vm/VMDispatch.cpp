@@ -47,12 +47,17 @@ case OpCode::LOAD_GLOBAL: {
                 COMPILER_THROW("LOAD_GLOBAL expects string operand");
             }
             uint32_t strIndex = instruction.operands[0].asStringValId();
-            // Use main_chunk_ for global name string resolution.
-            // Global names must be resolved from a shared chunk's string table
-            // so that STORE_GLOBAL and LOAD_GLOBAL use the same string table.
-            // This ensures the same string index maps to the same global name
-            // regardless of which chunk is currently executing.
-            const BytecodeChunk* resolveChunk = main_chunk_.get();
+            // Resolve the global-name string index against the chunk that
+            // emitted the instruction: the operand is a StringValId (a chunk-
+            // local index), so it only has meaning in the table of the chunk
+            // owning the executing frame (current_chunk is refreshed from the
+            // frame's chunk at the top of executeInstruction). Resolving
+            // against main_chunk_ instead aliases modules whose string tables
+            // differ from the main script's, silently corrupting globals (two
+            // different global names sharing one index collide in globals map).
+            // main_chunk_ is only a fallback for pre-frame execution.
+            const BytecodeChunk* resolveChunk = current_chunk;
+            if (!resolveChunk) resolveChunk = main_chunk_.get();
             std::string name;
             if (resolveChunk) {
                 name = resolveChunk->getString(strIndex);
@@ -113,13 +118,11 @@ case OpCode::STORE_GLOBAL: {
                 COMPILER_THROW("STORE_GLOBAL expects string operand");
             }
             uint32_t strIndex = instruction.operands[0].asStringValId();
-            // Use main_chunk_ for global name string resolution.
-            // Global names must be resolved from a shared chunk's string table
-            // so that STORE_GLOBAL and LOAD_GLOBAL use the same string table.
-            // This ensures the same string index maps to the same global name
-            // regardless of which chunk is currently executing.
+            // Same ruling as LOAD_GLOBAL: the index refers to the executing
+            // frame's chunk table, not the main chunk's.
             const auto& cf_store = currentFrame();
-            const BytecodeChunk* resolveChunk = main_chunk_.get();
+            const BytecodeChunk* resolveChunk = current_chunk;
+            if (!resolveChunk) resolveChunk = main_chunk_.get();
             std::string name;
             if (resolveChunk) {
                 name = resolveChunk->getString(strIndex);

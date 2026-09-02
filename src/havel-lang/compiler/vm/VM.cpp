@@ -4065,6 +4065,21 @@ Value VM::deepWrapModuleFunctions(
             }
             runDispatchLoop(frame_count_ - 1);
             module_wrapper_execution_depth_.fetch_sub(1);
+            if (suspension_requested_ || last_suspension_reason_ != 0) {
+              // The dispatch loop suspended (e.g. time.sleep inside the
+              // module function) and returned as if complete. The fiber
+              // machinery saved execution state at the suspension point and
+              // resumes by re-entering the dispatch loop directly, so the
+              // completion path below must NOT run: restoring globals to the
+              // caller's map (and current_chunk) here would make the
+              // subsequent saveFiberState capture the wrong globals, and the
+              // resumed function would resolve its module globals against the
+              // caller's map. Leave stack/globals/chunk as the suspension
+              // left them and propagate to the CALL site (op_CALL checks
+              // suspension_requested_ || last_suspension_reason_ after host
+              // calls). The return value is ignored by the suspension path.
+              return Value::makeNull();
+            }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
@@ -4238,6 +4253,13 @@ Value VM::deepWrapModuleFunctions(
             }
             runDispatchLoop(frame_count_ - 1);
             module_wrapper_execution_depth_.fetch_sub(1);
+            if (suspension_requested_ || last_suspension_reason_ != 0) {
+              // Same rule as the $module_fn_ wrapper: a suspension (sleep /
+              // yield) inside the closure body must propagate to the CALL
+              // site without restoring globals/current_chunk, or the fiber
+              // resume would run module code against the caller's globals.
+              return Value::makeNull();
+            }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }

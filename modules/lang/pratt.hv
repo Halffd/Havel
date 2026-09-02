@@ -423,6 +423,20 @@ fn isNotIn() {
   return current().tid == TID.Not and at(1).tid == TID.In
 
   }
+  // --- Statement-boundary detection ---
+  // advance() silently consumes NewLine/Comment/UnsafeMarker tokens, so unlike
+  // the C++ parser (where NewLine is a real token with binding power 0 that
+  // stops the infix loop), the Pratt loop here never sees the boundary.
+  // Detect it by comparing the current token's line against the last real
+  // token consumed: if they differ, the current token starts a new statement
+  // and must NOT be absorbed as an infix continuation of the previous one.
+  fn startsNewStatement() {
+    back = 1
+    while pos - back >= 0 and (at(-back).tid == TID.NewLine or at(-back).tid == TID.Comment or at(-back).tid == TID.UnsafeMarker) {
+      back = back + 1
+    }
+    return current().line != at(-back).line
+  }
     // ===================================================================
     // PRATT EXPRESSION PARSER
     // ===================================================================
@@ -455,12 +469,17 @@ fn parseExpr(rbp) {
  break
 
  }
- // Special: Arrow returns 0 in match context
- if curType == TID.Arrow and inMatchExpr {
+// Special: Arrow returns 0 in match context
+  if curType == TID.Arrow and inMatchExpr {
                 break
 
             }
   if bp == BP_NONE or rbp >= bp {
+    break
+  }
+  // Statement boundary: an infix operator may not continue an expression
+  // across a newline (C++ parser: NewLine has bp=0 as a real token there).
+  if startsNewStatement() {
     break
   }
   opToken = advance()
@@ -483,12 +502,7 @@ fn parseExpr(rbp) {
             // swallowed NewLine. Scan back past newlines/comments to the last
             // real token; if the next token is on a different line, it starts a
             // new statement and must NOT be absorbed as an implicit call arg.
-            back = 1
-            while pos - back >= 0 and (at(-back).tid == TID.NewLine or at(-back).tid == TID.Comment or at(-back).tid == TID.UnsafeMarker) {
-                back = back + 1
-            }
-            sameLine = current().line == at(-back).line
-            if !sameLine {
+            if startsNewStatement() {
                 return left
             }
             prevSugar = allowBraceSugar
@@ -662,12 +676,25 @@ else if tt == TID.OpenParen {
 return parseParenExpr(tok)
 }
 else if tt == TID.OpenBracket {
-pos = pos - 1
+// advance() in parseExpr already consumed '[' AND skipped following
+// NewLine tokens, so a plain pos-1 lands on the NewLine, not the '['
+// (VM closure capture of pos). Scan back over separators to the real '['.
+back = 1
+while at(-back).tid == TID.NewLine or at(-back).tid == TID.Comment or at(-back).tid == TID.UnsafeMarker {
+  back = back + 1
+}
+pos = pos - back
 syncCur()
 return parseArrayLiteral()
 }
 else if tt == TID.OpenBrace {
-pos = pos - 1
+// Same as OpenBracket: pos-1 would land on the NewLine that advance()
+// already swallowed. Scan back to the actual '{'.
+back = 1
+while at(-back).tid == TID.NewLine or at(-back).tid == TID.Comment or at(-back).tid == TID.UnsafeMarker {
+  back = back + 1
+}
+pos = pos - back
 syncCur()
 return disambiguateBrace()
 }
@@ -2068,15 +2095,16 @@ return BlockStatement(stmts, l, c)
         l = current().line
         c = current().col
 
- if alreadyConsumedOpenBrace {
-  // token already consumed by caller
- }
- else if current().tid == TID.BangOpenBrace {
+ // Entry brace handling. Independent if/guards: the VM mis-executes
+ // if/else-if/else chains with an empty first branch (fallthrough bug),
+ // which broke multiline object literals ({ at end of line).
+ braceConsumed = alreadyConsumedOpenBrace
+ if (not braceConsumed) and current().tid == TID.BangOpenBrace {
   advance() // consume !{
+  braceConsumed = true
  }
- else {
+ if not braceConsumed {
   expect(TID.OpenBrace)
-
  }
 
     fields = []

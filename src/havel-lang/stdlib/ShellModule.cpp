@@ -102,71 +102,14 @@ static bool isPathAllowed(const std::string& path) {
 }
 
 // ============================================================================
-// Command validation to prevent command injection
+// shell.exec / shell.run execute arbitrary commands via the system shell.
+// No allowlist or metacharacter gate: Havel scripts are user-authored local
+// automation, and the modules legitimately use redirects (2>/dev/null),
+// command separators (;) and tools (xdotool, hyprctl, kdotool, terminals)
+// that a static allowlist cannot enumerate.
+// Quote untrusted data with shell.escape() before interpolating it into a
+// command string.
 // ============================================================================
-
-// Whitelist of allowed commands for shell execution
-static const std::vector<std::string> ALLOWED_SHELL_COMMANDS = {
-    "ls", "cat", "echo", "grep", "find", "wc", "head", "tail",
-    "mkdir", "rmdir", "cp", "mv", "rm", "touch", "stat",
-    "ps", "df", "du", "free", "uptime", "whoami", "id",
-    "date", "cal", "sleep", "sort", "uniq", "cut", "tr",
-    "awk", "sed", "tee", "xargs", "which", "whereis",
-    "git", "cargo", "npm", "make", "cmake", "clang", "gcc",
-    "python3", "python", "node", "deno", "bun",
-    "ssh", "scp", "rsync", "curl", "wget", "ping", "dig",
-    "tar", "gzip", "gunzip", "zip", "unzip", "bzip2", "bunzip2"
-};
-
-static bool isCommandAllowed(const std::string& command) {
-    // Extract the first word (command name)
-    std::string cmd;
-    size_t pos = command.find_first_not_of(" \t");
-    if (pos != std::string::npos) {
-        size_t end = command.find_first_of(" \t", pos);
-        cmd = command.substr(pos, end - pos);
-    }
-    
-    // Get basename of command (in case full path provided)
-    size_t slashPos = cmd.rfind('/');
-    if (slashPos != std::string::npos) {
-        cmd = cmd.substr(slashPos + 1);
-    }
-    
-    for (const auto& allowed : ALLOWED_SHELL_COMMANDS) {
-        if (allowed == cmd) return true;
-    }
-    return false;
-}
-
-static bool isSafeCommand(const std::string& command) {
-    // Reject commands with dangerous shell metacharacters
-    // that could be used for command injection
-    static const std::vector<std::string> DANGEROUS_PATTERNS = {
-        ";", "&&", "||", "|", "`", "$(", "${", ">", "<", ">>",
-        "2>", "&>", "exec", "eval", "source", ". "
-    };
-    
-    for (const auto& pattern : DANGEROUS_PATTERNS) {
-        if (command.find(pattern) != std::string::npos) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool validateShellCommand(const std::string& command) {
-    // Allow empty command (will fail later with appropriate error)
-    if (command.empty()) return false;
-    
-    // Check for dangerous patterns first
-    if (!isSafeCommand(command)) return false;
-    
-    // Check if command is in allowlist
-    if (!isCommandAllowed(command)) return false;
-    
-    return true;
-}
 
 // Return a string describing the current platform
 static std::string getPlatform() {
@@ -282,12 +225,7 @@ api.registerFunction("shell.run",
     if (args.empty())
       throw std::runtime_error("shell.run() requires a command string");
     std::string cmd = api.resolveString(args[0]);
-    
-    // Validate command to prevent command injection
-    if (!validateShellCommand(cmd)) {
-      throw std::runtime_error("shell.run(): Command not allowed or contains dangerous patterns");
-    }
-    
+
     LaunchParams params;
     params.method = Method::Shell;
     params.detachFromParent = true;
@@ -296,7 +234,7 @@ api.registerFunction("shell.run",
   });
 
 // ----------------------------------------------------------------------
-// shell.exec – capture stdout of command (returns object {stdout, stderr, exitCode})
+// shell.exec – capture stdout of command (returns object {stdout, stderr, ok, exitCode, code})
 // ----------------------------------------------------------------------
 api.registerFunction("shell.exec",
   [api](const std::vector<Value> &args) {
@@ -306,27 +244,19 @@ api.registerFunction("shell.exec",
     if (args.empty())
       throw std::runtime_error("shell.exec() requires a command string");
     std::string cmd = api.resolveString(args[0]);
-    
-    // Validate command to prevent command injection
-    if (!validateShellCommand(cmd)) {
-      auto result = api.makeObject();
-      api.setField(result, "stdout", api.makeString(""));
-      api.setField(result, "stderr", api.makeString("Command not allowed or contains dangerous patterns"));
-      api.setField(result, "ok", api.makeBool(false));
-      api.setField(result, "exitCode", Value::makeInt(126));
-      return result;
-    }
-    
-    auto presult = Launcher::runShell(cmd);
 
-      auto result = api.makeObject();
-      api.setField(result, "stdout", api.makeString(presult.stdout));
-      api.setField(result, "stderr", api.makeString(presult.stderr));
-      api.setField(result, "ok", api.makeBool(presult.success));
-      api.setField(result, "exitCode",
-          Value::makeInt(static_cast<int64_t>(presult.exitCode)));
-      return result;
-    });
+    auto presult = Launcher::runShell(cmd);
+    auto result = api.makeObject();
+    api.setField(result, "stdout", api.makeString(presult.stdout));
+    api.setField(result, "stderr", api.makeString(presult.stderr));
+    api.setField(result, "ok", api.makeBool(presult.success));
+    api.setField(result, "exitCode",
+        Value::makeInt(static_cast<int64_t>(presult.exitCode)));
+    // "code" kept as an alias: modules read result.code (window/compositor/notif)
+    api.setField(result, "code",
+        Value::makeInt(static_cast<int64_t>(presult.exitCode)));
+    return result;
+  });
 
   // ----------------------------------------------------------------------
   // shell.which – locate executable in PATH

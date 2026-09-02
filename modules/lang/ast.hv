@@ -210,19 +210,11 @@ fn IndexExpression(obj, index, line, col) {
 
 }
 fn AssignmentExpression(target, value, line, col) {
-    print("AST_DEBUG: AssignmentExpression target.kind=" + target.kind + " target.name=" + target.name)
-    if target.kind == "Identifier" {
-        print("AST_DEBUG: Setting globalScope=true for " + target.name)
-        target.globalScope = true
-    }
-    {kind: "AssignmentExpression", line: line, col: col, target: target, value: value, isGlobalScope: target.globalScope == true}
-
+    {kind: "AssignmentExpression", line: line, col: col, target: target, value: value}
 }
 fn CompoundAssignment(target, oper, value, line, col) {
-    if target.kind == "Identifier" {
-        target.globalScope = true
-    }
-    {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value, isGlobalScope: target.globalScope == true}
+    {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value}
+}
 
 }
 fn ArrayLiteral(elements, line, col) {

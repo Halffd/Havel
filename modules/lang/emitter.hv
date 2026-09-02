@@ -134,12 +134,10 @@ fn emitLoadVar(emitter, name) {
     }
   }
   bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, name)))
-
 }
+
 fn emitStoreVar(emitter, name) {
-  print("emitStoreVar: name=" + name)
   resolved = scopeResolve(emitter.scope, name)
-  print("  resolved=" + str(resolved))
   if resolved != null {
     if resolved.kind == "local" {
       bc.emit("STORE_VAR", resolved.index)
@@ -150,24 +148,22 @@ fn emitStoreVar(emitter, name) {
       return
     }
   }
-  print("  not resolved in scope")
-  // Variable not found in scope — bare assignment creates local inside function, global at top level
+  // Variable not found in scope -- bare assignment creates local inside function, global at top level
   funcRoot = scopeFindFuncRoot(emitter.scope)
-  print("  funcRoot.parent=" + str(funcRoot.parent))
   if funcRoot.parent != null {
     if emitter.global_names[name] == true {
       bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
       return
     }
-    // Inside a function — declare as local in the current scope
+    // Inside a function -- declare as local in the current scope
     idx = scopeDeclare(emitter.scope, name)
     bc.emit("STORE_VAR", idx)
     return
   }
-  print("  emitting STORE_GLOBAL for top-level")
   bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
 
- }
+}
+
 fn emitStoreDecl(emitter, name, isConst) {
   funcRoot = scopeFindFuncRoot(emitter.scope)
   if funcRoot.parent != null {
@@ -371,7 +367,7 @@ if opr == "not in" {
   if opr == "is not" {
     if node.right.kind == "Identifier" {
       emitExpr(emitter, node.left)
-      protIdx = bc.add_string(node.right.name)
+      protIdx = bc.add_chunk_string(node.right.name)
       bc.emit("PROT_CHECK", bc.str_id(protIdx))
       bc.emit("NOT")
     }
@@ -386,7 +382,7 @@ if opr == "not in" {
   if opr == "is" {
     if node.right.kind == "Identifier" {
       emitExpr(emitter, node.left)
-      protIdx = bc.add_string(node.right.name)
+      protIdx = bc.add_chunk_string(node.right.name)
       bc.emit("PROT_CHECK", bc.str_id(protIdx))
     }
     else {
@@ -788,13 +784,6 @@ return
     if k == "AssignmentExpression" {
         target = node.target
     if target.kind == "Identifier" {
-        if target.globalScope == true {
-            emitExpr(emitter, node.value)
-            bc.emit("DUP")
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
-            bc.emit("POP")
-            return
-        }
         emitExpr(emitter, node.value)
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)
@@ -3202,82 +3191,136 @@ return
 emitStmt(emitter, node)
 
 }
-fn emitBlockWithReturn(emitter, node) {
-if node == null {
+fn emitBlockWithReturn(emitter, node, newScope = true) {
+  if node == null {
     bc.emit("PUSH_NULL")
     return
   }
-if node.kind == "BlockStatement" {
-  oldScope = emitter.scope
-    blockScope = Scope(oldScope, oldScope.funcIdx, oldScope.bcFuncIdx)
-  emitter.scope = blockScope
-stmts = node.body
-n = #stmts
-if n == 0 {
-oldScope.count = blockScope.count
-emitter.scope = oldScope
-bc.emit("PUSH_NULL")
-return
-}
-isBuggyNullExpr = false
-if n == 1 {
-if stmts[0].kind == "ExpressionStatement" {
-if stmts[0].expr == null {
-isBuggyNullExpr = true
-}
-}
-}
-if isBuggyNullExpr {
-oldScope.count = blockScope.count
-emitter.scope = oldScope
-bc.emit("PUSH_NULL")
-return
-}
-		si = 0
-		while si < n - 1 {
-			emitStmt(emitter, stmts[si])
-			si = si + 1
-		}
-	last = stmts[n - 1]
-	// Propagate tail position to last statement in block (only if already in tail position from outer context)
-	savedTail = emitter.inTailPosition
+  if node.kind == "BlockStatement" {
+    if !newScope {
+      // For function bodies, use the existing scope (don't create a nested block scope)
+      stmts = node.body
+      n = #stmts
+      if n == 0 {
+        bc.emit("PUSH_NULL")
+        return
+      }
+      isBuggyNullExpr = false
+      if n == 1 {
+        if stmts[0].kind == "ExpressionStatement" {
+          if stmts[0].expr == null {
+            isBuggyNullExpr = true
+          }
+        }
+      }
+      if isBuggyNullExpr {
+        bc.emit("PUSH_NULL")
+        return
+      }
+      si = 0
+      while si < n - 1 {
+        emitStmt(emitter, stmts[si])
+        si = si + 1
+      }
+      last = stmts[n - 1]
+      savedTail = emitter.inTailPosition
+      if last.kind == "ReturnStatement" {
+        emitter.inTailPosition = true
+      }
+      if last.kind == "ExpressionStatement" {
+        if last.expr != null {
+          emitExpr(emitter, last.expr)
+        } else {
+          bc.emit("PUSH_NULL")
+        }
+        emitter.inTailPosition = savedTail
+        return
+      }
+      if last.kind == "ReturnStatement" {
+        emitStmt(emitter, last)
+        emitter.inTailPosition = savedTail
+        return
+      }
+      if last.kind == "IfStatement" {
+        emitStmt(emitter, last)
+        emitter.inTailPosition = savedTail
+        return
+      }
+      emitStmt(emitter, last)
+      bc.emit("PUSH_NULL")
+      emitter.inTailPosition = savedTail
+      return
+    }
+    oldScope = emitter.scope
+    blockScope = Scope(oldScope, oldScope.funcId, oldScope.bcFuncIdx)
+    emitter.scope = blockScope
+    stmts = node.body
+    n = #stmts
+    if n == 0 {
+      oldScope.count = blockScope.count
+      emitter.scope = oldScope
+      bc.emit("PUSH_NULL")
+      return
+    }
+    isBuggyNullExpr = false
+    if n == 1 {
+      if stmts[0].kind == "ExpressionStatement" {
+        if stmts[0].expr == null {
+          isBuggyNullExpr = true
+        }
+      }
+    }
+    if isBuggyNullExpr {
+      oldScope.count = blockScope.count
+      emitter.scope = oldScope
+      bc.emit("PUSH_NULL")
+      return
+    }
+    si = 0
+    while si < n - 1 {
+      emitStmt(emitter, stmts[si])
+      si = si + 1
+    }
+    last = stmts[n - 1]
+    // Propagate tail position to last statement in block (only if already in tail position from outer context)
+    savedTail = emitter.inTailPosition
     if last.kind == "ReturnStatement" {
       emitter.inTailPosition = true
     }
     // For ExpressionStatement/IfStatement, only keep tail position if already set from outer context
     // (e.g., function body set it; nested blocks inherit it)
-		if last.kind == "ExpressionStatement" {
-			if last.expr != null {
-				emitExpr(emitter, last.expr)
-			} else {
-				bc.emit("PUSH_NULL")
-			}
-			emitter.inTailPosition = savedTail
-			oldScope.count = blockScope.count
-			emitter.scope = oldScope
-			return
-		}
-		if last.kind == "ReturnStatement" {
-			emitStmt(emitter, last)
-			emitter.inTailPosition = savedTail
-			oldScope.count = blockScope.count
-			emitter.scope = oldScope
-			return
-		}
-		if last.kind == "IfStatement" {
-			emitStmt(emitter, last)
-			emitter.inTailPosition = savedTail
-			oldScope.count = blockScope.count
-			emitter.scope = oldScope
-			return
-		}
-		emitStmt(emitter, last)
-bc.emit("PUSH_NULL")
-emitter.inTailPosition = savedTail
-oldScope.count = blockScope.count
-emitter.scope = oldScope
-return
-}
+    if last.kind == "ExpressionStatement" {
+      if last.expr != null {
+        emitExpr(emitter, last.expr)
+      } else {
+        bc.emit("PUSH_NULL")
+      }
+      emitter.inTailPosition = savedTail
+      oldScope.count = blockScope.count
+      emitter.scope = oldScope
+      return
+    }
+    if last.kind == "ReturnStatement" {
+      emitStmt(emitter, last)
+      emitter.inTailPosition = savedTail
+      oldScope.count = blockScope.count
+      emitter.scope = oldScope
+      return
+    }
+    if last.kind == "IfStatement" {
+      emitStmt(emitter, last)
+      emitter.inTailPosition = savedTail
+      oldScope.count = blockScope.count
+      emitter.scope = oldScope
+      return
+    }
+    emitStmt(emitter, last)
+    bc.emit("PUSH_NULL")
+    emitter.inTailPosition = savedTail
+    oldScope.count = blockScope.count
+    emitter.scope = oldScope
+    return
+  }
   if node.kind == "IfStatement" {
       emitIfExpr(emitter, node)
       emitter.inTailPosition = savedTail
@@ -3413,7 +3456,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
     bc.emit("LOAD_VAR", 0)
     bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
   }
-  emitBlockWithReturn(emitter, bodyNode)
+emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     rootCheck = scopeFindFuncRoot(newScope)
     actualLocals = scopeLocalCount(newScope)
@@ -3432,7 +3475,7 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine, isGenerator) {
   oldScope = emitter.scope
   fid = emitter.nextFuncId
   emitter.nextFuncId = fid + 1
-  newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
+  newScope = Scope(oldScope, fid, null)
   emitter.scope = newScope
   // Bind function name in the function's own scope for recursion
   if name != null {
@@ -3513,8 +3556,8 @@ di = 0
       // Havel might need special handling (e.g. pre-allocating the closure).
   }
   
-  emitBlockWithReturn(emitter, bodyNode)
-  bc.emit("RETURN")
+emitBlockWithReturn(emitter, bodyNode)
+    bc.emit("RETURN")
   actualLocals = scopeLocalCount(newScope)
   bc.set_local_count(actualLocals)
   upcount = newScope.upcount

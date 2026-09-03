@@ -859,6 +859,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
     // lock ordering violation (priority_mutex_ must not be
     // acquired while holding goroutines_mutex_).
     std::vector<Goroutine*> toWake;
+    const bool trace_sleep = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
     {
         std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
@@ -876,15 +877,21 @@ size_t Scheduler::wakeSleepingGoroutines() {
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
                 if (g->wait_handle.type != AwaitableType::SLEEP) {
+                    if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} type-not-SLEEP type={}", id, (int)g->wait_handle.type); }
                     continue;
                 }
                 if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) {
+                    if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} no-deadline", id); }
                     continue;
                 }
                 // Add 1ms tolerance: when remaining is <1ms the sleep loop
                 // in processGoroutines would sleep_for(0ms) (busy-wait), so
                 // waking slightly early is better than spinning.
                 if (now + std::chrono::milliseconds(1) < g->wait_handle.deadline) {
+                    if (trace_sleep) {
+                        long due = std::chrono::duration_cast<std::chrono::milliseconds>(now - g->wait_handle.deadline).count();
+                        ::havel::info("[SLEEPDBG] wake skip gid={} not-yet-due dueMs={}", id, due);
+                    }
                     continue;
                 }
             }
@@ -894,6 +901,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
             if (!g->state.compare_exchange_strong(expected, GoroutineState::Runnable,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
                 // State changed (likely to Done), skip this goroutine
+                if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} CAS-fail", id); }
                 continue;
             }
 
@@ -910,6 +918,9 @@ size_t Scheduler::wakeSleepingGoroutines() {
     if (!toWake.empty()) {
         std::lock_guard plock(priority_mutex_);
         for (auto* g : toWake) {
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+                ::havel::info("[SLEEPDBG] wakeSleepingGoroutines promotes gid={} name='{}'", g->id, g->name);
+            }
             // Set resume value for sleep (returns null)
             g->wait_handle.resume_value = Value::makeNull();
             // Defense in depth: ensure goroutine isn't already in a queue

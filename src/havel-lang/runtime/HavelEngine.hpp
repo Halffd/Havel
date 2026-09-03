@@ -1083,7 +1083,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       // Check if the goroutine suspended (await/sleep) or finished
       uint8_t lastReason = vm_->getLastSuspensionReason();
       if (std::getenv("HAVEL_TRACE_SLEEP")) {
-        std::cerr << "[SLEEPDBG] processGoroutines after-run gid=" << g->id << " lastReason=" << (int)lastReason << " state=" << (int)g->state.load() << "\n";
+        long dueMs = 0;
+        uint32_t fip = UINT32_MAX; unsigned fstate = 0;
+        if (g->fiber) { fip = g->fiber->ip; fstate = (unsigned)g->fiber->state; }
+        {
+          std::lock_guard wlock(g->wait_handle_mutex_);
+          auto dl = g->wait_handle.deadline;
+          if (dl != std::chrono::steady_clock::time_point{}) {
+            dueMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - dl).count();
+          }
+        }
+        std::cerr << "[SLEEPDBG] after-run gid=" << g->id << " lastReason=" << (int)lastReason
+                  << " gstate=" << (int)g->state.load() << " fiberIp=" << fip
+                  << " fiberState=" << fstate << " waitDueMs=" << dueMs << " updInt=" << g->update_interval_ms << "\n";
       }
       void* lastContext = vm_->getLastSuspensionContext();
       if (lastReason != 0) {

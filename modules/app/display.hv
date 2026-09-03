@@ -165,7 +165,7 @@ fn wm() {
         if _dpy == 0 { _wmName = "unknown" }
         else {
             _atom = x11.internAtom(_dpy, "_NET_SUPPORTING_WM_CHECK", 1)
-            _r = protocols.getWindowProp(_root, _atom)
+            _r = protocols.getWindowProp(_dpy, _root, _atom)
             if _r != 0 {
                 _name_atom = x11.internAtom(_dpy, "_NET_WM_NAME", 1)
                 _name = protocols.getStringProp(_dpy, _r, _name_atom)

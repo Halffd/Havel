@@ -293,16 +293,44 @@ std::string X11Backend::getWindowClass(wID id) {
   if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return "";
 
+  // First try XGetClassHint (standard ICCCM way)
   XClassHint classHint;
-  if (XGetClassHint(display, id, &classHint) == 0) return "";
-
   std::string windowClass;
-  if (classHint.res_class) {
-    windowClass = classHint.res_class;
-    XFree(classHint.res_class);
+  if (XGetClassHint(display, id, &classHint) != 0) {
+    if (classHint.res_class) {
+      windowClass = classHint.res_class;
+      XFree(classHint.res_class);
+    }
+    if (classHint.res_name) {
+      XFree(classHint.res_name);
+    }
   }
-  if (classHint.res_name) {
-    XFree(classHint.res_name);
+
+  // Fallback: read raw WM_CLASS property if XGetClassHint failed or returned empty
+  if (windowClass.empty()) {
+    Atom wmClassAtom = XInternAtom(display, "WM_CLASS", x11::XTrue);
+    if (wmClassAtom != x11::XNone) {
+      Atom actualType;
+      int actualFormat;
+      unsigned long nItems, bytesAfter;
+      unsigned char *prop = nullptr;
+      if (XGetWindowProperty(display, id, wmClassAtom, 0, 1024, x11::XFalse,
+                              XA_STRING, &actualType, &actualFormat, &nItems,
+                              &bytesAfter, &prop) == x11::XSuccess) {
+        if (prop && nItems > 0) {
+          // WM_CLASS contains two NULL-terminated strings: res_name, res_class
+          const char *data = reinterpret_cast<const char *>(prop);
+          const char *res_name = data;
+          const char *res_class = data + strlen(data) + 1;
+          if (res_class < data + nItems && *res_class) {
+            windowClass = res_class;
+          } else if (*res_name) {
+            windowClass = res_name;
+          }
+        }
+        if (prop) XFree(prop);
+      }
+    }
   }
 
   auto &entry = windowInfoCache_[id];

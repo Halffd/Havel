@@ -28,6 +28,9 @@ option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
+option(ENABLE_HVDB "Build Havel debugger (hvdb)" ON)
+option(ENABLE_HAVEL_DAP "Build DAP server (havel-dap)" ON)
+option(ENABLE_HVTEST "Build test runner (hvtest)" ON)
 option(ENABLE_TSAN "Enable ThreadSanitizer (mutually exclusive with ASAN/UBSAN)" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer (default ON for Debug)" ON)
@@ -102,11 +105,11 @@ endif()
 
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
@@ -1602,14 +1605,14 @@ havel_core
 # ==============================================================================
 # UNIFIED TEST RUNNER
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HVTEST)
 set(HVTEST_SOURCES
- src/hvtest/main.cpp
- src/hvtest/smoke_runner.cpp
- src/hvtest/test_scheduler_rig.cpp
- src/c/LoggerC.c
- src/c/Config.c
- )
+  src/hvtest/main.cpp
+  src/hvtest/smoke_runner.cpp
+  src/hvtest/test_scheduler_rig.cpp
+  src/c/LoggerC.c
+  src/c/Config.c
+  )
 
 add_executable(hvtest ${HVTEST_SOURCES})
 set_target_properties(hvtest PROPERTIES
@@ -1708,7 +1711,7 @@ endif()
 # ==============================================================================
 # HAVEL DEBUGGER (hvdb) & DUMPER (hvdump)
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HVDB)
 add_executable(hvdb src/hvdb/hvdb.cpp)
 add_executable(hvdump src/hvtools/hvdump.cpp)
 set_target_properties(hvdb PROPERTIES
@@ -1766,7 +1769,7 @@ endif()
 # ==============================================================================
 # HAVEL DAP SERVER (havel-dap)
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HAVEL_DAP)
 add_executable(havel-dap src/havel-dap/havel-dap.cpp)
 set_target_properties(havel-dap PROPERTIES
     CXX_STANDARD 23
@@ -2252,14 +2255,27 @@ add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboa
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
 add_havel_module_plugin(config       ${CMAKE_SOURCE_DIR}/src/modules/config/ConfigModule.cpp)
 add_havel_module_plugin(display      ${CMAKE_SOURCE_DIR}/src/modules/display/DisplayModule.cpp)
+# Shared library for FFI types registry — must be single instance shared
+# between main binary and ffi plugin to avoid double-free at exit.
+add_library(havel_ffi_types SHARED
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFITypes.cpp
+)
+target_include_directories(havel_ffi_types PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/include
+  ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(havel_ffi_types PRIVATE ${LIBFFI_LIBRARIES})
+# Link into main binary (via havel_lang)
+target_link_libraries(havel_lang PRIVATE havel_ffi_types)
+
 add_havel_module_plugin(ffi          ${CMAKE_SOURCE_DIR}/src/modules/ffi/FFIModule.cpp
   EXTRA_DEFS $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>)
 target_sources(havel_mod_ffi PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFIMemory.cpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFICall.cpp
-  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFITypes.cpp
 )
-target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES})
+target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES} havel_ffi_types)
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)

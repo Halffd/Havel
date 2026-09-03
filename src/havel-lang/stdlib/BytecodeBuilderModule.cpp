@@ -410,8 +410,10 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
       throw std::runtime_error("bc.add_string: requires string value");
     }
     auto resolved = api.resolveString(args[0]);
-    // Use main_chunk for shared string table so StringValId is valid across all chunks
-    uint32_t strId = g_builder.main_chunk->addString(resolved);
+    // Use the current function's chunk for the string table so StringValId
+    // indices are valid when the chunk is later stored/spawned and resolved
+    // against current_chunk (not main_chunk_).
+    uint32_t strId = g_builder.chunk->addString(resolved);
     Value constVal = Value::makeStringValId(strId);
     auto &consts = fn->constants;
     for (uint32_t i = 0; i < consts.size(); ++i) {
@@ -429,8 +431,8 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
 			throw std::runtime_error("bc.add_regex: requires string value");
 		}
 		auto resolved = api.resolveString(args[0]);
-		// Use main_chunk for shared string table so RegexValId is valid across all chunks
-		uint32_t strId = g_builder.main_chunk->addString(resolved);
+		// Use the current function's chunk for the string table (same as add_string)
+		uint32_t strId = g_builder.chunk->addString(resolved);
 		Value constVal = Value::makeRegexValId(strId);
 		auto &consts = fn->constants;
 		for (uint32_t i = 0; i < consts.size(); ++i) {

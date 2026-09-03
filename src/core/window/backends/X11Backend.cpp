@@ -78,6 +78,13 @@ wID X11Backend::getActiveWindow() {
   unsigned long nitems, bytesAfter;
   unsigned char *prop = nullptr;
   Window activeWindow = 0;
+  // EWMH _NET_ACTIVE_WINDOW is the authoritative client id. On reparenting WMs
+  // (Cinnamon, Muffin, KWin with frames) the client is nested under a frame
+  // whose parent is the root; climbing to the frame would throw away the real
+  // client id the user expects. Only climb for values obtained from fallbacks
+  // (input focus / client list / enumerate), which may legitimately be an
+  // inner window that needs a stable top-level ancestor.
+  bool fromEwmh = false;
 
   if (XGetWindowProperty(display, DefaultRootWindow(display), activeWindowAtom,
                           0, 1, x11::XFalse, XA_WINDOW, &actualType,
@@ -85,6 +92,7 @@ wID X11Backend::getActiveWindow() {
                           &prop) == x11::XSuccess) {
     if (prop) {
       activeWindow = *reinterpret_cast<Window *>(prop);
+      fromEwmh = true;
       XFree(prop);
     }
   }
@@ -130,7 +138,7 @@ wID X11Backend::getActiveWindow() {
     }
   }
 
-  if (activeWindow != 0 && activeWindow != DefaultRootWindow(display)) {
+  if (!fromEwmh && activeWindow != 0 && activeWindow != DefaultRootWindow(display)) {
     Window current = activeWindow;
     Window root = DefaultRootWindow(display);
     while (current != 0 && current != root) {

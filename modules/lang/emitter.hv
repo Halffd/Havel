@@ -181,13 +181,13 @@ fn emitStoreDecl(emitter, name, isConst) {
 fn emitKwargsObject(emitter, kwargs) {
   bc.emit("OBJECT_NEW")
   trueIdx = bc.add_const(true)
-  kwargKeyIdx = bc.add_string("__kwargs")
+  kwargKeyIdx = bc.add_chunk_string("__kwargs")
   bc.emit("LOAD_CONST", trueIdx)
   bc.emit("LOAD_CONST", kwargKeyIdx)
   bc.emit("OBJECT_SET")
   for kw in kwargs {
     emitExpr(emitter, kw.value)
-    nameIdx = bc.add_string(kw.name)
+    nameIdx = bc.add_chunk_string(kw.name)
     bc.emit("LOAD_CONST", nameIdx)
     bc.emit("OBJECT_SET")
   }
@@ -275,7 +275,7 @@ fn emitExpr(emitter, node) {
 			bc.emit("LOAD_CONST", idx)
 		}
 		else {
-			idx = bc.add_string(node.value)
+			idx = bc.add_chunk_string(node.value)
 			bc.emit("LOAD_CONST", idx)
 		}
 		return
@@ -436,7 +436,7 @@ if opr == "not in" {
 	// Constant folding for literal binary expressions
 	if opr == "+" && node.left.kind == "StringLiteral" && node.right.kind == "StringLiteral" {
 		folded = node.left.value + node.right.value
-		idx = bc.add_string(folded)
+		idx = bc.add_chunk_string(folded)
 		bc.emit("LOAD_CONST", idx)
 		return
 	}
@@ -581,7 +581,7 @@ return
     isIncrement = node.oper == "++"
     // Load self.field
     bc.emit("LOAD_VAR", 0)
-    keyIdx = bc.add_string(fname)
+    keyIdx = bc.add_chunk_string(fname)
     bc.emit("LOAD_CONST", keyIdx)
     bc.emit("OBJECT_GET")
     bc.emit("LOAD_CONST", bc.add_const(1))
@@ -593,7 +593,7 @@ return
     bc.emit("STORE_VAR", tempVal)
     bc.emit("LOAD_VAR", 0)
     bc.emit("LOAD_VAR", tempVal)
-    keyIdx2 = bc.add_string(fname)
+    keyIdx2 = bc.add_chunk_string(fname)
     bc.emit("LOAD_CONST", keyIdx2)
     bc.emit("OBJECT_SET")
     bc.emit("POP")
@@ -605,7 +605,7 @@ return
     // obj.field++ → load obj, get field, +1, store back
     emitExpr(emitter, target.obj)
     bc.emit("DUP")
-    keyIdx = bc.add_string(target.property)
+    keyIdx = bc.add_chunk_string(target.property)
     bc.emit("LOAD_CONST", keyIdx)
     bc.emit("OBJECT_GET")
     bc.emit("LOAD_CONST", bc.add_const(1))
@@ -615,7 +615,7 @@ return
     emitter.scope.count = emitter.scope.count + 1
     bc.emit("STORE_VAR", tempVal)
     bc.emit("LOAD_VAR", tempVal)
-    keyIdx2 = bc.add_string(target.property)
+    keyIdx2 = bc.add_chunk_string(target.property)
     bc.emit("LOAD_CONST", keyIdx2)
     bc.emit("OBJECT_SET")
     bc.emit("POP")
@@ -643,7 +643,7 @@ return
 			else {
 				bc.emit("PUSH_NULL")
 			}
-			methodIdx = bc.add_string(callee.superMethodName)
+			methodIdx = bc.add_chunk_string(callee.superMethodName)
 			bc.emit("LOAD_CONST", methodIdx)
 			bc.emit("OBJECT_GET_RAW")
 			bc.emit("LOAD_VAR", 0)
@@ -793,7 +793,7 @@ return
         if target.kind == "MemberExpression" {
             emitExpr(emitter, target.obj)
             emitExpr(emitter, node.value)
-            keyIdx = bc.add_string(target.property)
+            keyIdx = bc.add_chunk_string(target.property)
             bc.emit("LOAD_CONST", keyIdx)
             bc.emit("OBJECT_SET")
             return
@@ -852,7 +852,7 @@ if target.kind == "IndexExpression" {
 					aliasName = keyName
 				}
 				bc.emit("LOAD_VAR", tempSlot)
-				keyIdx = bc.add_string(keyName)
+				keyIdx = bc.add_chunk_string(keyName)
 				bc.emit("LOAD_CONST", keyIdx)
 				bc.emit("OBJECT_GET")
 				emitStoreVar(emitter, aliasName)
@@ -870,7 +870,7 @@ if target.kind == "IndexExpression" {
 		emitter.scope.count = emitter.scope.count + 1
 		emitExpr(emitter, node.value)
 		bc.emit("STORE_VAR", tempVal)
-		keyIdx = bc.add_string(fname)
+		keyIdx = bc.add_chunk_string(fname)
 		bc.emit("LOAD_CONST", keyIdx)
 		bc.emit("STORE_VAR", tempKey)
 		bc.emit("LOAD_VAR", 0)
@@ -895,7 +895,7 @@ if target.kind == "IndexExpression" {
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
       bc.emit("STORE_VAR", tempObj)
       bc.emit("STORE_VAR", tempVal)
-      keyIdx = bc.add_string(fname)
+      keyIdx = bc.add_chunk_string(fname)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("STORE_VAR", tempKey)
       bc.emit("LOAD_VAR", tempObj)
@@ -998,7 +998,7 @@ if target.kind == "IndexExpression" {
 		if inplaceMethod != null {
 			emitExpr(emitter, target.obj)
 			bc.emit("DUP")
-			keyIdx = bc.add_string(target.property)
+			keyIdx = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
@@ -1010,7 +1010,7 @@ if target.kind == "IndexExpression" {
 			// In-place succeeded — POP result, reload original obj+prop value
 			bc.emit("POP")
 			emitExpr(emitter, target.obj)
-			keyIdx2 = bc.add_string(target.property)
+			keyIdx2 = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
 			bc.emit("OBJECT_GET")
 			endJump = bc.emit("JUMP", 0)
@@ -1018,13 +1018,13 @@ if target.kind == "IndexExpression" {
 			bc.patch_jump(fallbackJump, bc.instr_count())
 			emitExpr(emitter, target.obj)
 			bc.emit("DUP")
-			keyIdx3 = bc.add_string(target.property)
+			keyIdx3 = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx3)
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
 			// Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
-			keyIdx4 = bc.add_string(target.property)
+			keyIdx4 = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx4)
 			bc.emit("OBJECT_SET")
 			bc.patch_jump(endJump, bc.instr_count())
@@ -1033,12 +1033,12 @@ if target.kind == "IndexExpression" {
 			// No in-place — desugared form
 			emitExpr(emitter, target.obj)
 			bc.emit("DUP")
-			keyIdx = bc.add_string(target.property)
+			keyIdx = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
-			keyIdx2 = bc.add_string(target.property)
+			keyIdx2 = bc.add_chunk_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
 			bc.emit("OBJECT_SET")
 		}
@@ -1075,7 +1075,7 @@ else if target.kind == "AtExpression" {
   tempResult = scopeLocalCount(emitter.scope)
   emitter.scope.count = emitter.scope.count + 1
   bc.emit("LOAD_VAR", 0)
-  fidx = bc.add_string(fname)
+  fidx = bc.add_chunk_string(fname)
   bc.emit("LOAD_CONST", fidx)
   bc.emit("OBJECT_GET")
   emitExpr(emitter, node.value)
@@ -1092,7 +1092,7 @@ else if target.kind == "AtExpression" {
   bc.emit("STORE_VAR", tempResult)
   bc.emit("LOAD_VAR", 0)
   bc.emit("LOAD_VAR", tempResult)
-  fidx2 = bc.add_string(fname)
+  fidx2 = bc.add_chunk_string(fname)
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
@@ -1106,7 +1106,7 @@ else if target.kind == "AtAtExpression" {
   emitter.scope.count = emitter.scope.count + 1
   classSid = globalIdx(emitter, emitter.currentClassName)
   bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
-  fidx = bc.add_string(fname)
+  fidx = bc.add_chunk_string(fname)
   bc.emit("LOAD_CONST", fidx)
   bc.emit("OBJECT_GET")
   emitExpr(emitter, node.value)
@@ -1124,7 +1124,7 @@ else if target.kind == "AtAtExpression" {
   classSid2 = globalIdx(emitter, emitter.currentClassName)
   bc.emit("LOAD_GLOBAL", bc.str_id(classSid2))
   bc.emit("LOAD_VAR", tempResult)
-  fidx2 = bc.add_string(fname)
+  fidx2 = bc.add_chunk_string(fname)
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
@@ -1241,7 +1241,7 @@ if k == "TernaryExpression" {
         }
         else {
           emitExpr(emitter, field.value)
-          keyIdx = bc.add_string(field.key)
+          keyIdx = bc.add_chunk_string(field.key)
           bc.emit("LOAD_CONST", keyIdx)
           bc.emit("OBJECT_SET")
         }
@@ -1271,13 +1271,13 @@ if k == "TernaryExpression" {
 		if node.optional == true {
 			bc.emit("DUP")
 			optJump = bc.emit("JUMP_IF_NULL", 0)
-			keyIdx = bc.add_string(node.property)
+			keyIdx = bc.add_chunk_string(node.property)
 			bc.emit("LOAD_CONST", keyIdx)
 			bc.emit("OBJECT_GET")
 			bc.patch_jump(optJump, bc.instr_count())
 			return
 		}
-		keyIdx = bc.add_string(node.property)
+		keyIdx = bc.add_chunk_string(node.property)
 		bc.emit("LOAD_CONST", keyIdx)
 		bc.emit("OBJECT_GET")
 		return
@@ -1360,11 +1360,11 @@ return
 
 }
     if k == "InterpolatedString" {
-  emptyIdx = bc.add_string("")
+  emptyIdx = bc.add_chunk_string("")
   bc.emit("LOAD_CONST", emptyIdx)
   for seg in node.parts {
     if seg.kind == "StringLiteral" {
-      strIdx = bc.add_string(seg.value)
+      strIdx = bc.add_chunk_string(seg.value)
       bc.emit("LOAD_CONST", strIdx)
                 bc.emit("STRING_CONCAT")
             }
@@ -1492,7 +1492,7 @@ return
   }
   if k == "RegexLiteral" {
     // Emit regex as a string constant, tagged for runtime
-    idx = bc.add_string(node.pattern)
+    idx = bc.add_chunk_string(node.pattern)
     bc.emit("LOAD_CONST", idx)
     return
 
@@ -1502,7 +1502,7 @@ if k == "AtExpression" {
     fname = node.field
     if fname.kind == "Identifier" { fname = fname.name }
     bc.emit("LOAD_VAR", 0)
-    keyIdx = bc.add_string(fname)
+    keyIdx = bc.add_chunk_string(fname)
     bc.emit("LOAD_CONST", keyIdx)
     bc.emit("OBJECT_GET")
     directives = {"disable": true, "enable": true, "remove": true, "toggle": true}
@@ -1546,7 +1546,7 @@ if k == "AtExpression" {
 			sid = globalIdx(emitter, "run")
 		}
 		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-		cmdIdx = bc.add_string(node.command)
+		cmdIdx = bc.add_chunk_string(node.command)
 		bc.emit("LOAD_CONST", cmdIdx)
 		bc.emit("CALL", 1)
 		// Handle pipe chain: $! cmd1 | cmd2 | ...
@@ -1555,7 +1555,7 @@ if k == "AtExpression" {
 			sid = globalIdx(emitter, "run")
 			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
 			if next.command != null {
-				cmdIdx = bc.add_string(next.command)
+				cmdIdx = bc.add_chunk_string(next.command)
 				bc.emit("LOAD_CONST", cmdIdx)
 				bc.emit("CALL", 1)
 				bc.emit("POP")
@@ -1569,7 +1569,7 @@ if k == "AtExpression" {
 		// Backtick: `cmd` — same as ShellCommand without capture
 		sid = globalIdx(emitter, "run")
 		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-		cmdIdx = bc.add_string(node.command)
+		cmdIdx = bc.add_chunk_string(node.command)
 		bc.emit("LOAD_CONST", cmdIdx)
 		bc.emit("CALL", 1)
 		return
@@ -1798,7 +1798,7 @@ if k == "AsyncExpression" {
     return
   }
 if k == "HotkeyLiteral" {
- idx = bc.add_string(node.combination)
+ idx = bc.add_chunk_string(node.combination)
  bc.emit("LOAD_CONST", idx)
     return
   }
@@ -1852,7 +1852,7 @@ fn emitDel(emitter, node) {
   }
   if k == "MemberExpression" {
     emitExpr(emitter, node.obj)
-    keyIdx = bc.add_string(node.property)
+    keyIdx = bc.add_chunk_string(node.property)
     bc.emit("LOAD_CONST", keyIdx)
     bc.emit("OBJECT_DELETE")
     return
@@ -2252,7 +2252,7 @@ if k == "RepeatStatement" {
 			bc.set_local_count(0)
 			bc.func_pop()
 			emitter.scope = prevSigScope
-			nameIdx = bc.add_string(node.name)
+			nameIdx = bc.add_chunk_string(node.name)
 			sid = globalIdx(emitter, "signal.bind")
 			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
 			bc.emit("LOAD_CONST", nameIdx)
@@ -2303,7 +2303,7 @@ if k == "RepeatStatement" {
 						aliasName = keyName
 					}
 					bc.emit("LOAD_VAR", tempSlot)
-					keyIdx = bc.add_string(keyName)
+					keyIdx = bc.add_chunk_string(keyName)
 					bc.emit("LOAD_CONST", keyIdx)
 					bc.emit("OBJECT_GET")
 					emitStoreDecl(emitter, aliasName, node.isConst)
@@ -2382,7 +2382,7 @@ if k == "RepeatStatement" {
 						aliasName = keyName
 					}
 					bc.emit("LOAD_VAR", tempSlot)
-					keyIdx = bc.add_string(keyName)
+					keyIdx = bc.add_chunk_string(keyName)
 					bc.emit("LOAD_CONST", keyIdx)
 					bc.emit("OBJECT_GET")
 					emitStoreDecl(emitter, aliasName, true)
@@ -2555,13 +2555,13 @@ if k == "ClassDeclaration" {
     // prot.register(name, method1, method2, ...) → CALL(1+N)
     sid = globalIdx(emitter, "prot.register")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    nameIdx = bc.add_string(node.name)
+    nameIdx = bc.add_chunk_string(node.name)
     bc.emit("LOAD_CONST", nameIdx)
     methodCount = 1
     if node.methods != null {
       for m in node.methods {
         if m.name != null {
-          midx = bc.add_string(m.name)
+          midx = bc.add_chunk_string(m.name)
           bc.emit("LOAD_CONST", midx)
           methodCount = methodCount + 1
         }
@@ -2607,7 +2607,7 @@ if k == "HotkeyBinding" {
               if s.expr.kind == "AssignmentExpression" {
                 if s.expr.target.kind == "Identifier" {
                   emitExpr(emitter, s.expr.value)
-                  keyIdx = bc.add_string(s.expr.target.name)
+                  keyIdx = bc.add_chunk_string(s.expr.target.name)
                   bc.emit("LOAD_CONST", keyIdx)
                   bc.emit("OBJECT_SET")
                 }
@@ -2636,14 +2636,14 @@ if k == "HotkeyBinding" {
                   confSid = globalIdx(emitter, "conf")
                   bc.emit("LOAD_GLOBAL", bc.str_id(confSid))
                   bc.emit("LOAD_VAR", tmpSlot)
-                  keyIdx = bc.add_string(key)
+                  keyIdx = bc.add_chunk_string(key)
                   bc.emit("LOAD_CONST", keyIdx)
                   bc.emit("OBJECT_SET")
                   bc.emit("POP")
                   // config.set("key", value)
                   setSid = globalIdx(emitter, "config.set")
                   bc.emit("LOAD_GLOBAL", bc.str_id(setSid))
-                  keyStrIdx = bc.add_string(key)
+                  keyStrIdx = bc.add_chunk_string(key)
                   bc.emit("LOAD_CONST", keyStrIdx)
                   emitExpr(emitter, s.expr.value)
 bc.emit("CALL", 2)
@@ -2715,7 +2715,7 @@ bc.emit("CALL", 2)
         else {
           bc.emit("PUSH_NULL")
         }
-        keyIdx = bc.add_string(pair.key)
+        keyIdx = bc.add_chunk_string(pair.key)
         bc.emit("LOAD_CONST", keyIdx)
         bc.emit("OBJECT_SET")
       }
@@ -2736,7 +2736,7 @@ bc.emit("CALL", 2)
         else {
           bc.emit("PUSH_NULL")
         }
-        keyIdx = bc.add_string(pair.key)
+        keyIdx = bc.add_chunk_string(pair.key)
         bc.emit("LOAD_CONST", keyIdx)
         bc.emit("OBJECT_SET")
       }
@@ -2749,7 +2749,7 @@ bc.emit("CALL", 2)
     modeSid = globalIdx(emitter, "mode")
     bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
     bc.emit("CALL", 0)
-    nameIdx = bc.add_string(node.modeName)
+    nameIdx = bc.add_chunk_string(node.modeName)
     bc.emit("LOAD_CONST", nameIdx)
     bc.emit("EQ")
     bc.emit("DUP")
@@ -2769,7 +2769,7 @@ if k == "ModesBlock" {
   for modeDef in node.modes {
    sid = globalIdx(emitter, "mode.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   mNameIdx = bc.add_string(modeDef.name)
+   mNameIdx = bc.add_chunk_string(modeDef.name)
    bc.emit("LOAD_CONST", mNameIdx)
    bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
    if modeDef.condition != null {
@@ -2826,7 +2826,7 @@ if k == "ModesBlock" {
    }
    // onEnterFrom mode name
    if modeDef.onEnterFrom != null && modeDef.onEnterFrom != "" {
-    enterFromIdx = bc.add_string(modeDef.onEnterFrom)
+    enterFromIdx = bc.add_chunk_string(modeDef.onEnterFrom)
     bc.emit("LOAD_CONST", enterFromIdx)
    }
    else {
@@ -2858,7 +2858,7 @@ if k == "ModesBlock" {
    }
    // onExitTo mode name
    if modeDef.onExitTo != null && modeDef.onExitTo != "" {
-    exitToIdx = bc.add_string(modeDef.onExitTo)
+    exitToIdx = bc.add_chunk_string(modeDef.onExitTo)
     bc.emit("LOAD_CONST", exitToIdx)
    }
    else {
@@ -2954,7 +2954,7 @@ if k == "ModesBlock" {
       endJump = bc.emit("JUMP_IF_TRUE", 0)
       sleepSid = globalIdx(emitter, "sleep")
       bc.emit("LOAD_GLOBAL", bc.str_id(sleepSid))
-      msIdx = bc.add_string("10ms")
+      msIdx = bc.add_chunk_string("10ms")
       bc.emit("LOAD_CONST", msIdx)
       bc.emit("CALL", 1)
       bc.emit("POP")
@@ -2987,7 +2987,7 @@ if k == "ModesBlock" {
       }
       else if node.target.kind == "MemberExpression" {
         emitExpr(emitter, node.target.obj)
-        propIdx = bc.add_string(node.target.property)
+        propIdx = bc.add_chunk_string(node.target.property)
         bc.emit("LOAD_CONST", propIdx)
         bc.emit("OBJECT_DELETE")
       }
@@ -3033,7 +3033,7 @@ if k == "ModesBlock" {
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     traitName = node.name
     if type(traitName) == "object" { traitName = traitName.name }
-    nameIdx = bc.add_string(traitName)
+    nameIdx = bc.add_chunk_string(traitName)
     bc.emit("LOAD_CONST", nameIdx)
     methodCount = 1
     if node.methods != null {
@@ -3041,7 +3041,7 @@ if k == "ModesBlock" {
         mName = m.name
         if type(mName) == "object" { mName = mName.name }
         if mName != null {
-          midx = bc.add_string(mName)
+          midx = bc.add_chunk_string(mName)
           bc.emit("LOAD_CONST", midx)
           methodCount = methodCount + 1
         }
@@ -3579,7 +3579,7 @@ fn emitUseStatement(emitter, node) {
       if node.isFileImport != true {
       if !node.isNamedImport {
         if !node.isWildcard {
-          pathIdx = bc.add_string(node.module)
+          pathIdx = bc.add_chunk_string(node.module)
           bc.emit("LOAD_CONST", pathIdx)
           bc.emit("IMPORT")
           sid = bc.add_chunk_string(node.alias)
@@ -3596,7 +3596,7 @@ fn emitUseStatement(emitter, node) {
     if node.isFileImport != true {
       for modName in node.moduleNames {
         if modName == "" { continue }
-        pathIdx = bc.add_string(modName)
+        pathIdx = bc.add_chunk_string(modName)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
         sid = bc.add_chunk_string(modName)
@@ -3610,7 +3610,7 @@ fn emitUseStatement(emitter, node) {
   if node.isWildcard == true {
     path = node.filePath
     if path == null { path = node.module }
-    pathIdx = bc.add_string(path)
+    pathIdx = bc.add_chunk_string(path)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
     bc.emit("IMPORT_WILDCARD")
@@ -3621,7 +3621,7 @@ fn emitUseStatement(emitter, node) {
   if node.isNamedImport == true {
     path = node.filePath
     if path == null { path = node.module }
-    pathIdx = bc.add_string(path)
+    pathIdx = bc.add_chunk_string(path)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
     iNames = node.importNames
@@ -3643,7 +3643,7 @@ if iNames != null {
       }
       if alias == "" { ii = ii + 1; continue }
       bc.emit("DUP")
-      keyIdx = bc.add_string(name)
+      keyIdx = bc.add_chunk_string(name)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("OBJECT_GET")
       sid = bc.add_chunk_string(alias)
@@ -3658,7 +3658,7 @@ if iNames != null {
   // Form 4: use "file.hv" as alias or use "file.hv" — file import
   if node.isFileImport == true {
     if node.filePath != null {
-    pathIdx = bc.add_string(node.filePath)
+    pathIdx = bc.add_chunk_string(node.filePath)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
       if node.alias != null && node.alias != "" {
@@ -3692,7 +3692,7 @@ if iNames != null {
 
 // Fallback: use module — bare module import as global
   if node.module != null && node.module != "" {
-    pathIdx = bc.add_string(node.module)
+    pathIdx = bc.add_chunk_string(node.module)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
     sid = bc.add_chunk_string(node.module)
@@ -3707,7 +3707,7 @@ fn emitImportStatement(emitter, node) {
 
   // import { a, b as c } from "module"
   if node.importNames != null {
-    pathIdx = bc.add_string(module)
+    pathIdx = bc.add_chunk_string(module)
 bc.emit("LOAD_CONST", pathIdx)
 bc.emit("IMPORT")
 ii2 = 0
@@ -3724,7 +3724,7 @@ bc.emit("IMPORT_WILDCARD")
 return
 }
 bc.emit("DUP")
-keyIdx = bc.add_string(name)
+keyIdx = bc.add_chunk_string(name)
 bc.emit("LOAD_CONST", keyIdx)
 bc.emit("OBJECT_GET")
 sid = bc.add_chunk_string(alias)
@@ -3736,7 +3736,7 @@ ii2 = ii2 + 1
   }
 
   // bare: import "module" — store as global with module stem name
-  pathIdx = bc.add_string(module)
+  pathIdx = bc.add_chunk_string(module)
   bc.emit("LOAD_CONST", pathIdx)
   bc.emit("IMPORT")
   sid = bc.add_chunk_string(module)
@@ -4088,7 +4088,7 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
     if pattern.properties != null {
       for prop in pattern.properties {
         bc.emit("LOAD_VAR", discSlot)
-        fieldIdx = bc.add_string(prop.key)
+        fieldIdx = bc.add_chunk_string(prop.key)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_GET")
 		if prop.value != null {
@@ -4121,10 +4121,10 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
     ctorArgs = pattern.args != null ? pattern.args : (pattern.params != null ? pattern.params : [])
     bc.emit("LOAD_CONST", bc.add_const(true))
     bc.emit("LOAD_VAR", discSlot)
-    tagIdx = bc.add_string("tag")
+    tagIdx = bc.add_chunk_string("tag")
     bc.emit("LOAD_CONST", tagIdx)
     bc.emit("OBJECT_GET")
-    nameIdx = bc.add_string(ctorName)
+    nameIdx = bc.add_chunk_string(ctorName)
     bc.emit("LOAD_CONST", nameIdx)
     bc.emit("EQ")
     bc.emit("AND")
@@ -4138,7 +4138,7 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
         if i == 1 { fieldName = "error" }
         if i == 2 { fieldName = "message" }
         bc.emit("LOAD_VAR", discSlot)
-        fieldIdx = bc.add_string(fieldName)
+        fieldIdx = bc.add_chunk_string(fieldName)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_GET")
         if arg.kind == "Identifier" {
@@ -4197,7 +4197,7 @@ fn emitClassDeclaration(emitter, node) {
   sid = globalIdx(emitter, "class.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
-  nameIdx = bc.add_string(node.name)
+  nameIdx = bc.add_chunk_string(node.name)
   bc.emit("LOAD_CONST", nameIdx)
   // Instance fields array
   bc.emit("ARRAY_NEW")
@@ -4205,12 +4205,12 @@ fn emitClassDeclaration(emitter, node) {
     for f in node.definition.fields {
       isField = f.isClassField
       if isField == null {
-        fidx = bc.add_string(f.name)
+        fidx = bc.add_chunk_string(f.name)
         bc.emit("LOAD_CONST", fidx)
         bc.emit("ARRAY_PUSH")
       }
       else if !isField {
-        fidx = bc.add_string(f.name)
+        fidx = bc.add_chunk_string(f.name)
         bc.emit("LOAD_CONST", fidx)
         bc.emit("ARRAY_PUSH")
       }
@@ -4236,7 +4236,7 @@ fn emitClassDeclaration(emitter, node) {
       isField = f.isClassField
       if isField != null {
         if isField {
-          fidx = bc.add_string(f.name)
+          fidx = bc.add_chunk_string(f.name)
           bc.emit("LOAD_CONST", fidx)
           bc.emit("ARRAY_PUSH")
         }
@@ -4251,7 +4251,7 @@ fn emitClassDeclaration(emitter, node) {
       if (isField == null || !isField) {
         if f.defaultValue != null {
           emitExpr(emitter, f.defaultValue)
-          fidx = bc.add_string(f.name)
+          fidx = bc.add_chunk_string(f.name)
           bc.emit("LOAD_CONST", fidx)
           bc.emit("OBJECT_SET")
         }
@@ -4269,7 +4269,7 @@ fn emitClassDeclaration(emitter, node) {
           if f.defaultValue != null {
         bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
         emitExpr(emitter, f.defaultValue)
-        fieldIdx = bc.add_string(f.name)
+        fieldIdx = bc.add_chunk_string(f.name)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_SET")
         bc.emit("POP")
@@ -4298,7 +4298,7 @@ fn emitClassMethodRegister(emitter, className, method) {
   classSid = globalIdx(emitter, className)
   bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
   // Method name
-  mnameIdx = bc.add_string(method.name)
+  mnameIdx = bc.add_chunk_string(method.name)
   bc.emit("LOAD_CONST", mnameIdx)
   // Instance methods get 'self' at slot 0, class methods (@@) don't
   isClassMethod = method.isClassMethod != null && method.isClassMethod
@@ -4329,7 +4329,7 @@ fn emitStructMethodRegister(emitter, structName, method) {
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   structSid = globalIdx(emitter, structName)
   bc.emit("LOAD_GLOBAL", bc.str_id(structSid))
-  mnameIdx = bc.add_string(method.name)
+  mnameIdx = bc.add_chunk_string(method.name)
   bc.emit("LOAD_CONST", mnameIdx)
   isClassMethod = method.isClassMethod != null && method.isClassMethod
   chunkIdx = -1
@@ -4362,7 +4362,7 @@ fn emitStructDeclaration(emitter, node) {
   sid = globalIdx(emitter, "struct.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
-  nameIdx = bc.add_string(node.name)
+  nameIdx = bc.add_chunk_string(node.name)
   bc.emit("LOAD_CONST", nameIdx)
   // Fields array
   bc.emit("ARRAY_NEW")
@@ -4372,7 +4372,7 @@ fn emitStructDeclaration(emitter, node) {
       if type(f) == "object" {
         if f.name != null { fname = f.name }
       }
-      fidx = bc.add_string(fname)
+      fidx = bc.add_chunk_string(fname)
       bc.emit("LOAD_CONST", fidx)
       bc.emit("ARRAY_PUSH")
     }
@@ -4411,9 +4411,9 @@ fn emitStructDeclaration(emitter, node) {
       if protName != null && protName != "" {
         protSid = globalIdx(emitter, "prot.impl")
         bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
-        pnIdx = bc.add_string(protName)
+        pnIdx = bc.add_chunk_string(protName)
         bc.emit("LOAD_CONST", pnIdx)
-        cnIdx = bc.add_string(node.name)
+        cnIdx = bc.add_chunk_string(node.name)
         bc.emit("LOAD_CONST", cnIdx)
         bc.emit("CALL", 2)
       bc.emit("POP")
@@ -4440,7 +4440,7 @@ fn emitImplDeclaration(emitter, node) {
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
       typeSid = globalIdx(emitter, typeName)
       bc.emit("LOAD_GLOBAL", bc.str_id(typeSid))
-      mnameIdx = bc.add_string(method.name)
+      mnameIdx = bc.add_chunk_string(method.name)
       bc.emit("LOAD_CONST", mnameIdx)
       fnObj = bc.make_function_obj(fidx)
       fnConstIdx = bc.add_const(fnObj)
@@ -4452,9 +4452,9 @@ fn emitImplDeclaration(emitter, node) {
   if traitName != "" {
     protSid = globalIdx(emitter, "prot.impl")
     bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
-    tnIdx = bc.add_string(traitName)
+    tnIdx = bc.add_chunk_string(traitName)
     bc.emit("LOAD_CONST", tnIdx)
-    cnIdx = bc.add_string(typeName)
+    cnIdx = bc.add_chunk_string(typeName)
     bc.emit("LOAD_CONST", cnIdx)
     bc.emit("CALL", 2)
     bc.emit("POP")
@@ -4464,13 +4464,13 @@ fn emitImplDeclaration(emitter, node) {
 fn emitEnumDeclaration(emitter, node) {
   sid = globalIdx(emitter, "enum.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-  nameIdx = bc.add_string(node.name)
+  nameIdx = bc.add_chunk_string(node.name)
   bc.emit("LOAD_CONST", nameIdx)
   // Variant names array
   bc.emit("ARRAY_NEW")
   if node.definition.variants != null {
     for v in node.definition.variants {
-      vidx = bc.add_string(v.name)
+      vidx = bc.add_chunk_string(v.name)
       bc.emit("LOAD_CONST", vidx)
       bc.emit("ARRAY_PUSH")
     }
@@ -4531,7 +4531,7 @@ fn emitHotkeyBinding(emitter, node) {
   modeSid = globalIdx(emitter, "mode")
   bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
   bc.emit("CALL", 0)
-  modeKeyIdx = bc.add_string(node.mode)
+  modeKeyIdx = bc.add_chunk_string(node.mode)
   bc.emit("LOAD_CONST", modeKeyIdx)
   bc.emit("EQ")
   modeSkipJumpIp = bc.emit("JUMP_IF_FALSE", 0)
@@ -4574,11 +4574,11 @@ fn emitHotkeyBinding(emitter, node) {
     sid = globalIdx(emitter, "hotkey.register_conditional")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     if type(hk) == "string" {
-     keyIdx = bc.add_string(hk)
+     keyIdx = bc.add_chunk_string(hk)
      bc.emit("LOAD_CONST", keyIdx)
     }
     else if hk.kind == "HotkeyLiteral" {
-     keyIdx = bc.add_string(hk.combination)
+     keyIdx = bc.add_chunk_string(hk.combination)
      bc.emit("LOAD_CONST", keyIdx)
     }
     else {
@@ -4589,9 +4589,9 @@ fn emitHotkeyBinding(emitter, node) {
     bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(useCondIdx)))
     if hasPolicy {
      bc.emit("OBJECT_NEW")
-     polKeyIdx = bc.add_string(node.policy)
+     polKeyIdx = bc.add_chunk_string(node.policy)
      bc.emit("LOAD_CONST", polKeyIdx)
-     polNameIdx = bc.add_string("policy")
+     polNameIdx = bc.add_chunk_string("policy")
      bc.emit("LOAD_CONST", polNameIdx)
      bc.emit("OBJECT_SET")
      bc.emit("CALL", 4)
@@ -4604,11 +4604,11 @@ fn emitHotkeyBinding(emitter, node) {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "string" {
-    keyIdx = bc.add_string(hk)
+    keyIdx = bc.add_chunk_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else if hk.kind == "HotkeyLiteral" {
-    keyIdx = bc.add_string(hk.combination)
+    keyIdx = bc.add_chunk_string(hk.combination)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else {
@@ -4617,9 +4617,9 @@ fn emitHotkeyBinding(emitter, node) {
    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
-    polKeyIdx = bc.add_string(node.policy)
+    polKeyIdx = bc.add_chunk_string(node.policy)
     bc.emit("LOAD_CONST", polKeyIdx)
-    polNameIdx = bc.add_string("policy")
+    polNameIdx = bc.add_chunk_string("policy")
     bc.emit("LOAD_CONST", polNameIdx)
     bc.emit("OBJECT_SET")
     bc.emit("CALL", 3)
@@ -4667,7 +4667,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
   modeSid = globalIdx(emitter, "mode")
   bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
   bc.emit("CALL", 0)
-  modeKeyIdx = bc.add_string(node.mode)
+  modeKeyIdx = bc.add_chunk_string(node.mode)
   bc.emit("LOAD_CONST", modeKeyIdx)
   bc.emit("EQ")
   modeSkipJumpIp = bc.emit("JUMP_IF_FALSE", 0)
@@ -4706,11 +4706,11 @@ hkList = []
     sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "string" {
-    keyIdx = bc.add_string(hk)
+    keyIdx = bc.add_chunk_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else if hk.kind == "HotkeyLiteral" {
-    keyIdx = bc.add_string(hk.combination)
+    keyIdx = bc.add_chunk_string(hk.combination)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else {
@@ -4721,9 +4721,9 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
     bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(useCondIdx)))
     if hasPolicy {
     bc.emit("OBJECT_NEW")
-    polKeyIdx = bc.add_string(node.policy)
+    polKeyIdx = bc.add_chunk_string(node.policy)
     bc.emit("LOAD_CONST", polKeyIdx)
-    polNameIdx = bc.add_string("policy")
+    polNameIdx = bc.add_chunk_string("policy")
     bc.emit("LOAD_CONST", polNameIdx)
     bc.emit("OBJECT_SET")
     bc.emit("CALL", 4)
@@ -4736,11 +4736,11 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "string" {
-    keyIdx = bc.add_string(hk)
+    keyIdx = bc.add_chunk_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else if hk.kind == "HotkeyLiteral" {
-    keyIdx = bc.add_string(hk.combination)
+    keyIdx = bc.add_chunk_string(hk.combination)
     bc.emit("LOAD_CONST", keyIdx)
    }
    else {
@@ -4749,9 +4749,9 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
-    polKeyIdx = bc.add_string(node.policy)
+    polKeyIdx = bc.add_chunk_string(node.policy)
     bc.emit("LOAD_CONST", polKeyIdx)
-    polNameIdx = bc.add_string("policy")
+    polNameIdx = bc.add_chunk_string("policy")
     bc.emit("LOAD_CONST", polNameIdx)
     bc.emit("OBJECT_SET")
     bc.emit("CALL", 3)
@@ -4877,10 +4877,10 @@ fn emitDecoratorStatement(emitter, node) {
     }
     i = i - 1
   }
-  origNameIdx = bc.add_string(fnName)
-  nameKeyIdx = bc.add_string("__name__")
-  wrappedKeyIdx = bc.add_string("__wrapped__")
-  arityKeyIdx = bc.add_string("__arity__")
+  origNameIdx = bc.add_chunk_string(fnName)
+  nameKeyIdx = bc.add_chunk_string("__name__")
+  wrappedKeyIdx = bc.add_chunk_string("__wrapped__")
+  arityKeyIdx = bc.add_chunk_string("__arity__")
   bc.emit("LOAD_VAR", slot)
   bc.emit("LOAD_CONST", origNameIdx)
   bc.emit("LOAD_CONST", nameKeyIdx)
@@ -4914,7 +4914,7 @@ fn emitInputStatement(emitter, node) {
     if ct == "SendText" || ct == "sendText" {
       sid = globalIdx(emitter, "io.send")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      textIdx = bc.add_string(cmd.text)
+      textIdx = bc.add_chunk_string(cmd.text)
       bc.emit("LOAD_CONST", textIdx)
       bc.emit("CALL", 1)
       bc.emit("POP")
@@ -4922,7 +4922,7 @@ fn emitInputStatement(emitter, node) {
     if ct == "SendKey" || ct == "sendKey" {
       sid = globalIdx(emitter, "io.sendKey")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      keyIdx = bc.add_string(cmd.key)
+      keyIdx = bc.add_chunk_string(cmd.key)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("CALL", 1)
       bc.emit("POP")
@@ -4930,7 +4930,7 @@ fn emitInputStatement(emitter, node) {
     if ct == "MouseClick" || ct == "mouseClick" {
       sid = globalIdx(emitter, "io.click")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      btnIdx = bc.add_string(cmd.text)
+      btnIdx = bc.add_chunk_string(cmd.text)
       bc.emit("LOAD_CONST", btnIdx)
       bc.emit("CALL", 1)
       bc.emit("POP")
@@ -4938,9 +4938,9 @@ fn emitInputStatement(emitter, node) {
     if ct == "MouseMove" || ct == "mouseMove" {
       sid = globalIdx(emitter, "io.mouseMoveTo")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      xIdx = bc.add_string(cmd.xExprStr)
+      xIdx = bc.add_chunk_string(cmd.xExprStr)
       bc.emit("LOAD_CONST", xIdx)
-      yIdx = bc.add_string(cmd.yExprStr)
+      yIdx = bc.add_chunk_string(cmd.yExprStr)
       bc.emit("LOAD_CONST", yIdx)
       bc.emit("CALL", 2)
       bc.emit("POP")
@@ -4948,9 +4948,9 @@ fn emitInputStatement(emitter, node) {
     if ct == "MouseRelative" || ct == "mouseRelative" {
       sid = globalIdx(emitter, "io.mouseMoveRel")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      xIdx = bc.add_string(cmd.xExprStr)
+      xIdx = bc.add_chunk_string(cmd.xExprStr)
       bc.emit("LOAD_CONST", xIdx)
-      yIdx = bc.add_string(cmd.yExprStr)
+      yIdx = bc.add_chunk_string(cmd.yExprStr)
       bc.emit("LOAD_CONST", yIdx)
       bc.emit("CALL", 2)
       bc.emit("POP")
@@ -4986,7 +4986,7 @@ fn emitOnKeyBinding(emitter, registerFn, key, body) {
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   if key != null {
     if type(key) == "string" {
-      keyIdx = bc.add_string(key)
+      keyIdx = bc.add_chunk_string(key)
       bc.emit("LOAD_CONST", keyIdx)
     }
     else { emitExpr(emitter, key) }
@@ -5019,7 +5019,7 @@ fn emitOnKeyListBinding(emitter, registerFn, keys, body) {
   if keys != null {
     for k in keys {
       if k != null {
-        keyIdx = bc.add_string(k)
+        keyIdx = bc.add_chunk_string(k)
         bc.emit("LOAD_CONST", keyIdx)
         bc.emit("ARRAY_PUSH")
       }

@@ -1087,6 +1087,47 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeArrayId(arr.id);
   });
 
+  // Hotkey.suspendGrabs() - suspend all hotkey grabs (release X11 key grabs)
+  // Use before reading stdin in REPL so keystrokes reach the terminal
+  api.registerPrototypeMethod("Hotkey", "suspendGrabs", 1, [&vm](const std::vector<Value> &args) -> Value {
+    (void)args;
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      hostCtx->hotkeyManager->suspendGrabs();
+    }
+    return Value::makeNull();
+  });
+
+  // Hotkey.resumeGrabs() - resume hotkey grabs after suspending
+  // Use after reading stdin in REPL to re-enable hotkey grabs
+  api.registerPrototypeMethod("Hotkey", "resumeGrabs", 1, [&vm](const std::vector<Value> &args) -> Value {
+    (void)args;
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      hostCtx->hotkeyManager->resumeGrabs();
+    }
+    return Value::makeNull();
+  });
+
+  // Global functions for REPL integration (no 'this' required)
+  api.registerFunction("Hotkey.suspendGrabs", [&vm](const std::vector<Value> &args) -> Value {
+    (void)args;
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      hostCtx->hotkeyManager->suspendGrabs();
+    }
+    return Value::makeNull();
+  });
+
+  api.registerFunction("Hotkey.resumeGrabs", [&vm](const std::vector<Value> &args) -> Value {
+    (void)args;
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      hostCtx->hotkeyManager->resumeGrabs();
+    }
+    return Value::makeNull();
+  });
+
   // conditionFn - returns whether a condition function exists for this hotkey
   api.registerPrototypeMethod("Hotkey", "conditionFn", 1, [&vm](const std::vector<Value> &args) -> Value {
     if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);

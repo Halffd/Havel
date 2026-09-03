@@ -1,0 +1,39 @@
+// Headless repro of goroutine-per-iteration window.active() + sleep pattern
+// that hangs live at a random iteration. Uses time-based bail so it can run
+// here; run with HAVEL_TRACE_SCHED_STALL=1 to dump suspended goroutine state.
+
+use window
+use time
+
+tickGo = 0
+tickOut = 0
+
+go fn update() {
+  loop {
+    tickGo++
+    println("[IN GOROUTINE] tick=$tickGo")
+    val w = window.active()
+    // mirror user loop: a non-trivial struct read each iteration
+    if w != nil {
+      val tid = w.id
+      val ttl = w.title
+      val tpid = w.pid
+      if tpid == -1 { println("x") }
+    }
+    if tickGo > 200 {
+      println("[IN GOROUTINE] bail=$tickGo")
+      exit(0)
+    }
+    sleep(100)
+  }
+}
+
+loop {
+  tickOut++
+  println("[OUTSIDE GOROUTINE] tick=$tickOut")
+  if tickOut > 250 {
+    println("[OUTSIDE] bail, go=$tickGo")
+    exit(0)
+  }
+  sleep(100)
+}

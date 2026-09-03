@@ -1,0 +1,23 @@
+// Regression: a function named `update` must parse as a normal identifier,
+// not be mis-tokenized as the reserved `update <ms> {}` block keyword.
+//
+// Ran against self-hosted pipeline this produced `Parse error: 159` because
+// the C++ BootstrapLexer KEYWORDS reserved "update" while the self-hosted
+// lexer/parser treat it as an ordinary name. Ensure both agree.
+
+fn update() {
+    41
+}
+
+result = go fn update() {
+    42
+}
+
+main = fn() {
+    if update() != 41 {
+        print("FAIL: update() = " + update())
+        return 1
+    }
+    print("update-name: PASS")
+    0
+}

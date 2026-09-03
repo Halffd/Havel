@@ -859,6 +859,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
     // lock ordering violation (priority_mutex_ must not be
     // acquired while holding goroutines_mutex_).
     std::vector<Goroutine*> toWake;
+    const bool trace_sleep = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
     {
         std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
@@ -876,15 +877,21 @@ size_t Scheduler::wakeSleepingGoroutines() {
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
                 if (g->wait_handle.type != AwaitableType::SLEEP) {
+                    if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} type-not-SLEEP type={}", id, (int)g->wait_handle.type); }
                     continue;
                 }
                 if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) {
+                    if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} no-deadline", id); }
                     continue;
                 }
                 // Add 1ms tolerance: when remaining is <1ms the sleep loop
                 // in processGoroutines would sleep_for(0ms) (busy-wait), so
                 // waking slightly early is better than spinning.
                 if (now + std::chrono::milliseconds(1) < g->wait_handle.deadline) {
+                    if (trace_sleep) {
+                        long due = std::chrono::duration_cast<std::chrono::milliseconds>(now - g->wait_handle.deadline).count();
+                        ::havel::info("[SLEEPDBG] wake skip gid={} not-yet-due dueMs={}", id, due);
+                    }
                     continue;
                 }
             }
@@ -894,6 +901,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
             if (!g->state.compare_exchange_strong(expected, GoroutineState::Runnable,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
                 // State changed (likely to Done), skip this goroutine
+                if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} CAS-fail", id); }
                 continue;
             }
 
@@ -910,6 +918,9 @@ size_t Scheduler::wakeSleepingGoroutines() {
     if (!toWake.empty()) {
         std::lock_guard plock(priority_mutex_);
         for (auto* g : toWake) {
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+                ::havel::info("[SLEEPDBG] wakeSleepingGoroutines promotes gid={} name='{}'", g->id, g->name);
+            }
             // Set resume value for sleep (returns null)
             g->wait_handle.resume_value = Value::makeNull();
             // Defense in depth: ensure goroutine isn't already in a queue
@@ -951,6 +962,30 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
         }
     }
     return earliest;
+}
+
+void Scheduler::dumpGoroutineStates(const char* tag) const {
+  std::lock_guard lock(goroutines_mutex_);
+  ::havel::info("[Scheduler] [STALL={}] condEval={} goroutines={}", tag,
+                (int)g_in_conditional_hotkey_eval, goroutines_.size());
+  auto now = std::chrono::steady_clock::now();
+  for (const auto& [id, g] : goroutines_) {
+    if (!g) continue;
+    auto st = g->state.load(std::memory_order_acquire);
+    auto sr = g->suspension_reason.load(std::memory_order_acquire);
+    std::string as;
+    long deadlineOffsetMs = 0;  // >0 = already past due (lost wakeup), <0 = still future
+    {
+      std::lock_guard wlock(g->wait_handle_mutex_);
+      as = awaitableTypeString(g->wait_handle.type);
+      auto d = g->wait_handle.deadline;
+      if (d != std::chrono::steady_clock::time_point{}) {
+        deadlineOffsetMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - d).count();
+      }
+    }
+    ::havel::info("[Scheduler] [STALL={}] gid={} name='{}' state={} reason={} awaitableType={} deadlineDueMs={}",
+                  tag, id, g->name, (int)st, (int)sr, as, deadlineOffsetMs);
+  }
 }
 
  void Scheduler::notifyWakeup() {

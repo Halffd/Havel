@@ -651,6 +651,9 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
     // Wake sleeping goroutines whose resume_at_time has passed
     size_t wakeSleepingGoroutines();
+    // Diagnostic: dump every goroutine's state + suspension reason + awaitable
+    // type to the log. Gated behind HAVEL_TRACE_SCHED_STALL in the VM loop.
+    void dumpGoroutineStates(const char* tag) const;
 
     // Earliest deadline among all sleeping goroutines. Empty optional if none sleeping.
     std::optional<std::chrono::steady_clock::time_point> nextSleepDeadline() const;

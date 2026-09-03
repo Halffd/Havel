@@ -994,7 +994,6 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
       if (!g) {
-        std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
         // Persistent hotkeys park in Suspended+HotkeyWait and are woken
@@ -1003,6 +1002,20 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // the self-hosted path exits as soon as a hotkey-only script parks,
         // so its hotkeys can never fire (native mode covers this with the UI
         // backend's runEventLoop).
+        //
+        // Rate-limited STALL diagnostics: pickNext-null is a *normal* transient
+        // whenever two goroutines are asleep at once. Only surface it when it
+        // persists across a wall-clock second and the idle sleeper's deadline
+        // has actually passed (deadlineDueMs > 0), i.e. a lost wakeup, versus
+        // a still-future deadline (healthy bounded wait, < 0).
+        if (std::getenv("HAVEL_TRACE_SCHED_STALL")) {
+          static time_t s_last_stall_log = 0;
+          time_t now_sec = ::time(nullptr);
+          if (now_sec != s_last_stall_log) {
+            s_last_stall_log = now_sec;
+            sched->dumpGoroutineStates("HavelEngine-pickNext-null stall");
+          }
+        }
         if (sched->hasHotkeyWaitSuspended()) {
           std::this_thread::sleep_for(std::chrono::milliseconds(2));
           continue;

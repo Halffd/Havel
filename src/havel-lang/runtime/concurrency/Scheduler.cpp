@@ -958,19 +958,23 @@ void Scheduler::dumpGoroutineStates(const char* tag) const {
   if (!goroutines_.empty()) {
     ::havel::info("[Scheduler] [STALL={}] goroutines={}", tag, goroutines_.size());
   }
+  auto now = std::chrono::steady_clock::now();
   for (const auto& [id, g] : goroutines_) {
     if (!g) continue;
     auto st = g->state.load(std::memory_order_acquire);
     auto sr = g->suspension_reason.load(std::memory_order_acquire);
-    bool hasDeadline = false;
     std::string as;
+    long deadlineOffsetMs = 0;  // >0 = already past due (lost wakeup), <0 = still future
     {
       std::lock_guard wlock(g->wait_handle_mutex_);
       as = awaitableTypeString(g->wait_handle.type);
-      hasDeadline = (g->wait_handle.deadline != std::chrono::steady_clock::time_point{});
+      auto d = g->wait_handle.deadline;
+      if (d != std::chrono::steady_clock::time_point{}) {
+        deadlineOffsetMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - d).count();
+      }
     }
-    ::havel::info("[Scheduler] [STALL={}] gid={} name='{}' state={} reason={} awaitableType={} hasDeadline={}",
-                  tag, id, g->name, (int)st, (int)sr, as, hasDeadline);
+    ::havel::info("[Scheduler] [STALL={}] gid={} name='{}' state={} reason={} awaitableType={} deadlineDueMs={}",
+                  tag, id, g->name, (int)st, (int)sr, as, deadlineOffsetMs);
   }
 }
 

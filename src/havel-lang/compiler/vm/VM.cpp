@@ -524,7 +524,17 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
         if (::getenv("HAVEL_TRACE_SCHED_STALL")) {
-          scheduler_->dumpGoroutineStates("pickNext-null stall");
+          // Only log when this null-stall actually persists: the pickNext-null
+          // state is a *normal* transient whenever two goroutines are asleep at
+          // once (the usual dual sleep+main pattern). Rate-limit to once per
+          // wall-clock second so healthy runs stay quiet and only a genuine
+          // freeze (same goroutines idle for seconds) becomes visible/decidable.
+          static time_t s_last_stall_log = 0;
+          time_t now_sec = ::time(nullptr);
+          if (now_sec != s_last_stall_log) {
+            s_last_stall_log = now_sec;
+            scheduler_->dumpGoroutineStates("pickNext-null stall");
+          }
         }
         auto deadline = scheduler_->nextSleepDeadline();
         if (!deadline) break;

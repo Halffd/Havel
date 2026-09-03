@@ -3580,14 +3580,14 @@ fn emitUseStatement(emitter, node) {
     if node.module != null {
       if node.isFileImport != true {
       if !node.isNamedImport {
-        if !node.isWildcard {
-          pathIdx = bc.add_chunk_string(node.module)
-          bc.emit("LOAD_CONST", pathIdx)
-          bc.emit("IMPORT")
-          sid = bc.add_chunk_string(node.alias)
-          bc.emit("STORE_GLOBAL", bc.str_id(sid))
-          return
-        }
+      if !node.isWildcard {
+        pathIdx = bc.add_const(node.module)
+        bc.emit("LOAD_CONST", pathIdx)
+        bc.emit("IMPORT")
+        sid = bc.add_const(node.alias)
+        bc.emit("STORE_GLOBAL", bc.str_id(sid))
+        return
+      }
       }
       }
     }
@@ -3598,10 +3598,10 @@ fn emitUseStatement(emitter, node) {
     if node.isFileImport != true {
       for modName in node.moduleNames {
         if modName == "" { continue }
-        pathIdx = bc.add_chunk_string(modName)
+        pathIdx = bc.add_const(modName)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
-        sid = bc.add_chunk_string(modName)
+        sid = bc.add_const(modName)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       return
@@ -3612,7 +3612,7 @@ fn emitUseStatement(emitter, node) {
   if node.isWildcard == true {
     path = node.filePath
     if path == null { path = node.module }
-    pathIdx = bc.add_chunk_string(path)
+    pathIdx = bc.add_const(path)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
     bc.emit("IMPORT_WILDCARD")
@@ -3623,36 +3623,36 @@ fn emitUseStatement(emitter, node) {
   if node.isNamedImport == true {
     path = node.filePath
     if path == null { path = node.module }
-    pathIdx = bc.add_chunk_string(path)
+    pathIdx = bc.add_const(path)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
     iNames = node.importNames
     iAliases = node.importAliases
-if iNames != null {
-    ii = 0
-    while ii < #iNames {
-      name = iNames[ii]
-      if name == "*" && node.isWildcard == true {
-        bc.emit("IMPORT_WILDCARD")
-        return
-      }
-      if name == "" { ii = ii + 1; continue }
-      alias = name
-      if iAliases != null {
-        if ii < #iAliases {
-          alias = iAliases[ii]
+    if iNames != null {
+      ii = 0
+      while ii < #iNames {
+        name = iNames[ii]
+        if name == "*" && node.isWildcard == true {
+          bc.emit("IMPORT_WILDCARD")
+          return
         }
+        if name == "" { ii = ii + 1; continue }
+        alias = name
+        if iAliases != null {
+          if ii < #iAliases {
+            alias = iAliases[ii]
+          }
+        }
+        if alias == "" { ii = ii + 1; continue }
+        bc.emit("DUP")
+        keyIdx = bc.add_const(name)
+        bc.emit("LOAD_CONST", keyIdx)
+        bc.emit("OBJECT_GET")
+        sid = bc.add_const(alias)
+        bc.emit("STORE_GLOBAL", bc.str_id(sid))
+        ii = ii + 1
       }
-      if alias == "" { ii = ii + 1; continue }
-      bc.emit("DUP")
-      keyIdx = bc.add_chunk_string(name)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("OBJECT_GET")
-      sid = bc.add_chunk_string(alias)
-      bc.emit("STORE_GLOBAL", bc.str_id(sid))
-      ii = ii + 1
     }
-  }
     bc.emit("POP")
     return
   }
@@ -3660,19 +3660,19 @@ if iNames != null {
   // Form 4: use "file.hv" as alias or use "file.hv" — file import
   if node.isFileImport == true {
     if node.filePath != null {
-    pathIdx = bc.add_chunk_string(node.filePath)
+    pathIdx = bc.add_const(node.filePath)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
       if node.alias != null && node.alias != "" {
-        sid = bc.add_chunk_string(node.alias)
+        sid = bc.add_const(node.alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       else {
         fname = node.filePath
         dot = #fname - 1
-      while dot >= 0 {
-        if fname[dot] == "." { break }
-        dot = dot - 1
+        while dot >= 0 {
+          if fname[dot] == "." { break }
+          dot = dot - 1
       }
       slash = -1
       i = #fname - 1
@@ -3709,39 +3709,39 @@ fn emitImportStatement(emitter, node) {
 
   // import { a, b as c } from "module"
   if node.importNames != null {
-    pathIdx = bc.add_chunk_string(module)
-bc.emit("LOAD_CONST", pathIdx)
-bc.emit("IMPORT")
-ii2 = 0
-while ii2 < #node.importNames {
-name = node.importNames[ii2]
-alias = name
-if node.importAliases != null {
-if ii2 < #node.importAliases {
-alias = node.importAliases[ii2]
-}
-}
-if name == "*" {
-bc.emit("IMPORT_WILDCARD")
-return
-}
-bc.emit("DUP")
-keyIdx = bc.add_chunk_string(name)
-bc.emit("LOAD_CONST", keyIdx)
-bc.emit("OBJECT_GET")
-sid = bc.add_chunk_string(alias)
-bc.emit("STORE_GLOBAL", bc.str_id(sid))
-ii2 = ii2 + 1
-}
+    pathIdx = bc.add_const(module)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    ii2 = 0
+    while ii2 < #node.importNames {
+      name = node.importNames[ii2]
+      alias = name
+      if node.importAliases != null {
+        if ii2 < #node.importAliases {
+          alias = node.importAliases[ii2]
+        }
+      }
+      if name == "*" {
+        bc.emit("IMPORT_WILDCARD")
+        return
+      }
+      bc.emit("DUP")
+      keyIdx = bc.add_const(name)
+      bc.emit("LOAD_CONST", keyIdx)
+      bc.emit("OBJECT_GET")
+      sid = bc.add_const(alias)
+      bc.emit("STORE_GLOBAL", bc.str_id(sid))
+      ii2 = ii2 + 1
+    }
     bc.emit("POP")
     return
   }
 
   // bare: import "module" — store as global with module stem name
-  pathIdx = bc.add_chunk_string(module)
+  pathIdx = bc.add_const(module)
   bc.emit("LOAD_CONST", pathIdx)
   bc.emit("IMPORT")
-  sid = bc.add_chunk_string(module)
+  sid = bc.add_const(module)
   bc.emit("STORE_GLOBAL", bc.str_id(sid))
 }
 

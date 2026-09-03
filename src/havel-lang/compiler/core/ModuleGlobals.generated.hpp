@@ -66,7 +66,6 @@ inline constexpr const char *kModuleGlobals[] = {
     "rand",
     "randint",
     "random",
-    "readline",
     "screenshot",
     "scroll",
     "shell",

@@ -182,27 +182,31 @@ LOG_DIR="logs"
 THREADS=${THREADS:-$(detect_cores)}
 
 declare -A BUILD_CONFIGS=(
-  [0]="Debug,ON,ON,ON,OFF,OFF,build-debug"
-  [1]="Release,OFF,OFF,ON,OFF,OFF,build-release"
-  [2]="Debug,OFF,ON,ON,OFF,OFF,build-debug"
-  [3]="Debug,OFF,OFF,OFF,OFF,OFF,build-debug"
-  [4]="Debug,ON,ON,OFF,OFF,OFF,build-debug"
-  [5]="Release,ON,ON,ON,OFF,OFF,build-release"
-  [6]="Debug,ON,ON,OFF,OFF,OFF,build-debug"
-  [7]="Release,OFF,OFF,OFF,OFF,OFF,build-release"
-  [8]="Debug,OFF,ON,OFF,OFF,OFF,build-debug"
-  [9]="Release,ON,ON,OFF,OFF,OFF,build-release"
-  [10]="Debug,OFF,ON,ON,OFF,OFF,build"
-  [11]="Release,OFF,ON,ON,OFF,OFF,build"
-  [12]="Debug,ON,ON,OFF,ON,OFF,build-headless"
-  [13]="Release,OFF,ON,OFF,ON,OFF,build-headless"
-  [14]="Debug,OFF,ON,OFF,ON,OFF,build-headless"
-  [15]="Release,ON,ON,OFF,ON,OFF,build-headless"
-  [16]="Debug,OFF,ON,OFF,OFF,ON,build-tsan"
+  [0]="Debug,ON,ON,ON,OFF,OFF,ON,ON,ON,build-debug"
+  [1]="Release,OFF,OFF,ON,OFF,OFF,ON,ON,ON,build-release"
+  [2]="Debug,OFF,ON,ON,OFF,OFF,ON,ON,ON,build-debug"
+  [3]="Debug,OFF,OFF,OFF,OFF,OFF,ON,ON,ON,build-debug"
+  [4]="Debug,ON,ON,OFF,OFF,OFF,ON,ON,ON,build-debug"
+  [5]="Release,ON,ON,ON,OFF,OFF,ON,ON,ON,build-release"
+  [6]="Debug,ON,ON,OFF,OFF,OFF,ON,ON,ON,build-debug"
+  [7]="Release,OFF,OFF,OFF,OFF,OFF,ON,ON,ON,build-release"
+  [8]="Debug,OFF,ON,OFF,OFF,OFF,ON,ON,ON,build-debug"
+  [9]="Release,ON,ON,OFF,OFF,OFF,ON,ON,ON,build-release"
+  [10]="Debug,OFF,ON,ON,OFF,OFF,ON,ON,ON,build"
+  [11]="Release,OFF,ON,ON,OFF,OFF,ON,ON,ON,build"
+  [12]="Debug,ON,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
+  [13]="Release,OFF,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
+  [14]="Debug,OFF,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
+  [15]="Release,ON,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
+  [16]="Debug,OFF,ON,OFF,OFF,ON,ON,ON,ON,build-tsan"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
-    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS ENABLE_TSAN BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
+    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS ENABLE_TSAN ENABLE_HVDB ENABLE_HAVEL_DAP ENABLE_HVTEST BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
+    # Allow environment variables to override config defaults
+    [[ -n "${ENABLE_HVDB_ENV:-}" ]] && ENABLE_HVDB="${ENABLE_HVDB_ENV}"
+    [[ -n "${ENABLE_HAVEL_DAP_ENV:-}" ]] && ENABLE_HAVEL_DAP="${ENABLE_HAVEL_DAP_ENV}"
+    [[ -n "${ENABLE_HVTEST_ENV:-}" ]] && ENABLE_HVTEST="${ENABLE_HVTEST_ENV}"
     if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
         log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
         ENABLE_HAVEL_LANG="ON"
@@ -369,6 +373,9 @@ build() {
     fi
   cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
 	cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
+	cmake_cmd+=" -DENABLE_HVDB=${ENABLE_HVDB:-ON}"
+	cmake_cmd+=" -DENABLE_HAVEL_DAP=${ENABLE_HAVEL_DAP:-ON}"
+	cmake_cmd+=" -DENABLE_HVTEST=${ENABLE_HVTEST:-ON}"
 	if [[ "$ENABLE_HAVEL_LANG" == "ON" ]]; then
 		cmake_cmd+=" -DENABLE_MODULE_PLUGINS=ON"
 	fi

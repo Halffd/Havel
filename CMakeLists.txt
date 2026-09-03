@@ -28,6 +28,9 @@ option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
+option(ENABLE_HVDB "Build Havel debugger (hvdb)" ON)
+option(ENABLE_HAVEL_DAP "Build DAP server (havel-dap)" ON)
+option(ENABLE_HVTEST "Build test runner (hvtest)" ON)
 option(ENABLE_TSAN "Enable ThreadSanitizer (mutually exclusive with ASAN/UBSAN)" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer (default ON for Debug)" ON)
@@ -1602,14 +1605,14 @@ havel_core
 # ==============================================================================
 # UNIFIED TEST RUNNER
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HVTEST)
 set(HVTEST_SOURCES
- src/hvtest/main.cpp
- src/hvtest/smoke_runner.cpp
- src/hvtest/test_scheduler_rig.cpp
- src/c/LoggerC.c
- src/c/Config.c
- )
+  src/hvtest/main.cpp
+  src/hvtest/smoke_runner.cpp
+  src/hvtest/test_scheduler_rig.cpp
+  src/c/LoggerC.c
+  src/c/Config.c
+  )
 
 add_executable(hvtest ${HVTEST_SOURCES})
 set_target_properties(hvtest PROPERTIES
@@ -1708,7 +1711,7 @@ endif()
 # ==============================================================================
 # HAVEL DEBUGGER (hvdb) & DUMPER (hvdump)
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HVDB)
 add_executable(hvdb src/hvdb/hvdb.cpp)
 add_executable(hvdump src/hvtools/hvdump.cpp)
 set_target_properties(hvdb PROPERTIES
@@ -1766,7 +1769,7 @@ endif()
 # ==============================================================================
 # HAVEL DAP SERVER (havel-dap)
 # ==============================================================================
-if(ENABLE_HAVEL_LANG)
+if(ENABLE_HAVEL_LANG AND ENABLE_HAVEL_DAP)
 add_executable(havel-dap src/havel-dap/havel-dap.cpp)
 set_target_properties(havel-dap PROPERTIES
     CXX_STANDARD 23

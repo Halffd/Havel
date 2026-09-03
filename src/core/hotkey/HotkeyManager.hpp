@@ -49,11 +49,32 @@ public:
   void DisableHotkey(const std::string &key);
   bool SetHotkeyGrab(const std::string &alias, bool grab);
 
+bool GrabHotkey(int id);      // Grab hotkey by id
+  bool UngrabHotkey(int id);    // Ungrab hotkey by id
+
   void suspendGrabs();
   void resumeGrabs();
+
+  // RAII guard for exception-safe suspend/resume
+  class ScopedSuspendGrabs {
+  public:
+    explicit ScopedSuspendGrabs(HotkeyManager& manager) : manager_(manager) {
+      manager_.suspendGrabs();
+    }
+    ~ScopedSuspendGrabs() {
+      manager_.resumeGrabs();
+    }
+    // Non-copyable, non-movable
+    ScopedSuspendGrabs(const ScopedSuspendGrabs&) = delete;
+    ScopedSuspendGrabs& operator=(const ScopedSuspendGrabs&) = delete;
+    ScopedSuspendGrabs(ScopedSuspendGrabs&&) = delete;
+    ScopedSuspendGrabs& operator=(ScopedSuspendGrabs&&) = delete;
+
+  private:
+    HotkeyManager& manager_;
+  };
+
   void handleHotkeyTrigger(int hotkeyId);
-  bool GrabHotkey(int id);      // Grab hotkey by id
-  bool UngrabHotkey(int id);    // Ungrab hotkey by id
 
   void LoadHotkeyConfigurations();
   void ReloadConfigurations();
@@ -145,6 +166,7 @@ private:
  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
     compiler::EventQueue* eventQueue_ = nullptr;
   bool grabsSuspended_ = false;
+  int suspendDepth_ = 0;
   std::unordered_map<std::string, bool> pendingGrabs_;
 };
 

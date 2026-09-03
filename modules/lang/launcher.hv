@@ -457,7 +457,6 @@ fn replBalanced(code) {
     }
     !in_string && brace == 0 && bracket == 0 && paren == 0
 }
-
 fn replLoop(cfg) {
     interactive = shell.isatty(0)
     if interactive {
@@ -477,12 +476,16 @@ fn replLoop(cfg) {
         while true {
             if useReadline {
                 prompt = (pending == "") ? "havel> " : "...> "
+                // Suspend hotkey grabs so keystrokes reach readline
+                Hotkey.suspendGrabs()
                 line = readline.readline(prompt)
+                Hotkey.resumeGrabs()
                 if line != null && line != "" {
                     readline.add_history(line)
                 }
             } else {
-                while !shell.ready(5) {
+                // Pump event loop while waiting for input
+                while !shell.ready(50) {
                     bc.tick()
                 }
                 if interactive {
@@ -493,7 +496,10 @@ fn replLoop(cfg) {
                         shell.write("...> ")
                     }
                 }
+                // Suspend hotkey grabs so keystrokes reach stdin
+                Hotkey.suspendGrabs()
                 line = shell.read()
+                Hotkey.resumeGrabs()
             }
             if line == null {
                 if interactive { print("") }
@@ -554,7 +560,8 @@ fn replLoop(cfg) {
                     if bc.debug_is_attached() {
                         bc.debug_detach()
                         print("Debug mode: OFF")
-                    } else {
+                    }
+                    else {
                         bc.debug_attach()
                         bc.debug_step_mode(1)  // StepInto
                         print("Debug mode: ON (step mode: StepInto)")

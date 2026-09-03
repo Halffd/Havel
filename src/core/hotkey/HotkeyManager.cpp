@@ -191,28 +191,36 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
   void HotkeyManager::suspendGrabs()
   {
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
-    grabsSuspended_ = true;
-    pendingGrabs_.clear();
-    if (io) {
-      io->UngrabAll();
+    if (suspendDepth_ == 0) {
+      // Only actually ungrab on first suspend
+      if (io) {
+        io->UngrabAll();
+      }
     }
+    suspendDepth_++;
+    // Don't clear pendingGrabs_ here - let it accumulate
   }
 
   void HotkeyManager::resumeGrabs()
   {
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
-    grabsSuspended_ = false;
-    auto &hotkeys = RegisteredHotkeys();
-    for (auto &[id, hk] : hotkeys) {
-      if (!hk.evdev && hk.enabled) {
-        if (hk.grab) {
-          io->GrabHotkey(id);
-        } else {
-          io->UngrabHotkey(id);
+    if (suspendDepth_ > 0) {
+      suspendDepth_--;
+      // Only actually re-grab when we reach depth 0
+      if (suspendDepth_ == 0) {
+        auto &hotkeys = RegisteredHotkeys();
+        for (auto &[id, hk] : hotkeys) {
+          if (!hk.evdev && hk.enabled) {
+            if (hk.grab) {
+              io->GrabHotkey(id);
+            } else {
+              io->UngrabHotkey(id);
+            }
+          }
         }
+        pendingGrabs_.clear();
       }
     }
-    pendingGrabs_.clear();
   }
 
   bool HotkeyManager::RemoveHotkey(int id)

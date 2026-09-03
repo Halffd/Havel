@@ -281,8 +281,17 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
 
     // Each script runs in its own subprocess whose self-hosted boot costs
     // ~4s, so a sequential suite takes 20+ minutes. Run them concurrently.
-    const unsigned workers = std::min<unsigned>(
-        std::max(std::thread::hardware_concurrency(), 1u), 8u);
+    // Cap workers to keep CPU usage bounded: each subprocess runs its own
+    // single-threaded VM dispatch loop at 100% of a core. Allow an explicit
+    // override via HAVEL_TEST_THREADS (e.g. =0 or =1 for headroom).
+    unsigned workers = 4;
+    if (const char *env = std::getenv("HAVEL_TEST_THREADS")) {
+        int n = std::atoi(env);
+        if (n > 0) workers = static_cast<unsigned>(n);
+    } else {
+        workers = std::min<unsigned>(
+            std::max(std::thread::hardware_concurrency(), 1u), 4u);
+    }
     std::atomic<size_t> next{0};
     std::vector<ScriptResult> results_par(scripts.size());
     std::mutex io_mtx;

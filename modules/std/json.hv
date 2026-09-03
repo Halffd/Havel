@@ -109,7 +109,7 @@ fn _stringify(value, indent, depth) {
         if value { return "true" }
         return "false"
     }
-    if _t == "float" || _t == "int" || _t == "number" {
+    if _t == "int" || _t == "float" {
         return str(value)
     }
     if _t == "string" { return _escStr(value) }
@@ -146,8 +146,6 @@ fn _stringifyObj(obj, indent, depth) {
         _first = false
         if _pretty {
             _result = _result + _nl + _pad + indent
-        } else {
-            _result = _result + " "
         }
         _result = _result + _escStr(_key) + ": "
         _result = _result + _stringify(_v, indent, depth + 1)
@@ -155,15 +153,12 @@ fn _stringifyObj(obj, indent, depth) {
     }
     if _pretty {
         _result = _result + _nl + _pad
-    } else {
-        if !_first { _result = _result + " " }
     }
     _result + "}"
 }
 
 fn _stringifyArr(arr, indent, depth) {
     _n = #arr
-    if _n == 0 { return "[]" }
     _pretty = indent != null
     _nl = "\n"
     _pad = ""
@@ -424,7 +419,7 @@ fn parse(source) {
 fn stringify(value, indent) {
     _ind = null
     if indent != null {
-        if type(indent) == "float" || type(indent) == "int" || type(indent) == "number" {
+        if type(indent) == "int" || type(indent) == "float" {
             if indent > 0 {
                 _s = ""
                 _i = 0

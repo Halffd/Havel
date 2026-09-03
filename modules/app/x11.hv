@@ -124,7 +124,7 @@ fn getWindowProperty(dpy, win, atom, offset, length, delete, reqType) {
 }
 
 fn free(ptr) {
-    _checkDpy(0)  // XFree doesn't need a display
+    // XFree takes only the pointer; no display is involved, so no dpy guard.
     if ptr != 0 { ffi.call(_XFree, "int32", ["pointer"], ptr) }
 }
 
@@ -229,9 +229,12 @@ fn setInputFocus(dpy, win, revert, time) {
 }
 
 fn getWMName(dpy, win) {
+    // XFetchName(Display*, Window, char**) -> int Status. The name is an
+    // out-param, so pass a pointer slot and read the string after the call.
     _checkDpy(dpy)
-    _name = ffi.call(_XFetchName, "pointer", ["pointer", "uint64"], dpy, win)
-    if _name == 0 { "" } else { ffi.string(_name) }
+    _nameptr = ffi.allocBytes(8)
+    _result = ffi.call(_XFetchName, "int32", ["pointer", "uint64", "pointer"], dpy, win, _nameptr)
+    if _result == 0 { "" } else { ffi.string(ffi.get_ptr(_nameptr, 0)) }
 }
 
 fn getClassHint(dpy, win) {

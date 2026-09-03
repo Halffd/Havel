@@ -1076,6 +1076,16 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
               g->wait_handle.clear();
             }
           }
+          if (std::getenv("HAVEL_TRACE_RESUME")) {
+            uint32_t tip = UINT32_MAX; size_t nframe = 0;
+            if (g->fiber && !g->fiber->call_stack.empty()) {
+              tip = g->fiber->call_stack.back().ip; nframe = g->fiber->call_stack.size();
+            }
+            ::havel::info("[RESUMEDBG] gid={} name='{}' topFrameIp={} nframes={} fiberIp={} waitType={} updInt={}",
+                          g->id, g->name, tip, nframe,
+                          g->fiber ? g->fiber->ip : UINT32_MAX,
+                          (int)g->wait_handle.type, g->update_interval_ms);
+          }
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
         }
       }

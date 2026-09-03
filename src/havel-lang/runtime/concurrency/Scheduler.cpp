@@ -966,9 +966,8 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
 
 void Scheduler::dumpGoroutineStates(const char* tag) const {
   std::lock_guard lock(goroutines_mutex_);
-  if (!goroutines_.empty()) {
-    ::havel::info("[Scheduler] [STALL={}] goroutines={}", tag, goroutines_.size());
-  }
+  ::havel::info("[Scheduler] [STALL={}] condEval={} goroutines={}", tag,
+                (int)g_in_conditional_hotkey_eval, goroutines_.size());
   auto now = std::chrono::steady_clock::now();
   for (const auto& [id, g] : goroutines_) {
     if (!g) continue;

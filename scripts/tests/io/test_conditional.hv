@@ -118,8 +118,8 @@ vHk = ^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
         send("{enter}")
         sleep(100)
         send("f")
-        move(1600, 900)
-        click()
+        io.mouseMoveTo(1600, 900)
+        io.click(1)
     }
 }
 o => test()

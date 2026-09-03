@@ -132,33 +132,49 @@ void havel_loader_add_standard_paths(HavelLoader *loader) {
 }
 
 void havel_loader_add_module_paths(HavelLoader *loader) {
- if (!loader) return;
- havel_loader_add_search_path(loader, "modules");
+  if (!loader) return;
+  havel_loader_add_search_path(loader, "modules");
 
- {
-  char exe_path[512];
-  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-  if (len > 0) {
-   exe_path[len] = '\0';
-   char *last_slash = strrchr(exe_path, '/');
-   if (last_slash) {
-    *last_slash = '\0';
-    char buf[768];
-    snprintf(buf, sizeof(buf), "%s/modules", exe_path);
-    havel_loader_add_search_path(loader, buf);
-   }
+  {
+    char exe_path[512];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len > 0) {
+      exe_path[len] = '\0';
+      char *last_slash = strrchr(exe_path, '/');
+      if (last_slash) {
+        *last_slash = '\0';
+        char buf[768];
+        snprintf(buf, sizeof(buf), "%s/modules", exe_path);
+        havel_loader_add_search_path(loader, buf);
+      }
+    }
   }
- }
 
- havel_loader_add_search_path(loader, "/usr/lib/havel/modules");
- havel_loader_add_search_path(loader, "/usr/local/lib/havel/modules");
+  // Add build output directory (build-debug/modules relative to executable)
+  {
+    char exe_path[512];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len > 0) {
+      exe_path[len] = '\0';
+      char *last_slash = strrchr(exe_path, '/');
+      if (last_slash) {
+        *last_slash = '\0';
+        char buf[768];
+        snprintf(buf, sizeof(buf), "%s/modules", exe_path);
+        havel_loader_add_search_path(loader, buf);
+      }
+    }
+  }
 
- const char *home = getenv("HOME");
- if (home) {
-  char buf[512];
-  snprintf(buf, sizeof(buf), "%s/.havel/modules", home);
-  havel_loader_add_search_path(loader, buf);
- }
+  havel_loader_add_search_path(loader, "/usr/lib/havel/modules");
+  havel_loader_add_search_path(loader, "/usr/local/lib/havel/modules");
+
+  const char *home = getenv("HOME");
+  if (home) {
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s/.havel/modules", home);
+    havel_loader_add_search_path(loader, buf);
+  }
 
   const char *mod_dir = getenv("HAVEL_MODULE_DIR");
   if (mod_dir) havel_loader_add_search_path(loader, mod_dir);
@@ -196,20 +212,28 @@ static int file_mtime(const char *path, time_t *out) {
 }
 
 static char *find_library(HavelLoader *loader, const char *name) {
- const char *suffix = platform_suffix();
+  const char *suffix = platform_suffix();
 
- for (int i = 0; i < loader->search_path_count; i++) {
-  const char *dir = loader->search_paths[i];
-  char buf[768];
+  for (int i = 0; i < loader->search_path_count; i++) {
+    const char *dir = loader->search_paths[i];
+    char buf[768];
 
-  snprintf(buf, sizeof(buf), "%s/%s%s", dir, name, suffix);
-  if (file_exists(buf)) return strdup(buf);
+    HAVEL_LOGF_DEBUG("find_library: searching in dir=%s for name=%s", dir, name);
 
-  snprintf(buf, sizeof(buf), "%s/lib%s%s", dir, name, suffix);
-  if (file_exists(buf)) return strdup(buf);
- }
+    snprintf(buf, sizeof(buf), "%s/%s%s", dir, name, suffix);
+    if (file_exists(buf)) {
+      HAVEL_LOGF_DEBUG("find_library: found at %s", buf);
+      return strdup(buf);
+    }
 
- return NULL;
+    snprintf(buf, sizeof(buf), "%s/lib%s%s", dir, name, suffix);
+    if (file_exists(buf)) {
+      HAVEL_LOGF_DEBUG("find_library: found at %s", buf);
+      return strdup(buf);
+    }
+  }
+
+  return NULL;
 }
 
 static void register_loaded(HavelLoader *loader, const char *name,

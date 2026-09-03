@@ -25,6 +25,23 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
 
   // Pre-scan: collect all top-level assignment targets as implicit globals
   // This ensures lambdas can reference variables that are assigned at top level
+  // It must recurse into chained assignment RHS (a = b = v) so the inner
+  // targets (b) are also pre-declared as globals; otherwise an inner target
+  // that is later rebound as a local (e.g. goroutine destructure) is never
+  // visible to top-level functions referencing it -> false "Unresolved".
+  const auto collectAssignTarget = [&](const ast::Expression *expr,
+                                       auto &&self) -> void {
+    if (!expr || expr->kind != ast::NodeType::AssignmentExpression) {
+      return;
+    }
+    const auto &assignment = static_cast<const ast::AssignmentExpression &>(*expr);
+    if (assignment.target &&
+        assignment.target->kind == ast::NodeType::Identifier) {
+      const auto &ident = static_cast<const ast::Identifier &>(*assignment.target);
+      global_variables_.insert(ident.symbol);
+    }
+    self(assignment.value.get(), self);
+  };
   for (const auto &statement : program.body) {
     if (!statement || statement->kind != ast::NodeType::ExpressionStatement) {
       continue;
@@ -35,15 +52,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
         exprStmt.expression->kind != ast::NodeType::AssignmentExpression) {
       continue;
     }
-    const auto &assignment =
-        static_cast<const ast::AssignmentExpression &>(*exprStmt.expression);
-    if (assignment.target &&
-        assignment.target->kind == ast::NodeType::Identifier) {
-      const auto &ident =
-          static_cast<const ast::Identifier &>(*assignment.target);
-      // Pre-declare as global variable
-      global_variables_.insert(ident.symbol);
-    }
+    collectAssignTarget(exprStmt.expression.get(), collectAssignTarget);
   }
 
   // First pass: declare ALL top-level bindings (let and fn names)

@@ -38,7 +38,6 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"throw", TokenType::Throw},
     {"thread", TokenType::Thread},
     {"interval", TokenType::Interval},
-    {"update", TokenType::Update},
     {"timeout", TokenType::Timeout},
     {"yield", TokenType::Yield},
     {"go", TokenType::Go},
@@ -2662,8 +2661,7 @@ bool Lexer::isSoftIdentifier(TokenType t) {
          t == TokenType::Pool ||
          t == TokenType::Config ||
          t == TokenType::Devices ||
-         t == TokenType::Modes ||
-         t == TokenType::Update;
+t == TokenType::Modes;
 }
 
 } // namespace havel

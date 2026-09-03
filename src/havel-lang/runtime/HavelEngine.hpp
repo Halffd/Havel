@@ -994,7 +994,6 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
       if (!g) {
-        std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
         // Persistent hotkeys park in Suspended+HotkeyWait and are woken
@@ -1003,6 +1002,20 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // the self-hosted path exits as soon as a hotkey-only script parks,
         // so its hotkeys can never fire (native mode covers this with the UI
         // backend's runEventLoop).
+        //
+        // Rate-limited STALL diagnostics: pickNext-null is a *normal* transient
+        // whenever two goroutines are asleep at once. Only surface it when it
+        // persists across a wall-clock second and the idle sleeper's deadline
+        // has actually passed (deadlineDueMs > 0), i.e. a lost wakeup, versus
+        // a still-future deadline (healthy bounded wait, < 0).
+        if (std::getenv("HAVEL_TRACE_SCHED_STALL")) {
+          static time_t s_last_stall_log = 0;
+          time_t now_sec = ::time(nullptr);
+          if (now_sec != s_last_stall_log) {
+            s_last_stall_log = now_sec;
+            sched->dumpGoroutineStates("HavelEngine-pickNext-null stall");
+          }
+        }
         if (sched->hasHotkeyWaitSuspended()) {
           std::this_thread::sleep_for(std::chrono::milliseconds(2));
           continue;
@@ -1063,6 +1076,16 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
               g->wait_handle.clear();
             }
           }
+          if (std::getenv("HAVEL_TRACE_RESUME")) {
+            uint32_t tip = UINT32_MAX; size_t nframe = 0;
+            if (g->fiber && !g->fiber->call_stack.empty()) {
+              tip = g->fiber->call_stack.back().ip; nframe = g->fiber->call_stack.size();
+            }
+            ::havel::info("[RESUMEDBG] gid={} name='{}' topFrameIp={} nframes={} fiberIp={} waitType={} updInt={}",
+                          g->id, g->name, tip, nframe,
+                          g->fiber ? g->fiber->ip : UINT32_MAX,
+                          (int)g->wait_handle.type, g->update_interval_ms);
+          }
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
         }
       }
@@ -1070,7 +1093,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       // Check if the goroutine suspended (await/sleep) or finished
       uint8_t lastReason = vm_->getLastSuspensionReason();
       if (std::getenv("HAVEL_TRACE_SLEEP")) {
-        std::cerr << "[SLEEPDBG] processGoroutines after-run gid=" << g->id << " lastReason=" << (int)lastReason << " state=" << (int)g->state.load() << "\n";
+        long dueMs = 0;
+        uint32_t fip = UINT32_MAX; unsigned fstate = 0;
+        if (g->fiber) { fip = g->fiber->ip; fstate = (unsigned)g->fiber->state; }
+        {
+          std::lock_guard wlock(g->wait_handle_mutex_);
+          auto dl = g->wait_handle.deadline;
+          if (dl != std::chrono::steady_clock::time_point{}) {
+            dueMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - dl).count();
+          }
+        }
+        std::cerr << "[SLEEPDBG] after-run gid=" << g->id << " lastReason=" << (int)lastReason
+                  << " gstate=" << (int)g->state.load() << " fiberIp=" << fip
+                  << " fiberState=" << fstate << " waitDueMs=" << dueMs << " updInt=" << g->update_interval_ms << "\n";
       }
       void* lastContext = vm_->getLastSuspensionContext();
       if (lastReason != 0) {

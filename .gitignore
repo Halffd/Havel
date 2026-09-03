@@ -92,3 +92,4 @@ session*
 out
 build-*/**/*.hvc
 modules/**/*.hvc
+scripts/mycache/

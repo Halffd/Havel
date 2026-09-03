@@ -46,6 +46,21 @@ namespace havel::stdlib {
 static std::set<std::string> g_completion_words;
 static bool g_completion_initialized = false;
 
+// Callback mode state
+static std::string g_callback_line;
+static bool g_callback_ready = false;
+
+// Callback handler for readline callback mode
+extern "C" void on_readline_callback(char *line) {
+    if (line) {
+        g_callback_line = line;
+        free(line);
+    } else {
+        g_callback_line.clear();
+    }
+    g_callback_ready = true;
+}
+
 // readline completion generator - returns next match or nullptr
 static char *completion_generator(const char *text, int state) {
     static std::vector<std::string>::const_iterator it;
@@ -297,7 +312,70 @@ static void register_readline_functions(const VMApi &api) {
     api.setField(readlineObj, "clear_history",       api.makeFunctionRef("readline.clear_history"));
     api.setField(readlineObj, "history_length",      api.makeFunctionRef("readline.history_length"));
     api.setField(readlineObj, "add_completion_word", api.makeFunctionRef("readline.add_completion_word"));
-    api.setGlobal("readline", readlineObj);
+
+    // ----------------------------------------------------------------------
+    // readline.callback_handler_install – install callback handler
+    // ----------------------------------------------------------------------
+    api.registerFunction("readline.callback_handler_install",
+        [api](const std::vector<Value> &args) {
+#ifdef HAVE_READLINE
+            if (args.size() < 1) return Value::makeNull();
+            std::string prompt = api.resolveString(args[0]);
+            g_callback_ready = false;
+            g_callback_line.clear();
+            rl_callback_handler_install(prompt.c_str(), on_readline_callback);
+            return Value::makeNull();
+#else
+            return Value::makeNull();
+#endif
+        });
+
+    // ----------------------------------------------------------------------
+    // readline.callback_read_char – read a character and invoke callback
+    // ----------------------------------------------------------------------
+    api.registerFunction("readline.callback_read_char",
+        [](const std::vector<Value> &) {
+#ifdef HAVE_READLINE
+            rl_callback_read_char();
+            return Value::makeNull();
+#else
+            return Value::makeNull();
+#endif
+        });
+
+    // ----------------------------------------------------------------------
+    // readline.callback_handler_remove – remove callback handler
+    // ----------------------------------------------------------------------
+    api.registerFunction("readline.callback_handler_remove",
+        [](const std::vector<Value> &) {
+#ifdef HAVE_READLINE
+            rl_callback_handler_remove();
+            g_callback_ready = false;
+            g_callback_line.clear();
+            return Value::makeNull();
+#else
+            return Value::makeNull();
+#endif
+        });
+
+    // ----------------------------------------------------------------------
+    // readline.callback_get_line – get the line from callback if ready
+    // ----------------------------------------------------------------------
+    api.registerFunction("readline.callback_get_line",
+        [api](const std::vector<Value> &) {
+#ifdef HAVE_READLINE
+            if (g_callback_ready) {
+                g_callback_ready = false;
+                std::string line = g_callback_line;
+                g_callback_line.clear();
+                return api.makeString(line);
+            }
+            return Value::makeNull();
+#else
+            return Value::makeNull();
+#endif
+        });
+
 }
 
 void registerReadlineModule(const VMApi &api) {

@@ -953,6 +953,27 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
     return earliest;
 }
 
+void Scheduler::dumpGoroutineStates(const char* tag) const {
+  std::lock_guard lock(goroutines_mutex_);
+  if (!goroutines_.empty()) {
+    ::havel::info("[Scheduler] [STALL={}] goroutines={}", tag, goroutines_.size());
+  }
+  for (const auto& [id, g] : goroutines_) {
+    if (!g) continue;
+    auto st = g->state.load(std::memory_order_acquire);
+    auto sr = g->suspension_reason.load(std::memory_order_acquire);
+    bool hasDeadline = false;
+    std::string as;
+    {
+      std::lock_guard wlock(g->wait_handle_mutex_);
+      as = awaitableTypeString(g->wait_handle.type);
+      hasDeadline = (g->wait_handle.deadline != std::chrono::steady_clock::time_point{});
+    }
+    ::havel::info("[Scheduler] [STALL={}] gid={} name='{}' state={} reason={} awaitableType={} hasDeadline={}",
+                  tag, id, g->name, (int)st, (int)sr, as, hasDeadline);
+  }
+}
+
  void Scheduler::notifyWakeup() {
  #ifndef _WIN32
    if (deferred_wakeup_fd_ >= 0) {

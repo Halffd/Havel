@@ -523,6 +523,9 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
+        if (::getenv("HAVEL_TRACE_SCHED_STALL")) {
+          scheduler_->dumpGoroutineStates("pickNext-null stall");
+        }
         auto deadline = scheduler_->nextSleepDeadline();
         if (!deadline) break;
         auto now = std::chrono::steady_clock::now();

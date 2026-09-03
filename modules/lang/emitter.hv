@@ -59,7 +59,7 @@ fn emitError(msg, line, col) {
  emitterError(msg, line, col)
  }
 fn globalIdx(emitter, name) {
-    cidx = bc.add_global_string(name)
+    cidx = bc.add_chunk_string(name)
     cidx
 }
 fn collectAssignTargetNames(emitter, target) {
@@ -2312,8 +2312,9 @@ if k == "RepeatStatement" {
 			return
 		}
 		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
+		// Module scope has funcId == null; its child is the main function
 		funcRoot = scopeFindFuncRoot(emitter.scope)
-		if funcRoot.parent == null {
+		if funcRoot != null && funcRoot.parent != null && funcRoot.parent.funcId == null {
 			if node.value != null {
 				emitExpr(emitter, node.value)
 			}
@@ -2389,10 +2390,11 @@ if k == "RepeatStatement" {
 				}
 			}
 			return
-		}
+}
 		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
+		// Module scope has funcId == null; its child is the main function
 		funcRoot = scopeFindFuncRoot(emitter.scope)
-		if funcRoot.parent == null {
+		if funcRoot != null && funcRoot.parent != null && funcRoot.parent.funcId == null {
 			if node.value != null {
 				emitExpr(emitter, node.value)
 			}
@@ -2412,7 +2414,7 @@ if k == "RepeatStatement" {
 			emitStoreDecl(emitter, node.name, true)
 		}
 		return
-    }
+	}
   if k == "FnDeclaration" {
     // Declare the function name in scope
     localIdx = scopeDeclare(emitter.scope, node.name)

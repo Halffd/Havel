@@ -27,6 +27,10 @@ detect_cores() {
     fi
 }
 
+# Cap automatic build parallel jobs to leave CPU headroom for other work.
+# Users can override with THREADS=N to use all cores or a higher cap.
+MAX_AUTODETECT_THREADS=12
+
 detect_libraries() {
     check_lib() {
         local lib=$1
@@ -179,7 +183,16 @@ fi
 BUILD_TYPE="Release"
 BUILD_DIR="build"
 LOG_DIR="logs"
-THREADS=${THREADS:-$(detect_cores)}
+# Auto-detect parallel build jobs, capped to MAX_AUTODETECT_THREADS to leave
+# CPU headroom. An explicit THREADS env var is never capped.
+if [[ -z "${THREADS:-}" ]]; then
+    auto_cores=$(detect_cores)
+    if [[ "$auto_cores" -gt "$MAX_AUTODETECT_THREADS" ]]; then
+        THREADS="$MAX_AUTODETECT_THREADS"
+    else
+        THREADS="$auto_cores"
+    fi
+fi
 
 declare -A BUILD_CONFIGS=(
   [0]="Debug,ON,ON,ON,OFF,OFF,build-debug"
@@ -545,7 +558,7 @@ usage() {
     echo "  -h, --help   Show this help"
     echo ""
     echo -e "${YELLOW}Environment:${NC}"
-    echo "  THREADS=N           Parallel build jobs (default: auto, currently $(detect_cores))"
+    echo "  THREADS=N           Parallel build jobs (default: auto, capped at $(MAX_AUTODETECT_THREADS))"
     echo ""
     echo -e "${YELLOW}ASAN/UBSAN Flags:${NC}"
     echo "  --asanl, --asan-level LEVEL    ASAN level: none|minimal|default|full|strict"

@@ -1771,7 +1771,9 @@ fn tokenize(source) {
 }
 
 fn tokenizeWithErrors(source) {
-    {tokens: tokenize(source), errors: []}
+    toks = tokenize(source)
+    errs = []
+    {tokens: toks, errors: errs}
 }
 
 fn printTokens(tokens) {

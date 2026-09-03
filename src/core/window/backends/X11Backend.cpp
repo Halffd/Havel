@@ -101,7 +101,6 @@ wID X11Backend::getActiveWindow() {
     Window focusedWindow = 0;
     int revertTo = 0;
     if (XGetInputFocus(display, &focusedWindow, &revertTo) != 0) {
-      havel::warn("[X11Backend] XGetInputFocus result: focusedWindow={} revertTo={}", focusedWindow, revertTo);
       if (focusedWindow != 0 && focusedWindow != 1 && focusedWindow != DefaultRootWindow(display)) {
         activeWindow = focusedWindow;
       }
@@ -881,30 +880,60 @@ std::vector<WindowInfo> X11Backend::getAllWindows() {
   if (!display) return windows;
 
   Window root = DisplayManager::GetRootWindow();
-  Window rootReturn, parentReturn;
-  Window *childrenReturn;
-  unsigned int nChildren;
 
-  if (XQueryTree(display, root, &rootReturn, &parentReturn, &childrenReturn, &nChildren)) {
-    for (unsigned int i = 0; i < nChildren; i++) {
-      WindowInfo info;
-      info.id = childrenReturn[i];
-      info.title = getWindowTitle(childrenReturn[i]);
-      XClassHint classHint;
-      if (XGetClassHint(display, childrenReturn[i], &classHint)) {
-        info.windowClass = classHint.res_class ? classHint.res_class : "";
-        if (classHint.res_name) XFree(classHint.res_name);
-        if (classHint.res_class) XFree(classHint.res_class);
-      }
-      XWindowAttributes attrs;
-      if (XGetWindowAttributes(display, childrenReturn[i], &attrs)) {
-        info.x = attrs.x; info.y = attrs.y;
-        info.width = attrs.width; info.height = attrs.height;
-      }
-      info.valid = true;
-      windows.push_back(info);
+  // Enumerate EWMH _NET_CLIENT_LIST: the authoritative set of managed client
+  // windows. Unlike raw root children, this includes reparented clients (e.g.
+  // under a Cinnamon/Muffin frame) and excludes frames/decoration windows, so
+  // the returned ids are the real clients the user acts on and stay consistent
+  // with getActiveWindow().
+  std::vector<Window> clientList;
+  Atom clientsAtom = XInternAtom(display, "_NET_CLIENT_LIST", x11::XTrue);
+  if (clientsAtom != x11::XNone) {
+    Atom actualType;
+    int actualFormat;
+    unsigned long nitems, bytesAfter;
+    unsigned char *prop = nullptr;
+    if (XGetWindowProperty(display, root, clientsAtom, 0, 4096, x11::XFalse,
+                           XA_WINDOW, &actualType, &actualFormat, &nitems,
+                           &bytesAfter, &prop) == x11::XSuccess && prop) {
+      Window *wins = reinterpret_cast<Window *>(prop);
+      for (unsigned long i = 0; i < nitems; i++) clientList.push_back(wins[i]);
+      XFree(prop);
     }
-    XFree(childrenReturn);
+  }
+
+  if (clientList.empty()) {
+    Window rootReturn, parentReturn;
+    Window *childrenReturn = nullptr;
+    unsigned int nChildren = 0;
+    if (XQueryTree(display, root, &rootReturn, &parentReturn, &childrenReturn,
+                   &nChildren)) {
+      for (unsigned int i = 0; i < nChildren; i++)
+        clientList.push_back(childrenReturn[i]);
+      if (childrenReturn) XFree(childrenReturn);
+    }
+  }
+
+  for (Window w : clientList) {
+    WindowInfo info;
+    info.id = w;
+    info.title = getWindowTitle(w);
+    XClassHint classHint;
+    if (XGetClassHint(display, w, &classHint)) {
+      info.windowClass = classHint.res_class ? classHint.res_class : "";
+      if (classHint.res_name) XFree(classHint.res_name);
+      if (classHint.res_class) XFree(classHint.res_class);
+    }
+    XWindowAttributes attrs;
+    if (XGetWindowAttributes(display, w, &attrs)) {
+      info.x = attrs.x; info.y = attrs.y;
+      info.width = attrs.width; info.height = attrs.height;
+    }
+    info.pid = getWindowPID(w);
+    info.exe = info.pid ? getProcessName(info.pid) : "";
+    info.cmdline = info.pid ? getProcessCmdline(info.pid) : "";
+    info.valid = true;
+    windows.push_back(info);
   }
   return windows;
 }

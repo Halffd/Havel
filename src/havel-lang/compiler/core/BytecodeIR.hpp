@@ -712,7 +712,14 @@ public:
   void mul_int(std::optional<SourceLocation> loc = {});
   void div_int(std::optional<SourceLocation> loc = {});
   void mod_int(std::optional<SourceLocation> loc = {});
-  
+
+  void inc_local(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void dec_local(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void inc_local_post(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void dec_local_post(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+
+  void pop(std::optional<SourceLocation> loc = {});
+
   // String cursor ops
   void string_cursor_new(std::optional<SourceLocation> loc = {});
   void string_cursor_current(std::optional<SourceLocation> loc = {});

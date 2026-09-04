@@ -275,5 +275,108 @@ TEST_F(CFGPipelineTest, StandardPipelineKeepsCfgValidAfterEachPass) {
   EXPECT_TRUE(res.valid);  // no validation failure surfaced after any pass
 }
 
+TEST_F(CFGPipelineTest, ConstPropagationFoldsBinaryOps) {
+  FunctionBuilder fb("cp1", 0, 0);
+  fb.load_const(Value::makeInt(10));
+  fb.load_const(Value::makeInt(5));
+  fb.add_int();
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();  // includes ConstPropagation
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  // Should have folded 10 + 5 -> 15
+  bool found_folded = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == 15) {
+      found_folded = true;
+    }
+  }
+  EXPECT_TRUE(found_folded) << "Constant folding of 10 + 5 -> 15";
+  EXPECT_TRUE(res.valid);
+}
+
+TEST_F(CFGPipelineTest, ConstPropagationPropagatesLocals) {
+  FunctionBuilder fb("cp2", 0, 1);
+  fb.load_const(Value::makeInt(42));
+  fb.store_var(0);  // local 0 = 42
+  fb.load_var(0);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  // Should have replaced LOAD_VAR 0 with LOAD_CONST 42
+  bool found_const = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == 42) {
+      found_const = true;
+    }
+  }
+  EXPECT_TRUE(found_const) << "Constant propagation into local load";
+  EXPECT_TRUE(res.valid);
+}
+
+TEST_F(CFGPipelineTest, DceRemovesDeadStoresAndLoads) {
+  FunctionBuilder fb("dce1", 0, 2);
+  // dead store
+  fb.load_const(Value::makeInt(10));
+  fb.store_var(0);
+  // dead load
+  fb.load_var(1);
+  fb.pop();
+  // live store + load
+  fb.load_const(Value::makeInt(7));
+  fb.store_var(1);
+  fb.load_var(1);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+
+  // Count remaining instructions - dead store/load should be gone
+  size_t inst_count = 0;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode != OpCode::RETURN) ++inst_count;
+  }
+  // Should have: LOAD_CONST 7, STORE_VAR 1, LOAD_VAR 1 (3 inst) + RET
+  // Dead STORE_VAR 0, LOAD_VAR 1, POP should be removed
+  EXPECT_LE(inst_count, 3);
+}
+
+TEST_F(CFGPipelineTest, DceRemovesDeadIncDec) {
+  FunctionBuilder fb("dce2", 0, 1);
+  // dead increment
+  fb.inc_local(0);
+  // live
+  fb.load_const(Value::makeInt(1));
+  fb.store_var(0);
+  fb.load_var(0);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  // INCLOCAL of dead local should be removed
+  bool has_inc = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::INCLOCAL) has_inc = true;
+  }
+  EXPECT_FALSE(has_inc) << "Dead INCRELOCAL should be eliminated";
+}
+
 }  // namespace
 }  // namespace havel::compiler

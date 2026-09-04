@@ -1,7 +1,10 @@
 #include "BytecodePasses.hpp"
+#include "DataflowAnalysis.hpp"
+
 #include <algorithm>
 #include <queue>
 #include <unordered_set>
+#include <stack>
 
 namespace havel::compiler {
 
@@ -240,44 +243,43 @@ public:
   PassType type() const override { return PassType::ConstPropagation; }
   std::string name() const override { return "ConstPropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::SimplifyCFG}; }
-  
+
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
-    
-    // Track known constant values for locals
-    std::vector<std::optional<int64_t>> local_values(func.local_count + func.param_count);
-    std::vector<bool> is_constant(func.local_count + func.param_count, false);
-    
-    // Forward propagation - simplified implementation
+
+    // ---- 1. Cross-block constant propagation for locals using dataflow ----
+    ConstPropagationAnalysis analysis;
+    auto in_states = analysis.run(blocks, func);
+
+    // For each block, propagate constants through the block using the IN state.
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
-      auto& block = blocks[bi];
+      const BasicBlock& block = blocks[bi];
+      ConstantMap local_consts = in_states[bi];
+
       for (size_t ii = 0; ii < block.instructions.size(); ++ii) {
-        Instruction& inst = block.instructions[ii];
-        
+        Instruction& inst = const_cast<Instruction&>(block.instructions[ii]);
+
+        // Propagate known constant into instructions that use local indices
         switch (inst.opcode) {
-          case OpCode::LOAD_CONST: {
+          case OpCode::LOAD_VAR: {
             if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              int64_t val = inst.operands[0].asInt();
-              // Next instruction should be STORE_VAR - track in real impl
+              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+              if (idx < local_consts.size() && local_consts[idx].is_constant()) {
+                // Replace LOAD_VAR with LOAD_CONST of the known value
+                inst.opcode = OpCode::LOAD_CONST;
+                inst.operands[0] = Value::makeInt(local_consts[idx].value);
+                result.modified = true;
+              }
             }
             break;
           }
-          case OpCode::ADD:
-          case OpCode::SUB:
-          case OpCode::MUL:
-          case OpCode::DIV:
-          case OpCode::MOD:
-          case OpCode::ADD_INT:
-          case OpCode::SUB_INT:
-          case OpCode::MUL_INT:
-          case OpCode::DIV_INT:
-          case OpCode::MOD_INT: {
-            // Fold constants if both operands known - simplified
-            break;
-          }
-          case OpCode::STORE_VAR: {
+          case OpCode::STORE_VAR:
+          case OpCode::STORE_IMMUT_VAR: {
             if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              // Track constant value for this local
+              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+              if (idx < local_consts.size()) {
+                local_consts[idx] = ConstantValue::unknown();
+              }
             }
             break;
           }
@@ -286,8 +288,107 @@ public:
         }
       }
     }
-    
-    result.messages.push_back("ConstPropagation: stack-based analysis needed");
+
+    // ---- 2. Intra-block peephole constant folding ----
+    // Scan each block for LOAD_CONST + binary op patterns and fold them.
+    for (auto& block : blocks) {
+      std::vector<Instruction> new_insts;
+      new_insts.reserve(block.instructions.size());
+
+      for (size_t ii = 0; ii < block.instructions.size(); ++ii) {
+        const Instruction& inst = block.instructions[ii];
+
+        // Look ahead for LOAD_CONST + binary op where both operands are const
+        if (ii + 2 < block.instructions.size()) {
+          const Instruction& inst1 = block.instructions[ii + 1];
+          const Instruction& inst2 = block.instructions[ii + 2];
+
+          if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+              inst1.opcode == OpCode::LOAD_CONST && inst1.operands[0].isInt()) {
+            int64_t a = inst.operands[0].asInt();
+            int64_t b = inst1.operands[0].asInt();
+            int64_t result_val = 0;
+            bool folded = false;
+
+            if (inst2.opcode == OpCode::ADD || inst2.opcode == OpCode::ADD_INT) {
+              result_val = a + b;
+              folded = true;
+            } else if (inst2.opcode == OpCode::SUB || inst2.opcode == OpCode::SUB_INT) {
+              result_val = a - b;
+              folded = true;
+            } else if (inst2.opcode == OpCode::MUL || inst2.opcode == OpCode::MUL_INT) {
+              result_val = a * b;
+              folded = true;
+            } else if (inst2.opcode == OpCode::DIV || inst2.opcode == OpCode::DIV_INT) {
+              if (b != 0) { result_val = a / b; folded = true; }
+            } else if (inst2.opcode == OpCode::MOD || inst2.opcode == OpCode::MOD_INT) {
+              if (b != 0) { result_val = a % b; folded = true; }
+            }
+
+            if (folded) {
+              // Replace the three instructions with a single LOAD_CONST
+              new_insts.push_back(Instruction(OpCode::LOAD_CONST, {Value::makeInt(result_val)}));
+              ii += 2;  // Skip the next two instructions we folded
+              result.modified = true;
+              result.messages.push_back("ConstPropagation: folded constant binary op");
+              continue;
+            }
+          }
+        }
+
+        // Also fold unary negation
+        if (ii + 1 < block.instructions.size()) {
+          const Instruction& next = block.instructions[ii + 1];
+          if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+              next.opcode == OpCode::NEGATE) {
+            int64_t val = inst.operands[0].asInt();
+            new_insts.push_back(Instruction(OpCode::LOAD_CONST, {Value::makeInt(-val)}));
+            ++ii;  // Skip NEGATE
+            result.modified = true;
+            result.messages.push_back("ConstPropagation: folded NEGATE");
+            continue;
+          }
+        }
+
+        new_insts.push_back(inst);
+      }
+
+      if (new_insts.size() != block.instructions.size()) {
+        block.instructions.swap(new_insts);
+        result.modified = true;
+      }
+    }
+
+    // ---- 3. Remove redundant LOAD_CONST + POP pairs ----
+    for (auto& block : blocks) {
+      std::vector<Instruction> new_insts;
+      new_insts.reserve(block.instructions.size());
+
+      for (size_t i = 0; i < block.instructions.size(); ++i) {
+        const Instruction& inst = block.instructions[i];
+        bool skip = false;
+
+        if (i + 1 < block.instructions.size()) {
+          const Instruction& next = block.instructions[i + 1];
+          if (inst.opcode == OpCode::LOAD_CONST && next.opcode == OpCode::POP) {
+            result.modified = true;
+            skip = true;
+            result.messages.push_back("ConstPropagation: removed dead LOAD_CONST");
+          }
+        }
+
+        if (!skip) new_insts.push_back(inst);
+      }
+
+      if (new_insts.size() != block.instructions.size()) {
+        block.instructions.swap(new_insts);
+        result.modified = true;
+      }
+    }
+
+    if (!result.modified) {
+      result.messages.push_back("ConstPropagation: no changes");
+    }
     return result;
   }
 };
@@ -299,23 +400,116 @@ public:
   PassType type() const override { return PassType::DeadCodeElimination; }
   std::string name() const override { return "DeadCodeElimination"; }
   std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
-  
+
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
-    
-    for (auto& block : blocks) {
+
+    // ---- 1. Liveness analysis for local variables ----
+    // Compute which locals are live at each program point.
+    LivenessAnalysis analysis;
+    auto in_live = analysis.run(blocks, func);
+
+    // For each block, we track liveness backwards through instructions.
+    // An instruction is dead if:
+    // - It writes a local that is not live after the instruction
+    // - It is a LOAD_VAR of a local not live after, and the value is not used
+    // For now we do the simple local-dead-store elimination.
+
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+      auto& block = blocks[bi];
       if (block.instructions.empty()) continue;
-      
+
+      // Start with OUT live set from dataflow (what's live at block exit)
+      LiveSet live = in_live[bi];
+
+      // Process instructions backwards
       std::vector<Instruction> new_insts;
       new_insts.reserve(block.instructions.size());
-      
+
+      for (int ii = static_cast<int>(block.instructions.size()) - 1; ii >= 0; --ii) {
+        const Instruction& inst = block.instructions[ii];
+        bool keep = true;
+
+        switch (inst.opcode) {
+          case OpCode::STORE_VAR:
+          case OpCode::STORE_IMMUT_VAR: {
+            if (!inst.operands.empty() && inst.operands[0].isInt()) {
+              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+              if (idx < live.live.size() && !live.live[idx]) {
+                // Stored value is never read - dead store
+                keep = false;
+                result.modified = true;
+                result.messages.push_back("DCE: removed dead store to local " + std::to_string(idx));
+              } else {
+                // This local is now live (its value is needed)
+                if (idx < live.live.size()) live.live[idx] = true;
+              }
+            }
+            break;
+          }
+          case OpCode::LOAD_VAR: {
+            if (!inst.operands.empty() && inst.operands[0].isInt()) {
+              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+              if (idx < live.live.size() && !live.live[idx]) {
+                // Loaded value is never used - dead load
+                keep = false;
+                result.modified = true;
+                result.messages.push_back("DCE: removed dead load of local " + std::to_string(idx));
+              } else {
+                // This local is live (its value is needed)
+                if (idx < live.live.size()) live.live[idx] = true;
+              }
+            }
+            break;
+          }
+          case OpCode::INCLOCAL:
+          case OpCode::DECLOCAL:
+          case OpCode::INCLOCAL_POST:
+          case OpCode::DECLOCAL_POST: {
+            if (!inst.operands.empty() && inst.operands[0].isInt()) {
+              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+              if (idx < live.live.size() && !live.live[idx]) {
+                // Increment/decrement of dead local
+                keep = false;
+                result.modified = true;
+                result.messages.push_back("DCE: removed dead inc/dec of local " + std::to_string(idx));
+              } else {
+                if (idx < live.live.size()) live.live[idx] = true;
+              }
+            }
+            break;
+          }
+          default:
+            // For other instructions, we conservatively keep them.
+            // A full DCE would track stack liveness.
+            break;
+        }
+
+        if (keep) {
+          new_insts.push_back(inst);
+        }
+      }
+
+      // Reverse back to forward order
+      std::reverse(new_insts.begin(), new_insts.end());
+      if (new_insts.size() != block.instructions.size()) {
+        block.instructions.swap(new_insts);
+        result.modified = true;
+      }
+    }
+
+    // ---- 2. Peephole dead code elimination (stack patterns) ----
+    for (auto& block : blocks) {
+      std::vector<Instruction> new_insts;
+      new_insts.reserve(block.instructions.size());
+
       for (size_t i = 0; i < block.instructions.size(); ++i) {
-        const auto& inst = block.instructions[i];
+        const Instruction& inst = block.instructions[i];
         bool skip = false;
-        
+
         if (i + 1 < block.instructions.size()) {
-          const auto& next = block.instructions[i + 1];
-          
+          const Instruction& next = block.instructions[i + 1];
+
           // LOAD_CONST -> POP
           if (inst.opcode == OpCode::LOAD_CONST && next.opcode == OpCode::POP) {
             result.modified = true;
@@ -328,19 +522,23 @@ public:
             skip = true;
             result.messages.push_back("DCE: removed DUP + POP");
           }
+          // LOAD_VAR -> POP (dead load)
+          else if (inst.opcode == OpCode::LOAD_VAR && next.opcode == OpCode::POP) {
+            result.modified = true;
+            skip = true;
+            result.messages.push_back("DCE: removed LOAD_VAR + POP");
+          }
         }
-        
-        if (!skip) {
-          new_insts.push_back(inst);
-        }
+
+        if (!skip) new_insts.push_back(inst);
       }
-      
+
       if (new_insts.size() != block.instructions.size()) {
         block.instructions.swap(new_insts);
         result.modified = true;
       }
     }
-    
+
     return result;
   }
 };
@@ -369,7 +567,7 @@ public:
   bool requires_validation() const override { return false; }
   
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
-    auto validation = validate_cfg(blocks);
+    auto validation = validate_function(func, func.entry_block);
     PassResult result;
     result.valid = validation.valid;
     result.messages = validation.errors;

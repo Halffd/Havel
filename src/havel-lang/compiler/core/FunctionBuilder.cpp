@@ -304,6 +304,23 @@ void FunctionBuilder::mul_int(std::optional<SourceLocation> loc) { push(OpCode::
 void FunctionBuilder::div_int(std::optional<SourceLocation> loc) { push(OpCode::DIV_INT, {}, std::move(loc)); }
 void FunctionBuilder::mod_int(std::optional<SourceLocation> loc) { push(OpCode::MOD_INT, {}, std::move(loc)); }
 
+void FunctionBuilder::inc_local(uint32_t local_idx, std::optional<SourceLocation> loc) {
+  push(OpCode::INCLOCAL, {Value::makeInt(local_idx)}, std::move(loc));
+}
+void FunctionBuilder::dec_local(uint32_t local_idx, std::optional<SourceLocation> loc) {
+  push(OpCode::DECLOCAL, {Value::makeInt(local_idx)}, std::move(loc));
+}
+void FunctionBuilder::inc_local_post(uint32_t local_idx, std::optional<SourceLocation> loc) {
+  push(OpCode::INCLOCAL_POST, {Value::makeInt(local_idx)}, std::move(loc));
+}
+void FunctionBuilder::dec_local_post(uint32_t local_idx, std::optional<SourceLocation> loc) {
+  push(OpCode::DECLOCAL_POST, {Value::makeInt(local_idx)}, std::move(loc));
+}
+
+void FunctionBuilder::pop(std::optional<SourceLocation> loc) {
+  push(OpCode::POP, {}, std::move(loc));
+}
+
 void FunctionBuilder::string_cursor_new(std::optional<SourceLocation> loc) { push(OpCode::STRING_CURSOR_NEW, {}, std::move(loc)); }
 void FunctionBuilder::string_cursor_current(std::optional<SourceLocation> loc) { push(OpCode::STRING_CURSOR_CURRENT, {}, std::move(loc)); }
 void FunctionBuilder::string_cursor_advance(std::optional<SourceLocation> loc) { push(OpCode::STRING_CURSOR_ADVANCE, {}, std::move(loc)); }

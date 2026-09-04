@@ -1252,8 +1252,9 @@ int REPL::run() {
                 pumpCallback_();
             }
 
-            // Small sleep to prevent busy-waiting when no input
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Wait on queue CV with timeout - wakes immediately on input,
+            // times out periodically to pump scheduler
+            inputQueue_.wait_for_input(std::chrono::milliseconds(50));
         }
     } catch (const std::exception& e) {
         // Handle exceptions from processPendingInput (exit, error, etc.)

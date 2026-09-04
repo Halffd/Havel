@@ -3493,6 +3493,9 @@ void VM::drainFinalizers() {
 void VM::collectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  if (trace_gc_) {
+    traceGC("Starting garbage collection");
+  }
   std::vector<Value> scheduler_roots;
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
@@ -3506,6 +3509,9 @@ void VM::collectGarbage() {
                          return locals[index];
                        },
                        scheduler_roots);
+  if (trace_gc_) {
+    traceGC("Garbage collection completed");
+  }
 }
 
 void VM::stepGarbageCollection(size_t work_budget) {
@@ -7045,3 +7051,44 @@ void VM::traceInstruction(const Instruction& inst, const BytecodeFunction* func,
 }
 
 } // namespace havel::compiler
+
+// Trace helper methods
+void havel::compiler::VM::traceGC(const std::string& message) const {
+  if (!trace_gc_) return;
+  fprintf(stderr, "[TRACE:GC] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceScheduler(const std::string& message) const {
+  if (!trace_scheduler_) return;
+  fprintf(stderr, "[TRACE:SCHED] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceCall(const std::string& message) const {
+  if (!trace_calls_) return;
+  fprintf(stderr, "[TRACE:CALL] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceGlobal(const std::string& message) const {
+  if (!trace_globals_) return;
+  fprintf(stderr, "[TRACE:GLOBAL] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceChannel(const std::string& message) const {
+  if (!trace_channels_) return;
+  fprintf(stderr, "[TRACE:CHAN] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceHotkey(const std::string& message) const {
+  if (!trace_hotkeys_) return;
+  fprintf(stderr, "[TRACE:HOTKEY] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceWhen(const std::string& message) const {
+  if (!trace_when_) return;
+  fprintf(stderr, "[TRACE:WHEN] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceAsync(const std::string& message) const {
+  if (!trace_async_) return;
+  fprintf(stderr, "[TRACE:ASYNC] %s\n", message.c_str());
+}

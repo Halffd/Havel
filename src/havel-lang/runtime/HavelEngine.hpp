@@ -47,6 +47,14 @@ struct EngineConfig {
     bool debugAst = false;
     bool debugEmitter = false;
     bool traceExecution = false;
+    bool traceGC = false;
+    bool traceScheduler = false;
+    bool traceCalls = false;
+    bool traceGlobals = false;
+    bool traceChannels = false;
+    bool traceHotkeys = false;
+    bool traceWhen = false;
+    bool traceAsync = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
     bool headlessMode = false;
@@ -98,6 +106,30 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         vm_->setHeadlessMode(config_.headlessMode);
         if (config_.traceExecution) {
             vm_->setTraceExecution(true);
+        }
+        if (config_.traceGC) {
+            vm_->setTraceGC(true);
+        }
+        if (config_.traceScheduler) {
+            vm_->setTraceScheduler(true);
+        }
+        if (config_.traceCalls) {
+            vm_->setTraceCalls(true);
+        }
+        if (config_.traceGlobals) {
+            vm_->setTraceGlobals(true);
+        }
+        if (config_.traceChannels) {
+            vm_->setTraceChannels(true);
+        }
+        if (config_.traceHotkeys) {
+            vm_->setTraceHotkeys(true);
+        }
+        if (config_.traceWhen) {
+            vm_->setTraceWhen(true);
+        }
+        if (config_.traceAsync) {
+            vm_->setTraceAsync(true);
         }
         hostContext_->vm = vm_.get();
         hostAPI->SetVM(vm_.get());

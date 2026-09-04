@@ -497,6 +497,14 @@ size_t tail_call_depth_ = 0;
 int32_t pending_call_return_ip_ = -1;
     bool profiling_enabled_ = false;
     bool trace_execution_ = false;
+    bool trace_gc_ = false;
+    bool trace_scheduler_ = false;
+    bool trace_calls_ = false;
+    bool trace_globals_ = false;
+    bool trace_channels_ = false;
+    bool trace_hotkeys_ = false;
+    bool trace_when_ = false;
+    bool trace_async_ = false;
     std::array<uint64_t, 256> opcode_counts_{};
     uint64_t executed_instructions_ = 0;
     uint64_t max_instructions_ = 0; // 0 = no limit
@@ -1110,10 +1118,34 @@ void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::mov
     void setTraceExecution(bool enabled) { 
       trace_execution_ = enabled; 
     }
+    void setTraceGC(bool enabled) { trace_gc_ = enabled; }
+    void setTraceScheduler(bool enabled) { trace_scheduler_ = enabled; }
+    void setTraceCalls(bool enabled) { trace_calls_ = enabled; }
+    void setTraceGlobals(bool enabled) { trace_globals_ = enabled; }
+    void setTraceChannels(bool enabled) { trace_channels_ = enabled; }
+    void setTraceHotkeys(bool enabled) { trace_hotkeys_ = enabled; }
+    void setTraceWhen(bool enabled) { trace_when_ = enabled; }
+    void setTraceAsync(bool enabled) { trace_async_ = enabled; }
     bool isTraceExecution() const { return trace_execution_; }
+    bool isTraceGC() const { return trace_gc_; }
+    bool isTraceScheduler() const { return trace_scheduler_; }
+    bool isTraceCalls() const { return trace_calls_; }
+    bool isTraceGlobals() const { return trace_globals_; }
+    bool isTraceChannels() const { return trace_channels_; }
+    bool isTraceHotkeys() const { return trace_hotkeys_; }
+    bool isTraceWhen() const { return trace_when_; }
+    bool isTraceAsync() const { return trace_async_; }
 
     // Instruction tracing for --trace flag
     void traceInstruction(const Instruction& inst, const BytecodeFunction* func, size_t frame_depth, size_t ip) const;
+    void traceGC(const std::string& message) const;
+    void traceScheduler(const std::string& message) const;
+    void traceCall(const std::string& message) const;
+    void traceGlobal(const std::string& message) const;
+    void traceChannel(const std::string& message) const;
+    void traceHotkey(const std::string& message) const;
+    void traceWhen(const std::string& message) const;
+    void traceAsync(const std::string& message) const;
     uint64_t executedInstructionCount() const { return executed_instructions_; }
     void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
     uint64_t maxInstructions() const { return max_instructions_; }

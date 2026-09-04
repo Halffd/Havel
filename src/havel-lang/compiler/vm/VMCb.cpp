@@ -64,14 +64,18 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
   }
 
   // Capture the globals in scope at spawn time keyed by the goroutine's
-  // closure id. startGoroutineCall restores this snapshot on the goroutine's
-  // first run so it resolves globals against the right module scope, even if
-  // the closure's module_globals is later reassigned by module-cache fixup.
+  // closure id. Scheduler stores this Value as the goroutine's identity;
+  // startGoroutineCall resolves the rest so it resolves globals against the
+  // right module scope, even if the closure's module_globals is later
+  // reassigned by module-cache fixup.
   if (spawn_value.isClosureId()) {
     uint32_t cid = spawn_value.asClosureId();
     // Snapshot the spawned closure's OWN scope, not the caller's ambient.
     // Spawn can happen from inside a module function (e.g. async_mod.go),
     // where ambient globals is that module's sidecar; a script closure's
+  if (trace_scheduler_) {
+    traceScheduler(std::format("Spawning goroutine: callee={}, args={}", callee.toString(), args.size()));
+  }
     // imports (STORE_GLOBAL from `use { x } from "m"`) live in the script
     // globals and would be missing from the wrong-map snapshot.
     std::shared_ptr<std::unordered_map<std::string, Value>> snapshot_src;

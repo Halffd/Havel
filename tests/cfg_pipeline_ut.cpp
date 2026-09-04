@@ -8,6 +8,7 @@
 // files or scripts.
 
 #include "BytecodeIR.hpp"
+#include "BytecodePasses.hpp"
 
 #include <gtest/gtest.h>
 
@@ -249,6 +250,29 @@ TEST_F(CFGPipelineTest, ValidateModuleChecksAllFunctions) {
     if (e.find("function 'bad'") != std::string::npos) caught = true;
   }
   EXPECT_TRUE(caught);
+}
+
+TEST_F(CFGPipelineTest, StandardPipelineKeepsCfgValidAfterEachPass) {
+  // Feed a real CFG-backed function through the standard optimization pipeline.
+  // PassManager::run_all validates (structurally + operand references) after
+  // every pass; this asserts the function survives optimization as a valid CFG.
+  FunctionBuilder fb("pipe", 1, 1);
+  fb.load_var(0);
+  fb.load_const(Value::makeInt(1));
+  fb.add_int();
+  fb.store_var(1);
+  fb.ret();
+  fb.create_block();  // trailing, unreachable fall-through
+
+  BytecodeFunction f = fb.build();
+  {
+    const auto v = validate_function(f, f.entry_block);
+    ASSERT_TRUE(v.valid) << (v.errors.empty() ? "" : v.errors[0]);
+  }
+
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+  EXPECT_TRUE(res.valid);  // no validation failure surfaced after any pass
 }
 
 }  // namespace

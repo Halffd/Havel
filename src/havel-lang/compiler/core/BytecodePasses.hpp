@@ -76,8 +76,13 @@ public:
       auto result = pass->run(blocks, func);
       total |= result;
       
+      // Debug/development hardening: after any pass that requests validation,
+      // run the full per-function verifier (structural CFG checks plus operand
+      // references against the function's locals/upvalues/global_names). Failures
+      // are surfaced as messages and force a re-run. The checks are a cheap
+      // linear walk, so they stay enabled in all build types.
       if (validate_after_each && pass->requires_validation()) {
-        auto validation = validate_cfg(blocks);
+        auto validation = validate_function(func, func.entry_block);
         if (!validation.valid) {
           result.messages.push_back("Validation failed after " + pass->name() + ": " + 
                                     join_errors(validation.errors));

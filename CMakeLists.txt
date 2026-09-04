@@ -2435,6 +2435,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         tests/cfg_pipeline_ut.cpp
         src/havel-lang/compiler/core/FunctionBuilder.cpp
         src/havel-lang/compiler/core/CFG.cpp
+        src/havel-lang/compiler/core/BytecodePasses.cpp
     )
     target_include_directories(cfg_pipeline_test PRIVATE
         ${CMAKE_SOURCE_DIR}/src

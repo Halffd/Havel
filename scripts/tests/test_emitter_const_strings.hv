@@ -1,0 +1,36 @@
+// Regression test: emitter emitted string indices via bc.add_chunk_string
+// (a raw chunk string-table index) as LOAD_CONST operands, which expect a
+// constant-array index. This corrupted every string-valued constant produced
+// from these sites — object literal keys, member access o.x, method names,
+// for-in iterator fields (done/second), etc. Fixed by using bc.add_string
+// (registers a proper StringValId constant) at all LOAD_CONST-keyed sites.
+// Expected: object literal keys, member access, and for-in loops all
+// resolve string constants correctly.
+
+// Object literal keys must resolve to the real keys.
+o = {alpha: 1, beta: "two"}
+if o.get("alpha") != 1 || o.get("beta") != "two" {
+    assert(false, "object literal keys not set correctly")
+}
+
+// Member access o.x must read the real field, not an arbitrary later literal.
+if o.alpha != 1 || o.beta != "two" {
+    assert(false, "member access o.x reads wrong field: got alpha=" + str(o.alpha))
+}
+
+// String concatenation of literals inside a function must resolve correctly.
+fn tag() {
+    return "{" + "c"
+}
+if tag() != "{c" {
+    assert(false, "literal concat in function wrong: got " + tag())
+}
+
+// for-in must iterate to completion (depends on iterator done/second fields).
+sum = 0
+for v in [10, 20, 30] { sum += v }
+if sum != 60 {
+    assert(false, "for-in loop corrupted: sum=" + str(sum))
+}
+
+print("emitter const-string regression: PASS")

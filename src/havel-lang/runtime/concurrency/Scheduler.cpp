@@ -868,16 +868,55 @@ size_t Scheduler::wakeSleepingGoroutines() {
             auto state = g->state.load(std::memory_order_acquire);
             if (state == GoroutineState::Done) continue;
             if (state != GoroutineState::Suspended) {
+                if (trace_sleep) {
+                    long due{0};
+                    {
+                        std::lock_guard wlock(g->wait_handle_mutex_);
+                        auto d = g->wait_handle.deadline;
+                        if (d != std::chrono::steady_clock::time_point{}) {
+                            due = std::chrono::duration_cast<std::chrono::milliseconds>(now - d).count();
+                        }
+                    }
+                    if (due > 0) {
+                        ::havel::warn("[LOST-WAKEUP] wake skip gid={} state-not-Suspended state={} but deadline overdue {}ms",
+                                      id, (int)state, due);
+                    }
+                }
                 continue;
             }
             auto sr = g->suspension_reason.load(std::memory_order_acquire);
             if (sr != SuspensionReason::SleepWait) {
+                if (trace_sleep) {
+                    long due{0};
+                    {
+                        std::lock_guard wlock(g->wait_handle_mutex_);
+                        auto d = g->wait_handle.deadline;
+                        if (d != std::chrono::steady_clock::time_point{}) {
+                            due = std::chrono::duration_cast<std::chrono::milliseconds>(now - d).count();
+                        }
+                    }
+                    if (due > 0) {
+                        ::havel::warn("[LOST-WAKEUP] wake skip gid={} reason-not-SleepWait reason={} but deadline overdue {}ms",
+                                      id, (int)sr, due);
+                    }
+                }
                 continue;
             }
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
                 if (g->wait_handle.type != AwaitableType::SLEEP) {
-                    if (trace_sleep) { ::havel::info("[SLEEPDBG] wake skip gid={} type-not-SLEEP type={}", id, (int)g->wait_handle.type); }
+                    if (trace_sleep) {
+                        long due{0};
+                        auto d = g->wait_handle.deadline;
+                        if (d != std::chrono::steady_clock::time_point{}) {
+                            due = std::chrono::duration_cast<std::chrono::milliseconds>(now - d).count();
+                        }
+                        if (due > 0) {
+                            ::havel::warn("[LOST-WAKEUP] wake skip gid={} type-not-SLEEP type={} deadline overdue {}ms", id, (int)g->wait_handle.type, due);
+                        } else {
+                            ::havel::info("[SLEEPDBG] wake skip gid={} type-not-SLEEP type={}", id, (int)g->wait_handle.type);
+                        }
+                    }
                     continue;
                 }
                 if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) {

@@ -275,7 +275,7 @@ fn emitExpr(emitter, node) {
 			bc.emit("LOAD_CONST", idx)
 		}
 		else {
-			idx = bc.add_chunk_string(node.value)
+			idx = bc.add_string(node.value)
 			bc.emit("LOAD_CONST", idx)
 		}
 		return
@@ -1241,7 +1241,7 @@ if k == "TernaryExpression" {
         }
         else {
           emitExpr(emitter, field.value)
-          keyIdx = bc.add_chunk_string(field.key)
+          keyIdx = bc.add_string(field.key)
           bc.emit("LOAD_CONST", keyIdx)
           bc.emit("OBJECT_SET")
         }

@@ -1,0 +1,42 @@
+// Regression test: json.stringify corruption from object literal keys
+// and string concatenation in module functions.
+// Bugs fixed:
+//  - emitter.hv emitted object-literal keys via bc.add_chunk_string (a raw
+//    string-table index) as a LOAD_CONST operand, so object-literal keys
+//    resolved to the wrong strings (arbitrary later script literals).
+//  - VMArithmetic string ADD resolved StringValId operands against
+//    main_chunk_ instead of current_chunk, corrupting concatenation in
+//    module functions.
+// Expected: object literal keys survive, json.stringify produces valid
+// JSON with correct keys/values.
+
+use json
+
+// Object literal keys must resolve to the real keys, not later literals.
+obj = {alpha: 1, beta: "two", gamma: true}
+ks = obj.keys()
+i = 0
+n = 0
+while i < #ks {
+    if ks[i] == "alpha" || ks[i] == "beta" || ks[i] == "gamma" { n = n + 1 }
+    i = i + 1
+}
+assert(n == 3, "object literal keys are corrupt: got " + str(n) + " valid of " + str(#ks))
+
+// json.stringify of an object literal must emit correct keys.
+s = json.stringify(obj)
+assert(s == "{\"alpha\": 1,\"beta\": \"two\",\"gamma\": true}" ||
+       s == "{\"beta\": \"two\",\"alpha\": 1,\"gamma\": true}" ||
+       s == "{\"gamma\": true,\"beta\": \"two\",\"alpha\": 1}" ||
+       s == "{\"alpha\": 1,\"gamma\": true,\"beta\": \"two\"}" ||
+       s == "{\"beta\": \"two\",\"gamma\": true,\"alpha\": 1}" ||
+       s == "{\"gamma\": true,\"alpha\": 1,\"beta\": \"two\"}",
+       "json.stringify object literal not valid: " + s)
+
+// Round-trip must preserve key/value data (order may differ after parse).
+p = json.parse(s)
+s2 = json.stringify(p)
+assert(p["alpha"] == 1 && p["beta"] == "two" && p["gamma"] == true,
+       "json round-trip lost values: " + s2)
+
+print("json literal key + stringify regression: PASS")

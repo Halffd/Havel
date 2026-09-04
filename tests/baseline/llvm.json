@@ -1,0 +1,78 @@
+{
+  "baseline": "llvm",
+  "version": "0.3.4",
+  "timestamp": "2026-09-04T04:25:46Z",
+  "build": {
+    "mode": 5,
+    "type": "Release",
+    "enable_llvm": true,
+    "llvm_version": "22.1.8",
+    "enable_tests": true,
+    "enable_havel_lang": true,
+    "thin_lto": true,
+    "march_native": true,
+    "build_dir": "build-release",
+    "self_hosted": true
+  },
+  "system": {
+    "cores": 16,
+    "os": "Linux",
+    "arch": "x86_64",
+    "compiler": "clang",
+    "cxx_standard": "C++23"
+  },
+  "startup": {
+    "minimal_script_ms": [
+      870,
+      860
+    ],
+    "rss_kb": 90300,
+    "note": "~5x faster startup and ~5.6x lower RSS than Debug"
+  },
+  "tests": {
+    "jit_smoke": {
+      "passed": 30,
+      "failed": 0,
+      "total": 30,
+      "note": "LLVM ORC JIT path works"
+    },
+    "smoke": {
+      "passed": 279,
+      "failed": 0,
+      "skipped": 0,
+      "total": 279
+    },
+    "integration": {
+      "total": 97,
+      "by_status": {
+        "PASS": 52,
+        "FAIL(1)": 42,
+        "TIMEOUT": 3
+      },
+      "by_classification": {
+        "PASS": 52,
+        "EXPECTED_FAILURE": 20,
+        "INFRASTRUCTURE_FAILURE": 22,
+        "TIMEOUT": 3
+      },
+      "pass_count": 52,
+      "fail_count": 42,
+      "timeout_count": 3,
+      "exit127_count": 0
+    }
+  },
+  "interpreter_benchmarks_ms": {
+    "arithmetic": 27479,
+    "arrays": 4135,
+    "closures": {
+      "error": "FAIL - parse error (stale syntax), build does not run"
+    },
+    "functions": 5857,
+    "strings": 1684,
+    "objects": {
+      "error": "FAIL (rc=1) after ~42s"
+    },
+    "gc": 17718,
+    "test_simple": 896
+  }
+}

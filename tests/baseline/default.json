@@ -1,0 +1,64 @@
+{
+  "baseline": "default",
+  "version": "0.3.4",
+  "timestamp": "2026-09-04T04:25:46Z",
+  "build": {
+    "mode": 6,
+    "type": "Debug",
+    "enable_llvm": false,
+    "enable_tests": true,
+    "enable_havel_lang": true,
+    "asan": true,
+    "ubsan": true,
+    "build_dir": "build-debug",
+    "self_hosted": true
+  },
+  "system": {
+    "cores": 16,
+    "os": "Linux",
+    "arch": "x86_64",
+    "compiler": "clang",
+    "cxx_standard": "C++23"
+  },
+  "startup": {
+    "minimal_script_ms": [
+      5300,
+      4160,
+      4260
+    ],
+    "rss_kb": 507000,
+    "note": "Debug+ASAN+UBSAN dominates; ~4-5s base init"
+  },
+  "tests": {
+    "smoke": {
+      "passed": 279,
+      "failed": 0,
+      "skipped": 0,
+      "total": 279,
+      "suite_elapsed_ms": 660450,
+      "note": "100% pass; default Debug non-LLVM"
+    },
+    "ctest": {
+      "note": "hvtest-smoke re-runs full 279-file smoke (~660s); module-globals-drift-guard PASS; no gtest C++ tests (GTest not found)"
+    },
+    "module_globals_drift_guard": "PASS",
+    "integration": {
+      "total": 97,
+      "by_status": {
+        "PASS": 52,
+        "FAIL(1)": 42,
+        "TIMEOUT": 3
+      },
+      "by_classification": {
+        "PASS": 52,
+        "EXPECTED_FAILURE": 20,
+        "INFRASTRUCTURE_FAILURE": 22,
+        "TIMEOUT": 3
+      },
+      "pass_count": 52,
+      "fail_count": 42,
+      "timeout_count": 3,
+      "exit127_count": 0
+    }
+  }
+}

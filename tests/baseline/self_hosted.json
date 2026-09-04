@@ -1,0 +1,54 @@
+{
+  "baseline": "self_hosted",
+  "version": "0.3.4",
+  "timestamp": "2026-09-04T04:25:46Z",
+  "note": "The default 'havel run' and hvtest already use the self-hosted pipeline via out/ (compiled from modules/lang). Build compiles 101 modules, 0 failed into ~/.cache/havel/*.hvc.",
+  "build": {
+    "pipeline": "self-hosted",
+    "modules_compiled": 101,
+    "modules_failed": 0,
+    "output": "/home/half-arch/.cache/havel",
+    "self_hosted_path": "out/"
+  },
+  "system": {
+    "cores": 16,
+    "os": "Linux",
+    "arch": "x86_64",
+    "compiler": "clang",
+    "cxx_standard": "C++23"
+  },
+  "startup_self_hosted": {
+    "minimal_script_ms": [
+      5300,
+      4160,
+      4260
+    ],
+    "note": "self-hosted lexer/parser/typecheck/emit adds ~1-2s to runtime vs pure C++ path; debug dominates"
+  },
+  "tests": {
+    "smoke": {
+      "passed": 279,
+      "failed": 0,
+      "total": 279,
+      "note": "hvtest --smoke uses self-hosted pipeline explicitly"
+    },
+    "integration": {
+      "total": 97,
+      "by_status": {
+        "PASS": 52,
+        "FAIL(1)": 42,
+        "TIMEOUT": 3
+      },
+      "by_classification": {
+        "PASS": 52,
+        "EXPECTED_FAILURE": 20,
+        "INFRASTRUCTURE_FAILURE": 22,
+        "TIMEOUT": 3
+      },
+      "pass_count": 52,
+      "fail_count": 42,
+      "timeout_count": 3,
+      "exit127_count": 0
+    }
+  }
+}

@@ -2422,6 +2422,32 @@ Qt6::Widgets
 endif()
 
 # ==============================================================================
+# LIGHTWEIGHT IR/CFG UNIT TEST
+# ==============================================================================
+# The CFG/IR layer (FunctionBuilder, validate_cfg, flatten_cfg) is self-contained
+# and does not depend on the application core, GUI, or LLVM backends. It is
+# tested by a dedicated, fast executable that compiles only the IR sources plus
+# the test. This intentionally bypasses the whole-application test targets,
+# which cannot compile the core sources (they require the generated
+# havel_platform.h, absent from that target's include path).
+if(ENABLE_TESTS AND GTest_FOUND)
+    add_executable(cfg_pipeline_test
+        tests/cfg_pipeline_ut.cpp
+        src/havel-lang/compiler/core/FunctionBuilder.cpp
+        src/havel-lang/compiler/core/CFG.cpp
+    )
+    target_include_directories(cfg_pipeline_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
+endif()
+
+# ==============================================================================
 # INSTALLATION RULES
 # ==============================================================================
 install(TARGETS havel

@@ -179,5 +179,77 @@ TEST_F(CFGPipelineTest, SwitchHelperBuildsDispatchChain) {
   EXPECT_GE(fb.build().local_count, 1u);
 }
 
+TEST_F(CFGPipelineTest, ValidateFunctionRejectsBadLocalIndex) {
+  FunctionBuilder fb("badlocal", 0, 1);
+  fb.load_var(0);  // valid; slot 0 exists
+  fb.store_var(3); // invalid; only slots 0 exists after +temps
+  fb.create_block();
+  BytecodeFunction f = fb.build();
+
+  const auto v = validate_function(f, f.entry_block);
+  EXPECT_FALSE(v.valid);
+  bool caught = false;
+  for (const auto& e : v.errors) {
+    if (e.find("local index 3 out of range") != std::string::npos) caught = true;
+  }
+  EXPECT_TRUE(caught);
+}
+
+TEST_F(CFGPipelineTest, ValidateFunctionPassesValidLocalsAndGlobals) {
+  FunctionBuilder fb("ok", 2, 1);
+  fb.load_var(0);
+  fb.load_var(1);
+  fb.load_global("config");
+  fb.store_global("config");
+  fb.add_upvalue(0);
+  fb.load_upvalue(0);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  const auto v = validate_function(f, f.entry_block);
+  EXPECT_TRUE(v.valid) << (v.errors.empty() ? "" : v.errors[0]);
+}
+
+TEST_F(CFGPipelineTest, ValidateFunctionRejectsGlobalOutOfRange) {
+  FunctionBuilder fb("badglobal", 0, 0);
+  // Refer a global name table index that does not exist. The builder interns
+  // names internally, so fabricate the operand by poking the instruction directly.
+  fb.push(Instruction(OpCode::LOAD_GLOBAL,
+                      std::vector<Value>{Value::makeStringValId(7)}));
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  ASSERT_TRUE(f.global_names.empty());  // never interned -> table is empty
+
+  const auto v = validate_function(f, f.entry_block);
+  EXPECT_FALSE(v.valid);
+}
+
+TEST_F(CFGPipelineTest, ValidateModuleChecksAllFunctions) {
+  BytecodeChunk chunk;
+  {
+    FunctionBuilder fb("good", 0, 0);
+    fb.ret();
+    fb.create_block();
+    chunk.addFunction(fb.build());
+  }
+  {
+    FunctionBuilder fb("bad", 0, 1);
+    fb.load_var(5);  // out of range
+    fb.create_block();
+    chunk.addFunction(fb.build());
+  }
+
+  const auto v = validate_module(chunk);
+  EXPECT_FALSE(v.valid);  // the bad function must fail the module
+  bool caught = false;
+  for (const auto& e : v.errors) {
+    if (e.find("function 'bad'") != std::string::npos) caught = true;
+  }
+  EXPECT_TRUE(caught);
+}
+
 }  // namespace
 }  // namespace havel::compiler

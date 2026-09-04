@@ -882,6 +882,18 @@ private:
   std::vector<std::string> strings;
 };
 
+// ===== Per-function and per-module validation =====
+// validate_function runs the CFG structural checks (validate_cfg) then checks
+// that instruction operands reference valid entities in the owning function:
+//   - LOAD_VAR/STORE_VAR/STORE_IMMUT_VAR local indices < locals.size()
+//   - LOAD_UPVALUE/STORE_UPVALUE upvalue indices < upvalues.size()
+//   - LOAD_GLOBAL/STORE_GLOBAL/STORE_IMMUT_GLOBAL name indices < global_names.size()
+//   - LOAD_CONST operand presence
+// validate_module checks every CFG-backed function in a chunk.
+CFGValidationResult validate_function(const BytecodeFunction& func,
+                                      uint32_t entry_block);
+CFGValidationResult validate_module(const BytecodeChunk& chunk);
+
 // Bytecode compiler interface
 class BytecodeCompiler {
 public:

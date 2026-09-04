@@ -305,4 +305,140 @@ LinearFunction flatten_cfg(const std::vector<BasicBlock>& blocks,
   return out;
 }
 
+// ===== Per-function validation =====
+//
+// Runs the CFG structural checks, then validates that instruction operands
+// reference entities that exist in the owning function (locals, upvalues, and
+// global names). This is the CFG/builder path: functions produced by
+// FunctionBuilder carry `blocks`, `locals`, `upvalues`, and `global_names`.
+namespace {
+
+// Opcodes whose first operand is a zero-based local-slot index.
+bool opc_takes_local(OpCode op) {
+  switch (op) {
+    case OpCode::LOAD_VAR:
+    case OpCode::STORE_VAR:
+    case OpCode::STORE_IMMUT_VAR:
+    case OpCode::INCLOCAL:
+    case OpCode::DECLOCAL:
+    case OpCode::INCLOCAL_POST:
+    case OpCode::DECLOCAL_POST:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool opc_takes_upvalue(OpCode op) {
+  return op == OpCode::LOAD_UPVALUE || op == OpCode::STORE_UPVALUE;
+}
+
+bool opc_takes_global(OpCode op) {
+  return op == OpCode::LOAD_GLOBAL || op == OpCode::STORE_GLOBAL ||
+         op == OpCode::STORE_IMMUT_GLOBAL;
+}
+
+bool opc_takes_const(OpCode op) { return op == OpCode::LOAD_CONST; }
+
+}  // namespace
+
+CFGValidationResult validate_function(const BytecodeFunction& func,
+                                      uint32_t entry_block) {
+  CFGValidationResult result;
+
+  if (func.blocks.empty()) {
+    result.warnings.push_back("function '" + func.name +
+                              "' has no CFG blocks; operand checks skipped");
+    return result;
+  }
+
+  // Structural CFG checks.
+  {
+    const CFGValidationResult cfg = validate_cfg(func.blocks, entry_block);
+    result.valid &= cfg.valid;
+    result.errors.insert(result.errors.end(), cfg.errors.begin(), cfg.errors.end());
+    result.warnings.insert(result.warnings.end(), cfg.warnings.begin(),
+                           cfg.warnings.end());
+  }
+
+  // Operand reference checks.
+  auto build_msg = [&](uint32_t block_id, size_t inst_idx, const std::string& what,
+                       uint64_t idx, size_t bound) {
+    return "function '" + func.name + "' block " + std::to_string(block_id) +
+           " instruction " + std::to_string(inst_idx) + ": " + what +
+           " index " + std::to_string(idx) + " out of range (count " +
+           std::to_string(bound) + ")";
+  };
+
+  for (uint32_t bi = 0; bi < func.blocks.size(); ++bi) {
+    const BasicBlock& b = func.blocks[bi];
+    for (size_t ii = 0; ii < b.instructions.size(); ++ii) {
+      const Instruction& inst = b.instructions[ii];
+      if (inst.operands.empty()) continue;
+
+      if (opc_takes_local(inst.opcode)) {
+        if (!inst.operands[0].isInt()) {
+          result.valid = false;
+          result.errors.push_back("function '" + func.name + "' block " +
+                                  std::to_string(bi) + " instruction " +
+                                  std::to_string(ii) +
+                                  ": local index operand is not an integer");
+          continue;
+        }
+        const uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+        if (idx >= func.locals.size()) {
+          result.valid = false;
+          result.errors.push_back(
+              build_msg(bi, ii, "local", idx, func.locals.size()));
+        }
+      } else if (opc_takes_upvalue(inst.opcode)) {
+        const uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+        if (idx >= func.upvalues.size()) {
+          result.valid = false;
+          result.errors.push_back(
+              build_msg(bi, ii, "upvalue", idx, func.upvalues.size()));
+        }
+      } else if (opc_takes_global(inst.opcode)) {
+        // For CFG-backed functions the builder always interns globals into
+        // func.global_names and emits the name index as a StringValId (low 31
+        // bits, see Value::makeStringValId). An index outside that table is an
+        // invalid reference.
+        const uint64_t idx = inst.operands[0].asStringValId();
+        if (idx >= func.global_names.size()) {
+          result.valid = false;
+          result.errors.push_back(
+              build_msg(bi, ii, "global", idx, func.global_names.size()));
+        }
+      } else if (opc_takes_const(inst.opcode)) {
+        // LOAD_CONST must actually carry a constant payload.
+        if (!(inst.operands[0].isInt() || inst.operands[0].isNumber() ||
+              inst.operands[0].isBool() || inst.operands[0].isStringId())) {
+          result.valid = false;
+          result.errors.push_back("function '" + func.name + "' block " +
+                                  std::to_string(bi) + " instruction " +
+                                  std::to_string(ii) +
+                                  ": LOAD_CONST has no scalar payload");
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+CFGValidationResult validate_module(const BytecodeChunk& chunk) {
+  CFGValidationResult result;
+  for (const BytecodeFunction& func : chunk.getAllFunctions()) {
+    const CFGValidationResult fv = validate_function(func, func.entry_block);
+    result.valid &= fv.valid;
+    result.errors.insert(result.errors.end(), fv.errors.begin(), fv.errors.end());
+    result.warnings.insert(result.warnings.end(), fv.warnings.begin(),
+                           fv.warnings.end());
+  }
+  if (chunk.getFunctionCount() == 0) {
+    result.warnings.push_back("module has no functions to validate");
+  }
+  return result;
+}
+
 }  // namespace havel::compiler

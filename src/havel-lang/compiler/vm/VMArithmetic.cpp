@@ -343,39 +343,19 @@ void VM::execBinaryOp(const Instruction &instruction) {
 	}
 
 	if (left.isStringValId() || left.isStringId() || right.isStringValId() || right.isStringId()) {
-		std::string l;
-		if (left.isStringValId()) {
-			if (main_chunk_) {
-				l = main_chunk_->getString(left.asStringValId());
-			} else {
-				l = "<string:" + std::to_string(left.asStringValId()) + ">";
-			}
-		} else if (left.isStringId()) {
-			if (auto *s = heap_.string(left.asStringId())) {
-				l = *s;
-			} else {
-				l = "<string:" + std::to_string(left.asStringId()) + ">";
-			}
-		} else {
-			l = toString(left);
-		}
-
-		std::string r;
-		if (right.isStringValId()) {
-			if (main_chunk_) {
-				r = main_chunk_->getString(right.asStringValId());
-			} else {
-				r = "<string:" + std::to_string(right.asStringValId()) + ">";
-			}
-		} else if (right.isStringId()) {
-			if (auto *s = heap_.string(right.asStringId())) {
-				r = *s;
-			} else {
-				r = "<string:" + std::to_string(right.asStringId()) + ">";
-			}
-		} else {
-			r = toString(right);
-		}
+		// Resolve string operands against the correct chunk: a StringValId
+		// stores an index into the chunk where the constant was defined
+		// (e.g. a module chunk), which is NOT necessarily main_chunk_. Resolving
+		// against main_chunk_ reads the wrong string (e.g. arbitrary bytes from
+		// the main script's string table), corrupting string concatenation in
+		// module functions. Use resolveStringKey so StringValId indexes resolve
+		// against current_chunk first, then main_chunk_, matching LOAD_CONST.
+		std::string l = (left.isStringValId() || left.isStringId())
+		                    ? resolveStringKey(left)
+		                    : toString(left);
+		std::string r = (right.isStringValId() || right.isStringId())
+		                    ? resolveStringKey(right)
+		                    : toString(right);
 
 		switch (instruction.opcode) {
 		case OpCode::ADD: {

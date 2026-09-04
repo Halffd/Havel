@@ -257,7 +257,12 @@ std::string X11Backend::getWindowTitle(wID id) {
     }
   }
 
-  windowInfoCache_[id] = {title, {}, std::chrono::steady_clock::now()};
+  // Do not clobber an already-resolved className: getWindowClass reads
+  // this cache and would otherwise see an empty class for WINDOW_CACHE_TTL
+  // (getWindowInfo calls getWindowTitle then getWindowClass back-to-back).
+  auto &entry = windowInfoCache_[id];
+  entry.title = title;
+  entry.lastUpdate = std::chrono::steady_clock::now();
   return title;
 }
 
@@ -290,7 +295,7 @@ std::string X11Backend::getWindowClass(wID id) {
 
   {
     auto it = windowInfoCache_.find(id);
-    if (it != windowInfoCache_.end() &&
+    if (it != windowInfoCache_.end() && !it->second.className.empty() &&
         std::chrono::steady_clock::now() - it->second.lastUpdate < WINDOW_CACHE_TTL) {
       return it->second.className;
     }

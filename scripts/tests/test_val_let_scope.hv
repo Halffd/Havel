@@ -1,0 +1,84 @@
+// Smoke test: top-level val/let scope fix
+// Verifies that top-level val/let declarations are correctly stored as globals
+// and can be read from nested functions/closures.
+
+// Test 1: Basic val at top level
+val GLOBAL_CONST = 42
+fn test_val() {
+    return GLOBAL_CONST
+}
+assert(test_val() == 42, "val at top level")
+
+// Test 2: Basic let at top level
+let global_mutable = 100
+fn test_let() {
+    return global_mutable
+}
+assert(test_let() == 100, "let at top level")
+
+// Test 3: Mutation of top-level let
+let counter = 0
+fn inc() {
+    counter = counter + 1
+    return counter
+}
+assert(inc() == 1, "inc 1")
+assert(inc() == 2, "inc 2")
+assert(inc() == 3, "inc 3")
+
+// Test 4: Nested functions accessing globals
+let outer_x = 10
+val outer_y = 20
+fn outer() {
+    fn middle() {
+        fn inner() {
+            return outer_x + outer_y
+        }
+        return inner()
+    }
+    return middle()
+}
+assert(outer() == 30, "deeply nested access")
+
+// Test 5: Shadowing - local val shadows global
+val shadow_test = 999
+fn test_shadow() {
+    val shadow_test = 1
+    return shadow_test
+}
+assert(test_shadow() == 1, "local shadows global")
+assert(shadow_test == 999, "global unchanged")
+
+// Test 6: Closure capturing global
+fn make_adder(n) {
+    return fn(x) { return x + n + outer_x }
+}
+val add5 = make_adder(5)
+assert(add5(10) == 25, "closure captures global")
+
+// Test 7: For loop with global mutable
+let sum = 0
+for i in 1 .. 5 {
+    sum = sum + i
+}
+assert(sum == 15, "for loop mutates global")
+
+// Test 8: Multiple globals
+val a = 1
+let b = 2
+val c = 3
+fn test_multiple() {
+    return a + b + c
+}
+assert(test_multiple() == 6, "multiple globals")
+
+// Test 9: Global object/array
+val global_arr = [1, 2, 3]
+val global_obj = {"key": "value"}
+fn test_composite() {
+    return global_arr[1]
+}
+assert(test_composite() == 2, "global composite access")
+
+print("All val/let scope tests passed!")
+return "SUCCESS"

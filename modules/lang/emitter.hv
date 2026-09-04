@@ -166,17 +166,17 @@ fn emitStoreVar(emitter, name) {
 
 fn emitStoreDecl(emitter, name, isConst) {
   funcRoot = scopeFindFuncRoot(emitter.scope)
-  if funcRoot.parent != null {
+  // Only treat as global if in main function scope (not nested function)
+  if funcRoot.parent != null && funcRoot.funcId == emitter.mainFuncId {
     if emitter.global_names[name] == true {
       bc.emit(isConst ? "STORE_IMMUT_GLOBAL" : "STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
       return
     }
-    idx = scopeDeclare(emitter.scope, name)
-    bc.emit(isConst ? "STORE_IMMUT_VAR" : "STORE_VAR", idx)
-    return
   }
-  emitter.global_names[name] = true
-  bc.emit(isConst ? "STORE_IMMUT_GLOBAL" : "STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
+  // Otherwise declare as local in current scope
+  idx = scopeDeclare(emitter.scope, name)
+  bc.emit(isConst ? "STORE_IMMUT_VAR" : "STORE_VAR", idx)
+  return
 }
 fn emitKwargsObject(emitter, kwargs) {
   bc.emit("OBJECT_NEW")
@@ -2310,11 +2310,11 @@ if k == "RepeatStatement" {
 				}
 			}
 			return
-		}
+}
 		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
-		// Module scope has parent == null; its child is the main function
+		// Module-level means we're in the main function scope (not a nested function)
 		funcRoot = scopeFindFuncRoot(emitter.scope)
-		if funcRoot != null && funcRoot.parent != null && funcRoot.parent.parent == null {
+		if funcRoot != null && funcRoot.funcId == emitter.mainFuncId {
 			if node.value != null {
 				emitExpr(emitter, node.value)
 			}
@@ -2339,7 +2339,7 @@ if k == "RepeatStatement" {
 			}
 		}
 		return
-    }
+	}
 	if k == "ValDeclaration" {
 		// Array destructuring: val [a, b, c] = val
 		if node.pattern != null && node.pattern.kind == "ArrayPattern" {
@@ -2392,9 +2392,9 @@ if k == "RepeatStatement" {
 			return
 }
 		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
-		// Module scope has parent == null; its child is the main function
+		// Module-level means we're in the main function scope (not a nested function)
 		funcRoot = scopeFindFuncRoot(emitter.scope)
-		if funcRoot != null && funcRoot.parent != null && funcRoot.parent.parent == null {
+		if funcRoot != null && funcRoot.funcId == emitter.mainFuncId {
 			if node.value != null {
 				emitExpr(emitter, node.value)
 			}
@@ -3802,10 +3802,13 @@ collectTopLevelGlobals(emitter, topStmts)
       emitter.structNames[stmt.name] = true
     }
   }
+  // Allocate mainFuncId before Pass 1 so nested functions can detect module-level
+  emitter.mainFuncId = emitter.nextFuncId
+  emitter.nextFuncId = emitter.mainFuncId + 1
   // Pass 1: compile all function bodies
- funcUpcounts = []
- funcChunkIdxs = []
- fi = 0
+  funcUpcounts = []
+  funcChunkIdxs = []
+  fi = 0
 while fi < #funcDecls {
   decl = funcDecls[fi]
   implFor = decl._implFor
@@ -3829,15 +3832,14 @@ while fi < #funcDecls {
   funcChunkIdxs.push(chunkIdx)
   fi = fi + 1
   }
- // Pass 2: compile __main__
- mainChunkIdx = bc.func_new(entryName, 0, 64)
- traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
- // Create proper function scope for __main__ with moduleScope as parent
- // Use a unique funcId to distinguish __main__ from moduleScope
- mainFuncId = emitter.nextFuncId
- emitter.nextFuncId = mainFuncId + 1
- mainScope = Scope(moduleScope, mainFuncId, mainChunkIdx)
- emitter.scope = mainScope
+// Pass 2: compile __main__
+  mainChunkIdx = bc.func_new(entryName, 0, 64)
+  traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
+  // Create proper function scope for __main__ with moduleScope as parent
+  // Use the pre-allocated mainFuncId
+  mainFuncId = emitter.mainFuncId
+  mainScope = Scope(moduleScope, mainFuncId, mainChunkIdx)
+  emitter.scope = mainScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0
   while fi2 < #funcDecls {

@@ -7040,7 +7040,8 @@ void VM::traceInstruction(const Instruction& inst, const BytecodeFunction* func,
     oss << "]";
   }
 
-  ::havel::debug(oss.str());
+  // Output directly to stderr - trace should work regardless of debug log level
+  fprintf(stderr, "%s\n", oss.str().c_str());
 }
 
 } // namespace havel::compiler

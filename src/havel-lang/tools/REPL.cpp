@@ -1,4 +1,5 @@
 #include "REPL.hpp"
+#include "ReplInputQueue.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
@@ -24,6 +25,8 @@
 #include <poll.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <thread>
+#include <chrono>
 
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
@@ -382,6 +385,230 @@ void REPL::logOutput(const std::string& text) {
     if (outputLog_.is_open()) {
         outputLog_ << text;
         outputLog_.flush();
+    }
+}
+
+void REPL::replInputThreadEntry() {
+    replThreadRunning_.store(true);
+    
+    while (replThreadRunning_.load()) {
+        if (inputQueue_.is_shutdown()) {
+            break;
+        }
+
+        // Check for interrupt first
+        if (interrupted_.load()) {
+            interrupted_.store(false);
+            // Push empty line to signal interrupt
+            inputQueue_.push("");
+            continue;
+        }
+
+        // Read line using existing logic (blocking)
+        // We'll reuse the readline logic but without the event pump
+        std::string prompt = accumulatedInput.empty()
+            ? config_.prompt
+            : config_.continuePrompt;
+
+        std::string line = readLineNoPump(prompt);
+        
+        if (!replThreadRunning_.load()) {
+            break;
+        }
+
+        if (interrupted_.load()) {
+            interrupted_.store(false);
+            inputQueue_.push("");  // Signal interrupt
+            continue;
+        }
+
+        if (line.empty() && std::cin.eof()) {
+            if (accumulatedInput.empty()) {
+                inputQueue_.push("__EOF__");  // Special EOF marker
+            } else {
+                inputQueue_.push("");  // Clear accumulated input
+            }
+            std::cin.clear();
+            continue;
+        }
+
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\n\r"));
+        line.erase(line.find_last_not_of(" \t\n\r") + 1);
+        
+        if (line.empty() && accumulatedInput.empty()) {
+            continue;
+        }
+
+        // Push to queue for VM thread to process
+        inputQueue_.push(line);
+    }
+    
+    replThreadRunning_.store(false);
+}
+
+std::string REPL::readLineNoPump(const std::string& prompt) {
+    if (inputHandler_) {
+        return inputHandler_(prompt);
+    }
+
+#ifdef HAVE_READLINE
+    // Use standard readline (blocking) - no pump callback
+    char* line = readline(prompt.c_str());
+    if (line) {
+        std::string result(line);
+        free(line);
+        return result;
+    }
+    return "";
+#else
+    std::cout << prompt;
+    std::cout.flush();
+    std::string line;
+    char c = 0;
+    while (true) {
+        struct pollfd pfd;
+        pfd.fd = STDIN_FILENO;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int ret = poll(&pfd, 1, -1); // Block indefinitely
+        if (ret > 0) {
+            if (pfd.revents & POLLIN) {
+                char c = 0;
+                ssize_t n = read(STDIN_FILENO, &c, 1);
+                if (n > 0) {
+                    if (c == '\n' || c == '\r') {
+                        break;
+                    }
+                    line += c;
+                } else {
+                    if (n == 0) std::cin.setstate(std::ios::eofbit);
+                    break;
+                }
+            }
+        } else if (ret < 0 && errno != EINTR) {
+            break;
+        }
+    }
+    return line;
+#endif
+}
+
+void REPL::processPendingInput() {
+    while (auto line = inputQueue_.try_pop()) {
+        if (inputQueue_.is_shutdown()) {
+            break;
+        }
+
+        if (*line == "__EOF__") {
+            // EOF marker - exit REPL
+            std::cin.setstate(std::ios::eofbit);
+            accumulatedInput.clear();
+            return;
+        }
+
+        if (line->empty()) {
+            // Empty line could be interrupt signal or just empty input
+            if (interrupted_.load()) {
+                interrupted_.store(false);
+                std::cout << "^C\n";
+                accumulatedInput.clear();
+                return;
+            }
+            // Empty input - just continue
+            continue;
+        }
+
+        // Trim whitespace
+        line->erase(0, line->find_first_not_of(" \t\n\r"));
+        line->erase(line->find_last_not_of(" \t\n\r") + 1);
+
+        if (line->empty() && accumulatedInput.empty()) {
+            continue;
+        }
+
+        // Check for commands (only when not accumulating)
+        if (accumulatedInput.empty()) {
+            bool wasCommand = handleCommand(*line);
+            if (wasCommand) {
+                continue;  // Command was handled, don't accumulate
+            }
+        }
+
+        // Accumulate input
+        if (accumulatedInput.empty()) {
+            accumulatedInput = *line;
+        } else {
+            accumulatedInput += "\n" + *line;
+        }
+
+        // Check if input is complete
+        if (!isInputComplete(accumulatedInput)) {
+            continue;  // Need more input
+        }
+
+        // Add complete input to readline history (single or multi-line)
+#ifdef HAVE_READLINE
+        if (!accumulatedInput.empty()) {
+            add_history(accumulatedInput.c_str());
+        }
+#endif
+
+        // Execute accumulated input
+        bool wasInterrupted = interrupted_.load();
+        bool success = execute(accumulatedInput);
+
+        // Handle Ctrl-C during execution: break from loops/goroutines
+        if (interrupted_.load()) {
+            interrupted_.store(false);
+            wasInterrupted = true;
+        }
+        if (wasInterrupted) {
+            if (vm_) vm_->exit_requested_.store(false);
+            clearStopRequest();
+            auto* sched = vm_ ? vm_->getScheduler() : nullptr;
+            if (sched) {
+                sched->forEachGoroutine([](compiler::Scheduler::Goroutine* g) {
+                    if (g && g->persistent) {
+                        g->state = compiler::Scheduler::GoroutineState::Suspended;
+                        g->suspension_reason.store(
+                            compiler::Scheduler::SuspensionReason::HotkeyWait,
+                            std::memory_order_release);
+                        if (g->fiber) {
+                            g->fiber->state = compiler::FiberState::SUSPENDED;
+                            g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+                        }
+                    } else if (g && g->state != compiler::Scheduler::GoroutineState::Suspended) {
+                        g->state = compiler::Scheduler::GoroutineState::Done;
+                    }
+                });
+            }
+            std::cout << "\nKeyboardInterrupt\n";
+            consecutiveInterrupts_++;
+            if (consecutiveInterrupts_ >= 2) {
+                std::cout << "^C\nExiting...\n";
+                // Signal shutdown
+                replThreadRunning_.store(false);
+                inputQueue_.wake();
+                throw std::runtime_error("Double interrupt - exiting");
+            }
+        } else {
+consecutiveInterrupts_ = 0;
+        }
+
+        // Pump event loop callback (e.g., EventListener) on same thread after each execution
+        if (pumpCallback_) {
+            pumpCallback_();
+        }
+
+        // Reset for next input
+        accumulatedInput.clear();
+        
+        if (!success && config_.stopOnError) {
+            replThreadRunning_.store(false);
+            inputQueue_.wake();
+            throw std::runtime_error("Stop on error");
+        }
     }
 }
 
@@ -1002,147 +1229,45 @@ int REPL::run() {
 
     logOutput("=== Havel REPL session started at " + sessionStart_ + " ===\n");
 
-  accumulatedInput.clear();
+    accumulatedInput.clear();
     currentLine = 0;
     int consecutiveInterrupts = 0;
 
-    while (true) {
-        currentLine++;
+    // Start REPL input thread (separate thread for blocking read)
+    replThreadRunning_.store(true);
+    replInputThread_ = std::thread(&REPL::replInputThreadEntry, this);
 
-        // Check for interrupt
-        if (interrupted_.load()) {
-            interrupted_.store(false);
-            consecutiveInterrupts++;
-            if (!accumulatedInput.empty()) {
-                std::cout << "^C\nInput cleared. Press Ctrl-D to exit.\n";
-                accumulatedInput.clear();
-                continue;
-            }
-            if (consecutiveInterrupts >= 2) {
-                std::cout << "^C\nExiting...\n";
+    try {
+        // Main VM thread loop - processes input from queue
+        while (replThreadRunning_.load()) {
+            // Process any pending input from REPL thread
+            processPendingInput();
+
+            if (!replThreadRunning_.load()) {
                 break;
             }
-            std::cout << "^C\n(Press Ctrl-C again to exit, or Ctrl-D)\n";
-            continue;
+
+            // Pump VM scheduler to keep goroutines running
+            if (pumpCallback_) {
+                pumpCallback_();
+            }
+
+            // Small sleep to prevent busy-waiting when no input
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        consecutiveInterrupts = 0;
-
-    // Determine prompt
-    std::string prompt = accumulatedInput.empty()
-        ? (PROMPT_COLOR + config_.prompt + RESET_COLOR)
-        : (CONT_COLOR + config_.continuePrompt + RESET_COLOR);
-    
-    // Read input
-    std::string line = readLine(prompt);
-
-  // Check for interrupt after read
-  if (interrupted_.load()) {
-    interrupted_.store(false);
-    std::cout << "^C\n";
-    accumulatedInput.clear();
-    continue;
-  }
-
-  // Check for EOF (Ctrl-D)
-  if (line.empty() && std::cin.eof()) {
-    if (accumulatedInput.empty()) {
-      std::cout << "^D\nExiting...\n";
-      break;
-    } else {
-      std::cout << "^D\nInput cleared (press Ctrl-D again to exit).\n";
-      accumulatedInput.clear();
-      std::cin.clear();
-      continue;
-    }
-  }
-
-  // Trim whitespace
-  line.erase(0, line.find_first_not_of(" \t\n\r"));
-  line.erase(line.find_last_not_of(" \t\n\r") + 1);
-    
-    // Skip empty lines (unless accumulating)
-    if (line.empty() && accumulatedInput.empty()) {
-      continue;
-    }
-    
-    // Check for commands (only when not accumulating)
-    if (accumulatedInput.empty()) {
-      bool wasCommand = handleCommand(line);
-      if (wasCommand) {
-        continue;  // Command was handled, don't accumulate
-      }
-    }
-    
-    // Accumulate input
-    if (accumulatedInput.empty()) {
-      accumulatedInput = line;
-    } else {
-      accumulatedInput += "\n" + line;
+    } catch (const std::exception& e) {
+        // Handle exceptions from processPendingInput (exit, error, etc.)
+        printError(e.what());
     }
 
-    // Check if input is complete
-    if (!isInputComplete(accumulatedInput)) {
-      continue;  // Need more input
-    }
-    
-    // Add complete input to readline history (single or multi-line)
-#ifdef HAVE_READLINE
-    if (!accumulatedInput.empty()) {
-      add_history(accumulatedInput.c_str());
-    }
-#endif
-    
-    // Execute accumulated input
-    bool wasInterrupted = interrupted_.load();
-    bool success = execute(accumulatedInput);
+    // Signal REPL thread to stop
+    replThreadRunning_.store(false);
+    inputQueue_.wake();
 
-    // Handle Ctrl-C during execution: break from loops/goroutines
-    if (interrupted_.load()) {
-        interrupted_.store(false);
-        wasInterrupted = true;
+    // Wait for REPL thread to finish
+    if (replInputThread_.joinable()) {
+        replInputThread_.join();
     }
-    if (wasInterrupted) {
-        if (vm_) vm_->exit_requested_.store(false);
-        clearStopRequest();
-        auto* sched = vm_ ? vm_->getScheduler() : nullptr;
-        if (sched) {
-            sched->forEachGoroutine([](compiler::Scheduler::Goroutine* g) {
-                if (g && g->persistent) {
-                    g->state = compiler::Scheduler::GoroutineState::Suspended;
-                    g->suspension_reason.store(
-                        compiler::Scheduler::SuspensionReason::HotkeyWait,
-                        std::memory_order_release);
-                    if (g->fiber) {
-                        g->fiber->state = compiler::FiberState::SUSPENDED;
-                        g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
-                    }
-                } else if (g && g->state != compiler::Scheduler::GoroutineState::Suspended) {
-                    g->state = compiler::Scheduler::GoroutineState::Done;
-                }
-            });
-        }
-        std::cout << "\nKeyboardInterrupt\n";
-        consecutiveInterrupts++;
-        if (consecutiveInterrupts >= 2) {
-            std::cout << "^C\nExiting...\n";
-            break;
-        }
-    } else {
-        consecutiveInterrupts = 0;
-    }
-
-    // Pump event loop callback (e.g., EventListener) on same thread after each execution
-    if (pumpCallback_) {
-      pumpCallback_();
-    }
-
-    // Reset for next input
-    accumulatedInput.clear();
-    
-    if (!success && config_.stopOnError) {
-        break; // Stop on error
-    }
-}
 
     logOutput("=== Havel REPL session ended at " + sessionStart_ + " ===\n");
 

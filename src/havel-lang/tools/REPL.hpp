@@ -14,12 +14,14 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "ReplInputQueue.hpp"
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <atomic>
 #include <fstream>
+#include <thread>
 
 namespace havel { class IHostAPI; }
 
@@ -216,6 +218,13 @@ private:
     // Interrupt flag for Ctrl-C handling
     static std::atomic<bool> interrupted_;
 
+    // Input queue for REPL thread -> VM thread communication
+    havel::repl::ReplInputQueue inputQueue_;
+
+    // REPL input thread (separate from VM thread)
+    std::thread replInputThread_;
+    std::atomic<bool> replThreadRunning_{false};
+
     // Output log stream (append to file)
     std::ofstream outputLog_;
 
@@ -245,6 +254,18 @@ private:
 
     // Debug callback for hvdb mode
     void replDebugCallback();
+
+    // REPL input thread entry point
+    void replInputThreadEntry();
+
+    // Process pending input from queue
+    void processPendingInput();
+
+    // Readline without event pump (for REPL thread)
+    std::string readLineNoPump(const std::string& prompt);
+
+    // Consecutive interrupt counter for double-Ctrl-C exit
+    int consecutiveInterrupts_ = 0;
 
     friend void replSignalHandler(int sig);
 };

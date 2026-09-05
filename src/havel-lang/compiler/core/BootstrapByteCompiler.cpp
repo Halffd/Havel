@@ -1999,7 +1999,19 @@ void ByteCompiler::collectParameterPatternSlots(
 }
 
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
-  auto source_scope = atNode(statement);
+  // ExpressionStatement nodes carry the position of the NEXT token
+  // (parser builds them after consuming the statement). Anchor the scope
+  // at the wrapped expression instead so trailing POPs and statement-level
+  // emits map to the statement's real start line.
+  const ast::ASTNode *anchor = &statement;
+  if (statement.kind == ast::NodeType::ExpressionStatement) {
+    const auto &expr_stmt =
+        static_cast<const ast::ExpressionStatement &>(statement);
+    if (expr_stmt.expression) {
+      anchor = expr_stmt.expression.get();
+    }
+  }
+  auto source_scope = atNode(*anchor);
   switch (statement.kind) {
   case ast::NodeType::ExpressionStatement: {
     const auto &expr_stmt =

@@ -6859,21 +6859,19 @@ bool VM::checkDebugBreak() {
   auto &frame = frame_arena_[frame_count_ - 1];
   auto *func = frame.function;
   auto loc = nearestSourceLocation(*func, frame.ip);
-
-  // Track breakpoint hits for suppression (runs for all step modes)
-  // This ensures suppression variables are set even during single-stepping
   std::string filename =
       loc.filename.empty() ? func->source_file : loc.filename;
-  if (!filename.empty() && loc.line > 0 && hasBreakpoint(filename, loc.line)) {
-    // Track the last breakpoint hit for suppression
-    debug_last_break_file_ = filename;
-    debug_last_break_line_ = loc.line;
-    debug_last_break_depth_ = frame_count_;
-  }
+  bool atBreakpoint =
+      !filename.empty() && loc.line > 0 && hasBreakpoint(filename, loc.line);
 
   if (debug_step_mode_ == DebugStepMode::StepInto) {
     if (loc.line > 0) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
@@ -6882,6 +6880,11 @@ bool VM::checkDebugBreak() {
   if (debug_step_mode_ == DebugStepMode::StepOver) {
     if (loc.line > 0 && frame_count_ <= debug_step_frame_depth_) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
@@ -6890,28 +6893,32 @@ bool VM::checkDebugBreak() {
   if (debug_step_mode_ == DebugStepMode::StepOut) {
     if (loc.line > 0 && frame_count_ < debug_step_frame_depth_) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
   }
 
-  // Breakpoint check - use instruction location filename or fall back to
-  // function source_file
-  // (filename already computed above)
-  if (!filename.empty() && loc.line > 0) {
-    if (hasBreakpoint(filename, loc.line)) {
-      // Suppress repeated hits on the same line when continuing
-      bool suppress = (debug_step_mode_ == DebugStepMode::Continue &&
-                       filename == debug_last_break_file_ &&
-                       loc.line == debug_last_break_line_);
-      if (suppress) {
-        return false;
-      }
-      debug_last_break_file_ = filename;
-      debug_last_break_line_ = loc.line;
-      debug_last_break_depth_ = frame_count_;
-      return true;
+  // Breakpoint check. Suppression state is only recorded when a break is
+  // actually reported, never pre-emptively, otherwise the first hit of a
+  // freshly-set breakpoint is swallowed (the pre-check "track" block would
+  // mark the current location as already-broken before the check runs).
+  if (atBreakpoint) {
+    // Suppress repeated hits on the same line when continuing
+    bool suppress = (debug_step_mode_ == DebugStepMode::Continue &&
+                     filename == debug_last_break_file_ &&
+                     loc.line == debug_last_break_line_);
+    if (suppress) {
+      return false;
     }
+    debug_last_break_file_ = filename;
+    debug_last_break_line_ = loc.line;
+    debug_last_break_depth_ = frame_count_;
+    return true;
   }
 
   // Clear same-line suppression when we've moved past the breakpoint line

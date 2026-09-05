@@ -22,6 +22,7 @@ enum class PassType {
   // Optimization passes
   Inlining,           // Inline hot call sites
   LICM,               // Loop-invariant code motion
+  FastIntegerLowering, // Lower ADD/SUB/MUL/INT_DIV/REMAINDER to _INT opcodes
   // Analysis passes
   TypeInference,      // Infer types for locals
   LivenessAnalysis,   // Compute liveness for register allocation
@@ -235,6 +236,30 @@ public:
   }
   std::vector<std::string> modified_state() const override {
     return {Analysis::kCFG};
+  }
+
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                 const BytecodeChunk& chunk) override;
+};
+
+// Lowers generic arithmetic to the fast integer opcodes when the operand
+// types are provably int. Rewrites are value-preserving: ADD/SUB/MUL int
+// semantics are identical to their _INT variants (VMArithmetic int path),
+// INT_DIV lowers to DIV_INT and REMAINDER to MOD_INT (both plain C %).
+// DIV (double result) and MOD (sign-adjusted) have no _INT equivalent and
+// are never rewritten.
+class FastIntegerLoweringPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::FastIntegerLowering; }
+  std::string name() const override { return "FastIntegerLowering"; }
+  std::vector<PassType> dependencies() const override {
+    return {PassType::TypePropagation};
+  }
+  std::vector<std::string> preserved_analyses() const override {
+    return {Analysis::kCFG, Analysis::kLiveness};
+  }
+  std::vector<std::string> modified_state() const override {
+    return {Analysis::kTypeState};
   }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,

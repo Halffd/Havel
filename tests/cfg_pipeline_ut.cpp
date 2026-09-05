@@ -1134,5 +1134,126 @@ TEST_F(CFGPipelineTest, FlattenPreservesConditionalFallThrough) {
             7);
 }
 
+// ===== Fast Integer Lowering =====
+
+// ADD of two int-typed locals must lower to ADD_INT; a mixed int/number
+// addition must stay ADD. The local type proof comes from
+// TypePropagationAnalysis (locals holding only int constants).
+TEST_F(CFGPipelineTest, FastIntegerLoweringProvenInts) {
+  FunctionBuilder fb("fl1", 0, 2);
+  fb.load_const(Value::makeInt(3));
+  fb.store_var(0);
+  fb.load_const(Value::makeInt(4));
+  fb.store_var(1);
+  fb.load_var(0);
+  fb.load_var(1);
+  fb.add();  // int + int -> ADD_INT
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+  ASSERT_TRUE(res.valid);
+
+  bool saw_add_int = false;
+  bool saw_add = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::ADD_INT) saw_add_int = true;
+    if (inst.opcode == OpCode::ADD) saw_add = true;
+  }
+  EXPECT_TRUE(saw_add_int) << "int + int must lower to ADD_INT";
+  EXPECT_FALSE(saw_add) << "generic ADD must be gone";
+}
+
+TEST_F(CFGPipelineTest, FastIntegerLoweringKeepsMixedNumeric) {
+  FunctionBuilder fb("fl2", 0, 2);
+  fb.load_const(Value::makeInt(3));
+  fb.store_var(0);
+  fb.load_const(Value::makeDouble(1.5));
+  fb.store_var(1);
+  fb.load_var(0);
+  fb.load_var(1);
+  fb.add();  // int + number -> stays ADD (double semantics)
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+  ASSERT_TRUE(res.valid);
+
+  for (const auto& inst : f.blocks[0].instructions) {
+    EXPECT_NE(inst.opcode, OpCode::ADD_INT)
+        << "int + double must not lower to ADD_INT";
+  }
+}
+
+// INT_DIV between proven ints lowers to DIV_INT; the division-by-zero error
+// path must still throw with the same message (semantic equivalence).
+TEST_F(CFGPipelineTest, FastIntegerLoweringIntDiv) {
+  FunctionBuilder fb("fl3", 0, 2);
+  fb.load_const(Value::makeInt(9));
+  fb.store_var(0);
+  fb.load_const(Value::makeInt(3));
+  fb.store_var(1);
+  fb.load_var(0);
+  fb.load_var(1);
+  fb.push(OpCode::INT_DIV);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+  ASSERT_TRUE(res.valid);
+
+  bool saw_div_int = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::DIV_INT) saw_div_int = true;
+  }
+  EXPECT_TRUE(saw_div_int) << "INT_DIV of proven ints must lower to DIV_INT";
+}
+
+// The real-compiler path: a function whose local provably holds ints must
+// round-trip through the optimizer with the arithmetic lowered.
+TEST_F(CFGPipelineTest, OptimizeDriverLowersFastIntArithmetic) {
+  namespace cfi = havel::compiler::cfgintegration;
+  BytecodeFunction f("fl4", 0, 2);
+  f.constants.push_back(Value::makeInt(2));   // pool 0
+  f.constants.push_back(Value::makeInt(40));  // pool 1
+  f.local_count = 2;
+
+  // a = 40; b = 2; a = a + b (LOAD_CONST pool refs); return a
+  auto LC = [&](int64_t p) {
+    return Instruction(OpCode::LOAD_CONST, {Value::makeInt(p)});
+  };
+  f.instructions.push_back(LC(1));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(LC(0));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(1)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(1)}));
+  f.instructions.push_back(Instruction(OpCode::ADD));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+
+  cfi::OptimizeStats stats;
+  BytecodeChunk chunk;
+  ASSERT_TRUE(cfi::optimize_function_cfg(f, chunk, &stats));
+  EXPECT_EQ(stats.functions_optimized, 1u);
+
+  bool saw_add_int = false;
+  for (const auto& inst : f.instructions) {
+    if (inst.opcode == OpCode::ADD_INT) saw_add_int = true;
+    EXPECT_NE(inst.opcode, OpCode::ADD) << "generic ADD must be lowered";
+  }
+  EXPECT_TRUE(saw_add_int) << "a + b of int locals must lower to ADD_INT";
+}
+
 }  // namespace
 }  // namespace havel::compiler

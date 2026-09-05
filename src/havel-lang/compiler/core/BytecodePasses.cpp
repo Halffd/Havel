@@ -1394,6 +1394,175 @@ public:
   }
 };
 
+// ===== Fast Integer Lowering Pass =====
+//
+// Rewrites generic arithmetic opcodes to their fast integer variants when the
+// operand types are provably int at the operation site:
+//
+//   ADD -> ADD_INT, SUB -> SUB_INT, MUL -> MUL_INT,
+//   INT_DIV -> DIV_INT, REMAINDER -> MOD_INT
+//
+// Soundness: on the int/int path in execBinaryOp (VMArithmetic.cpp) the
+// generic opcodes produce the exact same result as the _INT variants
+// (including the divide/modulo-by-zero runtime error), so the rewrite is
+// value-preserving. DIV (double result) and MOD (sign-adjusted remainder)
+// have no _INT equivalent and are left alone. The operand proof walks each
+// block with an abstract type stack seeded from the TypePropagationAnalysis
+// fixpoint masks; an operand whose mask contains any non-INT bit (or whose
+// local mask is unknown) blocks the rewrite for that site.
+//
+// The rewrite must run AFTER TypePropagation (dependencies()) since it
+// relies on the inferred local masks.
+
+PassResult FastIntegerLoweringPass::run(std::vector<BasicBlock>& blocks,
+                                        BytecodeFunction& func,
+                                        const BytecodeChunk& chunk) {
+  PassResult result;
+  (void)chunk;
+
+  if (blocks.empty()) return result;
+
+  TypePropagationAnalysis analysis;
+  const auto local_masks = analysis.run(blocks, func);
+
+  using TypeMask = TypePropagationAnalysis::TypeMask;
+  const TypeMask INT = TYPE_HINT_INT;
+  const TypeMask UNKNOWN = TypePropagationAnalysis::ALL_TYPES;
+
+  for (auto& block : blocks) {
+    // Abstract operand stack: a mask per pushed value.
+    std::vector<TypeMask> stack;
+
+    auto pop = [&]() -> TypeMask {
+      if (stack.empty()) return UNKNOWN;
+      TypeMask m = stack.back();
+      stack.pop_back();
+      return m == 0 ? UNKNOWN : m;
+    };
+
+    for (auto& inst : block.instructions) {
+      switch (inst.opcode) {
+        case OpCode::LOAD_CONST:
+          if (!inst.operands.empty()) {
+            stack.push_back(TypePropagationAnalysis::hint_for_const(
+                inst.operands[0]));
+          } else {
+            stack.push_back(UNKNOWN);
+          }
+          break;
+        case OpCode::PUSH_NULL:
+          stack.push_back(TYPE_HINT_NULL);
+          break;
+        case OpCode::LOAD_VAR: {
+          uint64_t idx = UINT64_MAX;
+          if (!inst.operands.empty() && inst.operands[0].isInt()) {
+            idx = static_cast<uint64_t>(inst.operands[0].asInt());
+          }
+          stack.push_back(idx < local_masks.size() && local_masks[idx] != 0
+                              ? local_masks[idx]
+                              : UNKNOWN);
+          break;
+        }
+        case OpCode::STORE_VAR:
+        case OpCode::STORE_IMMUT_VAR:
+          (void)pop();
+          break;
+        case OpCode::POP:
+          (void)pop();
+          break;
+        case OpCode::DUP: {
+          TypeMask t = pop();
+          stack.push_back(t);
+          stack.push_back(t);
+          break;
+        }
+        case OpCode::SWAP: {
+          TypeMask a = pop();
+          TypeMask b = pop();
+          stack.push_back(a);
+          stack.push_back(b);
+          break;
+        }
+        case OpCode::LOAD_GLOBAL:
+        case OpCode::LOAD_UPVALUE:
+        case OpCode::CLOSURE:
+          stack.push_back(UNKNOWN);
+          break;
+        case OpCode::STORE_GLOBAL:
+        case OpCode::STORE_IMMUT_GLOBAL:
+        case OpCode::STORE_UPVALUE:
+          (void)pop();
+          break;
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::INT_DIV:
+        case OpCode::REMAINDER: {
+          TypeMask r = pop();
+          TypeMask l = pop();
+          if (l == INT && r == INT) {
+            switch (inst.opcode) {
+              case OpCode::ADD: inst.opcode = OpCode::ADD_INT; break;
+              case OpCode::SUB: inst.opcode = OpCode::SUB_INT; break;
+              case OpCode::MUL: inst.opcode = OpCode::MUL_INT; break;
+              case OpCode::INT_DIV: inst.opcode = OpCode::DIV_INT; break;
+              case OpCode::REMAINDER: inst.opcode = OpCode::MOD_INT; break;
+              default: break;
+            }
+            result.modified = true;
+            result.messages.push_back(
+                "FastIntegerLowering: lowered arithmetic to _INT opcode");
+            stack.push_back(INT);
+          } else {
+            // Result type unknown for the generic op (could be int, double,
+            // or an object dispatch result).
+            stack.push_back(UNKNOWN);
+          }
+          break;
+        }
+        case OpCode::DIV:
+        case OpCode::MOD:
+        case OpCode::DIVMOD:
+        case OpCode::POW: {
+          // Kept generic: DIV yields double, MOD is sign-adjusted, DIVMOD
+          // allocates, POW goes through std::pow.
+          (void)pop();
+          (void)pop();
+          stack.push_back(UNKNOWN);
+          break;
+        }
+        case OpCode::ADD_INT:
+        case OpCode::SUB_INT:
+        case OpCode::MUL_INT:
+        case OpCode::DIV_INT:
+        case OpCode::MOD_INT: {
+          (void)pop();
+          (void)pop();
+          stack.push_back(UNKNOWN);
+          break;
+        }
+        case OpCode::NEGATE: {
+          TypeMask t = pop();
+          stack.push_back(t == INT ? INT : UNKNOWN);
+          break;
+        }
+        case OpCode::CALL:
+        case OpCode::TAIL_CALL:
+          stack.clear();
+          stack.push_back(UNKNOWN);
+          break;
+        default:
+          // Conservative: assume one unknown result pushed (covers EQ/LT/
+          // bit ops -> bool, and everything with unmodeled stack effects).
+          stack.push_back(UNKNOWN);
+          break;
+      }
+    }
+  }
+
+  return result;
+}
+
 // ===== Pass Factory =====
 
 std::unique_ptr<BytecodePass> create_pass(PassType type) {
@@ -1412,6 +1581,8 @@ std::unique_ptr<BytecodePass> create_pass(PassType type) {
       return std::make_unique<InliningPass>();
     case PassType::LICM:
       return std::make_unique<LICMPass>();
+    case PassType::FastIntegerLowering:
+      return std::make_unique<FastIntegerLoweringPass>();
     case PassType::Validation:
       return std::make_unique<ValidationPass>();
     default:
@@ -1430,6 +1601,8 @@ std::unique_ptr<PassManager> create_standard_pipeline() {
   pm->add_pass(std::make_unique<CopyPropagationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<TypePropagationPass>());
+  pm->add_pass(std::make_unique<ValidationPass>());
+  pm->add_pass(std::make_unique<FastIntegerLoweringPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<DeadCodeEliminationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());

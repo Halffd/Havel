@@ -9,6 +9,7 @@
 
 #include "BytecodeIR.hpp"
 #include "BytecodePasses.hpp"
+#include "Backend.hpp"
 #include "CFGIntegration.hpp"
 #include "DataflowAnalysis.hpp"
 #include "InstructionEffects.hpp"
@@ -1135,6 +1136,85 @@ TEST_F(CFGPipelineTest, FlattenPreservesConditionalFallThrough) {
             OpCode::LOAD_CONST);
   EXPECT_EQ(lin.instructions[static_cast<size_t>(target)].operands[0].asInt(),
             7);
+}
+
+// ===== Compiler backend abstraction (TODO #18/#19) =====
+
+// The VM backend reports every named function as available and compiles
+// anything: the interpreter executes bytecode directly, so "compilation" is
+// a no-op marker (TODO #19: the interpreter is the simplest backend).
+TEST_F(CFGPipelineTest, VMBbackendAlwaysAvailable) {
+  VMBbackend backend;
+  EXPECT_STREQ(backend.name(), "vm");
+
+  BytecodeFunction f("vm_backend_probe", 0, 0);
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+  EXPECT_TRUE(backend.compile(f));
+  EXPECT_TRUE(backend.is_compiled("vm_backend_probe"));
+  EXPECT_FALSE(backend.is_compiled(""));
+
+  // compile_module over a chunk with a real function succeeds.
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("m1", 0, 0));
+  EXPECT_TRUE(backend.compile_module(chunk));
+}
+
+// The JIT adapter delegates to the legacy JITCompiler interface and, with no
+// JIT attached, degrades gracefully instead of crashing.
+TEST_F(CFGPipelineTest, JITCompilerBackendNullJITDegrades) {
+  JITCompilerBackend backend(nullptr);
+  EXPECT_STREQ(backend.name(), "llvm-orc");
+
+  BytecodeFunction f("jit_backend_probe", 0, 0);
+  EXPECT_FALSE(backend.compile(f));
+  EXPECT_FALSE(backend.compile_tier(f, 2));
+  EXPECT_FALSE(backend.is_compiled("jit_backend_probe"));
+  EXPECT_EQ(backend.legacy(), nullptr);
+
+  // Diagnostic knobs must be no-ops rather than dereference a null JIT.
+  backend.set_debug_mode(true);
+  backend.set_dump_ir(true);
+  backend.set_dump_asm(true);
+  backend.set_show_warnings(true);
+  backend.set_optimization_level(2);
+}
+
+// A stub JIT proves the adapter forwards the legacy calls.
+namespace {
+class StubJIT : public JITCompiler {
+public:
+  void compileFunction(const BytecodeFunction& func) override {
+    last_name = func.name;
+    compiled_count++;
+  }
+  Value executeCompiled(VM*, const std::string&,
+                        const std::vector<Value>&) override {
+    return Value::makeNull();
+  }
+  bool isCompiled(const std::string& func_name) const override {
+    return func_name == "hot_one";
+  }
+  std::string last_name;
+  int compiled_count = 0;
+};
+}  // namespace
+
+TEST_F(CFGPipelineTest, JITCompilerBackendForwardsLegacyInterface) {
+  auto stub = std::make_unique<StubJIT>();
+  StubJIT* stub_raw = stub.get();
+  JITCompilerBackend backend(std::move(stub));
+
+  BytecodeFunction f("forwarded", 0, 0);
+  EXPECT_TRUE(backend.compile(f));
+  EXPECT_EQ(stub_raw->last_name, "forwarded");
+  EXPECT_EQ(stub_raw->compiled_count, 1);
+
+  EXPECT_TRUE(backend.compile_tier(f, 2));
+  EXPECT_EQ(stub_raw->compiled_count, 2);
+
+  EXPECT_TRUE(backend.is_compiled("hot_one"));
+  EXPECT_FALSE(backend.is_compiled("cold_one"));
+  EXPECT_EQ(backend.legacy(), stub_raw);
 }
 
 // ===== Runtime ABI =====

@@ -8,6 +8,7 @@
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
 #ifdef HAVEL_ENABLE_LLVM
+#include "../compiler/core/Backend.hpp"
 #include "../compiler/BytecodeOrcJIT.h"
 #endif
 #include "HostAPI.hpp"
@@ -133,9 +134,14 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             });
             auto* existingJIT = vm_->getJITCompiler();
             if (!existingJIT) {
-                jitCompiler_ = std::make_unique<compiler::BytecodeOrcJIT>();
-                existingJIT = jitCompiler_.get();
-                vm_->setJITCompiler(std::move(jitCompiler_));
+                vm_->setJITCompiler(
+                    std::make_unique<compiler::BytecodeOrcJIT>());
+                existingJIT = vm_->getJITCompiler();
+                // Backend abstraction boundary (TODO #18): engine-side
+                // access goes through CompilerBackend; the VM keeps single
+                // ownership of the legacy JITCompiler for its tiering hooks.
+                backend_ =
+                    std::make_unique<compiler::JITCompilerBackend>(existingJIT);
             }
             vm_->setHotTraceCallback([existingJIT](const compiler::BytecodeFunction& func,
                                                  uint32_t start_ip,
@@ -740,11 +746,12 @@ vm_->addIntervalResult(timer_id, result);
             modules_->shutdown();
         }
         if (vm_) {
+#ifdef HAVEL_ENABLE_LLVM
+            // Drop the backend view before the VM deletes the JIT it owns.
+            backend_.reset();
+#endif
             vm_->setJITCompiler(nullptr);
         }
-#ifdef HAVEL_ENABLE_LLVM
-        jitCompiler_.reset();
-#endif
         vm_.reset();
         modules_.reset();
         hostContext_.reset();
@@ -759,7 +766,10 @@ private:
     std::shared_ptr<WindowManager> windowManager_;
     std::shared_ptr<BrightnessManager> brightnessManager_;
 #ifdef HAVEL_ENABLE_LLVM
-    std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
+    // Backend abstraction (TODO #18): the engine owns the ORC JIT through the
+    // CompilerBackend boundary. The VM's tiering hooks keep talking to the
+    // legacy JITCompiler interface (setJITCompiler), reached via legacy().
+    std::unique_ptr<compiler::CompilerBackend> backend_;
 #endif
     std::unique_ptr<HostContext> hostContext_;
     std::shared_ptr<Modules> modules_;

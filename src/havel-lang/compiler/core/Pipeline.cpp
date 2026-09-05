@@ -1011,8 +1011,8 @@ for (const auto &err : parser.getErrors()) {
     COMPILER_THROW(formatted);
   }
 
-  VM owned_vm;
-  VM *vm = options.vm_override ? options.vm_override : &owned_vm;
+  std::unique_ptr<VM> owned_vm;
+  VM *vm = options.vm_override ? options.vm_override : (owned_vm = std::make_unique<VM>(), owned_vm.get());
   for (const auto &[name, fn] : options.host_functions) {
     vm->registerHostFunction(name, fn);
     // registerHostFunction already adds to globals

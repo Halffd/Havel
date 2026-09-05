@@ -3500,6 +3500,9 @@ void VM::drainFinalizers() {
 void VM::collectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  if (trace_gc_) {
+    traceGC("Starting garbage collection");
+  }
   std::vector<Value> scheduler_roots;
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
@@ -3513,6 +3516,9 @@ void VM::collectGarbage() {
                          return locals[index];
                        },
                        scheduler_roots);
+  if (trace_gc_) {
+    traceGC("Garbage collection completed");
+  }
 }
 
 void VM::stepGarbageCollection(size_t work_budget) {
@@ -5712,12 +5718,13 @@ load_from_source:
   for (const auto &[name, value] : globals) {
     if (name.empty() || name[0] == '_')
       continue;
-    // When shadowing a host module, skip Havel wrappers that have the same
+    // When shadowing a host module, skip Havel functions that have the same
     // name as an existing host function on the host module object — the
     // host function is already available and adding a wrapper that calls
     // config.<name>() would cause infinite recursion (config == exports).
-    if (shadowingHostModule && hostModuleFuncNames.count(name) &&
-        value.isClosureId())
+    // Values can be ClosureId (cached .hvc loads) or FunctionObjId (fresh
+    // source compile) — match by NAME, not value flavor.
+    if (shadowingHostModule && hostModuleFuncNames.count(name))
       continue;
     // Skip inherited globals UNLESS the module redefined them
     // (i.e., the value is different from what was inherited)
@@ -6860,10 +6867,19 @@ bool VM::checkDebugBreak() {
   auto &frame = frame_arena_[frame_count_ - 1];
   auto *func = frame.function;
   auto loc = nearestSourceLocation(*func, frame.ip);
+  std::string filename =
+      loc.filename.empty() ? func->source_file : loc.filename;
+  bool atBreakpoint =
+      !filename.empty() && loc.line > 0 && hasBreakpoint(filename, loc.line);
 
   if (debug_step_mode_ == DebugStepMode::StepInto) {
     if (loc.line > 0) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
@@ -6872,6 +6888,11 @@ bool VM::checkDebugBreak() {
   if (debug_step_mode_ == DebugStepMode::StepOver) {
     if (loc.line > 0 && frame_count_ <= debug_step_frame_depth_) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
@@ -6880,35 +6901,43 @@ bool VM::checkDebugBreak() {
   if (debug_step_mode_ == DebugStepMode::StepOut) {
     if (loc.line > 0 && frame_count_ < debug_step_frame_depth_) {
       debug_step_mode_ = DebugStepMode::Continue;
+      if (atBreakpoint) {
+        debug_last_break_file_ = filename;
+        debug_last_break_line_ = loc.line;
+        debug_last_break_depth_ = frame_count_;
+      }
       return true;
     }
     return false;
   }
 
-  // Breakpoint check - use instruction location filename or fall back to
-  // function source_file
-  std::string filename =
-      loc.filename.empty() ? func->source_file : loc.filename;
-  if (!filename.empty() && loc.line > 0) {
-    if (hasBreakpoint(filename, loc.line)) {
-      if (debug_step_mode_ == DebugStepMode::Continue &&
-          filename == debug_last_break_file_ &&
-          loc.line == debug_last_break_line_) {
-        return false;
-      }
-      debug_last_break_file_ = filename;
-      debug_last_break_line_ = loc.line;
-      debug_last_break_depth_ = frame_count_;
-      return true;
+  // Breakpoint check. Suppression state is only recorded when a break is
+  // actually reported, never pre-emptively, otherwise the first hit of a
+  // freshly-set breakpoint is swallowed (the pre-check "track" block would
+  // mark the current location as already-broken before the check runs).
+  if (atBreakpoint) {
+    // Suppress repeated hits on the same line when continuing
+    bool suppress = (debug_step_mode_ == DebugStepMode::Continue &&
+                     filename == debug_last_break_file_ &&
+                     loc.line == debug_last_break_line_);
+    if (suppress) {
+      return false;
     }
+    debug_last_break_file_ = filename;
+    debug_last_break_line_ = loc.line;
+    debug_last_break_depth_ = frame_count_;
+    return true;
   }
 
   // Clear same-line suppression when we've moved past the breakpoint line
-  // in the same or parent frame (not in sub-function calls)
+  // within the same source file at or above the break's frame depth. Never
+  // clear while location info is missing or while executing another file's
+  // code (e.g. a freshly loaded module's init): otherwise every top-level
+  // `use` clears the state and re-fires the previous breakpoint.
   if (debug_step_mode_ == DebugStepMode::Continue &&
       debug_last_break_line_ > 0 && frame_count_ <= debug_last_break_depth_ &&
-      (filename != debug_last_break_file_ ||
-       loc.line != debug_last_break_line_)) {
+      !filename.empty() && filename == debug_last_break_file_ &&
+      loc.line > 0 && loc.line != debug_last_break_line_) {
     debug_last_break_line_ = 0;
     debug_last_break_file_.clear();
     debug_last_break_depth_ = 0;
@@ -6917,9 +6946,11 @@ bool VM::checkDebugBreak() {
   return false;
 }
 
-void VM::attachDebugger() { debugger_attached_ = true; }
+void VM::attachDebugger() { 
+    debugger_attached_ = true; 
+  }
 
-void VM::detachDebugger() {
+  void VM::detachDebugger() {
   debugger_attached_ = false;
   debug_step_mode_ = DebugStepMode::Continue;
   debug_breakpoints_.clear();
@@ -7047,7 +7078,49 @@ void VM::traceInstruction(const Instruction& inst, const BytecodeFunction* func,
     oss << "]";
   }
 
-  ::havel::debug(oss.str());
+  // Output directly to stderr - trace should work regardless of debug log level
+  fprintf(stderr, "%s\n", oss.str().c_str());
 }
 
 } // namespace havel::compiler
+
+// Trace helper methods
+void havel::compiler::VM::traceGC(const std::string& message) const {
+  if (!trace_gc_) return;
+  fprintf(stderr, "[TRACE:GC] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceScheduler(const std::string& message) const {
+  if (!trace_scheduler_) return;
+  fprintf(stderr, "[TRACE:SCHED] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceCall(const std::string& message) const {
+  if (!trace_calls_) return;
+  fprintf(stderr, "[TRACE:CALL] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceGlobal(const std::string& message) const {
+  if (!trace_globals_) return;
+  fprintf(stderr, "[TRACE:GLOBAL] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceChannel(const std::string& message) const {
+  if (!trace_channels_) return;
+  fprintf(stderr, "[TRACE:CHAN] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceHotkey(const std::string& message) const {
+  if (!trace_hotkeys_) return;
+  fprintf(stderr, "[TRACE:HOTKEY] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceWhen(const std::string& message) const {
+  if (!trace_when_) return;
+  fprintf(stderr, "[TRACE:WHEN] %s\n", message.c_str());
+}
+
+void havel::compiler::VM::traceAsync(const std::string& message) const {
+  if (!trace_async_) return;
+  fprintf(stderr, "[TRACE:ASYNC] %s\n", message.c_str());
+}

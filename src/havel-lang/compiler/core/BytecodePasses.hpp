@@ -3,6 +3,7 @@
 #include "BytecodeIR.hpp"
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,17 @@ struct PassResult {
   }
 };
 
+// Analysis names used by BytecodePass analysis contracts. Central names avoid
+// typo-driven desyncs between pass declarations and the manager's tracking.
+namespace Analysis {
+inline constexpr const char* kCFG = "cfg";
+inline constexpr const char* kLocals = "locals";
+inline constexpr const char* kConstantState = "constant_state";
+inline constexpr const char* kLiveness = "liveness";
+inline constexpr const char* kTypeState = "type_state";
+inline constexpr const char* kCopyState = "copy_state";
+}  // namespace Analysis
+
 // Base pass interface
 class BytecodePass {
 public:
@@ -51,22 +63,33 @@ public:
   virtual PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) = 0;
   virtual bool requires_validation() const { return true; }
   virtual std::vector<PassType> dependencies() const { return {}; }
+
+  // Analysis contract (TODO.md #9). Each pass declares which analyses it
+  // requires (must be valid before it runs), which it preserves (still valid
+  // after it runs), and which it invalidates/modifies. The manager enforces
+  // the required side by skipping a pass whose requirements are unavailable.
+  virtual std::vector<std::string> required_analyses() const { return {}; }
+  virtual std::vector<std::string> preserved_analyses() const { return {}; }
+  virtual std::vector<std::string> modified_state() const { return {}; }
 };
 
 // Pass manager - runs passes in order with validation
 class PassManager {
   std::vector<std::unique_ptr<BytecodePass>> passes;
   bool validate_after_each = true;
-  
+  // Analyses known to still be valid. Starts with the CFG (passes operate on
+  // CFG form); the manager removes entries a pass declares it modified.
+  std::set<std::string> available_analyses = {Analysis::kCFG};
+
 public:
   PassManager() = default;
-  
+
   void add_pass(std::unique_ptr<BytecodePass> pass) {
     passes.push_back(std::move(pass));
   }
-  
+
   void set_validation(bool enabled) { validate_after_each = enabled; }
-  
+
   PassResult run_all(std::vector<BasicBlock>& blocks, BytecodeFunction& func) {
     PassResult total;
     for (auto& pass : passes) {
@@ -74,10 +97,29 @@ public:
       for (PassType dep : pass->dependencies()) {
         // In a full implementation, track which passes have run
       }
-      
+
+      // Skip if a required analysis was invalidated by an earlier pass.
+      std::vector<std::string> missing;
+      for (const std::string& req : pass->required_analyses()) {
+        if (!available_analyses.count(req)) missing.push_back(req);
+      }
+      if (!missing.empty()) {
+        PassResult skipped;
+        skipped.messages.push_back("Skipping " + pass->name() +
+                                   ": missing analysis " + join_errors(missing));
+        total |= skipped;
+        continue;
+      }
+
       auto result = pass->run(blocks, func);
       total |= result;
-      
+
+      // Analyses a pass invalidates are no longer available; preserved ones
+      // stay valid (removing nothing).
+      for (const std::string& m : pass->modified_state()) {
+        available_analyses.erase(m);
+      }
+
       // Debug/development hardening: after any pass that requests validation,
       // run the full per-function verifier (structural CFG checks plus operand
       // references against the function's locals/upvalues/global_names). Failures
@@ -124,6 +166,11 @@ public:
   PassType type() const override { return PassType::CopyPropagation; }
   std::string name() const override { return "CopyPropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
+  std::vector<std::string> required_analyses() const override { return {}; }
+  std::vector<std::string> preserved_analyses() const override {
+    return {Analysis::kCFG, Analysis::kLocals};
+  }
+  std::vector<std::string> modified_state() const override { return {Analysis::kCopyState}; }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
 };
@@ -133,6 +180,9 @@ public:
   PassType type() const override { return PassType::TypePropagation; }
   std::string name() const override { return "TypePropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
+  std::vector<std::string> required_analyses() const override { return {}; }
+  std::vector<std::string> preserved_analyses() const override { return {Analysis::kCFG}; }
+  std::vector<std::string> modified_state() const override { return {Analysis::kLocals}; }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
 };

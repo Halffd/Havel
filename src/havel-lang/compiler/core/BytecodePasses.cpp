@@ -37,6 +37,7 @@ class SimplifyCFGPass : public BytecodePass {
 public:
   PassType type() const override { return PassType::SimplifyCFG; }
   std::string name() const override { return "SimplifyCFG"; }
+  std::vector<std::string> modified_state() const override { return {Analysis::kCFG}; }
   
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
@@ -243,6 +244,7 @@ public:
   PassType type() const override { return PassType::ConstPropagation; }
   std::string name() const override { return "ConstPropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::SimplifyCFG}; }
+  std::vector<std::string> modified_state() const override { return {Analysis::kConstantState}; }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
@@ -400,6 +402,7 @@ public:
   PassType type() const override { return PassType::DeadCodeElimination; }
   std::string name() const override { return "DeadCodeElimination"; }
   std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
+  std::vector<std::string> modified_state() const override { return {Analysis::kLiveness}; }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
@@ -652,6 +655,7 @@ public:
   PassType type() const override { return PassType::Inlining; }
   std::string name() const override { return "Inlining"; }
   std::vector<PassType> dependencies() const override { return {PassType::SimplifyCFG, PassType::ConstPropagation}; }
+  std::vector<std::string> modified_state() const override { return {Analysis::kCFG}; }
   
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     PassResult result;
@@ -667,6 +671,10 @@ public:
   PassType type() const override { return PassType::Validation; }
   std::string name() const override { return "Validation"; }
   bool requires_validation() const override { return false; }
+  std::vector<std::string> preserved_analyses() const override {
+    return {Analysis::kCFG, Analysis::kLocals, Analysis::kConstantState,
+            Analysis::kLiveness, Analysis::kTypeState, Analysis::kCopyState};
+  }
   
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override {
     auto validation = validate_function(func, func.entry_block);

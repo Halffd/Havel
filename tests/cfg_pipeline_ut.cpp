@@ -463,5 +463,41 @@ TEST_F(CFGPipelineTest, TypePropagationTreatsUnknownParamsAsAny) {
   EXPECT_EQ(f.locals[1].type_hint, TypePropagationAnalysis::ALL_TYPES);
 }
 
+// A pass that requires an analysis no earlier pass provides.
+class RequiresAnalysisPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::LivenessAnalysis; }
+  std::string name() const override { return "RequiresAnalysis"; }
+  std::vector<std::string> required_analyses() const override { return {"never_provided"}; }
+  bool requires_validation() const override { return false; }
+  PassResult run(std::vector<BasicBlock>&, BytecodeFunction&) override { return {}; }
+};
+
+TEST_F(CFGPipelineTest, PassSkippedWhenAnalysisInvalidated) {
+  FunctionBuilder fb("t4", 0, 0);
+  fb.load_const(Value::makeInt(1));
+  fb.pop();
+  fb.ret();
+  fb.create_block();
+  BytecodeFunction f = fb.build();
+
+  PassManager pm;
+  const auto contract_pass = std::make_unique<TypePropagationPass>();
+  const std::string hinted_analysis = contract_pass->modified_state().empty()
+                                          ? std::string("???")
+                                          : contract_pass->modified_state().front();
+  pm.add_pass(std::make_unique<TypePropagationPass>());
+  pm.add_pass(std::make_unique<RequiresAnalysisPass>());
+  const PassResult res = pm.run_all(f.blocks, f);
+
+  // Run all: TypePropagation executes, the requires-analysis pass is skipped.
+  bool saw_skip = false;
+  for (const auto& m : res.messages) {
+    if (m.find("Skipping RequiresAnalysis") != std::string::npos) saw_skip = true;
+  }
+  EXPECT_TRUE(saw_skip) << "PassManager should skip a pass with an unavailable analysis";
+  EXPECT_EQ(hinted_analysis, Analysis::kLocals);  // sanity: contract wired
+}
+
 }  // namespace
 }  // namespace havel::compiler

@@ -1378,5 +1378,67 @@ TEST_F(CFGPipelineTest, OptimizeDriverLowersFastIntArithmetic) {
   EXPECT_TRUE(saw_add_int) << "a + b of int locals must lower to ADD_INT";
 }
 
+// The optimizer rewrites the instruction stream, so original per-IP type
+// feedback would be stale; the driver clears it and re-derives AOT hints from
+// the TypePropagation fixpoint so the JIT keeps its int specialization.
+TEST_F(CFGPipelineTest, OptimizeDriverRecomputesAotHints) {
+  namespace cfi = havel::compiler::cfgintegration;
+  BytecodeFunction f("hint1", 0, 2);
+  f.constants.push_back(Value::makeInt(3));   // pool 0
+  f.constants.push_back(Value::makeInt(4));  // pool 1
+  f.local_count = 2;
+
+  auto LC = [&](int64_t p) {
+    return Instruction(OpCode::LOAD_CONST, {Value::makeInt(p)});
+  };
+  // a = 3; b = 4; if (a < b) { return a } else { return b }
+  // Linear layout: leaders at 0, 8 (fall-through of JIF), 11 (JIF target).
+  f.instructions.push_back(LC(0));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(LC(1));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(1)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(1)}));
+  f.instructions.push_back(Instruction(OpCode::LT));
+  f.instructions.push_back(
+      Instruction(OpCode::JUMP_IF_FALSE, {Value::makeInt(11)}));
+  // then (leader 8): return a
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+  // else (leader 11): return b
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(1)}));
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+
+  cfi::OptimizeStats stats;
+  BytecodeChunk chunk;
+  ASSERT_TRUE(cfi::optimize_function_cfg(f, chunk, &stats))
+      << stats.last_reconstruct_error << stats.last_validation_error;
+
+  EXPECT_EQ(f.type_feedback.size(), f.instructions.size());
+
+  // The LT comparison of two provably-int locals must carry an INT AOT hint
+  // (ConstProp may have folded it away entirely - then the function collapses
+  // to a constant load and there is no comparison to hint, which is fine).
+  bool found_lt = false;
+  bool lt_hinted = false;
+  for (size_t ip = 0; ip < f.instructions.size(); ++ip) {
+    if (f.instructions[ip].opcode == OpCode::LT) {
+      found_lt = true;
+      if (ip < f.type_feedback.size() && f.type_feedback[ip].has_aot_hint &&
+          (f.type_feedback[ip].aot_type_hint & TYPE_HINT_INT) &&
+          !(f.type_feedback[ip].aot_type_hint & TYPE_HINT_NUMBER)) {
+        lt_hinted = true;
+      }
+    }
+  }
+  if (found_lt) {
+    EXPECT_TRUE(lt_hinted) << "surviving LT of int operands must keep an "
+                              "INT AOT hint for JIT specialization";
+  }
+  EXPECT_TRUE(f.type_feedback.size() > 0);
+}
+
 }  // namespace
 }  // namespace havel::compiler

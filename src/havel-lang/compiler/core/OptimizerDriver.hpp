@@ -144,6 +144,123 @@ inline bool optimize_function_cfg(BytecodeFunction& func,
                                 ? instructions_before - instructions_after
                                 : 0);
 
+  // Re-derive AOT type hints for the optimized stream. The optimizer rewrote
+  // instruction identities, so original per-IP feedback would be stale; the
+  // lowering below clears it. The JIT's Phase-4 specialization consumes
+  // aot_type_hint/has_aot_hint (int-only hints enable the specialized int
+  // binop and comparison paths), so recompute them from the TypePropagation
+  // fixpoint instead of losing them: walk each block with an abstract type
+  // stack (same model as FastIntegerLoweringPass) and mark generic
+  // arithmetic/comparison sites whose operands are provably int.
+  std::vector<uint64_t> block_hints;  // flat per-instruction, block order.
+  {
+    TypePropagationAnalysis analysis;
+    const auto local_masks = analysis.run(func.blocks, func);
+    using TypeMask = TypePropagationAnalysis::TypeMask;
+    const TypeMask INT = TYPE_HINT_INT;
+    const TypeMask UNKNOWN = TypePropagationAnalysis::ALL_TYPES;
+
+    block_hints.reserve(instructions_after);
+    for (const auto& block : func.blocks) {
+      std::vector<TypeMask> stack;
+      auto pop = [&]() -> TypeMask {
+        if (stack.empty()) return UNKNOWN;
+        TypeMask m = stack.back();
+        stack.pop_back();
+        return m == 0 ? UNKNOWN : m;
+      };
+      for (const auto& inst : block.instructions) {
+        uint64_t hint = 0;
+        switch (inst.opcode) {
+          case OpCode::LOAD_CONST:
+            if (!inst.operands.empty()) {
+              stack.push_back(
+                  TypePropagationAnalysis::hint_for_const(inst.operands[0]));
+            } else {
+              stack.push_back(UNKNOWN);
+            }
+            break;
+          case OpCode::PUSH_NULL:
+            stack.push_back(TYPE_HINT_NULL);
+            break;
+          case OpCode::LOAD_VAR: {
+            uint64_t idx = UINT64_MAX;
+            if (!inst.operands.empty() && inst.operands[0].isInt()) {
+              idx = static_cast<uint64_t>(inst.operands[0].asInt());
+            }
+            stack.push_back(idx < local_masks.size() && local_masks[idx] != 0
+                               ? local_masks[idx]
+                               : UNKNOWN);
+            break;
+          }
+          case OpCode::STORE_VAR:
+          case OpCode::STORE_IMMUT_VAR:
+          case OpCode::POP:
+            (void)pop();
+            break;
+          case OpCode::DUP: {
+            TypeMask t = pop();
+            stack.push_back(t);
+            stack.push_back(t);
+            break;
+          }
+          case OpCode::SWAP: {
+            TypeMask a = pop();
+            TypeMask b = pop();
+            stack.push_back(a);
+            stack.push_back(b);
+            break;
+          }
+          case OpCode::LOAD_GLOBAL:
+          case OpCode::LOAD_UPVALUE:
+          case OpCode::CLOSURE:
+            stack.push_back(UNKNOWN);
+            break;
+          case OpCode::ADD:
+          case OpCode::SUB:
+          case OpCode::MUL:
+          case OpCode::EQ:
+          case OpCode::NEQ:
+          case OpCode::LT:
+          case OpCode::LTE:
+          case OpCode::GT:
+          case OpCode::GTE: {
+            TypeMask r = pop();
+            TypeMask l = pop();
+            if (l == INT && r == INT) {
+              hint = TYPE_HINT_INT;
+              stack.push_back(
+                  (inst.opcode == OpCode::EQ || inst.opcode == OpCode::NEQ ||
+                   inst.opcode == OpCode::LT || inst.opcode == OpCode::LTE ||
+                   inst.opcode == OpCode::GT || inst.opcode == OpCode::GTE)
+                      ? static_cast<TypeMask>(TYPE_HINT_BOOL)
+                      : INT);
+            } else {
+              stack.push_back(UNKNOWN);
+            }
+            break;
+          }
+          case OpCode::ADD_INT:
+          case OpCode::SUB_INT:
+          case OpCode::MUL_INT:
+            (void)pop();
+            (void)pop();
+            stack.push_back(UNKNOWN);
+            break;
+          case OpCode::CALL:
+          case OpCode::TAIL_CALL:
+            stack.clear();
+            stack.push_back(UNKNOWN);
+            break;
+          default:
+            stack.push_back(UNKNOWN);
+            break;
+        }
+        block_hints.push_back(hint);
+      }
+    }
+  }
+
   // Lower back to the linear stream.
   auto lowered = lower_cfg(func.blocks, func.constants);
   if (!lowered.ok) {
@@ -156,6 +273,24 @@ inline bool optimize_function_cfg(BytecodeFunction& func,
   func.instruction_locations = std::move(lowered.locations);
   func.type_feedback.clear();
   func.type_feedback.resize(func.instructions.size());
+  // Write the recomputed hints: lower_cfg emits each block's body
+  // contiguously in block order and appends exactly one terminator
+  // instruction per block (a trailing None block appends none). Mirror that
+  // emission order to map flat body hints to linear IPs; never pattern-match
+  // opcodes, which would desync on a legitimate body NOP.
+  {
+    size_t src = 0;
+    size_t ip = 0;
+    for (size_t b = 0; b < func.blocks.size() && src < block_hints.size(); ++b) {
+      for (size_t k = 0; k < func.blocks[b].instructions.size(); ++k, ++ip, ++src) {
+        if (block_hints[src] != 0 && ip < func.type_feedback.size()) {
+          func.type_feedback[ip].aot_type_hint = block_hints[src];
+          func.type_feedback[ip].has_aot_hint = true;
+        }
+      }
+      if (func.blocks[b].terminator.kind != TerminatorKind::None) ++ip;
+    }
+  }
   // Keep the CFG attached: downstream consumers can rely on either form, and
   // has_cfg() stays truthful.
   ++stats->functions_optimized;

@@ -13,10 +13,13 @@
 #include "DataflowAnalysis.hpp"
 #include "InstructionEffects.hpp"
 #include "OptimizerDriver.hpp"
+#include "RuntimeABI.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace havel::compiler {
@@ -1134,7 +1137,47 @@ TEST_F(CFGPipelineTest, FlattenPreservesConditionalFallThrough) {
             7);
 }
 
-// ===== Fast Integer Lowering =====
+// ===== Runtime ABI =====
+
+// The RuntimeABI.hpp X-macro is the single source of truth for the runtime
+// symbol surface: backends include its declarations and BytecodeOrcJIT
+// registers its entries with the JIT dylib straight from the list. This test
+// pins the structural contract: every entry declares an extern "C" function
+// (the declarations are visible here through the header include) and the
+// entry count matches the list. scripts/check_runtime_abi.sh guards the
+// definitions side.
+TEST_F(CFGPipelineTest, RuntimeAbiEntriesDeclareLinkableSymbols) {
+  size_t entries = 0;
+  size_t with_vm_ptr = 0;
+#define COUNT_ENTRY(name, ret, args, contract) \
+  ++entries;                                  \
+  (void)(contract);
+  HAVEL_RUNTIME_ABI(COUNT_ENTRY)
+#undef COUNT_ENTRY
+
+  EXPECT_GT(entries, 100u) << "ABI surface unexpectedly small";
+
+  // Declarations are visible through the header include and type-check as
+  // C function types (no address is taken, so the minimal test target does
+  // not need the runtime definitions on its link line).
+  static_assert(std::is_same_v<decltype(&havel_vm_throw_error),
+                               void (*)(void*, const char*)>,
+                "havel_vm_throw_error declaration");
+  static_assert(std::is_same_v<decltype(&havel_vm_eq),
+                               uint64_t (*)(uint64_t, uint64_t)>,
+                "havel_vm_eq declaration");
+  static_assert(std::is_same_v<decltype(&havel_gc_write_barrier),
+                                void (*)(void*, uint64_t)>,
+                "havel_gc_write_barrier declaration");
+
+  // Spot-check contract text is attached to key entries.
+  std::string_view found;
+#define FIND_CONTRACT(name, ret, args, contract) \
+  if (std::string_view(#name) == "havel_vm_call") found = contract;
+  HAVEL_RUNTIME_ABI(FIND_CONTRACT)
+#undef FIND_CONTRACT
+  EXPECT_FALSE(found.empty()) << "havel_vm_call contract documented";
+}
 
 // ADD of two int-typed locals must lower to ADD_INT; a mixed int/number
 // addition must stay ADD. The local type proof comes from

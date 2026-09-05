@@ -27,6 +27,7 @@
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Passes/PassBuilder.h>
 #include "BytecodeOrcJIT.h"
+#include "compiler/runtime/RuntimeABI.hpp"
 #include "core/util/Env.hpp"
 #include "../../utils/Logger.hpp"
 #include <cstring>
@@ -2244,143 +2245,14 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
         };
     };
 
-addSym("havel_vm_throw_error", reinterpret_cast<void*>(&havel_vm_throw_error));
-addSym("havel_vm_throw_value", reinterpret_cast<void*>(&havel_vm_throw_value));
-    addSym("havel_vm_try_enter", reinterpret_cast<void*>(&havel_vm_try_enter));
-    addSym("havel_vm_try_exit", reinterpret_cast<void*>(&havel_vm_try_exit));
-    addSym("havel_vm_load_exception", reinterpret_cast<void*>(&havel_vm_load_exception));
-addSym("havel_gc_write_barrier", reinterpret_cast<void*>(&havel_gc_write_barrier));
-addSym("havel_gc_register_roots", reinterpret_cast<void*>(&havel_gc_register_roots));
-addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
-addSym("havel_deoptimize", reinterpret_cast<void*>(&havel_deoptimize));
-addSym("havel_vm_call", reinterpret_cast<void*>(&havel_vm_call));
-addSym("havel_vm_tail_call", reinterpret_cast<void*>(&havel_vm_tail_call));
-addSym("havel_vm_global_get", reinterpret_cast<void*>(&havel_vm_global_get));
-addSym("havel_vm_global_set", reinterpret_cast<void*>(&havel_vm_global_set));
-addSym("havel_vm_upvalue_get", reinterpret_cast<void*>(&havel_vm_upvalue_get));
-addSym("havel_vm_upvalue_set", reinterpret_cast<void*>(&havel_vm_upvalue_set));
-addSym("havel_vm_close_upvalues", reinterpret_cast<void*>(&havel_vm_close_upvalues));
-addSym("havel_vm_locals_base", reinterpret_cast<void*>(&havel_vm_locals_base));
-addSym("havel_vm_pow", reinterpret_cast<void*>(&havel_vm_pow));
-addSym("havel_vm_array_new", reinterpret_cast<void*>(&havel_vm_array_new));
-addSym("havel_vm_array_get", reinterpret_cast<void*>(&havel_vm_array_get));
-addSym("havel_vm_collection_get_raw", reinterpret_cast<void*>(&havel_vm_collection_get_raw));
-addSym("havel_vm_collection_get_raw_ic", reinterpret_cast<void*>(&havel_vm_collection_get_raw_ic));
-addSym("havel_vm_array_set", reinterpret_cast<void*>(&havel_vm_array_set));
-addSym("havel_vm_array_len", reinterpret_cast<void*>(&havel_vm_array_len));
-addSym("havel_vm_array_push", reinterpret_cast<void*>(&havel_vm_array_push));
-addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
-    addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
-    addSym("havel_vm_object_get_raw", reinterpret_cast<void*>(&havel_vm_object_get_raw_ic));
-    addSym("havel_vm_object_get_raw_ic", reinterpret_cast<void*>(&havel_vm_object_get_raw_ic));
-    addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
-    addSym("havel_vm_object_set_raw", reinterpret_cast<void*>(&havel_vm_object_set_raw));
-addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
-addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
-addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
-addSym("havel_vm_time_now", reinterpret_cast<void*>(&havel_vm_time_now));
-addSym("havel_vm_thread_new", reinterpret_cast<void*>(&havel_vm_thread_new));
-addSym("havel_vm_thread_join", reinterpret_cast<void*>(&havel_vm_thread_join));
-addSym("havel_vm_thread_send", reinterpret_cast<void*>(&havel_vm_thread_send));
-addSym("havel_vm_thread_recv", reinterpret_cast<void*>(&havel_vm_thread_recv));
-addSym("havel_vm_channel_new", reinterpret_cast<void*>(&havel_vm_channel_new));
-addSym("havel_vm_channel_send", reinterpret_cast<void*>(&havel_vm_channel_send));
-addSym("havel_vm_channel_recv", reinterpret_cast<void*>(&havel_vm_channel_recv));
-addSym("havel_vm_channel_close", reinterpret_cast<void*>(&havel_vm_channel_close));
-addSym("havel_vm_interval_start", reinterpret_cast<void*>(&havel_vm_interval_start));
-addSym("havel_vm_interval_stop", reinterpret_cast<void*>(&havel_vm_interval_stop));
-addSym("havel_vm_timeout_start", reinterpret_cast<void*>(&havel_vm_timeout_start));
-addSym("havel_vm_timeout_cancel", reinterpret_cast<void*>(&havel_vm_timeout_cancel));
-addSym("havel_vm_yield", reinterpret_cast<void*>(&havel_vm_yield));
-addSym("havel_vm_await", reinterpret_cast<void*>(&havel_vm_await));
-addSym("havel_vm_string_len", reinterpret_cast<void*>(&havel_vm_string_len));
-addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat));
-        addSym("havel_vm_bit_and", reinterpret_cast<void*>(&havel_vm_bit_and));
-        addSym("havel_vm_bit_or", reinterpret_cast<void*>(&havel_vm_bit_or));
-        addSym("havel_vm_bit_xor", reinterpret_cast<void*>(&havel_vm_bit_xor));
-        addSym("havel_vm_bit_not", reinterpret_cast<void*>(&havel_vm_bit_not));
-        addSym("havel_vm_bit_lsh", reinterpret_cast<void*>(&havel_vm_bit_lsh));
-        addSym("havel_vm_bit_rsh", reinterpret_cast<void*>(&havel_vm_bit_rsh));
-        addSym("havel_vm_fiber_sleep", reinterpret_cast<void*>(&havel_vm_fiber_sleep));
-        addSym("havel_vm_call_host", reinterpret_cast<void*>(&havel_vm_call_host));
-        addSym("havel_vm_call_method", reinterpret_cast<void*>(&havel_vm_call_method));
-        addSym("havel_vm_eq", reinterpret_cast<void*>(&havel_vm_eq));
-        addSym("havel_vm_neq", reinterpret_cast<void*>(&havel_vm_neq));
-        addSym("havel_vm_lt", reinterpret_cast<void*>(&havel_vm_lt));
-        addSym("havel_vm_lte", reinterpret_cast<void*>(&havel_vm_lte));
-        addSym("havel_vm_gt", reinterpret_cast<void*>(&havel_vm_gt));
-        addSym("havel_vm_gte", reinterpret_cast<void*>(&havel_vm_gte));
-        addSym("havel_vm_is", reinterpret_cast<void*>(&havel_vm_is));
-        addSym("havel_vm_not", reinterpret_cast<void*>(&havel_vm_not));
-addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
-        addSym("havel_vm_is_truthy", reinterpret_cast<void*>(&havel_vm_is_truthy));
-        addSym("havel_vm_closure_new", reinterpret_cast<void*>(&havel_vm_closure_new));
-        addSym("havel_vm_array_del", reinterpret_cast<void*>(&havel_vm_array_del));
-        addSym("havel_vm_array_freeze", reinterpret_cast<void*>(&havel_vm_array_freeze));
-        addSym("havel_vm_array_pop", reinterpret_cast<void*>(&havel_vm_array_pop));
-        addSym("havel_vm_array_has", reinterpret_cast<void*>(&havel_vm_array_has));
-        addSym("havel_vm_array_find", reinterpret_cast<void*>(&havel_vm_array_find));
-        addSym("havel_vm_array_map", reinterpret_cast<void*>(&havel_vm_array_map));
-        addSym("havel_vm_array_filter", reinterpret_cast<void*>(&havel_vm_array_filter));
-        addSym("havel_vm_array_reduce", reinterpret_cast<void*>(&havel_vm_array_reduce));
-        addSym("havel_vm_array_foreach", reinterpret_cast<void*>(&havel_vm_array_foreach));
-        addSym("havel_vm_set_new", reinterpret_cast<void*>(&havel_vm_set_new));
-        addSym("havel_vm_set_set", reinterpret_cast<void*>(&havel_vm_set_set));
-        addSym("havel_vm_set_del", reinterpret_cast<void*>(&havel_vm_set_del));
-        addSym("havel_vm_range_step_new", reinterpret_cast<void*>(&havel_vm_range_step_new));
-        addSym("havel_vm_object_keys", reinterpret_cast<void*>(&havel_vm_object_keys));
-        addSym("havel_vm_object_values", reinterpret_cast<void*>(&havel_vm_object_values));
-        addSym("havel_vm_object_entries", reinterpret_cast<void*>(&havel_vm_object_entries));
-        addSym("havel_vm_object_has", reinterpret_cast<void*>(&havel_vm_object_has));
-    addSym("havel_vm_object_delete", reinterpret_cast<void*>(&havel_vm_object_delete));
-    addSym("havel_vm_backedge", reinterpret_cast<void*>(&havel_vm_backedge));
-    addSym("havel_vm_object_new_unsorted", reinterpret_cast<void*>(&havel_vm_object_new_unsorted));
-        addSym("havel_vm_string_upper", reinterpret_cast<void*>(&havel_vm_string_upper));
-        addSym("havel_vm_string_lower", reinterpret_cast<void*>(&havel_vm_string_lower));
-        addSym("havel_vm_string_trim", reinterpret_cast<void*>(&havel_vm_string_trim));
-        addSym("havel_vm_string_sub", reinterpret_cast<void*>(&havel_vm_string_sub));
-        addSym("havel_vm_string_find", reinterpret_cast<void*>(&havel_vm_string_find));
-        addSym("havel_vm_string_has", reinterpret_cast<void*>(&havel_vm_string_has));
-        addSym("havel_vm_string_starts", reinterpret_cast<void*>(&havel_vm_string_starts));
-        addSym("havel_vm_string_ends", reinterpret_cast<void*>(&havel_vm_string_ends));
-        addSym("havel_vm_string_split", reinterpret_cast<void*>(&havel_vm_string_split));
-        addSym("havel_vm_string_replace", reinterpret_cast<void*>(&havel_vm_string_replace));
-        addSym("havel_vm_string_promote", reinterpret_cast<void*>(&havel_vm_string_promote));
-        addSym("havel_vm_to_int", reinterpret_cast<void*>(&havel_vm_to_int));
-        addSym("havel_vm_to_float", reinterpret_cast<void*>(&havel_vm_to_float));
-        addSym("havel_vm_to_string", reinterpret_cast<void*>(&havel_vm_to_string));
-        addSym("havel_vm_to_bool", reinterpret_cast<void*>(&havel_vm_to_bool));
-        addSym("havel_vm_type_of", reinterpret_cast<void*>(&havel_vm_type_of));
-        addSym("havel_vm_as_type", reinterpret_cast<void*>(&havel_vm_as_type));
-        addSym("havel_vm_print", reinterpret_cast<void*>(&havel_vm_print));
-        addSym("havel_vm_debug", reinterpret_cast<void*>(&havel_vm_debug));
-        addSym("havel_vm_import", reinterpret_cast<void*>(&havel_vm_import));
-        addSym("havel_vm_yield_resume", reinterpret_cast<void*>(&havel_vm_yield_resume));
-        addSym("havel_vm_go_async", reinterpret_cast<void*>(&havel_vm_go_async));
-        addSym("havel_vm_spread", reinterpret_cast<void*>(&havel_vm_spread));
-        addSym("havel_vm_class_new", reinterpret_cast<void*>(&havel_vm_class_new));
-        addSym("havel_vm_struct_new", reinterpret_cast<void*>(&havel_vm_struct_new));
-        addSym("havel_vm_struct_get", reinterpret_cast<void*>(&havel_vm_struct_get));
-        addSym("havel_vm_struct_set", reinterpret_cast<void*>(&havel_vm_struct_set));
-        addSym("havel_vm_prot_check", reinterpret_cast<void*>(&havel_vm_prot_check));
-        addSym("havel_vm_prot_cast", reinterpret_cast<void*>(&havel_vm_prot_cast));
-        addSym("havel_vm_class_get_field", reinterpret_cast<void*>(&havel_vm_class_get_field));
-        addSym("havel_vm_class_set_field", reinterpret_cast<void*>(&havel_vm_class_set_field));
-        addSym("havel_vm_load_class_proto", reinterpret_cast<void*>(&havel_vm_load_class_proto));
-        addSym("havel_vm_call_super", reinterpret_cast<void*>(&havel_vm_call_super));
-        addSym("havel_vm_enum_new", reinterpret_cast<void*>(&havel_vm_enum_new));
-        addSym("havel_vm_enum_tag", reinterpret_cast<void*>(&havel_vm_enum_tag));
-        addSym("havel_vm_enum_payload", reinterpret_cast<void*>(&havel_vm_enum_payload));
-        addSym("havel_vm_export_fn", reinterpret_cast<void*>(&havel_vm_export_fn));
-        addSym("havel_vm_export_var", reinterpret_cast<void*>(&havel_vm_export_var));
-        addSym("havel_vm_begin_module", reinterpret_cast<void*>(&havel_vm_begin_module));
-        addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
-    addSym("havel_vm_set_exception", reinterpret_cast<void*>(&havel_vm_set_exception));
-    addSym("havel_vm_try_find_throw_target", reinterpret_cast<void*>(&havel_vm_try_find_throw_target));
-    addSym("havel_vm_throw_from_jit", reinterpret_cast<void*>(&havel_vm_throw_from_jit));
-    addSym("havel_vm_object_has_raw", reinterpret_cast<void*>(&havel_vm_object_has_raw));
-    addSym("havel_vm_object_delete_raw", reinterpret_cast<void*>(&havel_vm_object_delete_raw));
-    addSym("havel_vm_import_wildcard", reinterpret_cast<void*>(&havel_vm_import_wildcard));
+    // Register the full Runtime ABI (RuntimeABI.hpp X-macro) with the JIT
+    // dylib: single source of truth for names, so a new ABI entry is
+    // automatically resolvable from generated code without touching this
+    // file (the runtime-abi-drift-guard test keeps definitions in sync).
+#define HAVEL_RUNTIME_ABI_REG(name, ret, args, contract) \
+    addSym(#name, reinterpret_cast<void*>(&name));
+    HAVEL_RUNTIME_ABI(HAVEL_RUNTIME_ABI_REG)
+#undef HAVEL_RUNTIME_ABI_REG
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         reportLLVMError("define-symbols", std::move(err), show_warnings_);

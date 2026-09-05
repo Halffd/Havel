@@ -72,6 +72,9 @@ CFGValidationResult validate_cfg(const std::vector<BasicBlock>& blocks,
   }
 
   // Recompute edges from terminators and cross-check stored edges.
+  // An Unreachable terminator lowers to a NOP and execution continues into
+  // the next block (SimplifyCFG rewrites Jump(i+1) into it), so it carries an
+  // implicit linear fall-through edge like the trailing None block.
   std::vector<std::vector<uint32_t>> successors(n);
   std::vector<std::vector<uint32_t>> predecessors(n);
   for (size_t i = 0; i < n; ++i) {
@@ -81,6 +84,10 @@ CFGValidationResult validate_cfg(const std::vector<BasicBlock>& blocks,
       if (t < n) {
         predecessors[t].push_back(static_cast<uint32_t>(i));
       }
+    }
+    if (b.terminator.kind == TerminatorKind::Unreachable && i + 1 < n) {
+      successors[i].push_back(static_cast<uint32_t>(i) + 1);
+      predecessors[i + 1].push_back(static_cast<uint32_t>(i));
     }
   }
 

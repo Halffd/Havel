@@ -1,5 +1,6 @@
 #include "BytecodePasses.hpp"
 #include "DataflowAnalysis.hpp"
+#include "InstructionEffects.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -42,6 +43,7 @@ public:
   
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func, const BytecodeChunk& chunk) override {
     PassResult result;
+    (void)func; (void)chunk;
     
     // 1. Remove unreachable blocks
     result |= remove_unreachable(blocks);
@@ -57,6 +59,22 @@ public:
     
     // 5. Remove empty blocks
     result |= remove_empty_blocks(blocks);
+
+    // Terminator rewrites (Jump(i+1) -> Unreachable, target remaps, merges)
+    // invalidate the stored edge lists; refresh them so validation and the
+    // downstream dataflow passes see the actual CFG.
+    if (result.modified) {
+      for (auto& b : blocks) {
+        b.predecessors.clear();
+        b.successors.clear();
+      }
+      for (uint32_t i = 0; i < blocks.size(); ++i) {
+        blocks[i].successors = detail::successors_with_fallthrough(blocks, i);
+        for (uint32_t t : blocks[i].successors) {
+          if (t < blocks.size()) blocks[t].predecessors.push_back(i);
+        }
+      }
+    }
     
     return result;
   }
@@ -105,6 +123,9 @@ private:
         }
       }
     }
+    
+    // Validation requires block id == position; renumber after any removal.
+    for (size_t i = 0; i < new_blocks.size(); ++i) new_blocks[i].id = static_cast<uint32_t>(i);
     
     blocks.swap(new_blocks);
     return result;
@@ -234,6 +255,8 @@ private:
         }
       }
     }
+    // Validation requires block id == position; renumber after any removal.
+    for (size_t i = 0; i < blocks.size(); ++i) blocks[i].id = static_cast<uint32_t>(i);
     return result;
   }
 };
@@ -245,154 +268,344 @@ public:
   PassType type() const override { return PassType::ConstPropagation; }
   std::string name() const override { return "ConstPropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::SimplifyCFG}; }
-  std::vector<std::string> modified_state() const override { return {Analysis::kConstantState}; }
+  // Folding constant conditional terminators rewires the CFG edges, so the
+  // stored predecessor/successor lists must be rebuilt (done in-run).
+  std::vector<std::string> modified_state() const override {
+    return {Analysis::kConstantState, Analysis::kCFG};
+  }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func, const BytecodeChunk& chunk) override {
     PassResult result;
+    (void)chunk;
 
-    // ---- 1. Cross-block constant propagation for locals using dataflow ----
-    ConstPropagationAnalysis analysis;
-    auto in_states = analysis.run(blocks, func);
-
-    // For each block, propagate constants through the block using the IN state.
-    for (size_t bi = 0; bi < blocks.size(); ++bi) {
-      const BasicBlock& block = blocks[bi];
-      ConstantMap local_consts = in_states[bi];
-
-      for (size_t ii = 0; ii < block.instructions.size(); ++ii) {
-        Instruction& inst = const_cast<Instruction&>(block.instructions[ii]);
-
-        // Propagate known constant into instructions that use local indices
-        switch (inst.opcode) {
-          case OpCode::LOAD_VAR: {
-            if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-              if (idx < local_consts.size() && local_consts[idx].is_constant()) {
-                // Replace LOAD_VAR with LOAD_CONST of the known value
-                inst.opcode = OpCode::LOAD_CONST;
-                inst.operands[0] = Value::makeInt(local_consts[idx].value);
-                result.modified = true;
-              }
-            }
-            break;
-          }
-          case OpCode::STORE_VAR:
-          case OpCode::STORE_IMMUT_VAR: {
-            if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-              if (idx < local_consts.size()) {
-                local_consts[idx] = ConstantValue::unknown();
-              }
-            }
-            break;
-          }
-          default:
-            break;
-        }
+    // The analysis reads the stored predecessor lists, which are not
+    // guaranteed to be populated (FunctionBuilder fixtures, or passes that
+    // rebuilt blocks without refreshing the lists). Recompute them from the
+    // terminators: in this model every edge is an explicit terminator target,
+    // plus the implicit linear fall-through carried by an Unreachable
+    // terminator (SimplifyCFG rewrites Jump(i+1) to it).
+    for (auto& b : blocks) {
+      b.predecessors.clear();
+      b.successors.clear();
+    }
+    for (uint32_t i = 0; i < blocks.size(); ++i) {
+      blocks[i].successors = detail::successors_with_fallthrough(blocks, i);
+      for (uint32_t t : blocks[i].successors) {
+        if (t < blocks.size()) blocks[t].predecessors.push_back(i);
       }
     }
 
-    // ---- 2. Intra-block peephole constant folding ----
-    // Scan each block for LOAD_CONST + binary op patterns and fold them.
-    for (auto& block : blocks) {
+    ConstPropagationAnalysis analysis;
+    auto in_states = analysis.run(blocks, func);
+
+    bool cfg_changed = false;
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+      BasicBlock& block = blocks[bi];
+      const size_t n = block.instructions.size();
+
+      ConstantMap locals = in_states[bi];
+      ConstPropagationAnalysis::ConstantStack stack;
       std::vector<Instruction> new_insts;
-      new_insts.reserve(block.instructions.size());
+      new_insts.reserve(n);
 
-      for (size_t ii = 0; ii < block.instructions.size(); ++ii) {
-        const Instruction& inst = block.instructions[ii];
+      for (size_t i = 0; i < n; ++i) {
+        const Instruction& inst = block.instructions[i];
 
-        // Look ahead for LOAD_CONST + binary op where both operands are const
-        if (ii + 2 < block.instructions.size()) {
-          const Instruction& inst1 = block.instructions[ii + 1];
-          const Instruction& inst2 = block.instructions[ii + 2];
-
-          if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
-              inst1.opcode == OpCode::LOAD_CONST && inst1.operands[0].isInt()) {
-            int64_t a = inst.operands[0].asInt();
-            int64_t b = inst1.operands[0].asInt();
-            int64_t result_val = 0;
-            bool folded = false;
-
-            if (inst2.opcode == OpCode::ADD || inst2.opcode == OpCode::ADD_INT) {
-              result_val = a + b;
-              folded = true;
-            } else if (inst2.opcode == OpCode::SUB || inst2.opcode == OpCode::SUB_INT) {
-              result_val = a - b;
-              folded = true;
-            } else if (inst2.opcode == OpCode::MUL || inst2.opcode == OpCode::MUL_INT) {
-              result_val = a * b;
-              folded = true;
-            } else if (inst2.opcode == OpCode::DIV || inst2.opcode == OpCode::DIV_INT) {
-              if (b != 0) { result_val = a / b; folded = true; }
-            } else if (inst2.opcode == OpCode::MOD || inst2.opcode == OpCode::MOD_INT) {
-              if (b != 0) { result_val = a % b; folded = true; }
-            }
-
-            if (folded) {
-              // Replace the three instructions with a single LOAD_CONST
-              new_insts.push_back(Instruction(OpCode::LOAD_CONST, {Value::makeInt(result_val)}));
-              ii += 2;  // Skip the next two instructions we folded
+        // ---- Pattern A: LOAD_CONST a; LOAD_CONST b; foldable-binop ----
+        if (i + 2 < n && inst.opcode == OpCode::LOAD_CONST &&
+            !inst.operands.empty() &&
+            block.instructions[i + 1].opcode == OpCode::LOAD_CONST &&
+            !block.instructions[i + 1].operands.empty()) {
+          const Value& a = inst.operands[0];
+          const Value& b = block.instructions[i + 1].operands[0];
+          if (ConstPropagationAnalysis::foldable_const(a) &&
+              ConstPropagationAnalysis::foldable_const(b)) {
+            auto folded = ConstPropagationAnalysis::try_fold(
+                block.instructions[i + 2].opcode, a, b);
+            if (folded.has_value()) {
+              new_insts.emplace_back(OpCode::LOAD_CONST,
+                                     std::vector<Value>{*folded});
+              if (stack.size() >= 2) stack.resize(stack.size() - 2);
+              else stack.clear();
+              stack.push_back(*folded);
               result.modified = true;
-              result.messages.push_back("ConstPropagation: folded constant binary op");
+              result.messages.push_back("ConstProp: folded constant binary op");
+              i += 2;
               continue;
             }
           }
         }
 
-        // Also fold unary negation
-        if (ii + 1 < block.instructions.size()) {
-          const Instruction& next = block.instructions[ii + 1];
-          if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
-              next.opcode == OpCode::NEGATE) {
-            int64_t val = inst.operands[0].asInt();
-            new_insts.push_back(Instruction(OpCode::LOAD_CONST, {Value::makeInt(-val)}));
-            ++ii;  // Skip NEGATE
-            result.modified = true;
-            result.messages.push_back("ConstPropagation: folded NEGATE");
-            continue;
+        // ---- Pattern B: LOAD_CONST a; NEGATE/NOT/IS_NULL ----
+        if (i + 1 < n && inst.opcode == OpCode::LOAD_CONST &&
+            !inst.operands.empty() &&
+            ConstPropagationAnalysis::foldable_const(inst.operands[0])) {
+          const OpCode un = block.instructions[i + 1].opcode;
+          if (un == OpCode::NEGATE || un == OpCode::NOT || un == OpCode::IS_NULL) {
+            auto folded = ConstPropagationAnalysis::try_fold_unary(
+                un, inst.operands[0]);
+            if (folded.has_value()) {
+              new_insts.emplace_back(OpCode::LOAD_CONST,
+                                     std::vector<Value>{*folded});
+              if (!stack.empty()) stack.pop_back();
+              stack.push_back(*folded);
+              result.modified = true;
+              result.messages.push_back("ConstProp: folded constant unary op");
+              ++i;
+              continue;
+            }
           }
         }
 
-        new_insts.push_back(inst);
+        // ---- Single-instruction handling: mirror update + optional rewrite.
+        //      The rules mirror ConstPropagationAnalysis::walk_block exactly.
+        switch (inst.opcode) {
+          case OpCode::LOAD_CONST:
+            if (!inst.operands.empty()) stack.push_back(inst.operands[0]);
+            else stack.push_back(std::nullopt);
+            new_insts.push_back(inst);
+            break;
+          case OpCode::PUSH_NULL:
+            stack.push_back(Value::makeNull());
+            new_insts.push_back(inst);
+            break;
+          case OpCode::LOAD_VAR: {
+            const uint64_t idx = local_operand(inst);
+            if (idx < locals.size() && locals[idx].is_constant()) {
+              new_insts.emplace_back(OpCode::LOAD_CONST,
+                                     std::vector<Value>{locals[idx].value});
+              stack.push_back(locals[idx].value);
+              result.modified = true;
+              result.messages.push_back(
+                  "ConstProp: propagated constant into LOAD_VAR");
+            } else {
+              stack.push_back(std::nullopt);
+              new_insts.push_back(inst);
+            }
+            break;
+          }
+          case OpCode::LOAD_UPVALUE:
+            stack.push_back(std::nullopt);
+            new_insts.push_back(inst);
+            break;
+          case OpCode::STORE_VAR:
+          case OpCode::STORE_IMMUT_VAR: {
+            const uint64_t idx = local_operand(inst);
+            const auto v = pop_stack(stack);
+            if (idx < locals.size()) {
+              locals[idx] = v.has_value() ? ConstantValue::constant(*v)
+                                          : ConstantValue::unknown();
+            }
+            new_insts.push_back(inst);
+            break;
+          }
+          case OpCode::STORE_UPVALUE:
+            (void)pop_stack(stack);
+            new_insts.push_back(inst);
+            break;
+          case OpCode::POP:
+            (void)pop_stack(stack);
+            new_insts.push_back(inst);
+            break;
+          case OpCode::DUP: {
+            const auto v = pop_stack(stack);
+            stack.push_back(v);
+            stack.push_back(v);
+            new_insts.push_back(inst);
+            break;
+          }
+          case OpCode::SWAP: {
+            const auto a = pop_stack(stack);
+            const auto b = pop_stack(stack);
+            stack.push_back(a);
+            stack.push_back(b);
+            new_insts.push_back(inst);
+            break;
+          }
+          case OpCode::INCLOCAL:
+          case OpCode::DECLOCAL:
+          case OpCode::INCLOCAL_POST:
+          case OpCode::DECLOCAL_POST: {
+            const uint64_t idx = local_operand(inst);
+            if (idx < locals.size()) locals[idx] = ConstantValue::unknown();
+            stack.push_back(std::nullopt);
+            new_insts.push_back(inst);
+            break;
+          }
+          case OpCode::NEGATE:
+          case OpCode::NOT:
+          case OpCode::IS_NULL: {
+            const auto v = pop_stack(stack);
+            stack.push_back(std::nullopt);  // non-const operand path
+            new_insts.push_back(inst);
+            break;
+          }
+          case OpCode::ADD:
+          case OpCode::SUB:
+          case OpCode::MUL:
+          case OpCode::DIV:
+          case OpCode::INT_DIV:
+          case OpCode::REMAINDER:
+          case OpCode::MOD:
+          case OpCode::POW:
+          case OpCode::ADD_INT:
+          case OpCode::SUB_INT:
+          case OpCode::MUL_INT:
+          case OpCode::DIV_INT:
+          case OpCode::MOD_INT:
+          case OpCode::EQ:
+          case OpCode::NEQ:
+          case OpCode::IS:
+          case OpCode::LT:
+          case OpCode::LTE:
+          case OpCode::GT:
+          case OpCode::GTE:
+          case OpCode::BIT_AND:
+          case OpCode::BIT_OR:
+          case OpCode::BIT_XOR:
+          case OpCode::BIT_LSH:
+          case OpCode::BIT_RSH:
+          case OpCode::AND:
+          case OpCode::OR: {
+            (void)pop_stack(stack);
+            (void)pop_stack(stack);
+            stack.push_back(std::nullopt);  // non-const operand path
+            new_insts.push_back(inst);
+            break;
+          }
+          default:
+            if (ConstPropagationAnalysis::may_escape_to_closure(inst.opcode)) {
+              std::fill(locals.begin(), locals.end(), ConstantValue::unknown());
+              stack.clear();
+              stack.push_back(std::nullopt);
+            } else {
+              const auto e = instruction_effect(inst.opcode);
+              if (e.pops < 0) stack.clear();
+              else for (int32_t k = 0; k < e.pops; ++k) (void)pop_stack(stack);
+              if (e.pushes < 0) stack.clear();
+              else for (int32_t k = 0; k < e.pushes; ++k) stack.push_back(std::nullopt);
+            }
+            new_insts.push_back(inst);
+            break;
+        }
       }
 
-      if (new_insts.size() != block.instructions.size()) {
+      // ---- Terminator folding: constant condition ----
+      // Fold JumpIfFalse/True/Null when the condition is a proven constant and
+      // the (pure, self-contained, net +1) tail producing it can be dropped.
+      const TerminatorKind tk = block.terminator.kind;
+      if ((tk == TerminatorKind::JumpIfFalse || tk == TerminatorKind::JumpIfTrue ||
+           tk == TerminatorKind::JumpIfNull) &&
+          !stack.empty() && stack.back().has_value() &&
+          block.terminator.targets.size() == 1) {
+        const Value cond = *stack.back();
+        const uint32_t target = block.terminator.targets[0];
+        const uint32_t fall = static_cast<uint32_t>(bi) + 1;
+
+        // Find the maximal pure suffix of the emitted instructions; it must be
+        // self-contained and deliver exactly the value the terminator pops.
+        size_t s = new_insts.size();
+        int32_t rel = 0;
+        while (s > 0 && is_pure(new_insts[s - 1].opcode)) --s;
+        // Forward-validate [s, new_insts.size()): pops never exceed the in-run
+        // depth and the run nets exactly the one popped condition value.
+        bool valid = true;
+        {
+          int32_t depth = 0;
+          for (size_t k = s; k < new_insts.size(); ++k) {
+            const auto e = instruction_effect(new_insts[k].opcode);
+            if (e.pops > depth) {
+              valid = false;
+              break;
+            }
+            depth = depth - e.pops + e.pushes;
+          }
+          if (valid && depth != 1) valid = false;
+        }
+
+        uint32_t chosen = UINT32_MAX;
+        if (valid) {
+          switch (tk) {
+            case TerminatorKind::JumpIfFalse:
+              chosen = ConstPropagationAnalysis::const_truthy(cond) ? fall : target;
+              break;
+            case TerminatorKind::JumpIfTrue:
+              chosen = ConstPropagationAnalysis::const_truthy(cond) ? target : fall;
+              break;
+            case TerminatorKind::JumpIfNull:
+              chosen = cond.isNull() ? target : fall;
+              break;
+            default:
+              break;
+          }
+        }
+
+        if (chosen != UINT32_MAX) {
+          new_insts.resize(s);  // drop the dead condition tail
+          block.terminator = Terminator::jump(chosen);
+          cfg_changed = true;
+          result.modified = true;
+          result.messages.push_back("ConstProp: folded constant conditional");
+        }
+      }
+
+      // Replace the block's instructions whenever the rewrite walk changed
+      // anything. Rewrites that keep the instruction count (LOAD_VAR ->
+      // LOAD_CONST, folded unary/binary ops) must still be applied, so the
+      // comparison cannot rely on size alone.
+      bool changed = new_insts.size() != n;
+      if (!changed) {
+        for (size_t k = 0; k < n; ++k) {
+          if (new_insts[k].opcode != block.instructions[k].opcode ||
+              new_insts[k].operands != block.instructions[k].operands) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (changed) {
         block.instructions.swap(new_insts);
         result.modified = true;
       }
     }
 
-    // ---- 3. Remove redundant LOAD_CONST + POP pairs ----
-    for (auto& block : blocks) {
-      std::vector<Instruction> new_insts;
-      new_insts.reserve(block.instructions.size());
-
-      for (size_t i = 0; i < block.instructions.size(); ++i) {
-        const Instruction& inst = block.instructions[i];
-        bool skip = false;
-
-        if (i + 1 < block.instructions.size()) {
-          const Instruction& next = block.instructions[i + 1];
-          if (inst.opcode == OpCode::LOAD_CONST && next.opcode == OpCode::POP) {
-            result.modified = true;
-            skip = true;
-            result.messages.push_back("ConstPropagation: removed dead LOAD_CONST");
-          }
-        }
-
-        if (!skip) new_insts.push_back(inst);
+    if (cfg_changed) {
+      // The folded terminators changed the CFG edges: rebuild the stored
+      // predecessor/successor lists so downstream analyses and validation
+      // see consistent state. The stored successors mirror the validation
+      // edge model: explicit targets plus the implicit linear fall-through
+      // carried by an Unreachable terminator.
+      for (auto& b : blocks) {
+        b.predecessors.clear();
+        b.successors.clear();
       }
-
-      if (new_insts.size() != block.instructions.size()) {
-        block.instructions.swap(new_insts);
-        result.modified = true;
+      for (size_t i = 0; i < blocks.size(); ++i) {
+        blocks[i].successors = detail::successors_with_fallthrough(blocks, static_cast<uint32_t>(i));
+        for (uint32_t t : blocks[i].successors) {
+          if (t < blocks.size()) blocks[t].predecessors.push_back(static_cast<uint32_t>(i));
+        }
       }
     }
 
     if (!result.modified) {
-      result.messages.push_back("ConstPropagation: no changes");
+      result.messages.push_back("ConstProp: no changes");
     }
     return result;
+  }
+
+private:
+  static uint64_t local_operand(const Instruction& inst) {
+    if (!inst.operands.empty() && inst.operands[0].isInt()) {
+      return static_cast<uint64_t>(inst.operands[0].asInt());
+    }
+    return UINT64_MAX;
+  }
+
+  static ConstPropagationAnalysis::StackVal pop_stack(ConstPropagationAnalysis::ConstantStack& stack) {
+    if (stack.empty()) return std::nullopt;
+    auto v = std::move(stack.back());
+    stack.pop_back();
+    return v;
   }
 };
 
@@ -408,61 +621,108 @@ public:
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func, const BytecodeChunk& chunk) override {
     PassResult result;
 
-    // ---- 1. Liveness analysis for local variables ----
-    // Compute which locals are live at each program point.
     LivenessAnalysis analysis;
     auto in_live = analysis.run(blocks, func);
 
-    // For each block, we track liveness backwards through instructions.
-    // An instruction is dead if:
-    // - It writes a local that is not live after the instruction
-    // - It is a LOAD_VAR of a local not live after, and the value is not used
-    // For now we do the simple local-dead-store elimination.
-
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
       auto& block = blocks[bi];
-      if (block.instructions.empty()) continue;
+      const size_t n = block.instructions.size();
+      if (n == 0) continue;
 
-      // Start with OUT live set from dataflow (what's live at block exit)
+      std::vector<char> remove(n, 0);
+
+      // ---- 1. Pure-run elimination (balanced window scan) ----
+      // Inside each maximal contiguous run of pure instructions, greedily
+      // scan for the leftmost window that is self-contained: its stack
+      // effect never dips below the starting depth (nothing consumed from
+      // outside the window) and nets exactly zero (nothing left on the
+      // stack). Such windows are dead: they compute values that are
+      // discarded within the window. This eliminates unused pure values,
+      // redundant stack operations, and dead calculations whose operands
+      // were folded away, including inner balanced pairs embedded inside a
+      // larger run whose net effect is nonzero (e.g. the [LOAD_VAR; POP]
+      // prefix of a run whose final value feeds the terminator).
+      for (size_t i = 0; i < n;) {
+        if (!is_pure(block.instructions[i].opcode)) {
+          ++i;
+          continue;
+        }
+        size_t run_end = i;
+        while (run_end < n && is_pure(block.instructions[run_end].opcode)) {
+          ++run_end;
+        }
+        size_t w = i;
+        while (w < run_end) {
+          int32_t rel = 0;  // depth of values pushed inside the window
+          size_t j = w;
+          bool found = false;
+          while (j < run_end) {
+            const auto e = instruction_effect(block.instructions[j].opcode);
+            if (e.pops > rel) {
+              break;  // would consume a value from outside the window
+            }
+            rel = rel - e.pops + e.pushes;
+            ++j;
+            if (rel == 0) {
+              found = true;
+              break;
+            }
+          }
+          if (found) {
+            for (size_t k = w; k < j; ++k) remove[k] = 1;
+            result.modified = true;
+            result.messages.push_back("DCE: removed dead pure stack window [" +
+                                      std::to_string(w) + "," + std::to_string(j) + ")");
+            w = j;
+          } else {
+            ++w;
+          }
+        }
+        i = run_end;
+      }
+
+      // ---- 2. Liveness-driven dead store / dead inc-dec elimination ----
+      // Decisions are recorded as removal flags, and every removal keeps the
+      // stack balanced:
+      //   - a dead STORE_VAR is removed together with the maximal pure suffix
+      //     immediately before it that produces exactly the stored value
+      //     (net +1, self-contained);
+      //   - a dead INCLOCAL/DECLOCAL (or post variant) pushes a value, so it
+      //     is removed together with the POP that consumes it.
       LiveSet live = in_live[bi];
 
-      // Process instructions backwards
-      std::vector<Instruction> new_insts;
-      new_insts.reserve(block.instructions.size());
-
-      for (int ii = static_cast<int>(block.instructions.size()) - 1; ii >= 0; --ii) {
+      for (int ii = static_cast<int>(n) - 1; ii >= 0; --ii) {
         const Instruction& inst = block.instructions[ii];
-        bool keep = true;
+        uint64_t idx = UINT64_MAX;
+        if (!inst.operands.empty() && inst.operands[0].isInt()) {
+          idx = static_cast<uint64_t>(inst.operands[0].asInt());
+        }
 
         switch (inst.opcode) {
           case OpCode::STORE_VAR:
           case OpCode::STORE_IMMUT_VAR: {
-            if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-              if (idx < live.live.size() && !live.live[idx]) {
-                // Stored value is never read - dead store
-                keep = false;
-                result.modified = true;
-                result.messages.push_back("DCE: removed dead store to local " + std::to_string(idx));
-              } else {
-                // This local is now live (its value is needed)
-                if (idx < live.live.size()) live.live[idx] = true;
-              }
+            if (idx >= live.live.size() || live.live[idx]) {
+              // Value will be read later; the store survives. Mark the old
+              // value live (conservative: mirrors previous behavior).
+              if (idx < live.live.size()) live.live[idx] = true;
+              break;
             }
-            break;
-          }
-          case OpCode::LOAD_VAR: {
-            if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-              if (idx < live.live.size() && !live.live[idx]) {
-                // Loaded value is never used - dead load
-                keep = false;
-                result.modified = true;
-                result.messages.push_back("DCE: removed dead load of local " + std::to_string(idx));
-              } else {
-                // This local is live (its value is needed)
-                if (idx < live.live.size()) live.live[idx] = true;
-              }
+            // Dead store. Find the maximal pure suffix before it; if that
+            // suffix is self-contained and nets exactly +1 (the value the
+            // store pops), remove suffix + store.
+            size_t p = static_cast<size_t>(ii);
+            int32_t rel = 0;
+            bool valid = true;
+            while (p > 0 && is_pure(block.instructions[p - 1].opcode)) {
+              const auto e = instruction_effect(block.instructions[p - 1].opcode);
+              if (e.pops > rel) valid = false;
+              rel = rel - e.pops + e.pushes;
+              --p;
+            }
+            if (valid && rel == 1) {
+              for (size_t k = p; k <= static_cast<size_t>(ii); ++k) remove[k] = 1;
+              result.modified = true;
+              result.messages.push_back("DCE: removed dead store to local " + std::to_string(idx));
             }
             break;
           }
@@ -470,79 +730,50 @@ public:
           case OpCode::DECLOCAL:
           case OpCode::INCLOCAL_POST:
           case OpCode::DECLOCAL_POST: {
-            if (!inst.operands.empty() && inst.operands[0].isInt()) {
-              uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-              if (idx < live.live.size() && !live.live[idx]) {
-                // Increment/decrement of dead local
-                keep = false;
-                result.modified = true;
-                result.messages.push_back("DCE: removed dead inc/dec of local " + std::to_string(idx));
-              } else {
-                if (idx < live.live.size()) live.live[idx] = true;
-              }
+            if (idx >= live.live.size() || live.live[idx]) {
+              if (idx < live.live.size()) live.live[idx] = true;
+              break;
+            }
+            // Dead increment/decrement. It pushes a value, so balance the
+            // removal with the following POP (unless that POP is already part
+            // of a removed pure run).
+            const size_t ni = static_cast<size_t>(ii) + 1;
+            if (ni < n && block.instructions[ni].opcode == OpCode::POP && !remove[ni]) {
+              remove[static_cast<size_t>(ii)] = 1;
+              remove[ni] = 1;
+              result.modified = true;
+              result.messages.push_back("DCE: removed dead inc/dec of local " + std::to_string(idx));
+            }
+            break;
+          }
+          case OpCode::LOAD_VAR: {
+            // Dead loads are handled by the pure-run rule (the consuming POP
+            // sits in the same run). Only liveness state is updated here.
+            if (idx < live.live.size() && live.live[idx]) {
+              live.live[idx] = true;
             }
             break;
           }
           default:
-            // For other instructions, we conservatively keep them.
-            // A full DCE would track stack liveness.
             break;
         }
-
-        if (keep) {
-          new_insts.push_back(inst);
-        }
       }
 
-      // Reverse back to forward order
-      std::reverse(new_insts.begin(), new_insts.end());
-      if (new_insts.size() != block.instructions.size()) {
+      bool any = false;
+      for (char r : remove) any |= (r != 0);
+      if (any) {
+        std::vector<Instruction> new_insts;
+        new_insts.reserve(n);
+        for (size_t i = 0; i < n; ++i) {
+          if (!remove[i]) new_insts.push_back(block.instructions[i]);
+        }
         block.instructions.swap(new_insts);
-        result.modified = true;
       }
     }
 
-    // ---- 2. Peephole dead code elimination (stack patterns) ----
-    for (auto& block : blocks) {
-      std::vector<Instruction> new_insts;
-      new_insts.reserve(block.instructions.size());
-
-      for (size_t i = 0; i < block.instructions.size(); ++i) {
-        const Instruction& inst = block.instructions[i];
-        bool skip = false;
-
-        if (i + 1 < block.instructions.size()) {
-          const Instruction& next = block.instructions[i + 1];
-
-          // LOAD_CONST -> POP
-          if (inst.opcode == OpCode::LOAD_CONST && next.opcode == OpCode::POP) {
-            result.modified = true;
-            skip = true;
-            result.messages.push_back("DCE: removed LOAD_CONST + POP");
-          }
-          // DUP -> POP
-          else if (inst.opcode == OpCode::DUP && next.opcode == OpCode::POP) {
-            result.modified = true;
-            skip = true;
-            result.messages.push_back("DCE: removed DUP + POP");
-          }
-          // LOAD_VAR -> POP (dead load)
-          else if (inst.opcode == OpCode::LOAD_VAR && next.opcode == OpCode::POP) {
-            result.modified = true;
-            skip = true;
-            result.messages.push_back("DCE: removed LOAD_VAR + POP");
-          }
-        }
-
-        if (!skip) new_insts.push_back(inst);
-      }
-
-      if (new_insts.size() != block.instructions.size()) {
-        block.instructions.swap(new_insts);
-        result.modified = true;
-      }
+    if (!result.modified) {
+      result.messages.push_back("DCE: no changes");
     }
-
     return result;
   }
 };

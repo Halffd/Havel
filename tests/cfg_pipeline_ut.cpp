@@ -10,6 +10,7 @@
 #include "BytecodeIR.hpp"
 #include "BytecodePasses.hpp"
 #include "DataflowAnalysis.hpp"
+#include "InstructionEffects.hpp"
 
 #include <gtest/gtest.h>
 
@@ -324,6 +325,117 @@ TEST_F(CFGPipelineTest, ConstPropagationPropagatesLocals) {
   EXPECT_TRUE(res.valid);
 }
 
+TEST_F(CFGPipelineTest, ConstPropagationFoldsComparisons) {
+  FunctionBuilder fb("cp_cmp", 0, 0);
+  fb.load_const(Value::makeInt(10));
+  fb.load_const(Value::makeInt(5));
+  fb.lt();  // 10 < 5 -> false
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  // Should have folded 10 < 5 -> LOAD_CONST false
+  bool found_folded = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isBool() &&
+        !inst.operands[0].asBool()) {
+      found_folded = true;
+    }
+  }
+  EXPECT_TRUE(found_folded) << "Constant folding of 10 < 5 -> false";
+  EXPECT_TRUE(res.valid);
+}
+
+TEST_F(CFGPipelineTest, ConstPropagationFoldsUnaryOps) {
+  FunctionBuilder fb("cp_un", 0, 0);
+  fb.load_const(Value::makeInt(5));
+  fb.push(OpCode::NEGATE);  // -5
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  // Should have folded NEGATE(5) -> LOAD_CONST -5
+  bool found_folded = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == -5) {
+      found_folded = true;
+    }
+  }
+  EXPECT_TRUE(found_folded) << "Constant folding of negate(5) -> -5";
+  EXPECT_TRUE(res.valid);
+}
+
+TEST_F(CFGPipelineTest, ConstPropagationFoldsConstantConditional) {
+  // if (true) fall through to b1, else b2 -> b1 (join). The CFG model carries
+  // every edge as an explicit terminator target, so the else arm re-joins via
+  // an explicit Jump to b1. Const true means JumpIfFalse(2) is never taken and
+  // the conditional folds to an unconditional Jump into the join.
+  FunctionBuilder fb("cp_cond", 0, 0);
+  const uint32_t b0 = fb.current_block();
+  const uint32_t b1 = fb.create_block();
+  const uint32_t b2 = fb.create_block();
+  fb.set_current_block(b0);
+  fb.load_const(Value::makeBool(true));
+  fb.jump_if_false(b2);  // never taken: true -> b1
+  fb.set_current_block(b1);
+  fb.ret();
+  fb.set_current_block(b2);
+  fb.jump(b1);  // explicit re-join keeps the else arm a real CFG edge
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  ASSERT_TRUE(res.valid);
+  // Only the fall-through edge may remain: unconditional Jump to block 1
+  // (the join), whose predecessor list was rebuilt to match.
+  EXPECT_EQ(f.blocks[0].terminator.kind, TerminatorKind::Jump);
+  ASSERT_EQ(f.blocks[0].terminator.targets.size(), 1u);
+  EXPECT_EQ(f.blocks[0].terminator.targets[0], b1);
+  // The dead condition tail was dropped.
+  EXPECT_TRUE(f.blocks[0].instructions.empty());
+  // Stored predecessor lists match the folded terminator.
+  bool b1_has_pred = false;
+  for (uint32_t p : f.blocks[b1].predecessors) b1_has_pred |= (p == b0);
+  EXPECT_TRUE(b1_has_pred) << "fall-through predecessor updated";
+}
+
+TEST_F(CFGPipelineTest, ConstPropagationPropagatesCrossBlockLocals) {
+  // block 0: local 0 = 7; block 1: LOAD_VAR 0 -> LOAD_CONST 7
+  FunctionBuilder fb("cp_x", 0, 1);
+  const uint32_t b0 = fb.current_block();
+  const uint32_t b1 = fb.create_block();
+  fb.set_current_block(b0);
+  fb.load_const(Value::makeInt(7));
+  fb.store_var(0);
+  fb.jump(b1);
+  fb.set_current_block(b1);
+  fb.load_var(0);
+  fb.ret();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  bool found_const = false;
+  for (const auto& inst : f.blocks[b1].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == 7) {
+      found_const = true;
+    }
+  }
+  EXPECT_TRUE(found_const)
+      << "Constant from predecessor block propagated into LOAD_VAR";
+}
+
 TEST_F(CFGPipelineTest, DceRemovesDeadStoresAndLoads) {
   FunctionBuilder fb("dce1", 0, 2);
   // dead store
@@ -357,8 +469,9 @@ TEST_F(CFGPipelineTest, DceRemovesDeadStoresAndLoads) {
 
 TEST_F(CFGPipelineTest, DceRemovesDeadIncDec) {
   FunctionBuilder fb("dce2", 0, 1);
-  // dead increment
+  // dead increment (statement form: INCLOCAL pushes, POP consumes)
   fb.inc_local(0);
+  fb.pop();
   // live
   fb.load_const(Value::makeInt(1));
   fb.store_var(0);
@@ -371,12 +484,102 @@ TEST_F(CFGPipelineTest, DceRemovesDeadIncDec) {
   const PassResult res = pm->run_all(f.blocks, f);
 
   EXPECT_TRUE(res.valid);
-  // INCLOCAL of dead local should be removed
+  // The INCLOCAL + POP pair (dead local) should be removed together, keeping
+  // the stack balanced.
   bool has_inc = false;
   for (const auto& inst : f.blocks[0].instructions) {
     if (inst.opcode == OpCode::INCLOCAL) has_inc = true;
   }
-  EXPECT_FALSE(has_inc) << "Dead INCRELOCAL should be eliminated";
+  EXPECT_FALSE(has_inc) << "Dead INCLOCAL should be eliminated";
+}
+
+TEST_F(CFGPipelineTest, DceKeepsDeadStoreWhenProducerIsImpure) {
+  // A dead store whose producer can throw (LOAD_GLOBAL is MayThrow) must be
+  // kept: removing it would both unbalance the stack and elide a possible
+  // runtime error.
+  FunctionBuilder fb("dce3", 0, 1);
+  fb.load_global("missing");
+  fb.store_var(0);  // dead store, but LOAD_GLOBAL is not removable
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  bool has_load_global = false;
+  bool has_store = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_GLOBAL) has_load_global = true;
+    if (inst.opcode == OpCode::STORE_VAR) has_store = true;
+  }
+  EXPECT_TRUE(has_load_global) << "MayThrow producer must not be removed";
+  EXPECT_TRUE(has_store) << "Dead store with unremovable producer must be kept";
+}
+
+TEST_F(CFGPipelineTest, DceRemovesBalancedPureChains) {
+  // A self-contained pure chain with no net stack effect is entirely dead.
+  FunctionBuilder fb("dce4", 0, 0);
+  fb.load_const(Value::makeInt(1));
+  fb.load_const(Value::makeInt(2));
+  fb.pop();
+  fb.pop();
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  for (const auto& inst : f.blocks[0].instructions) {
+    EXPECT_NE(inst.opcode, OpCode::LOAD_CONST) << "Dead pure chain must vanish";
+  }
+}
+
+TEST_F(CFGPipelineTest, DceKeepsPureRunFeedingReturn) {
+  // A pure run whose value is consumed by RET is live: nothing must vanish.
+  FunctionBuilder fb("dce5", 0, 0);
+  fb.load_const(Value::makeInt(42));
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  bool found = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == 42) {
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found) << "Return value producer must survive DCE";
+}
+
+TEST_F(CFGPipelineTest, DceRemovesDeadLoadPopPair) {
+  // LOAD_VAR whose value is immediately discarded: the pair is one balanced
+  // pure run and vanishes.
+  FunctionBuilder fb("dce6", 0, 2);
+  fb.load_var(1);
+  fb.pop();
+  fb.load_const(Value::makeInt(7));
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = create_standard_pipeline();
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  bool has_load = false;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_VAR) has_load = true;
+  }
+  EXPECT_FALSE(has_load) << "Dead LOAD_VAR + POP pair must be removed";
 }
 
 TEST_F(CFGPipelineTest, CopyPropagationReplacesLocalCopies) {
@@ -621,6 +824,71 @@ TEST_F(CFGPipelineTest, LicmHoistsInvariantStorePairOutOfLoop) {
     }
   }
   EXPECT_FALSE(header_touches_local1) << "Hoisted pair must be removed from header";
+}
+
+// ===== TODO.md #13: Instruction Effects Model =====
+
+// The removable-pure set must be exactly the ops classified Effects::None.
+TEST_F(CFGPipelineTest, InstructionEffectsPureSetIsRemovable) {
+  EXPECT_TRUE(is_pure(OpCode::LOAD_CONST));
+  EXPECT_TRUE(is_pure(OpCode::LOAD_VAR));
+  EXPECT_TRUE(is_pure(OpCode::LOAD_UPVALUE));
+  EXPECT_TRUE(is_pure(OpCode::POP));
+  EXPECT_TRUE(is_pure(OpCode::DUP));
+  EXPECT_TRUE(is_pure(OpCode::SWAP));
+  EXPECT_TRUE(is_pure(OpCode::PUSH_NULL));
+  EXPECT_TRUE(is_pure(OpCode::IS_NULL));
+  EXPECT_TRUE(is_pure(OpCode::NOT));
+  EXPECT_TRUE(is_pure(OpCode::AND));
+  EXPECT_TRUE(is_pure(OpCode::OR));
+  EXPECT_TRUE(is_pure(OpCode::NOP));
+
+  // Anything that writes, calls, allocates, or can trap must NOT be pure.
+  EXPECT_FALSE(is_pure(OpCode::STORE_VAR));
+  EXPECT_FALSE(is_pure(OpCode::STORE_GLOBAL));
+  EXPECT_FALSE(is_pure(OpCode::LOAD_GLOBAL));
+  EXPECT_FALSE(is_pure(OpCode::ADD));
+  EXPECT_FALSE(is_pure(OpCode::ADD_INT));
+  EXPECT_FALSE(is_pure(OpCode::DIV));
+  EXPECT_FALSE(is_pure(OpCode::EQ));
+  EXPECT_FALSE(is_pure(OpCode::CALL));
+  EXPECT_FALSE(is_pure(OpCode::PRINT));
+  EXPECT_FALSE(is_pure(OpCode::THROW));
+  EXPECT_FALSE(is_pure(OpCode::ARRAY_NEW));
+}
+
+// Exact stack effects of the ops the optimizer models precisely.
+TEST_F(CFGPipelineTest, InstructionEffectsStackEffectsAreExact) {
+  EXPECT_EQ(instruction_effect(OpCode::LOAD_CONST).pushes, 1);
+  EXPECT_EQ(instruction_effect(OpCode::LOAD_CONST).pops, 0);
+  EXPECT_EQ(instruction_effect(OpCode::POP).pops, 1);
+  EXPECT_EQ(instruction_effect(OpCode::POP).pushes, 0);
+  EXPECT_EQ(instruction_effect(OpCode::DUP).pops, 1);
+  EXPECT_EQ(instruction_effect(OpCode::DUP).pushes, 2);
+  EXPECT_EQ(instruction_effect(OpCode::SWAP).pops, 2);
+  EXPECT_EQ(instruction_effect(OpCode::SWAP).pushes, 2);
+  EXPECT_EQ(instruction_effect(OpCode::STORE_VAR).pops, 1);
+  EXPECT_EQ(instruction_effect(OpCode::STORE_VAR).pushes, 0);
+  EXPECT_EQ(instruction_effect(OpCode::CALL).pushes, 1);
+  EXPECT_EQ(instruction_effect(OpCode::RETURN).pops, 1);
+}
+
+// Terminators, calls, and IO carry the flags they must carry.
+TEST_F(CFGPipelineTest, InstructionEffectsFlagCoverage) {
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::JUMP).effects, Effects::Terminates));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::JUMP_IF_FALSE).effects, Effects::Terminates));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::RETURN).effects, Effects::Terminates));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::THROW).effects, Effects::Terminates));
+
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::CALL).effects, Effects::Calls));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::CALL).effects, Effects::MayThrow));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::PRINT).effects, Effects::HasSideEffects));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::ARRAY_NEW).effects, Effects::Allocates));
+  EXPECT_TRUE(has_flag(instruction_effect(OpCode::DIV).effects, Effects::MayThrow));
+
+  // Unknown stack effects are marked with -1, never misreported as exact.
+  EXPECT_EQ(instruction_effect(OpCode::CALL).pops, -1);
+  EXPECT_EQ(instruction_effect(OpCode::THREAD_SPAWN).pops, -1);
 }
 
 }  // namespace

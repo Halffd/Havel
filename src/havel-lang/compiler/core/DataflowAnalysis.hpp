@@ -1,7 +1,10 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include "InstructionEffects.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -10,263 +13,534 @@
 
 namespace havel::compiler {
 
-// ===== Dataflow Analysis Framework =====
+// ===== Constant Propagation Analysis =====
 //
-// A generic forward/backward dataflow framework with a worklist fixpoint solver.
-// Concrete analyses (ConstPropagation, LivenessAnalysis) provide:
+// Computes, for every block, which locals hold a compile-time constant at the
+// block's entry. The result feeds ConstPropagationPass, which rewrites
+// LOAD_VAR -> LOAD_CONST, folds constant arithmetic/comparisons, and folds
+// conditional terminators whose condition is constant.
 //
-//   - Domain: the lattice type (must be CopyConstructible)
-//   - Boundary: initial value for entry (forward) / exit (backward)
-//   - Transfer: function (domain, instruction, block) -> new domain
-//   - Meet: domain meet (join for forward, meet for backward)
-//   - Direction: forward or backward
-//
-// The solver computes IN/OUT states for each block to a fixpoint.
+// The lattice: Unknown (top) > Constant(Value). A slot only ever moves
+// Constant -> Unknown (literal-derived constants are fixed; derived constants
+// lose precision when their source does), so the worklist fixpoint terminates.
+// The transfer walks each block with a transient abstract stack of
+// optional<Value> (nullopt = could not be proven constant). The stack is what
+// lets STORE_VAR record which value was stored and lets binary ops propagate
+// constants; the earlier generic-DataflowAnalysis<> version lacked any
+// inter-instruction stack model, so LOAD_CONST never reached its STORE_VAR
+// and no local ever became constant.
 
-// Abstract lattice value for constant propagation.
+namespace detail {
+
+// Successor blocks of `bid` in the edge model, PLUS the implicit linear
+// fall-through: SimplifyCFG rewrites Jump(i+1) into an Unreachable terminator
+// (a NOP in the lowered stream), so execution continues into block i+1. Both
+// the worklist propagation and the predecessor lists in ConstPropagationPass
+// must see that edge or constants do not cross such block boundaries.
+inline std::vector<uint32_t> successors_with_fallthrough(
+    const std::vector<BasicBlock>& blocks, uint32_t bid) {
+  std::vector<uint32_t> succ = blocks[bid].get_targets();
+  if (blocks[bid].terminator.kind == TerminatorKind::Unreachable &&
+      bid + 1 < blocks.size()) {
+    succ.push_back(bid + 1);
+  }
+  return succ;
+}
+
+}  // namespace detail
+
 enum class ConstantState : uint8_t {
   Unknown,    // May be anything (top of lattice)
   Constant,   // Known constant value
-  Unreachable // Block is unreachable (bottom for forward, top for backward)
 };
 
 struct ConstantValue {
   ConstantState state = ConstantState::Unknown;
-  int64_t value = 0;  // Valid only if state == Constant
+  Value value;  // Valid only if state == Constant
 
   ConstantValue() = default;
-  ConstantValue(ConstantState s) : state(s) {}
-  ConstantValue(ConstantState s, int64_t v) : state(s), value(v) {}
+  explicit ConstantValue(ConstantState s) : state(s) {}
+  ConstantValue(ConstantState s, Value v) : state(s), value(std::move(v)) {}
 
   static ConstantValue unknown() { return ConstantValue(ConstantState::Unknown); }
-  static ConstantValue constant(int64_t v) { return ConstantValue(ConstantState::Constant, v); }
-  static ConstantValue unreachable() { return ConstantValue(ConstantState::Unreachable); }
+  static ConstantValue constant(Value v) { return ConstantValue(ConstantState::Constant, std::move(v)); }
 
   bool is_unknown() const { return state == ConstantState::Unknown; }
   bool is_constant() const { return state == ConstantState::Constant; }
-  bool is_unreachable() const { return state == ConstantState::Unreachable; }
+
+  bool operator==(const ConstantValue& o) const {
+    if (state != o.state) return false;
+    return !is_constant() || value == o.value;
+  }
+  bool operator!=(const ConstantValue& o) const { return !(*this == o); }
 };
 
 // Per-local constant state map (indexed by local slot).
 using ConstantMap = std::vector<ConstantValue>;
 
-// Forward/backward dataflow analysis base template.
-template <typename Domain>
-class DataflowAnalysis {
+class ConstPropagationAnalysis {
 public:
-  virtual ~DataflowAnalysis() = default;
+  // Intra-block abstract stack element: the proven constant, or nullopt.
+  using StackVal = std::optional<Value>;
+  using ConstantStack = std::vector<StackVal>;
 
-  // Direction: true = forward, false = backward
-  virtual bool is_forward() const = 0;
+  // Constant values that are safe to reason about at compile time: the
+  // homomorphic subset of the VM value space. Heap values (strings, arrays,
+  // objects, closures) are excluded.
+  static bool foldable_const(const Value& v) {
+    return v.isInt() || v.isDouble() || v.isBool() || v.isNull();
+  }
 
-  // Initial state at the function entry (forward) or exit (backward).
-  virtual Domain boundary(const BytecodeFunction& func) const = 0;
+  // VM isTruthy restricted to the foldable constants. Only called on consts
+  // that passed foldable_const; the fall-through is never reached.
+  static bool const_truthy(const Value& v) {
+    if (v.isNull()) return false;
+    if (v.isBool()) return v.asBool();
+    if (v.isInt()) return v.asInt() != 0;
+    if (v.isDouble()) return v.asDouble() != 0.0;
+    return true;
+  }
 
-  // Meet operator (join for backward, meet for forward).
-  // Combines incoming states from multiple predecessors/successors.
-  virtual Domain meet(const Domain& a, const Domain& b) const = 0;
-
-  // Transfer function: applies instruction effect to state.
-  // Returns new state after the instruction.
-  virtual Domain transfer(const Domain& in, const Instruction& inst,
-                          const BytecodeFunction& func, uint32_t block_id) const = 0;
-
-  // Equality check for fixpoint termination.
-  virtual bool equals(const Domain& a, const Domain& b) const = 0;
-
-  // Run the analysis to fixpoint.
-  // Returns IN states for each block (index = block id).
-  std::vector<Domain> run(const std::vector<BasicBlock>& blocks,
-                          const BytecodeFunction& func) const {
-    const size_t n = blocks.size();
-    std::vector<Domain> in(n);
-    std::vector<Domain> out(n);
-
-    // Initialize IN states.
-    Domain init = boundary(func);
-    for (size_t i = 0; i < n; ++i) {
-      in[i] = init;
-    }
-    if (n > 0) {
-      // Entry block gets boundary, others start at bottom/top.
-      if (is_forward()) {
-        in[0] = init;
-      } else {
-        // For backward, exit block is typically the last with Return/None
-        for (size_t i = 0; i < n; ++i) {
-          const auto& b = blocks[i];
-          if (b.terminator.kind == TerminatorKind::Return ||
-              b.terminator.kind == TerminatorKind::None) {
-            in[i] = init;
-          }
-        }
+  // Fold a binary op over two compile-time constants, mirroring the VM's
+  // dispatch order (VMArithmetic.cpp): null special cases first, then int/int,
+  // then mixed numeric; EQ/NEQ use deep numeric/boolean equality; IS is
+  // identity. Returns nullopt when the result cannot be proven (div by zero,
+  // unsupported operand types, heap results).
+  static std::optional<Value> try_fold(OpCode op, const Value& a, const Value& b) {
+    // ---- null special case (dispatch head) ----
+    if (a.isNull() || b.isNull()) {
+      switch (op) {
+        case OpCode::EQ:
+          return Value::makeBool(a.isNull() && b.isNull());
+        case OpCode::NEQ:
+          return Value::makeBool(!(a.isNull() && b.isNull()));
+        case OpCode::IS:
+          return Value::makeBool(a.isNull() && b.isNull());
+        case OpCode::LT:
+        case OpCode::LTE:
+        case OpCode::GT:
+        case OpCode::GTE:
+          return Value::makeBool(false);
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::DIV:
+        case OpCode::INT_DIV:
+        case OpCode::REMAINDER:
+        case OpCode::MOD:
+        case OpCode::POW:
+        case OpCode::BIT_AND:
+        case OpCode::BIT_OR:
+        case OpCode::BIT_XOR:
+        case OpCode::BIT_LSH:
+        case OpCode::BIT_RSH:
+          return Value::makeNull();  // VM: arithmetic with null yields null
+        default:
+          return std::nullopt;
       }
     }
 
-    // Worklist algorithm.
-    std::vector<bool> in_worklist(n, true);
-    std::vector<uint32_t> worklist;
-    worklist.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) worklist.push_back(i);
+    // ---- equality: deep comparison (numeric mix allowed) ----
+    if (op == OpCode::EQ || op == OpCode::NEQ) {
+      if ((a.isInt() || a.isDouble()) && (b.isInt() || b.isDouble())) {
+        const double l = a.isInt() ? static_cast<double>(a.asInt()) : a.asDouble();
+        const double r = b.isInt() ? static_cast<double>(b.asInt()) : b.asDouble();
+        return Value::makeBool(op == OpCode::EQ ? (l == r) : (l != r));
+      }
+      if (a.isBool() && b.isBool()) {
+        return Value::makeBool(op == OpCode::EQ ? (a.asBool() == b.asBool())
+                                                : (a.asBool() != b.asBool()));
+      }
+      return std::nullopt;
+    }
+    if (op == OpCode::IS) {
+      if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() == b.asInt());
+      if (a.isDouble() && b.isDouble()) return Value::makeBool(a.asDouble() == b.asDouble());
+      if (a.isBool() && b.isBool()) return Value::makeBool(a.asBool() == b.asBool());
+      return std::nullopt;
+    }
+
+    // ---- int/int ----
+    if (a.isInt() && b.isInt()) {
+      const int64_t l = a.asInt();
+      const int64_t r = b.asInt();
+      switch (op) {
+        case OpCode::ADD:
+        case OpCode::ADD_INT:
+          return Value::makeInt(l + r);
+        case OpCode::SUB:
+        case OpCode::SUB_INT:
+          return Value::makeInt(l - r);
+        case OpCode::MUL:
+        case OpCode::MUL_INT:
+          return Value::makeInt(l * r);
+        case OpCode::DIV:
+          if (r == 0) return std::nullopt;  // runtime would throw
+          return Value::makeDouble(static_cast<double>(l) / static_cast<double>(r));
+        case OpCode::INT_DIV:
+        case OpCode::DIV_INT:
+          if (r == 0) return std::nullopt;
+          return Value::makeInt(l / r);
+        case OpCode::REMAINDER:
+          if (r == 0) return std::nullopt;
+          return Value::makeInt(l % r);
+        case OpCode::MOD:
+        case OpCode::MOD_INT: {
+          if (r == 0) return std::nullopt;
+          int64_t m = l % r;
+          if (m != 0 && ((m < 0) != (r < 0))) m += r;
+          return Value::makeInt(m);
+        }
+        case OpCode::LT:
+          return Value::makeBool(l < r);
+        case OpCode::LTE:
+          return Value::makeBool(l <= r);
+        case OpCode::GT:
+          return Value::makeBool(l > r);
+        case OpCode::GTE:
+          return Value::makeBool(l >= r);
+        case OpCode::BIT_AND:
+          return Value::makeInt(l & r);
+        case OpCode::BIT_OR:
+          return Value::makeInt(l | r);
+        case OpCode::BIT_XOR:
+          return Value::makeInt(l ^ r);
+        case OpCode::BIT_LSH:
+          return Value::makeInt(l << (static_cast<uint64_t>(r) & 63));
+        case OpCode::BIT_RSH:
+          return Value::makeInt(l >> (static_cast<uint64_t>(r) & 63));
+        case OpCode::AND:
+          return Value::makeBool(const_truthy(a) && const_truthy(b));
+        case OpCode::OR:
+          return Value::makeBool(const_truthy(a) || const_truthy(b));
+        default:
+          return std::nullopt;
+      }
+    }
+
+    // ---- mixed numeric (int/double in any combination) ----
+    if ((a.isInt() || a.isDouble()) && (b.isInt() || b.isDouble())) {
+      const double l = a.isInt() ? static_cast<double>(a.asInt()) : a.asDouble();
+      const double r = b.isInt() ? static_cast<double>(b.asInt()) : b.asDouble();
+      switch (op) {
+        case OpCode::ADD:
+          return Value::makeDouble(l + r);
+        case OpCode::SUB:
+          return Value::makeDouble(l - r);
+        case OpCode::MUL:
+          return Value::makeDouble(l * r);
+        case OpCode::DIV:
+          if (r == 0.0) return std::nullopt;
+          return Value::makeDouble(l / r);
+        case OpCode::INT_DIV: {
+          const int64_t divisor = static_cast<int64_t>(r);
+          if (divisor == 0) return std::nullopt;
+          return Value::makeInt(static_cast<int64_t>(l) / divisor);
+        }
+        case OpCode::REMAINDER: {
+          const int64_t divisor = static_cast<int64_t>(r);
+          if (divisor == 0) return std::nullopt;
+          return Value::makeInt(static_cast<int64_t>(l) % divisor);
+        }
+        case OpCode::MOD: {
+          if (r == 0.0) return std::nullopt;
+          double m = std::fmod(l, r);
+          if (m != 0.0 && ((m < 0.0) != (r < 0.0))) m += r;
+          return Value::makeDouble(m);
+        }
+        case OpCode::LT:
+          return Value::makeBool(l < r);
+        case OpCode::LTE:
+          return Value::makeBool(l <= r);
+        case OpCode::GT:
+          return Value::makeBool(l > r);
+        case OpCode::GTE:
+          return Value::makeBool(l >= r);
+        case OpCode::AND:
+          return Value::makeBool(const_truthy(a) && const_truthy(b));
+        case OpCode::OR:
+          return Value::makeBool(const_truthy(a) || const_truthy(b));
+        default:
+          return std::nullopt;
+      }
+    }
+
+    // ---- bool/bool logical ----
+    if (a.isBool() && b.isBool()) {
+      switch (op) {
+        case OpCode::AND:
+          return Value::makeBool(const_truthy(a) && const_truthy(b));
+        case OpCode::OR:
+          return Value::makeBool(const_truthy(a) || const_truthy(b));
+        default:
+          return std::nullopt;
+      }
+    }
+    return std::nullopt;
+  }
+
+  // Fold a unary op over a compile-time constant.
+  static std::optional<Value> try_fold_unary(OpCode op, const Value& v) {
+    switch (op) {
+      case OpCode::NEGATE:
+        if (v.isInt()) return Value::makeInt(-v.asInt());
+        if (v.isDouble()) return Value::makeDouble(-v.asDouble());
+        return std::nullopt;
+      case OpCode::NOT:
+        if (foldable_const(v)) return Value::makeBool(!const_truthy(v));
+        return std::nullopt;
+      case OpCode::IS_NULL:
+        if (foldable_const(v)) return Value::makeBool(v.isNull());
+        return std::nullopt;
+      default:
+        return std::nullopt;
+    }
+  }
+
+  // Per-block IN constant maps (index = block id). Size per block is
+  // local_count + param_count, matching LOAD_VAR/STORE_VAR slot indices.
+  std::vector<ConstantMap> run(const std::vector<BasicBlock>& blocks,
+                               const BytecodeFunction& func) const {
+    const size_t num_slots = static_cast<size_t>(func.local_count) + func.param_count;
+    const size_t n = blocks.size();
+    if (n == 0) return {};
+
+    std::vector<ConstantMap> in(n, ConstantMap(num_slots, ConstantValue::unknown()));
+    std::vector<ConstantMap> out(n, ConstantMap(num_slots, ConstantValue::unknown()));
+
+    std::vector<uint32_t> worklist(n);
+    for (uint32_t i = 0; i < n; ++i) worklist[i] = i;
+    std::vector<char> in_worklist(n, 1);
 
     while (!worklist.empty()) {
       uint32_t bid = worklist.back();
       worklist.pop_back();
-      in_worklist[bid] = false;
+      in_worklist[bid] = 0;
 
-      const BasicBlock& b = blocks[bid];
-
-      // Compute IN from predecessors (forward) or successors (backward).
-      Domain in_state;
-      if (is_forward()) {
-        // Forward: IN = meet of OUT of predecessors.
-        if (b.predecessors.empty()) {
-          in_state = boundary(func);  // Entry
+      ConstantMap in_state(num_slots, ConstantValue::unknown());
+      bool have_pred = false;
+      for (uint32_t pred : blocks[bid].predecessors) {
+        if (pred >= n) continue;
+        // meet_into with an all-Unknown destination stays all-Unknown (a
+        // meeting with Unknown wipes precision), so seed the accumulator with
+        // the first predecessor's OUT verbatim.
+        if (!have_pred) {
+          in_state = out[pred];
+          have_pred = true;
         } else {
-          in_state = out[b.predecessors[0]];
-          for (size_t pi = 1; pi < b.predecessors.size(); ++pi) {
-            in_state = meet(in_state, out[b.predecessors[pi]]);
-          }
-        }
-      } else {
-        // Backward: IN = meet of OUT of successors.
-        const auto& targets = b.get_targets();
-        if (targets.empty()) {
-          in_state = boundary(func);  // Exit
-        } else {
-          in_state = out[targets[0]];
-          for (size_t ti = 1; ti < targets.size(); ++ti) {
-            in_state = meet(in_state, out[targets[ti]]);
-          }
+          meet_into(in_state, out[pred]);
         }
       }
+      in[bid] = in_state;
 
-      // Apply transfer functions through the block.
-      Domain out_state = in_state;
-      for (const Instruction& inst : b.instructions) {
-        out_state = transfer(out_state, inst, func, bid);
-      }
-      // Terminator has no effect on constant state (but may for liveness).
-      // For forward, the terminator's effect is folded into successor's IN via meet.
+      ConstantMap cur = in_state;
+      ConstantStack stack;
+      walk_block(blocks[bid], cur, stack);
 
-      // Check if OUT changed.
-      if (!equals(out[bid], out_state)) {
-        out[bid] = out_state;
-
-        // Propagate to successors (forward) or predecessors (backward).
-        if (is_forward()) {
-          for (uint32_t succ : b.get_targets()) {
-            if (!in_worklist[succ]) {
-              worklist.push_back(succ);
-              in_worklist[succ] = true;
-            }
-          }
-        } else {
-          for (uint32_t pred : b.predecessors) {
-            if (!in_worklist[pred]) {
-              worklist.push_back(pred);
-              in_worklist[pred] = true;
-            }
+      if (cur != out[bid]) {
+        out[bid] = std::move(cur);
+        for (uint32_t succ : detail::successors_with_fallthrough(blocks, bid)) {
+          if (succ < n && !in_worklist[succ]) {
+            in_worklist[succ] = 1;
+            worklist.push_back(succ);
           }
         }
       }
     }
-
     return in;
   }
-};
 
-// ===== Constant Propagation Analysis =====
-
-class ConstPropagationAnalysis : public DataflowAnalysis<ConstantMap> {
-public:
-  bool is_forward() const override { return true; }
-
-  ConstantMap boundary(const BytecodeFunction& func) const override {
-    ConstantMap m(func.local_count + func.param_count, ConstantValue::unknown());
-    return m;
-  }
-
-  ConstantMap meet(const ConstantMap& a, const ConstantMap& b) const override {
-    ConstantMap r(a.size());
-    for (size_t i = 0; i < a.size(); ++i) {
-      r[i] = meet_values(a[i], b[i]);
-    }
-    return r;
-  }
-
-  ConstantMap transfer(const ConstantMap& in, const Instruction& inst,
-                       const BytecodeFunction& func, uint32_t block_id) const override {
-    ConstantMap out = in;
-
-    switch (inst.opcode) {
-      case OpCode::LOAD_CONST: {
-        if (!inst.operands.empty() && inst.operands[0].isInt()) {
-          int64_t val = inst.operands[0].asInt();
-          // The next instruction should be STORE_VAR - we can't easily know
-          // which local it targets without peeking. For simplicity, we'll
-          // handle this via a post-scan or by assuming LOAD_CONST is
-          // immediately followed by STORE_VAR. A more complete impl would
-          // use a peephole pass or track the stack.
-          // Here we just note the constant is on the stack (no slot assigned).
-        }
-        break;
-      }
-      case OpCode::STORE_VAR:
-      case OpCode::STORE_IMMUT_VAR: {
-        if (!inst.operands.empty() && inst.operands[0].isInt()) {
-          uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-          if (idx < out.size()) {
-            out[idx] = ConstantValue::unknown();
-          }
-        }
-        break;
-      }
-      case OpCode::LOAD_VAR: {
-        // Loading a variable - no state change.
-        break;
-      }
-      case OpCode::ADD:
-      case OpCode::SUB:
-      case OpCode::MUL:
-      case OpCode::DIV:
-      case OpCode::MOD:
-      case OpCode::ADD_INT:
-      case OpCode::SUB_INT:
-      case OpCode::MUL_INT:
-      case OpCode::DIV_INT:
-      case OpCode::MOD_INT: {
-        // Binary ops consume two values, produce one. Without stack tracking
-        // we can't precisely propagate constants. Mark destination as Unknown.
-        // (Real impl would use a stack abstraction.)
-        break;
-      }
+  // Blocks that create or invoke closures may observe and mutate frame
+  // locals (captured as upvalues), so local constants must be forgotten.
+  static bool may_escape_to_closure(OpCode op) {
+    switch (op) {
+      case OpCode::CLOSURE:
+      case OpCode::DEFINE_FUNC:
+      case OpCode::CALL:
+      case OpCode::CALL_DYN:
+      case OpCode::CALL_SPREAD:
+      case OpCode::TAIL_CALL:
+      case OpCode::CALL_METHOD:
+      case OpCode::CALL_METHOD_SPREAD:
+      case OpCode::FFI_CALL:
+      case OpCode::SPREAD_CALL:
+      case OpCode::CALL_IF_FUNCTION:
+      case OpCode::ARRAY_MAP:
+      case OpCode::ARRAY_FILTER:
+      case OpCode::ARRAY_REDUCE:
+      case OpCode::ARRAY_FOREACH:
+        return true;
       default:
-        break;
-    }
-    return out;
-  }
-
-  bool equals(const ConstantMap& a, const ConstantMap& b) const override {
-    if (a.size() != b.size()) return false;
-    for (size_t i = 0; i < a.size(); ++i) {
-      if (a[i].state != b[i].state) return false;
-      if (a[i].is_constant() && b[i].is_constant() && a[i].value != b[i].value)
         return false;
     }
-    return true;
+  }
+
+  // Walk one block's instructions, updating the per-local constant map and the
+  // transient abstract stack. Used by the fixpoint above; the same rules drive
+  // ConstPropagationPass's rewrite walk.
+  static void walk_block(const BasicBlock& block, ConstantMap& locals,
+                         ConstantStack& stack) {
+    for (const Instruction& inst : block.instructions) {
+      switch (inst.opcode) {
+        case OpCode::LOAD_CONST:
+          if (!inst.operands.empty()) stack.push_back(inst.operands[0]);
+          else stack.push_back(std::nullopt);
+          break;
+        case OpCode::PUSH_NULL:
+          stack.push_back(Value::makeNull());
+          break;
+        case OpCode::LOAD_VAR: {
+          uint64_t idx = local_operand(inst);
+          stack.push_back(idx < locals.size() && locals[idx].is_constant()
+                              ? StackVal(locals[idx].value)
+                              : StackVal());
+          break;
+        }
+        case OpCode::LOAD_UPVALUE:
+          stack.push_back(std::nullopt);  // captured value, unknown
+          break;
+        case OpCode::STORE_VAR:
+        case OpCode::STORE_IMMUT_VAR: {
+          uint64_t idx = local_operand(inst);
+          StackVal v = pop_stack(stack);
+          if (idx < locals.size()) {
+            locals[idx] = v.has_value() ? ConstantValue::constant(*v)
+                                        : ConstantValue::unknown();
+          }
+          break;
+        }
+        case OpCode::STORE_UPVALUE:
+          (void)pop_stack(stack);
+          break;
+        case OpCode::POP:
+          (void)pop_stack(stack);
+          break;
+        case OpCode::DUP: {
+          StackVal v = pop_stack(stack);
+          stack.push_back(v);
+          stack.push_back(v);
+          break;
+        }
+        case OpCode::SWAP: {
+          StackVal a = pop_stack(stack);
+          StackVal b = pop_stack(stack);
+          stack.push_back(a);
+          stack.push_back(b);
+          break;
+        }
+        case OpCode::INCLOCAL:
+        case OpCode::DECLOCAL:
+        case OpCode::INCLOCAL_POST:
+        case OpCode::DECLOCAL_POST: {
+          uint64_t idx = local_operand(inst);
+          if (idx < locals.size()) locals[idx] = ConstantValue::unknown();
+          stack.push_back(std::nullopt);  // pushes the new/old value
+          break;
+        }
+        case OpCode::NEGATE:
+        case OpCode::NOT:
+        case OpCode::IS_NULL: {
+          StackVal v = pop_stack(stack);
+          StackVal folded;
+          if (v.has_value() && foldable_const(*v)) {
+            folded = try_fold_unary(inst.opcode, *v);
+          }
+          stack.push_back(folded);
+          break;
+        }
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::DIV:
+        case OpCode::INT_DIV:
+        case OpCode::REMAINDER:
+        case OpCode::MOD:
+        case OpCode::POW:
+        case OpCode::ADD_INT:
+        case OpCode::SUB_INT:
+        case OpCode::MUL_INT:
+        case OpCode::DIV_INT:
+        case OpCode::MOD_INT:
+        case OpCode::EQ:
+        case OpCode::NEQ:
+        case OpCode::IS:
+        case OpCode::LT:
+        case OpCode::LTE:
+        case OpCode::GT:
+        case OpCode::GTE:
+        case OpCode::BIT_AND:
+        case OpCode::BIT_OR:
+        case OpCode::BIT_XOR:
+        case OpCode::BIT_LSH:
+        case OpCode::BIT_RSH:
+        case OpCode::AND:
+        case OpCode::OR: {
+          StackVal r = pop_stack(stack);
+          StackVal l = pop_stack(stack);
+          StackVal folded;
+          if (l.has_value() && r.has_value() && foldable_const(*l) && foldable_const(*r)) {
+            folded = try_fold(inst.opcode, *l, *r);
+          }
+          stack.push_back(folded);
+          break;
+        }
+        default:
+          if (may_escape_to_closure(inst.opcode)) {
+            // A closure may capture and mutate frame locals.
+            std::fill(locals.begin(), locals.end(), ConstantValue::unknown());
+            stack.clear();
+            stack.push_back(std::nullopt);  // CALL/CLOSURE result is unknown
+            break;
+          }
+          // Conservative effect fallback from the shared classification.
+          {
+            const auto e = instruction_effect(inst.opcode);
+            if (e.pops < 0) {
+              stack.clear();
+            } else {
+              for (int32_t i = 0; i < e.pops; ++i) (void)pop_stack(stack);
+            }
+            if (e.pushes < 0) {
+              stack.clear();
+            } else {
+              for (int32_t i = 0; i < e.pushes; ++i) stack.push_back(std::nullopt);
+            }
+          }
+          break;
+      }
+    }
   }
 
 private:
-  static ConstantValue meet_values(const ConstantValue& a, const ConstantValue& b) {
-    if (a.is_unreachable() || b.is_unreachable()) return ConstantValue::unreachable();
-    if (a.is_constant() && b.is_constant()) {
-      if (a.value == b.value) return a;
-      return ConstantValue::unknown();  // Different constants -> unknown
+  static uint64_t local_operand(const Instruction& inst) {
+    if (!inst.operands.empty() && inst.operands[0].isInt()) {
+      return static_cast<uint64_t>(inst.operands[0].asInt());
     }
-    if (a.is_constant()) return a;
-    if (b.is_constant()) return b;
-    return ConstantValue::unknown();
+    return UINT64_MAX;
+  }
+
+  // Pop the abstract stack; an underflow models a value pushed by a
+  // predecessor block (unknown), which we never need to distinguish.
+  static StackVal pop_stack(ConstantStack& stack) {
+    if (stack.empty()) return std::nullopt;
+    StackVal v = std::move(stack.back());
+    stack.pop_back();
+    return v;
+  }
+
+  // Join `src` into `dst` (meet: a slot keeps its constant only if both
+  // sides agree on the same value).
+  static void meet_into(ConstantMap& dst, const ConstantMap& src) {
+    const size_t n = std::min(dst.size(), src.size());
+    for (size_t i = 0; i < n; ++i) {
+      if (dst[i].is_unknown() || src[i].is_unknown()) {
+        dst[i] = ConstantValue::unknown();
+      } else if (dst[i].is_constant() && src[i].is_constant()) {
+        if (!(dst[i].value == src[i].value)) dst[i] = ConstantValue::unknown();
+      } else {
+        dst[i] = ConstantValue::unknown();
+      }
+    }
   }
 };
 
@@ -292,54 +566,78 @@ struct LiveSet {
   }
 };
 
-class LivenessAnalysis : public DataflowAnalysis<LiveSet> {
+class LivenessAnalysis {
 public:
-  bool is_forward() const override { return false; }
+  // Returns, for each block, the set of locals LIVE AT THE BLOCK'S EXIT:
+  // locals that any successor may read. This is what a backward dead-store
+  // walk needs to start from.
+  //
+  // Classic backward liveness: exit[b] = join of entry[s] over successors s;
+  // entry[b] = exit[b] gen/killed walking the block's instructions in
+  // reverse. Iterated to a fixpoint over the CFG. Backward transfer does not
+  // fit the forward-only framework, so this is self-owned like the other
+  // analyses in this header.
+  std::vector<LiveSet> run(const std::vector<BasicBlock>& blocks,
+                           const BytecodeFunction& func) const {
+    const size_t num_locals = static_cast<size_t>(func.local_count) + func.param_count;
+    const size_t n = blocks.size();
+    if (n == 0) return {};
 
-  LiveSet boundary(const BytecodeFunction& func) const override {
-    return LiveSet(func.local_count + func.param_count);
-  }
+    std::vector<LiveSet> entry(n, LiveSet(num_locals));
+    std::vector<LiveSet> exit(n, LiveSet(num_locals));
 
-  LiveSet meet(const LiveSet& a, const LiveSet& b) const override {
-    return a.join(b);
-  }
-
-  LiveSet transfer(const LiveSet& in, const Instruction& inst,
-                   const BytecodeFunction& func, uint32_t block_id) const override {
-    LiveSet out = in;
-
-    switch (inst.opcode) {
-      case OpCode::LOAD_VAR: {
-        if (!inst.operands.empty() && inst.operands[0].isInt()) {
-          uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-          if (idx < out.live.size()) out.live[idx] = true;
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (uint32_t b = 0; b < n; ++b) {
+        LiveSet ex(num_locals);
+        // Successors include the implicit linear fall-through carried by an
+        // Unreachable terminator (SimplifyCFG rewrites Jump(i+1) to it), or a
+        // dead store here would be treated as unused while the next block
+        // still reads the local.
+        for (uint32_t s : detail::successors_with_fallthrough(blocks, b)) {
+          if (s < n) ex = ex.join(entry[s]);
         }
-        break;
-      }
-      case OpCode::STORE_VAR:
-      case OpCode::STORE_IMMUT_VAR:
-      case OpCode::INCLOCAL:
-      case OpCode::DECLOCAL:
-      case OpCode::INCLOCAL_POST:
-      case OpCode::DECLOCAL_POST: {
-        if (!inst.operands.empty() && inst.operands[0].isInt()) {
-          uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
-          if (idx < out.live.size()) out.live[idx] = false;  // Killed by store
+        LiveSet en = ex;
+        transfer_backward(blocks[b], en);
+        if (!(en == entry[b]) || !(ex == exit[b])) {
+          entry[b] = std::move(en);
+          exit[b] = std::move(ex);
+          changed = true;
         }
-        break;
       }
-      case OpCode::LOAD_UPVALUE:
-      case OpCode::STORE_UPVALUE:
-        // Upvalues tracked separately; conservatively mark all live.
-        break;
-      default:
-        break;
     }
-    return out;
+    return exit;
   }
 
-  bool equals(const LiveSet& a, const LiveSet& b) const override {
-    return a == b;
+private:
+  void transfer_backward(const BasicBlock& block, LiveSet& live) const {
+    for (int ii = static_cast<int>(block.instructions.size()) - 1; ii >= 0; --ii) {
+      const Instruction& inst = block.instructions[ii];
+      uint64_t idx = UINT64_MAX;
+      if (!inst.operands.empty() && inst.operands[0].isInt()) {
+        idx = static_cast<uint64_t>(inst.operands[0].asInt());
+      }
+      switch (inst.opcode) {
+        case OpCode::LOAD_VAR:
+          if (idx < live.live.size()) live.live[idx] = true;  // gen
+          break;
+        case OpCode::STORE_VAR:
+        case OpCode::STORE_IMMUT_VAR:
+          if (idx < live.live.size()) live.live[idx] = false;  // kill
+          break;
+        case OpCode::INCLOCAL:
+        case OpCode::DECLOCAL:
+        case OpCode::INCLOCAL_POST:
+        case OpCode::DECLOCAL_POST:
+          // Reads the old value, then writes the new one: the old value must
+          // be live before the instruction.
+          if (idx < live.live.size()) live.live[idx] = true;
+          break;
+        default:
+          break;
+      }
+    }
   }
 };
 

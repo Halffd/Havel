@@ -106,12 +106,9 @@ VM::VM(const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
-    if (trace_execution_) {
-      // fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
-      // fflush(stderr);
-    }
-    jit_compiler_->setDebugMode(cfg.debugJIT);
+    backend_ = std::make_unique<JITCompilerBackend>(
+        std::make_unique<BytecodeOrcJIT>());
+    backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
 }
@@ -145,8 +142,9 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
-    jit_compiler_->setDebugMode(cfg.debugJIT);
+    backend_ = std::make_unique<JITCompilerBackend>(
+        std::make_unique<BytecodeOrcJIT>());
+    backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
 }
@@ -1546,7 +1544,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     hot_func_cb_(*func);
   }
 
-  if (func->jit_compiled && jit_compiler_ && !debugger_attached_ &&
+  if (func->jit_compiled && backend_ && !debugger_attached_ &&
       !callable.isClosureId()) {
     if (debugging::debug_io)
       ::havel::debug("[VM] JIT path: func={} callable_is_closure={} "
@@ -1555,9 +1553,13 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
                      debugger_attached_);
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     try {
-      jit_compiler_->executeCompiled(this, func->name, args);
+      Value jit_result;
+      if (backend_->execute(this, func->name, args, &jit_result)) {
+        setJITActiveClosurePublic(prev_jit_closure);
+        return GoroutineCallResult::JITExecuted;
+      }
       setJITActiveClosurePublic(prev_jit_closure);
-      return GoroutineCallResult::JITExecuted;
+      // Backend declined to execute; fall through to interpreter path.
     } catch (const JitCoroutineSignal &) {
       setJITActiveClosurePublic(prev_jit_closure);
       // Fall through to interpreter path
@@ -2801,13 +2803,17 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
     // fflush(stderr);
   }
-  if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
+  if (callee->jit_compiled && backend_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     try {
-      Value result = jit_compiler_->executeCompiled(this, callee->name, args);
+      Value result;
+      if (backend_->execute(this, callee->name, args, &result)) {
+        setJITActiveClosurePublic(prev_jit_closure);
+        pushStack(result);
+        return;
+      }
       setJITActiveClosurePublic(prev_jit_closure);
-      pushStack(result);
-      return;
+      // Backend declined; fall through to the interpreter call path.
     } catch (const JitCoroutineSignal &) {
       // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
       // that requires interpreter frame management. Fall back to

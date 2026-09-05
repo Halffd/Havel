@@ -20,6 +20,7 @@
 #include <queue>
 
 #include "../core/BytecodeIR.hpp"
+#include "../core/Backend.hpp"
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -1097,8 +1098,31 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   
-void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::move(jit); }
-    JITCompiler* getJITCompiler() const { return jit_compiler_.get(); }
+  // Backend attachment (TODO #18/#19): the VM executes through a
+  // CompilerBackend. The interpreter is always available as the reference
+  // path; a JIT backend replaces the fast path when attached.
+  void setBackend(std::unique_ptr<CompilerBackend> backend) {
+    backend_ = std::move(backend);
+  }
+  CompilerBackend* getBackend() const { return backend_.get(); }
+
+  // Legacy attachment shim: wraps a JITCompiler in the backend boundary.
+  // New embedders should build a JITCompilerBackend (owning) and call
+  // setBackend; this keeps Havel.cpp/HavelEngine wiring compiling while
+  // those migrate.
+  void setJITCompiler(std::unique_ptr<JITCompiler> jit) {
+    if (jit) {
+      backend_ = std::make_unique<JITCompilerBackend>(std::move(jit));
+    } else {
+      backend_.reset();
+    }
+  }
+  // Diagnostic accessors for embedders that still report on the legacy
+  // interface (hvdb status output). Null when no JIT is attached.
+  JITCompiler* getJITCompiler() const {
+    auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get());
+    return jit_backend ? jit_backend->legacy() : nullptr;
+  }
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {
@@ -1502,7 +1526,7 @@ private:
     std::vector<std::string> program_args_;
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
-    std::unique_ptr<JITCompiler> jit_compiler_;
+    std::unique_ptr<CompilerBackend> backend_;
     bool tiering_enabled_ = false;
     uint64_t tier1_threshold_ = 1000;
     uint64_t tier2_threshold_ = 10000;

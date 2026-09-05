@@ -54,6 +54,18 @@ public:
   // Whether a previously compiled function is executable via this backend.
   virtual bool is_compiled(const std::string& func_name) const = 0;
 
+  // Execute a compiled function. Returns true when the backend executed it
+  // (result in *out); false when the caller must fall back to its own
+  // execution path (for the VM backend that is the interpreter itself, so
+  // it never executes here). Thrown exceptions propagate to the caller:
+  // in particular JitCoroutineSignal escapes JIT execution and tells the VM
+  // to re-enter the interpreter for this call.
+  virtual bool execute(VM* vm, const std::string& func_name,
+                       const std::vector<Value>& args, Value* out) {
+    (void)vm; (void)func_name; (void)args; (void)out;
+    return false;
+  }
+
   // Diagnostic knobs, mirroring the JITCompiler set.
   virtual void set_debug_mode(bool enabled) { (void)enabled; }
   virtual void set_dump_ir(bool enabled) { (void)enabled; }
@@ -76,6 +88,13 @@ public:
     // The interpreter can run anything; a name check is meaningless here,
     // so report availability only for non-empty names.
     return !func_name.empty();
+  }
+  bool execute(VM*, const std::string&, const std::vector<Value>&,
+               Value*) override {
+    // The VM backend never executes through the abstraction: the interpreter
+    // IS the VM's own execution path, and the caller falls back to it when
+    // execute() returns false.
+    return false;
   }
   const char* name() const override { return "vm"; }
 };
@@ -118,6 +137,13 @@ public:
   }
   bool is_compiled(const std::string& func_name) const override {
     return jit_ && jit_->isCompiled(func_name);
+  }
+  bool execute(VM* vm, const std::string& func_name,
+               const std::vector<Value>& args, Value* out) override {
+    if (!jit_) return false;
+    Value result = jit_->executeCompiled(vm, func_name, args);
+    if (out) *out = std::move(result);
+    return true;
   }
 
   void set_debug_mode(bool enabled) override { if (jit_) jit_->setDebugMode(enabled); }

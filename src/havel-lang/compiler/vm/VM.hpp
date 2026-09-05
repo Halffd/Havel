@@ -20,6 +20,7 @@
 #include <queue>
 
 #include "../core/BytecodeIR.hpp"
+#include "../core/Backend.hpp"
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -810,8 +811,21 @@ Value lookupGlobalByKey(const std::string& key) {
                 }
             }
         }
+        // Tier-2 backedge hotness: count each SITE once (mirroring the
+        // tier-1 site-key dedup above), not every past-threshold iteration -
+        // the counter feeds the shutdown "tier2_enqueued" statistic, which
+        // previously read 9990001 for a hot loop because it counted loop
+        // iterations. Actual tier-2 queueing happens in the binop tiering
+        // hook (VMArithmetic.cpp), not here.
         if (count >= tier2_threshold_) {
-            tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+            bool first_time = false;
+            {
+                std::lock_guard<std::mutex> lock(hot_trace_mutex_);
+                first_time = tier2_backedge_sites_.insert(site_key).second;
+            }
+            if (first_time) {
+                tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -1105,8 +1119,31 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   
-void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::move(jit); }
-    JITCompiler* getJITCompiler() const { return jit_compiler_.get(); }
+  // Backend attachment (TODO #18/#19): the VM executes through a
+  // CompilerBackend. The interpreter is always available as the reference
+  // path; a JIT backend replaces the fast path when attached.
+  void setBackend(std::unique_ptr<CompilerBackend> backend) {
+    backend_ = std::move(backend);
+  }
+  CompilerBackend* getBackend() const { return backend_.get(); }
+
+  // Legacy attachment shim: wraps a JITCompiler in the backend boundary.
+  // New embedders should build a JITCompilerBackend (owning) and call
+  // setBackend; this keeps Havel.cpp/HavelEngine wiring compiling while
+  // those migrate.
+  void setJITCompiler(std::unique_ptr<JITCompiler> jit) {
+    if (jit) {
+      backend_ = std::make_unique<JITCompilerBackend>(std::move(jit));
+    } else {
+      backend_.reset();
+    }
+  }
+  // Diagnostic accessors for embedders that still report on the legacy
+  // interface (hvdb status output). Null when no JIT is attached.
+  JITCompiler* getJITCompiler() const {
+    auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get());
+    return jit_backend ? jit_backend->legacy() : nullptr;
+  }
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {
@@ -1534,7 +1571,7 @@ private:
     std::vector<std::string> program_args_;
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
-    std::unique_ptr<JITCompiler> jit_compiler_;
+    std::unique_ptr<CompilerBackend> backend_;
     bool tiering_enabled_ = false;
     uint64_t tier1_threshold_ = 1000;
     uint64_t tier2_threshold_ = 10000;
@@ -1552,6 +1589,7 @@ private:
     std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
     std::atomic<uint64_t> trace_hot_count_{0};
     std::unordered_set<uint64_t> hot_trace_sites_;
+    std::unordered_set<uint64_t> tier2_backedge_sites_;
     std::mutex hot_trace_mutex_;
     HotTraceCallback hot_trace_cb_;
     bool tier2_flush_on_shutdown_ = false;

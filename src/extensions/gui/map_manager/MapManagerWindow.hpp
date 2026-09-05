@@ -230,32 +230,6 @@ private:
 };
 
 /**
- * ConditionEditorDialog - Dialog for editing mapping conditions
- */
-class ConditionEditorDialog : public QDialog {
-    Q_OBJECT
-
-public:
-    explicit ConditionEditorDialog(MappingCondition* condition, QWidget* parent = nullptr);
-    
-    MappingCondition getCondition() const { return editedCondition; }
-    bool wasAccepted() const { return accepted; }
-
-private slots:
-    void onAccept();
-    void onReject();
-    void onConditionTypeChanged(int index);
-
-private:
-    void setupUI();
-    
-    MappingCondition editedCondition;
-    bool accepted = false;
-    
-    QComboBox* cmbType;
-    QLineEdit* editPattern;
-    QLabel* lblPatternHelp;
-};
 
 /**
  * HotkeyCapture - Widget for capturing hotkey input

@@ -6,7 +6,7 @@
 #include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "core/hotkey/HotkeyActionWrapper.hpp"
-#include "extensions/gui/automation_suite/AutomationSuite.hpp"
+// AutomationSuite removed (deprecated)
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
 #include "utils/ExitHandler.hpp"

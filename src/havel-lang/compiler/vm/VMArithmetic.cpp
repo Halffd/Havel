@@ -14,7 +14,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
   Value left = popStack();
 
   if (trace_execution_) {
-    // fprintf(stderr, "[BINARY-DEBUG] opcode=%d tiering_enabled=%d jit_compiler_=%p\n", (int)instruction.opcode, tiering_enabled_, jit_compiler_.get());
+    // fprintf(stderr, "[BINARY-DEBUG] opcode=%d tiering_enabled=%d backend=%p\n", (int)instruction.opcode, tiering_enabled_, backend_.get());
     // fflush(stderr);
   }
 
@@ -25,10 +25,10 @@ void VM::execBinaryOp(const Instruction &instruction) {
     fb.left_type_mask |= getFeedbackMask(left);
     fb.right_type_mask |= getFeedbackMask(right);
 
-    if (tiering_enabled_ && frame.function && jit_compiler_) {
+    if (tiering_enabled_ && frame.function && backend_) {
       if (trace_execution_) {
-        // fprintf(stderr, "[TIERING-DEBUG] tiering_enabled=%d frame.function=%s jit_compiler_=%p execution_count=%llu tier1_thresh=%llu tier2_thresh=%llu\n", 
-        //          tiering_enabled_, frame.function ? "yes" : "no", jit_compiler_.get(), (unsigned long long)fb.execution_count, (unsigned long long)tier1_threshold_, (unsigned long long)tier2_threshold_);
+        // fprintf(stderr, "[TIERING-DEBUG] tiering_enabled=%d frame.function=%s backend=%p execution_count=%llu tier1_thresh=%llu tier2_thresh=%llu\n",
+        //          tiering_enabled_, frame.function ? "yes" : "no", backend_.get(), (unsigned long long)fb.execution_count, (unsigned long long)tier1_threshold_, (unsigned long long)tier2_threshold_);
         // fflush(stderr);
       }
       const std::string fn_name = frame.function->name;
@@ -36,7 +36,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
         tier1_compiled_.insert(fn_name);
         tier1_transition_count_.fetch_add(1);
         ::havel::debug("[tiering] {} -> tier1", fn_name);
-        jit_compiler_->compileFunctionTier(*frame.function, 1);
+        backend_->compile_tier(*frame.function, 1);
       }
       if (fb.execution_count >= tier2_threshold_ && !tier2_compiled_.count(fn_name)) {
         tier2_compiled_.insert(fn_name);
@@ -65,8 +65,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
                   tier2_queue_.pop();
                 }
               }
-              if (fn.has_value() && jit_compiler_) {
-                jit_compiler_->compileFunctionTier(*fn, 2);
+              if (fn.has_value() && backend_) {
+                backend_->compile_tier(*fn, 2);
                 tier2_compile_count_.fetch_add(1);
                 ::havel::debug("[tiering] {} -> tier2", fn->name);
                 std::lock_guard<std::mutex> lk(tier2_queue_mutex_);

@@ -26,6 +26,7 @@ endif()
 # ==============================================================================
 option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
+option(ENABLE_CRANELIFT "Build the Cranelift backend prototype (requires cargo)" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
 option(ENABLE_HVDB "Build Havel debugger (hvdb)" ON)
@@ -751,6 +752,10 @@ endif()
 set(TEST_SOURCES "")
 if(ENABLE_TESTS)
     file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp" "tests/*_test.cpp" "tests/phase2_integration_test.cpp")
+    # The cranelift prototype driver is registered separately (needs the
+    # Rust staticlib; only built when ENABLE_CRANELIFT is on).
+    list(REMOVE_ITEM TEST_SOURCES
+        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp")
 endif()
 
 
@@ -1687,6 +1692,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # for --build/--full-aot depends on.
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
+  # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
+  # havel_deoptimize symbol defined in the runtime sources is missing from
+  # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
+  # The JIT symbol map and backend declarations derive from that X-macro.
+  add_test(NAME runtime-abi-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_runtime_abi.sh)
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)
@@ -2285,6 +2296,13 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
+add_havel_module_plugin(text_chunker_gui ${CMAKE_SOURCE_DIR}/src/modules/text_chunker_gui/TextChunkerGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
+add_havel_module_plugin(alt_tab_gui ${CMAKE_SOURCE_DIR}/src/modules/alt_tab_gui/AltTabGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+add_havel_module_plugin(map_manager_gui ${CMAKE_SOURCE_DIR}/src/modules/map_manager_gui/MapManagerGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
@@ -2301,12 +2319,22 @@ if(ENABLE_QT)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
   # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_alt_tab_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_map_manager_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   
   add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   add_havel_module_plugin(screenshot_gui ${CMAKE_SOURCE_DIR}/src/modules/screenshot_gui/ScreenshotGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   target_include_directories(havel_mod_screenshot PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_screenshot_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_alt_tab_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_map_manager_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
 endif()
 
 # Export symbols from main executable so plugins can resolve them
@@ -2445,11 +2473,71 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
     target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
+endif()
+
+# ==============================================================================
+# CRANELIFT BACKEND PROTOTYPE (TODO #24 / section 42 step 15)
+# ==============================================================================
+# Opt-in: builds the Rust staticlib (requires cargo; CARGO_HOME must be
+# writable) and a C test driver that verifies the hclb_* C ABI against the
+# C++ Value NaN-boxing, then compiles and executes int-subset functions
+# through Cranelift.
+if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
+    find_program(CARGO_EXECUTABLE cargo)
+    if(NOT CARGO_EXECUTABLE)
+        message(WARNING "ENABLE_CRANELIFT=ON but cargo not found; prototype disabled")
+    else()
+        set(CRANELIFT_DIR ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/cranelift-backend)
+        set(CRANELIFT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/cranelift-backend)
+        # Cargo invocations need a writable CARGO_HOME: default to the user's
+        # home, fall back to a build-dir one when it is read-only.
+        # Cargo needs a writable CARGO_HOME: prefer the environment, fall
+        # back to the user's home, last resort a build-local directory.
+        if(DEFINED ENV{CARGO_HOME})
+            set(CRANELIFT_CARGO_HOME "$ENV{CARGO_HOME}")
+        elseif(DEFINED ENV{HOME})
+            set(CRANELIFT_CARGO_HOME "$ENV{HOME}/.cargo")
+        else()
+            set(CRANELIFT_CARGO_HOME "${CRANELIFT_BUILD_DIR}/cargo-home")
+        endif()
+        add_custom_command(
+            OUTPUT ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            COMMAND ${CMAKE_COMMAND} -E env
+                    CARGO_HOME=${CRANELIFT_CARGO_HOME}
+                    ${CARGO_EXECUTABLE} build --release
+                        --manifest-path ${CRANELIFT_DIR}/Cargo.toml
+                        --target-dir ${CRANELIFT_BUILD_DIR}
+            COMMAND ${CMAKE_COMMAND} -E copy
+                    ${CRANELIFT_BUILD_DIR}/release/libhavel_cranelift_backend.a
+                    ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            WORKING_DIRECTORY ${CRANELIFT_DIR}
+            COMMENT "Building Cranelift backend prototype (Rust staticlib)"
+            VERBATIM
+        )
+        add_custom_target(cranelift_backend_lib ALL
+            DEPENDS ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a)
+
+        add_executable(cranelift_proto_driver
+            tests/cranelift_proto_driver.cpp
+        )
+        add_dependencies(cranelift_proto_driver cranelift_backend_lib)
+        target_include_directories(cranelift_proto_driver PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/havel-lang
+        )
+        target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
+        target_link_libraries(cranelift_proto_driver PRIVATE
+            ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            ${CMAKE_DL_LIBS}
+        )
+        add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)
+    endif()
 endif()
 
 # ==============================================================================

@@ -271,14 +271,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugAst = cfg.debugAst,
           .debugEmitter = cfg.debugEmitter,
           .traceExecution = cfg.traceExecution,
-          .traceGC = cfg.traceGC,
-          .traceScheduler = cfg.traceScheduler,
-          .traceCalls = cfg.traceCalls,
-          .traceGlobals = cfg.traceGlobals,
-          .traceChannels = cfg.traceChannels,
-          .traceHotkeys = cfg.traceHotkeys,
-          .traceWhen = cfg.traceWhen,
-          .traceAsync = cfg.traceAsync,
+          .optimizeBytecode = cfg.optimizeBytecode,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
           .headlessMode = cfg.headlessMode,
@@ -591,6 +584,7 @@ public:
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
             options.traceExecution = cfg.traceExecution;
+            options.optimizeBytecode = cfg.optimizeBytecode;
             auto *ee = havel_inst.getExecutionEngine();
             if (ee) {
               ee->setScriptReady(true);
@@ -704,6 +698,7 @@ public:
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
         options.traceExecution = cfg.traceExecution;
+        options.optimizeBytecode = cfg.optimizeBytecode;
         if (ee) {
           // Pump goroutine scheduler from the main fiber yield hook so a
           // goroutine spawned by a hotkey script runs while main blocks in
@@ -989,6 +984,7 @@ public:
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
         options.traceExecution = cfg.traceExecution;
+        options.optimizeBytecode = cfg.optimizeBytecode;
         if (ee)
           options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
@@ -1590,22 +1586,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugHotkeys = true;
     } else if (arg == "--trace" || arg == "-t") {
       cfg.traceExecution = true;
-    } else if (arg == "--trace-gc") {
-      cfg.traceGC = true;
-    } else if (arg == "--trace-sched") {
-      cfg.traceScheduler = true;
-    } else if (arg == "--trace-calls") {
-      cfg.traceCalls = true;
-    } else if (arg == "--trace-globals") {
-      cfg.traceGlobals = true;
-    } else if (arg == "--trace-chans") {
-      cfg.traceChannels = true;
-    } else if (arg == "--trace-hotkeys") {
-      cfg.traceHotkeys = true;
-    } else if (arg == "--trace-when") {
-      cfg.traceWhen = true;
-    } else if (arg == "--trace-async") {
-      cfg.traceAsync = true;
+    } else if (arg == "--optimize-bytecode" || arg == "-O") {
+      cfg.optimizeBytecode = true;
     } else if (arg == "--log-level" && i + 1 < argc) {
       std::string level = argv[++i];
       if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
@@ -2019,14 +2001,6 @@ Options:
   -dl, --debug-lexer  Enable lexer debugging
   -dbc, --debug-bytecode  Enable bytecode debugging
   -t, --trace         Trace bytecode execution (show each instruction)
-  --trace-gc          Trace GC events (collections, allocations)
-  --trace-sched       Trace scheduler/goroutine events
-  --trace-calls       Trace function calls
-  --trace-globals     Trace global variable reads/writes
-  --trace-chans       Trace channel operations
-  --trace-hotkeys     Trace hotkey events
-  --trace-when        Trace when-block evaluations
-  --trace-async       Trace async/await operations
   -dgc, --debug-gc    Enable GC debugging
   -de, --debug-engine Enable engine debugging
   -dio, --debug-io    Enable IO debugging

@@ -1,0 +1,9 @@
+#pragma once
+
+#include "havel-lang/compiler/vm/VMApi.hpp"
+
+namespace havel::modules {
+
+void registerSystemMonitorModule(const compiler::VMApi& api);
+
+} // namespace havel::modules

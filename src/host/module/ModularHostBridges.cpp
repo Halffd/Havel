@@ -23,16 +23,14 @@
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#include "extensions/gui/common/SettingsWindow.hpp"
+// SettingsWindow removed (was part of deprecated AutomationSuite)
 #endif
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "host/app/AppService.hpp"
 #include "host/audio/AudioService.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "extensions/gui/automation_suite/AutomationSuite.hpp"
-#endif
+// AutomationSuite removed (deprecated)
 #include "host/automation/AutomationService.hpp"
 #include "host/browser/BrowserService.hpp"
 #include "host/chunker/TextChunkerService.hpp"

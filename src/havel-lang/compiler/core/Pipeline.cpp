@@ -11,6 +11,7 @@
 #include "ModuleGlobals.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "BootstrapByteCompiler.hpp"
+#include "OptimizerDriver.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
@@ -1279,6 +1280,36 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   auto chunk = compiler.compile(*program);
   if (!chunk) {
     COMPILER_THROW("Bytecode compilation failed");
+  }
+
+  // Optional CFG optimization pass over the compiled functions. Opt-in via
+  // PipelineOptions::optimizeBytecode; functions whose bytecode the CFG model
+  // cannot faithfully carry are skipped untouched, so enabling this never
+  // changes semantics for unsupported shapes.
+  if (options.optimizeBytecode) {
+    namespace cfi = havel::compiler::cfgintegration;
+    cfi::OptimizeStats stats;
+    const size_t count = chunk->getFunctionCount();
+    for (size_t i = 0; i < count; ++i) {
+      BytecodeFunction* fn = chunk->getFunctionMutable(
+          static_cast<uint32_t>(i));
+      if (!fn) continue;
+      cfi::optimize_function_cfg(*fn, *chunk, &stats);
+    }
+    std::ostringstream optSummary;
+    optSummary << "optimizeBytecode: " << stats.functions_optimized << "/"
+               << stats.functions_total << " functions optimized ("
+               << stats.functions_skipped_unsafe << " skipped unsafe, "
+               << stats.functions_skipped_error << " errors), "
+               << stats.blocks_removed << " blocks and "
+               << stats.instructions_removed << " instructions removed";
+    if (!stats.last_reconstruct_error.empty()) {
+      optSummary << " | reconstruct: " << stats.last_reconstruct_error;
+    }
+    if (!stats.last_validation_error.empty()) {
+      optSummary << " | validate: " << stats.last_validation_error;
+    }
+    HAVEL_LOG_INFO(optSummary.str());
   }
 
   // Auto-cache compiled chunk to ~/.cache/havel

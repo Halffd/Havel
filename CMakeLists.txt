@@ -2285,6 +2285,8 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
+add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
+add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE

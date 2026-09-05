@@ -7,7 +7,6 @@
 #include "havel-lang/runtime/HostContext.hpp"
 #include "core/io/IO.hpp"
 #include "gui/clipboard_manager/ClipboardManager.hpp"
-#include "gui/automation_suite/AutomationSuite.hpp"
 #include <QApplication>
 
 namespace havel::modules {

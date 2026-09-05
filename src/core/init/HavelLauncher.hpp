@@ -60,6 +60,7 @@ bool debugGc = false;
   bool traceExecution = false;
   bool diffBytecode = false;
   bool stopOnError = false;
+  bool optimizeBytecode = false;  // run the CFG optimization pipeline
   bool fullRepl = false;
   bool minimalMode = false;
   bool headlessMode = false;

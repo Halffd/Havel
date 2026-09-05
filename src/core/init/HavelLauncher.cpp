@@ -271,6 +271,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg
           .debugAst = cfg.debugAst,
           .debugEmitter = cfg.debugEmitter,
           .traceExecution = cfg.traceExecution,
+          .optimizeBytecode = cfg.optimizeBytecode,
           .stopOnError = cfg.stopOnError,
           .leanMinimalStartup = cfg.minimalMode,
           .headlessMode = cfg.headlessMode,
@@ -583,6 +584,7 @@ public:
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
             options.traceExecution = cfg.traceExecution;
+            options.optimizeBytecode = cfg.optimizeBytecode;
             auto *ee = havel_inst.getExecutionEngine();
             if (ee) {
               ee->setScriptReady(true);
@@ -696,6 +698,7 @@ public:
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
         options.traceExecution = cfg.traceExecution;
+        options.optimizeBytecode = cfg.optimizeBytecode;
         if (ee) {
           // Pump goroutine scheduler from the main fiber yield hook so a
           // goroutine spawned by a hotkey script runs while main blocks in
@@ -981,6 +984,7 @@ public:
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
         options.traceExecution = cfg.traceExecution;
+        options.optimizeBytecode = cfg.optimizeBytecode;
         if (ee)
           options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
@@ -1582,6 +1586,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugHotkeys = true;
     } else if (arg == "--trace" || arg == "-t") {
       cfg.traceExecution = true;
+    } else if (arg == "--optimize-bytecode" || arg == "-O") {
+      cfg.optimizeBytecode = true;
     } else if (arg == "--log-level" && i + 1 < argc) {
       std::string level = argv[++i];
       if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);

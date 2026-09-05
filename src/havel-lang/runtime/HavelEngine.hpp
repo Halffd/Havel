@@ -47,6 +47,7 @@ struct EngineConfig {
     bool debugAst = false;
     bool debugEmitter = false;
     bool traceExecution = false;
+    bool optimizeBytecode = false;  // run the CFG optimization pipeline
     bool stopOnError = false;
     bool leanMinimalStartup = false;
     bool headlessMode = false;
@@ -522,6 +523,7 @@ vm_->addIntervalResult(timer_id, result);
         options.debugBytecode = config_.debugBytecode;
         options.debugEmitter = config_.debugEmitter;
         options.traceExecution = config_.traceExecution;
+        options.optimizeBytecode = config_.optimizeBytecode;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;
         }
@@ -591,6 +593,7 @@ vm_->addIntervalResult(timer_id, result);
         }
         options.debugBytecode = config_.debugBytecode;
         options.debugEmitter = config_.debugEmitter;
+        options.optimizeBytecode = config_.optimizeBytecode;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;
         }

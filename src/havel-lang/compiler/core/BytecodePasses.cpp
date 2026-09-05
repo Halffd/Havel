@@ -89,7 +89,11 @@ private:
     
     while (!q.empty()) {
       uint32_t id = q.front(); q.pop();
-      for (uint32_t succ : blocks[id].get_targets()) {
+      // Successors include implicit fall-through edges (JumpIf* fall into
+      // block i+1 on the non-jump arm; an Unreachable terminator is a NOP
+      // continuation; a trailing None block ends the stream). Deleting a
+      // fall-through arm as "unreachable" would miscompile conditionals.
+      for (uint32_t succ : detail::successors_with_fallthrough(blocks, id)) {
         if (succ < blocks.size() && !reachable[succ]) {
           reachable[succ] = true;
           q.push(succ);
@@ -1130,6 +1134,11 @@ PassResult inline_call_at(std::vector<BasicBlock>& blocks, BytecodeFunction& fun
     }
 
     // Recompute predecessor lists from the new terminators.
+    // Validation requires block id == position; the splice moved every block
+    // after the call site, so renumber the whole materialized list.
+    for (size_t i = 0; i < out.size(); ++i) {
+      out[i].id = static_cast<uint32_t>(i);
+    }
     for (auto& b : out) b.predecessors.clear();
     for (uint32_t i = 0; i < out.size(); ++i) {
       for (uint32_t t : out[i].get_targets()) {

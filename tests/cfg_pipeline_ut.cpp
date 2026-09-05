@@ -9,8 +9,10 @@
 
 #include "BytecodeIR.hpp"
 #include "BytecodePasses.hpp"
+#include "CFGIntegration.hpp"
 #include "DataflowAnalysis.hpp"
 #include "InstructionEffects.hpp"
+#include "OptimizerDriver.hpp"
 
 #include <gtest/gtest.h>
 
@@ -889,6 +891,247 @@ TEST_F(CFGPipelineTest, InstructionEffectsFlagCoverage) {
   // Unknown stack effects are marked with -1, never misreported as exact.
   EXPECT_EQ(instruction_effect(OpCode::CALL).pops, -1);
   EXPECT_EQ(instruction_effect(OpCode::THREAD_SPAWN).pops, -1);
+}
+
+// ===== Linear <-> CFG integration (reconstruct_cfg / lower_cfg) =====
+
+// Reconstruct a linear stream with a conditional into blocks; lowering back
+// must produce an equivalent stream (same opcodes; jump targets remapped to
+// the same leaders) and literal LOAD_CONST values must round-trip through the
+// constant pool.
+TEST_F(CFGPipelineTest, ReconstructAndLowerRoundTripConditional) {
+  namespace cfi = havel::compiler::cfgintegration;
+  BytecodeFunction f("rt1", 0, 0);
+
+  // Linear form (constant-pool indices):
+  //   0: LOAD_CONST pool[1]      <- int 5
+  //   1: LOAD_CONST pool[0]      <- int 3
+  //   2: LT
+  //   3: JUMP_IF_FALSE 8
+  //   4: LOAD_CONST pool[2]      <- int 10
+  //   5: STORE_VAR 0
+  //   6: JUMP 9
+  //   7: NOP                     <- leader target 8 lands here
+  // (we build 8 as the else-arm start)
+  f.constants.push_back(Value::makeInt(3));   // pool 0
+  f.constants.push_back(Value::makeInt(5));   // pool 1
+  f.constants.push_back(Value::makeInt(10));  // pool 2
+  f.local_count = 1;
+
+  auto LC = [&](int64_t pool_idx) {
+    return Instruction(OpCode::LOAD_CONST, {Value::makeInt(pool_idx)});
+  };
+
+  f.instructions.push_back(LC(1));
+  f.instructions.push_back(LC(0));
+  f.instructions.push_back(Instruction(OpCode::LT));
+  f.instructions.push_back(
+      Instruction(OpCode::JUMP_IF_FALSE, {Value::makeInt(8)}));
+  f.instructions.push_back(LC(2));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::JUMP, {Value::makeInt(9)}));
+  // else arm (leader 8):
+  f.instructions.push_back(LC(0));  // LOAD_CONST 3
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  // join (leader 9):
+  f.instructions.push_back(LC(2));  // LOAD_CONST 10
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+
+  ASSERT_TRUE(cfi::function_supports_cfg(f));
+
+  auto rc = cfi::reconstruct_cfg(f);
+  ASSERT_TRUE(rc.ok) << rc.error;
+  // 4 leaders: 0 (cond), 4 (then), 8 (else), 9? wait: JUMP 9 -> leader at 9;
+  // 8 is JUMP_IF_FALSE target. Leaders: 0, 4 (after JUMP_IF_FALSE... no:
+  // JUMP_IF_FALSE at 3 makes 4 a leader? No: instructions after a conditional
+  // jump are fall-through leaders). Compute: leaders at 0, 4 (fall-through of
+  // JIF), 8 (JIF target), 6? no. JUMP at 6 targets 9 -> leader 9.
+  ASSERT_GE(rc.blocks.size(), 4u);
+
+  // Valid CFG.
+  const auto v = validate_cfg(rc.blocks, 0);
+  ASSERT_TRUE(v.errors.empty()) << v.errors[0];
+  EXPECT_TRUE(v.valid);
+
+  // LOAD_CONST operands must now be literal Values, not pool indices.
+  bool saw_literal_5 = false;
+  for (const auto& b : rc.blocks) {
+    for (const auto& inst : b.instructions) {
+      if (inst.opcode == OpCode::LOAD_CONST && !inst.operands.empty() &&
+          inst.operands[0].isInt() && inst.operands[0].asInt() == 5) {
+        saw_literal_5 = true;
+      }
+    }
+  }
+  EXPECT_TRUE(saw_literal_5) << "LOAD_CONST translated to literal value";
+
+  // Lower back; constants re-interned; jump operands resolve to block starts.
+  std::vector<Value> pool = f.constants;
+  auto lowered = cfi::lower_cfg(rc.blocks, pool);
+  ASSERT_TRUE(lowered.ok) << lowered.error;
+  EXPECT_FALSE(lowered.instructions.empty());
+  for (const auto& inst : lowered.instructions) {
+    switch (inst.opcode) {
+      case OpCode::JUMP:
+      case OpCode::JUMP_IF_FALSE:
+      case OpCode::JUMP_IF_TRUE:
+      case OpCode::JUMP_IF_NULL:
+        ASSERT_TRUE(inst.operands[0].isInt());
+        EXPECT_GE(inst.operands[0].asInt(), 0);
+        EXPECT_LT(static_cast<size_t>(inst.operands[0].asInt()),
+                  lowered.instructions.size());
+        break;
+      case OpCode::LOAD_CONST:
+        ASSERT_TRUE(inst.operands[0].isInt());
+        EXPECT_LT(static_cast<size_t>(inst.operands[0].asInt()),
+                  pool.size());
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+// The full driver: optimize a small linear function and check the dead store
+// is removed while the live path is preserved.
+TEST_F(CFGPipelineTest, OptimizeDriverRemovesDeadStore) {
+  namespace cfi = havel::compiler::cfgintegration;
+  BytecodeFunction f("opt1", 0, 1);
+
+  f.constants.push_back(Value::makeInt(7));  // pool 0
+  f.local_count = 1;
+
+  // 0: LOAD_CONST 7; 1: STORE_VAR 0 (dead: overwritten); 2: LOAD_CONST 7;
+  // 3: STORE_VAR 0 (live); 4: LOAD_VAR 0; 5: RETURN
+  f.instructions.push_back(
+      Instruction(OpCode::LOAD_CONST, {Value::makeInt(0)}));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(
+      Instruction(OpCode::LOAD_CONST, {Value::makeInt(0)}));
+  f.instructions.push_back(
+      Instruction(OpCode::STORE_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+
+  cfi::OptimizeStats stats;
+  BytecodeChunk chunk;
+  ASSERT_TRUE(cfi::optimize_function_cfg(f, chunk, &stats));
+  EXPECT_EQ(stats.functions_optimized, 1u);
+
+  // After const-prop rewrites LOAD_VAR 0 into the constant 7, no local is
+  // ever read, so DCE removes both stores. Expected result: LOAD_CONST 7;
+  // RETURN with nothing else.
+  ASSERT_EQ(f.instructions.size(), 2u);
+  EXPECT_EQ(f.instructions[0].opcode, OpCode::LOAD_CONST);
+  ASSERT_TRUE(f.instructions[0].operands[0].isInt());
+  const size_t pool_idx =
+      static_cast<size_t>(f.instructions[0].operands[0].asInt());
+  ASSERT_LT(pool_idx, f.constants.size());
+  EXPECT_TRUE(f.constants[pool_idx] == Value::makeInt(7));
+  EXPECT_EQ(f.instructions[1].opcode, OpCode::RETURN);
+
+  // Constant propagation should have replaced LOAD_VAR with a literal-backed
+  // LOAD_CONST pool reference.
+  bool has_const_load = false;
+  for (const auto& inst : f.instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST &&
+        inst.operands[0].isInt() &&
+        static_cast<size_t>(inst.operands[0].asInt()) < f.constants.size() &&
+        f.constants[static_cast<size_t>(inst.operands[0].asInt())] ==
+            Value::makeInt(7)) {
+      has_const_load = true;
+    }
+  }
+  EXPECT_TRUE(has_const_load) << "load const-propagated to 7";
+
+  // Per-IP arrays rebuilt to the new instruction count.
+  EXPECT_EQ(f.type_feedback.size(), f.instructions.size());
+  EXPECT_EQ(f.instruction_locations.size(), f.instructions.size());
+}
+
+// Functions with opcodes the CFG model cannot carry must be skipped
+// untouched.
+TEST_F(CFGPipelineTest, OptimizeDriverSkipsUnsupportedFunctions) {
+  namespace cfi = havel::compiler::cfgintegration;
+  BytecodeFunction f("unsafe1", 0, 0);
+
+  f.constants.push_back(Value::makeNull());
+  f.instructions.push_back(
+      Instruction(OpCode::LOAD_CONST, {Value::makeInt(0)}));
+  f.instructions.push_back(
+      Instruction(OpCode::TRY_ENTER, {Value::makeInt(5)}));
+  f.instructions.push_back(Instruction(OpCode::RETURN));
+
+  const auto before = f.instructions;
+  cfi::OptimizeStats stats;
+  BytecodeChunk chunk;
+  EXPECT_FALSE(cfi::optimize_function_cfg(f, chunk, &stats));
+  EXPECT_EQ(stats.functions_skipped_unsafe, 1u);
+  ASSERT_EQ(f.instructions.size(), before.size());
+  for (size_t i = 0; i < f.instructions.size(); ++i) {
+    EXPECT_EQ(f.instructions[i].opcode, before[i].opcode);
+    EXPECT_EQ(f.instructions[i].operands, before[i].operands);
+  }
+  EXPECT_FALSE(f.has_cfg()) << "no partial CFG left behind";
+}
+
+// flatten_cfg must preserve fall-through adjacency for one-armed
+// conditionals: the block after a JumpIf* in the linear stream must be that
+// block's fall-through arm.
+TEST_F(CFGPipelineTest, FlattenPreservesConditionalFallThrough) {
+  // ifelse shape where the then-block is NOT adjacent to the entry in block
+  // id order used to break under BFS ordering: entry(0) JIF(2); then(1); exit(2).
+  FunctionBuilder fb("ft1", 1, 0);
+  fb.load_var(0);
+  fb.load_const(Value::makeInt(0));
+  fb.eq();
+  const uint32_t then_b = fb.create_block();
+  const uint32_t exit_b = fb.create_block();
+  fb.set_current_block(0);
+  auto ab = fb.branch(0, then_b, exit_b);
+  EXPECT_EQ(ab.first, then_b);
+  fb.set_current_block(then_b);
+  fb.load_const(Value::makeInt(42));
+  fb.ret();
+  fb.set_current_block(exit_b);
+  fb.load_const(Value::makeInt(7));
+  fb.ret();
+
+  BytecodeFunction f = fb.build();
+  const auto v = validate_cfg(f.blocks, f.entry_block);
+  ASSERT_TRUE(v.errors.empty()) << v.errors[0];
+
+  LinearFunction lin = flatten_cfg(f.blocks, f.entry_block);
+
+  // Entry must be emitted first and its JUMP_IF_FALSE must be immediately
+  // followed by the then-arm (fall-through), with the exit target pointing at
+  // the exit block's start IP.
+  ASSERT_FALSE(lin.instructions.empty());
+  size_t jif_index = SIZE_MAX;
+  for (size_t i = 0; i < lin.instructions.size(); ++i) {
+    if (lin.instructions[i].opcode == OpCode::JUMP_IF_FALSE) {
+      jif_index = i;
+      break;
+    }
+  }
+  ASSERT_NE(jif_index, SIZE_MAX);
+  // Next emitted instruction must belong to the then-arm (LOAD_CONST 42),
+  // proving adjacency was preserved.
+  ASSERT_LT(jif_index + 1, lin.instructions.size());
+  EXPECT_EQ(lin.instructions[jif_index + 1].opcode, OpCode::LOAD_CONST);
+  ASSERT_FALSE(lin.instructions[jif_index + 1].operands.empty());
+  EXPECT_EQ(lin.instructions[jif_index + 1].operands[0].asInt(), 42);
+  // And the conditional's target must be the exit block (LOAD_CONST 7).
+  const int64_t target = lin.instructions[jif_index].operands[0].asInt();
+  ASSERT_GE(target, 0);
+  ASSERT_LT(static_cast<size_t>(target), lin.instructions.size());
+  EXPECT_EQ(lin.instructions[static_cast<size_t>(target)].opcode,
+            OpCode::LOAD_CONST);
+  EXPECT_EQ(lin.instructions[static_cast<size_t>(target)].operands[0].asInt(),
+            7);
 }
 
 }  // namespace

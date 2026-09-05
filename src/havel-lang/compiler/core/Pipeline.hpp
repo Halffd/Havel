@@ -24,6 +24,10 @@ struct PipelineOptions {
     bool debugBytecode = false;
     bool debugEmitter = false;
     bool traceExecution = false;
+    // Run the CFG optimization pipeline (reconstruct -> passes -> lower) over
+    // compiled functions. Functions with opcodes the CFG model cannot carry
+    // (exception handlers, inline caches, coroutine suspension) are skipped.
+    bool optimizeBytecode = false;
     uint64_t max_instructions = 0; // 0 = unlimited
     std::unordered_map<std::string, BytecodeHostFunction> host_functions;
     VM *vm_override = nullptr;

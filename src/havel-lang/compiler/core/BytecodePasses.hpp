@@ -163,6 +163,10 @@ private:
   }
 };
 
+// ===== Pass Factory =====
+
+std::unique_ptr<BytecodePass> create_pass(PassType type);
+
 // ===== Pipeline Creation =====
 
 std::unique_ptr<PassManager> create_standard_pipeline();

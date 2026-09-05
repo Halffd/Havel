@@ -2285,6 +2285,7 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
+add_havel_module_plugin(text_chunker_gui ${CMAKE_SOURCE_DIR}/src/modules/text_chunker_gui/TextChunkerGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
 add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
@@ -2303,12 +2304,14 @@ if(ENABLE_QT)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
   # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   
   add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   add_havel_module_plugin(screenshot_gui ${CMAKE_SOURCE_DIR}/src/modules/screenshot_gui/ScreenshotGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   target_include_directories(havel_mod_screenshot PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_screenshot_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
 endif()
 
 # Export symbols from main executable so plugins can resolve them

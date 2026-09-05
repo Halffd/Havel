@@ -77,6 +77,7 @@ inline constexpr const char *kModuleGlobals[] = {
     "system",
     "system_monitor",
     "textChunker",
+    "text_chunker_gui",
     "thread",
     "time",
     "timeout",

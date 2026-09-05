@@ -16,6 +16,7 @@ enum class PassType {
   // Dataflow passes
   ConstPropagation,   // Fold known constants, propagate types
   CopyPropagation,    // Replace copies of locals
+  TypePropagation,    // Infer per-local TYPE_HINT_* masks via dataflow
   DeadCodeElimination, // Remove unreachable/dead code
   // Optimization passes
   Inlining,           // Inline hot call sites
@@ -122,6 +123,15 @@ class CopyPropagationPass : public BytecodePass {
 public:
   PassType type() const override { return PassType::CopyPropagation; }
   std::string name() const override { return "CopyPropagation"; }
+  std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
+
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
+};
+
+class TypePropagationPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::TypePropagation; }
+  std::string name() const override { return "TypePropagation"; }
   std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
 
   PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;

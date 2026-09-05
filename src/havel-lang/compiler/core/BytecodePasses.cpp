@@ -612,6 +612,39 @@ PassResult CopyPropagationPass::run(std::vector<BasicBlock>& blocks, BytecodeFun
   return result;
 }
 
+// ===== Type Propagation Pass =====
+//
+// Runs the forward type analysis and writes the resulting per-local masks into
+// func.locals[i].type_hint. Masks are OR-ed in (never removing existing hints
+// such as frontend annotations). The result feeds JIT AOT type feedback.
+
+PassResult TypePropagationPass::run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) {
+  PassResult result;
+  if (func.locals.empty() || !func.has_cfg()) {
+    return result;
+  }
+
+  TypePropagationAnalysis analysis;
+  auto masks = analysis.run(blocks, func);
+  if (masks.size() != func.locals.size()) {
+    return result;
+  }
+
+  bool changed = false;
+  for (size_t i = 0; i < masks.size(); ++i) {
+    TypePropagationAnalysis::TypeMask inferred = masks[i];
+    if (inferred != 0 && (func.locals[i].type_hint & inferred) != inferred) {
+      func.locals[i].type_hint |= inferred;
+      changed = true;
+    }
+  }
+  if (changed) {
+    result.modified = true;
+    result.messages.push_back("TypePropagation: updated local type hints");
+  }
+  return result;
+}
+
 // ===== Pass 4: Inlining =====
 
 class InliningPass : public BytecodePass {
@@ -660,6 +693,8 @@ std::unique_ptr<BytecodePass> create_pass(PassType type) {
       return std::make_unique<ConstPropagationPass>();
     case PassType::CopyPropagation:
       return std::make_unique<CopyPropagationPass>();
+    case PassType::TypePropagation:
+      return std::make_unique<TypePropagationPass>();
     case PassType::DeadCodeElimination:
       return std::make_unique<DeadCodeEliminationPass>();
     case PassType::Inlining:
@@ -680,6 +715,8 @@ std::unique_ptr<PassManager> create_standard_pipeline() {
   pm->add_pass(std::make_unique<ConstPropagationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<CopyPropagationPass>());
+  pm->add_pass(std::make_unique<ValidationPass>());
+  pm->add_pass(std::make_unique<TypePropagationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<DeadCodeEliminationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());

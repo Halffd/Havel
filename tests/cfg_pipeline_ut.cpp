@@ -9,6 +9,7 @@
 
 #include "BytecodeIR.hpp"
 #include "BytecodePasses.hpp"
+#include "DataflowAnalysis.hpp"
 
 #include <gtest/gtest.h>
 
@@ -403,6 +404,63 @@ TEST_F(CFGPipelineTest, CopyPropagationReplacesLocalCopies) {
     }
   }
   EXPECT_EQ(load_var_0, 2) << "Copy propagation should replace local 1 with local 0";
+}
+
+TEST_F(CFGPipelineTest, TypePropagationInfersLocalHints) {
+  FunctionBuilder fb("t1", 0, 3);
+  fb.load_const(Value::makeInt(42));
+  fb.store_var(0);
+  fb.load_const(Value::makeDouble(2.5));
+  fb.store_var(1);
+  fb.load_const(Value::makeBool(true));
+  fb.store_var(2);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  PassManager pm;
+  pm.add_pass(std::make_unique<TypePropagationPass>());
+  const PassResult res = pm.run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  EXPECT_EQ(f.locals[0].type_hint, TYPE_HINT_INT);
+  EXPECT_EQ(f.locals[1].type_hint, TYPE_HINT_NUMBER);
+  EXPECT_EQ(f.locals[2].type_hint, TYPE_HINT_BOOL);
+}
+
+TEST_F(CFGPipelineTest, TypePropagationMergesMultipleTypes) {
+  FunctionBuilder fb("t2", 0, 1);
+  fb.load_const(Value::makeInt(1));
+  fb.store_var(0);
+  fb.load_const(Value::makeDouble(3.0));
+  fb.store_var(0);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  PassManager pm;
+  pm.add_pass(std::make_unique<TypePropagationPass>());
+  const PassResult res = pm.run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  EXPECT_EQ(f.locals[0].type_hint, TYPE_HINT_INT | TYPE_HINT_NUMBER);
+}
+
+TEST_F(CFGPipelineTest, TypePropagationTreatsUnknownParamsAsAny) {
+  FunctionBuilder fb("t3", 1, 2);
+  // local 1 = param 0 (unknown type) -> must be conservative ALL_TYPES
+  fb.load_var(0);
+  fb.store_var(1);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  PassManager pm;
+  pm.add_pass(std::make_unique<TypePropagationPass>());
+  const PassResult res = pm.run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  EXPECT_EQ(f.locals[1].type_hint, TypePropagationAnalysis::ALL_TYPES);
 }
 
 }  // namespace

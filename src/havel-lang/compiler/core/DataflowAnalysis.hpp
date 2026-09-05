@@ -343,4 +343,216 @@ public:
   }
 };
 
+// ===== Type Propagation Analysis =====
+//
+// Forward may-analysis over value types. Computes, for each local slot, the
+// union (bitwise OR) of the TYPE_HINT_* bits of every value that can flow into
+// it along any path. The result feeds LocalInfo::type_hint (and, downstream,
+// the JIT's AOT type feedback).
+//
+// Unlike ConstPropagation/Liveness this analysis is not expressed through the
+// generic DataflowAnalysis<> base: its transfer function needs the operand
+// stack, which the base does not model between instructions. Instead it runs
+// its own worklist fixpoint; the per-block transfer walks the block with a
+// transient abstract stack and only per-local masks persist.
+//
+// Lattice: bottom = 0 (no information), join = OR, top = ALL_TYPES. Monotone
+// (masks only accrue bits), so the worklist terminates.
+
+class TypePropagationAnalysis {
+public:
+  using TypeMask = uint64_t;
+
+  // Union of every TYPE_HINT_* bit. Used for values whose type cannot be
+  // determined statically.
+  static constexpr TypeMask ALL_TYPES = 0xFF;
+
+  // Map a constant Value to its type hint bit.
+  static TypeMask hint_for_const(const Value& v) {
+    if (v.isInt()) return TYPE_HINT_INT;
+    if (v.isDouble()) return TYPE_HINT_NUMBER;
+    if (v.isBool()) return TYPE_HINT_BOOL;
+    if (v.isNull()) return TYPE_HINT_NULL;
+    if (v.isStringId()) return TYPE_HINT_STRING;
+    if (v.isArrayId()) return TYPE_HINT_ARRAY;
+    if (v.isObjectId()) return TYPE_HINT_OBJECT;
+    if (v.isClosureId()) return TYPE_HINT_FUNCTION;
+    return ALL_TYPES;
+  }
+
+  // Per-local type masks at fixpoint, unioned across all blocks. Indexed like
+  // LOAD_VAR/STORE_VAR operands. Empty if there are no blocks.
+  std::vector<TypeMask> run(const std::vector<BasicBlock>& blocks,
+                            const BytecodeFunction& func) const {
+    const size_t num_locals = func.local_count > 0
+                                  ? static_cast<size_t>(func.local_count)
+                                  : func.locals.size();
+    const size_t n = blocks.size();
+    std::vector<std::vector<TypeMask>> out(n, std::vector<TypeMask>(num_locals, 0));
+
+    if (n == 0) return {};
+
+    // Worklist of blocks to (re)process.
+    std::vector<uint32_t> worklist(n);
+    for (uint32_t i = 0; i < n; ++i) worklist[i] = i;
+    std::vector<char> in_worklist(n, 1);
+
+    while (!worklist.empty()) {
+      uint32_t bid = worklist.back();
+      worklist.pop_back();
+      in_worklist[bid] = 0;
+
+      // IN = join of predecessor OUT masks (entry has no predecessors -> 0).
+      std::vector<TypeMask> in(num_locals, 0);
+      for (uint32_t pred : blocks[bid].predecessors) {
+        if (pred < n) {
+          for (size_t i = 0; i < num_locals; ++i) {
+            in[i] |= out[pred][i];
+          }
+        }
+      }
+
+      std::vector<TypeMask> cur = in;
+      transfer_block(blocks[bid], cur);
+
+      if (cur != out[bid]) {
+        out[bid] = std::move(cur);
+        for (uint32_t succ : blocks[bid].get_targets()) {
+          if (succ < n && !in_worklist[succ]) {
+            in_worklist[succ] = 1;
+            worklist.push_back(succ);
+          }
+        }
+      }
+    }
+
+    // Union the fixpoint masks across all blocks (any block may be reached by
+    // some path; the entry block's effects appear via its successors).
+    std::vector<TypeMask> result(num_locals, 0);
+    for (const auto& b : out) {
+      for (size_t i = 0; i < num_locals; ++i) {
+        result[i] |= b[i];
+      }
+    }
+    return result;
+  }
+
+private:
+  static TypeMask normalize(TypeMask m) { return m != 0 ? m : ALL_TYPES; }
+
+  // Walk one block with a transient abstract stack. `masks` holds the current
+  // per-local masks (starting from the block's IN state).
+  void transfer_block(const BasicBlock& block, std::vector<TypeMask>& masks) const {
+    std::vector<TypeMask> stack;
+
+    auto pop = [&]() -> TypeMask {
+      if (stack.empty()) return ALL_TYPES;  // Unknown or unbalanced stack
+      TypeMask m = stack.back();
+      stack.pop_back();
+      return normalize(m);
+    };
+    auto push = [&](TypeMask m) { stack.push_back(normalize(m)); };
+
+    auto operand = [](const Instruction& inst) -> uint64_t {
+      if (!inst.operands.empty() && inst.operands[0].isInt()) {
+        return static_cast<uint64_t>(inst.operands[0].asInt());
+      }
+      return UINT64_MAX;
+    };
+
+    for (const Instruction& inst : block.instructions) {
+      switch (inst.opcode) {
+        case OpCode::LOAD_CONST:
+          if (!inst.operands.empty()) {
+            push(hint_for_const(inst.operands[0]));
+          } else {
+            push(ALL_TYPES);
+          }
+          break;
+        case OpCode::PUSH_NULL:
+          push(TYPE_HINT_NULL);
+          break;
+        case OpCode::LOAD_VAR: {
+          uint64_t idx = operand(inst);
+          push(idx < masks.size() ? masks[idx] : ALL_TYPES);
+          break;
+        }
+        case OpCode::STORE_VAR:
+        case OpCode::STORE_IMMUT_VAR: {
+          uint64_t idx = operand(inst);
+          TypeMask t = pop();
+          if (idx < masks.size()) masks[idx] |= t;
+          break;
+        }
+        case OpCode::POP:
+          (void)pop();
+          break;
+        case OpCode::DUP: {
+          TypeMask t = pop();
+          push(t);
+          push(t);
+          break;
+        }
+        case OpCode::SWAP: {
+          TypeMask a = pop();
+          TypeMask b = pop();
+          push(a);
+          push(b);
+          break;
+        }
+        case OpCode::LOAD_GLOBAL:
+        case OpCode::LOAD_UPVALUE:
+        case OpCode::CLOSURE:
+          push(ALL_TYPES);
+          break;
+        case OpCode::STORE_GLOBAL:
+        case OpCode::STORE_IMMUT_GLOBAL:
+        case OpCode::STORE_UPVALUE:
+          (void)pop();
+          break;
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::DIV:
+        case OpCode::INT_DIV:
+        case OpCode::DIVMOD:
+        case OpCode::MOD:
+        case OpCode::ADD_INT:
+        case OpCode::SUB_INT:
+        case OpCode::MUL_INT:
+        case OpCode::DIV_INT:
+        case OpCode::MOD_INT: {
+          // Numeric op: INT op INT yields INT; anything else is unknown.
+          TypeMask r = pop();
+          TypeMask l = pop();
+          if (l == TYPE_HINT_INT && r == TYPE_HINT_INT) {
+            push(TYPE_HINT_INT);
+          } else {
+            push(ALL_TYPES);
+          }
+          break;
+        }
+        case OpCode::NEGATE: {
+          TypeMask t = pop();
+          push(t == TYPE_HINT_INT ? TYPE_HINT_INT : ALL_TYPES);
+          break;
+        }
+        case OpCode::CALL:
+        case OpCode::TAIL_CALL:
+          // Unmodeled stack effect (pops callee + args, pushes result).
+          stack.clear();
+          push(ALL_TYPES);
+          break;
+        case OpCode::RETURN:
+          (void)pop();  // Return value popped
+          break;
+        default:
+          // Conservative: one unknown result pushed.
+          push(ALL_TYPES);
+          break;
+      }
+    }
+  }
+};
+
 }  // namespace havel::compiler

@@ -96,12 +96,24 @@ int main(int argc, char* argv[]) {
     havel::compiler::Scheduler& scheduler = havel::compiler::Scheduler::instance();
     vm.setScheduler(&scheduler);
     
-    havel::registerPureStdLib(vm);
+    // Install the full host-module stack (stdlib plugins, host bridges) the
+    // same way the normal launcher does. Without this, host functions such as
+    // run(), send(), clipboard, hotkeys, process, shell, etc. are unknown to
+    // the semantic analyzer and every hotkey script fails with
+    // "Unresolved identifier".
+    auto modules = havel::createModules(ctx);
+    modules->install();
 
     havel::compiler::PipelineOptions options;
     options.compile_unit_name = scriptPath;
     options.vm_override = &vm;
 
+    // Host functions from the bridges (run, send, clipboard, ...) must be
+    // visible to both the semantic analyzer and the runtime VM. Copy them
+    // from the installed Modules.
+    options.host_functions = modules->options().host_functions;
+
+    // The debugger prints to stdout; pipe the default print () there too.
     options.host_functions["print"] = [&vm](const std::vector<havel::compiler::Value>& args) {
         for (size_t i = 0; i < args.size(); ++i) {
             if (i > 0) std::cout << " ";

@@ -155,6 +155,12 @@ public:
     std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) override;
     int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) override;
 
+    // Screenshot Manager
+    void *getScreenshotManager() override;
+
+    // Lazy AltTab backend initialization
+    void ensureAltTabBackend();
+
 private:
     std::unique_ptr<UIService> service_;
 };

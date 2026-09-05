@@ -3,10 +3,7 @@
 
 #include "types.hpp"
 #include "ScreenRegionSelector.hpp"
-// #include <QFileSystemWatcher>
-// #include <QClipboard>
-// #include <QProcess>
-#include "../clipboard_manager/ClipboardManager.hpp"  // Include ClipboardManager
+#include "../clipboard_manager/ClipboardManager.hpp"
 
 namespace havel {
 
@@ -21,11 +18,24 @@ public slots:
     QString takeRegionScreenshot();
     QString takeScreenshotOfCurrentMonitor();
     QString captureRegion(const QRect &region);
+    
+    // Additional methods for Havel module
+    QString getScreenshotDirectory() const { return screenshotDir; }
+    void setScreenshotDirectory(const QString &dir) { 
+        screenshotDir = dir; 
+        if (!QDir(dir).exists()) {
+            QDir().mkpath(dir);
+        }
+    }
+    void showManager() { show(); raise(); activateWindow(); }
+    void hideManager() { hide(); }
+
+public:
+    void addToGrid(const QString &filename, const QPixmap &pixmap);
+    void copyImageToClipboard(const QString &imagePath);
 
 private:
     void setupUI();
-    void addToGrid(const QString &filename, const QPixmap &pixmap);
-    void copyImageToClipboard(const QString &imagePath);
     void copyPathToClipboard(const QString &path);
     void addToClipboardManager(const QString &imagePath);
 

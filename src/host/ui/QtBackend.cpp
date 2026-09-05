@@ -6,6 +6,9 @@
 
 #include "QtBackend.hpp"
 #include "UIService.hpp"
+#include "UIManager.hpp"
+#include "extensions/qt/QtAltTabBackend.hpp"
+#include "host/window/AltTabService.hpp"
 
 namespace havel::host {
 
@@ -369,6 +372,25 @@ std::string QtBackend::inputText(const std::string &title, const std::string &la
 
 int64_t QtBackend::inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) {
     return service_->inputInt(title, label, defaultValue, min, max, step);
+}
+
+void *QtBackend::getScreenshotManager() {
+#ifdef HAVE_QT_EXTENSION
+    return static_cast<void*>(service_->getScreenshotManager());
+#else
+    return nullptr;
+#endif
+}
+
+void QtBackend::ensureAltTabBackend() {
+#ifdef HAVE_QT_EXTENSION
+    static bool initialized = false;
+    if (!initialized) {
+        havel::AltTabService::instance().setBackend(
+            std::make_unique<QtAltTabBackend>());
+        initialized = true;
+    }
+#endif
 }
 
 } // namespace havel::host

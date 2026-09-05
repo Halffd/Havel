@@ -47,6 +47,7 @@ void declareAllServices() {
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
   registry.declareService<host::AppService>("app", "util");
+  registry.declareService<host::ScreenshotService>("screenshot", "util");
 #ifdef HAVE_QT_EXTENSION
   registry.declareService<host::PixelAutomationService>("pixel", "util");
 #endif
@@ -132,6 +133,15 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 			registry.registerService<host::AppService>(appService);
 		} catch (const std::exception& e) {
 			debug("initializeServiceRegistry: AppService failed: {}", e.what());
+		}
+	}
+
+	if (registry.shouldRegister("screenshot", includes, excludes)) {
+		try {
+			auto& screenshotService = host::ScreenshotService::getInstance();
+			registry.registerService<host::ScreenshotService>(std::shared_ptr<host::ScreenshotService>(&screenshotService, [](host::ScreenshotService*){}));
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: ScreenshotService failed: {}", e.what());
 		}
 	}
 

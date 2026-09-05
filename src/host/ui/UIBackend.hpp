@@ -182,6 +182,9 @@ public:
     virtual std::string fontPicker(const std::string &initialFont) { (void)initialFont; return ""; }
     virtual std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) { (void)title; (void)label; (void)defaultValue; return ""; }
     virtual int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) { (void)title; (void)label; (void)defaultValue; (void)min; (void)max; (void)step; return defaultValue; }
+
+    // Screenshot Manager (Qt-specific, default nullptr)
+    virtual void *getScreenshotManager() { return nullptr; }
 };
 
 } // namespace havel::host

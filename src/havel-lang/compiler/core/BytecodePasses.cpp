@@ -543,6 +543,75 @@ public:
   }
 };
 
+// ===== Copy Propagation Pass =====
+//
+// Simple intra-block copy propagation: tracks local-to-local copies
+// (STORE_VAR x from LOAD_VAR y) and replaces subsequent LOAD_VAR x
+// with LOAD_VAR y within the same block.
+
+PassResult CopyPropagationPass::run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) {
+  PassResult result;
+
+  for (auto& block : blocks) {
+    std::vector<Instruction> new_insts;
+    new_insts.reserve(block.instructions.size());
+    bool changed = false;
+
+    for (size_t ii = 0; ii < block.instructions.size(); ++ii) {
+      const Instruction& inst = block.instructions[ii];
+      bool replaced = false;
+
+      if (inst.opcode == OpCode::LOAD_VAR && !inst.operands.empty() &&
+          inst.operands[0].isInt()) {
+        uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
+
+        // Walk backwards to find if this local was copied from another
+        for (int jj = static_cast<int>(ii) - 1; jj >= 0; --jj) {
+          const Instruction& prev = block.instructions[jj];
+          if (prev.opcode == OpCode::STORE_VAR ||
+              prev.opcode == OpCode::STORE_IMMUT_VAR) {
+            if (!prev.operands.empty() && prev.operands[0].isInt()) {
+              uint64_t dst = static_cast<uint64_t>(prev.operands[0].asInt());
+              if (dst == idx && jj > 0) {
+                // Check if the value stored came from LOAD_VAR of another local
+                const Instruction& src_inst = block.instructions[jj - 1];
+                if (src_inst.opcode == OpCode::LOAD_VAR &&
+                    !src_inst.operands.empty() &&
+                    src_inst.operands[0].isInt()) {
+                  uint64_t src_idx = static_cast<uint64_t>(src_inst.operands[0].asInt());
+                  if (src_idx != idx) {
+                    // Replace LOAD_VAR idx with LOAD_VAR src_idx
+                    new_insts.push_back(
+                        Instruction(OpCode::LOAD_VAR, {Value::makeInt(src_idx)}));
+                    result.modified = true;
+                    result.messages.push_back("CopyPropagation: replaced local " +
+                                              std::to_string(idx) + " with " +
+                                              std::to_string(src_idx));
+                    replaced = true;
+                    changed = true;
+                  }
+                }
+                break;  // Stop at first store to this local
+              }
+            }
+          }
+        }
+      }
+
+      if (!replaced) {
+        new_insts.push_back(inst);
+      }
+    }
+
+    if (changed) {
+      block.instructions.swap(new_insts);
+      result.modified = true;
+    }
+  }
+
+  return result;
+}
+
 // ===== Pass 4: Inlining =====
 
 class InliningPass : public BytecodePass {
@@ -589,6 +658,8 @@ std::unique_ptr<BytecodePass> create_pass(PassType type) {
       return std::make_unique<SimplifyCFGPass>();
     case PassType::ConstPropagation:
       return std::make_unique<ConstPropagationPass>();
+    case PassType::CopyPropagation:
+      return std::make_unique<CopyPropagationPass>();
     case PassType::DeadCodeElimination:
       return std::make_unique<DeadCodeEliminationPass>();
     case PassType::Inlining:
@@ -607,6 +678,8 @@ std::unique_ptr<PassManager> create_standard_pipeline() {
   pm->add_pass(std::make_unique<SimplifyCFGPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<ConstPropagationPass>());
+  pm->add_pass(std::make_unique<ValidationPass>());
+  pm->add_pass(std::make_unique<CopyPropagationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());
   pm->add_pass(std::make_unique<DeadCodeEliminationPass>());
   pm->add_pass(std::make_unique<ValidationPass>());

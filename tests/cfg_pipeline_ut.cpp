@@ -378,5 +378,32 @@ TEST_F(CFGPipelineTest, DceRemovesDeadIncDec) {
   EXPECT_FALSE(has_inc) << "Dead INCRELOCAL should be eliminated";
 }
 
+TEST_F(CFGPipelineTest, CopyPropagationReplacesLocalCopies) {
+  FunctionBuilder fb("copy1", 0, 2);
+  // local 1 = local 0 (copy)
+  fb.load_var(0);
+  fb.store_var(1);
+  // later load local 1 -> should become load local 0
+  fb.load_var(1);
+  fb.ret();
+  fb.create_block();
+
+  BytecodeFunction f = fb.build();
+  auto pm = std::make_unique<PassManager>();
+  pm->add_pass(std::make_unique<CopyPropagationPass>());
+  const PassResult res = pm->run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  // Count LOAD_VAR 0 occurrences - should be 2 (original + 1 replaced)
+  int load_var_0 = 0;
+  for (const auto& inst : f.blocks[0].instructions) {
+    if (inst.opcode == OpCode::LOAD_VAR && inst.operands[0].isInt() &&
+        inst.operands[0].asInt() == 0) {
+      ++load_var_0;
+    }
+  }
+  EXPECT_EQ(load_var_0, 2) << "Copy propagation should replace local 1 with local 0";
+}
+
 }  // namespace
 }  // namespace havel::compiler

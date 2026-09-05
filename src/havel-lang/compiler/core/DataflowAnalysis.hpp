@@ -45,11 +45,6 @@ struct ConstantValue {
   bool is_unknown() const { return state == ConstantState::Unknown; }
   bool is_constant() const { return state == ConstantState::Constant; }
   bool is_unreachable() const { return state == ConstantState::Unreachable; }
-
-  // Lattice ordering: Unreachable < Constant < Unknown
-  // (Unreachable = bottom for forward, top for backward)
-  // Meet for forward: Unreachable ⊓ x = Unreachable, Constant ⊓ Constant = Constant (if same val), Constant ⊓ Unknown = Constant
-  // Join for backward: Unknown ⊔ x = Unknown, Constant ⊔ Constant = Constant (if same), Constant ⊔ Unknown = Unknown
 };
 
 // Per-local constant state map (indexed by local slot).
@@ -222,10 +217,7 @@ public:
         if (!inst.operands.empty() && inst.operands[0].isInt()) {
           uint64_t idx = static_cast<uint64_t>(inst.operands[0].asInt());
           if (idx < out.size()) {
-            // The value being stored is on the stack top. In a stack-based IR
-            // we don't easily know its value here. A full impl would track
-            // the stack. For now we mark as Unknown (conservative).
-            // Real solution: add a stack-aware transfer or post-pass stack sim.
+            out[idx] = ConstantValue::unknown();
           }
         }
         break;

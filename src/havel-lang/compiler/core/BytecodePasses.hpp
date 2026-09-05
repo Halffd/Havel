@@ -15,6 +15,7 @@ enum class PassType {
   SimplifyCFG,        // Merge blocks, remove dead, simplify jumps
   // Dataflow passes
   ConstPropagation,   // Fold known constants, propagate types
+  CopyPropagation,    // Replace copies of locals
   DeadCodeElimination, // Remove unreachable/dead code
   // Optimization passes
   Inlining,           // Inline hot call sites
@@ -114,5 +115,16 @@ private:
 std::unique_ptr<PassManager> create_standard_pipeline();
 std::unique_ptr<PassManager> create_fast_pipeline();
 std::unique_ptr<PassManager> create_optimizing_pipeline();
+
+// ===== Pass Declarations =====
+
+class CopyPropagationPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::CopyPropagation; }
+  std::string name() const override { return "CopyPropagation"; }
+  std::vector<PassType> dependencies() const override { return {PassType::ConstPropagation}; }
+
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
+};
 
 } // namespace havel::compiler

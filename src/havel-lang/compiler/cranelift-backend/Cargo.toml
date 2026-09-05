@@ -1,0 +1,13 @@
+[package]
+name = "havel_cranelift_backend"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+cranelift-jit = "0.121"
+cranelift-module = "0.121"
+cranelift = "0.121"
+cranelift-native = "0.121"

@@ -137,7 +137,7 @@ void Parser::checkParseLoop(int &counter, const char* context) {
 }
 
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
-    return makeNode<ast::Identifier>(token.value, token.line,
+    return makeNodeAt<ast::Identifier>(token, token.value, token.line,
         token.column);
 }
 

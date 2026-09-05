@@ -33,15 +33,22 @@ namespace havel::compiler {
 namespace detail {
 
 // Successor blocks of `bid` in the edge model, PLUS the implicit linear
-// fall-through: SimplifyCFG rewrites Jump(i+1) into an Unreachable terminator
-// (a NOP in the lowered stream), so execution continues into block i+1. Both
-// the worklist propagation and the predecessor lists in ConstPropagationPass
-// must see that edge or constants do not cross such block boundaries.
+// fall-through edge: JumpIf* fall through into block i+1 when the condition
+// takes the non-jump arm, an Unreachable terminator lowers to a NOP (SimplifyCFG
+// rewrites Jump(i+1) into it), and None is the trailing fall-through marker.
+// Worklist propagation, predecessor lists, and reachability must all see that
+// edge or constants/liveness do not cross those block boundaries and
+// unreachable-block removal deletes live fall-through arms.
 inline std::vector<uint32_t> successors_with_fallthrough(
     const std::vector<BasicBlock>& blocks, uint32_t bid) {
   std::vector<uint32_t> succ = blocks[bid].get_targets();
-  if (blocks[bid].terminator.kind == TerminatorKind::Unreachable &&
-      bid + 1 < blocks.size()) {
+  const TerminatorKind tk = blocks[bid].terminator.kind;
+  const bool falls_through = tk == TerminatorKind::None ||
+                             tk == TerminatorKind::Unreachable ||
+                             tk == TerminatorKind::JumpIfFalse ||
+                             tk == TerminatorKind::JumpIfTrue ||
+                             tk == TerminatorKind::JumpIfNull;
+  if (falls_through && bid + 1 < blocks.size()) {
     succ.push_back(bid + 1);
   }
   return succ;

@@ -694,6 +694,11 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         dispatch_table[static_cast<uint8_t>(OpCode::DIVMOD)] = &&op_DIVMOD;
         dispatch_table[static_cast<uint8_t>(OpCode::REMAINDER)] = &&op_REMAINDER;
         dispatch_table[static_cast<uint8_t>(OpCode::MOD)] = &&op_MOD;
+        dispatch_table[static_cast<uint8_t>(OpCode::ADD_INT)] = &&op_ADD_INT;
+        dispatch_table[static_cast<uint8_t>(OpCode::SUB_INT)] = &&op_ADD_INT;
+        dispatch_table[static_cast<uint8_t>(OpCode::MUL_INT)] = &&op_ADD_INT;
+        dispatch_table[static_cast<uint8_t>(OpCode::DIV_INT)] = &&op_ADD_INT;
+        dispatch_table[static_cast<uint8_t>(OpCode::MOD_INT)] = &&op_ADD_INT;
         dispatch_table[static_cast<uint8_t>(OpCode::POW)] = &&op_POW;
         dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL)] = &&op_INCLOCAL;
         dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL)] = &&op_DECLOCAL;
@@ -1468,6 +1473,80 @@ op_BIT_LSH: op_BIT_RSH: {
         maybeCollectGarbage();
         periodicYieldCheck();
         if (suspension_requested_) { return; }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+}
+
+// Fast integer arithmetic: the optimizer's FastIntegerLowering pass rewrites
+// ADD/SUB/MUL (and INT_DIV/REMAINDER) to these opcodes when TypePropagation
+// proves both operands are ints, and the emitter already emits them for
+// statically typed int expressions. Operate directly on the unboxed int48
+// payload; a non-int operand means the type proof was wrong or the bytecode
+// was hand-built, so bail to the generic slow path rather than corrupting
+// the stack.
+op_ADD_INT: {
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    {
+        Value r = popStack();
+        Value l = popStack();
+        if (r.isInt() && l.isInt()) {
+            const int64_t li = l.asInt();
+            const int64_t ri = r.asInt();
+            int64_t result;
+            switch (inst.opcode) {
+                case OpCode::ADD_INT: result = li + ri; break;
+                case OpCode::SUB_INT: result = li - ri; break;
+                case OpCode::MUL_INT: result = li * ri; break;
+                case OpCode::DIV_INT:
+                    if (ri == 0) COMPILER_THROW_AT("Division by zero", inst);
+                    result = li / ri;
+                    break;
+                case OpCode::MOD_INT:
+                    if (ri == 0) COMPILER_THROW_AT("Modulo by zero", inst);
+                    result = li % ri;
+                    break;
+                default:
+                    result = 0;
+                    break;
+            }
+            pushStack(result);
+            counter++;
+            if ((counter & 8191) == 0) {
+                if (exit_requested_.load()) return;
+                maybeCollectGarbage();
+                periodicYieldCheck();
+                if (suspension_requested_) { return; }
+            }
+            if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+            {
+                auto &f2 = frame_arena_[frame_count_ - 1];
+                if (f2.ip >= f2.function->instructions.size()) {
+                    stack.push(nullptr);
+                    executeInstruction(Instruction{OpCode::RETURN});
+                    return;
+                }
+                goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+            }
+        }
+        // Not proven ints: the optimizer's proof was wrong or the bytecode
+        // was hand-built. Restore the operands and let the generic path
+        // handle every shape, including method dispatch on objects.
+        pushStack(std::move(l));
+        pushStack(std::move(r));
+        execBinaryOp(inst);
+        counter++;
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {

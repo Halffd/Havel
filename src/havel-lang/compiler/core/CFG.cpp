@@ -1,7 +1,9 @@
 #include "BytecodeIR.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace havel::compiler {
@@ -184,12 +186,13 @@ CFGValidationResult validate_cfg(const std::vector<BasicBlock>& blocks,
 
 // ===== Flatten CFG to Linear Instructions =====
 //
-// Orders blocks (BFS from the entry along terminator successors, then any
-// leftover/unreachable blocks in their original order) and emits each block's
-// instructions contiguously. Terminators lower to a single jump/return/throw
-// instruction whose target is the absolute instruction index of the target
-// block's first instruction (matching the VM's JUMP semantics: frame.ip =
-// target). Block start indices are recorded in `block_start_ips`.
+// Orders blocks in their index order (block i falls through into block i+1
+// for fall-through terminators, so adjacency must be preserved — a BFS or any
+// other reordering would miscompile one-armed conditionals) and emits each
+// block's instructions contiguously. Terminators lower to a single
+// jump/return/throw instruction whose target is the absolute instruction index
+// of the target block's first instruction (matching the VM's JUMP semantics:
+// frame.ip = target). Block start indices are recorded in `block_start_ips`.
 LinearFunction flatten_cfg(const std::vector<BasicBlock>& blocks,
                            uint32_t entry_block) {
   LinearFunction out;
@@ -199,38 +202,21 @@ LinearFunction flatten_cfg(const std::vector<BasicBlock>& blocks,
 
   if (entry_block >= n) entry_block = 0;
 
+  (void)entry_block;  // index-order emission starts at block 0 regardless
+
   std::vector<uint32_t> order;
   order.reserve(n);
-  std::vector<bool> visited(n, false);
-
-  std::queue<uint32_t> q;
-  q.push(entry_block);
-  visited[entry_block] = true;
-  while (!q.empty()) {
-    uint32_t id = q.front();
-    q.pop();
-    order.push_back(id);
-    const BasicBlock& b = blocks[id];
-    for (uint32_t succ : b.terminator.targets) {
-      if (succ < n && !visited[succ]) {
-        visited[succ] = true;
-        q.push(succ);
-      }
-    }
-  }
-
-  // Append any blocks not reached (dead code) in their original order.
-  for (uint32_t i = 0; i < n; ++i) {
-    if (!visited[i]) order.push_back(i);
-  }
+  for (uint32_t i = 0; i < n; ++i) order.push_back(i);
 
   // The single fall-through (None-terminated) block, if present, must be the
   // final block in the linear output so that "no terminator" coincides with
   // "end of the instruction stream".
   for (auto it = order.begin(); it != order.end(); ++it) {
     if (blocks[*it].terminator.kind == TerminatorKind::None && it + 1 != order.end()) {
+      // A non-trailing None block is only valid if it is the entry of a
+      // degenerate stream; move it last to keep the invariant.
       order.erase(it);
-      order.push_back(blocks.size() - 1);
+      order.push_back(static_cast<uint32_t>(n - 1));
       break;
     }
   }
@@ -417,14 +403,18 @@ CFGValidationResult validate_function(const BytecodeFunction& func,
               build_msg(bi, ii, "global", idx, func.global_names.size()));
         }
       } else if (opc_takes_const(inst.opcode)) {
-        // LOAD_CONST must actually carry a constant payload.
-        if (!(inst.operands[0].isInt() || inst.operands[0].isNumber() ||
-              inst.operands[0].isBool() || inst.operands[0].isStringId())) {
+        // LOAD_CONST must actually carry a constant payload. Any Value shape
+        // is legal: the pool legitimately holds scalars (int/double/bool/
+        // null) and heap references (strings, arrays, objects, closures,
+        // functions, host funcs, ...), resolved by the owning VM at runtime.
+        // The only structural requirement is a non-empty operand.
+        if (inst.operands.empty()) {
           result.valid = false;
-          result.errors.push_back("function '" + func.name + "' block " +
-                                  std::to_string(bi) + " instruction " +
-                                  std::to_string(ii) +
-                                  ": LOAD_CONST has no scalar payload");
+          result.errors.push_back(
+              "function '" + func.name + "' block " +
+              std::to_string(bi) + " instruction " +
+              std::to_string(ii) +
+              ": LOAD_CONST has no constant payload");
         }
       }
     }

@@ -803,8 +803,21 @@ Value lookupGlobalByKey(const std::string& key) {
                 }
             }
         }
+        // Tier-2 backedge hotness: count each SITE once (mirroring the
+        // tier-1 site-key dedup above), not every past-threshold iteration -
+        // the counter feeds the shutdown "tier2_enqueued" statistic, which
+        // previously read 9990001 for a hot loop because it counted loop
+        // iterations. Actual tier-2 queueing happens in the binop tiering
+        // hook (VMArithmetic.cpp), not here.
         if (count >= tier2_threshold_) {
-            tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+            bool first_time = false;
+            {
+                std::lock_guard<std::mutex> lock(hot_trace_mutex_);
+                first_time = tier2_backedge_sites_.insert(site_key).second;
+            }
+            if (first_time) {
+                tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -1544,6 +1557,7 @@ private:
     std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
     std::atomic<uint64_t> trace_hot_count_{0};
     std::unordered_set<uint64_t> hot_trace_sites_;
+    std::unordered_set<uint64_t> tier2_backedge_sites_;
     std::mutex hot_trace_mutex_;
     HotTraceCallback hot_trace_cb_;
     bool tier2_flush_on_shutdown_ = false;

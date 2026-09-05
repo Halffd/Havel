@@ -258,6 +258,7 @@ VM::~VM() {
   backedge_counters_.clear();
   tier1_compiled_.clear();
   tier2_compiled_.clear();
+  tier2_backedge_sites_.clear();
   protocol_contracts_.clear();
   protocol_impls_.clear();
   type_protocols_.clear();

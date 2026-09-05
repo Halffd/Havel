@@ -4,6 +4,7 @@
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+#include "core/util/Env.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -89,7 +90,25 @@ int main(int argc, char* argv[]) {
     }
 
     havel::HostContext ctx;
-    havel::compiler::VM vm(ctx);
+
+    // Derive the self-hosted modules tree the same way the launcher does
+    // (binary/../out). Without this the VM never registers the out/modules/std
+    // search paths and source stdlib modules like ocr, config, fmt, etc.
+    // fail at runtime with "Module not found".
+    havel::compiler::VMConfig vmConfig;
+    {
+        namespace fs = std::filesystem;
+        auto exePath = havel::Env::executable();
+        if (!exePath.empty()) {
+            fs::path candidate =
+                fs::path(exePath).parent_path().parent_path() / "out";
+            if (fs::exists(candidate / "modules" / "lang")) {
+                vmConfig.self_hosted_modules_path = candidate.string();
+            }
+        }
+    }
+
+    havel::compiler::VM vm(ctx, vmConfig);
     ctx.vm = &vm;
     
     // Use singleton scheduler for VM execution
@@ -103,6 +122,13 @@ int main(int argc, char* argv[]) {
     // "Unresolved identifier".
     auto modules = havel::createModules(ctx);
     modules->install();
+
+    // Load the native config module up front so a later `use "std/config"`
+    // merges into the SAME config object (shadowing path in VM.cpp skips the
+    // Havel wrappers for names the host module already provides). Without
+    // this, the shadowing check sees an unloaded lazy module and the exports
+    // object binds config.get to the wrapper itself -> infinite recursion.
+    vm.ensureModuleLoaded("config");
 
     havel::compiler::PipelineOptions options;
     options.compile_unit_name = scriptPath;

@@ -5711,12 +5711,13 @@ load_from_source:
   for (const auto &[name, value] : globals) {
     if (name.empty() || name[0] == '_')
       continue;
-    // When shadowing a host module, skip Havel wrappers that have the same
+    // When shadowing a host module, skip Havel functions that have the same
     // name as an existing host function on the host module object — the
     // host function is already available and adding a wrapper that calls
     // config.<name>() would cause infinite recursion (config == exports).
-    if (shadowingHostModule && hostModuleFuncNames.count(name) &&
-        value.isClosureId())
+    // Values can be ClosureId (cached .hvc loads) or FunctionObjId (fresh
+    // source compile) — match by NAME, not value flavor.
+    if (shadowingHostModule && hostModuleFuncNames.count(name))
       continue;
     // Skip inherited globals UNLESS the module redefined them
     // (i.e., the value is different from what was inherited)
@@ -6922,11 +6923,14 @@ bool VM::checkDebugBreak() {
   }
 
   // Clear same-line suppression when we've moved past the breakpoint line
-  // in the same or parent frame (not in sub-function calls)
+  // within the same source file at or above the break's frame depth. Never
+  // clear while location info is missing or while executing another file's
+  // code (e.g. a freshly loaded module's init): otherwise every top-level
+  // `use` clears the state and re-fires the previous breakpoint.
   if (debug_step_mode_ == DebugStepMode::Continue &&
       debug_last_break_line_ > 0 && frame_count_ <= debug_last_break_depth_ &&
-      (filename != debug_last_break_file_ ||
-       loc.line != debug_last_break_line_)) {
+      !filename.empty() && filename == debug_last_break_file_ &&
+      loc.line > 0 && loc.line != debug_last_break_line_) {
     debug_last_break_line_ = 0;
     debug_last_break_file_.clear();
     debug_last_break_depth_ = 0;

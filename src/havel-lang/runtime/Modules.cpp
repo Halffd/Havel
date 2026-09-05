@@ -165,6 +165,7 @@ void Modules::installHostFunctions() {
     concurrencyBridge_->install(options_);
     automationBridge_->install(options_);
     browserBridge_->install(options_);
+    configBridge_->install(options_);
     toolsBridge_->install(options_);
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {

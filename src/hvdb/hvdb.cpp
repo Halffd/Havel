@@ -91,6 +91,11 @@ int main(int argc, char* argv[]) {
     havel::HostContext ctx;
     havel::compiler::VM vm(ctx);
     ctx.vm = &vm;
+    
+    // Use singleton scheduler for VM execution
+    havel::compiler::Scheduler& scheduler = havel::compiler::Scheduler::instance();
+    vm.setScheduler(&scheduler);
+    
     havel::registerPureStdLib(vm);
 
     havel::compiler::PipelineOptions options;
@@ -143,6 +148,7 @@ int main(int argc, char* argv[]) {
             std::cout << "(hvdb) " << std::flush;
             std::string line;
             if (!std::getline(std::cin, line)) {
+                // EOF or error - continue execution
                 debugger_continue = true;
                 break;
             }
@@ -478,6 +484,11 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    // Set initial breakpoint at main so debugger stops at entry
+    vm.setBreakpoint(scriptPath, 1);
+    breakpoints.push_back({scriptPath, 1});
+    std::cout << "  Breakpoint at " << scriptPath << ":1 (main entry)" << std::endl;
 
     try {
         auto result = havel::compiler::runBytecodePipeline(source, "__main__", options);

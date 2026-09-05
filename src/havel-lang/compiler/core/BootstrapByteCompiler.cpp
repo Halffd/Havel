@@ -670,7 +670,9 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   // Compute max local slot from resolver's main_local_count
   uint32_t max_slot = lexical_resolution_.main_local_count;
 
-	enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
+  BytecodeFunction main_fn("__main__", 0, max_slot);
+  main_fn.source_file = source_file_;
+  enterFunction(std::move(main_fn), main_function_index);
 	next_local_index = max_slot;
 
 const ast::Statement *lastRegularStmt = nullptr;
@@ -957,9 +959,9 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     BytecodeFunction bf(function.name->symbol, param_count, max_slot);
     bf.param_names = std::move(param_names);
     bf.source_line = function.line;
-  // source_file will be set by the pipeline/compiler context
+    bf.source_file = source_file_;
 
-enterFunction(std::move(bf), index_it->second);
+    enterFunction(std::move(bf), index_it->second);
 next_local_index = max_slot;
 auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
 if (upvalues_it != lexical_resolution_.function_upvalues.end()) {

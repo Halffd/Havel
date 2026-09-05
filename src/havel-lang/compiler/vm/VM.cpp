@@ -6860,6 +6860,17 @@ bool VM::checkDebugBreak() {
   auto *func = frame.function;
   auto loc = nearestSourceLocation(*func, frame.ip);
 
+  // Track breakpoint hits for suppression (runs for all step modes)
+  // This ensures suppression variables are set even during single-stepping
+  std::string filename =
+      loc.filename.empty() ? func->source_file : loc.filename;
+  if (!filename.empty() && loc.line > 0 && hasBreakpoint(filename, loc.line)) {
+    // Track the last breakpoint hit for suppression
+    debug_last_break_file_ = filename;
+    debug_last_break_line_ = loc.line;
+    debug_last_break_depth_ = frame_count_;
+  }
+
   if (debug_step_mode_ == DebugStepMode::StepInto) {
     if (loc.line > 0) {
       debug_step_mode_ = DebugStepMode::Continue;
@@ -6886,13 +6897,14 @@ bool VM::checkDebugBreak() {
 
   // Breakpoint check - use instruction location filename or fall back to
   // function source_file
-  std::string filename =
-      loc.filename.empty() ? func->source_file : loc.filename;
+  // (filename already computed above)
   if (!filename.empty() && loc.line > 0) {
     if (hasBreakpoint(filename, loc.line)) {
-      if (debug_step_mode_ == DebugStepMode::Continue &&
-          filename == debug_last_break_file_ &&
-          loc.line == debug_last_break_line_) {
+      // Suppress repeated hits on the same line when continuing
+      bool suppress = (debug_step_mode_ == DebugStepMode::Continue &&
+                       filename == debug_last_break_file_ &&
+                       loc.line == debug_last_break_line_);
+      if (suppress) {
         return false;
       }
       debug_last_break_file_ = filename;
@@ -6916,9 +6928,11 @@ bool VM::checkDebugBreak() {
   return false;
 }
 
-void VM::attachDebugger() { debugger_attached_ = true; }
+void VM::attachDebugger() { 
+    debugger_attached_ = true; 
+  }
 
-void VM::detachDebugger() {
+  void VM::detachDebugger() {
   debugger_attached_ = false;
   debug_step_mode_ = DebugStepMode::Continue;
   debug_breakpoints_.clear();

@@ -470,7 +470,8 @@ public:
   std::string name() const override { return "RequiresAnalysis"; }
   std::vector<std::string> required_analyses() const override { return {"never_provided"}; }
   bool requires_validation() const override { return false; }
-  PassResult run(std::vector<BasicBlock>&, BytecodeFunction&) override { return {}; }
+  PassResult run(std::vector<BasicBlock>&, BytecodeFunction&,
+                 const BytecodeChunk&) override { return {}; }
 };
 
 TEST_F(CFGPipelineTest, PassSkippedWhenAnalysisInvalidated) {
@@ -497,6 +498,129 @@ TEST_F(CFGPipelineTest, PassSkippedWhenAnalysisInvalidated) {
   }
   EXPECT_TRUE(saw_skip) << "PassManager should skip a pass with an unavailable analysis";
   EXPECT_EQ(hinted_analysis, Analysis::kLocals);  // sanity: contract wired
+}
+
+TEST_F(CFGPipelineTest, InliningReplacesCallSiteWithCalleeBody) {
+  // A small pure callee `add1(x) = x + x` inlined into `main` at
+  // `LOAD_GLOBAL add1; CALL 1`. Expects: no CALL left anywhere, callee locals
+  // shifted into fresh caller slots (delta = caller local count), continuations
+  // rewired so the result still flows into local 0, and a valid CFG.
+  BytecodeChunk chunk;
+  {
+    FunctionBuilder callee("add1", 1, 0);
+    callee.load_var(0);
+    callee.load_var(0);
+    callee.add();
+    callee.ret();
+    callee.create_block();
+    chunk.addFunction(callee.build());
+  }
+
+  FunctionBuilder caller("main", 0, 1);
+  caller.load_const(Value::makeInt(5));
+  caller.load_global("add1");
+  caller.call(1);
+  caller.store_var(0);
+  caller.ret();
+  caller.create_block();
+
+  BytecodeFunction f = caller.build();
+  const size_t blocks_before = f.blocks.size();
+  const size_t insts_before = [&] {
+    size_t n = 0;
+    for (const auto& b : f.blocks) n += b.instructions.size();
+    return n;
+  }();
+
+  PassManager pm;
+  pm.add_pass(std::make_unique<InliningPass>());
+  const PassResult res = pm.run_all(f.blocks, f, chunk);
+
+  EXPECT_TRUE(res.valid);
+  EXPECT_TRUE(res.modified);
+  EXPECT_GT(f.blocks.size(), blocks_before);
+  EXPECT_GT([&] {
+    size_t n = 0;
+    for (const auto& b : f.blocks) n += b.instructions.size();
+    return n;
+  }(), insts_before);
+
+  bool has_call = false;
+  for (const auto& b : f.blocks) {
+    for (const auto& inst : b.instructions) {
+      if (inst.opcode == OpCode::CALL) has_call = true;
+    }
+  }
+  EXPECT_FALSE(has_call) << "Inlined call site must not leave a CALL behind";
+}
+
+TEST_F(CFGPipelineTest, LicmHoistsInvariantStorePairOutOfLoop) {
+  // Natural loop: block 0 entry jumps to header 1; header 1 holds the invariant
+  // pair `LOAD_CONST 7; STORE_VAR 1` and jumps to latch 2; latch 2 jumps back
+  // to header 1; block 3 (exit, ret) + trailing fall-through close the function.
+  // LICM must move the pair into a new preheader right before the header (new
+  // block 1), leaving the header (new block 2) with no instructions.
+  FunctionBuilder fb("licm", 0, 2);
+  fb.load_const(Value::makeInt(0));
+  fb.store_var(0);
+
+  uint32_t header = fb.create_block();
+  uint32_t latch = fb.create_block();
+  uint32_t exit = fb.create_block();
+
+  fb.set_current_block(0);
+  fb.jump(header, {});
+
+  fb.set_current_block(header);
+  fb.load_const(Value::makeInt(7));
+  fb.store_var(1);
+  fb.jump(latch, {});
+
+  fb.set_current_block(latch);
+  fb.jump(header, {});
+
+  fb.set_current_block(exit);
+  fb.load_const(Value::makeInt(99));
+  fb.ret();
+  fb.create_block();  // trailing fall-through (end of stream)
+
+  BytecodeFunction f = fb.build();
+  {
+    const auto v = validate_cfg(f.blocks, f.entry_block);
+    ASSERT_TRUE(v.errors.empty()) << v.errors[0];
+    EXPECT_TRUE(v.valid);
+  }
+  EXPECT_EQ(f.blocks.size(), 5u);
+
+  PassManager pm;
+  pm.add_pass(std::make_unique<LICMPass>());
+  const PassResult res = pm.run_all(f.blocks, f);
+
+  EXPECT_TRUE(res.valid);
+  EXPECT_TRUE(res.modified);
+
+  // Block 1 must now be the preheader holding the hoisted pair.
+  ASSERT_GE(f.blocks.size(), 3u);
+  EXPECT_EQ(f.blocks[1].id, 1u);
+  bool pair_in_preheader = false;
+  for (size_t i = 0; i + 1 < f.blocks[1].instructions.size(); ++i) {
+    if (f.blocks[1].instructions[i].opcode == OpCode::LOAD_CONST &&
+        f.blocks[1].instructions[i].operands[0].isInt() &&
+        f.blocks[1].instructions[i].operands[0].asInt() == 7 &&
+        f.blocks[1].instructions[i + 1].opcode == OpCode::STORE_VAR) {
+      pair_in_preheader = true;
+    }
+  }
+  EXPECT_TRUE(pair_in_preheader) << "Invariant pair must land in the preheader";
+
+  // The old header (block 2 after the shift) must hold no instructions.
+  bool header_touches_local1 = false;
+  for (const auto& inst : f.blocks[2].instructions) {
+    if (inst.opcode == OpCode::LOAD_CONST || inst.opcode == OpCode::STORE_VAR) {
+      header_touches_local1 = true;
+    }
+  }
+  EXPECT_FALSE(header_touches_local1) << "Hoisted pair must be removed from header";
 }
 
 }  // namespace

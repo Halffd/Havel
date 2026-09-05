@@ -60,7 +60,10 @@ public:
   virtual ~BytecodePass() = default;
   virtual PassType type() const = 0;
   virtual std::string name() const = 0;
-  virtual PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) = 0;
+  // Runs the pass on one function. `chunk` gives access to the whole module
+  // (callees for Inlining, etc.); passes that do not need it ignore it.
+  virtual PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                         const BytecodeChunk& chunk) = 0;
   virtual bool requires_validation() const { return true; }
   virtual std::vector<PassType> dependencies() const { return {}; }
 
@@ -91,6 +94,12 @@ public:
   void set_validation(bool enabled) { validate_after_each = enabled; }
 
   PassResult run_all(std::vector<BasicBlock>& blocks, BytecodeFunction& func) {
+    static const BytecodeChunk empty_chunk;
+    return run_all(blocks, func, empty_chunk);
+  }
+
+  PassResult run_all(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                     const BytecodeChunk& chunk) {
     PassResult total;
     for (auto& pass : passes) {
       // Validate dependencies
@@ -111,7 +120,7 @@ public:
         continue;
       }
 
-      auto result = pass->run(blocks, func);
+      auto result = pass->run(blocks, func, chunk);
       total |= result;
 
       // Analyses a pass invalidates are no longer available; preserved ones
@@ -138,8 +147,9 @@ public:
   }
   
   // Run single pass
-  PassResult run_pass(BytecodePass& pass, std::vector<BasicBlock>& blocks, BytecodeFunction& func) {
-    return pass.run(blocks, func);
+  PassResult run_pass(BytecodePass& pass, std::vector<BasicBlock>& blocks,
+                      BytecodeFunction& func, const BytecodeChunk& chunk) {
+    return pass.run(blocks, func, chunk);
   }
   
 private:
@@ -172,7 +182,8 @@ public:
   }
   std::vector<std::string> modified_state() const override { return {Analysis::kCopyState}; }
 
-  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                 const BytecodeChunk& chunk) override;
 };
 
 class TypePropagationPass : public BytecodePass {
@@ -184,7 +195,46 @@ public:
   std::vector<std::string> preserved_analyses() const override { return {Analysis::kCFG}; }
   std::vector<std::string> modified_state() const override { return {Analysis::kLocals}; }
 
-  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func) override;
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                 const BytecodeChunk& chunk) override;
+};
+
+class InliningPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::Inlining; }
+  std::string name() const override { return "Inlining"; }
+  std::vector<PassType> dependencies() const override {
+    return {PassType::SimplifyCFG, PassType::ConstPropagation};
+  }
+  std::vector<std::string> required_analyses() const override { return {}; }
+  std::vector<std::string> preserved_analyses() const override {
+    return {Analysis::kLocals};
+  }
+  std::vector<std::string> modified_state() const override {
+    return {Analysis::kCFG, Analysis::kLocals};
+  }
+
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                 const BytecodeChunk& chunk) override;
+};
+
+class LICMPass : public BytecodePass {
+public:
+  PassType type() const override { return PassType::LICM; }
+  std::string name() const override { return "LICM"; }
+  std::vector<PassType> dependencies() const override {
+    return {PassType::SimplifyCFG};
+  }
+  std::vector<std::string> required_analyses() const override { return {}; }
+  std::vector<std::string> preserved_analyses() const override {
+    return {Analysis::kCFG};
+  }
+  std::vector<std::string> modified_state() const override {
+    return {Analysis::kCFG};
+  }
+
+  PassResult run(std::vector<BasicBlock>& blocks, BytecodeFunction& func,
+                 const BytecodeChunk& chunk) override;
 };
 
 } // namespace havel::compiler

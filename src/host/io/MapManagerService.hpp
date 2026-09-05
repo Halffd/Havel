@@ -134,6 +134,9 @@ public:
     /// Get number of mappings
     int getMappingCount() const;
 
+    // Access to internal MapManager for GUI
+    std::shared_ptr<havel::MapManager> getMapManager() const { return m_manager; }
+
 private:
     std::shared_ptr<havel::MapManager> m_manager;
 };

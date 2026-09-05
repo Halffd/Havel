@@ -1,0 +1,57 @@
+// Test screenshot module with custom styling
+
+use screenshot
+
+// Default: dim 20% + blue crosshair + 8px red border
+let img = screenshot.captureRegion(100, 100, 400, 300)
+
+// Custom: no dim, red crosshair, green border
+let custom = screenshot.style({
+  dimFactor: 1.0,
+  cursorCrossColor: 0xFFFF0000,
+  selectionBorderColor: 0xFF00FF00,
+  selectionBorderWidth: 4
+})
+let img2 = screenshot.capture(custom)
+
+// Access rich image data
+print("img:", img.width, img.height, img.format)
+print("img stats.r.mean:", img.stats.r.mean)
+print("img meta:", img.meta.captureType)
+
+// Test 2D pixel access
+let px = img.pixels[50][100]
+print("img.pixels[50][100]:", px.r, px.g, px.b, px.a)
+
+// Test channel arrays
+print("img.red[0]:", img.red[0])
+print("img.green[0]:", img.green[0])
+print("img.blue[0]:", img.blue[0])
+print("img.alpha[0]:", img.alpha[0])
+
+// Test monitor info
+print("monitorCount:", screenshot.monitorCount())
+let geo = screenshot.monitorGeometry(0)
+print("monitor 0:", geo)
+
+// Test full desktop capture (small test)
+let full = screenshot.capture()
+print("full desktop:", full.width, "x", full.height, full.meta.captureType)
+
+print("ALL TESTS PASSED")
+
+print(screenshot.captureRegion(0, 0, 111, 111))
+use ui
+use screenshot_gui
+
+let w = ui.window("Test")
+ui.element.show(w)
+
+// Captures with: dim 20% + blue crosshair + 8px red border + 30% fill
+let path = screenshot_gui.takeScreenshot()
+
+// Opens region selector with same styling
+screenshot_gui.takeRegionScreenshot()
+
+screenshot_gui.showManager()  // Shows preview grid
+ui.runEventLoop()

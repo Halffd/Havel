@@ -155,6 +155,29 @@ public:
     std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) override;
     int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) override;
 
+    // High-level dialogs
+    std::string showMenu(const std::string &title, const std::vector<std::string> &options, bool multiSelect = false) override;
+    std::string showContextMenu(const std::vector<std::string> &options) override;
+    std::string showInputDialog(const std::string &title, const std::string &prompt, const std::string &defaultValue) override;
+    std::string showPasswordDialog(const std::string &title, const std::string &prompt) override;
+    double showNumberDialog(const std::string &title, const std::string &prompt, double defaultValue, double min, double max, double step) override;
+    std::string showFileDialog(const std::string &title, const std::string &startDir, const std::string &filter, bool save) override;
+    std::string showDirectoryDialog(const std::string &title, const std::string &startDir) override;
+    std::string showColorPicker(const std::string &title, const std::string &defaultColor) override;
+    bool showConfirmDialog(const std::string &title, const std::string &message) override;
+    void showNotification(const std::string &title, const std::string &message, const std::string &icon, int durationMs) override;
+
+    // Window transparency
+    bool setActiveWindowTransparency(double opacity) override;
+    bool setWindowTransparencyById(uint64_t windowId, double opacity) override;
+    bool setWindowTransparencyByTitle(const std::string &title, double opacity) override;
+
+    // Screenshot Manager
+    void *getScreenshotManager() override;
+
+    // Lazy AltTab backend initialization
+    void ensureAltTabBackend();
+
 private:
     std::unique_ptr<UIService> service_;
 };

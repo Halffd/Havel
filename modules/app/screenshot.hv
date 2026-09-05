@@ -268,64 +268,8 @@ fn save(shot, path) {
     ffi.free(_buf)
     return false
   }
-  ff.call(_fwrite, "int64", ["pointer", "int64", "int64", "pointer"], _buf, 1, _file_size, _fp)
+  ffi.call(_fwrite, "int64", ["pointer", "int64", "int64", "pointer"], _buf, 1, _file_size, _fp)
   ffi.call(_fclose, "int32", ["pointer"], _fp)
   ffi.free(_buf)
   true
-}
-
-fn XOpenDisplay(display) {
-  ffi.call(_XOpenDisplay, "pointer", ["pointer"], display)
-}
-
-fn XCloseDisplay(display) {
-  ffi.call(_XCloseDisplay, "int32", ["pointer"], display)
-}
-
-fn DefaultRootWindow(display) {
-  ffi.call(_DefaultRootWindow, "uint64", ["pointer"], display)
-}
-
-fn XGetWindowAttributes(display, window, attr) {
-  ffi.call(_XGetWindowAttributes, "int32", ["pointer", "uint64", "pointer"], display, window, attr)
-}
-
-fn XGetImage(display, drawable, x, y, width, height, plane_mask, format) {
-  ffi.call(_XGetImage, "pointer", ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64"], display, drawable, x, y, width, height, plane_mask, format)
-}
-
-fn XDestroyImage(image) {
-  ffi.call(_XDestroyImage, "int32", ["pointer"], image)
-}
-
-fn XFree(data) {
-  ffi.call(_XFree, "int32", ["pointer"], data)
-}
-
-fn XRRGetScreenResourcesCurrent(display) {
-  ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer"], display)
-}
-
-fn XRRGetOutputPrimary(display) {
-  ffi.call(_XRRGetOutputPrimary, "uint64", ["pointer"], display)
-}
-
-fn XRRGetOutputInfo(display, output) {
-  ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "uint64"], display, output)
-}
-
-fn XRRGetCrtcInfo(display, crtc) {
-  ffi.call(_XRRGetCrtcInfo, "pointer", ["pointer", "uint64"], display, crtc)
-}
-
-fn XRRFreeCrtcInfo(crtc) {
-  ffi.call(_XRRFreeCrtcInfo, "void", ["pointer"], crtc)
-}
-
-fn XRRFreeOutputInfo(output_info) {
-  ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], output_info)
-}
-
-fn XRRFreeScreenResources(resources) {
-  ffi.call(_XRRFreeScreenResources, "void", ["pointer"], resources)
 }

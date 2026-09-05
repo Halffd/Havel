@@ -2296,13 +2296,17 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 
 # Qt-dependent modules
 if(ENABLE_QT)
-  # add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp)
+  add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
   # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  # screenshot module has const auto& lambda incompatibility with std::function — skip as .so for now
-  # add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp)
+  
+  add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(screenshot_gui ${CMAKE_SOURCE_DIR}/src/modules/screenshot_gui/ScreenshotGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  target_include_directories(havel_mod_screenshot PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_screenshot_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
 endif()
 
 # Export symbols from main executable so plugins can resolve them
@@ -2419,6 +2423,33 @@ Qt6::Widgets
         target_compile_definitions(test_gui PRIVATE RUN_TESTS)
         add_test(NAME test_gui COMMAND test_gui)
     endif()
+endif()
+
+# ==============================================================================
+# LIGHTWEIGHT IR/CFG UNIT TEST
+# ==============================================================================
+# The CFG/IR layer (FunctionBuilder, validate_cfg, flatten_cfg) is self-contained
+# and does not depend on the application core, GUI, or LLVM backends. It is
+# tested by a dedicated, fast executable that compiles only the IR sources plus
+# the test. This intentionally bypasses the whole-application test targets,
+# which cannot compile the core sources (they require the generated
+# havel_platform.h, absent from that target's include path).
+if(ENABLE_TESTS AND GTest_FOUND)
+    add_executable(cfg_pipeline_test
+        tests/cfg_pipeline_ut.cpp
+        src/havel-lang/compiler/core/FunctionBuilder.cpp
+        src/havel-lang/compiler/core/CFG.cpp
+        src/havel-lang/compiler/core/BytecodePasses.cpp
+    )
+    target_include_directories(cfg_pipeline_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
 endif()
 
 # ==============================================================================

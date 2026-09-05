@@ -4,6 +4,6 @@
 
 namespace havel::modules {
 
-void registerScreenshotModule(const compiler::VMApi& api);
+void registerScreenshotGuiModule(const compiler::VMApi& api);
 
 } // namespace havel::modules

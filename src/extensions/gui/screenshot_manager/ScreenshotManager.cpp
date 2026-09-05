@@ -27,6 +27,113 @@
 
 namespace havel {
 
+// Default ShareX-like style settings
+struct ScreenshotStyle {
+    double dimFactor = 0.8;           // 20% dim
+    bool showCursorCross = true;      // Show blue crosshair at cursor
+    uint32_t cursorCrossColor = 0xFF0000FF;  // Blue
+    int cursorCrossSize = 24;
+    int cursorCrossWidth = 3;
+    int selectionBorderWidth = 8;     // 8px red border
+    uint32_t selectionBorderColor = 0xFFFF0000;  // Red
+    double selectionOpacity = 0.3;    // 30% fill
+};
+
+static QImage applyDefaultStyle(const QImage& image, const ScreenshotStyle& style = {}) {
+    if (image.isNull()) return image;
+    
+    QImage result = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    
+    // 1. Dim the entire image by dimFactor (20% darker)
+    if (style.dimFactor < 1.0 && style.dimFactor > 0.0) {
+        int w = result.width();
+        int h = result.height();
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(result.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb pixel = line[x];
+                int r = qRed(pixel);
+                int g = qGreen(pixel);
+                int b = qBlue(pixel);
+                int a = qAlpha(pixel);
+                
+                r = static_cast<int>(r * style.dimFactor);
+                g = static_cast<int>(g * style.dimFactor);
+                b = static_cast<int>(b * style.dimFactor);
+                
+                line[x] = qRgba(r, g, b, a);
+            }
+        }
+    }
+    
+    // 2. Draw blue crosshair at cursor position
+    if (style.showCursorCross) {
+        QPainter painter(&result);
+        painter.setRenderHint(QPainter::Antialiasing);
+        
+        QPen pen(QColor::fromRgba(style.cursorCrossColor), style.cursorCrossWidth, Qt::SolidLine, Qt::RoundCap);
+        painter.setPen(pen);
+        
+        // Get global cursor position
+        QPoint cursorPos = QCursor::pos();
+        
+        // Adjust for virtual desktop offset if needed
+        QScreen* primary = QGuiApplication::primaryScreen();
+        if (primary) {
+            QRect geo = primary->virtualGeometry();
+            cursorPos -= geo.topLeft();
+        }
+        
+        int cx = cursorPos.x();
+        int cy = cursorPos.y();
+        int halfSize = style.cursorCrossSize / 2;
+        
+        // Draw horizontal line
+        painter.drawLine(cx - halfSize, cy, cx + halfSize, cy);
+        // Draw vertical line
+        painter.drawLine(cx, cy - halfSize, cx, cy + halfSize);
+        
+        // Draw center circle
+        painter.setBrush(QColor::fromRgba(style.cursorCrossColor));
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(cx - style.cursorCrossWidth, cy - style.cursorCrossWidth, style.cursorCrossWidth * 2, style.cursorCrossWidth * 2);
+        
+        painter.end();
+    }
+    
+    // 3. Draw 8px red border with 30% opacity fill around the entire image
+    if (style.selectionBorderWidth > 0) {
+        QPainter painter(&result);
+        painter.setRenderHint(QPainter::Antialiasing);
+        
+        int borderWidth = style.selectionBorderWidth;
+        uint32_t borderColor = style.selectionBorderColor;
+        double opacity = style.selectionOpacity;
+        
+        // Draw border
+        QPen pen(QColor::fromRgba(borderColor), borderWidth, Qt::SolidLine, Qt::RoundCap, Qt::MiterJoin);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        
+        int inset = borderWidth / 2;
+        painter.drawRect(inset, inset, result.width() - borderWidth, result.height() - borderWidth);
+        
+        // Draw semi-transparent fill
+        if (opacity > 0 && opacity < 1.0) {
+            QColor fillColor = QColor::fromRgba(borderColor);
+            fillColor.setAlphaF(opacity);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(fillColor);
+            painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            painter.drawRect(inset, inset, result.width() - borderWidth, result.height() - borderWidth);
+        }
+        
+        painter.end();
+    }
+    
+    return result;
+}
+
 ScreenshotManager::ScreenshotManager(ClipboardManager* clipboardManager, QWidget *parent) : QMainWindow(parent) {
     this->clipboardManager = clipboardManager;
     screenshotDir = QDir::homePath() + "/Screenshots";
@@ -39,7 +146,6 @@ ScreenshotManager::ScreenshotManager(ClipboardManager* clipboardManager, QWidget
     clipboard = QApplication::clipboard();
     folderWatcher = new QFileSystemWatcher(this);
     folderWatcher->addPath(screenshotDir);
-    // connect(folderWatcher, &QFileSystemWatcher::directoryChanged, this, &ScreenshotManager::onDirectoryChanged);
 }
 
 void ScreenshotManager::setupUI() {
@@ -51,13 +157,11 @@ void ScreenshotManager::setupUI() {
 
     auto mainLayout = new QHBoxLayout(centralWidget);
     screenshotGrid = new QTableWidget(this);
-    screenshotGrid->setColumnCount(3);  // Reduced columns to accommodate larger images
+    screenshotGrid->setColumnCount(3);
     screenshotGrid->setRowCount(0);
     screenshotGrid->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     screenshotGrid->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-
-    // Set larger image size
-    screenshotGrid->setIconSize(QSize(300, 225));  // Larger thumbnails
+    screenshotGrid->setIconSize(QSize(300, 225));
     screenshotGrid->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
     mainLayout->addWidget(screenshotGrid);
@@ -65,6 +169,22 @@ void ScreenshotManager::setupUI() {
     previewLabel = new QLabel(this);
     previewLabel->setMinimumSize(400, 300);
     mainLayout->addWidget(previewLabel);
+}
+
+// Helper to capture, apply style, and save
+static QString captureAndStyle(const QString& filename, const QString& fullPath, QImage image, ScreenshotManager* self) {
+    if (image.isNull()) return QString();
+    
+    // Apply default ShareX-like style
+    ScreenshotStyle style;
+    QImage styled = applyDefaultStyle(image, style);
+    
+    if (!styled.save(fullPath)) return QString();
+    
+    QPixmap qpixmap = QPixmap::fromImage(styled);
+    self->addToGrid(filename, qpixmap.scaled(200, 150, Qt::KeepAspectRatio));
+    self->copyImageToClipboard(fullPath);
+    return fullPath;
 }
 
 QString ScreenshotManager::takeScreenshot() {
@@ -77,16 +197,15 @@ QString ScreenshotManager::takeScreenshot() {
 
         bool success = false;
 
-        // Try grim (wlroots-based: Sway, Hyprland, etc.)
         if (QProcess::execute("grim", {fullPath}) == 0) success = true;
-
-        // Try spectacle (KDE)
         else if (QProcess::execute("spectacle", {"-b", "-n", "-o", fullPath}) == 0) success = true;
-
-        // Try gnome-screenshot (GNOME)
         else if (QProcess::execute("gnome-screenshot", {"-f", fullPath}) == 0) success = true;
 
         if (success) {
+            QImage img(fullPath);
+            if (!img.isNull()) {
+                return captureAndStyle(filename, fullPath, img, this);
+            }
             addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
             copyImageToClipboard(fullPath);
             return fullPath;
@@ -94,28 +213,22 @@ QString ScreenshotManager::takeScreenshot() {
     }
 
 #ifdef __linux__
-    // Try X11 low-level capture for obscured windows using XGetImage (since XCompositeNameWindowPixmap doesn't work on root)
     x11::Display *display = x11::OpenDisplay(nullptr);
     if (display) {
         x11::Window root = DefaultRootWindow(display);
         XWindowAttributes attr;
         if (XGetWindowAttributes(display, root, &attr)) {
-            // Capture the full desktop using XGetImage directly on root window
             XImage *image = XGetImage(display, root, 0, 0,
                                      attr.width, attr.height, AllPlanes, ZPixmap);
             if (image) {
                 QImage qimg = QImage((uchar*)image->data, image->width, image->height,
                                      image->bytes_per_line, QImage::Format_RGB32);
-                // Convert BGR to RGB if needed
                 qimg = qimg.rgbSwapped();
 
-                if (!qimg.isNull() && qimg.save(fullPath)) {
-                    QPixmap qpixmap = QPixmap::fromImage(qimg);
-                    addToGrid(filename, qpixmap.scaled(200, 150, Qt::KeepAspectRatio));
-                    copyImageToClipboard(fullPath);
+                if (!qimg.isNull()) {
                     XDestroyImage(image);
                     x11::CloseDisplay(display);
-                    return fullPath;
+                    return captureAndStyle(filename, fullPath, qimg, this);
                 }
                 XDestroyImage(image);
             }
@@ -129,27 +242,22 @@ QString ScreenshotManager::takeScreenshot() {
     if (screens.isEmpty()) return QString();
 
     if (screens.size() == 1) {
-        // Single monitor - simple grab
         auto screen = screens[0];
         auto pixmap = screen->grabWindow(0);
-        if (!pixmap.isNull() && pixmap.save(fullPath)) {
-            addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
-            copyImageToClipboard(fullPath);
-            return fullPath;
+        if (!pixmap.isNull()) {
+            QImage img = pixmap.toImage();
+            return captureAndStyle(filename, fullPath, img, this);
         }
     } else {
-        // Multiple monitors - stitch them together
         int totalWidth = 0;
         int maxHeight = 0;
 
-        // Calculate total dimensions
         for (auto *screen : screens) {
             QRect geo = screen->geometry();
             totalWidth += geo.width();
             maxHeight = std::max(maxHeight, geo.height());
         }
 
-        // Create combined pixmap
         QPixmap combinedPixmap(totalWidth, maxHeight);
         combinedPixmap.fill(Qt::black);
         QPainter painter(&combinedPixmap);
@@ -169,14 +277,13 @@ QString ScreenshotManager::takeScreenshot() {
             currentX += geo.width();
         }
 
-        if (success && combinedPixmap.save(fullPath)) {
-            addToGrid(filename, combinedPixmap.scaled(200, 150, Qt::KeepAspectRatio));
-            copyImageToClipboard(fullPath);
-            return fullPath;
+        if (success) {
+            QImage img = combinedPixmap.toImage();
+            return captureAndStyle(filename, fullPath, img, this);
         }
     }
 
-    return QString(); // Return empty string if failed
+    return QString();
 }
 
 QString ScreenshotManager::takeRegionScreenshot() {
@@ -184,36 +291,26 @@ QString ScreenshotManager::takeRegionScreenshot() {
     QString fullPath = screenshotDir + "/" + filename;
     bool success = false;
 
-    // Check for Wayland
     if (QApplication::platformName().contains("wayland", Qt::CaseInsensitive) ||
         qgetenv("XDG_SESSION_TYPE") == "wayland") {
-        // Try slurp | grim
-        // We need to use sh -c to pipe
         QString command = QString("slurp | grim -g - %1").arg(fullPath);
         if (QProcess::execute("sh", {"-c", command}) == 0) success = true;
-
-        // Try spectacle (KDE)
         else if (QProcess::execute("spectacle", {"-r", "-b", "-n", "-o", fullPath}) == 0) success = true;
-
-        // Try gnome-screenshot (GNOME)
         else if (QProcess::execute("gnome-screenshot", {"-a", "-f", fullPath}) == 0) success = true;
-    }
-    // Try X11-specific tools
-    else {
-        // Try gnome-screenshot area selection
+    } else {
         if (QProcess::execute("gnome-screenshot", {"-a", "-f", fullPath}) == 0) success = true;
-
-        // Try scrot with selection (interactive)
         else if (QProcess::execute("scrot", {"-s", fullPath}) == 0) success = true;
-
-        // Try import with user selection
         else if (QProcess::execute("import", {fullPath}) == 0) success = true;
     }
 
     if (success) {
-         addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
-         copyImageToClipboard(fullPath);
-         return fullPath;
+        QImage img(fullPath);
+        if (!img.isNull()) {
+            return captureAndStyle(filename, fullPath, img, this);
+        }
+        addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
+        copyImageToClipboard(fullPath);
+        return fullPath;
     }
 
     // Fallback to Qt's region selector
@@ -230,39 +327,34 @@ QString ScreenshotManager::takeRegionScreenshot() {
         selector->show();
     });
 
-    return QString(); // Return empty string for async operation
+    return QString();
 }
 
 QString ScreenshotManager::takeScreenshotOfCurrentMonitor() {
     QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
     QString fullPath = screenshotDir + "/" + filename;
 
-    // Check for Wayland
     if (QApplication::platformName().contains("wayland", Qt::CaseInsensitive) ||
         qgetenv("XDG_SESSION_TYPE") == "wayland") {
 
         bool success = false;
-
-        // Try spectacle (KDE) -m for current monitor
         if (QProcess::execute("spectacle", {"-m", "-b", "-n", "-o", fullPath}) == 0) success = true;
 
         if (success) {
-             addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
-             copyImageToClipboard(fullPath);
-             return fullPath;
+            QImage img(fullPath);
+            if (!img.isNull()) {
+                return captureAndStyle(filename, fullPath, img, this);
+            }
+            addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
+            copyImageToClipboard(fullPath);
+            return fullPath;
         }
     }
 
 #ifdef __linux__
-    // Try X11 low-level capture for current monitor using XGetImage (since XCompositeNameWindowPixmap doesn't work on root)
     auto currentScreen = QGuiApplication::screenAt(QCursor::pos());
-    if (!currentScreen) {
-        currentScreen = QGuiApplication::primaryScreen();
-    }
-    if (!currentScreen) {
-        qWarning() << "Could not determine screen";
-        return QString();
-    }
+    if (!currentScreen) currentScreen = QGuiApplication::primaryScreen();
+    if (!currentScreen) return QString();
 
     QRect monitorGeometry = currentScreen->geometry();
 
@@ -271,24 +363,19 @@ QString ScreenshotManager::takeScreenshotOfCurrentMonitor() {
         x11::Window root = DefaultRootWindow(display);
         XWindowAttributes attr;
         if (XGetWindowAttributes(display, root, &attr)) {
-            // Capture the full desktop using XGetImage directly on root window
             XImage *image = XGetImage(display, root, 0, 0,
                                      attr.width, attr.height, AllPlanes, ZPixmap);
             if (image) {
                 QImage fullImage = QImage((uchar*)image->data, image->width, image->height,
                                          image->bytes_per_line, QImage::Format_RGB32);
-                fullImage = fullImage.rgbSwapped(); // Convert BGR to RGB if needed
+                fullImage = fullImage.rgbSwapped();
 
-                // Crop to current monitor's geometry (adjust coordinates relative to full desktop)
                 QImage monitorImage = fullImage.copy(monitorGeometry);
 
-                if (!monitorImage.isNull() && monitorImage.save(fullPath)) {
-                    QPixmap qpixmap = QPixmap::fromImage(monitorImage);
-                    addToGrid(filename, qpixmap.scaled(200, 150, Qt::KeepAspectRatio));
-                    copyImageToClipboard(fullPath);
+                if (!monitorImage.isNull()) {
                     XDestroyImage(image);
                     x11::CloseDisplay(display);
-                    return fullPath;
+                    return captureAndStyle(filename, fullPath, monitorImage, this);
                 }
                 XDestroyImage(image);
             }
@@ -297,26 +384,15 @@ QString ScreenshotManager::takeScreenshotOfCurrentMonitor() {
     }
 #endif
 
-    // Fallback to Qt's screen grabber for current monitor
     auto screen = QGuiApplication::screenAt(QCursor::pos());
-    if (!screen) {
-        screen = QGuiApplication::primaryScreen();
-    }
+    if (!screen) screen = QGuiApplication::primaryScreen();
     if (!screen) return QString();
 
     auto pixmap = screen->grabWindow(0, screen->geometry().x(), screen->geometry().y(), screen->geometry().width(), screen->geometry().height());
-    if (pixmap.isNull()) {
-        qWarning() << "Failed to grab screen";
-        return QString();
-    }
+    if (pixmap.isNull()) return QString();
 
-    if (pixmap.save(fullPath)) {
-        addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
-        copyImageToClipboard(fullPath);
-        return fullPath;
-    }
-
-    return QString();
+    QImage img = pixmap.toImage();
+    return captureAndStyle(filename, fullPath, img, this);
 }
 
 QString ScreenshotManager::captureRegion(const QRect &region) {
@@ -324,31 +400,24 @@ QString ScreenshotManager::captureRegion(const QRect &region) {
     QString fullPath = screenshotDir + "/" + filename;
 
 #ifdef __linux__
-    // Try X11 low-level capture for region using XGetImage (since XCompositeNameWindowPixmap doesn't work on root)
     x11::Display *display = x11::OpenDisplay(nullptr);
     if (display) {
         x11::Window root = DefaultRootWindow(display);
         XWindowAttributes attr;
         if (XGetWindowAttributes(display, root, &attr)) {
-            // Capture the full desktop using XGetImage directly on root window
             XImage *image = XGetImage(display, root, 0, 0,
                                      attr.width, attr.height, AllPlanes, ZPixmap);
             if (image) {
                 QImage fullImage = QImage((uchar*)image->data, image->width, image->height,
                                          image->bytes_per_line, QImage::Format_RGB32);
-                fullImage = fullImage.rgbSwapped(); // Convert BGR to RGB if needed
+                fullImage = fullImage.rgbSwapped();
 
-                // Crop to the selected region
                 QImage regionImage = fullImage.copy(region);
 
-                if (!regionImage.isNull() && regionImage.save(fullPath)) {
-                    QPixmap qpixmap = QPixmap::fromImage(regionImage);
-                    addToGrid(filename, qpixmap.scaled(200, 150, Qt::KeepAspectRatio));
-                    copyImageToClipboard(fullPath);
+                if (!regionImage.isNull()) {
                     XDestroyImage(image);
                     x11::CloseDisplay(display);
-                    show();
-                    return fullPath;
+                    return captureAndStyle(filename, fullPath, regionImage, this);
                 }
                 XDestroyImage(image);
             }
@@ -357,15 +426,13 @@ QString ScreenshotManager::captureRegion(const QRect &region) {
     }
 #endif
 
-    // Fallback to Qt's screen grabber for region
+    // Fallback to Qt's screen grabber
     auto screen = QApplication::primaryScreen();
     auto pixmap = screen->grabWindow(0, region.x(), region.y(), region.width(), region.height());
 
-    if (pixmap.save(fullPath)) {
-        addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
-        copyImageToClipboard(fullPath);
-        show();
-        return fullPath;
+    if (!pixmap.isNull()) {
+        QImage img = pixmap.toImage();
+        return captureAndStyle(filename, fullPath, img, this);
     }
 
     show();
@@ -376,52 +443,43 @@ void ScreenshotManager::addToGrid(const QString &filename, const QPixmap &pixmap
     int currentRowCount = screenshotGrid->rowCount();
     int currentColumnCount = screenshotGrid->columnCount();
 
-    // Calculate which cell to insert into
     int totalCells = currentRowCount * currentColumnCount;
-    int currentCell = totalCells; // Position for the new item
+    int currentCell = totalCells;
 
     int row = currentCell / currentColumnCount;
     int col = currentCell % currentColumnCount;
 
-    // Add a new row if needed
     if (col == 0 && currentCell > 0) {
         screenshotGrid->insertRow(currentRowCount);
     }
 
-    // Recalculate row if we just added one
     if (col == 0 && currentCell > 0) {
         row = currentRowCount;
     }
 
-    // Create a widget to hold the image and buttons
     auto widget = new QWidget();
     auto layout = new QVBoxLayout(widget);
 
-    // Scale the pixmap to fit the larger thumbnail size
     QPixmap scaledPixmap = pixmap.scaled(300, 225, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
-    // Create label for the image
     auto imageLabel = new QLabel();
     imageLabel->setPixmap(scaledPixmap);
     imageLabel->setAlignment(Qt::AlignCenter);
     imageLabel->setFixedSize(300, 225);
     imageLabel->setStyleSheet("border: 1px solid gray;");
 
-    // Create buttons
     auto buttonLayout = new QHBoxLayout();
     auto copyPathBtn = new QPushButton("Copy Path");
     auto copyImageBtn = new QPushButton("Copy Image");
     auto deleteBtn = new QPushButton("Delete");
     auto openEditorBtn = new QPushButton("Open Editor");
 
-    // Store the file path in the button's property for later use
     QString fullPath = screenshotDir + "/" + filename;
     copyPathBtn->setProperty("filepath", fullPath);
     copyImageBtn->setProperty("filepath", fullPath);
     deleteBtn->setProperty("filepath", fullPath);
     openEditorBtn->setProperty("filepath", fullPath);
 
-    // Connect button signals
     connect(copyPathBtn, &QPushButton::clicked, [this, copyPathBtn]() {
         QString path = copyPathBtn->property("filepath").toString();
         copyPathToClipboard(path);
@@ -435,9 +493,8 @@ void ScreenshotManager::addToGrid(const QString &filename, const QPixmap &pixmap
     connect(deleteBtn, &QPushButton::clicked, [this, deleteBtn, widget, row, col]() {
         QString path = deleteBtn->property("filepath").toString();
         QFile::remove(path);
-        // Remove the widget from the table cell
         screenshotGrid->removeCellWidget(row, col);
-        delete widget; // Clean up the widget
+        delete widget;
     });
 
     connect(openEditorBtn, &QPushButton::clicked, [openEditorBtn]() {
@@ -453,7 +510,6 @@ void ScreenshotManager::addToGrid(const QString &filename, const QPixmap &pixmap
     layout->addWidget(imageLabel);
     layout->addLayout(buttonLayout);
 
-    // Add the widget to the table cell
     screenshotGrid->setCellWidget(row, col, widget);
 }
 
@@ -475,9 +531,6 @@ void ScreenshotManager::copyPathToClipboard(const QString &path) {
 
 void ScreenshotManager::addToClipboardManager(const QString &imagePath) {
     if (clipboardManager && !imagePath.isEmpty()) {
-        // Add the image to the clipboard manager's history
-        // This would depend on the specific API of ClipboardManager
-        // For now, we'll just ensure the image is in the system clipboard
         QPixmap pixmap(imagePath);
         if (!pixmap.isNull()) {
             clipboardManager->getClipboard()->setPixmap(pixmap);

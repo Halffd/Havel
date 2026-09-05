@@ -278,8 +278,7 @@ bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) 
 #ifdef HAVE_QT_EXTENSION
         havel::host::ScreenshotService::getInstance().setBackend(
             std::make_unique<havel::host::QtScreenshotBackend>());
-        havel::AltTabService::instance().setBackend(
-            std::make_unique<havel::host::QtAltTabBackend>());
+        // AltTab backend created lazily on first use (after QApplication exists)
         return true;
 #else
         return false;

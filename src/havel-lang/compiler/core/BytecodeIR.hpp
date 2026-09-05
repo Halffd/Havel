@@ -631,8 +631,11 @@ struct BasicBlock {
 // Forward declaration for BytecodeFunction (used in FunctionBuilder)
 struct BytecodeFunction;
 
-// ===== Builder Monad: BlockAnd<()> =====
-// Provides structured CFG construction with type-safe block management
+// ===== FunctionBuilder =====
+// Provides structured CFG construction. Blocks are appended in creation order;
+// terminators end the current block and the callers coordinate the next block
+// explicitly via create_block()/set_current_block(). build() materializes a
+// BytecodeFunction carrying the CFG (blocks) plus typed locals/params.
 
 class FunctionBuilder {
   struct Impl;
@@ -709,7 +712,14 @@ public:
   void mul_int(std::optional<SourceLocation> loc = {});
   void div_int(std::optional<SourceLocation> loc = {});
   void mod_int(std::optional<SourceLocation> loc = {});
-  
+
+  void inc_local(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void dec_local(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void inc_local_post(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+  void dec_local_post(uint32_t local_idx, std::optional<SourceLocation> loc = {});
+
+  void pop(std::optional<SourceLocation> loc = {});
+
   // String cursor ops
   void string_cursor_new(std::optional<SourceLocation> loc = {});
   void string_cursor_current(std::optional<SourceLocation> loc = {});
@@ -772,6 +782,24 @@ struct BytecodeFunction {
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;
+
+  // Optional explicit CFG representation. When non-empty, `blocks` is the
+  // control-flow graph for the function and `instructions` is the linear
+  // flavor produced by flatten_cfg()/the codegen backends. The linear
+  // consumers (interpreter/JIT) operate on `instructions`; CFG passes operate
+  // on `blocks`. `entry_block` is the id of the function entry block.
+  std::vector<BasicBlock> blocks;
+  uint32_t entry_block = 0;
+  // Typed local slots indexed identically to LOAD_VAR/STORE_VAR operands.
+  // Parameters occupy slots [0, param_count); the remaining slots are temps.
+  std::vector<LocalInfo> locals;
+  // Global names referenced via LOAD_GLOBAL/STORE_GLOBAL. The instruction
+  // operand is the index into this table (a chunk-local StringValId once the
+  // name is interned into the owning BytecodeChunk at lowering time).
+  std::vector<std::string> global_names;
+
+  // Whether the function is represented in CFG form (blocks populated).
+  bool has_cfg() const { return !blocks.empty(); }
   // Default parameter values (indexed by param index, empty if no default)
   // Stored as constant values for simple defaults
   std::vector<std::optional<Value>> default_values;
@@ -860,6 +888,18 @@ public:
 private:
   std::vector<std::string> strings;
 };
+
+// ===== Per-function and per-module validation =====
+// validate_function runs the CFG structural checks (validate_cfg) then checks
+// that instruction operands reference valid entities in the owning function:
+//   - LOAD_VAR/STORE_VAR/STORE_IMMUT_VAR local indices < locals.size()
+//   - LOAD_UPVALUE/STORE_UPVALUE upvalue indices < upvalues.size()
+//   - LOAD_GLOBAL/STORE_GLOBAL/STORE_IMMUT_GLOBAL name indices < global_names.size()
+//   - LOAD_CONST operand presence
+// validate_module checks every CFG-backed function in a chunk.
+CFGValidationResult validate_function(const BytecodeFunction& func,
+                                      uint32_t entry_block);
+CFGValidationResult validate_module(const BytecodeChunk& chunk);
 
 // Bytecode compiler interface
 class BytecodeCompiler {

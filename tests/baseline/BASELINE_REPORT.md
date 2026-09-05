@@ -1,235 +1,166 @@
-# Phase 0 - Havel VM Baseline Benchmark Report
+# Phase 0 - Havel Baseline Report
 
-**Date**: 2026-08-30  
-**System**: Linux, 16 cores, half-pc  
-**Build**: Debug mode (no LLVM)  
-**Havel Binary**: `build-debug/havel`
+**Date**: 2026-09-04
+**System**: Linux, 16 cores, x86_64, clang, C++23
+**Repo**: /home/all/repos/havel, branch main (HEAD 9adfec38)
 
----
+This report records the Phase 0 baseline required by TODO.md section 3:
+build configurations, test results with failure classification, startup time,
+interpreter performance, memory, and the machine-readable baselines in
+`tests/baseline/{default,llvm,self_hosted}.json`.
 
-## Executive Summary
-
-### Key Findings
-
-1. **Startup Overhead Dominates**: Each test takes ~3-4 seconds minimum
-   - Baseline startup/initialization: ~3000ms per test
-   - Actual test execution appears sub-second for simple tests
-   - **Implication**: 1000x overhead on simple operations
-
-2. **Test Pass Rate**: 11/20 tests passing (55%)
-   - Many core features have failing tests (assignment, arrays, closures)
-   - Not blocker failures - tests exist and most pass
-   - Suggests pre-existing bugs or incomplete self-hosted implementation
-
-3. **Performance is Uniform**: Test execution time varies only ±700ms
-   - All tests hover in 3000-4300ms range
-   - No "super slow" or "super fast" tests
-   - Suggests execution doesn't scale with test complexity (yet)
+Every subsequent architectural change (BytecodeIR stabilization, pass
+framework, JIT backends) must be compared against these files.
 
 ---
 
-## Detailed Analysis
+## 1. Build Configurations
 
-### Test Results Summary
+Both relevant configurations build cleanly and produce the self-hosted pipeline
+(101 modules, 0 failed).
 
+| Config | Mode | Type | LLVM | Sanitizers | Binary | Size |
+|--------|------|------|------|-----------|--------|------|
+| default (no LLVM) | 6 | Debug | off | ASAN+UBSAN | build-debug/havel | 99 MB |
+| LLVM-enabled | 5 | Release | 22.1.8 on | ThinLTO+`-march=native` | build-release/havel | 9.8 MB |
+
+- The **default** `havel` and `hvtest` already use the **self-hosted pipeline**
+  (compiled from `modules/lang` into `out/`, cached into `~/.cache/havel/*.hvc`).
+- A pure C++ (non-self-hosted) config exists via modes 3/7 but is not the default
+  build path.
+- Both builds produce `hvtest`; `havel-bytecode-smoke` is not produced by these
+  configs.
+
+## 2. Test Suite Results
+
+### Smoke suite — modern language tests (scripts/smoke/*.hv)
 ```
-Category          Tests   Pass   Fail   Avg Time
-────────────────────────────────────────────────
-Arithmetic        10      7      3      3180ms
-Array Operations  4       1      3      3640ms
-Assignment        2       0      2      3877ms
-Async/Await       3       2      1      3737ms
-────────────────────────────────────────────────
-TOTAL            20      11      9      3608ms
+279 passed, 0 failed, 0 skipped  | 660450ms wall for 279 files
+avg 2.4s/test harness time (9.4s in-process test time)
 ```
+**100% pass.** This is the authoritative modern test set and is healthy.
 
-### Performance Breakdown
-
-**Fastest Tests** (≤3100ms - likely startup + trivial execution):
-- `arithmetic_mul`: 3091ms
-- `arithmetic_mod`: 3096ms
-- `arithmetic_add`: 3105ms
-
-**Slowest Tests** (≥4000ms - startup + real work):
-- `assignment_upvalue`: 4362ms (closures + upvalue capture)
-- `await_cofn_multi_yield`: 4088ms (async/coroutines)
-- `array_reverse_sort`: 3762ms (array sorting)
-- `array_push_pop`: 3733ms (array operations)
-- `await_cofn_args`: 3725ms (async with arguments)
-
-**Observations**:
-- Upvalue capture (+1200ms vs baseline) → closure overhead detected
-- Multi-yield coroutines (+1000ms) → async scheduling overhead
-- Array operations (+600ms) → collection overhead
-- Pure arithmetic (~0ms delta) → optimized well
-
-### Startup Analysis
-
-Looking at TIMING output from test runs:
+### JIT smoke — LLVM ORC path (release build)
 ```
-TIMING: parse: tokenize = 22ms
-TIMING: parse: parseAST = 3074ms
-TIMING: typecheck = 210ms
-TIMING: emit = 1086ms
-TIMING: TOTAL runScript = 4400ms
+30 passed, 0 failed  | rc=0  (jit-try-catch, jit-array-map, jit-gc-stress,
+                             jit-recursion, jit-class-jit, jit-object-jit-chain, ...)
+```
+**100% pass.** The LLVM JIT backend works.
+
+### Integration suite (scripts/integration/*.hv)
+```
+97 total: 52 PASS, 42 FAIL(1), 3 TIMEOUT, 0 exit=127
 ```
 
-**Where Time is Spent**:
-1. **Parser AST construction**: 3074ms (70% of total)
-   - Tokenization: 22ms (0.5%)
-   - AST building: 3052ms (69%)
-   - **Bottleneck**: Recursive descent parsing + AST allocation
+### C++ unit tests / ctest
+- No gtest tests built (`GTest` not found; `test_embed_api.cpp` not compiled).
+- Debug ctest runs two tests:
+  - `hvtest-smoke` — re-runs the full 279-file smoke suite (~660 s); passes but is slow.
+  - `module-globals-drift-guard` — **PASS** ("OK: ModuleGlobals.generated.hpp (67 names)").
 
-2. **Bytecode Emission**: 1086ms (25%)
-   - Code generation from AST
-   - Symbol resolution
-   - Reasonable cost given AST complexity
+## 3. Failure Classification
 
-3. **Type Checking**: 210ms (5%)
-   - Relatively fast
-   - Well-optimized semantic analysis
+Separate of exit=127 from timeout per TODO.md: there are **0 exit=127** and
+**3 timeout** results. No regressions and no new failures found.
 
-4. **Actual Execution**: Remaining time in test results
-   - Overhead absorbed by remaining 300-1000ms per test
-   - Actual test logic is sub-second
+| Classification | Count | Meaning |
+|----------------|-------|---------|
+| PASS | 52 | runs to exit 0 |
+| EXPECTED_FAILURE | 20 | stale, legacy-syntax tests the modern self-hosted compiler rejects |
+| INFRASTRUCTURE_FAILURE | 22 | require display / input devices / audio / network / FFI libs (headless env) |
+| TIMEOUT | 3 | defined timeout (120 s) exceeded: `test_conditional_hotkeys`, `test_ffi_mpv`, `test_new_stdlib` |
+| REGRESSION | 0 | none |
+| NEW_FAILURE | 0 | none |
+| UNCLASSIFIED | 0 | none |
 
----
+### PRE_EXISTING / EXPECTED_FAILURE (legacy syntax, 20)
+Tests written for the pre-migration Havel syntax (`let`, `:=`, `+` string
+concatenation, space-separated `print`, LINQ `from...select`, monads, etc.).
+The modern self-hosted parser rejects these. Examples verified in source:
+`test_fs`, `test_stdlib`, `test_try`, `test_import`, `test_linq2`, `test_monads`,
+`test_cfg`, `test_path`, `test_path_simple`, `test_regex_module`,
+`test_result_types`, `test_struct_class`, `test_types`, `test_async_await`,
+`test_cooperative_async`, `int_gof_patterns`, `test_pipeline_features`,
+`test_utility_module`, `test_fsuv`, `test_config_sugar`.
 
-## Bottleneck Identification
+### INFRASTRUCTURE_FAILURE (22)
+Tests that perform live I/O and need hardware/display/network that this
+headless environment lacks: window/X11 (`test_x11*`, `test_window*`,
+`test_wm_detection`), audio (`test_audio*`), hotkey/event (`test_event_system`,
+`test_host_modules`, `test_basic_modules`), FFI libs (`test_ffi_*`), network
+(`test_net_dns`, `test_net_stack`), timers/OS (`test_thread_safe_timers`,
+`test_os_module`, `test_wt`, `test_canvas`). Per AGENTS.md these IO/UI tests are
+not meaningful headless; they are flagged rather than treated as regressions.
 
-### 🔴 CRITICAL Bottlenecks (>1 second overhead)
+## 4. Startup Time
 
-1. **AST Parser (70% of startup)**
-   - Recursive descent parsing of Havel syntax
-   - Allocates AST nodes for every language construct
-   - **Why**: No streaming/incremental parsing, full tree built in memory
-   - **Impact**: Every test starts slow; impossible to achieve fast startup
-   - **Fix approach**: Streaming AST, incremental parsing, or AST caching
+Measured against a 3-line minimal script (Debug with ASAN/UBSAN vs Release).
 
-2. **Self-Hosted Compiler Bugs** (11/20 tests fail)
-   - Assignment operations fail
-   - Array methods fail intermittently
-   - Closure/upvalue semantics incomplete
-   - **Why**: Self-hosted Havel lang compiler has gaps
-   - **Impact**: Can't trust self-hosted path for perf improvements
-   - **Fix approach**: Complete self-hosted implementation OR use C++ VM for perf work
+| Build | startup (ms) | peak RSS |
+|-------|--------------|----------|
+| Debug (no LLVM) | 5300 / 4160 / 4260 | ~507 MB |
+| Release (LLVM) | 870 / 860 | ~90 MB |
 
-### 🟡 SECONDARY Bottlenecks (100-500ms overhead)
+Release is ~5x faster startup and ~5.6x lower memory. Debug's ASAN+UBSAN plus
+unoptimized code dominates startup. This matches the earlier finding that
+debug startup (~4-5 s) dominates per-test time; the release build is the
+realistic execution-profile configuration.
 
-1. **Closure/Upvalue Handling** (+1200ms for upvalue test)
-   - Capturing variables adds significant overhead
-   - Likely: heap allocation for captured scope frame
-   - **Fix approach**: Optimize upvalue representation (direct pointers vs heap)
+## 5. Interpreter Performance (Release, self-hosted)
 
-2. **Async/Coroutine Scheduling** (+1000ms for multi-yield)
-   - Each yield/resume has dispatch overhead
-   - Likely: hashtable lookup for fiber state, context switches
-   - **Fix approach**: Direct fiber reference instead of ID lookups
+Benchmark scripts (scripts/benchmarks/*.hv) via `build-release/havel run`, wall time:
 
-3. **Array Methods** (+600ms over baseline)
-   - `push`, `pop`, `sort`, `reverse` each slower
-   - Likely: repeated allocations, copying on modifications
-   - **Fix approach**: Copy-on-write semantics, in-place modifications
+| Benchmark | time (ms) | result |
+|-----------|-----------|--------|
+| arithmetic (1.6M int ops) | 27479 | pass |
+| arrays | 4135 | pass |
+| closures | - | **FAIL** (parse error, stale benchmark) |
+| functions | 5857 | pass |
+| strings | 1684 | pass |
+| objects | - | **FAIL** (rc=1) |
+| gc | 17718 | pass |
+| test_simple | 896 | pass |
 
-### 🟢 WORKING WELL
+- Interpreter is functional but slow for compute-heavy loops (~65k iterations/s
+  for the arithmetic benchmark in Release). Under Debug+ASAN the same benchmark
+  exceeds 120 s (times out).
+- `closures.hv` and `objects.hv` fail to run; `closures.hv` fails with a parser
+  error ("Unexpected token in expression: 76...") — another stale benchmark.
+  These explain why the 2026-08-30 benchmark baseline was all-zeros.
 
-- **Arithmetic**: No overhead vs baseline - fast opcodes working
-- **Simple I/O**: No major slowdowns in test execution
-- **Type Checking**: Only 5% of startup - well-tuned
+## 6. Machine-Readable Baselines
 
----
+Written to `tests/baseline/`:
 
-## Recommendations for Phase 0 Completion
+- `default.json` — Debug, no LLVM (mode 6) build config, startup, smoke/ctest/integration.
+- `llvm.json` — Release + LLVM 22.1.8 (mode 5) config, JIT smoke, interpreter benchmarks.
+- `self_hosted.json` — self-hosted pipeline build (101 modules), smoke/integration.
 
-### Short-term (No implementation yet - planning only)
+## 7. Key Findings
 
-1. **Establish measurement infrastructure** ✅
-   - Baseline created: `tests/baseline/vm_baseline_*.json`
-   - Can compare future changes against this
+1. **Modern language test suite is healthy**: smoke 279/279 and JIT 30/30 pass.
+2. **No regressions or new failures** — the integration failures are entirely
+   pre-existing (stale legacy-syntax tests + environment-dependent IO/UI/FFI tests).
+3. **Startup and memory are dominated by Debug ASAN/UBSAN**; Release is ~5x faster
+   and ~5.6x lower memory. Per-test debug timing is not a meaningful perf baseline.
+4. **Interpreter throughput is low** (~65k int-ops/s in Release). This is the
+   highest-ROI target per TODO.md's guidance (fast opcodes / VM optimization),
+   and the basis for later BytecodeIR/JIT work.
+5. **Benchmark suite is partially broken**: `closures.hv` and `objects.hv`
+   do not run (stale syntax). Fixing these is a prerequisite to trustworthy
+   benchmark trending.
 
-2. **Fix self-hosted test failures**
-   - Many core features fail (assignment, arrays, closures)
-   - Not urgent for perf analysis, but limits testing capability
-   - Estimate: 4-8 hours to debug semantic issues
+## 8. Next Steps (feed into TODO.md Phase 1+)
 
-3. **Profile bytecode emission**
-   - Measure AST→bytecode per function
-   - Identify: Which operations are slow to compile?
-   - Estimate: 2 hours with perf + flame graphs
-
-### Medium-term (Phase 1 - VM Optimization)
-
-Based on this baseline, prioritize:
-
-**TIER 1 (High ROI)**:
-1. Fast opcodes for common operations (already exists - good!)
-2. Improve AST parser speed (biggest single bottleneck)
-3. Optimize upvalue capture mechanism
-
-**TIER 2 (Medium ROI)**:
-1. Reduce allocation in array operations
-2. Optimize fiber scheduling dispatch
-3. Cache compilation results
-
-**TIER 3 (Lower ROI)**:
-1. Full incremental compilation (after IR stabilizes)
-2. Parallel compilation workers
-3. JIT backend integration
-
----
-
-## Baseline Files
-
-### Created Artifacts
-
-1. **Benchmark Runner**: `scripts/create_baseline.sh`
-   - Runs subset of smoke tests
-   - Collects elapsed time per test
-   - Outputs JSON for trending
-
-2. **Baseline Data**: `tests/baseline/vm_baseline_20260830_200316.json`
-   - 20 representative tests
-   - Timestamp: 2026-08-30 23:03:16 UTC
-   - Median execution: 3608ms
-   - Can be compared against future builds
-
-3. **This Report**: Identifies hotspots and priorities
-
-### Running Future Baselines
-
-```bash
-# Create new baseline
-./scripts/create_baseline.sh
-
-# Compare against previous
-diff -u tests/baseline/vm_baseline_OLD.json tests/baseline/vm_baseline_NEW.json
-```
-
----
-
-## Next Steps
-
-1. ✅ **Baseline Established** - Can now track regressions
-2. **Profile AST Parser** - Measure exact costs per operation
-3. **Measure Fiber Dispatch** - Optimize async overhead
-4. **Benchmark Array Operations** - Reduce allocation in collection methods
-5. **Test JIT Feasibility** - Measure LLVM compilation latency
-
----
-
-## Appendix: Test Configuration
-
-- **Build Mode**: Debug (no LTO, debug symbols enabled)
-- **LLVM Support**: Disabled (self-hosted Havel compiler)
-- **Timeout**: 60 seconds per test
-- **Runs**: 1 per test (baseline; future runs should do 3x for variance)
-- **Concurrency**: Sequential (single-threaded test runner)
-
----
+- Fix `closures.hv` / `objects.hv` benchmarks so the suite is fully runnable.
+- Use Release (mode 5) as the performance baseline config, not Debug.
+- Profile/optimize the interpreter (fast opcodes, host-call amortization) before
+  BytecodeIR/JIT work, per TODO.md section 4 (make host calls cheap).
+- Then proceed to Phase 1: stabilize BytecodeIR / CFG / verifier.
 
 ## Version History
 
 | Date | Update |
 |------|--------|
-| 2026-08-30 | Initial baseline created |
-| (future) | Track improvements against baseline |
+| 2026-08-30 | First (partial, outdated) baseline; 55% smoke pass |
+| 2026-09-04 | Phase 0 baseline re-established: smoke 100% pass, JIT 100% pass, integration classified, generated default/llvm/self_hosted.json |

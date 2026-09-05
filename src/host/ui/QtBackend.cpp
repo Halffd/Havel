@@ -9,6 +9,19 @@
 #include "UIManager.hpp"
 #include "extensions/qt/QtAltTabBackend.hpp"
 #include "host/window/AltTabService.hpp"
+#include <QColorDialog>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QFileDialog>
+#include <QListWidget>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QAbstractItemView>
+#include <QAction>
+#include <QActionGroup>
+#include <QMenu>
+#include <QSystemTrayIcon>
 
 namespace havel::host {
 
@@ -391,6 +404,199 @@ void QtBackend::ensureAltTabBackend() {
         initialized = true;
     }
 #endif
+}
+
+// ===== High-level dialog implementations =====
+
+std::string QtBackend::showMenu(const std::string &title, const std::vector<std::string> &options, bool multiSelect) {
+    if (options.empty()) return "";
+    
+    QDialog dialog;
+    dialog.setWindowTitle(QString::fromStdString(title));
+    dialog.setModal(true);
+
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+
+    QListWidget *listWidget = new QListWidget(&dialog);
+    if (multiSelect) {
+        listWidget->setSelectionMode(QAbstractItemView::MultiSelection);
+    }
+
+    for (const auto &option : options) {
+        listWidget->addItem(QString::fromStdString(option));
+    }
+
+    layout->addWidget(listWidget);
+
+    QPushButton *okButton = new QPushButton("OK", &dialog);
+    QPushButton *cancelButton = new QPushButton("Cancel", &dialog);
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(okButton);
+    buttonLayout->addWidget(cancelButton);
+    layout->addLayout(buttonLayout);
+
+    QObject::connect(okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+    QObject::connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        if (multiSelect) {
+            std::vector<std::string> selected;
+            for (auto *item : listWidget->selectedItems()) {
+                selected.push_back(item->text().toStdString());
+            }
+            // Return as JSON-like string for multiple selections
+            std::string result = "[";
+            for (size_t i = 0; i < selected.size(); ++i) {
+                if (i > 0) result += ",";
+                result += """ + selected[i] + """;
+            }
+            result += "]";
+            return result;
+        } else {
+            auto *item = listWidget->currentItem();
+            if (item) return item->text().toStdString();
+        }
+    }
+    return "";
+}
+
+std::string QtBackend::showContextMenu(const std::vector<std::string> &options) {
+    if (options.empty()) return "";
+    
+    QMenu menu;
+    QActionGroup group(&menu);
+    group.setExclusive(true);
+
+    for (const auto &option : options) {
+        QAction *action = menu.addAction(QString::fromStdString(option));
+        action->setCheckable(true);
+        group.addAction(action);
+    }
+
+    QAction *selected = menu.exec(QCursor::pos());
+    if (selected) return selected->text().toStdString();
+    return "";
+}
+
+std::string QtBackend::showInputDialog(const std::string &title, const std::string &prompt, const std::string &defaultValue) {
+    bool ok = false;
+    QString result = QInputDialog::getText(nullptr, 
+        QString::fromStdString(title),
+        QString::fromStdString(prompt),
+        QLineEdit::Normal,
+        QString::fromStdString(defaultValue),
+        &ok);
+    if (ok) return result.toStdString();
+    return "";
+}
+
+std::string QtBackend::showPasswordDialog(const std::string &title, const std::string &prompt) {
+    bool ok = false;
+    QString result = QInputDialog::getText(nullptr,
+        QString::fromStdString(title),
+        QString::fromStdString(prompt),
+        QLineEdit::Password,
+        "",
+        &ok);
+    if (ok) return result.toStdString();
+    return "";
+}
+
+double QtBackend::showNumberDialog(const std::string &title, const std::string &prompt, double defaultValue, double min, double max, double step) {
+    bool ok = false;
+    double value = QInputDialog::getDouble(nullptr,
+        QString::fromStdString(title),
+        QString::fromStdString(prompt),
+        defaultValue, min, max, 2, &ok, Qt::WindowFlags(), step);
+    if (ok) return value;
+    return defaultValue;
+}
+
+std::string QtBackend::showFileDialog(const std::string &title, const std::string &startDir, const std::string &filter, bool save) {
+    QString result;
+    if (save) {
+        result = QFileDialog::getSaveFileName(nullptr,
+            QString::fromStdString(title),
+            QString::fromStdString(startDir),
+            QString::fromStdString(filter));
+    } else {
+        result = QFileDialog::getOpenFileName(nullptr,
+            QString::fromStdString(title),
+            QString::fromStdString(startDir),
+            QString::fromStdString(filter));
+    }
+    return result.toStdString();
+}
+
+std::string QtBackend::showDirectoryDialog(const std::string &title, const std::string &startDir) {
+    QString result = QFileDialog::getExistingDirectory(nullptr,
+        QString::fromStdString(title),
+        QString::fromStdString(startDir),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    return result.toStdString();
+}
+
+std::string QtBackend::showColorPicker(const std::string &title, const std::string &defaultColor) {
+    QColor initial(Qt::white);
+    if (!defaultColor.empty()) {
+        initial = QColor(QString::fromStdString(defaultColor));
+    }
+    QColor color = QColorDialog::getColor(initial, nullptr, QString::fromStdString(title), QColorDialog::ShowAlphaChannel);
+    if (color.isValid()) {
+        return color.name(QColor::HexArgb).toStdString();
+    }
+    return "";
+}
+
+bool QtBackend::showConfirmDialog(const std::string &title, const std::string &message) {
+    return QMessageBox::question(nullptr,
+        QString::fromStdString(title),
+        QString::fromStdString(message),
+        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+}
+
+void QtBackend::showNotification(const std::string &title, const std::string &message, const std::string &icon, int durationMs) {
+    QSystemTrayIcon::MessageIcon iconType = QSystemTrayIcon::Information;
+    if (icon == "warning") iconType = QSystemTrayIcon::Warning;
+    else if (icon == "error") iconType = QSystemTrayIcon::Critical;
+    else if (icon == "success") iconType = QSystemTrayIcon::Information;
+    
+    // Create a temporary system tray icon for notification
+    static QSystemTrayIcon *tray = nullptr;
+    if (!tray) {
+        tray = new QSystemTrayIcon(qApp);
+        tray->setVisible(true);
+    }
+    tray->showMessage(QString::fromStdString(title), QString::fromStdString(message), iconType, durationMs > 0 ? durationMs : 5000);
+}
+
+bool QtBackend::setActiveWindowTransparency(double opacity) {
+    QWidget *active = QApplication::activeWindow();
+    if (!active) return false;
+    
+    active->setWindowOpacity(std::clamp(opacity, 0.0, 1.0));
+    return true;
+}
+
+bool QtBackend::setWindowTransparencyById(uint64_t windowId, double opacity) {
+    WId id = static_cast<WId>(windowId);
+    QWidget *widget = QWidget::find(id);
+    if (!widget) return false;
+    
+    widget->setWindowOpacity(std::clamp(opacity, 0.0, 1.0));
+    return true;
+}
+
+bool QtBackend::setWindowTransparencyByTitle(const std::string &title, double opacity) {
+    for (QWidget *widget : QApplication::topLevelWidgets()) {
+        if (widget->windowTitle().contains(QString::fromStdString(title), Qt::CaseInsensitive)) {
+            widget->setWindowOpacity(std::clamp(opacity, 0.0, 1.0));
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace havel::host

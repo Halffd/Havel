@@ -813,6 +813,147 @@ static Value uiIsAvailable(const VMApi &api, const std::vector<Value> &args) {
 }
 
 // ============================================================================
+// High-level dialog implementations
+// ============================================================================
+
+static Value uiShowMenu(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::vector<std::string> options;
+  if (args[1].isArrayId()) {
+    size_t len = api.length(args[1]);
+    for (size_t i = 0; i < len; ++i) {
+      options.push_back(api.toString(api.getAt(args[1], i)));
+    }
+  }
+  bool multiSelect = args.size() > 2 ? toBool(args[2]) : false;
+  std::string result = backend->showMenu(title, options, multiSelect);
+  return api.makeString(result);
+}
+
+static Value uiShowContextMenu(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.empty()) return api.makeString("");
+  std::vector<std::string> options;
+  if (args[0].isArrayId()) {
+    size_t len = api.length(args[0]);
+    for (size_t i = 0; i < len; ++i) {
+      options.push_back(api.toString(api.getAt(args[0], i)));
+    }
+  }
+  std::string result = backend->showContextMenu(options);
+  return api.makeString(result);
+}
+
+static Value uiShowInputDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::string prompt = getStringArg(api, args, 1, "");
+  std::string defaultValue = args.size() > 2 ? getStringArg(api, args, 2, "") : "";
+  std::string result = backend->showInputDialog(title, prompt, defaultValue);
+  return api.makeString(result);
+}
+
+static Value uiShowPasswordDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::string prompt = getStringArg(api, args, 1, "");
+  std::string result = backend->showPasswordDialog(title, prompt);
+  return api.makeString(result);
+}
+
+static Value uiShowNumberDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return Value::makeDouble(0.0);
+  std::string title = getStringArg(api, args, 0, "");
+  std::string prompt = getStringArg(api, args, 1, "");
+  double defaultValue = args.size() > 2 ? (args[2].isDouble() ? args[2].asDouble() : static_cast<double>(toInt(args[2]))) : 0.0;
+  double min = args.size() > 3 ? (args[3].isDouble() ? args[3].asDouble() : static_cast<double>(toInt(args[3]))) : -1000000.0;
+  double max = args.size() > 4 ? (args[4].isDouble() ? args[4].asDouble() : static_cast<double>(toInt(args[4]))) : 1000000.0;
+  double step = args.size() > 5 ? (args[5].isDouble() ? args[5].asDouble() : static_cast<double>(toInt(args[5]))) : 1.0;
+  double result = backend->showNumberDialog(title, prompt, defaultValue, min, max, step);
+  return Value::makeDouble(result);
+}
+
+static Value uiShowFileDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::string startDir = getStringArg(api, args, 1, "");
+  std::string filter = args.size() > 2 ? getStringArg(api, args, 2, "") : "";
+  bool save = args.size() > 3 ? toBool(args[3]) : false;
+  std::string result = backend->showFileDialog(title, startDir, filter, save);
+  return api.makeString(result);
+}
+
+static Value uiShowDirectoryDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::string startDir = getStringArg(api, args, 1, "");
+  std::string result = backend->showDirectoryDialog(title, startDir);
+  return api.makeString(result);
+}
+
+static Value uiShowColorPicker(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return api.makeString("");
+  std::string title = getStringArg(api, args, 0, "");
+  std::string defaultColor = getStringArg(api, args, 1, "");
+  std::string result = backend->showColorPicker(title, defaultColor);
+  return api.makeString(result);
+}
+
+static Value uiShowConfirmDialog(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return Value::makeBool(false);
+  std::string title = getStringArg(api, args, 0, "");
+  std::string message = getStringArg(api, args, 1, "");
+  bool result = backend->showConfirmDialog(title, message);
+  return Value::makeBool(result);
+}
+
+static Value uiShowNotification(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return Value::makeNull();
+  std::string title = getStringArg(api, args, 0, "");
+  std::string message = getStringArg(api, args, 1, "");
+  std::string icon = args.size() > 2 ? getStringArg(api, args, 2, "info") : "info";
+  int durationMs = args.size() > 3 ? toInt(args[3]) : 0;
+  backend->showNotification(title, message, icon, durationMs);
+  return Value::makeNull();
+}
+
+static Value uiSetActiveWindowTransparency(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.empty()) return Value::makeBool(false);
+  double opacity = args[0].isDouble() ? args[0].asDouble() : static_cast<double>(toInt(args[0]));
+  bool result = backend->setActiveWindowTransparency(opacity);
+  return Value::makeBool(result);
+}
+
+static Value uiSetWindowTransparencyById(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return Value::makeBool(false);
+  uint64_t windowId = args[0].isInt() ? static_cast<uint64_t>(args[0].asInt()) : 0;
+  double opacity = args[1].isDouble() ? args[1].asDouble() : static_cast<double>(toInt(args[1]));
+  bool result = backend->setWindowTransparencyById(windowId, opacity);
+  return Value::makeBool(result);
+}
+
+static Value uiSetWindowTransparencyByTitle(const VMApi &api, const std::vector<Value> &args) {
+  auto *backend = requireUIBackend(api);
+  if (args.size() < 2) return Value::makeBool(false);
+  std::string title = getStringArg(api, args, 0, "");
+  double opacity = args[1].isDouble() ? args[1].asDouble() : static_cast<double>(toInt(args[1]));
+  bool result = backend->setWindowTransparencyByTitle(title, opacity);
+  return Value::makeBool(result);
+}
+
+// ============================================================================
 // Register UI Module
 // ============================================================================
 
@@ -1142,6 +1283,73 @@ void registerUIModule(const compiler::VMApi &api) {
                          return uiIsAvailable(api, args);
                        });
 
+  // High-level dialogs
+  api.registerFunction("ui.showMenu",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowMenu(api, args);
+                       });
+
+  api.registerFunction("ui.showContextMenu",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowContextMenu(api, args);
+                       });
+
+  api.registerFunction("ui.showInputDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowInputDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showPasswordDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowPasswordDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showNumberDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowNumberDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showFileDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowFileDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showDirectoryDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowDirectoryDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showColorPicker",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowColorPicker(api, args);
+                       });
+
+  api.registerFunction("ui.showConfirmDialog",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowConfirmDialog(api, args);
+                       });
+
+  api.registerFunction("ui.showNotification",
+                       [api](const std::vector<Value> &args) {
+                         return uiShowNotification(api, args);
+                       });
+
+  // Window transparency
+  api.registerFunction("ui.setActiveWindowTransparency",
+                       [api](const std::vector<Value> &args) {
+                         return uiSetActiveWindowTransparency(api, args);
+                       });
+
+  api.registerFunction("ui.setWindowTransparencyById",
+                       [api](const std::vector<Value> &args) {
+                         return uiSetWindowTransparencyById(api, args);
+                       });
+
+  api.registerFunction("ui.setWindowTransparencyByTitle",
+                       [api](const std::vector<Value> &args) {
+                         return uiSetWindowTransparencyByTitle(api, args);
+                       });
+
   // Register global 'ui' object
   auto uiObj = api.makeObject();
 
@@ -1180,6 +1388,19 @@ void registerUIModule(const compiler::VMApi &api) {
   api.setField(uiObj, "setApi", api.makeFunctionRef("ui.setApi"));
   api.setField(uiObj, "getApi", api.makeFunctionRef("ui.getApi"));
   api.setField(uiObj, "isAvailable", api.makeFunctionRef("ui.isAvailable"));
+  api.setField(uiObj, "showMenu", api.makeFunctionRef("ui.showMenu"));
+  api.setField(uiObj, "showContextMenu", api.makeFunctionRef("ui.showContextMenu"));
+  api.setField(uiObj, "showInputDialog", api.makeFunctionRef("ui.showInputDialog"));
+  api.setField(uiObj, "showPasswordDialog", api.makeFunctionRef("ui.showPasswordDialog"));
+  api.setField(uiObj, "showNumberDialog", api.makeFunctionRef("ui.showNumberDialog"));
+  api.setField(uiObj, "showFileDialog", api.makeFunctionRef("ui.showFileDialog"));
+  api.setField(uiObj, "showDirectoryDialog", api.makeFunctionRef("ui.showDirectoryDialog"));
+  api.setField(uiObj, "showColorPicker", api.makeFunctionRef("ui.showColorPicker"));
+  api.setField(uiObj, "showConfirmDialog", api.makeFunctionRef("ui.showConfirmDialog"));
+  api.setField(uiObj, "showNotification", api.makeFunctionRef("ui.showNotification"));
+  api.setField(uiObj, "setActiveWindowTransparency", api.makeFunctionRef("ui.setActiveWindowTransparency"));
+  api.setField(uiObj, "setWindowTransparencyById", api.makeFunctionRef("ui.setWindowTransparencyById"));
+  api.setField(uiObj, "setWindowTransparencyByTitle", api.makeFunctionRef("ui.setWindowTransparencyByTitle"));
 
   api.setGlobal("ui", uiObj);
 }

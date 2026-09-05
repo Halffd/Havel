@@ -1520,6 +1520,13 @@ int64_t UIService::inputInt(const std::string &title, const std::string &label, 
     return static_cast<int64_t>(defaultValue);
 }
 
+ScreenshotManager *UIService::getScreenshotManager() {
+    if (!screenshotManager_) {
+        screenshotManager_ = std::make_unique<ScreenshotManager>(nullptr);
+    }
+    return screenshotManager_.get();
+}
+
 } // namespace havel::host
 
 #endif // HAVE_QT_EXTENSION

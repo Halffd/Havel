@@ -37,6 +37,7 @@
 #include <QWidget>
 
 #include "UIBackend.hpp"
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 
 #include <functional>
 #include <memory>
@@ -195,6 +196,9 @@ public:
     std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue);
     int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step);
 
+    // Screenshot Manager access
+    ScreenshotManager *getScreenshotManager();
+
 private:
     std::map<int64_t, QTimer*> timers_;
     int64_t nextTimerId_ = 1;
@@ -261,6 +265,9 @@ private:
   // Event loop management
   bool eventLoopRunning_ = false;
   int eventLoopExitCode_ = 0;
+
+  // Screenshot Manager
+  std::unique_ptr<ScreenshotManager> screenshotManager_;
 
   // Ensure QApplication exists
   void ensureApp();

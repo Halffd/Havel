@@ -182,6 +182,26 @@ public:
     virtual std::string fontPicker(const std::string &initialFont) { (void)initialFont; return ""; }
     virtual std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) { (void)title; (void)label; (void)defaultValue; return ""; }
     virtual int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) { (void)title; (void)label; (void)defaultValue; (void)min; (void)max; (void)step; return defaultValue; }
+
+    // High-level dialogs (default no-op, Qt overrides)
+    virtual std::string showMenu(const std::string &title, const std::vector<std::string> &options, bool multiSelect = false) { (void)title; (void)options; (void)multiSelect; return ""; }
+    virtual std::string showContextMenu(const std::vector<std::string> &options) { (void)options; return ""; }
+    virtual std::string showInputDialog(const std::string &title, const std::string &prompt, const std::string &defaultValue) { (void)title; (void)prompt; (void)defaultValue; return ""; }
+    virtual std::string showPasswordDialog(const std::string &title, const std::string &prompt) { (void)title; (void)prompt; return ""; }
+    virtual double showNumberDialog(const std::string &title, const std::string &prompt, double defaultValue, double min, double max, double step) { (void)title; (void)prompt; (void)defaultValue; (void)min; (void)max; (void)step; return defaultValue; }
+    virtual std::string showFileDialog(const std::string &title, const std::string &startDir, const std::string &filter, bool save) { (void)title; (void)startDir; (void)filter; (void)save; return ""; }
+    virtual std::string showDirectoryDialog(const std::string &title, const std::string &startDir) { (void)title; (void)startDir; return ""; }
+    virtual std::string showColorPicker(const std::string &title, const std::string &defaultColor) { (void)title; (void)defaultColor; return ""; }
+    virtual bool showConfirmDialog(const std::string &title, const std::string &message) { (void)title; (void)message; return false; }
+    virtual void showNotification(const std::string &title, const std::string &message, const std::string &icon, int durationMs) { (void)title; (void)message; (void)icon; (void)durationMs; }
+
+    // Window transparency (default no-op, Qt overrides)
+    virtual bool setActiveWindowTransparency(double opacity) { (void)opacity; return false; }
+    virtual bool setWindowTransparencyById(uint64_t windowId, double opacity) { (void)windowId; (void)opacity; return false; }
+    virtual bool setWindowTransparencyByTitle(const std::string &title, double opacity) { (void)title; (void)opacity; return false; }
+
+    // Screenshot Manager (Qt-specific, default nullptr)
+    virtual void *getScreenshotManager() { return nullptr; }
 };
 
 } // namespace havel::host

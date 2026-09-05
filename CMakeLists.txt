@@ -2296,13 +2296,17 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 
 # Qt-dependent modules
 if(ENABLE_QT)
-  # add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp)
+  add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
   # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  # screenshot module has const auto& lambda incompatibility with std::function — skip as .so for now
-  # add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp)
+  
+  add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(screenshot_gui ${CMAKE_SOURCE_DIR}/src/modules/screenshot_gui/ScreenshotGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  target_include_directories(havel_mod_screenshot PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_screenshot_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
 endif()
 
 # Export symbols from main executable so plugins can resolve them

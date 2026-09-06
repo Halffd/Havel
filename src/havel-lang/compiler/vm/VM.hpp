@@ -1045,6 +1045,11 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   // @return Goroutine ID
   uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {});
 
+  // Close open upvalue cells captured by a closure being spawned as a
+  // goroutine. Open cells index the spawning frame's locals; the goroutine's
+  // own locals layout makes those indices invalid, so capture the values.
+  void closeOpenUpvaluesForSpawn(uint32_t closure_id);
+
     // Spawn a goroutine from a registered callback
     uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
 
@@ -1340,6 +1345,15 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         // runs runDispatchLoop, which can call other wrapped functions.
         std::atomic<int> module_wrapper_execution_depth_{0};
         static constexpr int MAX_MODULE_WRAPPER_EXECUTION_DEPTH = 50;
+
+        // >0 while a wrapped module function's dispatch loop is on the C++
+        // stack. Re-entrant scheduling (e.g. processGoroutinesInline from a
+        // yieldNow inside a module fn) must not run sibling goroutines in
+        // this window: ambient globals is the module's map, so siblings
+        // would resolve their script globals against the wrong scope.
+        int moduleWrapperDepth() const {
+            return module_wrapper_execution_depth_.load(std::memory_order_acquire);
+        }
 
         // Drain callback invoked by host-side getters that read state derived
         // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine

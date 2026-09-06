@@ -55,12 +55,30 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
     return 0;
   }
 
+  if (trace_scheduler_) {
+    traceScheduler(std::format("Spawning goroutine: callee={}, args={}", callee.toString(), args.size()));
+  }
+
   // Normalize to a closure pinned to its owning chunk. Scheduler stores this
   // Value as the goroutine's identity; startGoroutineCall resolves the rest.
   Value spawn_value = pinCallableAsClosure(callee);
   if (spawn_value.isNull()) {
     ::havel::warn("[VM] spawnGoroutine: could not resolve chunk for callable");
     return 0;
+  }
+
+  // The goroutine will execute with a fresh locals array (startGoroutineCall
+  // clears VM locals and the goroutine frame's locals_base is its own). Any
+  // OPEN upvalue cell captured by the spawned closure points into the
+  // SPAWNING frame's locals region (locals_base + open_index); once the
+  // goroutine runs, those indices read the goroutine's own locals — garbage
+  // (e.g. a captured closure slot resolving to the goroutine's loop counter
+  // int). Close the open cells now: capture the current value so the
+  // goroutine sees the spawning scope's state. Cells stay shared with any
+  // sibling closures (STORE_UPVALUE writes closed_value), so captures remain
+  // coherent for the common read case.
+  if (spawn_value.isClosureId()) {
+    closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
   }
 
   // Capture the globals in scope at spawn time keyed by the goroutine's
@@ -73,9 +91,6 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
     // Snapshot the spawned closure's OWN scope, not the caller's ambient.
     // Spawn can happen from inside a module function (e.g. async_mod.go),
     // where ambient globals is that module's sidecar; a script closure's
-  if (trace_scheduler_) {
-    traceScheduler(std::format("Spawning goroutine: callee={}, args={}", callee.toString(), args.size()));
-  }
     // imports (STORE_GLOBAL from `use { x } from "m"`) live in the script
     // globals and would be missing from the wrong-map snapshot.
     std::shared_ptr<std::unordered_map<std::string, Value>> snapshot_src;
@@ -123,6 +138,12 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
         return 0;
     }
 
+    // Close open upvalue cells before the goroutine runs on its own locals
+    // (see spawnGoroutine for the reasoning).
+    if (spawn_value.isClosureId()) {
+        closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
+    }
+
     ::havel::debug("[VM] spawnCallback: id={} priority={} args={}", id, (int)priority, args.size());
 
     uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-callback", priority);
@@ -153,6 +174,12 @@ const std::string &alias) {
     if (spawn_value.isNull()) {
         ::havel::warn("[VM] createPersistentHotkeyCallback: could not resolve chunk for callable");
         return 0;
+    }
+
+    // Close open upvalue cells before the goroutine runs on its own locals
+    // (see spawnGoroutine for the reasoning).
+    if (spawn_value.isClosureId()) {
+        closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
     }
 
     uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-persistent", priority);

@@ -811,6 +811,18 @@ private:
     auto* sched = vm_->getScheduler();
     if (!sched) return;
 
+    // A wrapped module function's dispatch loop is on the C++ stack: the
+    // ambient globals map is currently the MODULE's sidecar (the wrapper
+    // swapped it). Running sibling goroutines now would make them resolve
+    // their script-level globals (e.g. a nested-capture counter's `count`)
+    // against the wrong scope — the sibling dies with a swallowed
+    // "Undefined variable" ERROR and is marked Done. Defer sibling work to
+    // the outer engine loop, which runs after the caller suspends and the
+    // suspended module frame's state has been saved.
+    if (vm_->moduleWrapperDepth() > 0) {
+      return;
+    }
+
     // Check if current goroutine is the one being executed
     auto* current_g = sched->current();
     (void)current_g;

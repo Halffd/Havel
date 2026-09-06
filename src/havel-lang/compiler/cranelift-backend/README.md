@@ -32,7 +32,18 @@ side (13 tests: boxing bit-exactness, identity, arithmetic, negative
 int48 handling, constant conditions, branches, a summation loop with a
 backedge, comparison fast path).
 
-The hclb_* C ABI mirrors the CompilerBackend contract
-(src/havel-lang/compiler/core/Backend.hpp); attaching it as a real
-CompilerBackend is the follow-up slice once the opcode subset covers
-enough of the language (calls, objects) to be worth tiering in.
+CALL lowers through the Runtime ABI bridge havel_vm_call: the callee
+word and arguments are staged into a per-site stack slot as a contiguous
+[callee, args...] array, so the runtime resolves closures, host
+functions, and bytecode targets without the backend duplicating call
+semantics.
+
+The hclb_* C ABI doubles as the backend attachment surface: core/
+CraneliftBackend.hpp wraps it as a real CompilerBackend (compile /
+compile_tier / execute / is_compiled), translating BytecodeFunction
+into the flat subset stream and refusing any function with opcodes
+outside the subset (can_lower) so nothing is ever partially compiled.
+The cranelift_proto_driver test compiles and runs a real BytecodeFunction
+through the full adapter path. Engine/VM wiring is opt-in the same way
+(ENABLE_CRANELIFT) and is the next slice: choosing the Cranelift backend
+as a tier-1 candidate next to the ORC JIT.

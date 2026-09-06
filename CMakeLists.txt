@@ -2532,6 +2532,8 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/havel-lang
         )
+        target_compile_definitions(cranelift_proto_driver PRIVATE
+            HAVEL_ENABLE_CRANELIFT)
         target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
         target_link_libraries(cranelift_proto_driver PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a

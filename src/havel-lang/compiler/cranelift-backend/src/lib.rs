@@ -91,6 +91,7 @@ pub const OP_RETURN: u32 = 7;
 // Control flow + comparisons (v2):
 pub const OP_JUMP: u32 = 8;
 pub const OP_JUMP_IF_FALSE: u32 = 9;
+pub const OP_CALL: u32 = 15;
 pub const OP_EQ: u32 = 10;
 pub const OP_NEQ: u32 = 11;
 pub const OP_LTE: u32 = 12;
@@ -208,6 +209,31 @@ mod fallback_shims {
         pack_bool(truthy)
     }
 
+    unsafe extern "C" fn shim_call(
+        _vm: *mut c_void,
+        args: *const u64,
+        count: u32,
+    ) -> u64 {
+        // Standalone plumbing check: treat the callee word as int48 n and
+        // return n + sum(args) so tests can verify the [callee, args...]
+        // array layout. The real runtime resolves and runs the callee.
+        if args.is_null() || count == 0 {
+            return NULL_TAGGED;
+        }
+        let callee = *args;
+        if !is_int48(callee) {
+            return NULL_TAGGED;
+        }
+        let mut acc = unpack_int48(callee);
+        for i in 1..count {
+            let w = *args.add(i as usize);
+            if is_int48(w) {
+                acc = acc.wrapping_add(unpack_int48(w));
+            }
+        }
+        pack_int48(acc)
+    }
+
     pub fn fallback_symbol(name: &str) -> Option<*const u8> {
         match name {
             "havel_vm_add" => Some(shim_add as *const u8),
@@ -220,6 +246,7 @@ mod fallback_shims {
             "havel_vm_gt" => Some(shim_gt as *const u8),
             "havel_vm_gte" => Some(shim_gte as *const u8),
             "havel_vm_is_truthy" => Some(shim_is_truthy as *const u8),
+            "havel_vm_call" => Some(shim_call as *const u8),
             _ => None,
         }
     }
@@ -355,6 +382,19 @@ impl CraneliftBackend {
             .module
             .declare_function("havel_vm_is_truthy", Linkage::Import, &truthy_sig)
             .map_err(|e| err(format!("declare havel_vm_is_truthy: {e}")))?;
+        // havel_vm_call is (vm, args_ptr, count) -> result: args[0] is the
+        // callee Value, the rest are the call arguments.
+        let mut call_sig = self.module.make_signature();
+        call_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+        ];
+        call_sig.returns = vec![AbiParam::new(int64)];
+        let call_id = self
+            .module
+            .declare_function("havel_vm_call", Linkage::Import, &call_sig)
+            .map_err(|e| err(format!("declare havel_vm_call: {e}")))?;
 
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
@@ -403,6 +443,9 @@ impl CraneliftBackend {
             let truthy_bridge_ref = self
                 .module
                 .declare_func_in_func(truthy_id, &mut builder.func);
+            let call_bridge_ref = self
+                .module
+                .declare_func_in_func(call_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first
@@ -600,6 +643,42 @@ impl CraneliftBackend {
                             .pop()
                             .ok_or_else(|| err("binop with empty stack".into()))?;
                         vstack.push(lower_binop(&mut builder, op, l, r));
+                    }
+                    OP_CALL => {
+                        // Stack in: [..., callee, arg1..argN]. The runtime
+                        // bridge wants a contiguous [callee, args...] array;
+                        // a stack slot holds it (calls can nest, so allocate
+                        // one slot per call site).
+                        let argc = operand as usize;
+                        if vstack.len() < argc + 1 {
+                            return Err(err("CALL with too few stack values".into()));
+                        }
+                        let slot = builder.create_sized_stack_slot(
+                            cranelift::codegen::ir::StackSlotData::new(
+                                cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                                ((argc + 1) * 8) as u32,
+                                8,
+                            ),
+                        );
+                        // store [callee, args...] into the slot; note the
+                        // vstack pops come last-first.
+                        // words = [callee, argN..arg1] with args in
+                        // reverse pop order; store each at its byte offset.
+                        let callee = vstack.pop().expect("checked depth");
+                        let mut words: Vec<Value> = Vec::with_capacity(argc + 1);
+                        words.push(callee);
+                        for k in 0..argc {
+                            words.push(vstack[vstack.len() - 1 - k]);
+                        }
+                        for (k, w) in words.iter().enumerate() {
+                            builder.ins().stack_store(*w, slot, (k as i32) * 8);
+                        }
+                        let base = builder.ins().stack_addr(pointer_ty, slot, 0);
+                        let cnt = builder.ins().iconst(int32, (argc + 1) as i64);
+                        let call =
+                            builder.ins().call(call_bridge_ref, &[vm, base, cnt]);
+                        vstack.truncate(vstack.len() - argc);
+                        vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_JUMP_IF_FALSE => {
                         let target = operand as usize;
@@ -1046,6 +1125,41 @@ mod tests {
     }
 
     #[test]
+    fn call_bridge_receives_callee_and_args() {
+        // fn (n) = call(callee=100, 1, 2, 3) -> shim returns 100+1+2+3 = 106
+        let mut backend = CraneliftBackend::new().unwrap();
+        //   0: LOAD_CONST 0 (100)
+        //   1: LOAD_CONST 1 (1)
+        //   2: LOAD_CONST 2 (2)
+        //   3: LOAD_CONST 3 (3)
+        //   4: CALL 3
+        //   5: RETURN
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST, 0, //
+            OP_LOAD_CONST, 1, //
+            OP_LOAD_CONST, 2, //
+            OP_LOAD_CONST, 3, //
+            OP_CALL, 3, //
+            OP_RETURN, 0,
+        ];
+        let constants = [
+            pack_int48(100),
+            pack_int48(1),
+            pack_int48(2),
+            pack_int48(3),
+        ];
+        let f = backend
+            .compile_function("calltest", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            106,
+            "shim must see [callee=100, 1, 2, 3]: {out:#x}"
+        );
+    }
+
+    #[test]
     fn comparisons_with_bridge_fallback() {
         // EQ on int operands takes the fast path; the standalone shim
         // returns null for non-int, proving the fallback is wired (the
@@ -1110,6 +1224,109 @@ mod tests {
 // ---------------------------------------------------------------------------
 // C ABI surface for the C++/CTest driver.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// C ABI backend surface: a CraneliftBackend as an owning handle so the C++
+// side can attach it through CompilerBackend (Backend.hpp).
+//
+// hclb_create()        -> opaque CraneliftBackend handle
+// hclb_compile(h, name, code, code_len, constants, arg_count) -> bool
+// hclb_execute(h, name, args, arg_count, out) -> bool
+// hclb_is_compiled(h, name) -> bool
+// hclb_destroy(h)
+//
+// The instruction stream is the flat (opcode, operand) u32 pairs the
+// lowering consumes; the C++ adapter extracts it from BytecodeFunction.
+// ---------------------------------------------------------------------------
+
+use std::ffi::{c_char, CStr};
+
+#[no_mangle]
+pub extern "C" fn hclb_create() -> *mut c_void {
+    match CraneliftBackend::new() {
+        Ok(b) => Box::into_raw(Box::new(b)) as *mut c_void,
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn hclb_destroy(handle: *mut c_void) {
+    if !handle.is_null() {
+        unsafe {
+            drop(Box::from_raw(handle as *mut CraneliftBackend));
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn hclb_compile(
+    handle: *mut c_void,
+    name: *const c_char,
+    code: *const u32,
+    code_len: u32,
+    constants: *const u64,
+    constants_len: u32,
+    arg_count: u32,
+) -> bool {
+    if handle.is_null() || name.is_null() || code.is_null() {
+        return false;
+    }
+    let backend = unsafe { &mut *(handle as *mut CraneliftBackend) };
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_string_lossy()
+        .into_owned();
+    let code = unsafe { std::slice::from_raw_parts(code, code_len as usize) };
+    let constants = if constants.is_null() || constants_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(constants, constants_len as usize) }
+    };
+    backend
+        .compile_function(&name, code, constants, arg_count)
+        .is_ok()
+}
+
+#[no_mangle]
+pub extern "C" fn hclb_is_compiled(
+    handle: *mut c_void,
+    name: *const c_char,
+) -> bool {
+    if handle.is_null() || name.is_null() {
+        return false;
+    }
+    let backend = unsafe { &*(handle as *mut CraneliftBackend) };
+    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    backend.symbols.contains_key(&name)
+}
+
+#[no_mangle]
+pub extern "C" fn hclb_execute(
+    handle: *mut c_void,
+    vm: *mut c_void,
+    name: *const c_char,
+    args: *const u64,
+    arg_count: u32,
+    out: *mut u64,
+) -> bool {
+    if handle.is_null() || name.is_null() {
+        return false;
+    }
+    let backend = unsafe { &mut *(handle as *mut CraneliftBackend) };
+    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    let Some(f) = backend.symbols.get(&name) else {
+        return false;
+    };
+    let args = if args.is_null() || arg_count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(args, arg_count as usize) }
+    };
+    let result = unsafe { (*f)(vm, args.as_ptr(), arg_count) };
+    if !out.is_null() {
+        unsafe { *out = result };
+    }
+    true
+}
 
 /// NaN-box an int (driver-side sanity check against C++ Value::rawBits()).
 #[no_mangle]

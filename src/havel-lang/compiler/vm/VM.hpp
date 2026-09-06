@@ -21,6 +21,7 @@
 
 #include "../core/BytecodeIR.hpp"
 #include "../core/Backend.hpp"
+#include "../core/RuntimeProfiler.hpp"
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -390,6 +391,11 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
     std::unordered_map<uint32_t, uint64_t> backedge_counters_;
+    // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
+    // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
+    RuntimeProfiler profiler_;
+    static_assert(RuntimeProfiler::kMaxTrackedFunctions > 0,
+                  "profiler function index space must exist");
 
     // Coroutine support (Lua-style coroutines)
 uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
@@ -790,12 +796,16 @@ Value lookupGlobalByKey(const std::string& key) {
     void recordBackedgePublic(uint32_t ip) {
         auto count = ++backedge_counters_[ip];
         trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
+        profiler_.recordBackedgeTotal();
         if (!hasActiveFrames()) {
             return;
         }
         const auto &frame = currentFrame();
         if (!frame.function) {
             return;
+        }
+        if (frame.chunk) {
+            profiler_.recordBackedge(frame.chunk->getFunctionIndex(frame.function));
         }
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
         if (count >= tier1_threshold_) {
@@ -1117,6 +1127,11 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   
   using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
+
+  // Runtime profiling (TODO #26): aggregate counters, safe to read from any
+  // thread; summary() is for diagnostics only (hvdb status, shutdown report).
+  const RuntimeProfiler& profiler() const { return profiler_; }
+  RuntimeProfiler& profiler() { return profiler_; }
 
   
   // Backend attachment (TODO #18/#19): the VM executes through a

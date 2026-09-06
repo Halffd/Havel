@@ -35,6 +35,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
       if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
         tier1_compiled_.insert(fn_name);
         tier1_transition_count_.fetch_add(1);
+        profiler_.recordTier1Compile(fn_name);
         ::havel::debug("[tiering] {} -> tier1", fn_name);
         backend_->compile_tier(*frame.function, 1);
       }
@@ -68,6 +69,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
               if (fn.has_value() && backend_) {
                 backend_->compile_tier(*fn, 2);
                 tier2_compile_count_.fetch_add(1);
+                profiler_.recordTier2Compile(fn->name);
                 ::havel::debug("[tiering] {} -> tier2", fn->name);
                 std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
                 tier2_queued_or_compiling_.erase(fn->name);

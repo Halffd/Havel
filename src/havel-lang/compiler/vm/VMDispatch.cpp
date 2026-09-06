@@ -773,6 +773,7 @@ op_LOAD_CONST: {
     pushStack(getConstant(inst.operands[0].asInt()));
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -822,6 +823,7 @@ op_LOAD_VAR: {
     pushStack(locals[abs]);
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -855,6 +857,7 @@ op_STORE_VAR: {
     locals[abs] = value;
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -879,6 +882,7 @@ op_POP: {
     popStack();
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -958,6 +962,7 @@ op_CALL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1109,6 +1114,7 @@ op_LOAD_GLOBAL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1144,6 +1150,7 @@ op_STORE_GLOBAL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1178,6 +1185,7 @@ op_STORE_IMMUT_GLOBAL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1207,6 +1215,7 @@ op_STORE_IMMUT_VAR: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1232,6 +1241,7 @@ op_LOAD_UPVALUE: {
     catch (const std::runtime_error &e) { throw std::runtime_error(e.what()); }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1257,6 +1267,7 @@ op_STORE_UPVALUE: {
     catch (const std::runtime_error &e) { throw std::runtime_error(e.what()); }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1333,6 +1344,7 @@ op_INCLOCAL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1370,6 +1382,7 @@ op_DECLOCAL: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1404,6 +1417,7 @@ op_INCLOCAL_POST: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1438,6 +1452,7 @@ op_DECLOCAL_POST: {
     }
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1469,6 +1484,7 @@ op_BIT_LSH: op_BIT_RSH: {
     execBinaryOp(inst);
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
@@ -1524,6 +1540,7 @@ op_ADD_INT: {
             pushStack(result);
             counter++;
             if ((counter & 8191) == 0) {
+                profiler_.recordInstructions(8192);
                 if (exit_requested_.load()) return;
                 maybeCollectGarbage();
                 periodicYieldCheck();
@@ -2255,6 +2272,7 @@ op_default: {
     if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
     counter++;
     if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();

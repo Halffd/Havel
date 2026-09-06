@@ -63,6 +63,9 @@ public:
         case OpCode::LOAD_CONST:
         case OpCode::LOAD_VAR:
         case OpCode::STORE_VAR:
+        case OpCode::POP:
+        case OpCode::DUP:
+        case OpCode::PUSH_NULL:
         case OpCode::ADD:
         case OpCode::SUB:
         case OpCode::MUL:
@@ -142,6 +145,9 @@ private:
         case OpCode::LOAD_CONST: op = 0; break;  // hclb OP_LOAD_CONST
         case OpCode::LOAD_VAR: op = 1; break;
         case OpCode::STORE_VAR: op = 2; break;
+        case OpCode::POP: op = 16; break;
+        case OpCode::DUP: op = 17; break;
+        case OpCode::PUSH_NULL: op = 18; break;
         case OpCode::ADD: op = 3; break;
         case OpCode::SUB: op = 4; break;
         case OpCode::MUL: op = 5; break;

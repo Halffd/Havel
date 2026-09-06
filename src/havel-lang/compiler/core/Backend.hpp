@@ -20,6 +20,8 @@
 
 #include "BytecodeIR.hpp"
 
+#include "../../../utils/Logger.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -163,6 +165,111 @@ public:
 private:
   std::unique_ptr<JITCompiler> jit_;
   bool owning_;
+};
+
+// ===== Tiered backend (TODO #25: Interpreter -> fast JIT -> optimizing) =====
+//
+// Composes a fast tier-1 backend (Cranelift when available) with an
+// optimizing tier-2 backend (the ORC JIT adapter). compile_tier routes:
+//   tier 1 -> fast (cheap codegen, low latency)
+//   tier 2 -> optimizing (expensive passes, best throughput)
+// execute consults the fast tier first, then the optimizing tier, so a
+// function promoted to tier 2 keeps running through the optimized code.
+// A missing fast backend degrades to the optimizing one alone.
+class TieredBackend final : public CompilerBackend {
+public:
+  TieredBackend(std::unique_ptr<CompilerBackend> fast,
+                std::unique_ptr<CompilerBackend> optimizing)
+      : fast_(std::move(fast)), optimizing_(std::move(optimizing)) {}
+
+  bool compile(const BytecodeFunction& func) override {
+    return fast_ ? fast_->compile(func)
+                 : (optimizing_ && optimizing_->compile(func));
+  }
+
+  bool compile_tier(const BytecodeFunction& func, uint8_t tier) override {
+    switch (tier) {
+      case 1:
+        // Tier 1 wants low-latency codegen; when no fast backend exists
+        // (no ENABLE_CRANELIFT), fall through to the optimizing one so
+        // tiering still works. A declined function (opcodes outside the
+        // fast backend's subset) also falls through to the optimizing
+        // tier rather than losing tiering entirely.
+        if (fast_ && fast_->compile(func)) {
+          ::havel::debug("[backend] tier1 {} via {}", func.name,
+                         fast_->name());
+          return true;
+        }
+        if (optimizing_ && optimizing_->compile(func)) {
+          ::havel::debug("[backend] tier1 {} via {} (fast tier declined)",
+                         func.name, optimizing_->name());
+          return true;
+        }
+        return false;
+      case 2:
+        if (optimizing_ && optimizing_->compile(func)) {
+          ::havel::debug("[backend] tier2 {} via {}", func.name,
+                         optimizing_->name());
+          return true;
+        }
+        if (fast_ && fast_->compile(func)) {
+          ::havel::debug("[backend] tier2 {} via {} (optimizing declined)",
+                         func.name, fast_->name());
+          return true;
+        }
+        return false;
+      default:
+        return compile(func);
+    }
+  }
+
+  bool is_compiled(const std::string& func_name) const override {
+    return (fast_ && fast_->is_compiled(func_name)) ||
+           (optimizing_ && optimizing_->is_compiled(func_name));
+  }
+
+  bool execute(VM* vm, const std::string& func_name,
+               const std::vector<Value>& args, Value* out) override {
+    // Optimizing tier first: a function that graduated to tier 2 must keep
+    // running its optimized code, not regress to tier 1 output.
+    if (optimizing_ && optimizing_->is_compiled(func_name) &&
+        optimizing_->execute(vm, func_name, args, out)) {
+      return true;
+    }
+    return fast_ && fast_->execute(vm, func_name, args, out);
+  }
+
+  void set_debug_mode(bool enabled) override {
+    if (fast_) fast_->set_debug_mode(enabled);
+    if (optimizing_) optimizing_->set_debug_mode(enabled);
+  }
+  void set_dump_ir(bool enabled) override {
+    if (fast_) fast_->set_dump_ir(enabled);
+    if (optimizing_) optimizing_->set_dump_ir(enabled);
+  }
+  void set_dump_asm(bool enabled) override {
+    if (fast_) fast_->set_dump_asm(enabled);
+    if (optimizing_) optimizing_->set_dump_asm(enabled);
+  }
+  void set_show_warnings(bool enabled) override {
+    if (fast_) fast_->set_show_warnings(enabled);
+    if (optimizing_) optimizing_->set_show_warnings(enabled);
+  }
+  void set_optimization_level(uint8_t level) override {
+    if (fast_) fast_->set_optimization_level(level);
+    if (optimizing_) optimizing_->set_optimization_level(level);
+  }
+
+  const char* name() const override {
+    return fast_ ? "tiered(cranelift+llvm)" : "tiered(llvm)";
+  }
+
+  CompilerBackend* fast() const { return fast_.get(); }
+  CompilerBackend* optimizing() const { return optimizing_.get(); }
+
+private:
+  std::unique_ptr<CompilerBackend> fast_;
+  std::unique_ptr<CompilerBackend> optimizing_;
 };
 
 }  // namespace havel::compiler

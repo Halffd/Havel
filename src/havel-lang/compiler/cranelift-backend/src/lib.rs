@@ -92,6 +92,9 @@ pub const OP_RETURN: u32 = 7;
 pub const OP_JUMP: u32 = 8;
 pub const OP_JUMP_IF_FALSE: u32 = 9;
 pub const OP_CALL: u32 = 15;
+pub const OP_POP: u32 = 16;
+pub const OP_DUP: u32 = 17;
+pub const OP_PUSH_NULL: u32 = 18;
 pub const OP_EQ: u32 = 10;
 pub const OP_NEQ: u32 = 11;
 pub const OP_LTE: u32 = 12;
@@ -707,6 +710,22 @@ impl CraneliftBackend {
                         builder.ins().jump(blk, &[]);
                         terminated = true;
                     }
+                    OP_POP => {
+                        if vstack.is_empty() {
+                            return Err(err("POP with empty stack".into()));
+                        }
+                        vstack.pop();
+                    }
+                    OP_DUP => {
+                        let v = *vstack
+                            .last()
+                            .ok_or_else(|| err("DUP with empty stack".into()))?;
+                        vstack.push(v);
+                    }
+                    OP_PUSH_NULL => {
+                        let null_w = builder.ins().iconst(int64, NULL_TAGGED as i64);
+                        vstack.push(null_w);
+                    }
                     OP_RETURN => {
                         let v = vstack
                             .pop()
@@ -1245,7 +1264,10 @@ use std::ffi::{c_char, CStr};
 pub extern "C" fn hclb_create() -> *mut c_void {
     match CraneliftBackend::new() {
         Ok(b) => Box::into_raw(Box::new(b)) as *mut c_void,
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[hclb] backend creation failed: {e}");
+            std::ptr::null_mut()
+        }
     }
 }
 
@@ -1281,9 +1303,13 @@ pub extern "C" fn hclb_compile(
     } else {
         unsafe { std::slice::from_raw_parts(constants, constants_len as usize) }
     };
-    backend
-        .compile_function(&name, code, constants, arg_count)
-        .is_ok()
+    match backend.compile_function(&name, code, constants, arg_count) {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("[hclb] compile {name} failed: {e}");
+            false
+        }
+    }
 }
 
 #[no_mangle]

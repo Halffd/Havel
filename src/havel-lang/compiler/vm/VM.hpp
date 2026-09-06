@@ -1173,7 +1173,12 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
       profiler_.recordTier1Compile(key);
       ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason,
                      hotness);
-      backend_->compile_tier(func, 1);
+      if (backend_->compile_tier(func, 1)) {
+        // The execute fast paths gate on jit_compiled for ANY backend, not
+        // just the legacy ORC flag: mark the function so calls route through
+        // the backend's compiled code.
+        func.jit_compiled = true;
+      }
 
       // Tier 2 queueing: only small, very hot functions qualify.
       if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&

@@ -1,6 +1,9 @@
 #include "VM.hpp"
 #include "VMApi.hpp"
 #include "VMInternals.hpp"
+#ifdef HAVEL_ENABLE_CRANELIFT
+#include "../core/CraneliftBackend.hpp"
+#endif
 #include "host/ServiceRegistry.hpp"
 #include <iostream>
 
@@ -107,8 +110,26 @@ VM::VM(const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
@@ -144,8 +165,26 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif

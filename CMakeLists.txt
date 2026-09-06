@@ -2122,6 +2122,7 @@ havel_core
     endif()
 
 target_compile_definitions(havel_lang PRIVATE
+$<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
@@ -2135,6 +2136,7 @@ HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
 )
 
     target_compile_definitions(havel_lang_core PRIVATE
+$<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
@@ -2489,7 +2491,7 @@ endif()
 # writable) and a C test driver that verifies the hclb_* C ABI against the
 # C++ Value NaN-boxing, then compiles and executes int-subset functions
 # through Cranelift.
-if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
+if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
     find_program(CARGO_EXECUTABLE cargo)
     if(NOT CARGO_EXECUTABLE)
         message(WARNING "ENABLE_CRANELIFT=ON but cargo not found; prototype disabled")
@@ -2507,6 +2509,7 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
         else()
             set(CRANELIFT_CARGO_HOME "${CRANELIFT_BUILD_DIR}/cargo-home")
         endif()
+        file(GLOB CRANELIFT_RUST_SOURCES ${CRANELIFT_DIR}/src/*.rs)
         add_custom_command(
             OUTPUT ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
             COMMAND ${CMAKE_COMMAND} -E env
@@ -2517,13 +2520,22 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
             COMMAND ${CMAKE_COMMAND} -E copy
                     ${CRANELIFT_BUILD_DIR}/release/libhavel_cranelift_backend.a
                     ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            DEPENDS ${CRANELIFT_RUST_SOURCES} ${CRANELIFT_DIR}/Cargo.toml
             WORKING_DIRECTORY ${CRANELIFT_DIR}
             COMMENT "Building Cranelift backend prototype (Rust staticlib)"
             VERBATIM
         )
-        add_custom_target(cranelift_backend_lib ALL
+        add_custom_target(cranelift_backend_lib
             DEPENDS ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a)
 
+        # Wire the Rust staticlib into the VM so the TieredBackend can
+        # construct the Cranelift tier-1 backend (HAVEL_ENABLE_CRANELIFT).
+        target_link_libraries(havel_lang PRIVATE
+            ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            ${CMAKE_DL_LIBS})
+        add_dependencies(havel_lang cranelift_backend_lib)
+
+        if(ENABLE_TESTS)
         add_executable(cranelift_proto_driver
             tests/cranelift_proto_driver.cpp
         )
@@ -2540,6 +2552,7 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
             ${CMAKE_DL_LIBS}
         )
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)
+        endif()
     endif()
 endif()
 

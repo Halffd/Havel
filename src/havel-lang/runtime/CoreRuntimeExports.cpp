@@ -308,8 +308,15 @@ extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id) {
     return Value::makeNull().rawBits();
   }
   const std::string& name = chunk->getString(name_id);
-  auto it = vm->getAllGlobals().find(name);
-  return it != vm->getAllGlobals().end() ? it->second.rawBits() : Value::makeNull().rawBits();
+  // Full LOAD_GLOBAL chain (VMDispatch.cpp): ambient globals, host
+  // functions, then the closure's module_globals sidecar - the
+  // authoritative store for module-level state. Reading only the ambient
+  // map made JIT-compiled module functions miss sidecar-only keys.
+  Value out;
+  if (vm->resolveGlobalPublic(name, &out)) {
+    return out.rawBits();
+  }
+  return Value::makeNull().rawBits();
 }
 
 extern "C" void havel_vm_global_set(void *vm_ptr, uint32_t name_id, uint64_t value) {
@@ -324,6 +331,13 @@ extern "C" void havel_vm_global_set(void *vm_ptr, uint32_t name_id, uint64_t val
   const std::string& name = chunk->getString(name_id);
   Value val = Value::fromRawBits(value);
   vm->setGlobal(name, val);
+  // Module-globals persistence, matching the interpreter's STORE_GLOBAL
+  // (VMDispatch.cpp): a write from a module function frame must also land
+  // in the closure's shared module_globals map and be recorded in
+  // written_globals so returning refreshes the caller's snapshot. Without
+  // this, JIT-compiled module functions lose every global write for all
+  // other frames (self-hosted parser corruption when getBPTABLE tiered).
+  vm->persistModuleGlobalPublic(name, val);
 }
 
 // ============================================================================

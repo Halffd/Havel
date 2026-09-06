@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <cstdlib>
 #include <optional>
 #include <shared_mutex>
 #include <span>
@@ -1172,6 +1173,22 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
+    // Module-function gate: the interpreter swaps the ambient globals
+    // snapshot to the callee closure's module_globals map when calling a
+    // module function (VM.cpp doCall), and the JIT execute path does not
+    // perform that swap - compiled module functions would read and write
+    // the CALLER's ambient map while other frames read the module
+    // sidecar, silently corrupting module-level caches (the self-hosted
+    // parser's BP_TABLE broke exactly this way when getBPTABLE tiered
+    // mid-parse). Until the JIT path implements the snapshot swap, only
+    // functions from the main chunk tier up; module functions stay
+    // interpreted.
+    if (frame_count_ > 0) {
+      const auto& cf = currentFrame();
+      if (cf.chunk && cf.chunk != main_chunk_.get()) {
+        return;
+      }
+    }
     const size_t size = func.instructions.size();
     if (size == 0 || size > tier1_max_instructions_) {
       return;  // never worth compiling (empty or above the tier-1 cap)
@@ -1180,6 +1197,12 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
       return;
     }
     const std::string key = func.name;
+    // Debug isolation: HAVEL_TIER1_ONLY=<name> restricts tier-up to a
+    // single function (miscompile bisects; not a production knob).
+    static const char* only_env = std::getenv("HAVEL_TIER1_ONLY");
+    if (only_env && key != only_env) {
+      return;
+    }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
       tier1_transition_count_.fetch_add(1);
@@ -1399,6 +1422,62 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
+    }
+
+    // Module-globals persistence for the Runtime ABI global_set bridge
+    // (CoreRuntimeExports): the interpreter's STORE_GLOBAL, when running in
+    // a module function frame (closure_id != 0), also persists the write to
+    // the closure's shared module_globals map and records the key in the
+    // frame's written_globals list so doReturn refreshes the caller's
+    // snapshot (VMDispatch.cpp STORE_GLOBAL). JIT-compiled code takes this
+    // path too, or module-level caches (BP_TABLE and friends) written by
+    // compiled functions would be lost for every other frame - the exact
+    // corruption that broke the self-hosted parser when the launcher's
+    // getBPTABLE tiered up.
+    // Global read for the Runtime ABI global_get bridge: the interpreter's
+    // LOAD_GLOBAL chain is globals -> lazy modules -> host functions ->
+    // closure module_globals sidecar. JIT code reads through this seam so
+    // module-level state written by any frame (sidecar) is visible.
+    // Returns true with *out set; false = genuinely undefined (caller
+    // decides null vs error).
+    bool resolveGlobalPublic(const std::string& name, Value* out) {
+        auto it = globals.find(name);
+        if (it != globals.end()) {
+            *out = it->second;
+            return true;
+        }
+        auto hostIt = host_function_globals_.find(name);
+        if (hostIt != host_function_globals_.end()) {
+            *out = hostIt->second;
+            return true;
+        }
+        const auto& cf = currentFrame();
+        if (cf.closure_id != 0) {
+            auto* closure = heap_.closure(cf.closure_id);
+            if (closure && closure->module_globals) {
+                auto sideIt = closure->module_globals->find(name);
+                if (sideIt != closure->module_globals->end()) {
+                    *out = sideIt->second;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    void persistModuleGlobalPublic(const std::string& name, const Value& value) {
+        const auto& cf = currentFrame();
+        if (cf.closure_id == 0) return;
+        auto* closure = heap_.closure(cf.closure_id);
+        if (!closure || !closure->module_globals) return;
+        (*closure->module_globals)[name] = value;
+        if (frame_count_ > 0) {
+            auto& wf = frame_arena_[frame_count_ - 1];
+            if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
+                          name) == wf.written_globals.end()) {
+                wf.written_globals.push_back(name);
+            }
+        }
     }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);

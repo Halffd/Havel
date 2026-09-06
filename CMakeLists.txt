@@ -663,8 +663,13 @@ endif()
 
 # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
     if(NOT ENABLE_LLVM)
+        # LLVM-dependent TUs: the ORC JIT monolith plus its decomposed
+        # slices (runtime bridges, IR lowering) - all require LLVM headers
+        # and libraries.
         list(REMOVE_ITEM HAVEL_LANG_SOURCES
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
+            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
+            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp
         )
     endif()
 
@@ -680,7 +685,10 @@ endif()
     # The fix applies to all targets that include HAVEL_LANG_SOURCES
     # -----------------------------------------------------------------------
     if(ENABLE_LLVM)
-        set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
+        set(JIT_SRC
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp"
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp"
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp")
         set(LAUNCHER_SRC "${CMAKE_SOURCE_DIR}/src/core/init/HavelLauncher.cpp")
         # Convert list of include dirs to properly formatted -I flags
         # LLVM_INCLUDE_DIRS is a semicolon-separated list, so we need to prefix each with -I

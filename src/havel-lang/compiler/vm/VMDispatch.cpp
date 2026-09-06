@@ -107,6 +107,29 @@ auto hostIt = host_function_globals_.find(name);
     break;
   }
 
+  // Fall back to the executing frame's closure sidecar. Nested captures
+  // compile to LOAD_GLOBAL with per-closure module_globals sidecars (see
+  // the make_counter pattern); a goroutine suspension/resume can leave the
+  // ambient globals map without the sidecar's keys (fiber switches churn
+  // ambient), losing counter state like `count`. The sidecar is the
+  // authoritative store for such names — STORE_GLOBAL persists there.
+  {
+    const auto &cf_fallback = currentFrame();
+    if (cf_fallback.closure_id != 0) {
+      auto *closure_fb = heap_.closure(cf_fallback.closure_id);
+      if (closure_fb && closure_fb->module_globals) {
+        auto sideIt = closure_fb->module_globals->find(name);
+        if (sideIt != closure_fb->module_globals->end()) {
+          // Heal ambient so subsequent reads hit the fast path.
+          globals[name] = sideIt->second;
+          trackGlobalAccess(name);
+          pushStack(sideIt->second);
+          break;
+        }
+      }
+    }
+  }
+
   trackGlobalAccess(name);
   COMPILER_THROW("Undefined variable: '" + name + "'");
   break;
@@ -453,17 +476,13 @@ case OpCode::LOAD_UPVALUE: {
         COMPILER_THROW("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
-    // std::cerr << "[DEBUG LOAD_UPVALUE] upvalue_index=" << upvalue_index << " cell->is_open=" << cell->is_open << " cell->open_index=" << cell->open_index << " cell->locals_base=" << cell->locals_base << std::endl;
     Value value;
     if (cell->is_open) {
         uint32_t abs_index = cell->locals_base + cell->open_index;
-        // std::cerr << "  abs_index=" << abs_index << " locals_base=" << cell->locals_base << " open_index=" << cell->open_index << std::endl;
         this->ensureLocalIndex(abs_index);
         value = locals[abs_index];
-        // std::cerr << "  loaded value=" << value.toString() << std::endl;
     } else {
         value = cell->closed_value;
-        // std::cerr << "  closed value=" << value.toString() << std::endl;
     }
     pushStack(value);
     break;

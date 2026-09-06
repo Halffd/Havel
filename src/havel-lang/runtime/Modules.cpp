@@ -455,6 +455,30 @@ void Modules::installStdLib() {
     }
     ctx_->vm->buildNamespaceGlobals();
 
+    // Re-register prototype methods whose host functions come from bridges
+    // (ConcurrencyBridge etc.). registerDefaultPrototypes() runs at VM init
+    // BEFORE this loop, so its by-name lookups ("channel.send" etc.) missed
+    // and stored a stale index 0. Registering the names AFTER the functions
+    // exist writes the real indices into prototypes_. Without this, a
+    // channel's ch.send(v) dispatched via CALL_METHOD silently resolves to
+    // the wrong host function (or a missing prototype) and drops the send.
+    ctx_->vm->registerPrototypeMethodByName("channel", "send", "channel.send");
+    ctx_->vm->registerPrototypeMethodByName("channel", "receive", "channel.receive");
+    ctx_->vm->registerPrototypeMethodByName("channel", "close", "channel.close");
+    ctx_->vm->registerPrototypeMethodByName("thread", "send", "thread.send");
+    ctx_->vm->registerPrototypeMethodByName("thread", "join", "thread.join");
+    ctx_->vm->registerPrototypeMethodByName("thread", "pause", "thread.pause");
+    ctx_->vm->registerPrototypeMethodByName("thread", "resume", "thread.resume");
+    ctx_->vm->registerPrototypeMethodByName("thread", "running", "thread.running");
+    ctx_->vm->registerPrototypeMethodByName("interval", "pause", "interval.pause");
+    ctx_->vm->registerPrototypeMethodByName("interval", "resume", "interval.resume");
+    ctx_->vm->registerPrototypeMethodByName("interval", "stop", "interval.stop");
+    ctx_->vm->registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
+    ctx_->vm->registerPrototypeMethodByName("timeout", "stop", "timeout.stop");
+    ctx_->vm->registerPrototypeMethodByName("waitgroup", "add", "waitgroup.add");
+    ctx_->vm->registerPrototypeMethodByName("waitgroup", "done", "waitgroup.done");
+    ctx_->vm->registerPrototypeMethodByName("waitgroup", "wait", "waitgroup.wait");
+
 for (auto &setupFn : vm_setup_callbacks_) {
         setupFn(*ctx_->vm);
     }

@@ -213,6 +213,32 @@ Value VM::pinCallableAsClosure(Value callable) {
   return Value::makeNull();
 }
 
+// Close open upvalue cells captured by a closure about to be spawned as a
+// goroutine. Open cells reference the spawning frame's locals region
+// (locals_base + open_index into the shared VM locals array); the goroutine
+// runs with its own cleared locals, so those indices would read the
+// goroutine's locals instead of the captured values. Closing captures the
+// current value; the cell object stays shared, so sibling closures (and
+// STORE_UPVALUE from any side) still observe the same cell.
+void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
+  auto *closure = heap_.closure(closure_id);
+  if (!closure)
+    return;
+  for (auto &cell : closure->upvalues) {
+    if (!cell)
+      continue;
+    if (!cell->is_open)
+      continue;
+    // Read the value the open cell currently aliases. The cell's
+    // locals_base/open_index refer to the shared locals array as laid out
+    // by the spawning frame — still valid right now, at spawn time.
+    uint32_t abs_index = cell->locals_base + cell->open_index;
+    Value current = (abs_index < locals.size()) ? locals[abs_index]
+                                                 : Value::makeNull();
+    cell->close(current);
+  }
+}
+
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
@@ -1284,6 +1310,19 @@ void VM::loadFiberState(Fiber *fiber) {
   //      (before any save). Stale, but better than nothing.
   // ambient stays primary: merges only add missing keys, never overwrite, so
   // shared-write semantics are preserved when ambient is the right map.
+
+  // STEP 6a: Restore the fiber's globals stack. Suspension can happen inside
+  // a module-fn call whose wrapper pushed the caller's (script) globals onto
+  // globals_stack_ and swapped ambient to the module map. saveFiberState
+  // preserved that stack in fiber->saved_globals_stack; without restoring it
+  // here, the resume loses the pushed script map entirely — later returns pop
+  // foreign entries and names written by the goroutine's script frames before
+  // the module call (e.g. a nested-capture counter's `count`) vanish from
+  // ambient.
+  if (fiber->has_saved_globals && !fiber->saved_globals_stack.empty()) {
+    globals_stack_ = fiber->saved_globals_stack;
+    globals_mirror_object_id_ = fiber->saved_globals_mirror_id;
+  }
   uint32_t top_closure_id = UINT32_MAX;
   if (frame_count_ > 0)
     top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
@@ -1491,6 +1530,17 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   } else {
     ::havel::error("[VM] startGoroutineCall(Value): unsupported callable kind");
     return GoroutineCallResult::Failed;
+  }
+
+  // A suspended module call leaves the module fn's CALLER map pushed onto
+  // globals_stack_ (see the module_fn/closure wrapper suspension paths) —
+  // and the VM ambient still holds the MODULE's map. A goroutine starting
+  // here is a fresh script-level entry (Created spawns, update ticks): it
+  // must run against the script scope, not the module sidecar. Copy the
+  // pushed map into ambient WITHOUT popping it — the suspended module
+  // frame's eventual RET still owns the pop.
+  if (!globals_stack_.empty()) {
+    globals = globals_stack_.back();
   }
 
   // Install the goroutine's spawn-time globals snapshot only when the
@@ -3346,12 +3396,19 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
       continue;
     }
     auto &cell = it->second;
+    // Respect an existing capture: a goroutine spawn may have closed this
+    // cell already (closeOpenUpvaluesForSpawn captures the spawning scope's
+    // value), and the shared locals array under this index can since have
+    // been reused by other frames (goroutines start at locals_base 0, so
+    // their STORE_VAR writes overlap the spawning frame's slots). Closing
+    // here with the reused value would corrupt the capture (e.g. a captured
+    // channel replaced by an int). UpvalueCell::close is idempotent — the
+    // first close wins — so route through it.
     if (index < locals.size()) {
-      cell->closed_value = locals[index];
+      cell->close(locals[index]);
     } else {
-      cell->closed_value = nullptr;
+      cell->close(nullptr);
     }
-    cell->is_open = false;
     open_upvalues.erase(it);
   }
 }
@@ -4104,6 +4161,17 @@ Value VM::deepWrapModuleFunctions(
               // left them and propagate to the CALL site (op_CALL checks
               // suspension_requested_ || last_suspension_reason_ after host
               // calls). The return value is ignored by the suspension path.
+              //
+              // The caller's globals map now lives ONLY in savedGlobals (a
+              // C++ local that dies with this invocation). Preserve it for
+              // the resume: push it onto globals_stack_ and flip the wrapped
+              // frame to owns_globals so its eventual RET pops the stack and
+              // restores the caller's scope. Ambient stays the module map —
+              // exactly what the resumed module function must see.
+              if (frame_count_ > 0) {
+                frame_arena_[frame_count_ - 1].owns_globals = true;
+              }
+              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
@@ -4284,6 +4352,13 @@ Value VM::deepWrapModuleFunctions(
               // yield) inside the closure body must propagate to the CALL
               // site without restoring globals/current_chunk, or the fiber
               // resume would run module code against the caller's globals.
+              // Preserve the caller's map (see that wrapper for details):
+              // push it on globals_stack_ and mark the frame so its RET
+              // pops it after the resume.
+              if (frame_count_ > 0) {
+                frame_arena_[frame_count_ - 1].owns_globals = true;
+              }
+              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {

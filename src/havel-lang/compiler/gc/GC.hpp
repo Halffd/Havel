@@ -41,8 +41,19 @@ Value closed_value = nullptr;
 Value get() const { return is_open ? nullptr : closed_value; }
 void set(Value value) { closed_value = value; }
 void close(Value value = nullptr) {
-closed_value = value;
-is_open = false;
+  // Idempotent: the FIRST close wins. A cell can be closed twice when a
+  // goroutine spawn closes its captured cells at spawn time (their abs
+  // region belongs to the spawning frame), and the spawning frame's
+  // later return runs closeFrameUpvalues over the same region — whose
+  // slots may since have been reused by other goroutine frames (the VM
+  // locals array is shared, and goroutines start with locals_base 0).
+  // Overwriting here would replace the captured value with unrelated
+  // data (e.g. a loop counter), so keep the original capture.
+  if (!is_open) {
+    return;
+  }
+  closed_value = value;
+  is_open = false;
 }
 bool isClosed() const { return !is_open; }
 };

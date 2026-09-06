@@ -2549,6 +2549,7 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
         target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
         target_link_libraries(cranelift_proto_driver PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            havel_aot_core_shim
             ${CMAKE_DL_LIBS}
         )
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)

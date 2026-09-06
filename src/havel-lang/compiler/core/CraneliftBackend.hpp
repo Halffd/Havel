@@ -22,6 +22,7 @@
 
 #include "Backend.hpp"
 #include "BytecodeIR.hpp"
+#include "../runtime/RuntimeABI.hpp"
 
 #include <cstdint>
 #include <string>
@@ -32,6 +33,8 @@ namespace havel::compiler {
 // hclb_* C ABI implemented by the Rust staticlib.
 extern "C" {
 void* hclb_create(void);
+void* hclb_create_with_symbols(const char** names, const void** addrs,
+                               uint32_t count);
 void hclb_destroy(void* handle);
 bool hclb_compile(void* handle, const char* name, const uint32_t* code,
                   uint32_t code_len, const uint64_t* constants,
@@ -43,7 +46,38 @@ bool hclb_execute(void* handle, void* vm, const char* name,
 
 class CraneliftBackend final : public CompilerBackend {
 public:
-  CraneliftBackend() : handle_(hclb_create()) {}
+  // The embedder passes the Runtime ABI addresses explicitly: release
+  // builds use -fvisibility=hidden (no .dynsym), so dlsym can never resolve
+  // the runtime from the main executable. Only the bridge surface the
+  // lowering actually calls is registered, so consumers that link this
+  // header (the proto driver) do not need the whole runtime on their link
+  // line.
+  CraneliftBackend() {
+    std::vector<const char*> names;
+    std::vector<const void*> addrs;
+    auto add = [&](const char* n, const void* a) {
+      names.push_back(n);
+      addrs.push_back(a);
+    };
+    add("havel_vm_add", reinterpret_cast<const void*>(&havel_vm_add));
+    add("havel_vm_sub", reinterpret_cast<const void*>(&havel_vm_sub));
+    add("havel_vm_mul", reinterpret_cast<const void*>(&havel_vm_mul));
+    add("havel_vm_eq", reinterpret_cast<const void*>(&havel_vm_eq));
+    add("havel_vm_neq", reinterpret_cast<const void*>(&havel_vm_neq));
+    add("havel_vm_lt", reinterpret_cast<const void*>(&havel_vm_lt));
+    add("havel_vm_lte", reinterpret_cast<const void*>(&havel_vm_lte));
+    add("havel_vm_gt", reinterpret_cast<const void*>(&havel_vm_gt));
+    add("havel_vm_gte", reinterpret_cast<const void*>(&havel_vm_gte));
+    add("havel_vm_is_truthy",
+        reinterpret_cast<const void*>(&havel_vm_is_truthy));
+    add("havel_vm_call", reinterpret_cast<const void*>(&havel_vm_call));
+    add("havel_vm_global_get",
+        reinterpret_cast<const void*>(&havel_vm_global_get));
+    add("havel_vm_global_set",
+        reinterpret_cast<const void*>(&havel_vm_global_set));
+    handle_ = hclb_create_with_symbols(
+        names.data(), addrs.data(), static_cast<uint32_t>(names.size()));
+  }
   ~CraneliftBackend() override {
     if (handle_) hclb_destroy(handle_);
   }
@@ -66,6 +100,8 @@ public:
         case OpCode::POP:
         case OpCode::DUP:
         case OpCode::PUSH_NULL:
+        case OpCode::LOAD_GLOBAL:
+        case OpCode::STORE_GLOBAL:
         case OpCode::ADD:
         case OpCode::SUB:
         case OpCode::MUL:
@@ -148,6 +184,8 @@ private:
         case OpCode::POP: op = 16; break;
         case OpCode::DUP: op = 17; break;
         case OpCode::PUSH_NULL: op = 18; break;
+        case OpCode::LOAD_GLOBAL: op = 19; break;
+        case OpCode::STORE_GLOBAL: op = 20; break;
         case OpCode::ADD: op = 3; break;
         case OpCode::SUB: op = 4; break;
         case OpCode::MUL: op = 5; break;
@@ -163,8 +201,17 @@ private:
         case OpCode::CALL: op = 15; break;
         default: break;  // can_lower() already refused anything else
       }
-      if (!inst.operands.empty() && inst.operands[0].isInt()) {
-        operand = static_cast<uint32_t>(inst.operands[0].asInt());
+      if (!inst.operands.empty()) {
+        // Global names travel as chunk-local StringValIds; the StringValId
+        // payload packs (chunkId << 31 | stringIndex), so the low 31 bits
+        // are the index and the operand resolves exactly like the
+        // interpreter's LOAD_GLOBAL path (asStringValId masks them out).
+        // Everything else in the subset carries integer operands.
+        if (inst.operands[0].isStringValId()) {
+          operand = inst.operands[0].asStringValId() & 0x7FFFFFFFu;
+        } else if (inst.operands[0].isInt()) {
+          operand = static_cast<uint32_t>(inst.operands[0].asInt());
+        }
       }
       out.push_back(op);
       out.push_back(operand);

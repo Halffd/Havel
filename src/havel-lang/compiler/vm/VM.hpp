@@ -190,10 +190,12 @@ struct VMConfig {
     uint64_t goroutine_tick_instructions = 10000;
     uint64_t goroutine_hotkey_tick_instructions = 100000;
 
-    // Tiering (JIT)
+    // Tiering (JIT). Zero means "use the HAVEL_TIER1_THRESHOLD /
+    // HAVEL_TIER2_THRESHOLD environment defaults" so operators can tune
+    // thresholds without recompiling; an explicit nonzero value wins.
     bool tiering_enabled = false;
-    uint64_t tier1_threshold = 1000;
-    uint64_t tier2_threshold = 10000;
+    uint64_t tier1_threshold = 0;
+    uint64_t tier2_threshold = 0;
     bool tier2_flush_on_shutdown = false;
 
     // JIT Debug
@@ -656,6 +658,17 @@ public:
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
     void pushStackPublic(Value value) { pushStack(std::move(value)); }
     Value popStackPublic() { return popStack(); }
+    // Runtime-ABI helpers for backend bridges (CoreRuntimeExports): the
+    // generic binary-op bridge runs execBinaryOp against the shared stack
+    // mid-dispatch, so it needs depth inspection, truncation, and the op
+    // itself behind public seams.
+    size_t stackDepthPublic() const { return stack.size(); }
+    void truncateStackPublic(size_t depth) {
+      while (stack.size() > depth) stack.pop();
+    }
+    void execBinaryOpPublic(const Instruction &instr) {
+      execBinaryOp(instr);
+    }
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }

@@ -279,44 +279,8 @@ static bool valueIsTruthy(uint64_t bits) {
   return true; // objects, arrays, etc. are truthy
 }
 
-// EQ: semantic equality — same bits OR both numeric and equal as doubles
-uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(true).rawBits();
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld == rd).rawBits();
-  return Value::makeBool(false).rawBits();
-}
-
-uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(false).rawBits();
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld != rd).rawBits();
-  return Value::makeBool(true).rawBits();
-}
-
-uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
-  return Value::makeBool(ld < rd).rawBits();
-}
-
-uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
-  return Value::makeBool(ld <= rd).rawBits();
-}
-
-uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
-  return Value::makeBool(ld > rd).rawBits();
-}
-
-uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
-  return Value::makeBool(ld >= rd).rawBits();
-}
+// EQ/comparison bridges moved to CoreRuntimeExports.cpp (Runtime ABI
+// single home); declared in runtime/RuntimeABI.hpp.
 
 uint64_t havel_vm_is(uint64_t l, uint64_t r) {
   return Value::makeBool(l == r).rawBits();
@@ -334,9 +298,9 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
     return vm->execLengthOp(v).rawBits();
 }
 
-int havel_vm_is_truthy(uint64_t v) {
-  return valueIsTruthy(v) ? 1 : 0;
-}
+// havel_vm_is_truthy moved to CoreRuntimeExports.cpp (Runtime ABI home);
+// valueIsTruthy stays here for the JIT's own truthiness lowering.
+
 
 // Power function
 uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {

@@ -95,6 +95,8 @@ pub const OP_CALL: u32 = 15;
 pub const OP_POP: u32 = 16;
 pub const OP_DUP: u32 = 17;
 pub const OP_PUSH_NULL: u32 = 18;
+pub const OP_LOAD_GLOBAL: u32 = 19;
+pub const OP_STORE_GLOBAL: u32 = 20;
 pub const OP_EQ: u32 = 10;
 pub const OP_NEQ: u32 = 11;
 pub const OP_LTE: u32 = 12;
@@ -128,7 +130,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_lt(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_lt(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) < unpack_int48(r))
         } else {
@@ -152,7 +154,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_eq(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_eq(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) == unpack_int48(r))
         } else {
@@ -160,7 +162,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_neq(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_neq(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) != unpack_int48(r))
         } else {
@@ -168,7 +170,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_lte(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_lte(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) <= unpack_int48(r))
         } else {
@@ -176,7 +178,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_gt(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_gt(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) > unpack_int48(r))
         } else {
@@ -184,7 +186,7 @@ mod fallback_shims {
         }
     }
 
-    unsafe extern "C" fn shim_gte(_vm: *mut c_void, l: u64, r: u64) -> u64 {
+    unsafe extern "C" fn shim_gte(l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_bool(unpack_int48(l) >= unpack_int48(r))
         } else {
@@ -212,29 +214,34 @@ mod fallback_shims {
         pack_bool(truthy)
     }
 
-    unsafe extern "C" fn shim_call(
-        _vm: *mut c_void,
-        args: *const u64,
-        count: u32,
-    ) -> u64 {
-        // Standalone plumbing check: treat the callee word as int48 n and
-        // return n + sum(args) so tests can verify the [callee, args...]
-        // array layout. The real runtime resolves and runs the callee.
-        if args.is_null() || count == 0 {
+    unsafe extern "C" fn shim_call(_vm: *mut c_void, args: *const u64, count: u32) -> u64 {
+        // Layout check: args[0] must be the callee and args[1..] the call
+        // arguments in order. Distinguish the slots by value so an inverted
+        // layout cannot pass (the callee constant is the large magic number;
+        // the arguments are 1, 2, 3). Returns callee*10 + arg0*2 + arg1 so
+        // a wrong layout produces a different sum.
+        if args.is_null() || count != 4 {
             return NULL_TAGGED;
         }
         let callee = *args;
         if !is_int48(callee) {
             return NULL_TAGGED;
         }
-        let mut acc = unpack_int48(callee);
-        for i in 1..count {
-            let w = *args.add(i as usize);
-            if is_int48(w) {
-                acc = acc.wrapping_add(unpack_int48(w));
-            }
+        let a = *args.add(1);
+        let b = *args.add(2);
+        let c = *args.add(3);
+        if !(is_int48(a) && is_int48(b) && is_int48(c)) {
+            return NULL_TAGGED;
         }
-        pack_int48(acc)
+        // callee must be 900000 (the magic), args must be 1,2,3 in order.
+        if unpack_int48(callee) != 900000
+            || unpack_int48(a) != 1
+            || unpack_int48(b) != 2
+            || unpack_int48(c) != 3
+        {
+            return NULL_TAGGED;
+        }
+        pack_int48(900123)
     }
 
     pub fn fallback_symbol(name: &str) -> Option<*const u8> {
@@ -267,7 +274,14 @@ pub struct CraneliftBackend {
 pub type HavelFn = unsafe extern "C" fn(*mut c_void, *const u64, u32) -> u64;
 
 impl CraneliftBackend {
-    pub fn new() -> Result<Self, String> {
+    /// `symbols`: (name, address) pairs for the Runtime ABI entries the
+    /// embedder provides. In a real embedding the main executable is built
+    /// with -fvisibility=hidden (no .dynsym entries), so dlsym can never
+    /// resolve the runtime from inside the process - the embedder passes
+    /// the addresses explicitly, the same table the LLVM backend registers
+    /// from the RuntimeABI.hpp X-macro. Unknown names fall back to the
+    /// standalone shims (tests) then dlsym.
+    pub fn new_with_symbols(symbols: Vec<(String, *const u8)>) -> Result<Self, String> {
         let mut flag_builder = settings::builder();
         flag_builder
             .set("use_colocated_libcalls", "false")
@@ -280,15 +294,22 @@ impl CraneliftBackend {
             .finish(settings::Flags::new(flag_builder))
             .map_err(|e| e.to_string())?;
         let mut jit_builder = JITBuilder::with_isa(isa, default_libcall_names());
-        // Runtime ABI symbols resolve from the embedding process
-        // (dlsym/RTLD_DEFAULT), matching the LLJIT symbol registration
-        // BytecodeOrcJIT performs from the same RuntimeABI.hpp X-macro.
+        // Embedder-provided Runtime ABI addresses first (hidden-visibility
+        // executables cannot be dlsym'd); the lookup fn serves the rest.
+        for (name, addr) in symbols {
+            jit_builder.symbol(name, addr);
+        }
         jit_builder.symbol_lookup_fn(Box::new(lookup_runtime_abi) as Box<_>);
         let module = JITModule::new(jit_builder);
         Ok(Self {
             module,
             symbols: HashMap::new(),
         })
+    }
+
+    /// Standalone construction (tests, tools): no embedder symbols.
+    pub fn new() -> Result<Self, String> {
+        CraneliftBackend::new_with_symbols(Vec::new())
     }
 
     /// Lower one function of the subset to native code. `code` is the flat
@@ -359,17 +380,7 @@ impl CraneliftBackend {
         ];
         bridge_sig.returns = vec![AbiParam::new(int64)];
         let mut bridge_ids: HashMap<&str, cranelift_module::FuncId> = HashMap::new();
-        for sym in [
-            "havel_vm_add",
-            "havel_vm_sub",
-            "havel_vm_mul",
-            "havel_vm_lt",
-            "havel_vm_eq",
-            "havel_vm_neq",
-            "havel_vm_lte",
-            "havel_vm_gt",
-            "havel_vm_gte",
-        ] {
+        for sym in ["havel_vm_add", "havel_vm_sub", "havel_vm_mul"] {
             let s = bridge_sig.clone();
             let id = self
                 .module
@@ -377,10 +388,31 @@ impl CraneliftBackend {
                 .map_err(|e| err(format!("declare {sym}: {e}")))?;
             bridge_ids.insert(sym, id);
         }
-        // havel_vm_is_truthy is (vm, value) -> i64: its own signature.
+        // Comparison bridges: (l, r) -> result, no vm (RuntimeABI.hpp):
+        // they are pure word semantics.
+        let mut cmp_sig = self.module.make_signature();
+        cmp_sig.params = vec![AbiParam::new(int64), AbiParam::new(int64)];
+        cmp_sig.returns = vec![AbiParam::new(int64)];
+        for sym in [
+            "havel_vm_lt",
+            "havel_vm_eq",
+            "havel_vm_neq",
+            "havel_vm_lte",
+            "havel_vm_gt",
+            "havel_vm_gte",
+        ] {
+            let sig = cmp_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &sig)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // havel_vm_is_truthy is (value) -> i32: its own signature
+        // (RuntimeABI.hpp; the C side returns int).
         let mut truthy_sig = self.module.make_signature();
-        truthy_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int64)];
-        truthy_sig.returns = vec![AbiParam::new(int64)];
+        truthy_sig.params = vec![AbiParam::new(int64)];
+        truthy_sig.returns = vec![AbiParam::new(types::I32)];
         let truthy_id = self
             .module
             .declare_function("havel_vm_is_truthy", Linkage::Import, &truthy_sig)
@@ -398,6 +430,27 @@ impl CraneliftBackend {
             .module
             .declare_function("havel_vm_call", Linkage::Import, &call_sig)
             .map_err(|e| err(format!("declare havel_vm_call: {e}")))?;
+
+        // havel_vm_global_get: (vm, chunk-local string id) -> global Value
+        // bits; missing globals yield null.
+        let mut global_get_sig = self.module.make_signature();
+        global_get_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int32)];
+        global_get_sig.returns = vec![AbiParam::new(int64)];
+        let global_get_id = self
+            .module
+            .declare_function("havel_vm_global_get", Linkage::Import, &global_get_sig)
+            .map_err(|e| err(format!("declare havel_vm_global_get: {e}")))?;
+        // havel_vm_global_set: (vm, chunk-local string id, Value bits) -> ().
+        let mut global_set_sig = self.module.make_signature();
+        global_set_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+            AbiParam::new(int64),
+        ];
+        let global_set_id = self
+            .module
+            .declare_function("havel_vm_global_set", Linkage::Import, &global_set_sig)
+            .map_err(|e| err(format!("declare havel_vm_global_set: {e}")))?;
 
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
@@ -435,7 +488,6 @@ impl CraneliftBackend {
             let zero8 = builder.ins().iconst(types::I8, 0);
             let one8 = builder.ins().iconst(types::I8, 1);
 
-
             // Resolve every bridge FuncRef up front so the lowering
             // closures never touch self.module (single-borrow discipline).
             let mut bridge_refs: HashMap<&str, cranelift::codegen::ir::FuncRef> = HashMap::new();
@@ -446,9 +498,13 @@ impl CraneliftBackend {
             let truthy_bridge_ref = self
                 .module
                 .declare_func_in_func(truthy_id, &mut builder.func);
-            let call_bridge_ref = self
+            let call_bridge_ref = self.module.declare_func_in_func(call_id, &mut builder.func);
+            let global_get_ref = self
                 .module
-                .declare_func_in_func(call_id, &mut builder.func);
+                .declare_func_in_func(global_get_id, &mut builder.func);
+            let global_set_ref = self
+                .module
+                .declare_func_in_func(global_set_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first
@@ -466,9 +522,9 @@ impl CraneliftBackend {
                 var_of.insert(i, var);
             }
             let declare_local = |operand: u32,
-                                     var_of: &mut HashMap<u32, Variable>,
-                                     next_var: &mut u32,
-                                     b: &mut FunctionBuilder|
+                                 var_of: &mut HashMap<u32, Variable>,
+                                 next_var: &mut u32,
+                                 b: &mut FunctionBuilder|
              -> Variable {
                 if let Some(v) = var_of.get(&operand) {
                     return *v;
@@ -488,9 +544,10 @@ impl CraneliftBackend {
                     let t = b.ins().band(v, tag_mask);
                     b.ins().icmp(IntCC::Equal, t, ext_tag_bits)
                 };
-                // The bridge is consulted unconditionally (pure runtime
-                // predicate); the select keeps only the applicable result.
-                let call = b.ins().call(truthy_bridge_ref, &[vm, v]);
+                // The bridge is consulted unconditionally (pure word
+                // predicate, no vm per RuntimeABI); the select keeps the
+                // applicable result.
+                let call = b.ins().call(truthy_bridge_ref, &[v]);
                 let res = b.inst_results(call)[0];
                 let bridge_on = b.ins().icmp_imm(IntCC::NotEqual, res, 0);
 
@@ -548,9 +605,17 @@ impl CraneliftBackend {
                     OP_GT => "havel_vm_gt",
                     _ => "havel_vm_gte",
                 };
+                // Arithmetic bridges take (vm, l, r); comparison bridges
+                // are pure word semantics and take (l, r) per RuntimeABI.
                 let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let call = b.ins().call(func_ref, &[vm, l, r]);
-                let bridged = b.inst_results(call)[0];
+                let is_comparison = matches!(op, OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE);
+                let bridged = if is_comparison {
+                    let call = b.ins().call(func_ref, &[l, r]);
+                    b.inst_results(call)[0]
+                } else {
+                    let call = b.ins().call(func_ref, &[vm, l, r]);
+                    b.inst_results(call)[0]
+                };
 
                 let masked_l = b.ins().band(l, payload_mask);
                 let shl_l = b.ins().ishl(masked_l, shift16);
@@ -665,22 +730,27 @@ impl CraneliftBackend {
                         );
                         // store [callee, args...] into the slot; note the
                         // vstack pops come last-first.
-                        // words = [callee, argN..arg1] with args in
-                        // reverse pop order; store each at its byte offset.
+                        // The stream pushes the callee FIRST, then the
+                        // arguments (LOAD_GLOBAL f; ...; SUB produces
+                        // [callee, arg] bottom-to-top). Pop the args first
+                        // (reverse), then the callee underneath, and stage
+                        // [callee, args...] contiguously for the bridge.
+                        let mut args_rev: Vec<Value> = Vec::with_capacity(argc);
+                        for _ in 0..argc {
+                            args_rev.push(vstack.pop().expect("checked depth"));
+                        }
                         let callee = vstack.pop().expect("checked depth");
                         let mut words: Vec<Value> = Vec::with_capacity(argc + 1);
                         words.push(callee);
-                        for k in 0..argc {
-                            words.push(vstack[vstack.len() - 1 - k]);
+                        for w in args_rev.into_iter().rev() {
+                            words.push(w);
                         }
                         for (k, w) in words.iter().enumerate() {
                             builder.ins().stack_store(*w, slot, (k as i32) * 8);
                         }
                         let base = builder.ins().stack_addr(pointer_ty, slot, 0);
                         let cnt = builder.ins().iconst(int32, (argc + 1) as i64);
-                        let call =
-                            builder.ins().call(call_bridge_ref, &[vm, base, cnt]);
-                        vstack.truncate(vstack.len() - argc);
+                        let call = builder.ins().call(call_bridge_ref, &[vm, base, cnt]);
                         vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_JUMP_IF_FALSE => {
@@ -709,6 +779,21 @@ impl CraneliftBackend {
                             .ok_or_else(|| err("jump target has no block".into()))?;
                         builder.ins().jump(blk, &[]);
                         terminated = true;
+                    }
+                    OP_LOAD_GLOBAL => {
+                        // Operand: chunk-local string id of the global name;
+                        // the runtime resolves it against the executing
+                        // chunk (same contract as the LOAD_GLOBAL opcode).
+                        let name_id = builder.ins().iconst(int32, operand as i64);
+                        let call = builder.ins().call(global_get_ref, &[vm, name_id]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STORE_GLOBAL => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("STORE_GLOBAL with empty stack".into()))?;
+                        let name_id = builder.ins().iconst(int32, operand as i64);
+                        builder.ins().call(global_set_ref, &[vm, name_id, v]);
                     }
                     OP_POP => {
                         if vstack.is_empty() {
@@ -753,7 +838,7 @@ impl CraneliftBackend {
         }
         self.module
             .define_function(func_id, &mut ctx)
-            .map_err(|e| err(format!("define {name}: {e}")))?;
+            .map_err(|e| err(format!("define {name}: {e:?}")))?;
         self.module.clear_context(&mut ctx);
         self.module
             .finalize_definitions()
@@ -1145,24 +1230,26 @@ mod tests {
 
     #[test]
     fn call_bridge_receives_callee_and_args() {
-        // fn (n) = call(callee=100, 1, 2, 3) -> shim returns 100+1+2+3 = 106
+        // CALL 3 stages [callee, arg1, arg2, arg3] contiguously; the shim
+        // pins the exact layout (callee first, args in push order) and
+        // returns a sentinel only for the exact sequence.
         let mut backend = CraneliftBackend::new().unwrap();
-        //   0: LOAD_CONST 0 (100)
-        //   1: LOAD_CONST 1 (1)
-        //   2: LOAD_CONST 2 (2)
-        //   3: LOAD_CONST 3 (3)
-        //   4: CALL 3
-        //   5: RETURN
         let code: Vec<u32> = vec![
-            OP_LOAD_CONST, 0, //
-            OP_LOAD_CONST, 1, //
-            OP_LOAD_CONST, 2, //
-            OP_LOAD_CONST, 3, //
-            OP_CALL, 3, //
-            OP_RETURN, 0,
+            OP_LOAD_CONST,
+            0, // callee: 900000 (magic)
+            OP_LOAD_CONST,
+            1, // arg1: 1
+            OP_LOAD_CONST,
+            2, // arg2: 2
+            OP_LOAD_CONST,
+            3, // arg3: 3
+            OP_CALL,
+            3, //
+            OP_RETURN,
+            0,
         ];
         let constants = [
-            pack_int48(100),
+            pack_int48(900000),
             pack_int48(1),
             pack_int48(2),
             pack_int48(3),
@@ -1173,8 +1260,8 @@ mod tests {
         let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
         assert_eq!(
             unpack_int48(out),
-            106,
-            "shim must see [callee=100, 1, 2, 3]: {out:#x}"
+            900123,
+            "shim must see [callee=900000, 1, 2, 3] in order: {out:#x}"
         );
     }
 
@@ -1271,6 +1358,35 @@ pub extern "C" fn hclb_create() -> *mut c_void {
     }
 }
 
+/// Create with an embedder-provided Runtime ABI symbol table:
+/// names[i] -> addrs[i], i in 0..count.
+#[no_mangle]
+pub extern "C" fn hclb_create_with_symbols(
+    names: *const *const c_char,
+    addrs: *const *const u8,
+    count: u32,
+) -> *mut c_void {
+    let mut syms: Vec<(String, *const u8)> = Vec::new();
+    if !names.is_null() && !addrs.is_null() {
+        for i in 0..count {
+            let n = unsafe { *names.add(i as usize) };
+            let a = unsafe { *addrs.add(i as usize) };
+            if n.is_null() {
+                continue;
+            }
+            let name = unsafe { CStr::from_ptr(n) }.to_string_lossy().into_owned();
+            syms.push((name, a));
+        }
+    }
+    match CraneliftBackend::new_with_symbols(syms) {
+        Ok(b) => Box::into_raw(Box::new(b)) as *mut c_void,
+        Err(e) => {
+            eprintln!("[hclb] backend creation failed: {e}");
+            std::ptr::null_mut()
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn hclb_destroy(handle: *mut c_void) {
     if !handle.is_null() {
@@ -1313,15 +1429,14 @@ pub extern "C" fn hclb_compile(
 }
 
 #[no_mangle]
-pub extern "C" fn hclb_is_compiled(
-    handle: *mut c_void,
-    name: *const c_char,
-) -> bool {
+pub extern "C" fn hclb_is_compiled(handle: *mut c_void, name: *const c_char) -> bool {
     if handle.is_null() || name.is_null() {
         return false;
     }
     let backend = unsafe { &*(handle as *mut CraneliftBackend) };
-    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_string_lossy()
+        .into_owned();
     backend.symbols.contains_key(&name)
 }
 
@@ -1338,7 +1453,9 @@ pub extern "C" fn hclb_execute(
         return false;
     }
     let backend = unsafe { &mut *(handle as *mut CraneliftBackend) };
-    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_string_lossy()
+        .into_owned();
     let Some(f) = backend.symbols.get(&name) else {
         return false;
     };

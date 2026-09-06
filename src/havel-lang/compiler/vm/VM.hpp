@@ -30,6 +30,7 @@
 namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
+#include "../../../utils/Logger.hpp"  // tier-manager debug output
 
 namespace havel::compiler {
 
@@ -808,6 +809,8 @@ Value lookupGlobalByKey(const std::string& key) {
             profiler_.recordBackedge(frame.chunk->getFunctionIndex(frame.function));
         }
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
+        // Trace callback fires once per site past the tier-1 threshold
+        // (hot-trace hooks; separate from function tier-up).
         if (count >= tier1_threshold_) {
             bool should_fire = false;
             {
@@ -815,18 +818,17 @@ Value lookupGlobalByKey(const std::string& key) {
                 should_fire = hot_trace_sites_.insert(site_key).second;
             }
             if (should_fire) {
-                tier1_transition_count_.fetch_add(1, std::memory_order_relaxed);
                 if (hot_trace_cb_) {
                     hot_trace_cb_(*frame.function, ip, count);
                 }
             }
         }
-        // Tier-2 backedge hotness: count each SITE once (mirroring the
-        // tier-1 site-key dedup above), not every past-threshold iteration -
-        // the counter feeds the shutdown "tier2_enqueued" statistic, which
-        // previously read 9990001 for a hot loop because it counted loop
-        // iterations. Actual tier-2 queueing happens in the binop tiering
-        // hook (VMArithmetic.cpp), not here.
+        // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
+        // backedge count even without binop feedback at the loop head.
+        maybeTierUp(*frame.function, count, "backedge");
+        // Tier-2 backedge hotness statistic: count each SITE once
+        // (mirroring the site-key dedup above); actual tier-2 queueing is
+        // the tier manager's job.
         if (count >= tier2_threshold_) {
             bool first_time = false;
             {
@@ -1132,6 +1134,93 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   // thread; summary() is for diagnostics only (hvdb status, shutdown report).
   const RuntimeProfiler& profiler() const { return profiler_; }
   RuntimeProfiler& profiler() { return profiler_; }
+
+  // ===== Tier manager (TODO #25) =====
+  //
+  // Central tier-up decision, shared by every trigger site (per-IP binop
+  // feedback, backedge hotness, function invocation). The decision weighs
+  // the profiler's evidence against the thresholds and the function's size:
+  //
+  //   tier 1 (fast JIT):  hotness >= tier1_threshold_ AND
+  //                       size <= tier1_max_instructions_
+  //   tier 2 (optimizing): hotness >= tier2_threshold_ AND
+  //                       size <= tier2_max_instructions_
+  //
+  // where hotness is the strongest available signal at the call site
+  // (binop feedback count, backedge count, or invocation count). Every
+  // function is decided once per tier; the sets below dedup.
+  void maybeTierUp(const BytecodeFunction& func, uint64_t hotness,
+                   const char* reason) {
+    if (!tiering_enabled_ || !backend_ || debugger_attached_) {
+      return;
+    }
+    const size_t size = func.instructions.size();
+    if (size == 0 || size > tier1_max_instructions_) {
+      return;  // never worth compiling (empty or above the tier-1 cap)
+    }
+    if (hotness < tier1_threshold_) {
+      return;
+    }
+    const std::string key = func.name;
+    if (!tier1_compiled_.count(key)) {
+      tier1_compiled_.insert(key);
+      tier1_transition_count_.fetch_add(1);
+      profiler_.recordTier1Compile(key);
+      ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason,
+                     hotness);
+      backend_->compile_tier(func, 1);
+
+      // Tier 2 queueing: only small, very hot functions qualify.
+      if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
+          !tier2_compiled_.count(key)) {
+        tier2_compiled_.insert(key);
+        {
+          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+          if (tier2_queued_or_compiling_.insert(key).second) {
+            tier2_queue_.push(func);
+            tier2_enqueue_count_.fetch_add(1);
+            ::havel::debug("[tiering] {} queued for tier2", key);
+          } else {
+            tier2_skip_duplicate_count_.fetch_add(1);
+          }
+        }
+        ensureTier2Worker();
+      }
+    }
+  }
+
+  // Spawn the background tier-2 compiler thread once; the worker drains the
+  // queue until shutdown marks it stopped and the queue is empty.
+  void ensureTier2Worker() {
+    if (!tier2_worker_running_.exchange(true)) {
+      tier2_worker_ = std::thread([this]() {
+        auto hasQueuedWork = [this]() {
+          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+          return !tier2_queue_.empty();
+        };
+        while (tier2_worker_running_.load() || hasQueuedWork()) {
+          std::optional<BytecodeFunction> fn;
+          {
+            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+            if (!tier2_queue_.empty()) {
+              fn = tier2_queue_.front();
+              tier2_queue_.pop();
+            }
+          }
+          if (fn.has_value() && backend_) {
+            backend_->compile_tier(*fn, 2);
+            tier2_compile_count_.fetch_add(1);
+            profiler_.recordTier2Compile(fn->name);
+            ::havel::debug("[tiering] {} -> tier2", fn->name);
+            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+            tier2_queued_or_compiling_.erase(fn->name);
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+          }
+        }
+      });
+    }
+  }
 
   
   // Backend attachment (TODO #18/#19): the VM executes through a
@@ -1590,6 +1679,12 @@ private:
     bool tiering_enabled_ = false;
     uint64_t tier1_threshold_ = 1000;
     uint64_t tier2_threshold_ = 10000;
+    // Function-size bounds for tier decisions (TODO #25): huge functions
+    // are not worth tier-1 codegen cost until proven hotter; anything above
+    // the hard cap never tiers (compile cost dwarfs interpreter time on a
+    // single pass).
+    uint32_t tier1_max_instructions_ = 20000;
+    uint32_t tier2_max_instructions_ = 8000;
     std::unordered_set<std::string> tier1_compiled_;
     std::unordered_set<std::string> tier2_compiled_;
     std::unordered_set<std::string> tier2_queued_or_compiling_;

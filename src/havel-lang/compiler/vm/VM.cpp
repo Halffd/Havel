@@ -1551,6 +1551,9 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
+  // Invocation-driven tiering (TODO #25): functions hot without arithmetic
+  // feedback (string/object churn, dispatch loops) still tier up here.
+  maybeTierUp(*func, func->execution_count, "invocation");
 
   if (func->jit_compiled && backend_ && !debugger_attached_ &&
       !callable.isClosureId()) {
@@ -2809,6 +2812,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*callee);
   }
+  // Invocation-driven tiering (TODO #25).
+  maybeTierUp(*callee, callee->execution_count, "invocation");
 
   if (trace_execution_) {
     // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());

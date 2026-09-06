@@ -15,6 +15,7 @@
 #include "InstructionEffects.hpp"
 #include "OptimizerDriver.hpp"
 #include "RuntimeABI.hpp"
+#include "RuntimeProfiler.hpp"
 
 #include <gtest/gtest.h>
 
@@ -1438,6 +1439,67 @@ TEST_F(CFGPipelineTest, OptimizeDriverRecomputesAotHints) {
                               "INT AOT hint for JIT specialization";
   }
   EXPECT_TRUE(f.type_feedback.size() > 0);
+}
+
+// ===== Runtime profiler (TODO #26) =====
+
+// The profiler is a set of relaxed atomics: recording from many "threads"
+// (simulated interleaved) must not lose counts, saturate safely beyond the
+// tracked function space, and produce a readable summary.
+TEST_F(CFGPipelineTest, RuntimeProfilerCountersAndSummary) {
+  RuntimeProfiler profiler;
+
+  profiler.recordFunctionCall(3);
+  profiler.recordFunctionCall(3);
+  profiler.recordFunctionCall(7);
+  EXPECT_EQ(profiler.functionCalls(3), 2u);
+  EXPECT_EQ(profiler.functionCalls(7), 1u);
+  EXPECT_EQ(profiler.totalCalls(), 3u);
+
+  profiler.recordBackedge(3);
+  profiler.recordBackedgeTotal();
+  EXPECT_EQ(profiler.backedges(3), 1u);
+  EXPECT_EQ(profiler.totalBackedges(), 2u);
+
+  profiler.recordThrow();
+  profiler.recordThrow();
+  EXPECT_EQ(profiler.throws(), 2u);
+
+  // Batched instruction recording (the dispatch loop's checkpoint form).
+  profiler.recordInstructions(8192);
+  profiler.recordInstructions(8192);
+  EXPECT_EQ(profiler.instructions(), 2u * 8192u);
+
+  // Allocation sink: the GC heap writes directly into the profiler's atomic.
+  auto* sink = profiler.allocationSink();
+  sink->fetch_add(5, std::memory_order_relaxed);
+  EXPECT_EQ(profiler.allocations(), 5u);
+
+  // Tier transitions.
+  profiler.recordTier1Compile("f");
+  profiler.recordTier2Compile("g");
+  EXPECT_EQ(profiler.tier1Compiles(), 1u);
+  EXPECT_EQ(profiler.tier2Compiles(), 2u - 1u);
+
+  // Saturation: indices beyond the tracked space must not corrupt memory;
+  // only the total moves.
+  const uint64_t calls_before = profiler.totalCalls();
+  profiler.recordFunctionCall(RuntimeProfiler::kMaxTrackedFunctions + 10);
+  EXPECT_EQ(profiler.totalCalls(), calls_before + 1u);
+
+  const std::string s = profiler.summary();
+  EXPECT_NE(s.find("calls=4"), std::string::npos)
+      << "3 tracked calls + 1 saturated call";
+  EXPECT_NE(s.find("throws=2"), std::string::npos);
+  EXPECT_NE(s.find("hottest_fn_index=3"), std::string::npos)
+      << "hottest function is index 3 with 2 calls";
+  EXPECT_NE(s.find("tier1=1"), std::string::npos);
+
+  profiler.reset();
+  EXPECT_EQ(profiler.totalCalls(), 0u);
+  EXPECT_EQ(profiler.instructions(), 0u);
+  EXPECT_TRUE(profiler.summary().find("hottest") == std::string::npos)
+      << "after reset no function should be reported hottest";
 }
 
 }  // namespace

@@ -385,8 +385,16 @@ const ::havel::Interval* interval(uint32_t id) const;
     void setFullCollectionInterval(size_t interval) { full_collection_interval_ = interval; }
     size_t fullCollectionInterval() const { return full_collection_interval_; }
     void setPromotionAgeThreshold(uint8_t age) { promotion_age_threshold_ = age; }
+
+    // Profiler feed (TODO #26): an optional sink receiving one relaxed
+    // atomic increment per allocation. The sink must outlive the heap.
+    void setAllocationCounter(std::atomic<uint64_t>* sink) { allocation_counter_ = sink; }
     uint8_t promotionAgeThreshold() const { return promotion_age_threshold_; }
     uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
+    // Total allocations since VM start (profiler feed, TODO #26).
+    uint64_t totalAllocations() const {
+        return total_allocations_.load(std::memory_order_relaxed);
+    }
   uint64_t cachedObjectCount() const { return cached_object_count_.load(std::memory_order_relaxed); }
   size_t oldArrayCount() const { return old_arrays_.size(); }
   size_t oldObjectCount() const { return old_objects_.size(); }
@@ -581,6 +589,8 @@ size_t allocations_since_last_ = 0;
 size_t recovered_in_cycle_ = 0;
 uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
     std::atomic<uint64_t> approx_heap_bytes_{0};
+    std::atomic<uint64_t> total_allocations_{0};  // profiler feed (TODO #26)
+    std::atomic<uint64_t>* allocation_counter_ = nullptr;  // optional profiler sink
     std::atomic<uint64_t> cached_object_count_{0};
 
     std::vector<Value> external_roots_;

@@ -796,6 +796,13 @@ return
             keyIdx = bc.add_string(target.property)
             bc.emit("LOAD_CONST", keyIdx)
             bc.emit("OBJECT_SET")
+            // OBJECT_SET pops [obj, value, key] and pushes the object back
+            // for chaining; statement-position assignments must consume it,
+            // matching the Identifier branch's self-cleaning shape - without
+            // this POP every obj.field = value in a loop leaked one stack
+            // slot per iteration (the objects benchmark overflowed the
+            // expression stack at 500k iterations).
+            bc.emit("POP")
             return
         }
 if target.kind == "IndexExpression" {

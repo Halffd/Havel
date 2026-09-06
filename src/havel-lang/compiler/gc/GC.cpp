@@ -158,6 +158,10 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
   addHeapBytes(est);
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return ClosureRef{.id = id};
 }
 
@@ -170,6 +174,10 @@ StringRef GCHeap::allocateString(std::string value) {
   addHeapBytes(est);
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return StringRef{.id = id};
 }
 
@@ -191,6 +199,10 @@ GCHeap::StringCursorRef GCHeap::allocateStringCursor(uint32_t string_id) {
   string_cursors_.emplace(id, StringCursor{.string_id = string_id, .byte_pos = 0, .codepoint_index = 0});
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return StringCursorRef{.id = id};
 }
 
@@ -217,6 +229,10 @@ ArrayRef GCHeap::allocateArray() {
   addHeapBytes(est);
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return ArrayRef{.id = id};
 }
 
@@ -250,6 +266,10 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
     addHeapBytes(est);
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return ObjectRef{.id = id, .sorted = sorted};
 }
 
@@ -265,6 +285,10 @@ SetRef GCHeap::allocateSet() {
     addHeapBytes(est);
   cached_object_count_.fetch_add(1, std::memory_order_relaxed);
   allocations_since_last_++;
+  total_allocations_.fetch_add(1, std::memory_order_relaxed);
+  if (allocation_counter_) {
+    allocation_counter_->fetch_add(1, std::memory_order_relaxed);
+  }
   return SetRef{.id = id};
 }
 

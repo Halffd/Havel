@@ -93,6 +93,7 @@ VM::VM(const VMConfig &cfg) {
   heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+  heap_.setAllocationCounter(profiler_.allocationSink());
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -134,6 +135,7 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+  heap_.setAllocationCounter(profiler_.allocationSink());
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -263,6 +265,9 @@ VM::~VM() {
                   tier2_compile_count_.load(),
                   tier2_skip_duplicate_count_.load());
   }
+  // Runtime profiling summary (TODO #26): one line at shutdown so the
+  // basic counters are observable in every run.
+  ::havel::info("[profiler] {}", profiler_.summary());
   for (auto &[name, rootId] : host_function_gc_roots_) {
     unpinExternalRoot(rootId);
   }
@@ -1591,9 +1596,14 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
+  profiler_.recordFunctionCall(
+      current_chunk ? current_chunk->getFunctionIndex(func) : 0);
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
+  // Invocation-driven tiering (TODO #25): functions hot without arithmetic
+  // feedback (string/object churn, dispatch loops) still tier up here.
+  maybeTierUp(*func, func->execution_count, "invocation");
 
   if (func->jit_compiled && backend_ && !debugger_attached_ &&
       !callable.isClosureId()) {
@@ -2281,6 +2291,7 @@ slow_path:
 }
 
 bool VM::handleScriptThrow(const Value &value) {
+  profiler_.recordThrow();
   has_current_exception_ = true;
   current_exception_ = value;
 
@@ -2846,9 +2857,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   packVariadicArgs(args, callee);
 
   callee->execution_count++;
+  profiler_.recordFunctionCall(
+      resolve_chunk ? resolve_chunk->getFunctionIndex(callee) : 0);
   if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*callee);
   }
+  // Invocation-driven tiering (TODO #25).
+  maybeTierUp(*callee, callee->execution_count, "invocation");
 
   if (trace_execution_) {
     // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());

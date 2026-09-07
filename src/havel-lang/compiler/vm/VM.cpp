@@ -2910,53 +2910,81 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
-    // Module-globals snapshot swap, mirroring the interpreter path below
-    // (VM.cpp: globals = *closure_globals with save/restore around the
-    // frame). The interpreter swaps the ambient map when a closure/module
-    // function carries module_globals; compiled functions read and write
-    // globals through the Runtime ABI bridges against the ambient map, so
-    // without this swap a JIT'd module function called from outside its
-    // module would corrupt the caller's globals instead of its module's
-    // (the self-hosted parser's BP_TABLE broke exactly this way).
+    // Compiled-module-function call context, mirroring the interpreter's
+    // frame setup below: swap the ambient globals snapshot when the callee
+    // carries module_globals, and push a synthetic CallFrame so
+    // currentFrame() during the compiled body names the CALLEE (its
+    // closure_id and chunk drive the Runtime-ABI global bridges: without
+    // the frame, writes from __main__-called module functions persisted
+    // against the caller's closure_id 0 and never reached the module
+    // sidecar - the self-hosted parser's BP_TABLE diverged exactly this
+    // way). The frame also carries locals slots for parameters so
+    // upvalue bridges can address the activation record.
     bool jit_owns_globals = false;
     if (closure_globals) {
       globals_stack_.push_back(std::move(globals));
       globals = *closure_globals;
       jit_owns_globals = true;
     }
-    try {
-      Value result;
-      if (backend_->execute(this, callee->name, args, &result)) {
-        setJITActiveClosurePublic(prev_jit_closure);
-        if (jit_owns_globals && !globals_stack_.empty()) {
-          globals = std::move(globals_stack_.back());
-          globals_stack_.pop_back();
-        }
-        pushStack(result);
-        return;
+    const size_t jit_locals_base = locals.size();
+    const size_t jit_needed =
+        std::max(callee->local_count, callee->param_count);
+    locals.resize(jit_locals_base + jit_needed, nullptr);
+    for (size_t i = 0; i < args.size() && i < jit_needed; ++i) {
+      locals[jit_locals_base + i] = args[i];
+    }
+    const size_t jit_stack_depth = stack.size();
+    {
+      CallFrame cf;
+      cf.function = callee;
+      cf.chunk = resolve_chunk;
+      cf.ip = 0;
+      cf.locals_base = jit_locals_base;
+      cf.closure_id = closure_id;
+      cf.owns_globals = jit_owns_globals;
+      cf.stack_depth = static_cast<uint32_t>(jit_stack_depth);
+      if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(std::move(cf));
+      } else {
+        frame_arena_[frame_count_] = std::move(cf);
       }
-      setJITActiveClosurePublic(prev_jit_closure);
+      frame_count_++;
+    }
+    const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    auto jit_teardown = [&]() {
+      // Pop the synthetic frame and restore the ambient snapshot. Nested
+      // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
+      // restore frame_count_, so the arena still holds our frame here.
+      if (frame_count_ >= jit_frame_base) {
+        frame_count_ = jit_frame_base - 1;
+      }
+      locals.resize(jit_locals_base);
       if (jit_owns_globals && !globals_stack_.empty()) {
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
       }
+    };
+    try {
+      Value result;
+      if (backend_->execute(this, callee->name, args, &result)) {
+        setJITActiveClosurePublic(prev_jit_closure);
+        jit_teardown();
+        pushStack(result);
+        return;
+      }
+      setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       // Backend declined; fall through to the interpreter call path.
     } catch (const JitCoroutineSignal &) {
       // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
       // that requires interpreter frame management. Fall back to
       // the interpreter path below to execute this function call.
       setJITActiveClosurePublic(prev_jit_closure);
-      if (jit_owns_globals && !globals_stack_.empty()) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-      }
+      jit_teardown();
       // Fall through to normal interpreter call path
     } catch (...) {
       setJITActiveClosurePublic(prev_jit_closure);
-      if (jit_owns_globals && !globals_stack_.empty()) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-      }
+      jit_teardown();
       throw;
     }
   }

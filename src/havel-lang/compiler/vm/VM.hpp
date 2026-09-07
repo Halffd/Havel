@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <shared_mutex>
@@ -1202,11 +1203,23 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
       return;
     }
     const std::string key = func.name;
-    // Debug isolation: HAVEL_TIER1_ONLY=<name> restricts tier-up to a
-    // single function (miscompile bisects; not a production knob).
-    static const char* only_env = std::getenv("HAVEL_TIER1_ONLY");
-    if (only_env && key != only_env) {
-      return;
+    // Debug isolation: HAVEL_TIER1_ONLY=<name[,name...]> restricts tier-up
+    // to the listed functions (miscompile bisects; not a production knob).
+    static const std::string only_env = std::getenv("HAVEL_TIER1_ONLY")
+                                             ? std::getenv("HAVEL_TIER1_ONLY")
+                                             : std::string();
+    if (!only_env.empty()) {
+      bool listed = false;
+      size_t pos = 0;
+      while (pos <= only_env.size() && !listed) {
+        size_t comma = only_env.find(',', pos);
+        const std::string tok = only_env.substr(
+            pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (tok == key) listed = true;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+      }
+      if (!listed) return;
     }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);

@@ -2247,16 +2247,11 @@ void VM::registerDefaultHostFunctions() {
     auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
     auto callback = [this, callbackId = registerCallback(closure), intervalIdPtr]() {
+      // Timer thread: only ever push events. Never invoke VM callbacks
+      // from here (timer thread != VM thread). If no queue, drop the tick.
       if (event_queue_) {
         auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *intervalIdPtr);
         event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-      } else {
-        try {
-          Value result = invokeCallback(callbackId, {});
-          interval_results_[*intervalIdPtr] = result;
-        } catch (const std::exception &e) {
-          ::havel::error("[interval] Exception: {}", e.what());
-        }
       }
     };
 
@@ -2335,17 +2330,12 @@ void VM::registerDefaultHostFunctions() {
         auto closure = args[1];
         auto intervalIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, intervalIdPtr]() {
+          // Timer thread: only ever push events. Never call the closure
+          // from here (timer thread != VM thread). If no queue, drop the tick.
           if (event_queue_) {
             auto *payload =
                 new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
             event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-          } else {
-            try {
-              Value result = this->callFunction(closure, {});
-              interval_results_[*intervalIdPtr] = result;
-            } catch (const std::exception &e) {
-              ::havel::error("[interval] Exception: {}", e.what());
-            }
           }
         };
         auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
@@ -2453,17 +2443,12 @@ void VM::registerDefaultHostFunctions() {
         auto closure = args[1];
         auto timeoutIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, timeoutIdPtr]() {
+          // Timer thread: only ever push events. Never call the closure
+          // from here (timer thread != VM thread). If no queue, drop the fire.
           if (event_queue_) {
             auto *payload =
                 new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
             event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
-          } else {
-            try {
-              Value result = this->callFunction(closure, {});
-              timeout_results_[*timeoutIdPtr] = result;
-            } catch (const std::exception &e) {
-              ::havel::error("[timeout] Exception: {}", e.what());
-            }
           }
         };
         auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));

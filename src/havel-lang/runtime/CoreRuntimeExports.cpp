@@ -1,6 +1,7 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include "havel-lang/ffi/FFICall.hpp"
@@ -300,6 +301,9 @@ extern "C" uint64_t havel_vm_call_if_function(void *vm_ptr, uint64_t val_raw) {
 
 extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id) {
   auto *vm = static_cast<VM *>(vm_ptr);
+  if (std::getenv("HCLB_TRACE_GLOBALS")) {
+    fprintf(stderr, "[GGET] name_id=%u\n", name_id);
+  }
   if (!vm) {
     return Value::makeNull().rawBits();
   }
@@ -321,6 +325,10 @@ extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id) {
 
 extern "C" void havel_vm_global_set(void *vm_ptr, uint32_t name_id, uint64_t value) {
   auto *vm = static_cast<VM *>(vm_ptr);
+  if (std::getenv("HCLB_TRACE_GLOBALS")) {
+    fprintf(stderr, "[GSET] name_id=%u val_bits=%llx\n", name_id,
+            static_cast<unsigned long long>(value));
+  }
   if (!vm) {
     return;
   }

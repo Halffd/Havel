@@ -1931,7 +1931,18 @@ case OpCode::LENGTH: {
 
     // Global and upvalue access - critical for closures
     case OpCode::LOAD_GLOBAL: {
-        uint32_t nameId = instr.operands[0].asInt();
+        // The operand is a chunk-local StringValId packing
+        // (chunkId << 31 | stringIndex); the interpreter resolves the low
+        // 31 bits (asStringValId() masks chunkId out) and the Runtime ABI
+        // bridge indexes the owning chunk's string table with it. Reading
+        // the raw asInt() here passed the full 33-bit value for module
+        // chunks, so havel_vm_global_get's bounds check rejected EVERY
+        // global load in module code - compiled module functions saw all
+        // their globals as null (JIT'd getBPTABLE rebuilt the binding
+        // table with null keys every call; getBindingPower then read
+        // BP_NONE for everything and the self-hosted parser broke).
+        const uint32_t nameId =
+            static_cast<uint32_t>(instr.operands[0].asStringValId());
         llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
         if (!fnGet) {
             fnGet = llvm::Function::Create(
@@ -1943,7 +1954,9 @@ case OpCode::LENGTH: {
     }
     case OpCode::STORE_GLOBAL:
     case OpCode::STORE_IMMUT_GLOBAL: {
-        uint32_t nameId = instr.operands[0].asInt();
+        // Same StringValId masking as LOAD_GLOBAL above.
+        const uint32_t nameId =
+            static_cast<uint32_t>(instr.operands[0].asStringValId());
         llvm::Value* v = vstack.back(); vstack.pop_back();
         llvm::Function* fnSet = module.getFunction("havel_vm_global_set");
         if (!fnSet) {

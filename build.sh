@@ -12,81 +12,81 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() {
-    local level=$1
-    local message=$2
-    local color=$3
-    echo -e "${color}[${level}]${NC} ${message}" | tee -a "${BUILD_LOG:-/dev/null}"
+  local level=$1
+  local message=$2
+  local color=$3
+  echo -e "${color}[${level}]${NC} ${message}" | tee -a "${BUILD_LOG:-/dev/null}"
 }
 
 detect_cores() {
-    local cores
-    if cores=$(nproc 2>/dev/null) || cores=$(sysctl -n hw.ncpu 2>/dev/null) || cores=$(grep -c ^processor /proc/cpuinfo 2>/dev/null); then
-        echo "$cores"
-    else
-        echo 4
-    fi
+  local cores
+  if cores=$(nproc 2>/dev/null) || cores=$(sysctl -n hw.ncpu 2>/dev/null) || cores=$(grep -c ^processor /proc/cpuinfo 2>/dev/null); then
+    echo "$cores"
+  else
+    echo 4
+  fi
 }
 
 # Cap automatic build parallel jobs to leave CPU headroom for other work.
 # Users can override with THREADS=N to use all cores or a higher cap.
-MAX_AUTODETECT_THREADS=12
+MAX_AUTODETECT_THREADS=4
 
 detect_libraries() {
-    check_lib() {
-        local lib=$1
-        if pkg-config --exists "$lib" 2>/dev/null; then
-            local version
-            version=$(pkg-config --modversion "$lib" 2>/dev/null || echo "found")
-            echo -e "  ${GREEN}✓${NC} $lib ($version)"
-            return 0
-        else
-            echo -e "  ${RED}✗${NC} $lib (not found)"
-            return 1
-        fi
-    }
+  check_lib() {
+    local lib=$1
+    if pkg-config --exists "$lib" 2>/dev/null; then
+      local version
+      version=$(pkg-config --modversion "$lib" 2>/dev/null || echo "found")
+      echo -e "  ${GREEN}✓${NC} $lib ($version)"
+      return 0
+    else
+      echo -e "  ${RED}✗${NC} $lib (not found)"
+      return 1
+    fi
+  }
 
-    log "INFO" "Detecting system libraries..." "${BLUE}"
-    echo ""
-    echo "Core Dependencies:"
-    check_lib "x11" || true
-    check_lib "xrandr" || true
-    check_lib "xinerama" || true
-    check_lib "xcomposite" || true
-    check_lib "xtst" || true
-    check_lib "xi" || true
-    check_lib "xfixes" || true
-    check_lib "xdamage" || true
-    check_lib "spdlog" || true
-    check_lib "nlohmann_json" || true
-    echo ""
-    echo "Audio/Media:"
-    check_lib "libpulse" || true
-    check_lib "libpipewire-0.3" || true
-    check_lib "alsa" || true
-    echo ""
-    echo "GUI Frameworks:"
-    check_lib "Qt6Core" || check_lib "qt6-base" || true
-    check_lib "gtk-4.0" || true
-    echo ""
-    echo "Additional:"
-    check_lib "lua5.4" || check_lib "lua" || true
-    check_lib "libcurl" || true
-    check_lib "libmpv" || true
-    check_lib "minizip" || true
-    check_lib "libepoxy" || true
-    echo ""
+  log "INFO" "Detecting system libraries..." "${BLUE}"
+  echo ""
+  echo "Core Dependencies:"
+  check_lib "x11" || true
+  check_lib "xrandr" || true
+  check_lib "xinerama" || true
+  check_lib "xcomposite" || true
+  check_lib "xtst" || true
+  check_lib "xi" || true
+  check_lib "xfixes" || true
+  check_lib "xdamage" || true
+  check_lib "spdlog" || true
+  check_lib "nlohmann_json" || true
+  echo ""
+  echo "Audio/Media:"
+  check_lib "libpulse" || true
+  check_lib "libpipewire-0.3" || true
+  check_lib "alsa" || true
+  echo ""
+  echo "GUI Frameworks:"
+  check_lib "Qt6Core" || check_lib "qt6-base" || true
+  check_lib "gtk-4.0" || true
+  echo ""
+  echo "Additional:"
+  check_lib "lua5.4" || check_lib "lua" || true
+  check_lib "libcurl" || true
+  check_lib "libmpv" || true
+  check_lib "minizip" || true
+  check_lib "libepoxy" || true
+  echo ""
 }
 
 detect_llvm() {
-    if command -v llvm-config &>/dev/null; then
-        local llvm_version
-        llvm_version=$(llvm-config --version 2>/dev/null || echo "unknown")
-        log "INFO" "LLVM found: ${llvm_version}" "${GREEN}"
-        return 0
-    else
-        log "INFO" "LLVM not found (JIT disabled)" "${YELLOW}"
-        return 1
-    fi
+  if command -v llvm-config &>/dev/null; then
+    local llvm_version
+    llvm_version=$(llvm-config --version 2>/dev/null || echo "unknown")
+    log "INFO" "LLVM found: ${llvm_version}" "${GREEN}"
+    return 0
+  else
+    log "INFO" "LLVM not found (JIT disabled)" "${YELLOW}"
+    return 1
+  fi
 }
 
 export CC=clang
@@ -103,81 +103,81 @@ ASAN_EXPLICITLY_DISABLED=false
 UBSAN_EXPLICITLY_DISABLED=false
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --asanl|--asan-level)
-            ASAN_LEVEL="${2:-default}"
-            shift 2
-            ;;
-        --asan-full)
-            ASAN_FULL=true
-            shift
-            ;;
-        --fsan|--fsanitize)
-            FSANITIZE_ARGS+=("$2")
-            shift 2
-            ;;
-        --tsan|--enable-tsan)
-            ENABLE_TSAN_FLAG=true
-            shift
-            ;;
-        --ubsan-full)
-            export UBSAN_ALIGNMENT=ON
-            export UBSAN_BOOL=ON
-            export UBSAN_ENUM=ON
-            export UBSAN_FLOAT_CAST_OVERFLOW=ON
-            export UBSAN_FLOAT_DIVIDE_BY_ZERO=ON
-            export UBSAN_FUNCTION=ON
-            export UBSAN_INTEGER=ON
-            export UBSAN_NULL=ON
-            export UBSAN_POINTER_OVERFLOW=ON
-            export UBSAN_RETURN=ON
-            export UBSAN_SHIFT=ON
-            export UBSAN_SIGNED_INTEGER_OVERFLOW=ON
-            export UBSAN_UNREACHABLE=ON
-            export UBSAN_VLA_BOUND=ON
-            export UBSAN_ABORT_ON_ERROR=ON
-            shift
-            ;;
-        --no-asan)
-            ASAN_EXPLICITLY_DISABLED=true
-            export ASAN_DETECT_LEAKS=OFF
-            export ASAN_DETECT_ODR_VIOLATION=OFF
-            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
-            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
-            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
-            export ASAN_ABORT_ON_ERROR=OFF
-            shift
-            ;;
-        --no-ubsan)
-            UBSAN_EXPLICITLY_DISABLED=true
-            export UBSAN_ABORT_ON_ERROR=OFF
-            export UBSAN_ALIGNMENT=OFF
-            export UBSAN_BOOL=OFF
-            export UBSAN_ENUM=OFF
-            export UBSAN_FLOAT_CAST_OVERFLOW=OFF
-            export UBSAN_FLOAT_DIVIDE_BY_ZERO=OFF
-            export UBSAN_FUNCTION=OFF
-            export UBSAN_INTEGER=OFF
-            export UBSAN_NULL=OFF
-            export UBSAN_POINTER_OVERFLOW=OFF
-            export UBSAN_RETURN=OFF
-            export UBSAN_SHIFT=OFF
-            export UBSAN_SIGNED_INTEGER_OVERFLOW=OFF
-            export UBSAN_UNREACHABLE=OFF
-            export UBSAN_VLA_BOUND=OFF
-            shift
-            ;;
-        *)
-            break
-            ;;
-    esac
+  case "$1" in
+  --asanl | --asan-level)
+    ASAN_LEVEL="${2:-default}"
+    shift 2
+    ;;
+  --asan-full)
+    ASAN_FULL=true
+    shift
+    ;;
+  --fsan | --fsanitize)
+    FSANITIZE_ARGS+=("$2")
+    shift 2
+    ;;
+  --tsan | --enable-tsan)
+    ENABLE_TSAN_FLAG=true
+    shift
+    ;;
+  --ubsan-full)
+    export UBSAN_ALIGNMENT=ON
+    export UBSAN_BOOL=ON
+    export UBSAN_ENUM=ON
+    export UBSAN_FLOAT_CAST_OVERFLOW=ON
+    export UBSAN_FLOAT_DIVIDE_BY_ZERO=ON
+    export UBSAN_FUNCTION=ON
+    export UBSAN_INTEGER=ON
+    export UBSAN_NULL=ON
+    export UBSAN_POINTER_OVERFLOW=ON
+    export UBSAN_RETURN=ON
+    export UBSAN_SHIFT=ON
+    export UBSAN_SIGNED_INTEGER_OVERFLOW=ON
+    export UBSAN_UNREACHABLE=ON
+    export UBSAN_VLA_BOUND=ON
+    export UBSAN_ABORT_ON_ERROR=ON
+    shift
+    ;;
+  --no-asan)
+    ASAN_EXPLICITLY_DISABLED=true
+    export ASAN_DETECT_LEAKS=OFF
+    export ASAN_DETECT_ODR_VIOLATION=OFF
+    export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+    export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+    export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+    export ASAN_ABORT_ON_ERROR=OFF
+    shift
+    ;;
+  --no-ubsan)
+    UBSAN_EXPLICITLY_DISABLED=true
+    export UBSAN_ABORT_ON_ERROR=OFF
+    export UBSAN_ALIGNMENT=OFF
+    export UBSAN_BOOL=OFF
+    export UBSAN_ENUM=OFF
+    export UBSAN_FLOAT_CAST_OVERFLOW=OFF
+    export UBSAN_FLOAT_DIVIDE_BY_ZERO=OFF
+    export UBSAN_FUNCTION=OFF
+    export UBSAN_INTEGER=OFF
+    export UBSAN_NULL=OFF
+    export UBSAN_POINTER_OVERFLOW=OFF
+    export UBSAN_RETURN=OFF
+    export UBSAN_SHIFT=OFF
+    export UBSAN_SIGNED_INTEGER_OVERFLOW=OFF
+    export UBSAN_UNREACHABLE=OFF
+    export UBSAN_VLA_BOUND=OFF
+    shift
+    ;;
+  *)
+    break
+    ;;
+  esac
 done
 
 if [[ $# -eq 0 ]] || [[ "$1" =~ ^(build|clean|rebuild|run|test|all|detect|info|help|--help|-h)$ ]]; then
-    BUILD_MODE=6
+  BUILD_MODE=6
 else
-    BUILD_MODE=$1
-    shift
+  BUILD_MODE=$1
+  shift
 fi
 
 BUILD_TYPE="Release"
@@ -186,12 +186,12 @@ LOG_DIR="logs"
 # Auto-detect parallel build jobs, capped to MAX_AUTODETECT_THREADS to leave
 # CPU headroom. An explicit THREADS env var is never capped.
 if [[ -z "${THREADS:-}" ]]; then
-    auto_cores=$(detect_cores)
-    if [[ "$auto_cores" -gt "$MAX_AUTODETECT_THREADS" ]]; then
-        THREADS="$MAX_AUTODETECT_THREADS"
-    else
-        THREADS="$auto_cores"
-    fi
+  auto_cores=$(detect_cores)
+  if [[ "$auto_cores" -gt "$MAX_AUTODETECT_THREADS" ]]; then
+    THREADS="$MAX_AUTODETECT_THREADS"
+  else
+    THREADS="$auto_cores"
+  fi
 fi
 
 declare -A BUILD_CONFIGS=(
@@ -215,79 +215,82 @@ declare -A BUILD_CONFIGS=(
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
-    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS ENABLE_TSAN ENABLE_HVDB ENABLE_HAVEL_DAP ENABLE_HVTEST BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
-    # Allow environment variables to override config defaults
-    [[ -n "${ENABLE_HVDB_ENV:-}" ]] && ENABLE_HVDB="${ENABLE_HVDB_ENV}"
-    [[ -n "${ENABLE_HAVEL_DAP_ENV:-}" ]] && ENABLE_HAVEL_DAP="${ENABLE_HAVEL_DAP_ENV}"
-    [[ -n "${ENABLE_HVTEST_ENV:-}" ]] && ENABLE_HVTEST="${ENABLE_HVTEST_ENV}"
-    if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
-        log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
-        ENABLE_HAVEL_LANG="ON"
-    fi
+  IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS ENABLE_TSAN ENABLE_HVDB ENABLE_HAVEL_DAP ENABLE_HVTEST BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
+  # Allow environment variables to override config defaults
+  [[ -n "${ENABLE_HVDB_ENV:-}" ]] && ENABLE_HVDB="${ENABLE_HVDB_ENV}"
+  [[ -n "${ENABLE_HAVEL_DAP_ENV:-}" ]] && ENABLE_HAVEL_DAP="${ENABLE_HAVEL_DAP_ENV}"
+  [[ -n "${ENABLE_HVTEST_ENV:-}" ]] && ENABLE_HVTEST="${ENABLE_HVTEST_ENV}"
+  if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
+    log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
+    ENABLE_HAVEL_LANG="ON"
+  fi
 else
-    log "ERROR" "Invalid build mode: $BUILD_MODE" "${RED}"
-    echo "Valid modes: ${!BUILD_CONFIGS[@]}"
-    exit 1
+  log "ERROR" "Invalid build mode: $BUILD_MODE" "${RED}"
+  echo "Valid modes: ${!BUILD_CONFIGS[@]}"
+  exit 1
 fi
 
 # Apply ASAN level flags (unless explicitly disabled)
 if [[ "$ASAN_EXPLICITLY_DISABLED" != "true" ]]; then
-    case "$ASAN_LEVEL" in
-        none|off)
-            export ASAN_DETECT_LEAKS=OFF
-            export ASAN_DETECT_ODR_VIOLATION=OFF
-            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
-            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
-            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
-            export ASAN_ABORT_ON_ERROR=OFF
-            ;;
-        minimal)
-            export ASAN_DETECT_LEAKS=ON
-            export ASAN_DETECT_ODR_VIOLATION=ON
-            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
-            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
-            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
-            export ASAN_ABORT_ON_ERROR=OFF
-            ;;
-        default|standard)
-            export ASAN_DETECT_LEAKS=ON
-            export ASAN_DETECT_ODR_VIOLATION=ON
-            export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
-            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
-            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
-            export ASAN_ABORT_ON_ERROR=OFF
-            ;;
-        full|strict)
-            export ASAN_DETECT_LEAKS=ON
-            export ASAN_DETECT_ODR_VIOLATION=ON
-            export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
-            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
-            export ASAN_ALLOCATOR_MAY_RETURN_NULL=ON
-            export ASAN_ABORT_ON_ERROR=ON
-            ;;
-    esac
-fi
-
-# ASAN full preset
-if [[ "$ASAN_FULL" == "true" ]]; then
+  case "$ASAN_LEVEL" in
+  none | off)
+    export ASAN_DETECT_LEAKS=OFF
+    export ASAN_DETECT_ODR_VIOLATION=OFF
+    export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+    export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+    export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+    export ASAN_ABORT_ON_ERROR=OFF
+    ;;
+  minimal)
+    export ASAN_DETECT_LEAKS=ON
+    export ASAN_DETECT_ODR_VIOLATION=ON
+    export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+    export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+    export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+    export ASAN_ABORT_ON_ERROR=OFF
+    ;;
+  default | standard)
+    export ASAN_DETECT_LEAKS=ON
+    export ASAN_DETECT_ODR_VIOLATION=ON
+    export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+    export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+    export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+    export ASAN_ABORT_ON_ERROR=OFF
+    ;;
+  full | strict)
     export ASAN_DETECT_LEAKS=ON
     export ASAN_DETECT_ODR_VIOLATION=ON
     export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
     export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
     export ASAN_ALLOCATOR_MAY_RETURN_NULL=ON
     export ASAN_ABORT_ON_ERROR=ON
+    ;;
+  esac
+fi
+
+# ASAN full preset
+if [[ "$ASAN_FULL" == "true" ]]; then
+  export ASAN_DETECT_LEAKS=ON
+  export ASAN_DETECT_ODR_VIOLATION=ON
+  export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+  export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+  export ASAN_ALLOCATOR_MAY_RETURN_NULL=ON
+  export ASAN_ABORT_ON_ERROR=ON
 fi
 
 # Additional fsanitize args
 if [[ ${#FSANITIZE_ARGS[@]} -gt 0 ]]; then
-    # Join with commas for CMake
-    FSAN_JOINED=$(IFS=,; echo "${FSANITIZE_ARGS[*]}")
-    export EXTRA_SANITIZERS="$FSAN_JOINED"
+  # Join with commas for CMake
+  FSAN_JOINED=$(
+    IFS=,
+    echo "${FSANITIZE_ARGS[*]}"
+  )
+  export EXTRA_SANITIZERS="$FSAN_JOINED"
 fi
 
 # TSAN flag
 if [[ "$ENABLE_TSAN_FLAG" == "true" ]]; then
-    ENABLE_TSAN="ON"
+  ENABLE_TSAN="ON"
 fi
 
 BUILD_LOG="${LOG_DIR}/build-mode${BUILD_MODE}-${BUILD_TYPE,,}.log"
@@ -317,13 +320,13 @@ UBSAN_UNREACHABLE=${UBSAN_UNREACHABLE:-ON}
 UBSAN_VLA_BOUND=${UBSAN_VLA_BOUND:-ON}
 
 show_config() {
-    log "INFO" "=== BUILD CONFIGURATION ===" "${BLUE}"
-    log "INFO" "Mode: ${BUILD_MODE}" "${BLUE}"
-    log "INFO" "Type: ${BUILD_TYPE}" "${BLUE}"
-    log "INFO" "Threads: ${THREADS}" "${BLUE}"
-    log "INFO" "Build Dir: ${SCRIPT_DIR}/${BUILD_DIR}" "${BLUE}"
-    log "INFO" "Source Dir: ${SCRIPT_DIR}" "${BLUE}"
-    echo ""
+  log "INFO" "=== BUILD CONFIGURATION ===" "${BLUE}"
+  log "INFO" "Mode: ${BUILD_MODE}" "${BLUE}"
+  log "INFO" "Type: ${BUILD_TYPE}" "${BLUE}"
+  log "INFO" "Threads: ${THREADS}" "${BLUE}"
+  log "INFO" "Build Dir: ${SCRIPT_DIR}/${BUILD_DIR}" "${BLUE}"
+  log "INFO" "Source Dir: ${SCRIPT_DIR}" "${BLUE}"
+  echo ""
   log "INFO" "Features:" "${CYAN}"
   log "INFO" " Tests: $([[ "$ENABLE_TESTS" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
   log "INFO" " Havel Lang: $([[ "$ENABLE_HAVEL_LANG" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
@@ -349,50 +352,50 @@ show_config() {
 }
 
 detect() {
-    log "INFO" "=== SYSTEM DETECTION ===" "${BLUE}"
-    echo ""
-    log "INFO" "CPU Cores: $(nproc 2>/dev/null || echo unknown)" "${BLUE}"
-    log "INFO" "Memory: $(free -h 2>/dev/null | awk '/^Mem:/ {print $2}' || echo unknown)" "${BLUE}"
-    echo ""
-    detect_llvm || true
-    echo ""
-    detect_libraries
+  log "INFO" "=== SYSTEM DETECTION ===" "${BLUE}"
+  echo ""
+  log "INFO" "CPU Cores: $(nproc 2>/dev/null || echo unknown)" "${BLUE}"
+  log "INFO" "Memory: $(free -h 2>/dev/null | awk '/^Mem:/ {print $2}' || echo unknown)" "${BLUE}"
+  echo ""
+  detect_llvm || true
+  echo ""
+  detect_libraries
 }
 
 clean() {
-    log "INFO" "Cleaning ${BUILD_DIR}..." "${YELLOW}"
-    rm -rf "${SCRIPT_DIR:?}/${BUILD_DIR}"
-    rm -f "${BUILD_LOG}"
+  log "INFO" "Cleaning ${BUILD_DIR}..." "${YELLOW}"
+  rm -rf "${SCRIPT_DIR:?}/${BUILD_DIR}"
+  rm -f "${BUILD_LOG}"
 }
 
 build() {
-    show_config
-    log "INFO" "Building in ${BUILD_TYPE} mode with ${THREADS} threads..." "${BLUE}"
-    mkdir -p "${SCRIPT_DIR}/${BUILD_DIR}"
+  show_config
+  log "INFO" "Building in ${BUILD_TYPE} mode with ${THREADS} threads..." "${BLUE}"
+  mkdir -p "${SCRIPT_DIR}/${BUILD_DIR}"
 
-    local cmake_cmd="cmake -B ${SCRIPT_DIR}/${BUILD_DIR}"
-    cmake_cmd+=" -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
-    cmake_cmd+=" -DCMAKE_C_COMPILER=clang"
-    cmake_cmd+=" -DCMAKE_CXX_COMPILER=clang++"
-    cmake_cmd+=" -DUSE_CLANG=ON"
-    cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
-    if [[ "$ENABLE_LLVM" == "ON" ]]; then
-        llvm_bin_dir="$(llvm-config --bindir 2>/dev/null || echo "/usr/bin")"
-        llvm_base_dir="$(llvm-config --prefix 2>/dev/null || echo "/usr")"
-        cmake_cmd+=" -DLLVM_DIR=$llvm_base_dir/lib/cmake/llvm \
+  local cmake_cmd="cmake -B ${SCRIPT_DIR}/${BUILD_DIR}"
+  cmake_cmd+=" -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+  cmake_cmd+=" -DCMAKE_C_COMPILER=clang"
+  cmake_cmd+=" -DCMAKE_CXX_COMPILER=clang++"
+  cmake_cmd+=" -DUSE_CLANG=ON"
+  cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
+  if [[ "$ENABLE_LLVM" == "ON" ]]; then
+    llvm_bin_dir="$(llvm-config --bindir 2>/dev/null || echo "/usr/bin")"
+    llvm_base_dir="$(llvm-config --prefix 2>/dev/null || echo "/usr")"
+    cmake_cmd+=" -DLLVM_DIR=$llvm_base_dir/lib/cmake/llvm \
         -DCMAKE_C_COMPILER=$llvm_base_dir/bin/clang \
         -DCMAKE_CXX_COMPILER=$llvm_base_dir/bin/clang++ \
         -DCMAKE_LINKER=$llvm_base_dir/bin/ld.lld"
-    fi
+  fi
   cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
-	cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
-	cmake_cmd+=" -DENABLE_HVDB=${ENABLE_HVDB:-ON}"
-	cmake_cmd+=" -DENABLE_HAVEL_DAP=${ENABLE_HAVEL_DAP:-ON}"
-	cmake_cmd+=" -DENABLE_HVTEST=${ENABLE_HVTEST:-ON}"
-	if [[ "$ENABLE_HAVEL_LANG" == "ON" ]]; then
-		cmake_cmd+=" -DENABLE_MODULE_PLUGINS=ON"
-	fi
-	cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
+  cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
+  cmake_cmd+=" -DENABLE_HVDB=${ENABLE_HVDB:-ON}"
+  cmake_cmd+=" -DENABLE_HAVEL_DAP=${ENABLE_HAVEL_DAP:-ON}"
+  cmake_cmd+=" -DENABLE_HVTEST=${ENABLE_HVTEST:-ON}"
+  if [[ "$ENABLE_HAVEL_LANG" == "ON" ]]; then
+    cmake_cmd+=" -DENABLE_MODULE_PLUGINS=ON"
+  fi
+  cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
   if [[ "$ENABLE_HEADLESS" == "ON" ]]; then
     cmake_cmd+=" -DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF"
   fi
@@ -423,125 +426,125 @@ build() {
     cmake_cmd+=" -DUBSAN_UNREACHABLE=${UBSAN_UNREACHABLE}"
     cmake_cmd+=" -DUBSAN_VLA_BOUND=${UBSAN_VLA_BOUND}"
     if [[ -n "${EXTRA_SANITIZERS:-}" ]]; then
-        cmake_cmd+=" -DEXTRA_SANITIZERS=${EXTRA_SANITIZERS}"
+      cmake_cmd+=" -DEXTRA_SANITIZERS=${EXTRA_SANITIZERS}"
     fi
   fi
   cmake_cmd+=" ${SCRIPT_DIR}"
 
-    log "INFO" "CMake command: ${cmake_cmd}" "${YELLOW}"
+  log "INFO" "CMake command: ${cmake_cmd}" "${YELLOW}"
 
-    if ! eval "${cmake_cmd}" 2>&1 | tee -a "${BUILD_LOG}"; then
-        log "ERROR" "CMake configuration failed" "${RED}"
-        exit 1
+  if ! eval "${cmake_cmd}" 2>&1 | tee -a "${BUILD_LOG}"; then
+    log "ERROR" "CMake configuration failed" "${RED}"
+    exit 1
+  fi
+
+  if ! cmake --build "${SCRIPT_DIR}/${BUILD_DIR}" -j"${THREADS}" 2>&1 | tee -a "${BUILD_LOG}"; then
+    log "ERROR" "Build failed" "${RED}"
+    exit 1
+  fi
+
+  log "SUCCESS" "Build completed successfully" "${GREEN}"
+
+  # Build native gamma ramp library for FFI-based brightness module
+  local gamma_ramp_c="${SCRIPT_DIR}/modules/app/gamma_ramp.c"
+  local gamma_ramp_so="${SCRIPT_DIR}/modules/app/libgamma_ramp.so"
+  if [[ -f "$gamma_ramp_c" ]]; then
+    log "INFO" "Building native gamma ramp library..." "${BLUE}"
+    if gcc -O2 -shared -fPIC -o "$gamma_ramp_so" "$gamma_ramp_c" -lm 2>/dev/null; then
+      log "INFO" "  → libgamma_ramp.so built" "${GREEN}"
+    else
+      log "WARNING" "  → Failed to build libgamma_ramp.so (fallback: Havel loop)" "${YELLOW}"
     fi
+  fi
 
-    if ! cmake --build "${SCRIPT_DIR}/${BUILD_DIR}" -j"${THREADS}" 2>&1 | tee -a "${BUILD_LOG}"; then
-        log "ERROR" "Build failed" "${RED}"
-        exit 1
+  # Build self-hosted pipeline modules (bytecode cache at ~/.cache/havel,
+  # source mirrors in out/modules/{lang,std})
+  local emit_script="${SCRIPT_DIR}/emit_pipeline.sh"
+  local havel_bin="${SCRIPT_DIR}/${BUILD_DIR}/havel"
+  if [[ -f "$emit_script" && -x "$havel_bin" ]]; then
+    log "INFO" "Building self-hosted pipeline modules..." "${BLUE}"
+    if bash "$emit_script" "$havel_bin" 2>&1; then
+      log "INFO" "  → Self-hosted pipeline built" "${GREEN}"
+    else
+      log "WARNING" "  → Self-hosted pipeline build failed (fallback: C++ pipeline)" "${YELLOW}"
     fi
-
-    log "SUCCESS" "Build completed successfully" "${GREEN}"
-
-    # Build native gamma ramp library for FFI-based brightness module
-    local gamma_ramp_c="${SCRIPT_DIR}/modules/app/gamma_ramp.c"
-    local gamma_ramp_so="${SCRIPT_DIR}/modules/app/libgamma_ramp.so"
-    if [[ -f "$gamma_ramp_c" ]]; then
-        log "INFO" "Building native gamma ramp library..." "${BLUE}"
-        if gcc -O2 -shared -fPIC -o "$gamma_ramp_so" "$gamma_ramp_c" -lm 2>/dev/null; then
-            log "INFO" "  → libgamma_ramp.so built" "${GREEN}"
-        else
-            log "WARNING" "  → Failed to build libgamma_ramp.so (fallback: Havel loop)" "${YELLOW}"
-        fi
-    fi
-
-    # Build self-hosted pipeline modules (bytecode cache at ~/.cache/havel,
-    # source mirrors in out/modules/{lang,std})
-    local emit_script="${SCRIPT_DIR}/emit_pipeline.sh"
-    local havel_bin="${SCRIPT_DIR}/${BUILD_DIR}/havel"
-    if [[ -f "$emit_script" && -x "$havel_bin" ]]; then
-        log "INFO" "Building self-hosted pipeline modules..." "${BLUE}"
-        if bash "$emit_script" "$havel_bin" 2>&1; then
-            log "INFO" "  → Self-hosted pipeline built" "${GREEN}"
-        else
-            log "WARNING" "  → Self-hosted pipeline build failed (fallback: C++ pipeline)" "${YELLOW}"
-        fi
-    fi
+  fi
 }
 
 run() {
-    local executable="${SCRIPT_DIR}/${BUILD_DIR}/havel"
-    if [[ ! -f "$executable" ]]; then
-        log "ERROR" "Executable not found: ${executable}" "${RED}"
-        exit 1
-    fi
-    log "INFO" "Running ${executable}..." "${YELLOW}"
-    "${executable}" "$@"
+  local executable="${SCRIPT_DIR}/${BUILD_DIR}/havel"
+  if [[ ! -f "$executable" ]]; then
+    log "ERROR" "Executable not found: ${executable}" "${RED}"
+    exit 1
+  fi
+  log "INFO" "Running ${executable}..." "${YELLOW}"
+  "${executable}" "$@"
 }
 
 test_suite() {
-    if [[ "$ENABLE_TESTS" != "ON" ]]; then
-        log "ERROR" "Tests disabled in mode ${BUILD_MODE}" "${RED}"
-        exit 1
+  if [[ "$ENABLE_TESTS" != "ON" ]]; then
+    log "ERROR" "Tests disabled in mode ${BUILD_MODE}" "${RED}"
+    exit 1
+  fi
+  log "INFO" "Running tests..." "${BLUE}"
+  local pass_count=0
+  local fail_count=0
+  local test_count=0
+
+  # Run CTest (C++ unit tests)
+  log "INFO" "Running CTest..." "${YELLOW}"
+  if ctest --test-dir "${SCRIPT_DIR}/${BUILD_DIR}" --output-on-failure 2>&1 | tee -a "${BUILD_LOG}"; then
+    ((pass_count += 1))
+  else
+    ((fail_count += 1))
+  fi
+  ((test_count += 1))
+
+  # Run smoke tests via havel (no-self-hosted to avoid self-hosted pipeline hang)
+  log "INFO" "Running script smoke tests..." "${YELLOW}"
+  local smoke_tests=(
+    "${SCRIPT_DIR}/scripts/smoke/arithmetic_add.hv"
+    "${SCRIPT_DIR}/scripts/smoke/arithmetic_sub.hv"
+    "${SCRIPT_DIR}/scripts/smoke/arithmetic_mul.hv"
+    "${SCRIPT_DIR}/scripts/smoke/arithmetic_div.hv"
+  )
+  for test_file in "${smoke_tests[@]}"; do
+    if [[ -f "$test_file" ]]; then
+      log "INFO" "Running $(basename "$test_file")..." "${YELLOW}"
+      if "${SCRIPT_DIR}/${BUILD_DIR}/havel" --no-self-hosted "$test_file" 2>&1 | grep -q "FAIL"; then
+        log "ERROR" "FAIL: $(basename "$test_file")" "${RED}"
+        ((fail_count += 1))
+      else
+        log "INFO" "PASS: $(basename "$test_file")" "${GREEN}"
+        ((pass_count += 1))
+      fi
+      ((test_count += 1))
     fi
-    log "INFO" "Running tests..." "${BLUE}"
-    local pass_count=0
-    local fail_count=0
-    local test_count=0
-    
-    # Run CTest (C++ unit tests)
-    log "INFO" "Running CTest..." "${YELLOW}"
-    if ctest --test-dir "${SCRIPT_DIR}/${BUILD_DIR}" --output-on-failure 2>&1 | tee -a "${BUILD_LOG}"; then
-        ((pass_count+=1))
-    else
-        ((fail_count+=1))
-    fi
-    ((test_count+=1))
-    
-    # Run smoke tests via havel (no-self-hosted to avoid self-hosted pipeline hang)
-    log "INFO" "Running script smoke tests..." "${YELLOW}"
-    local smoke_tests=(
-        "${SCRIPT_DIR}/scripts/smoke/arithmetic_add.hv"
-        "${SCRIPT_DIR}/scripts/smoke/arithmetic_sub.hv"
-        "${SCRIPT_DIR}/scripts/smoke/arithmetic_mul.hv"
-        "${SCRIPT_DIR}/scripts/smoke/arithmetic_div.hv"
-    )
-    for test_file in "${smoke_tests[@]}"; do
-        if [[ -f "$test_file" ]]; then
-            log "INFO" "Running $(basename "$test_file")..." "${YELLOW}"
-            if "${SCRIPT_DIR}/${BUILD_DIR}/havel" --no-self-hosted "$test_file" 2>&1 | grep -q "FAIL"; then
-                log "ERROR" "FAIL: $(basename "$test_file")" "${RED}"
-                ((fail_count+=1))
-            else
-                log "INFO" "PASS: $(basename "$test_file")" "${GREEN}"
-                ((pass_count+=1))
-            fi
-            ((test_count+=1))
-        fi
-    done
-    
-    if [[ $test_count -eq 0 ]]; then
-        log "WARNING" "No test executables found" "${YELLOW}"
-    else
-        log "INFO" "Tests: ${pass_count} passed, ${fail_count} failed (${test_count} total)" "${GREEN}"
-    fi
+  done
+
+  if [[ $test_count -eq 0 ]]; then
+    log "WARNING" "No test executables found" "${YELLOW}"
+  else
+    log "INFO" "Tests: ${pass_count} passed, ${fail_count} failed (${test_count} total)" "${GREEN}"
+  fi
 }
 
 usage() {
-    echo -e "${CYAN}havel build system${NC}"
-    echo ""
-    echo -e "${YELLOW}Usage:${NC} $0 [mode] [commands...]"
-    echo ""
-    echo -e "${YELLOW}Modes:${NC}"
-    echo "  0    Debug  + Tests + Havel Lang + LLVM"
-    echo "  1    Release + no Tests + no Havel Lang + LLVM"
-    echo "  2    Debug  + no Tests + Havel Lang + LLVM"
-    echo "  3    Debug  + no Tests + no Havel Lang + no LLVM"
-    echo -e "  4    Debug  + Tests + Havel Lang + no LLVM"
-    echo "  5    Release + Tests + Havel Lang + LLVM"
-    echo -e "  6    Debug  + Tests + Havel Lang + no LLVM     ${GREEN}← default${NC}"
-    echo "  7    Release + no Tests + no Havel Lang + no LLVM"
-    echo "  8    Debug  + no Tests + Havel Lang + no LLVM"
-    echo "  9    Release + Tests + Havel Lang + no LLVM"
+  echo -e "${CYAN}havel build system${NC}"
+  echo ""
+  echo -e "${YELLOW}Usage:${NC} $0 [mode] [commands...]"
+  echo ""
+  echo -e "${YELLOW}Modes:${NC}"
+  echo "  0    Debug  + Tests + Havel Lang + LLVM"
+  echo "  1    Release + no Tests + no Havel Lang + LLVM"
+  echo "  2    Debug  + no Tests + Havel Lang + LLVM"
+  echo "  3    Debug  + no Tests + no Havel Lang + no LLVM"
+  echo -e "  4    Debug  + Tests + Havel Lang + no LLVM"
+  echo "  5    Release + Tests + Havel Lang + LLVM"
+  echo -e "  6    Debug  + Tests + Havel Lang + no LLVM     ${GREEN}← default${NC}"
+  echo "  7    Release + no Tests + no Havel Lang + no LLVM"
+  echo "  8    Debug  + no Tests + Havel Lang + no LLVM"
+  echo "  9    Release + Tests + Havel Lang + no LLVM"
   echo " 10 Debug + no Tests + Havel Lang + LLVM (build/)"
   echo " 11 Release + no Tests + Havel Lang + LLVM (build/)"
   echo ""
@@ -550,92 +553,111 @@ usage() {
   echo " 13 Release + no Tests + Havel Lang + no LLVM + Headless"
   echo " 14 Debug + no Tests + Havel Lang + no LLVM + Headless"
   echo " 15 Release + Tests + Havel Lang + no LLVM + Headless"
-    echo ""
-    echo -e "${YELLOW}Commands:${NC}"
-    echo "  build      Configure and build"
-    echo "  clean      Remove build directory"
-    echo "  rebuild    clean + build"
-    echo "  run        Run the havel executable"
-    echo "  test       Run test suite"
-    echo "  all        clean + build + run"
-    echo "  detect     Detect system libraries and LLVM"
-    echo "  info       Show build configuration"
-    echo ""
-    echo -e "${YELLOW}Options:${NC}"
-    echo "  -h, --help   Show this help"
-    echo ""
-    echo -e "${YELLOW}Environment:${NC}"
-    echo "  THREADS=N           Parallel build jobs (default: auto, capped at $(MAX_AUTODETECT_THREADS))"
-    echo ""
-    echo -e "${YELLOW}ASAN/UBSAN Flags:${NC}"
-    echo "  --asanl, --asan-level LEVEL    ASAN level: none|minimal|default|full|strict"
-    echo "  --asan-full                    Enable all ASAN checks (strict preset)"
-    echo "  --fsanitize, --fsan SANITIZERS  Extra sanitizers (comma-separated: address,undefined,thread,memory)"
-    echo "  --tsan, --enable-tsan          Enable ThreadSanitizer"
-    echo "  --ubsan-full                   Enable all UBSAN checks"
-    echo "  --no-asan                      Disable all ASAN checks"
-    echo "  --no-ubsan                     Disable all UBSAN checks"
-    echo ""
-    echo -e "${YELLOW}ASAN/UBSAN Environment (Debug builds only):${NC}"
-    echo "  ASAN_DETECT_LEAKS=ON|OFF"
-    echo "  ASAN_DETECT_ODR_VIOLATION=ON|OFF"
-    echo "  ASAN_DETECT_STACK_USE_AFTER_RETURN=ON|OFF"
-    echo "  ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON|OFF"
-    echo "  ASAN_ALLOCATOR_MAY_RETURN_NULL=ON|OFF"
-    echo "  ASAN_ABORT_ON_ERROR=ON|OFF"
-    echo "  UBSAN_ABORT_ON_ERROR=ON|OFF"
-    echo "  UBSAN_ALIGNMENT=ON|OFF"
-    echo "  UBSAN_BOOL=ON|OFF"
-    echo "  UBSAN_ENUM=ON|OFF"
-    echo "  UBSAN_FLOAT_CAST_OVERFLOW=ON|OFF"
-    echo "  UBSAN_FLOAT_DIVIDE_BY_ZERO=ON|OFF"
-    echo "  UBSAN_FUNCTION=ON|OFF"
-    echo "  UBSAN_INTEGER=ON|OFF"
-    echo "  UBSAN_NULL=ON|OFF"
-    echo "  UBSAN_POINTER_OVERFLOW=ON|OFF"
-    echo "  UBSAN_RETURN=ON|OFF"
-    echo "  UBSAN_SHIFT=ON|OFF"
-    echo "  UBSAN_SIGNED_INTEGER_OVERFLOW=ON|OFF"
-    echo "  UBSAN_UNREACHABLE=ON|OFF"
-    echo "  UBSAN_VLA_BOUND=ON|OFF"
-    echo "  ENABLE_TSAN=ON       Enable ThreadSanitizer (mode 16)"
-    echo ""
-    echo -e "${YELLOW}Runtime (ASAN_OPTIONS):${NC}"
-    echo "  ASAN_OPTIONS=halt_on_error=1:detect_leaks=0:allocator_may_return_null=1"
-    echo ""
-    echo -e "${YELLOW}Examples:${NC}"
-    echo "  $0                 # mode 6 debug build (default)"
-    echo "  $0 build           # mode 6 debug build"
-    echo "  $0 rebuild         # clean + build mode 6"
-    echo "  $0 6 clean build   # explicit mode 6"
-    echo "  $0 9 build         # release no LLVM"
+  echo ""
+  echo -e "${YELLOW}Commands:${NC}"
+  echo "  build      Configure and build"
+  echo "  clean      Remove build directory"
+  echo "  rebuild    clean + build"
+  echo "  run        Run the havel executable"
+  echo "  test       Run test suite"
+  echo "  all        clean + build + run"
+  echo "  detect     Detect system libraries and LLVM"
+  echo "  info       Show build configuration"
+  echo ""
+  echo -e "${YELLOW}Options:${NC}"
+  echo "  -h, --help   Show this help"
+  echo ""
+  echo -e "${YELLOW}Environment:${NC}"
+  echo "  THREADS=N           Parallel build jobs (default: auto, capped at $(MAX_AUTODETECT_THREADS))"
+  echo ""
+  echo -e "${YELLOW}ASAN/UBSAN Flags:${NC}"
+  echo "  --asanl, --asan-level LEVEL    ASAN level: none|minimal|default|full|strict"
+  echo "  --asan-full                    Enable all ASAN checks (strict preset)"
+  echo "  --fsanitize, --fsan SANITIZERS  Extra sanitizers (comma-separated: address,undefined,thread,memory)"
+  echo "  --tsan, --enable-tsan          Enable ThreadSanitizer"
+  echo "  --ubsan-full                   Enable all UBSAN checks"
+  echo "  --no-asan                      Disable all ASAN checks"
+  echo "  --no-ubsan                     Disable all UBSAN checks"
+  echo ""
+  echo -e "${YELLOW}ASAN/UBSAN Environment (Debug builds only):${NC}"
+  echo "  ASAN_DETECT_LEAKS=ON|OFF"
+  echo "  ASAN_DETECT_ODR_VIOLATION=ON|OFF"
+  echo "  ASAN_DETECT_STACK_USE_AFTER_RETURN=ON|OFF"
+  echo "  ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON|OFF"
+  echo "  ASAN_ALLOCATOR_MAY_RETURN_NULL=ON|OFF"
+  echo "  ASAN_ABORT_ON_ERROR=ON|OFF"
+  echo "  UBSAN_ABORT_ON_ERROR=ON|OFF"
+  echo "  UBSAN_ALIGNMENT=ON|OFF"
+  echo "  UBSAN_BOOL=ON|OFF"
+  echo "  UBSAN_ENUM=ON|OFF"
+  echo "  UBSAN_FLOAT_CAST_OVERFLOW=ON|OFF"
+  echo "  UBSAN_FLOAT_DIVIDE_BY_ZERO=ON|OFF"
+  echo "  UBSAN_FUNCTION=ON|OFF"
+  echo "  UBSAN_INTEGER=ON|OFF"
+  echo "  UBSAN_NULL=ON|OFF"
+  echo "  UBSAN_POINTER_OVERFLOW=ON|OFF"
+  echo "  UBSAN_RETURN=ON|OFF"
+  echo "  UBSAN_SHIFT=ON|OFF"
+  echo "  UBSAN_SIGNED_INTEGER_OVERFLOW=ON|OFF"
+  echo "  UBSAN_UNREACHABLE=ON|OFF"
+  echo "  UBSAN_VLA_BOUND=ON|OFF"
+  echo "  ENABLE_TSAN=ON       Enable ThreadSanitizer (mode 16)"
+  echo ""
+  echo -e "${YELLOW}Runtime (ASAN_OPTIONS):${NC}"
+  echo "  ASAN_OPTIONS=halt_on_error=1:detect_leaks=0:allocator_may_return_null=1"
+  echo ""
+  echo -e "${YELLOW}Examples:${NC}"
+  echo "  $0                 # mode 6 debug build (default)"
+  echo "  $0 build           # mode 6 debug build"
+  echo "  $0 rebuild         # clean + build mode 6"
+  echo "  $0 6 clean build   # explicit mode 6"
+  echo "  $0 9 build         # release no LLVM"
   echo " $0 0 rebuild # full debug with LLVM"
   echo " $0 12 build # headless debug (no Qt)"
-    echo "  THREADS=4 $0 build # 4 threads"
-    echo ""
-    echo -e "${YELLOW}Logs:${NC} ${LOG_DIR}/build-mode[X]-[type].log"
-    exit 0
+  echo "  THREADS=4 $0 build # 4 threads"
+  echo ""
+  echo -e "${YELLOW}Logs:${NC} ${LOG_DIR}/build-mode[X]-[type].log"
+  exit 0
 }
 
 process_commands() {
-    if [[ $# -eq 0 ]]; then
-        build
-        return
-    fi
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            build)   build ;;
-            clean)   clean ;;
-            rebuild) clean; build ;;
-            run)     shift; run "$@"; break ;;
-            test)    test_suite ;;
-            all)     clean; build; shift; run "$@"; break ;;
-            detect|info) detect; show_config ;;
-            -h|--help|help) usage ;;
-            *) log "ERROR" "Unknown command: $1" "${RED}"; usage ;;
-        esac
-        shift
-    done
+  if [[ $# -eq 0 ]]; then
+    build
+    return
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    build) build ;;
+    clean) clean ;;
+    rebuild)
+      clean
+      build
+      ;;
+    run)
+      shift
+      run "$@"
+      break
+      ;;
+    test) test_suite ;;
+    all)
+      clean
+      build
+      shift
+      run "$@"
+      break
+      ;;
+    detect | info)
+      detect
+      show_config
+      ;;
+    -h | --help | help) usage ;;
+    *)
+      log "ERROR" "Unknown command: $1" "${RED}"
+      usage
+      ;;
+    esac
+    shift
+  done
 }
 
 export LD_LIBRARY_PATH=$OLD_LD_LIBRARY_PATH

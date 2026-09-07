@@ -663,8 +663,13 @@ endif()
 
 # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
     if(NOT ENABLE_LLVM)
+        # LLVM-dependent TUs: the ORC JIT monolith plus its decomposed
+        # slices (runtime bridges, IR lowering) - all require LLVM headers
+        # and libraries.
         list(REMOVE_ITEM HAVEL_LANG_SOURCES
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
+            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
+            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp
         )
     endif()
 
@@ -680,7 +685,10 @@ endif()
     # The fix applies to all targets that include HAVEL_LANG_SOURCES
     # -----------------------------------------------------------------------
     if(ENABLE_LLVM)
-        set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
+        set(JIT_SRC
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp"
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp"
+            "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp")
         set(LAUNCHER_SRC "${CMAKE_SOURCE_DIR}/src/core/init/HavelLauncher.cpp")
         # Convert list of include dirs to properly formatted -I flags
         # LLVM_INCLUDE_DIRS is a semicolon-separated list, so we need to prefix each with -I
@@ -2122,6 +2130,7 @@ havel_core
     endif()
 
 target_compile_definitions(havel_lang PRIVATE
+$<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
@@ -2135,6 +2144,7 @@ HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
 )
 
     target_compile_definitions(havel_lang_core PRIVATE
+$<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
@@ -2462,6 +2472,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/compiler/core/FunctionBuilder.cpp
         src/havel-lang/compiler/core/CFG.cpp
         src/havel-lang/compiler/core/BytecodePasses.cpp
+        src/havel-lang/compiler/core/RuntimeProfiler.cpp
     )
     target_include_directories(cfg_pipeline_test PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -2482,7 +2493,7 @@ endif()
 # writable) and a C test driver that verifies the hclb_* C ABI against the
 # C++ Value NaN-boxing, then compiles and executes int-subset functions
 # through Cranelift.
-if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
+if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
     find_program(CARGO_EXECUTABLE cargo)
     if(NOT CARGO_EXECUTABLE)
         message(WARNING "ENABLE_CRANELIFT=ON but cargo not found; prototype disabled")
@@ -2500,6 +2511,7 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
         else()
             set(CRANELIFT_CARGO_HOME "${CRANELIFT_BUILD_DIR}/cargo-home")
         endif()
+        file(GLOB CRANELIFT_RUST_SOURCES ${CRANELIFT_DIR}/src/*.rs)
         add_custom_command(
             OUTPUT ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
             COMMAND ${CMAKE_COMMAND} -E env
@@ -2510,13 +2522,22 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
             COMMAND ${CMAKE_COMMAND} -E copy
                     ${CRANELIFT_BUILD_DIR}/release/libhavel_cranelift_backend.a
                     ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            DEPENDS ${CRANELIFT_RUST_SOURCES} ${CRANELIFT_DIR}/Cargo.toml
             WORKING_DIRECTORY ${CRANELIFT_DIR}
             COMMENT "Building Cranelift backend prototype (Rust staticlib)"
             VERBATIM
         )
-        add_custom_target(cranelift_backend_lib ALL
+        add_custom_target(cranelift_backend_lib
             DEPENDS ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a)
 
+        # Wire the Rust staticlib into the VM so the TieredBackend can
+        # construct the Cranelift tier-1 backend (HAVEL_ENABLE_CRANELIFT).
+        target_link_libraries(havel_lang PRIVATE
+            ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            ${CMAKE_DL_LIBS})
+        add_dependencies(havel_lang cranelift_backend_lib)
+
+        if(ENABLE_TESTS)
         add_executable(cranelift_proto_driver
             tests/cranelift_proto_driver.cpp
         )
@@ -2525,12 +2546,16 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG AND ENABLE_TESTS)
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/havel-lang
         )
+        target_compile_definitions(cranelift_proto_driver PRIVATE
+            HAVEL_ENABLE_CRANELIFT)
         target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
         target_link_libraries(cranelift_proto_driver PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            havel_aot_core_shim
             ${CMAKE_DL_LIBS}
         )
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)
+        endif()
     endif()
 endif()
 

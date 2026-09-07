@@ -54,6 +54,9 @@ struct JITStackFrame;  // per-function GC/exception frame (BytecodeOrcJIT.h)
   ENTRY(havel_vm_array_set, uint64_t, (void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_as_type, uint64_t, (void* vm_ptr, uint64_t val_bits, uint32_t type_name_id), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_await, uint64_t, (void* vm_ptr, uint64_t val_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
+  ENTRY(havel_vm_add, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic ADD semantics for backends with speculative int fast paths: runs the VM's execBinaryOp on raw operand words and returns the result word; failures yield null.") \
+  ENTRY(havel_vm_sub, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic SUB semantics: same contract as havel_vm_add.") \
+  ENTRY(havel_vm_mul, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic MUL semantics: same contract as havel_vm_add.") \
   ENTRY(havel_vm_backedge, void, (void* vm_ptr, uint32_t ip), "Loop-backedge hook: suspension bookkeeping and tiering counters.") \
   ENTRY(havel_vm_begin_module, uint64_t, (void* vm_ptr), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_bit_and, uint64_t, (uint64_t a_bits, uint64_t b_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \

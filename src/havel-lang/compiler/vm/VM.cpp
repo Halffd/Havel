@@ -1,6 +1,11 @@
 #include "VM.hpp"
+#include <cstdio>
+#include <cstdlib>
 #include "VMApi.hpp"
 #include "VMInternals.hpp"
+#ifdef HAVEL_ENABLE_CRANELIFT
+#include "../core/CraneliftBackend.hpp"
+#endif
 #include "host/ServiceRegistry.hpp"
 #include <iostream>
 
@@ -93,6 +98,7 @@ VM::VM(const VMConfig &cfg) {
   heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+  heap_.setAllocationCounter(profiler_.allocationSink());
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -106,8 +112,26 @@ VM::VM(const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
@@ -134,6 +158,7 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+  heap_.setAllocationCounter(profiler_.allocationSink());
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -142,8 +167,26 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
@@ -213,6 +256,32 @@ Value VM::pinCallableAsClosure(Value callable) {
   return Value::makeNull();
 }
 
+// Close open upvalue cells captured by a closure about to be spawned as a
+// goroutine. Open cells reference the spawning frame's locals region
+// (locals_base + open_index into the shared VM locals array); the goroutine
+// runs with its own cleared locals, so those indices would read the
+// goroutine's locals instead of the captured values. Closing captures the
+// current value; the cell object stays shared, so sibling closures (and
+// STORE_UPVALUE from any side) still observe the same cell.
+void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
+  auto *closure = heap_.closure(closure_id);
+  if (!closure)
+    return;
+  for (auto &cell : closure->upvalues) {
+    if (!cell)
+      continue;
+    if (!cell->is_open)
+      continue;
+    // Read the value the open cell currently aliases. The cell's
+    // locals_base/open_index refer to the shared locals array as laid out
+    // by the spawning frame — still valid right now, at spawn time.
+    uint32_t abs_index = cell->locals_base + cell->open_index;
+    Value current = (abs_index < locals.size()) ? locals[abs_index]
+                                                 : Value::makeNull();
+    cell->close(current);
+  }
+}
+
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
@@ -237,6 +306,9 @@ VM::~VM() {
                   tier2_compile_count_.load(),
                   tier2_skip_duplicate_count_.load());
   }
+  // Runtime profiling summary (TODO #26): one line at shutdown so the
+  // basic counters are observable in every run.
+  ::havel::info("[profiler] {}", profiler_.summary());
   for (auto &[name, rootId] : host_function_gc_roots_) {
     unpinExternalRoot(rootId);
   }
@@ -1284,6 +1356,19 @@ void VM::loadFiberState(Fiber *fiber) {
   //      (before any save). Stale, but better than nothing.
   // ambient stays primary: merges only add missing keys, never overwrite, so
   // shared-write semantics are preserved when ambient is the right map.
+
+  // STEP 6a: Restore the fiber's globals stack. Suspension can happen inside
+  // a module-fn call whose wrapper pushed the caller's (script) globals onto
+  // globals_stack_ and swapped ambient to the module map. saveFiberState
+  // preserved that stack in fiber->saved_globals_stack; without restoring it
+  // here, the resume loses the pushed script map entirely — later returns pop
+  // foreign entries and names written by the goroutine's script frames before
+  // the module call (e.g. a nested-capture counter's `count`) vanish from
+  // ambient.
+  if (fiber->has_saved_globals && !fiber->saved_globals_stack.empty()) {
+    globals_stack_ = fiber->saved_globals_stack;
+    globals_mirror_object_id_ = fiber->saved_globals_mirror_id;
+  }
   uint32_t top_closure_id = UINT32_MAX;
   if (frame_count_ > 0)
     top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
@@ -1493,6 +1578,17 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     return GoroutineCallResult::Failed;
   }
 
+  // A suspended module call leaves the module fn's CALLER map pushed onto
+  // globals_stack_ (see the module_fn/closure wrapper suspension paths) —
+  // and the VM ambient still holds the MODULE's map. A goroutine starting
+  // here is a fresh script-level entry (Created spawns, update ticks): it
+  // must run against the script scope, not the module sidecar. Copy the
+  // pushed map into ambient WITHOUT popping it — the suspended module
+  // frame's eventual RET still owns the pop.
+  if (!globals_stack_.empty()) {
+    globals = globals_stack_.back();
+  }
+
   // Install the goroutine's spawn-time globals snapshot only when the
   // ambient globals is missing keys the snapshot carries. Merge those keys
   // INTO ambient rather than replacing the whole map: ambient may be the
@@ -1541,9 +1637,14 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
+  profiler_.recordFunctionCall(
+      current_chunk ? current_chunk->getFunctionIndex(func) : 0);
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
+  // Invocation-driven tiering (TODO #25): functions hot without arithmetic
+  // feedback (string/object churn, dispatch loops) still tier up here.
+  maybeTierUp(*func, func->execution_count, "invocation");
 
   if (func->jit_compiled && backend_ && !debugger_attached_ &&
       !callable.isClosureId()) {
@@ -2231,6 +2332,7 @@ slow_path:
 }
 
 bool VM::handleScriptThrow(const Value &value) {
+  profiler_.recordThrow();
   has_current_exception_ = true;
   current_exception_ = value;
 
@@ -2796,33 +2898,100 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   packVariadicArgs(args, callee);
 
   callee->execution_count++;
+  profiler_.recordFunctionCall(
+      resolve_chunk ? resolve_chunk->getFunctionIndex(callee) : 0);
   if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*callee);
   }
+  // Invocation-driven tiering (TODO #25).
+  maybeTierUp(*callee, callee->execution_count, "invocation");
 
   if (trace_execution_) {
     // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
     // fflush(stderr);
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
+    if (std::getenv("HCLB_TRACE_JITCALL")) {
+      fprintf(stderr, "[JITCALL] %s closure_id=%u closure_globals=%p\n",
+              callee->name.c_str(), closure_id,
+              closure_globals ? (void*)closure_globals.get() : nullptr);
+    }
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+    // Compiled-module-function call context, mirroring the interpreter's
+    // frame setup below: swap the ambient globals snapshot when the callee
+    // carries module_globals, and push a synthetic CallFrame so
+    // currentFrame() during the compiled body names the CALLEE (its
+    // closure_id and chunk drive the Runtime-ABI global bridges: without
+    // the frame, writes from __main__-called module functions persisted
+    // against the caller's closure_id 0 and never reached the module
+    // sidecar - the self-hosted parser's BP_TABLE diverged exactly this
+    // way). The frame also carries locals slots for parameters so
+    // upvalue bridges can address the activation record.
+    bool jit_owns_globals = false;
+    if (closure_globals) {
+      globals_stack_.push_back(std::move(globals));
+      globals = *closure_globals;
+      jit_owns_globals = true;
+    }
+    const size_t jit_locals_base = locals.size();
+    const size_t jit_needed =
+        std::max(callee->local_count, callee->param_count);
+    locals.resize(jit_locals_base + jit_needed, nullptr);
+    for (size_t i = 0; i < args.size() && i < jit_needed; ++i) {
+      locals[jit_locals_base + i] = args[i];
+    }
+    const size_t jit_stack_depth = stack.size();
+    {
+      CallFrame cf;
+      cf.function = callee;
+      cf.chunk = resolve_chunk;
+      cf.ip = 0;
+      cf.locals_base = jit_locals_base;
+      cf.closure_id = closure_id;
+      cf.owns_globals = jit_owns_globals;
+      cf.stack_depth = static_cast<uint32_t>(jit_stack_depth);
+      if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(std::move(cf));
+      } else {
+        frame_arena_[frame_count_] = std::move(cf);
+      }
+      frame_count_++;
+    }
+    const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    auto jit_teardown = [&]() {
+      // Pop the synthetic frame and restore the ambient snapshot. Nested
+      // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
+      // restore frame_count_, so the arena still holds our frame here.
+      if (frame_count_ >= jit_frame_base) {
+        frame_count_ = jit_frame_base - 1;
+      }
+      locals.resize(jit_locals_base);
+      if (jit_owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+      }
+    };
     try {
       Value result;
       if (backend_->execute(this, callee->name, args, &result)) {
         setJITActiveClosurePublic(prev_jit_closure);
+        jit_teardown();
         pushStack(result);
         return;
       }
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       // Backend declined; fall through to the interpreter call path.
     } catch (const JitCoroutineSignal &) {
       // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
       // that requires interpreter frame management. Fall back to
       // the interpreter path below to execute this function call.
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       // Fall through to normal interpreter call path
     } catch (...) {
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       throw;
     }
   }
@@ -3346,12 +3515,19 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
       continue;
     }
     auto &cell = it->second;
+    // Respect an existing capture: a goroutine spawn may have closed this
+    // cell already (closeOpenUpvaluesForSpawn captures the spawning scope's
+    // value), and the shared locals array under this index can since have
+    // been reused by other frames (goroutines start at locals_base 0, so
+    // their STORE_VAR writes overlap the spawning frame's slots). Closing
+    // here with the reused value would corrupt the capture (e.g. a captured
+    // channel replaced by an int). UpvalueCell::close is idempotent — the
+    // first close wins — so route through it.
     if (index < locals.size()) {
-      cell->closed_value = locals[index];
+      cell->close(locals[index]);
     } else {
-      cell->closed_value = nullptr;
+      cell->close(nullptr);
     }
-    cell->is_open = false;
     open_upvalues.erase(it);
   }
 }
@@ -4104,6 +4280,17 @@ Value VM::deepWrapModuleFunctions(
               // left them and propagate to the CALL site (op_CALL checks
               // suspension_requested_ || last_suspension_reason_ after host
               // calls). The return value is ignored by the suspension path.
+              //
+              // The caller's globals map now lives ONLY in savedGlobals (a
+              // C++ local that dies with this invocation). Preserve it for
+              // the resume: push it onto globals_stack_ and flip the wrapped
+              // frame to owns_globals so its eventual RET pops the stack and
+              // restores the caller's scope. Ambient stays the module map —
+              // exactly what the resumed module function must see.
+              if (frame_count_ > 0) {
+                frame_arena_[frame_count_ - 1].owns_globals = true;
+              }
+              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
@@ -4284,6 +4471,13 @@ Value VM::deepWrapModuleFunctions(
               // yield) inside the closure body must propagate to the CALL
               // site without restoring globals/current_chunk, or the fiber
               // resume would run module code against the caller's globals.
+              // Preserve the caller's map (see that wrapper for details):
+              // push it on globals_stack_ and mark the frame so its RET
+              // pops it after the resume.
+              if (frame_count_ > 0) {
+                frame_arena_[frame_count_ - 1].owns_globals = true;
+              }
+              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {

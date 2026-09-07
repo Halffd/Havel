@@ -1,0 +1,39 @@
+// Regression test: dsl { } blocks and $ <expr> shell-command form.
+// Bug: self-hosted pratt called nonexistent parseBlockStatement for dsl,
+// parsed $ [array] as indexing (Expected ']' after index), and the emitter
+// silently dropped bare BlockStatement nodes. Fix: dsl -> parseBlock(),
+// $ marker parses trailing expression, BlockStatement emits inlined stmts.
+// Expected: file markers created via run(), assertions pass.
+
+val b = "/usr/bin/touch"
+val m1 = "/tmp/hvtest_dsl_m1"
+val m2 = "/tmp/hvtest_dsl_m2"
+
+// 1. bare dsl block at top level with $ [array] (runtime vars)
+fs.rm(m1)
+dsl {
+    $ [b, m1]
+}
+assert(fs.exists(m1), "dsl block with $ [array] should run")
+
+// 2. dsl inside function
+fn makeThing(target) {
+    dsl {
+        $ [b, target]
+    }
+}
+fs.rm(m2)
+makeThing(m2)
+assert(fs.exists(m2), "dsl inside fn should run")
+
+// 3. run() array form: elements are space-joined (host semantic),
+// so use two-element command with no spaces inside elements
+fs.rm(m1)
+r = run([b, m1])
+assert(r.success, "run array form should succeed")
+assert(fs.exists(m1), "run array form should execute touch")
+
+// cleanup
+fs.rm(m1)
+fs.rm(m2)
+print("PASS dsl_block")

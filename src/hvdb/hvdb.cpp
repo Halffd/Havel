@@ -398,7 +398,9 @@ int main(int argc, char* argv[]) {
                     if (watches.empty()) std::cout << "  No watches\n";
                     else for (size_t i = 0; i < watches.size(); ++i)
                         std::cout << "  #" << i << " " << watches[i].expr << "\n";
-                } else std::cout << "  Usage: info [breakpoints|functions|watches]\n";
+                } else if (sub == "profile" || sub == "prof") {
+                    std::cout << "  " << vm.profiler().summary() << "\n";
+                } else std::cout << "  Usage: info [breakpoints|functions|watches|profile]\n";
             }
             // --- Advanced ---
             else if (cmd == "dis" || cmd == "disassemble") {

@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <shared_mutex>
 #include <span>
@@ -21,6 +23,7 @@
 
 #include "../core/BytecodeIR.hpp"
 #include "../core/Backend.hpp"
+#include "../core/RuntimeProfiler.hpp"
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -29,6 +32,7 @@
 namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
+#include "../../../utils/Logger.hpp"  // tier-manager debug output
 
 namespace havel::compiler {
 
@@ -188,10 +192,12 @@ struct VMConfig {
     uint64_t goroutine_tick_instructions = 10000;
     uint64_t goroutine_hotkey_tick_instructions = 100000;
 
-    // Tiering (JIT)
+    // Tiering (JIT). Zero means "use the HAVEL_TIER1_THRESHOLD /
+    // HAVEL_TIER2_THRESHOLD environment defaults" so operators can tune
+    // thresholds without recompiling; an explicit nonzero value wins.
     bool tiering_enabled = false;
-    uint64_t tier1_threshold = 1000;
-    uint64_t tier2_threshold = 10000;
+    uint64_t tier1_threshold = 0;
+    uint64_t tier2_threshold = 0;
     bool tier2_flush_on_shutdown = false;
 
     // JIT Debug
@@ -390,6 +396,11 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
     std::unordered_map<uint32_t, uint64_t> backedge_counters_;
+    // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
+    // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
+    RuntimeProfiler profiler_;
+    static_assert(RuntimeProfiler::kMaxTrackedFunctions > 0,
+                  "profiler function index space must exist");
 
     // Coroutine support (Lua-style coroutines)
 uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
@@ -649,6 +660,17 @@ public:
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
     void pushStackPublic(Value value) { pushStack(std::move(value)); }
     Value popStackPublic() { return popStack(); }
+    // Runtime-ABI helpers for backend bridges (CoreRuntimeExports): the
+    // generic binary-op bridge runs execBinaryOp against the shared stack
+    // mid-dispatch, so it needs depth inspection, truncation, and the op
+    // itself behind public seams.
+    size_t stackDepthPublic() const { return stack.size(); }
+    void truncateStackPublic(size_t depth) {
+      while (stack.size() > depth) stack.pop();
+    }
+    void execBinaryOpPublic(const Instruction &instr) {
+      execBinaryOp(instr);
+    }
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
@@ -790,6 +812,7 @@ Value lookupGlobalByKey(const std::string& key) {
     void recordBackedgePublic(uint32_t ip) {
         auto count = ++backedge_counters_[ip];
         trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
+        profiler_.recordBackedgeTotal();
         if (!hasActiveFrames()) {
             return;
         }
@@ -797,7 +820,12 @@ Value lookupGlobalByKey(const std::string& key) {
         if (!frame.function) {
             return;
         }
+        if (frame.chunk) {
+            profiler_.recordBackedge(frame.chunk->getFunctionIndex(frame.function));
+        }
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
+        // Trace callback fires once per site past the tier-1 threshold
+        // (hot-trace hooks; separate from function tier-up).
         if (count >= tier1_threshold_) {
             bool should_fire = false;
             {
@@ -805,18 +833,17 @@ Value lookupGlobalByKey(const std::string& key) {
                 should_fire = hot_trace_sites_.insert(site_key).second;
             }
             if (should_fire) {
-                tier1_transition_count_.fetch_add(1, std::memory_order_relaxed);
                 if (hot_trace_cb_) {
                     hot_trace_cb_(*frame.function, ip, count);
                 }
             }
         }
-        // Tier-2 backedge hotness: count each SITE once (mirroring the
-        // tier-1 site-key dedup above), not every past-threshold iteration -
-        // the counter feeds the shutdown "tier2_enqueued" statistic, which
-        // previously read 9990001 for a hot loop because it counted loop
-        // iterations. Actual tier-2 queueing happens in the binop tiering
-        // hook (VMArithmetic.cpp), not here.
+        // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
+        // backedge count even without binop feedback at the loop head.
+        maybeTierUp(*frame.function, count, "backedge");
+        // Tier-2 backedge hotness statistic: count each SITE once
+        // (mirroring the site-key dedup above); actual tier-2 queueing is
+        // the tier manager's job.
         if (count >= tier2_threshold_) {
             bool first_time = false;
             {
@@ -1033,6 +1060,11 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   // @return Goroutine ID
   uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {});
 
+  // Close open upvalue cells captured by a closure being spawned as a
+  // goroutine. Open cells index the spawning frame's locals; the goroutine's
+  // own locals layout makes those indices invalid, so capture the values.
+  void closeOpenUpvaluesForSpawn(uint32_t closure_id);
+
     // Spawn a goroutine from a registered callback
     uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
 
@@ -1117,6 +1149,142 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   
   using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
+
+  // Runtime profiling (TODO #26): aggregate counters, safe to read from any
+  // thread; summary() is for diagnostics only (hvdb status, shutdown report).
+  const RuntimeProfiler& profiler() const { return profiler_; }
+  RuntimeProfiler& profiler() { return profiler_; }
+
+  // ===== Tier manager (TODO #25) =====
+  //
+  // Central tier-up decision, shared by every trigger site (per-IP binop
+  // feedback, backedge hotness, function invocation). The decision weighs
+  // the profiler's evidence against the thresholds and the function's size:
+  //
+  //   tier 1 (fast JIT):  hotness >= tier1_threshold_ AND
+  //                       size <= tier1_max_instructions_
+  //   tier 2 (optimizing): hotness >= tier2_threshold_ AND
+  //                       size <= tier2_max_instructions_
+  //
+  // where hotness is the strongest available signal at the call site
+  // (binop feedback count, backedge count, or invocation count). Every
+  // function is decided once per tier; the sets below dedup.
+  void maybeTierUp(const BytecodeFunction& func, uint64_t hotness,
+                   const char* reason) {
+    if (!tiering_enabled_ || !backend_ || debugger_attached_) {
+      return;
+    }
+    // Module-function gate: module functions do NOT tier yet. The JIT
+    // execute path pushes no interpreter frame, so a compiled module
+    // function's Runtime-ABI global writes persist against the CALLER's
+    // frame (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverge depending on
+    // which path touched them last (the self-hosted parser's BP_TABLE
+    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
+    // compiled function itself returns correct values). doCall's JIT
+    // branch now performs the module-globals snapshot swap for ClosureId
+    // calls (matching the interpreter), which fixes that half; lifting
+    // this gate additionally requires the JIT path to establish the
+    // callee's frame context (closure_id/module_globals) for the bridges.
+    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    static const bool allow_module_tiering =
+        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
+    if (!allow_module_tiering && frame_count_ > 0) {
+      const auto& cf = currentFrame();
+      if (cf.chunk && cf.chunk != main_chunk_.get()) {
+        return;
+      }
+    }
+    const size_t size = func.instructions.size();
+    if (size == 0 || size > tier1_max_instructions_) {
+      return;  // never worth compiling (empty or above the tier-1 cap)
+    }
+    if (hotness < tier1_threshold_) {
+      return;
+    }
+    const std::string key = func.name;
+    // Debug isolation: HAVEL_TIER1_ONLY=<name[,name...]> restricts tier-up
+    // to the listed functions (miscompile bisects; not a production knob).
+    static const std::string only_env = std::getenv("HAVEL_TIER1_ONLY")
+                                             ? std::getenv("HAVEL_TIER1_ONLY")
+                                             : std::string();
+    if (!only_env.empty()) {
+      bool listed = false;
+      size_t pos = 0;
+      while (pos <= only_env.size() && !listed) {
+        size_t comma = only_env.find(',', pos);
+        const std::string tok = only_env.substr(
+            pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (tok == key) listed = true;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+      }
+      if (!listed) return;
+    }
+    if (!tier1_compiled_.count(key)) {
+      tier1_compiled_.insert(key);
+      tier1_transition_count_.fetch_add(1);
+      profiler_.recordTier1Compile(key);
+      ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason,
+                     hotness);
+      if (backend_->compile_tier(func, 1)) {
+        // The execute fast paths gate on jit_compiled for ANY backend, not
+        // just the legacy ORC flag: mark the function so calls route through
+        // the backend's compiled code.
+        func.jit_compiled = true;
+      }
+
+      // Tier 2 queueing: only small, very hot functions qualify.
+      if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
+          !tier2_compiled_.count(key)) {
+        tier2_compiled_.insert(key);
+        {
+          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+          if (tier2_queued_or_compiling_.insert(key).second) {
+            tier2_queue_.push(func);
+            tier2_enqueue_count_.fetch_add(1);
+            ::havel::debug("[tiering] {} queued for tier2", key);
+          } else {
+            tier2_skip_duplicate_count_.fetch_add(1);
+          }
+        }
+        ensureTier2Worker();
+      }
+    }
+  }
+
+  // Spawn the background tier-2 compiler thread once; the worker drains the
+  // queue until shutdown marks it stopped and the queue is empty.
+  void ensureTier2Worker() {
+    if (!tier2_worker_running_.exchange(true)) {
+      tier2_worker_ = std::thread([this]() {
+        auto hasQueuedWork = [this]() {
+          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+          return !tier2_queue_.empty();
+        };
+        while (tier2_worker_running_.load() || hasQueuedWork()) {
+          std::optional<BytecodeFunction> fn;
+          {
+            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+            if (!tier2_queue_.empty()) {
+              fn = tier2_queue_.front();
+              tier2_queue_.pop();
+            }
+          }
+          if (fn.has_value() && backend_) {
+            backend_->compile_tier(*fn, 2);
+            tier2_compile_count_.fetch_add(1);
+            profiler_.recordTier2Compile(fn->name);
+            ::havel::debug("[tiering] {} -> tier2", fn->name);
+            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+            tier2_queued_or_compiling_.erase(fn->name);
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+          }
+        }
+      });
+    }
+  }
 
   
   // Backend attachment (TODO #18/#19): the VM executes through a
@@ -1237,6 +1405,15 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         std::atomic<int> module_wrapper_execution_depth_{0};
         static constexpr int MAX_MODULE_WRAPPER_EXECUTION_DEPTH = 50;
 
+        // >0 while a wrapped module function's dispatch loop is on the C++
+        // stack. Re-entrant scheduling (e.g. processGoroutinesInline from a
+        // yieldNow inside a module fn) must not run sibling goroutines in
+        // this window: ambient globals is the module's map, so siblings
+        // would resolve their script globals against the wrong scope.
+        int moduleWrapperDepth() const {
+            return module_wrapper_execution_depth_.load(std::memory_order_acquire);
+        }
+
         // Drain callback invoked by host-side getters that read state derived
         // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine
         // sets this to its drainPendingVarChanges(): if the caller just
@@ -1263,6 +1440,66 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
+    }
+
+    // Module-globals persistence for the Runtime ABI global_set bridge
+    // (CoreRuntimeExports): the interpreter's STORE_GLOBAL, when running in
+    // a module function frame (closure_id != 0), also persists the write to
+    // the closure's shared module_globals map and records the key in the
+    // frame's written_globals list so doReturn refreshes the caller's
+    // snapshot (VMDispatch.cpp STORE_GLOBAL). JIT-compiled code takes this
+    // path too, or module-level caches (BP_TABLE and friends) written by
+    // compiled functions would be lost for every other frame - the exact
+    // corruption that broke the self-hosted parser when the launcher's
+    // getBPTABLE tiered up.
+    // Global read for the Runtime ABI global_get bridge: the interpreter's
+    // LOAD_GLOBAL chain is globals -> lazy modules -> host functions ->
+    // closure module_globals sidecar. JIT code reads through this seam so
+    // module-level state written by any frame (sidecar) is visible.
+    // Returns true with *out set; false = genuinely undefined (caller
+    // decides null vs error).
+    bool resolveGlobalPublic(const std::string& name, Value* out) {
+        auto it = globals.find(name);
+        if (it != globals.end()) {
+            *out = it->second;
+            return true;
+        }
+        auto hostIt = host_function_globals_.find(name);
+        if (hostIt != host_function_globals_.end()) {
+            *out = hostIt->second;
+            return true;
+        }
+        const auto& cf = currentFrame();
+        if (cf.closure_id != 0) {
+            auto* closure = heap_.closure(cf.closure_id);
+            if (closure && closure->module_globals) {
+                auto sideIt = closure->module_globals->find(name);
+                if (sideIt != closure->module_globals->end()) {
+                    *out = sideIt->second;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    void persistModuleGlobalPublic(const std::string& name, const Value& value) {
+        const auto& cf = currentFrame();
+        if (std::getenv("HCLB_TRACE_PERSIST")) {
+            fprintf(stderr, "[PERSIST] %s frame_closure=%u\n", name.c_str(),
+                    cf.closure_id);
+        }
+        if (cf.closure_id == 0) return;
+        auto* closure = heap_.closure(cf.closure_id);
+        if (!closure || !closure->module_globals) return;
+        (*closure->module_globals)[name] = value;
+        if (frame_count_ > 0) {
+            auto& wf = frame_arena_[frame_count_ - 1];
+            if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
+                          name) == wf.written_globals.end()) {
+                wf.written_globals.push_back(name);
+            }
+        }
     }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
@@ -1575,6 +1812,12 @@ private:
     bool tiering_enabled_ = false;
     uint64_t tier1_threshold_ = 1000;
     uint64_t tier2_threshold_ = 10000;
+    // Function-size bounds for tier decisions (TODO #25): huge functions
+    // are not worth tier-1 codegen cost until proven hotter; anything above
+    // the hard cap never tiers (compile cost dwarfs interpreter time on a
+    // single pass).
+    uint32_t tier1_max_instructions_ = 20000;
+    uint32_t tier2_max_instructions_ = 8000;
     std::unordered_set<std::string> tier1_compiled_;
     std::unordered_set<std::string> tier2_compiled_;
     std::unordered_set<std::string> tier2_queued_or_compiling_;

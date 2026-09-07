@@ -86,16 +86,17 @@ private:
         
         static int dummy_argc = 1;
         static char* dummy_argv[] = { const_cast<char*>("havel-screenshot"), nullptr };
-        static std::unique_ptr<QGuiApplication> app;
-        
-        if (!app) {
-            try {
-                app = std::make_unique<QGuiApplication>(dummy_argc, dummy_argv);
-                app->setQuitOnLastWindowClosed(false);
-                return true;
-            } catch (...) {
-                return false;
-            }
+
+        // Intentional leak, matching UIService/ClipboardMgrModule: a
+        // QGuiApplication created lazily mid-run must not be destroyed
+        // during exit() teardown (static-destruction order races Qt's own
+        // statics and the QXcbEventQueue thread -> SIGSEGV in
+        // ~QGuiApplication). Leak it; the OS reclaims at process end.
+        try {
+            QGuiApplication* app = new QGuiApplication(dummy_argc, dummy_argv);
+            app->setQuitOnLastWindowClosed(false);
+        } catch (...) {
+            return false;
         }
         return true;
     }

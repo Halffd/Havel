@@ -22,6 +22,7 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ABI_HPP="${REPO_DIR}/src/havel-lang/compiler/runtime/RuntimeABI.hpp"
 RUNTIME_SRCS=(
     "${REPO_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp"
+    "${REPO_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp"
     "${REPO_DIR}/src/havel-lang/runtime/CoreRuntimeExports.cpp"
 )
 
@@ -51,9 +52,7 @@ fi
 #    runtime sources: a line containing `sym(` whose statement does not end
 #    in `;`. Declarations end with `);`, definitions open a body `{`.
 while IFS= read -r sym; do
-    def_line=$(grep -E "${sym}[[:space:]]*\(" \
-         "${REPO_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp" \
-         "${REPO_DIR}/src/havel-lang/runtime/CoreRuntimeExports.cpp" 2>/dev/null \
+    def_line=$(grep -E "${sym}[[:space:]]*\(" "${RUNTIME_SRCS[@]}" 2>/dev/null \
          | grep -vE "\)[[:space:]]*;[[:space:]]*$" | head -1)
     if [[ -z "${def_line}" ]]; then
         echo "FAIL: ABI entry ${sym} has no definition in the runtime sources."

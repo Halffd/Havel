@@ -10,6 +10,9 @@
 // through CompilerBackend (src/havel-lang/compiler/core/Backend.hpp).
 
 #include "havel-lang/core/Value.hpp"
+#ifdef HAVEL_ENABLE_CRANELIFT
+#include "havel-lang/compiler/core/CraneliftBackend.hpp"
+#endif
 
 #include <cstdint>
 #include <cstdio>
@@ -56,6 +59,47 @@ int main() {
 
   // 3. Round-trip through both sides in one expression.
   CHECK(hclb_unpack_int48(hclb_pack_int48(-123456789L)) == -123456789L);
+
+#ifdef HAVEL_ENABLE_CRANELIFT
+  // 4. The full backend adapter: compile a BytecodeFunction through
+  //    CompilerBackend and execute it through native code.
+  {
+    using havel::compiler::BytecodeFunction;
+    using havel::compiler::Instruction;
+    using havel::compiler::OpCode;
+    using havel::compiler::CraneliftBackend;
+    using havel::core::Value;
+
+    havel::compiler::CraneliftBackend backend;
+    CHECK(backend.available());
+
+    // fn (a, b) = (a + b) < 100 ? no branches - straight arithmetic:
+    //   LOAD_VAR a; LOAD_VAR b; ADD; RETURN
+    BytecodeFunction f("cl_add", 2, 2);
+    f.instructions.push_back(
+        Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+    f.instructions.push_back(
+        Instruction(OpCode::LOAD_VAR, {Value::makeInt(1)}));
+    f.instructions.push_back(Instruction(OpCode::ADD));
+    f.instructions.push_back(Instruction(OpCode::RETURN));
+    CHECK(CraneliftBackend::can_lower(f));
+    CHECK(backend.compile(f));
+    CHECK(backend.is_compiled("cl_add"));
+
+    std::vector<Value> args{Value::makeInt(40), Value::makeInt(2)};
+    Value out;
+    CHECK(backend.execute(nullptr, "cl_add", args, &out));
+    CHECK(out.isInt());
+    CHECK(out.asInt() == 42);
+
+    // Unsupported opcode must be refused (left to the interpreter).
+    BytecodeFunction g("cl_bad", 0, 0);
+    g.instructions.push_back(Instruction(OpCode::ARRAY_NEW));
+    g.instructions.push_back(Instruction(OpCode::RETURN));
+    CHECK(!CraneliftBackend::can_lower(g));
+    CHECK(!backend.compile(g));
+  }
+#endif
 
   if (failures == 0) {
     std::printf("OK: cranelift_proto_driver (hclb ABI matches Value bits)\n");

@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <shared_mutex>
 #include <span>
@@ -190,10 +192,12 @@ struct VMConfig {
     uint64_t goroutine_tick_instructions = 10000;
     uint64_t goroutine_hotkey_tick_instructions = 100000;
 
-    // Tiering (JIT)
+    // Tiering (JIT). Zero means "use the HAVEL_TIER1_THRESHOLD /
+    // HAVEL_TIER2_THRESHOLD environment defaults" so operators can tune
+    // thresholds without recompiling; an explicit nonzero value wins.
     bool tiering_enabled = false;
-    uint64_t tier1_threshold = 1000;
-    uint64_t tier2_threshold = 10000;
+    uint64_t tier1_threshold = 0;
+    uint64_t tier2_threshold = 0;
     bool tier2_flush_on_shutdown = false;
 
     // JIT Debug
@@ -656,6 +660,17 @@ public:
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
     void pushStackPublic(Value value) { pushStack(std::move(value)); }
     Value popStackPublic() { return popStack(); }
+    // Runtime-ABI helpers for backend bridges (CoreRuntimeExports): the
+    // generic binary-op bridge runs execBinaryOp against the shared stack
+    // mid-dispatch, so it needs depth inspection, truncation, and the op
+    // itself behind public seams.
+    size_t stackDepthPublic() const { return stack.size(); }
+    void truncateStackPublic(size_t depth) {
+      while (stack.size() > depth) stack.pop();
+    }
+    void execBinaryOpPublic(const Instruction &instr) {
+      execBinaryOp(instr);
+    }
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
@@ -1159,6 +1174,27 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
+    // Module-function gate: module functions do NOT tier yet. The JIT
+    // execute path pushes no interpreter frame, so a compiled module
+    // function's Runtime-ABI global writes persist against the CALLER's
+    // frame (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverge depending on
+    // which path touched them last (the self-hosted parser's BP_TABLE
+    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
+    // compiled function itself returns correct values). doCall's JIT
+    // branch now performs the module-globals snapshot swap for ClosureId
+    // calls (matching the interpreter), which fixes that half; lifting
+    // this gate additionally requires the JIT path to establish the
+    // callee's frame context (closure_id/module_globals) for the bridges.
+    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    static const bool allow_module_tiering =
+        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
+    if (!allow_module_tiering && frame_count_ > 0) {
+      const auto& cf = currentFrame();
+      if (cf.chunk && cf.chunk != main_chunk_.get()) {
+        return;
+      }
+    }
     const size_t size = func.instructions.size();
     if (size == 0 || size > tier1_max_instructions_) {
       return;  // never worth compiling (empty or above the tier-1 cap)
@@ -1167,13 +1203,36 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
       return;
     }
     const std::string key = func.name;
+    // Debug isolation: HAVEL_TIER1_ONLY=<name[,name...]> restricts tier-up
+    // to the listed functions (miscompile bisects; not a production knob).
+    static const std::string only_env = std::getenv("HAVEL_TIER1_ONLY")
+                                             ? std::getenv("HAVEL_TIER1_ONLY")
+                                             : std::string();
+    if (!only_env.empty()) {
+      bool listed = false;
+      size_t pos = 0;
+      while (pos <= only_env.size() && !listed) {
+        size_t comma = only_env.find(',', pos);
+        const std::string tok = only_env.substr(
+            pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (tok == key) listed = true;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+      }
+      if (!listed) return;
+    }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
       tier1_transition_count_.fetch_add(1);
       profiler_.recordTier1Compile(key);
       ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason,
                      hotness);
-      backend_->compile_tier(func, 1);
+      if (backend_->compile_tier(func, 1)) {
+        // The execute fast paths gate on jit_compiled for ANY backend, not
+        // just the legacy ORC flag: mark the function so calls route through
+        // the backend's compiled code.
+        func.jit_compiled = true;
+      }
 
       // Tier 2 queueing: only small, very hot functions qualify.
       if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
@@ -1381,6 +1440,66 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
+    }
+
+    // Module-globals persistence for the Runtime ABI global_set bridge
+    // (CoreRuntimeExports): the interpreter's STORE_GLOBAL, when running in
+    // a module function frame (closure_id != 0), also persists the write to
+    // the closure's shared module_globals map and records the key in the
+    // frame's written_globals list so doReturn refreshes the caller's
+    // snapshot (VMDispatch.cpp STORE_GLOBAL). JIT-compiled code takes this
+    // path too, or module-level caches (BP_TABLE and friends) written by
+    // compiled functions would be lost for every other frame - the exact
+    // corruption that broke the self-hosted parser when the launcher's
+    // getBPTABLE tiered up.
+    // Global read for the Runtime ABI global_get bridge: the interpreter's
+    // LOAD_GLOBAL chain is globals -> lazy modules -> host functions ->
+    // closure module_globals sidecar. JIT code reads through this seam so
+    // module-level state written by any frame (sidecar) is visible.
+    // Returns true with *out set; false = genuinely undefined (caller
+    // decides null vs error).
+    bool resolveGlobalPublic(const std::string& name, Value* out) {
+        auto it = globals.find(name);
+        if (it != globals.end()) {
+            *out = it->second;
+            return true;
+        }
+        auto hostIt = host_function_globals_.find(name);
+        if (hostIt != host_function_globals_.end()) {
+            *out = hostIt->second;
+            return true;
+        }
+        const auto& cf = currentFrame();
+        if (cf.closure_id != 0) {
+            auto* closure = heap_.closure(cf.closure_id);
+            if (closure && closure->module_globals) {
+                auto sideIt = closure->module_globals->find(name);
+                if (sideIt != closure->module_globals->end()) {
+                    *out = sideIt->second;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    void persistModuleGlobalPublic(const std::string& name, const Value& value) {
+        const auto& cf = currentFrame();
+        if (std::getenv("HCLB_TRACE_PERSIST")) {
+            fprintf(stderr, "[PERSIST] %s frame_closure=%u\n", name.c_str(),
+                    cf.closure_id);
+        }
+        if (cf.closure_id == 0) return;
+        auto* closure = heap_.closure(cf.closure_id);
+        if (!closure || !closure->module_globals) return;
+        (*closure->module_globals)[name] = value;
+        if (frame_count_ > 0) {
+            auto& wf = frame_arena_[frame_count_ - 1];
+            if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
+                          name) == wf.written_globals.end()) {
+                wf.written_globals.push_back(name);
+            }
+        }
     }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);

@@ -1,6 +1,11 @@
 #include "VM.hpp"
+#include <cstdio>
+#include <cstdlib>
 #include "VMApi.hpp"
 #include "VMInternals.hpp"
+#ifdef HAVEL_ENABLE_CRANELIFT
+#include "../core/CraneliftBackend.hpp"
+#endif
 #include "host/ServiceRegistry.hpp"
 #include <iostream>
 
@@ -107,8 +112,26 @@ VM::VM(const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
@@ -144,8 +167,26 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    backend_ = std::make_unique<JITCompilerBackend>(
-        std::make_unique<BytecodeOrcJIT>());
+    // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
+    // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
+    // optimizing ORC JIT. Without a fast backend the composite degrades to
+    // ORC for both tiers.
+    std::unique_ptr<CompilerBackend> optimizing =
+        std::make_unique<JITCompilerBackend>(
+            std::make_unique<BytecodeOrcJIT>());
+    std::unique_ptr<CompilerBackend> fast;
+#if defined(HAVEL_ENABLE_CRANELIFT)
+    {
+      auto cranelift = std::make_unique<CraneliftBackend>();
+      if (cranelift->available()) {
+        fast = std::move(cranelift);
+      }
+      // Unavailable (staticlib failed to initialize) leaves fast null;
+      // TieredBackend then routes both tiers through ORC.
+    }
+#endif
+    backend_ = std::make_unique<TieredBackend>(std::move(fast),
+                                                std::move(optimizing));
     backend_->set_debug_mode(cfg.debugJIT);
   }
 #endif
@@ -2870,24 +2911,87 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // fflush(stderr);
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
+    if (std::getenv("HCLB_TRACE_JITCALL")) {
+      fprintf(stderr, "[JITCALL] %s closure_id=%u closure_globals=%p\n",
+              callee->name.c_str(), closure_id,
+              closure_globals ? (void*)closure_globals.get() : nullptr);
+    }
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+    // Compiled-module-function call context, mirroring the interpreter's
+    // frame setup below: swap the ambient globals snapshot when the callee
+    // carries module_globals, and push a synthetic CallFrame so
+    // currentFrame() during the compiled body names the CALLEE (its
+    // closure_id and chunk drive the Runtime-ABI global bridges: without
+    // the frame, writes from __main__-called module functions persisted
+    // against the caller's closure_id 0 and never reached the module
+    // sidecar - the self-hosted parser's BP_TABLE diverged exactly this
+    // way). The frame also carries locals slots for parameters so
+    // upvalue bridges can address the activation record.
+    bool jit_owns_globals = false;
+    if (closure_globals) {
+      globals_stack_.push_back(std::move(globals));
+      globals = *closure_globals;
+      jit_owns_globals = true;
+    }
+    const size_t jit_locals_base = locals.size();
+    const size_t jit_needed =
+        std::max(callee->local_count, callee->param_count);
+    locals.resize(jit_locals_base + jit_needed, nullptr);
+    for (size_t i = 0; i < args.size() && i < jit_needed; ++i) {
+      locals[jit_locals_base + i] = args[i];
+    }
+    const size_t jit_stack_depth = stack.size();
+    {
+      CallFrame cf;
+      cf.function = callee;
+      cf.chunk = resolve_chunk;
+      cf.ip = 0;
+      cf.locals_base = jit_locals_base;
+      cf.closure_id = closure_id;
+      cf.owns_globals = jit_owns_globals;
+      cf.stack_depth = static_cast<uint32_t>(jit_stack_depth);
+      if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(std::move(cf));
+      } else {
+        frame_arena_[frame_count_] = std::move(cf);
+      }
+      frame_count_++;
+    }
+    const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    auto jit_teardown = [&]() {
+      // Pop the synthetic frame and restore the ambient snapshot. Nested
+      // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
+      // restore frame_count_, so the arena still holds our frame here.
+      if (frame_count_ >= jit_frame_base) {
+        frame_count_ = jit_frame_base - 1;
+      }
+      locals.resize(jit_locals_base);
+      if (jit_owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+      }
+    };
     try {
       Value result;
       if (backend_->execute(this, callee->name, args, &result)) {
         setJITActiveClosurePublic(prev_jit_closure);
+        jit_teardown();
         pushStack(result);
         return;
       }
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       // Backend declined; fall through to the interpreter call path.
     } catch (const JitCoroutineSignal &) {
       // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
       // that requires interpreter frame management. Fall back to
       // the interpreter path below to execute this function call.
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       // Fall through to normal interpreter call path
     } catch (...) {
       setJITActiveClosurePublic(prev_jit_closure);
+      jit_teardown();
       throw;
     }
   }

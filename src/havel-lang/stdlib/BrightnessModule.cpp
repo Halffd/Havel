@@ -209,3 +209,4 @@ void registerBrightnessModule(const VMApi &api) {
 HAVEL_MODULE_PLUGIN_EAGER_A3(brightness, "1.0.0", "Brightness control module", "display", "xrandr", "x11",
 havel::stdlib::registerBrightnessModule(*api);
 )
+#endif

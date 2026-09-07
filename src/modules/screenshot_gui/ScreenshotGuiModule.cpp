@@ -27,13 +27,16 @@ static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Valu
 }
 
 static havel::ScreenshotManager* getScreenshotManager() {
+    debug("ScreenshotGuiModule: getScreenshotManager called");
     auto& uiManager = havel::host::UIManager::instance();
     auto* backend = uiManager.backend();
     if (!backend) {
         debug("ScreenshotGuiModule: No UI backend available");
         return nullptr;
     }
+    debug("ScreenshotGuiModule: Backend available, calling getScreenshotManager");
     void* ptr = backend->getScreenshotManager();
+    debug("ScreenshotGuiModule: Got ptr: {}", ptr);
     return static_cast<havel::ScreenshotManager*>(ptr);
 }
 

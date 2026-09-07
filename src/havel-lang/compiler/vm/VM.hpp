@@ -1447,6 +1447,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     int exitCode() const { return exit_code_.load(); }
   
     void setGlobal(std::string name, Value value) {
+        assertVMThread("setGlobal");
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
@@ -1984,18 +1985,93 @@ bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire)
     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
      void* getServiceRegistry() const { return serviceRegistry_; }
 
-     // RAII guard for vm_in_execute_. Ensures the flag is cleared on
-     // exception escape, preventing executeFrame() from being permanently
-     // locked out (ExecutionEngine.cpp:108 returns early while true).
-     struct ExecuteGuard {
-       std::atomic<bool>& flag;
-       explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
-         flag.store(true, std::memory_order_release);
-       }
-       ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
-       ExecuteGuard(const ExecuteGuard&) = delete;
-       ExecuteGuard& operator=(const ExecuteGuard&) = delete;
-     };
+      // RAII guard for vm_in_execute_. Ensures the flag is cleared on
+      // exception escape, preventing executeFrame() from being permanently
+      // locked out (ExecutionEngine.cpp:108 returns early while true).
+      struct ExecuteGuard {
+        std::atomic<bool>& flag;
+        explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
+          flag.store(true, std::memory_order_release);
+        }
+        ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
+        ExecuteGuard(const ExecuteGuard&) = delete;
+        ExecuteGuard& operator=(const ExecuteGuard&) = delete;
+      };
+
+      // =====================================================================
+      // VM-thread ownership guard (debug builds).
+      //
+      // The invariant: Havel state (stack, frames, heap, globals) is
+      // touched by at most one thread at a time. Different threads may
+      // LEGITIMATELY take turns driving the VM (main thread runs
+      // vm->execute(); the EventListener event-loop thread runs
+      // executeFrame(); any thread may run callFunctionSync) — but never
+      // concurrently, and foreign threads must never mutate VM state
+      // while the owner thread is inside dispatch.
+      //
+      // runDispatchLoop() latches dispatch_thread_ to whichever thread
+      // enters it and clears the latch on exit. While latched, the
+      // HAVEL_ASSERT_VM_THREAD guard fires if any OTHER thread reaches a
+      // VM-state choke point (invokeCallback, spawnGoroutine,
+      // setGlobal, heap allocation). This makes cross-thread violations
+      // (e.g. a detached timer thread calling invokeCallback while the
+      // event thread is dispatching) crash loudly in debug instead of
+      // corrupting state.
+      // =====================================================================
+#ifndef NDEBUG
+      std::thread::id dispatch_thread_{};
+      std::atomic<bool> dispatch_latched_{false};
+
+      void latchDispatchThread() {
+        // Nested re-entry (callFunctionSync inside dispatch) keeps latch.
+        if (dispatch_latched_.load(std::memory_order_acquire)) {
+          if (dispatch_thread_ != std::this_thread::get_id()) {
+            fprintf(stderr,
+                    "[VM-THREAD-VIOLATION] thread %zu entered dispatch while "
+                    "thread %zu holds it\n",
+                    hash_thread_id(std::this_thread::get_id()),
+                    hash_thread_id(dispatch_thread_));
+            abort();
+          }
+          return;
+        }
+        dispatch_thread_ = std::this_thread::get_id();
+        dispatch_latched_.store(true, std::memory_order_release);
+      }
+
+      void unlatchDispatchThread() {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ == std::this_thread::get_id()) {
+          dispatch_latched_.store(false, std::memory_order_release);
+          dispatch_thread_ = std::thread::id{};
+        }
+      }
+
+      static size_t hash_thread_id(std::thread::id id) {
+        return std::hash<std::thread::id>{}(id);
+      }
+
+      // Fire when a foreign thread touches VM state mid-dispatch: a
+      // detached timer thread calling invokeCallback while the event
+      // thread is dispatching crashes loudly here instead of corrupting
+      // state. No-op in release builds.
+      void assertVMThread(const char* what) {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ != std::this_thread::get_id()) {
+          fprintf(stderr,
+                  "[VM-THREAD-VIOLATION] %s called from foreign thread %zu "
+                  "while thread %zu owns dispatch\n",
+                  what, hash_thread_id(std::this_thread::get_id()),
+                  hash_thread_id(dispatch_thread_));
+          abort();
+        }
+      }
+#else
+      void latchDispatchThread() {}
+      void unlatchDispatchThread() {}
+      void assertVMThread(const char*) {}
+#endif
+
 
 
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }

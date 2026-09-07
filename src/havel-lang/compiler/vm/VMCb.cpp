@@ -30,6 +30,7 @@ CallbackId VM::registerCallback(const Value &closure) {
 
 Value VM::invokeCallback(CallbackId id,
                                  const std::vector<Value> &args) {
+  assertVMThread("invokeCallback");
   if (id == INVALID_CALLBACK_ID) {
     COMPILER_THROW("invokeCallback called with invalid callback ID");
   }
@@ -46,6 +47,7 @@ Value VM::invokeCallback(CallbackId id,
 }
 
 uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args) {
+  assertVMThread("spawnGoroutine");
   if (!scheduler_) {
     ::havel::warn("[VM] spawnGoroutine: No scheduler available");
     return 0;

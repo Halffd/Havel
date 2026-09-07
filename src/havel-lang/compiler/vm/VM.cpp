@@ -1872,6 +1872,14 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  // VM-thread ownership guard: latch dispatch to this thread for the
+  // duration (nested re-entry keeps the original latch). Every exit path
+  // below must unlatch; the guard struct covers exceptions too.
+  latchDispatchThread();
+  struct DispatchLatchGuard {
+    VM &vm;
+    ~DispatchLatchGuard() { vm.unlatchDispatchThread(); }
+  } _latch_guard{*this};
   Fiber *saved_fiber_flag = current_executing_fiber_;
   const bool has_instruction_limit = (max_instructions_ > 0);
   const bool has_timer = static_cast<bool>(timer_check_func_);

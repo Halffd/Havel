@@ -185,6 +185,20 @@ uint32_t havel_vm_locals_base(void* vm_ptr) {
 // Semantic comparison bridges — handle NaN-boxed type dispatch correctly
 // int 1 == double 1.0 must be true, but their bit representations differ
 
+// All bridges in this TU compile with -ffast-math, where std::isnan folds
+// to constant false and floating comparisons against NaN fold arbitrarily
+// (this exact combination made havel_vm_neq(60, null) return false, which
+// corrupted every mixed-type comparison from JIT-compiled code - the
+// self-hosted parser read BP_NONE for every operator once getBindingPower
+// tiered). Comparisons must therefore reason about NaN through the raw
+// bit pattern, never through isnan or float equality against NaN.
+static bool rawBitsAreNaN(double d) {
+  uint64_t bits;
+  std::memcpy(&bits, &d, sizeof(bits));
+  return (bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
+         (bits & 0x000FFFFFFFFFFFFFULL) != 0;
+}
+
 static double valueToDouble(uint64_t bits) {
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) {
     double d; std::memcpy(&d, &bits, sizeof(double)); return d;
@@ -200,7 +214,13 @@ static double valueToDouble(uint64_t bits) {
   if (tag == 0x2) { // BOOL
     return static_cast<double>((bits & 0x0000FFFFFFFFFFFFULL) != 0 ? 1 : 0);
   }
-  return 0.0/0.0; // NaN for null/ptr/refs — never equal to anything
+  // Null/ptr/refs coerce to a NaN payload value; comparisons treat them as
+  // never-equal. Build the NaN through the bit pattern (0x7FF8...) so the
+  // value remains distinguishable under -ffast-math via rawBitsAreNaN.
+  uint64_t nan_bits = 0x7FF8000000000001ULL;
+  double d;
+  std::memcpy(&d, &nan_bits, sizeof(d));
+  return d;
 }
 
 static bool valueIsTruthy(uint64_t bits) {
@@ -216,7 +236,15 @@ static bool valueIsTruthy(uint64_t bits) {
   }
   if (tag == 0x2) return (bits & 0x0000FFFFFFFFFFFFULL) != 0; // BOOL
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) { // DOUBLE
-    double d; std::memcpy(&d, &bits, sizeof(double)); return d != 0.0 && !std::isnan(d);
+    // Fast-math-safe: NaN doubles are falsy; test by raw bits, not isnan.
+    if ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
+        (bits & 0x000FFFFFFFFFFFFFULL) != 0) {
+      return false;  // NaN: falsy
+    }
+    double d; std::memcpy(&d, &bits, sizeof(double));
+    return d != 0.0;  // note: -0.0 == 0.0 compares equal under IEEE;
+                      // the interpreter treats -0.0 as falsy via the same
+                      // comparison, so this matches.
   }
   return true; // objects, arrays, etc. are truthy
 }
@@ -248,39 +276,39 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
 // the linker's one-definition rule once - do not duplicate).
 extern "C" uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
   if (l == r) return Value::makeBool(true).rawBits();
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld == rd).rawBits();
-  return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld == rd).rawBits();
 }
 
 extern "C" uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
   if (l == r) return Value::makeBool(false).rawBits();
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld != rd).rawBits();
-  return Value::makeBool(true).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
+  return Value::makeBool(ld != rd).rawBits();
 }
 
 extern "C" uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld < rd).rawBits();
 }
 
 extern "C" uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld <= rd).rawBits();
 }
 
 extern "C" uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld > rd).rawBits();
 }
 
 extern "C" uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
-  double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld >= rd).rawBits();
 }
 

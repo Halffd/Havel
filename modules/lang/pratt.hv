@@ -572,11 +572,28 @@ return BacktickExpression(tok.value, l, c)
 else if tt == TID.InterpolatedBacktick {
 return ShellCommand(tok.value, true, l, c)
 }
-else if tt == TID.ShellCommand {
-return ShellCommand(tok.value, false, l, c)
-}
-else if tt == TID.ShellCommandCapture {
-return ShellCommand(tok.value, true, l, c)
+else if tt == TID.ShellCommand or tt == TID.ShellCommandCapture {
+ // $ / $! marker token: parse the command expression that follows.
+ // Mirrors C++ BootstrapParser (parsePrimaryExpression ShellCommand case):
+ // $ [array], $ (expr), $ ident, $ "string" -> ShellCommandExpression.
+ capture = tt == TID.ShellCommandCapture
+ skipNewlines()
+ cur = current().tid
+ if cur == TID.OpenParen or cur == TID.OpenBracket {
+  cmdExpr = parseExpr(0)
+ }
+ else if cur == TID.Identifier or cur == TID.String or cur == TID.MultilineString {
+  cmdExpr = parseExpr(0)
+ }
+ else {
+  return error("Shell command requires expression: $ (cmd), $ [array], $ ident, or $ \"string\"", l, c)
+ }
+ if cmdExpr == null or cmdExpr.kind == "ErrorNode" {
+  return cmdExpr
+ }
+ node = ShellCommand("", capture, l, c)
+ node.commandExpr = cmdExpr
+ return node
 }
 else if tt == TID.Hotkey {
  return HotkeyExpression(tok.value, l, c)
@@ -2528,7 +2545,7 @@ if tt == TID.Dsl {
   if current().tid != TID.OpenBrace {
     error("Expected '{' after 'dsl'", current().line, current().col)
   }
-  return parseBlockStatement()
+  return parseBlock()
 }
 // Expression statement
     expr = parseExpr(0)

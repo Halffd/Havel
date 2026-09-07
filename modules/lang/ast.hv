@@ -353,7 +353,9 @@ fn BacktickExpression(command, line, col) {
 
 }
 fn ShellCommand(command, capture, line, col) {
-    {kind: "ShellCommand", line: line, col: col, command: command, capture: capture}
+    // command: string form (backtick-derived); commandExpr: expression form
+    // ($ <expr>, e.g. $ [b, nt, url] or $! (cmd)). Mirrors C++ ShellCommandExpression.
+    {kind: "ShellCommand", line: line, col: col, command: command, capture: capture, commandExpr: null}
 
 }
 fn RangeExpression(start, end, inclusive, line, col) {

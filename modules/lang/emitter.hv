@@ -1543,9 +1543,9 @@ if k == "AtExpression" {
         return
     }
 
-	if k == "ShellCommand" {
-		// Shell command: $cmd or $!cmd
-		// Emit as call to run() or runCapture() host functions
+ 	if k == "ShellCommand" {
+		// Shell command: $cmd, $!cmd (string form) or $ <expr> (expression form).
+		// Emit as call to run() or runCapture() host functions.
 		if node.capture {
 			sid = globalIdx(emitter, "runCapture")
 		}
@@ -1553,8 +1553,15 @@ if k == "AtExpression" {
 			sid = globalIdx(emitter, "run")
 		}
 		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-		cmdIdx = bc.add_string(node.command)
-		bc.emit("LOAD_CONST", cmdIdx)
+		if node.commandExpr != null {
+			// Expression form: $ [b, nt, url] / $ (cmd) / $ ident.
+			// Mirrors C++ compileShellCommandStatement: compile commandExpr, CALL 1.
+			emitExpr(emitter, node.commandExpr)
+		}
+		else {
+			cmdIdx = bc.add_string(node.command)
+			bc.emit("LOAD_CONST", cmdIdx)
+		}
 		bc.emit("CALL", 1)
 		// Handle pipe chain: $! cmd1 | cmd2 | ...
 		next = node.next
@@ -1994,6 +2001,25 @@ isYield = node.expr.kind == "YieldExpression"
         }
         return
 
+	}
+	// Bare block statement (e.g. dsl { ... }). Mirrors C++ compileBlockStatement:
+	// inline the nested statements in the CURRENT scope, no new Scope pushed.
+	if k == "BlockStatement" {
+		wasTail = emitter.inTailPosition
+		last = node.body.len - 1
+		i = 0
+		for stmt in node.body {
+			if i < last {
+				emitter.inTailPosition = false
+			}
+			else {
+				emitter.inTailPosition = wasTail
+			}
+			emitStmt(emitter, stmt)
+			i = i + 1
+		}
+		emitter.inTailPosition = wasTail
+		return
 	}
 	if k == "IfStatement" {
 		emitExpr(emitter, node.condition)

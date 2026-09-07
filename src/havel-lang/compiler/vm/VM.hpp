@@ -1485,10 +1485,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
     void persistModuleGlobalPublic(const std::string& name, const Value& value) {
         const auto& cf = currentFrame();
-        if (std::getenv("HCLB_TRACE_PERSIST")) {
-            fprintf(stderr, "[PERSIST] %s frame_closure=%u\n", name.c_str(),
-                    cf.closure_id);
-        }
         if (cf.closure_id == 0) return;
         auto* closure = heap_.closure(cf.closure_id);
         if (!closure || !closure->module_globals) return;

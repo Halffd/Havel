@@ -240,8 +240,92 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
     return vm->execLengthOp(v).rawBits();
 }
 
-// havel_vm_is_truthy moved to CoreRuntimeExports.cpp (Runtime ABI home);
-// valueIsTruthy stays here for the JIT's own truthiness lowering.
+// Comparison bridges (Runtime ABI): pure word semantics, no VM state.
+// Numeric comparisons coerce both sides as doubles; null/refs coerce to
+// NaN so comparisons against them are false; EQ/NEQ first check raw bit
+// equality so identical words compare equal. The single Runtime ABI home
+// for these (an accidental second copy in CoreRuntimeExports.cpp broke
+// the linker's one-definition rule once - do not duplicate).
+extern "C" uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(true).rawBits();
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld == rd).rawBits();
+  return Value::makeBool(false).rawBits();
+}
+
+extern "C" uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(false).rawBits();
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (!std::isnan(ld) && !std::isnan(rd)) return Value::makeBool(ld != rd).rawBits();
+  return Value::makeBool(true).rawBits();
+}
+
+extern "C" uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld < rd).rawBits();
+}
+
+extern "C" uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld <= rd).rawBits();
+}
+
+extern "C" uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld > rd).rawBits();
+}
+
+extern "C" uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
+  double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (std::isnan(ld) || std::isnan(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld >= rd).rawBits();
+}
+
+// Truthiness of a raw Value word (Runtime ABI): null falsy, bool by
+// payload, int48 non-zero, raw double non-zero/non-NaN, refs truthy.
+extern "C" int havel_vm_is_truthy(uint64_t v) {
+  return valueIsTruthy(v) ? 1 : 0;
+}
+
+// Arithmetic bridges for backends that lower speculative int paths and
+// need generic semantics for everything else (the Cranelift prototype):
+// the VM's execBinaryOp owns the language semantics, so stage the operand
+// words on the VM stack and run it in isolation.
+static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
+                              uint64_t l, uint64_t r);
+
+extern "C" uint64_t havel_vm_add(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::ADD, l, r);
+}
+extern "C" uint64_t havel_vm_sub(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::SUB, l, r);
+}
+extern "C" uint64_t havel_vm_mul(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::MUL, l, r);
+}
+
+static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
+                              uint64_t l, uint64_t r) {
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm) return Value::makeNull().rawBits();
+  const size_t depth_before = vm->stackDepthPublic();
+  vm->pushStackPublic(Value::fromRawBits(l));
+  vm->pushStackPublic(Value::fromRawBits(r));
+  havel::compiler::Instruction instr;
+  instr.opcode = op;
+  try {
+    vm->execBinaryOpPublic(instr);
+    Value result = vm->popStackPublic();
+    vm->truncateStackPublic(depth_before);
+    return result.rawBits();
+  } catch (...) {
+    vm->truncateStackPublic(depth_before);
+    return Value::makeNull().rawBits();
+  }
+}
 
 
 // Power function

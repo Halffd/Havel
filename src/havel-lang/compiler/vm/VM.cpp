@@ -1,6 +1,4 @@
 #include "VM.hpp"
-#include <cstdio>
-#include <cstdlib>
 #include "VMApi.hpp"
 #include "VMInternals.hpp"
 #ifdef HAVEL_ENABLE_CRANELIFT
@@ -2911,11 +2909,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // fflush(stderr);
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
-    if (std::getenv("HCLB_TRACE_JITCALL")) {
-      fprintf(stderr, "[JITCALL] %s closure_id=%u closure_globals=%p\n",
-              callee->name.c_str(), closure_id,
-              closure_globals ? (void*)closure_globals.get() : nullptr);
-    }
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     // Compiled-module-function call context, mirroring the interpreter's
     // frame setup below: swap the ambient globals snapshot when the callee

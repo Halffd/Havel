@@ -3744,6 +3744,76 @@ Value VM::popStack() {
   return value;
 }
 
+bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
+                         Value* out) {
+  Value receiver = Value::fromRawBits(receiver_bits);
+  Value key_value = Value::fromRawBits(key_bits);
+
+  // Interpreter OBJECT_GET parity (VMCollections.cpp) for receivers the
+  // object bridges see: arrays support numeric indices and `len`;
+  // everything object-like resolves through the class chain. Function
+  // objects, intervals, and string prototypes go through the dispatch
+  // fallback at the end.
+
+  if (receiver.isArrayId()) {
+    auto* array = heap_.array(receiver.asArrayId());
+    if (key_value.isInt() && array) {
+      int64_t index = key_value.asInt();
+      if (index < 0) index = static_cast<int64_t>(array->size()) + index;
+      if (index >= 0 && static_cast<size_t>(index) < array->size()) {
+        *out = (*array)[static_cast<size_t>(index)];
+        return true;
+      }
+      *out = Value::makeNull();
+      return true;
+    }
+    auto key = resolveKey(key_value);
+    if (key && *key == "len" && array) {
+      *out = Value::makeInt(static_cast<int64_t>(array->size()));
+      return true;
+    }
+    // Prototype methods (push/map/...) bind host functions; fall through
+    // to the generic dispatch so the method binding matches exactly.
+  }
+
+  if (receiver.isObjectId()) {
+    auto key = resolveKey(key_value);
+    if (key) {
+      if (receiver.asObjectId() == globals_mirror_object_id_) {
+        *out = lookupGlobalByKey(*key);
+        return true;
+      }
+      *out = objectGetWithClassChain(receiver.asObjectId(), *key);
+      return true;
+    }
+    *out = Value::makeNull();
+    return true;
+  }
+
+  // Function objects, intervals/timeouts, strings, sets: execute the real
+  // OBJECT_GET against the shared stack (balanced push/pull, isolated).
+  const size_t depth_before = stack.size();
+  pushStack(receiver);
+  pushStack(key_value);
+  Instruction instr;
+  instr.opcode = OpCode::OBJECT_GET;
+  try {
+    executeInstruction(instr);
+    if (!stack.empty()) {
+      *out = stack.top();
+      stack.pop();
+    } else {
+      *out = Value::makeNull();
+    }
+    truncateStackPublic(depth_before);
+    return true;
+  } catch (...) {
+    truncateStackPublic(depth_before);
+    *out = Value::makeNull();
+    return false;
+  }
+}
+
 uint64_t VM::indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
                                uint64_t val_bits) {
   Value container = Value::fromRawBits(container_bits);

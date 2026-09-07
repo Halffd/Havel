@@ -1529,6 +1529,17 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   // push (the container on success; val on bail to match the old contract).
   uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
                              uint64_t val_bits);
+
+  // Runtime-ABI seam (JitRuntimeBridges object_get): the interpreter's
+  // OBJECT_GET handles non-object receivers too - array len/index access,
+  // string member access, interval/timeout objects, function-object
+  // properties. JIT member access lowers to object_get bridges without
+  // proving the receiver is an object, so the bridges must run the full
+  // chain; without this, tokens.len on an ARRAY read as null and the
+  // self-hosted parser's at()/advance() always saw EOF, hanging parses in
+  // an infinite loop the moment `at` tiered. True when *out is set.
+  bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
+                       Value* out);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers

@@ -15,7 +15,6 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -617,19 +616,15 @@ uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, u
 uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
     if (!vm_ptr) return Value::makeNull().rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeNull().rawBits();
-
-    auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return Value::makeNull().rawBits();
-
-    if (obj.asObjectId() == vm->globalsMirrorObjectId()) {
-        return vm->lookupGlobalByKey(*key_str).rawBits();
+    // Member access on non-objects (array len/index, fn properties, string
+    // prototypes, ...) previously bailed to null here - the interpreter's
+    // OBJECT_GET handles all of them, so route through the parity seam.
+    // tokens.len on an array reading null hung the self-hosted parser.
+    Value out;
+    if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+        return out.rawBits();
     }
-
-    return vm->objectGetWithClassChain(obj.asObjectId(), *key_str).rawBits();
+    return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
@@ -648,7 +643,16 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
     Value obj, key_val;
     std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeNull().rawBits();
+    if (!obj.isObjectId()) {
+        // Non-object receivers take the un-cached parity path
+        // (memberGetPublic); arrays are mutable so the IC's shape-version
+        // scheme does not apply to them anyway.
+        Value out;
+        if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+            return out.rawBits();
+        }
+        return Value::makeNull().rawBits();
+    }
 
     const uint32_t obj_id = obj.asObjectId();
     if (obj_id == vm->globalsMirrorObjectId()) {

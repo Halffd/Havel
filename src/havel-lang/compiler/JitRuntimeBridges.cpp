@@ -15,6 +15,7 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -192,14 +193,27 @@ uint32_t havel_vm_locals_base(void* vm_ptr) {
 // self-hosted parser read BP_NONE for every operator once getBindingPower
 // tiered). Comparisons must therefore reason about NaN through the raw
 // bit pattern, never through isnan or float equality against NaN.
-static bool rawBitsAreNaN(double d) {
+// Fast-math guard: these functions must NOT be compiled with -ffast-math
+// (release default). Under fast-math the compiler both folds isnan to false
+// AND emits vucomisd-based branches whose NaN handling is undefined; the
+// disassembly of the release build showed the neq NaN path branching into
+// an unrelated trace block with clobbered registers. Per-function optnone
+// keeps the bit-pattern NaN logic honest (it is already integer-based, but
+// the surrounding double compare in the non-NaN path must also stay IEEE).
+#if defined(__clang__)
+#define HAVEL_NAN_SAFE __attribute__((optnone))
+#else
+#define HAVEL_NAN_SAFE __attribute__((optimize("no-fast-math")))
+#endif
+
+static HAVEL_NAN_SAFE bool rawBitsAreNaN(double d) {
   uint64_t bits;
   std::memcpy(&bits, &d, sizeof(bits));
   return (bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
          (bits & 0x000FFFFFFFFFFFFFULL) != 0;
 }
 
-static double valueToDouble(uint64_t bits) {
+static HAVEL_NAN_SAFE double valueToDouble(uint64_t bits) {
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) {
     double d; std::memcpy(&d, &bits, sizeof(double)); return d;
   }
@@ -223,7 +237,7 @@ static double valueToDouble(uint64_t bits) {
   return d;
 }
 
-static bool valueIsTruthy(uint64_t bits) {
+static HAVEL_NAN_SAFE bool valueIsTruthy(uint64_t bits) {
   uint64_t nullBits = 0x7FF8000000000000ULL | (0x3ULL << 48);
   if (bits == nullBits) return false;
   uint64_t tag = (bits & 0x0007000000000000ULL) >> 48;
@@ -274,39 +288,39 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
 // equality so identical words compare equal. The single Runtime ABI home
 // for these (an accidental second copy in CoreRuntimeExports.cpp broke
 // the linker's one-definition rule once - do not duplicate).
-extern "C" uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
   if (l == r) return Value::makeBool(true).rawBits();
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld == rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
   if (l == r) return Value::makeBool(false).rawBits();
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
   return Value::makeBool(ld != rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld < rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld <= rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld > rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
   return Value::makeBool(ld >= rd).rawBits();
@@ -314,7 +328,7 @@ extern "C" uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
 
 // Truthiness of a raw Value word (Runtime ABI): null falsy, bool by
 // payload, int48 non-zero, raw double non-zero/non-NaN, refs truthy.
-extern "C" int havel_vm_is_truthy(uint64_t v) {
+extern "C" HAVEL_NAN_SAFE int havel_vm_is_truthy(uint64_t v) {
   return valueIsTruthy(v) ? 1 : 0;
 }
 

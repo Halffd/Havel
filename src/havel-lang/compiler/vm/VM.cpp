@@ -2910,23 +2910,53 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+    // Module-globals snapshot swap, mirroring the interpreter path below
+    // (VM.cpp: globals = *closure_globals with save/restore around the
+    // frame). The interpreter swaps the ambient map when a closure/module
+    // function carries module_globals; compiled functions read and write
+    // globals through the Runtime ABI bridges against the ambient map, so
+    // without this swap a JIT'd module function called from outside its
+    // module would corrupt the caller's globals instead of its module's
+    // (the self-hosted parser's BP_TABLE broke exactly this way).
+    bool jit_owns_globals = false;
+    if (closure_globals) {
+      globals_stack_.push_back(std::move(globals));
+      globals = *closure_globals;
+      jit_owns_globals = true;
+    }
     try {
       Value result;
       if (backend_->execute(this, callee->name, args, &result)) {
         setJITActiveClosurePublic(prev_jit_closure);
+        if (jit_owns_globals && !globals_stack_.empty()) {
+          globals = std::move(globals_stack_.back());
+          globals_stack_.pop_back();
+        }
         pushStack(result);
         return;
       }
       setJITActiveClosurePublic(prev_jit_closure);
+      if (jit_owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+      }
       // Backend declined; fall through to the interpreter call path.
     } catch (const JitCoroutineSignal &) {
       // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
       // that requires interpreter frame management. Fall back to
       // the interpreter path below to execute this function call.
       setJITActiveClosurePublic(prev_jit_closure);
+      if (jit_owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+      }
       // Fall through to normal interpreter call path
     } catch (...) {
       setJITActiveClosurePublic(prev_jit_closure);
+      if (jit_owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+      }
       throw;
     }
   }

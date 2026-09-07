@@ -1173,17 +1173,22 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
-    // Module-function gate: the interpreter swaps the ambient globals
-    // snapshot to the callee closure's module_globals map when calling a
-    // module function (VM.cpp doCall), and the JIT execute path does not
-    // perform that swap - compiled module functions would read and write
-    // the CALLER's ambient map while other frames read the module
-    // sidecar, silently corrupting module-level caches (the self-hosted
-    // parser's BP_TABLE broke exactly this way when getBPTABLE tiered
-    // mid-parse). Until the JIT path implements the snapshot swap, only
-    // functions from the main chunk tier up; module functions stay
-    // interpreted.
-    if (frame_count_ > 0) {
+    // Module-function gate: module functions do NOT tier yet. The JIT
+    // execute path pushes no interpreter frame, so a compiled module
+    // function's Runtime-ABI global writes persist against the CALLER's
+    // frame (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverge depending on
+    // which path touched them last (the self-hosted parser's BP_TABLE
+    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
+    // compiled function itself returns correct values). doCall's JIT
+    // branch now performs the module-globals snapshot swap for ClosureId
+    // calls (matching the interpreter), which fixes that half; lifting
+    // this gate additionally requires the JIT path to establish the
+    // callee's frame context (closure_id/module_globals) for the bridges.
+    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    static const bool allow_module_tiering =
+        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
+    if (!allow_module_tiering && frame_count_ > 0) {
       const auto& cf = currentFrame();
       if (cf.chunk && cf.chunk != main_chunk_.get()) {
         return;

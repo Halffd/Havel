@@ -500,16 +500,15 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
 uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
     if (!vm_ptr) return val_bits;
     auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr, idx, val;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    if (!arr.isArrayId() || !idx.isInt()) return val_bits;
-    vm->setHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()), val);
-    // Return the array reference (not the value) so chained sets on the
-    // same array keep operating on the same array. Interpreter
-    // ARRAY_SET pops value/index/container and pushes the container.
-    return arr_bits;
+    // Full interpreter parity: ARRAY_SET falls through array/set/object
+    // semantics (VM::indexAssignPublic mirrors VMCollections.cpp,
+    // including the object GC write barrier and op_index_set dispatch).
+    // Previously this bailed on non-array containers, so every
+    // obj[key] = value in JIT-compiled code silently no-opped - the
+    // self-hosted parser's binding-power table built empty and every
+    // operator lookup read BP_NONE, corrupting parses once getBPTABLE
+    // tiered.
+    return vm->indexAssignPublic(arr_bits, idx_bits, val_bits);
 }
 
 uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {

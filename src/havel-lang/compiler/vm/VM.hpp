@@ -1307,10 +1307,20 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     }
   }
   // Diagnostic accessors for embedders that still report on the legacy
-  // interface (hvdb status output). Null when no JIT is attached.
+  // interface (hvdb status output, launcher JIT flag wiring). Null when no
+  // JIT is attached. Sees through the TieredBackend composite to its
+  // optimizing (ORC) tier.
   JITCompiler* getJITCompiler() const {
-    auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get());
-    return jit_backend ? jit_backend->legacy() : nullptr;
+    if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get())) {
+      return jit_backend->legacy();
+    }
+    if (auto* tiered = dynamic_cast<TieredBackend*>(backend_.get())) {
+      auto* optimizing = tiered->optimizing();
+      if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(optimizing)) {
+        return jit_backend->legacy();
+      }
+    }
+    return nullptr;
   }
 
   // System object initializer - called after registerDefaultHostGlobals()
@@ -1510,6 +1520,14 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   uint32_t getStringId(const Value &str);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
+  // Runtime-ABI seam (JitRuntimeBridges array_set): the interpreter's
+  // ARRAY_SET falls through to set/object semantics when the container is
+  // not an array (VMCollections.cpp) - including the object GC write
+  // barrier and frozen-object checks - and JIT-compiled code must see the
+  // exact same behavior. Returns the container word the interpreter would
+  // push (the container on success; val on bail to match the old contract).
+  uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
+                             uint64_t val_bits);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers

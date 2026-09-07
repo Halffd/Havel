@@ -3736,6 +3736,104 @@ Value VM::popStack() {
   return value;
 }
 
+uint64_t VM::indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
+                               uint64_t val_bits) {
+  Value container = Value::fromRawBits(container_bits);
+  Value index_or_key = Value::fromRawBits(key_bits);
+  Value value = Value::fromRawBits(val_bits);
+
+  // Parity with the interpreter's ARRAY_SET (VMCollections.cpp): array fast
+  // path, then set, then object semantics including op_index_set dispatch,
+  // the globals-mirror special case, resolveKey, and the object GC write
+  // barrier. On bail shapes the caller contract returns the value word.
+
+  if (container.isArrayId()) {
+    if (!index_or_key.isInt()) return val_bits;
+    auto index = indexFromValue(index_or_key);
+    if (!index) return val_bits;
+    auto* array = heap_.array(container.asArrayId());
+    if (!array) return val_bits;
+    if (array->frozen) return val_bits;
+    int64_t idx = *index;
+    if (idx < 0) {
+      idx = static_cast<int64_t>(array->size()) + idx;
+      if (idx < 0) return val_bits;
+    }
+    const auto idx_size = static_cast<size_t>(idx);
+    if (idx_size >= 100'000'000) return val_bits;
+    const size_t old_size = array->size();
+    if (idx_size >= old_size) {
+      array->resize(idx_size + 1, Value::makeNull());
+    }
+    (*array)[idx_size] = value;
+    heap_.writeArrayBarrier(array->data, value);
+    heap_.bumpArrayVersion(container.asArrayId());
+    if (old_size != array->size()) {
+      emitVariableChanged("@A" + std::to_string(container.asArrayId()) +
+                          ":length");
+    }
+    emitVariableChanged("@A" + std::to_string(container.asArrayId()) +
+                        ":[" + std::to_string(idx) + "]");
+    return container_bits;
+  }
+
+  if (container.isSetId()) {
+    auto key = resolveKey(index_or_key);
+    if (!key) return val_bits;
+    auto* set = heap_.set(container.asSetId());
+    if (!set) return val_bits;
+    bool present = false;
+    if (value.isBool()) {
+      present = value.asBool();
+    } else if (value.isInt()) {
+      present = value.asInt() != 0;
+    } else if (value.isDouble()) {
+      present = value.asDouble() != 0.0;
+    } else {
+      return val_bits;
+    }
+    if (present) {
+      (*set)[*key] = Value::makeNull();
+      heap_.writeSetBarrier(*set, *key, Value::makeNull());
+      heap_.bumpSetVersion(container.asSetId());
+    } else {
+      set->erase(*key);
+      heap_.bumpSetVersion(container.asSetId());
+    }
+    return container_bits;
+  }
+
+  if (container.isObjectId()) {
+    // Operator overloading: op_index_set takes precedence (matches the
+    // interpreter), executing the method and pushing the container.
+    Value opIndexSet = getHostObjectField(
+        ObjectRef{container.asObjectId(), true}, "op_index_set");
+    if (!opIndexSet.isNull() &&
+        (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() ||
+         opIndexSet.isHostFuncId())) {
+      callFunction(opIndexSet, {container, index_or_key, value});
+      return container_bits;
+    }
+    auto key = resolveKey(index_or_key);
+    if (!key) return val_bits;
+    auto* object = heap_.object(container.asObjectId());
+    if (!object) return val_bits;
+    // object->set() bumps shape_version, which the JIT's inline-cached
+    // collection reads (object_get_raw_ic) key their staleness check on;
+    // (*object)[key] does not bump, so cached reads would serve stale
+    // values forever after any write (the binding-power table built by
+    // JIT'd getBPTABLE read back as empty through the cache).
+    object->set(*key, value);
+    if (container.asObjectId() == globals_mirror_object_id_) {
+      globals[*key] = value;
+    }
+    heap_.writeObjectBarrier(object->data, *key, value);
+    return container_bits;
+  }
+
+  return val_bits;
+}
+
 void VM::pushStack(Value value) {
   if (stack.size() >= 1'000'000) {
     COMPILER_THROW("Expression stack overflow");

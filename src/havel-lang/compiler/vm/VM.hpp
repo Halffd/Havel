@@ -25,6 +25,8 @@
 #include "../core/Backend.hpp"
 #include "../core/RuntimeProfiler.hpp"
 #include "../gc/GC.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
+#include "../runtime/EventQueue.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../../runtime/ModuleLoader.hpp"
@@ -33,6 +35,7 @@ namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
 #include "../../../utils/Logger.hpp"  // tier-manager debug output
+#include "../runtime/EventQueue.hpp"
 
 namespace havel::compiler {
 
@@ -1307,10 +1310,20 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     }
   }
   // Diagnostic accessors for embedders that still report on the legacy
-  // interface (hvdb status output). Null when no JIT is attached.
+  // interface (hvdb status output, launcher JIT flag wiring). Null when no
+  // JIT is attached. Sees through the TieredBackend composite to its
+  // optimizing (ORC) tier.
   JITCompiler* getJITCompiler() const {
-    auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get());
-    return jit_backend ? jit_backend->legacy() : nullptr;
+    if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get())) {
+      return jit_backend->legacy();
+    }
+    if (auto* tiered = dynamic_cast<TieredBackend*>(backend_.get())) {
+      auto* optimizing = tiered->optimizing();
+      if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(optimizing)) {
+        return jit_backend->legacy();
+      }
+    }
+    return nullptr;
   }
 
   // System object initializer - called after registerDefaultHostGlobals()
@@ -1437,6 +1450,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     int exitCode() const { return exit_code_.load(); }
   
     void setGlobal(std::string name, Value value) {
+        assertVMThread("setGlobal");
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
@@ -1485,10 +1499,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
     void persistModuleGlobalPublic(const std::string& name, const Value& value) {
         const auto& cf = currentFrame();
-        if (std::getenv("HCLB_TRACE_PERSIST")) {
-            fprintf(stderr, "[PERSIST] %s frame_closure=%u\n", name.c_str(),
-                    cf.closure_id);
-        }
         if (cf.closure_id == 0) return;
         auto* closure = heap_.closure(cf.closure_id);
         if (!closure || !closure->module_globals) return;
@@ -1514,6 +1524,25 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   uint32_t getStringId(const Value &str);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
+  // Runtime-ABI seam (JitRuntimeBridges array_set): the interpreter's
+  // ARRAY_SET falls through to set/object semantics when the container is
+  // not an array (VMCollections.cpp) - including the object GC write
+  // barrier and frozen-object checks - and JIT-compiled code must see the
+  // exact same behavior. Returns the container word the interpreter would
+  // push (the container on success; val on bail to match the old contract).
+  uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
+                             uint64_t val_bits);
+
+  // Runtime-ABI seam (JitRuntimeBridges object_get): the interpreter's
+  // OBJECT_GET handles non-object receivers too - array len/index access,
+  // string member access, interval/timeout objects, function-object
+  // properties. JIT member access lowers to object_get bridges without
+  // proving the receiver is an object, so the bridges must run the full
+  // chain; without this, tokens.len on an ARRAY read as null and the
+  // self-hosted parser's at()/advance() always saw EOF, hanging parses in
+  // an infinite loop the moment `at` tiered. True when *out is set.
+  bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
+                       Value* out);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
@@ -1625,6 +1654,115 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
+
+  // =====================================================================
+  // Fiber-suspending blocking host calls (A+C threading model).
+  //
+  // Host functions with slow/blocking implementations call
+  // runBlockingHostCall(job, lift) unconditionally — the context decides
+  // the mode, authors never branch:
+  //
+  //   goroutine context + live event queue: job() runs on an EventQueue
+  //     worker thread and returns a shared_ptr<void> (any C++ result;
+  //     never a Value — Values never cross threads). The completion
+  //     event carries the cell; on the VM thread lift(cell) builds the
+  //     result Value and Scheduler::resumeExternalWithValue parks->
+  //     resumes the goroutine. The VM thread never blocks on the I/O.
+  //
+  //   no goroutine / no queue: job runs inline on the VM thread and
+  //     lift(job()) returns directly — cost identical to a plain
+  //     synchronous host call.
+  //
+  // Suspend case returns Value::makePending(token); the CALL epilogue
+  // parks the current goroutine on that token.
+  //
+  // GC note: lift may capture Values (host-object ids etc.). lift runs
+  // on the VM thread but survives across a suspension where GC can
+  // run, so pending records pin those captures via external roots —
+  // the registerCallback discipline.
+  // =====================================================================
+  using AsyncCxxResult = havel::compiler::AsyncCxxResult;
+  struct PendingHostCall {
+    std::function<Value(const AsyncCxxResult &)> vm_lift;
+  };
+  std::unordered_map<uint32_t, PendingHostCall> pending_host_calls_;
+  std::mutex pending_host_calls_mutex_;
+  uint32_t next_pending_token_ = 1;
+
+  template<typename JobFn, typename LiftFn>
+  Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
+    auto *sched = getScheduler();
+    if (sched && sched->current() && event_queue_ &&
+        !event_queue_->isShutdown()) {
+      uint32_t token;
+      {
+        std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);
+        token = next_pending_token_++;
+        pending_host_calls_[token] = PendingHostCall{
+            std::forward<LiftFn>(lift)};
+      }
+      auto *eq = event_queue_;
+      eq->postToWorker([eq, token, job = std::forward<JobFn>(job)]() {
+        // ---- worker thread: C++ in, C++ out, no VM/Value access ----
+        AsyncCxxResult cell;
+        try {
+          cell = job();
+        } catch (const std::exception &e) {
+          ::havel::error("[async host call] job threw: {}", e.what());
+        } catch (...) {
+          ::havel::error("[async host call] job threw unknown exception");
+        }
+        // Deliver. EventQueue drops events post-shutdown; the cell is
+        // a shared_ptr so the memory is freed wherever the last
+        // reference dies (here or in the handler).
+        eq->push(Event(EventType::ASYNC_HOST_COMPLETE, token,
+                       new AsyncCxxResult(std::move(cell))));
+      });
+      return Value::makePending(token);
+    }
+    // Synchronous fallback: identical cost to today's blocking call.
+    return lift(job());
+  }
+
+  // VM thread: handle a completed async host call. Runs the lift to
+  // build the result Value and resumes the parked goroutine.
+  void handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell);
+
+  // CALL epilogue helper for both dispatch paths (fast op_CALL and slow
+  // op_default): if the just-executed CALL left a Pending marker on the
+  // stack, park the current goroutine on the pending token (WaitHandle::
+  // EXTERNAL) and return true so the dispatcher suspends. Returns false
+  // for ordinary results. A Pending with no matching current goroutine
+  // is a broken invariant: log loudly and neutralize to null.
+  bool parkIfPendingCallResult() {
+    if (!scheduler_ || !current_executing_fiber_ || stack.empty()) {
+      if (!stack.empty() && stack.top().isPending()) {
+        ::havel::error("[VM] Pending host-call result outside goroutine "
+                       "context; check runBlockingHostCall preconditions");
+        stack.top() = Value::makeNull();
+      }
+      return false;
+    }
+    Value top = stack.top();
+    if (!top.isPending()) return false;
+    uint32_t token = top.asPendingToken();
+    Scheduler::Goroutine *g = scheduler_->current();
+    if (g && g->fiber == current_executing_fiber_) {
+      {
+        std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
+        g->wait_handle.set_external(token);
+      }
+      last_suspension_reason_ =
+          static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
+      last_suspension_context_ = nullptr;
+      suspension_requested_ = false;
+      return true;
+    }
+    ::havel::error("[VM] Pending value escaped without a matching current "
+                   "goroutine (token {})", token);
+    stack.top() = Value::makeNull();
+    return false;
+  }
   void pinModuleCacheExports(const std::string &key, const Value &exports);
   std::optional<Value> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }
@@ -1970,18 +2108,93 @@ bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire)
     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
      void* getServiceRegistry() const { return serviceRegistry_; }
 
-     // RAII guard for vm_in_execute_. Ensures the flag is cleared on
-     // exception escape, preventing executeFrame() from being permanently
-     // locked out (ExecutionEngine.cpp:108 returns early while true).
-     struct ExecuteGuard {
-       std::atomic<bool>& flag;
-       explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
-         flag.store(true, std::memory_order_release);
-       }
-       ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
-       ExecuteGuard(const ExecuteGuard&) = delete;
-       ExecuteGuard& operator=(const ExecuteGuard&) = delete;
-     };
+      // RAII guard for vm_in_execute_. Ensures the flag is cleared on
+      // exception escape, preventing executeFrame() from being permanently
+      // locked out (ExecutionEngine.cpp:108 returns early while true).
+      struct ExecuteGuard {
+        std::atomic<bool>& flag;
+        explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
+          flag.store(true, std::memory_order_release);
+        }
+        ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
+        ExecuteGuard(const ExecuteGuard&) = delete;
+        ExecuteGuard& operator=(const ExecuteGuard&) = delete;
+      };
+
+      // =====================================================================
+      // VM-thread ownership guard (debug builds).
+      //
+      // The invariant: Havel state (stack, frames, heap, globals) is
+      // touched by at most one thread at a time. Different threads may
+      // LEGITIMATELY take turns driving the VM (main thread runs
+      // vm->execute(); the EventListener event-loop thread runs
+      // executeFrame(); any thread may run callFunctionSync) — but never
+      // concurrently, and foreign threads must never mutate VM state
+      // while the owner thread is inside dispatch.
+      //
+      // runDispatchLoop() latches dispatch_thread_ to whichever thread
+      // enters it and clears the latch on exit. While latched, the
+      // HAVEL_ASSERT_VM_THREAD guard fires if any OTHER thread reaches a
+      // VM-state choke point (invokeCallback, spawnGoroutine,
+      // setGlobal, heap allocation). This makes cross-thread violations
+      // (e.g. a detached timer thread calling invokeCallback while the
+      // event thread is dispatching) crash loudly in debug instead of
+      // corrupting state.
+      // =====================================================================
+#ifndef NDEBUG
+      std::thread::id dispatch_thread_{};
+      std::atomic<bool> dispatch_latched_{false};
+
+      void latchDispatchThread() {
+        // Nested re-entry (callFunctionSync inside dispatch) keeps latch.
+        if (dispatch_latched_.load(std::memory_order_acquire)) {
+          if (dispatch_thread_ != std::this_thread::get_id()) {
+            fprintf(stderr,
+                    "[VM-THREAD-VIOLATION] thread %zu entered dispatch while "
+                    "thread %zu holds it\n",
+                    hash_thread_id(std::this_thread::get_id()),
+                    hash_thread_id(dispatch_thread_));
+            abort();
+          }
+          return;
+        }
+        dispatch_thread_ = std::this_thread::get_id();
+        dispatch_latched_.store(true, std::memory_order_release);
+      }
+
+      void unlatchDispatchThread() {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ == std::this_thread::get_id()) {
+          dispatch_latched_.store(false, std::memory_order_release);
+          dispatch_thread_ = std::thread::id{};
+        }
+      }
+
+      static size_t hash_thread_id(std::thread::id id) {
+        return std::hash<std::thread::id>{}(id);
+      }
+
+      // Fire when a foreign thread touches VM state mid-dispatch: a
+      // detached timer thread calling invokeCallback while the event
+      // thread is dispatching crashes loudly here instead of corrupting
+      // state. No-op in release builds.
+      void assertVMThread(const char* what) {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ != std::this_thread::get_id()) {
+          fprintf(stderr,
+                  "[VM-THREAD-VIOLATION] %s called from foreign thread %zu "
+                  "while thread %zu owns dispatch\n",
+                  what, hash_thread_id(std::this_thread::get_id()),
+                  hash_thread_id(dispatch_thread_));
+          abort();
+        }
+      }
+#else
+      void latchDispatchThread() {}
+      void unlatchDispatchThread() {}
+      void assertVMThread(const char*) {}
+#endif
+
 
 
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }

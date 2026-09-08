@@ -15,6 +15,7 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -185,7 +186,34 @@ uint32_t havel_vm_locals_base(void* vm_ptr) {
 // Semantic comparison bridges — handle NaN-boxed type dispatch correctly
 // int 1 == double 1.0 must be true, but their bit representations differ
 
-static double valueToDouble(uint64_t bits) {
+// All bridges in this TU compile with -ffast-math, where std::isnan folds
+// to constant false and floating comparisons against NaN fold arbitrarily
+// (this exact combination made havel_vm_neq(60, null) return false, which
+// corrupted every mixed-type comparison from JIT-compiled code - the
+// self-hosted parser read BP_NONE for every operator once getBindingPower
+// tiered). Comparisons must therefore reason about NaN through the raw
+// bit pattern, never through isnan or float equality against NaN.
+// Fast-math guard: these functions must NOT be compiled with -ffast-math
+// (release default). Under fast-math the compiler both folds isnan to false
+// AND emits vucomisd-based branches whose NaN handling is undefined; the
+// disassembly of the release build showed the neq NaN path branching into
+// an unrelated trace block with clobbered registers. Per-function optnone
+// keeps the bit-pattern NaN logic honest (it is already integer-based, but
+// the surrounding double compare in the non-NaN path must also stay IEEE).
+#if defined(__clang__)
+#define HAVEL_NAN_SAFE __attribute__((optnone))
+#else
+#define HAVEL_NAN_SAFE __attribute__((optimize("no-fast-math")))
+#endif
+
+static HAVEL_NAN_SAFE bool rawBitsAreNaN(double d) {
+  uint64_t bits;
+  std::memcpy(&bits, &d, sizeof(bits));
+  return (bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
+         (bits & 0x000FFFFFFFFFFFFFULL) != 0;
+}
+
+static HAVEL_NAN_SAFE double valueToDouble(uint64_t bits) {
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) {
     double d; std::memcpy(&d, &bits, sizeof(double)); return d;
   }
@@ -200,10 +228,16 @@ static double valueToDouble(uint64_t bits) {
   if (tag == 0x2) { // BOOL
     return static_cast<double>((bits & 0x0000FFFFFFFFFFFFULL) != 0 ? 1 : 0);
   }
-  return 0.0/0.0; // NaN for null/ptr/refs — never equal to anything
+  // Null/ptr/refs coerce to a NaN payload value; comparisons treat them as
+  // never-equal. Build the NaN through the bit pattern (0x7FF8...) so the
+  // value remains distinguishable under -ffast-math via rawBitsAreNaN.
+  uint64_t nan_bits = 0x7FF8000000000001ULL;
+  double d;
+  std::memcpy(&d, &nan_bits, sizeof(d));
+  return d;
 }
 
-static bool valueIsTruthy(uint64_t bits) {
+static HAVEL_NAN_SAFE bool valueIsTruthy(uint64_t bits) {
   uint64_t nullBits = 0x7FF8000000000000ULL | (0x3ULL << 48);
   if (bits == nullBits) return false;
   uint64_t tag = (bits & 0x0007000000000000ULL) >> 48;
@@ -216,7 +250,15 @@ static bool valueIsTruthy(uint64_t bits) {
   }
   if (tag == 0x2) return (bits & 0x0000FFFFFFFFFFFFULL) != 0; // BOOL
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) { // DOUBLE
-    double d; std::memcpy(&d, &bits, sizeof(double)); return d != 0.0 && !std::isnan(d);
+    // Fast-math-safe: NaN doubles are falsy; test by raw bits, not isnan.
+    if ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
+        (bits & 0x000FFFFFFFFFFFFFULL) != 0) {
+      return false;  // NaN: falsy
+    }
+    double d; std::memcpy(&d, &bits, sizeof(double));
+    return d != 0.0;  // note: -0.0 == 0.0 compares equal under IEEE;
+                      // the interpreter treats -0.0 as falsy via the same
+                      // comparison, so this matches.
   }
   return true; // objects, arrays, etc. are truthy
 }
@@ -240,8 +282,92 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
     return vm->execLengthOp(v).rawBits();
 }
 
-// havel_vm_is_truthy moved to CoreRuntimeExports.cpp (Runtime ABI home);
-// valueIsTruthy stays here for the JIT's own truthiness lowering.
+// Comparison bridges (Runtime ABI): pure word semantics, no VM state.
+// Numeric comparisons coerce both sides as doubles; null/refs coerce to
+// NaN so comparisons against them are false; EQ/NEQ first check raw bit
+// equality so identical words compare equal. The single Runtime ABI home
+// for these (an accidental second copy in CoreRuntimeExports.cpp broke
+// the linker's one-definition rule once - do not duplicate).
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(true).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld == rd).rawBits();
+}
+
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(false).rawBits();
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
+  return Value::makeBool(ld != rd).rawBits();
+}
+
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld < rd).rawBits();
+}
+
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld <= rd).rawBits();
+}
+
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld > rd).rawBits();
+}
+
+extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld >= rd).rawBits();
+}
+
+// Truthiness of a raw Value word (Runtime ABI): null falsy, bool by
+// payload, int48 non-zero, raw double non-zero/non-NaN, refs truthy.
+extern "C" HAVEL_NAN_SAFE int havel_vm_is_truthy(uint64_t v) {
+  return valueIsTruthy(v) ? 1 : 0;
+}
+
+// Arithmetic bridges for backends that lower speculative int paths and
+// need generic semantics for everything else (the Cranelift prototype):
+// the VM's execBinaryOp owns the language semantics, so stage the operand
+// words on the VM stack and run it in isolation.
+static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
+                              uint64_t l, uint64_t r);
+
+extern "C" uint64_t havel_vm_add(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::ADD, l, r);
+}
+extern "C" uint64_t havel_vm_sub(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::SUB, l, r);
+}
+extern "C" uint64_t havel_vm_mul(void* vm_ptr, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::MUL, l, r);
+}
+
+static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
+                              uint64_t l, uint64_t r) {
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm) return Value::makeNull().rawBits();
+  const size_t depth_before = vm->stackDepthPublic();
+  vm->pushStackPublic(Value::fromRawBits(l));
+  vm->pushStackPublic(Value::fromRawBits(r));
+  havel::compiler::Instruction instr;
+  instr.opcode = op;
+  try {
+    vm->execBinaryOpPublic(instr);
+    Value result = vm->popStackPublic();
+    vm->truncateStackPublic(depth_before);
+    return result.rawBits();
+  } catch (...) {
+    vm->truncateStackPublic(depth_before);
+    return Value::makeNull().rawBits();
+  }
+}
 
 
 // Power function
@@ -416,16 +542,15 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
 uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
     if (!vm_ptr) return val_bits;
     auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr, idx, val;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    if (!arr.isArrayId() || !idx.isInt()) return val_bits;
-    vm->setHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()), val);
-    // Return the array reference (not the value) so chained sets on the
-    // same array keep operating on the same array. Interpreter
-    // ARRAY_SET pops value/index/container and pushes the container.
-    return arr_bits;
+    // Full interpreter parity: ARRAY_SET falls through array/set/object
+    // semantics (VM::indexAssignPublic mirrors VMCollections.cpp,
+    // including the object GC write barrier and op_index_set dispatch).
+    // Previously this bailed on non-array containers, so every
+    // obj[key] = value in JIT-compiled code silently no-opped - the
+    // self-hosted parser's binding-power table built empty and every
+    // operator lookup read BP_NONE, corrupting parses once getBPTABLE
+    // tiered.
+    return vm->indexAssignPublic(arr_bits, idx_bits, val_bits);
 }
 
 uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {
@@ -492,19 +617,15 @@ uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, u
 uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
     if (!vm_ptr) return Value::makeNull().rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeNull().rawBits();
-
-    auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return Value::makeNull().rawBits();
-
-    if (obj.asObjectId() == vm->globalsMirrorObjectId()) {
-        return vm->lookupGlobalByKey(*key_str).rawBits();
+    // Member access on non-objects (array len/index, fn properties, string
+    // prototypes, ...) previously bailed to null here - the interpreter's
+    // OBJECT_GET handles all of them, so route through the parity seam.
+    // tokens.len on an array reading null hung the self-hosted parser.
+    Value out;
+    if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+        return out.rawBits();
     }
-
-    return vm->objectGetWithClassChain(obj.asObjectId(), *key_str).rawBits();
+    return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
@@ -523,7 +644,16 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
     Value obj, key_val;
     std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeNull().rawBits();
+    if (!obj.isObjectId()) {
+        // Non-object receivers take the un-cached parity path
+        // (memberGetPublic); arrays are mutable so the IC's shape-version
+        // scheme does not apply to them anyway.
+        Value out;
+        if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+            return out.rawBits();
+        }
+        return Value::makeNull().rawBits();
+    }
 
     const uint32_t obj_id = obj.asObjectId();
     if (obj_id == vm->globalsMirrorObjectId()) {
@@ -1118,6 +1248,10 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     Value receiver;
     std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
     const std::string method_name = chunk->getString(method_name_id);
+    if (std::getenv("HCLB_TRACE_CM")) {
+        fprintf(stderr, "[CALL_METHOD] chunk=%p id=%u name=%s nargs=%u\n",
+                (const void*)chunk, method_name_id, method_name.c_str(), arg_count);
+    }
     if (method_name.empty()) return Value::makeNull().rawBits();
 
     std::vector<Value> callArgs;

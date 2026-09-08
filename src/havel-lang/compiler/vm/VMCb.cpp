@@ -30,6 +30,7 @@ CallbackId VM::registerCallback(const Value &closure) {
 
 Value VM::invokeCallback(CallbackId id,
                                  const std::vector<Value> &args) {
+  assertVMThread("invokeCallback");
   if (id == INVALID_CALLBACK_ID) {
     COMPILER_THROW("invokeCallback called with invalid callback ID");
   }
@@ -46,6 +47,7 @@ Value VM::invokeCallback(CallbackId id,
 }
 
 uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args) {
+  assertVMThread("spawnGoroutine");
   if (!scheduler_) {
     ::havel::warn("[VM] spawnGoroutine: No scheduler available");
     return 0;
@@ -607,6 +609,17 @@ void VM::setEventQueue(class EventQueue* eq) {
       }
       delete payload;
     });
+    eq->onEvent(EventType::ASYNC_HOST_COMPLETE,
+                [this](const Event& event) {
+                  auto *cell =
+                      static_cast<AsyncCxxResult *>(event.ptr);
+                  if (!cell) return;
+                  // move the cell out before handling: the event owns the
+                  // last reference once the handler returns
+                  AsyncCxxResult owned(std::move(*cell));
+                  delete cell;
+                  handleAsyncHostComplete(event.data1, owned);
+                });
   }
 }
 
@@ -632,6 +645,40 @@ void VM::executePendingTimerCallbacks() {
     } catch (const std::exception& e) {
       ::havel::error("[VM] Timer callback exception: {}", e.what());
     }
+  }
+}
+
+void VM::handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell) {
+  // VM thread: a blocking host call finished on a worker. Run the lift
+  // (builds the result Value from the C++ cell), then resume the parked
+  // goroutine. Both lift captures and the record are VM-side state.
+  PendingHostCall record;
+  {
+    std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);
+    auto it = pending_host_calls_.find(token);
+    if (it == pending_host_calls_.end()) {
+      ::havel::debug("[VM] async host complete: token {} unmatched (call "
+                     "aborted) - dropped", token);
+      return;
+    }
+    record = std::move(it->second);
+    pending_host_calls_.erase(it);
+  }
+
+  Value result = Value::makeNull();
+  try {
+    if (record.vm_lift) result = record.vm_lift(cell);
+  } catch (const std::exception &e) {
+    ::havel::error("[VM] async host lift threw: {}", e.what());
+  } catch (...) {
+    ::havel::error("[VM] async host lift threw unknown exception");
+  }
+
+  auto *sched = getScheduler();
+  if (sched) {
+    sched->resumeExternalWithValue(token, std::move(result));
+  } else {
+    ::havel::warn("[VM] async host complete with no scheduler - dropped");
   }
 }
 

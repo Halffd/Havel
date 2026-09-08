@@ -9,7 +9,6 @@
  * - UIBridge: windows, clipboard, screenshots
  * - InputBridge: hotkeys, input remapping, AltTab
  * - MediaBridge: audio, brightness
- * - AsyncBridge: timers, async operations
  * - AutomationBridge: automation tasks
  * - BrowserBridge: browser automation
  * - ToolsBridge: text chunker
@@ -780,63 +779,6 @@ public:
                                              const HostContext *ctx);
     static Value handleMediaGetAvailablePlayers(const std::vector<Value> &args,
                                                   const HostContext *ctx);
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * AsyncBridge - Timers, async operations
- */
-class AsyncBridge : public BridgeModule {
-public:
-    explicit AsyncBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-    static Value handleSleep(const std::vector<Value> &args,
-                              const HostContext *ctx);
-    static Value handleTimeNow(const std::vector<Value> &args,
-                                const HostContext *ctx);
-    static Value handleAsyncRun(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-    static Value handleAsyncAwait(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleAsyncCancel(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleAsyncIsRunning(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-    static Value handleChannelCreate(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleChannelSend(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleChannelReceive(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-    static Value handleChannelTryReceive(const std::vector<Value> &args,
-                                          const HostContext *ctx);
-    static Value handleChannelClose(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleThreadCreate(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleThreadSend(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleThreadPause(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleThreadResume(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleThreadStop(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleThreadRunning(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleIntervalCreate(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-    static Value handleIntervalPause(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleIntervalResume(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-    static Value handleIntervalStop(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleTimeoutCreate(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleTimeoutCancel(const std::vector<Value> &args,
-                                      const HostContext *ctx);
 private:
     const HostContext *ctx_;
 };

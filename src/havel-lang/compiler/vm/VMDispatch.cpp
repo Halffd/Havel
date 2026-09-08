@@ -979,6 +979,9 @@ op_CALL: {
         }
         goto slow_dispatch_fallback;
     }
+    // Fiber-suspending host call: the CALL left a Pending marker; park
+    // the current goroutine on the pending token and suspend.
+    if (parkIfPendingCallResult()) return;
     counter++;
     if ((counter & 8191) == 0) {
         profiler_.recordInstructions(8192);

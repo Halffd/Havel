@@ -1198,6 +1198,18 @@ public:
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
+#ifdef HAVEL_ENABLE_LLVM
+      // The precompiled-bytecode path (runBytecodeFiles) configures the ORC
+      // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
+      // effect on tiering compiles done through the TieredBackend. Apply
+      // the same flags here, through the backend boundary.
+      if (auto* jit = vm.getJITCompiler()) {
+        jit->setDebugMode(cfg.debugJIT);
+        jit->setDumpIR(cfg.dumpIR);
+        jit->setDumpAsmToFile(cfg.outputAsmToFile);
+        jit->setShowWarnings(cfg.aotWarnings);
+      }
+#endif
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);
@@ -1245,6 +1257,18 @@ private:
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
+#ifdef HAVEL_ENABLE_LLVM
+      // The precompiled-bytecode path (runBytecodeFiles) configures the ORC
+      // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
+      // effect on tiering compiles done through the TieredBackend. Apply
+      // the same flags here, through the backend boundary.
+      if (auto* jit = vm.getJITCompiler()) {
+        jit->setDebugMode(cfg.debugJIT);
+        jit->setDumpIR(cfg.dumpIR);
+        jit->setDumpAsmToFile(cfg.outputAsmToFile);
+        jit->setShowWarnings(cfg.aotWarnings);
+      }
+#endif
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);

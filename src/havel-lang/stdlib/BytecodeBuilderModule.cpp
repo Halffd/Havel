@@ -4,6 +4,9 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "utils/Logger.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include <fstream>
 #include <iostream>
 

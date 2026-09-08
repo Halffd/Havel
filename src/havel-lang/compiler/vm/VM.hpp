@@ -25,6 +25,8 @@
 #include "../core/Backend.hpp"
 #include "../core/RuntimeProfiler.hpp"
 #include "../gc/GC.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
+#include "../runtime/EventQueue.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../../runtime/ModuleLoader.hpp"
@@ -33,6 +35,7 @@ namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
 #include "../../../utils/Logger.hpp"  // tier-manager debug output
+#include "../runtime/EventQueue.hpp"
 
 namespace havel::compiler {
 
@@ -1651,6 +1654,115 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
+
+  // =====================================================================
+  // Fiber-suspending blocking host calls (A+C threading model).
+  //
+  // Host functions with slow/blocking implementations call
+  // runBlockingHostCall(job, lift) unconditionally — the context decides
+  // the mode, authors never branch:
+  //
+  //   goroutine context + live event queue: job() runs on an EventQueue
+  //     worker thread and returns a shared_ptr<void> (any C++ result;
+  //     never a Value — Values never cross threads). The completion
+  //     event carries the cell; on the VM thread lift(cell) builds the
+  //     result Value and Scheduler::resumeExternalWithValue parks->
+  //     resumes the goroutine. The VM thread never blocks on the I/O.
+  //
+  //   no goroutine / no queue: job runs inline on the VM thread and
+  //     lift(job()) returns directly — cost identical to a plain
+  //     synchronous host call.
+  //
+  // Suspend case returns Value::makePending(token); the CALL epilogue
+  // parks the current goroutine on that token.
+  //
+  // GC note: lift may capture Values (host-object ids etc.). lift runs
+  // on the VM thread but survives across a suspension where GC can
+  // run, so pending records pin those captures via external roots —
+  // the registerCallback discipline.
+  // =====================================================================
+  using AsyncCxxResult = havel::compiler::AsyncCxxResult;
+  struct PendingHostCall {
+    std::function<Value(const AsyncCxxResult &)> vm_lift;
+  };
+  std::unordered_map<uint32_t, PendingHostCall> pending_host_calls_;
+  std::mutex pending_host_calls_mutex_;
+  uint32_t next_pending_token_ = 1;
+
+  template<typename JobFn, typename LiftFn>
+  Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
+    auto *sched = getScheduler();
+    if (sched && sched->current() && event_queue_ &&
+        !event_queue_->isShutdown()) {
+      uint32_t token;
+      {
+        std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);
+        token = next_pending_token_++;
+        pending_host_calls_[token] = PendingHostCall{
+            std::forward<LiftFn>(lift)};
+      }
+      auto *eq = event_queue_;
+      eq->postToWorker([eq, token, job = std::forward<JobFn>(job)]() {
+        // ---- worker thread: C++ in, C++ out, no VM/Value access ----
+        AsyncCxxResult cell;
+        try {
+          cell = job();
+        } catch (const std::exception &e) {
+          ::havel::error("[async host call] job threw: {}", e.what());
+        } catch (...) {
+          ::havel::error("[async host call] job threw unknown exception");
+        }
+        // Deliver. EventQueue drops events post-shutdown; the cell is
+        // a shared_ptr so the memory is freed wherever the last
+        // reference dies (here or in the handler).
+        eq->push(Event(EventType::ASYNC_HOST_COMPLETE, token,
+                       new AsyncCxxResult(std::move(cell))));
+      });
+      return Value::makePending(token);
+    }
+    // Synchronous fallback: identical cost to today's blocking call.
+    return lift(job());
+  }
+
+  // VM thread: handle a completed async host call. Runs the lift to
+  // build the result Value and resumes the parked goroutine.
+  void handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell);
+
+  // CALL epilogue helper for both dispatch paths (fast op_CALL and slow
+  // op_default): if the just-executed CALL left a Pending marker on the
+  // stack, park the current goroutine on the pending token (WaitHandle::
+  // EXTERNAL) and return true so the dispatcher suspends. Returns false
+  // for ordinary results. A Pending with no matching current goroutine
+  // is a broken invariant: log loudly and neutralize to null.
+  bool parkIfPendingCallResult() {
+    if (!scheduler_ || !current_executing_fiber_ || stack.empty()) {
+      if (!stack.empty() && stack.top().isPending()) {
+        ::havel::error("[VM] Pending host-call result outside goroutine "
+                       "context; check runBlockingHostCall preconditions");
+        stack.top() = Value::makeNull();
+      }
+      return false;
+    }
+    Value top = stack.top();
+    if (!top.isPending()) return false;
+    uint32_t token = top.asPendingToken();
+    Scheduler::Goroutine *g = scheduler_->current();
+    if (g && g->fiber == current_executing_fiber_) {
+      {
+        std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
+        g->wait_handle.set_external(token);
+      }
+      last_suspension_reason_ =
+          static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
+      last_suspension_context_ = nullptr;
+      suspension_requested_ = false;
+      return true;
+    }
+    ::havel::error("[VM] Pending value escaped without a matching current "
+                   "goroutine (token {})", token);
+    stack.top() = Value::makeNull();
+    return false;
+  }
   void pinModuleCacheExports(const std::string &key, const Value &exports);
   std::optional<Value> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }

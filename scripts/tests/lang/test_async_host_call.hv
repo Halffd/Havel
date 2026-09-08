@@ -1,0 +1,41 @@
+// Regression test: fiber-suspending blocking host calls (A+C model).
+//
+// Bug this guards against: before the runBlockingHostCall seam existed,
+// a blocking host call (window.active() X11 round-trip, cipc socket
+// read) stalled the whole VM thread — no hotkeys, no goroutines, no
+// event processing until the I/O finished. The fix suspends the calling
+// goroutine, runs the blocking part on an EventQueue worker, and
+// resumes with the VM-side-built result.
+//
+// Uses __async_probe(ms): a host function that sleeps ms on the worker
+// thread and returns elapsed microseconds.
+//
+// Expected:
+//   1. goroutine context: probe suspends (concurrent hotkey counter
+//      advances DURING the probe), returns >= requested duration
+//   2. top-level context: probe runs synchronously, returns duration
+//   3. resume value is the real result, never a <pending> marker
+
+counter = 0
+interval 10 { counter++ }
+
+// 1. goroutine context: blocking call must not stall the scheduler.
+val t0 = time.now()
+elapsed_us = 0
+go {
+    elapsed_us = __async_probe(300)
+}
+sleep(500) // let the goroutine run and the interval tick during it
+
+assert(counter > 5, "scheduler stalled during blocking call: counter=" + str(counter))
+assert(elapsed_us >= 280000, "probe returned too early: " + str(elapsed_us) + "us")
+
+// 2. resume value must be a plain int, never a pending marker
+assert(type(elapsed_us) == "int", "resume value leaked pending marker: " + type(elapsed_us))
+
+// 3. top-level sync fallback: still works, synchronous
+val top_us = __async_probe(50)
+assert(top_us >= 45000, "top-level probe too fast: " + str(top_us) + "us")
+assert(type(top_us) == "int", "top-level probe returned non-int: " + type(top_us))
+
+print("PASS async_host_call")

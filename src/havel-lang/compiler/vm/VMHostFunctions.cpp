@@ -1480,6 +1480,37 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
+  // __async_probe(ms) — fiber-suspending blocking call validation seam.
+  // Simulates a blocking host op (sleeps on the worker thread) and
+  // returns the wall-clock duration. In a goroutine context it must
+  // suspend the fiber and resume with the value; at top level it runs
+  // synchronously. Used by scripts/tests/lang/test_async_host_call.hv.
+  registerHostFunction("__async_probe", 1,
+      [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isInt()) {
+      COMPILER_THROW("__async_probe requires integer ms");
+    }
+    int64_t ms = args[0].asInt();
+    Value v = runBlockingHostCall(
+        [ms]() -> AsyncCxxResult {
+          auto t0 = std::chrono::steady_clock::now();
+          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+          auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::steady_clock::now() - t0)
+                                .count();
+          // C++ result across the boundary: never a Value
+          return std::static_pointer_cast<void>(
+              std::make_shared<int64_t>(elapsed_us));
+        },
+        [](const AsyncCxxResult &cell) -> Value {
+          auto us = std::static_pointer_cast<int64_t>(cell);
+          return Value::makeInt(us ? *us : -1);
+        });
+    ::havel::debug("[async-probe] ms={} -> {}", ms,
+                   v.isPending() ? std::string("PENDING") : std::string("sync-result"));
+    return v;
+  });
+
   // eval(code_string) - Parse and execute Havel code at runtime
   // Returns the result of the last expression
   registerHostFunction("eval", 1, [this](const std::vector<Value> &args) {

@@ -15,6 +15,7 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -1247,6 +1248,10 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     Value receiver;
     std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
     const std::string method_name = chunk->getString(method_name_id);
+    if (std::getenv("HCLB_TRACE_CM")) {
+        fprintf(stderr, "[CALL_METHOD] chunk=%p id=%u name=%s nargs=%u\n",
+                (const void*)chunk, method_name_id, method_name.c_str(), arg_count);
+    }
     if (method_name.empty()) return Value::makeNull().rawBits();
 
     std::vector<Value> callArgs;

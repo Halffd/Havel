@@ -592,6 +592,10 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
+        // Persistent goroutines (hotkey/update) park forever by design;
+        // when they are all that remains, the script is done. Otherwise
+        // (async host call, channel wait, timer await) keep pumping.
+        if (scheduler_->suspendedAwaitingResume() == 0) break;
         if (::getenv("HAVEL_TRACE_SCHED_STALL")) {
           // Only log when this null-stall actually persists: the pickNext-null
           // state is a *normal* transient whenever two goroutines are asleep at
@@ -606,7 +610,27 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
           }
         }
         auto deadline = scheduler_->nextSleepDeadline();
-        if (!deadline) break;
+        if (!deadline) {
+          // Suspended goroutines await event-driven resume (async host
+          // call on a worker, channel, thread join) — no sleep deadline.
+          // Wait on the deferred-wakeup fd so the resume jolts the
+          // loop; exit_requested_ at the loop top still honors exit.
+          int wakeupFd = scheduler_->deferredWakeupFd();
+          if (wakeupFd >= 0) {
+            struct pollfd pfd;
+            pfd.fd = wakeupFd;
+            pfd.events = POLLIN;
+            pfd.revents = 0;
+            int pr = ::poll(&pfd, 1, 100);
+            if (pr > 0 && (pfd.revents & POLLIN)) {
+              uint64_t val;
+              while (::read(wakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+            }
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          continue;
+        }
         auto now = std::chrono::steady_clock::now();
         if (*deadline <= now) continue;
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -657,6 +681,17 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
                  cur->state == Scheduler::GoroutineState::Running) {
         if (cur->fiber) {
           loadFiberState(cur->fiber);
+          // Resumed from a parked wait (async host call, channel):
+          // swap the Pending placeholder for the delivered result.
+          // Mirrors the HavelEngine resume path.
+          {
+            std::lock_guard wlock(cur->wait_handle_mutex_);
+            if (cur->wait_handle.type == Scheduler::AwaitableType::EXTERNAL ||
+                cur->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV) {
+              if (!stack.empty()) replaceStackTop(cur->wait_handle.resume_value);
+              cur->wait_handle.clear();
+            }
+          }
           current_executing_fiber_ = cur->fiber;
           runDispatchLoop(0);
           current_executing_fiber_ = nullptr;
@@ -678,6 +713,11 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         case F::TIMER: schedReason = S::TimerWait; break;
         case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
         case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
+        // AWAIT/EXTERNAL: fiber-suspending host call or general await.
+        // No dedicated Scheduler reason; wait_handle (EXTERNAL+token)
+        // is the authoritative resume key. None is correct.
+        case F::AWAIT:
+        case F::EXTERNAL: schedReason = S::None; break;
         default: break;
         }
         cur->state = Scheduler::GoroutineState::Suspended;
@@ -1127,7 +1167,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       suspension_requested_ = false;
 
       // Suspend the current fiber with the stored reason and context
-      // The context pointer contains thread_id or other relevant data
+      // The context pointer contains thread_id or other relevant info
       void *context = suspension_context_;
       SuspensionReason reason =
           static_cast<SuspensionReason>(suspension_reason_);
@@ -1143,6 +1183,17 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
         }
       }
 
+      current_executing_fiber_ = nullptr;
+      return VMExecutionResult::Suspended();
+    }
+
+    // Fiber-suspending host call: the instruction (CALL) left a Pending
+    // marker; park the current goroutine on the pending token. Mirrors
+    // the op_CALL fast-path check in VMDispatch.cpp.
+    if (parkIfPendingCallResult()) {
+      if (current_fiber) {
+        current_fiber->suspend(SuspensionReason::AWAIT, nullptr);
+      }
       current_executing_fiber_ = nullptr;
       return VMExecutionResult::Suspended();
     }
@@ -2256,6 +2307,25 @@ slow_path:
           last_suspension_context_ = ctx;
           break;
         }
+      }
+
+      // Fiber-suspending host call: the CALL pushed a Pending marker.
+      // Park the current goroutine on the token and break with the
+      // slow-path IP advance (mirrors the propagate-block convention so
+      // the suspended goroutine resumes at the instruction AFTER the
+      // CALL). parkIfPendingCallResult sets last_suspension_reason_
+      // (AWAIT) for the outer runner to consume.
+      if (parkIfPendingCallResult()) {
+        if (frame_count_ > stop_frame_depth) {
+          auto idx = frame_count_ - 1;
+          if (frame_count_ == entry_frame_count &&
+              frame_arena_[idx].ip == ip) {
+            frame_arena_[idx].ip++;
+          } else if (frame_count_ > entry_frame_count) {
+            frame_arena_[entry_frame_count - 1].ip++;
+          }
+        }
+        break;
       }
     } catch (const ScriptThrow &thrown) {
       ::havel::stdlib::notifyRuntimeError(thrown.value.toString());

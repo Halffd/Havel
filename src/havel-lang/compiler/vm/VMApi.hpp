@@ -299,6 +299,19 @@ struct VMApi {
     sched->deferToVM(std::forward<F>(fn));
   }
 
+  // Fiber-suspending blocking host call seam. Host functions call this
+  // unconditionally with a pure-C++ job (returns a shared_ptr<void>
+  // result cell) and a VM-side lift (builds the result Value). The
+  // context decides: goroutine + live event queue -> worker thread +
+  // Pending + park/resume; otherwise job runs inline on the VM thread
+  // (cost identical to a synchronous host call). See VM.hpp for the
+  // full contract.
+  template<typename JobFn, typename LiftFn>
+  Value runBlocking(JobFn &&job, LiftFn &&lift) const {
+    return vm().runBlockingHostCall(std::forward<JobFn>(job),
+                                    std::forward<LiftFn>(lift));
+  }
+
     havel::compiler::VMImage createImage(int width, int height, int stride, havel::compiler::PixelFormat format,
                         const uint8_t *data) const {
         return vm().createImage(width, height, stride, format, data);

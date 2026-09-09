@@ -1506,6 +1506,7 @@ endforeach()
 
 add_executable(havel
     src/main.cpp
+    src/utils/LsanSuppressions.cpp
 )
 
 target_link_libraries(havel PRIVATE

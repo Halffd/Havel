@@ -4607,9 +4607,21 @@ AsyncBridge::handleThreadSend(const std::vector<Value> &args,
     record = it->second;
   }
 
-  {
+  auto *sched = vm ? vm->getScheduler() : nullptr;
+  if (sched) {
+    sched->deferToVM([vm, record, msg = args[1]]() {
+      std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+      try {
+        (void)vm->invokeCallback(record.callback, {msg});
+      } catch (...) {
+      }
+    });
+  } else {
     std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-    (void)vm->invokeCallback(record.callback, {args[1]});
+    try {
+      (void)vm->invokeCallback(record.callback, {args[1]});
+    } catch (...) {
+      }
   }
   return Value::makeBool(true);
 }
@@ -4713,6 +4725,7 @@ AsyncBridge::handleIntervalCreate(const std::vector<Value> &args,
 
   std::thread([ctx, id, callback, delay_ms]() {
     auto *vm_local = static_cast<VM *>(ctx->vm);
+    auto *sched = vm_local ? vm_local->getScheduler() : nullptr;
     while (true) {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       bool should_run = false;
@@ -4727,10 +4740,20 @@ AsyncBridge::handleIntervalCreate(const std::vector<Value> &args,
       if (!should_run || !vm_local) {
         continue;
       }
-      std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-      try {
-        (void)vm_local->invokeCallback(callback, {});
-      } catch (...) {
+      if (sched) {
+        sched->deferToVM([callback, vm_local]() {
+          std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+          try {
+            (void)vm_local->invokeCallback(callback, {});
+          } catch (...) {
+          }
+        });
+      } else {
+        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+        try {
+          (void)vm_local->invokeCallback(callback, {});
+        } catch (...) {
+          }
       }
     }
   }).detach();

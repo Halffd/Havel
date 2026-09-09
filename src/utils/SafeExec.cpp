@@ -34,6 +34,17 @@ bool execDetached(const std::vector<std::string>& argv) {
         return true;
     }
 
+    // Close inherited fds beyond stdio before redirecting: the forked child
+    // inherits every grabbed evdev device and the X11 socket; keeping them
+    // open in the child (a) holds the EVIOCGRAB for the child's lifetime,
+    // breaking subsequent havel starts ("Device or resource busy"), and
+    // (b) keeps the child in a position to receive/read our input events.
+    // Close everything before dup2'ing /dev/null onto 0-2.
+    int maxFd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+    for (int fd = 3; fd < (maxFd > 1024 ? 1024 : maxFd); ++fd) {
+        close(fd);
+    }
+
     close(0);
     close(1);
     close(2);
@@ -81,6 +92,18 @@ std::optional<ExecResult> execSync(const std::vector<std::string>& argv) {
         dup2(pipe_err[1], STDERR_FILENO);
         close(pipe_out[1]);
         close(pipe_err[1]);
+
+        // Close remaining inherited fds (grabbed evdev devices, X11 socket,
+        // eventfds): the child must not hold device grabs or havel's
+        // wakeup fds open. Stdout/stderr (already dup2'd) stay open.
+        int maxFd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+        for (int fd = 3; fd < (maxFd > 1024 ? 1024 : maxFd); ++fd) {
+            close(fd);
+        }
+
+        // New process group so group-directed signals from the child (or
+        // aimed at it) cannot reach havel.
+        setpgid(0, 0);
 
         std::vector<char*> cargv;
         cargv.reserve(argv.size() + 1);

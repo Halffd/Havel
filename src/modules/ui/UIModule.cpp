@@ -2,6 +2,12 @@
  * UIModule.cpp - UI module implementation for Havel bytecode VM
  */
 #include "UIModule.hpp"
+
+#ifdef HAVE_QT_EXTENSION
+#include "host/ui/GuiThreadManager.hpp"
+#include <QCoreApplication>
+#include <QGuiApplication>
+#endif
 #include "UIElement.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "host/ui/UIManager.hpp"
@@ -958,6 +964,36 @@ static Value uiSetWindowTransparencyByTitle(const VMApi &api, const std::vector<
 // ============================================================================
 
 void registerUIModule(const compiler::VMApi &api) {
+#ifdef HAVE_QT_EXTENSION
+  // Initialize GUI thread manager for Qt event loop on dedicated thread
+  // Only initialize if display is available
+  auto& guiThread = havel::host::GuiThreadManager::instance();
+  if (!guiThread.isRunning()) {
+    bool hasDisplay = false;
+    if (qgetenv("DISPLAY").size() > 0 || qgetenv("WAYLAND_DISPLAY").size() > 0) {
+      hasDisplay = true;
+    } else if (QGuiApplication::instance()) {
+      auto* guiApp = qobject_cast<QGuiApplication*>(QGuiApplication::instance());
+      if (guiApp && !guiApp->screens().isEmpty()) {
+        hasDisplay = true;
+      }
+    }
+    
+    if (hasDisplay) {
+      guiThread.initialize();
+    }
+
+    // Set idle callback to process VM goroutines from GUI thread
+    auto& vm = api.vm();
+    guiThread.setIdleCallback([&vm]() {
+      if (vm.hasYieldCallback()) {
+        auto cb = vm.yield_callback_;
+        if (cb) cb();
+      }
+    });
+  }
+#endif
+
   // Element creation
   api.registerFunction("ui.window",
                        [api](const std::vector<Value> &args) {

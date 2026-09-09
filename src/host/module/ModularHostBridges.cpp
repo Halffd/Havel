@@ -270,13 +270,26 @@ Value IOBridge::handleSendText(const std::vector<Value> &args,
 
 Value IOBridge::handleWait(const std::vector<Value> &args,
                          const HostContext *ctx) {
-    (void)ctx;
     if (args.empty() || !args[0].isInt()) {
         return Value::makeBool(false);
     }
     int64_t ms = args[0].asInt();
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-    return Value::makeBool(true);
+    // io.wait: same semantics as timer.after — sleep on a worker so
+    // goroutines park; top-level blocks inline exactly as before.
+    if (!ctx || !ctx->vm) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        return Value::makeBool(true);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    compiler::VMApi api(*vm);
+    return api.runBlocking(
+        [ms]() -> compiler::AsyncCxxResult {
+          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+          return nullptr;
+        },
+        [](const compiler::AsyncCxxResult &) -> Value {
+          return Value::makeBool(true);
+        });
 }
 
 Value IOBridge::handleMouseClick(const std::vector<Value> &args,
@@ -1300,23 +1313,36 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.run() requires a string or array command");
   }
-  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
-  auto obj = vm->createHostObject();
-  auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
-  vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
-    vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
-    vm->setHostObjectField(obj, "success", Value::makeBool(result.success));
-    if (result.error.empty()) {
-        vm->setHostObjectField(obj, "error", Value::makeNull());
-    } else {
-        auto errRef = vm->getHeap().allocateString(result.error);
-        vm->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
-    }
-    auto outRef = vm->getHeap().allocateString(result.stdout);
-    vm->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
-    auto errOutRef = vm->getHeap().allocateString(result.stderr);
-    vm->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
-    return Value::makeObjectId(obj.id);
+  // Subprocess spawn+wait: runs on a worker under the A+C model; the
+  // result object is built VM-side on resume.
+  auto *vm_ = vm;
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [cmd]() -> compiler::AsyncCxxResult {
+        auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
+        return std::static_pointer_cast<void>(
+            std::make_shared<::havel::ProcessResult>(std::move(result)));
+      },
+      [vm_](const compiler::AsyncCxxResult &cell) -> Value {
+        auto result =
+            std::static_pointer_cast<::havel::ProcessResult>(cell);
+        auto obj = vm_->createHostObject();
+        auto guard = vm_->makeRoot(Value::makeObjectId(obj.id));
+        vm_->setHostObjectField(obj, "pid", Value::makeInt(result->pid));
+        vm_->setHostObjectField(obj, "exitCode", Value::makeInt(result->exitCode));
+        vm_->setHostObjectField(obj, "success", Value::makeBool(result->success));
+        if (result->error.empty()) {
+            vm_->setHostObjectField(obj, "error", Value::makeNull());
+        } else {
+            auto errRef = vm_->getHeap().allocateString(result->error);
+            vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
+        }
+        auto outRef = vm_->getHeap().allocateString(result->stdout);
+        vm_->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
+        auto errOutRef = vm_->getHeap().allocateString(result->stderr);
+        vm_->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
+        return Value::makeObjectId(obj.id);
+      });
 }
 
 Value
@@ -1342,9 +1368,20 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("runCapture() requires a string or array command");
   }
-  auto result = ::havel::Launcher::runSync(cmd);
-  auto strRef = vm->getHeap().allocateString(result.stdout);
-  return Value::makeStringId(strRef.id);
+  // Subprocess spawn+wait+capture: worker-side under the A+C model.
+  auto *vm_ = vm;
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [cmd]() -> compiler::AsyncCxxResult {
+        auto result = ::havel::Launcher::runSync(cmd);
+        return std::static_pointer_cast<void>(
+            std::make_shared<std::string>(std::move(result.stdout)));
+      },
+      [vm_](const compiler::AsyncCxxResult &cell) -> Value {
+        auto out = std::static_pointer_cast<std::string>(cell);
+        auto strRef = vm_->getHeap().allocateString(*out);
+        return Value::makeStringId(strRef.id);
+      });
 }
 
 Value
@@ -3274,11 +3311,12 @@ Value UIBridge::handleWindowWait(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   if (args.size() < 2 || !ctx->windowManager)
     return Value::makeBool(false);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  uint64_t wid = resolveWindowId(args[0], winService, vm);
   if (wid == 0)
     return Value::makeBool(false);
-  auto *vm = static_cast<VM *>(ctx->vm);
   std::string state = "show";
   if (args[1].isStringId()) {
     auto s = vm->toString(args[1]);
@@ -3288,22 +3326,38 @@ Value UIBridge::handleWindowWait(const std::vector<Value> &args,
   if (args.size() >= 3 && args[2].isInt())
     timeoutMs = static_cast<int>(args[2].asInt());
   bool waitVisible = (state == "show" || state == "visible" || state == "map");
-  auto deadline = std::chrono::steady_clock::now() +
-                  std::chrono::milliseconds(timeoutMs);
-  while (std::chrono::steady_clock::now() < deadline) {
-    auto info = winService.getWindowInfo(wid);
-    if (info.valid) {
-      if (waitVisible && !info.minimized)
-        return Value::makeBool(true);
-      if (!waitVisible && info.minimized)
-        return Value::makeBool(true);
-    } else {
-      if (!waitVisible)
-        return Value::makeBool(true);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-  return Value::makeBool(false);
+
+  // Poll loop with X11 round-trips + sleeps: runs on a worker under the
+  // A+C model; goroutines park instead of stalling the VM thread for up
+  // to the full timeout.
+  auto *wm = ctx->windowManager;
+  return api.runBlocking(
+      [wm, wid, waitVisible, timeoutMs]() -> compiler::AsyncCxxResult {
+        ::havel::host::WindowService svc(wm);
+        auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeoutMs);
+        while (std::chrono::steady_clock::now() < deadline) {
+          auto info = svc.getWindowInfo(wid);
+          if (info.valid) {
+            if (waitVisible && !info.minimized) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+            if (!waitVisible && info.minimized) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+          } else {
+            if (!waitVisible) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        return std::static_pointer_cast<void>(std::make_shared<bool>(false));
+      },
+      [](const compiler::AsyncCxxResult &cell) -> Value {
+        auto ok = std::static_pointer_cast<bool>(cell);
+        return Value::makeBool(ok && *ok);
+      });
 }
 
 Value UIBridge::handleWindowMapObj(const std::vector<Value> &args,
@@ -6112,7 +6166,6 @@ void TimerBridge::install(PipelineOptions &options) {
 
 Value TimerBridge::handleAfter(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("timer.after() requires delay_ms");
   }
@@ -6123,9 +6176,24 @@ Value TimerBridge::handleAfter(const std::vector<Value> &args,
 
   int64_t delay_ms = args[0].asInt();
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-
-	return Value::makeNull();
+  // Legacy shim: sleep for delay_ms (callback argument is ignored —
+  // scripts use timeout{} for real callbacks). The sleep runs on a
+  // worker under the A+C model so goroutines park instead of stalling
+  // the VM thread; top-level calls block inline exactly as before.
+  if (!ctx || !ctx->vm) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [delay_ms]() -> compiler::AsyncCxxResult {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        return nullptr;
+      },
+      [](const compiler::AsyncCxxResult &) -> Value {
+        return Value::makeNull();
+      });
 }
 
 Value TimerBridge::handleEvery(const std::vector<Value> &args,

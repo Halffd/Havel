@@ -9938,8 +9938,25 @@ t == havel::TokenType::RegexString ||
     } else {
       // Restore position - it's a positional element, not a key
       position = savedPos;
+      // A ';' or newline right after a key-candidate token is almost always
+      // a forgotten ':' or '=' (e.g. `"titles"; "str"` silently produced
+      // positional keys 0,1). Reject it with a clear message. Comma- and
+      // newline-separated positional entries stay legal (set-style
+      // literals like {"a", "b"}).
+      Token firstTok = tokens[savedPos];
+      bool keyCandidateEntry = isKeyToken(firstTok.type);
       // Parse as positional element
       auto value = parseExpression();
+      if (keyCandidateEntry &&
+          (at().type == havel::TokenType::Semicolon ||
+           at().type == havel::TokenType::NewLine)) {
+        std::string sep =
+            at().type == havel::TokenType::Semicolon ? "';'" : "newline";
+        failAt(firstTok,
+               "Object key '" + firstTok.value +
+                   "' is missing ':' or '=' (got '" + sep +
+                   "' separator)");
+      }
       havel::ast::ObjectLiteral::PairEntry entry;
       // key is empty = positional element
       entry.value = std::move(value);

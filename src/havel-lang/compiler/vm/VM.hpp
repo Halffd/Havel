@@ -1472,6 +1472,23 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // module-level state written by any frame (sidecar) is visible.
     // Returns true with *out set; false = genuinely undefined (caller
     // decides null vs error).
+    // Runtime-ABI seam (JitRuntimeBridges eq/neq): the interpreter's EQ
+    // compares strings by CONTENT across representations (heap StringId,
+    // chunk-local StringValId, RegexValId - see valuesEqualDeep); the
+    // bridges' raw-bit NaN dance cannot, so JIT-compiled code comparing a
+    // heap string against a chunk-local string constant (the self-hosted
+    // emitter's node.kind vs "NumberLiteral") always saw "not equal" and
+    // every dispatch fell through to the null branch. This seam gives the
+    // bridges the interpreter's exact string-equality behavior.
+    bool stringsEqualPublic(uint64_t l_bits, uint64_t r_bits) const {
+        Value l = Value::fromRawBits(l_bits);
+        Value r = Value::fromRawBits(r_bits);
+        auto ls = valueAsString(l);
+        if (!ls) return false;
+        auto rs = valueAsString(r);
+        return rs.has_value() && *ls == *rs;
+    }
+
     bool resolveGlobalPublic(const std::string& name, Value* out) {
         auto it = globals.find(name);
         if (it != globals.end()) {

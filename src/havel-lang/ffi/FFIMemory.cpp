@@ -10,6 +10,40 @@
 
 namespace havel::ffi {
 
+namespace {
+
+// Registry of allocations made through alloc_bytes/alloc. FFI buffers are
+// process-lifetime or explicitly freed (ffi.freeBytes); a buffer whose owner
+// never frees it used to leak silently at exit. The registry's destructor
+// runs during static teardown — before LSAN's exit check — and releases
+// whatever the script left behind.
+struct FFIRegistry {
+    std::mutex mutex;
+    std::unordered_map<void*, Allocation> entries;
+
+    ~FFIRegistry() {
+        for (auto &[ptr, entry] : entries) {
+            (void)ptr;
+            if (entry.freed) continue;
+            if (entry.finalizer) {
+                try {
+                    entry.finalizer(entry.ptr);
+                } catch (...) {
+                }
+            }
+            std::free(entry.ptr);
+            entry.freed = true;
+        }
+    }
+};
+
+FFIRegistry &registry() {
+    static FFIRegistry reg;
+    return reg;
+}
+
+} // namespace
+
 void* FFIMemory::alloc(std::shared_ptr<FFIType> type) {
     if (!type) return nullptr;
     size_t size = FFITypeRegistry::size_of(type);
@@ -23,19 +57,58 @@ void* FFIMemory::alloc_bytes(size_t size) {
     if (!ptr) return nullptr;
     
     std::memset(ptr, 0, size);
+
+    auto &reg = registry();
+    std::lock_guard<std::mutex> lock(reg.mutex);
+    Allocation entry;
+    entry.ptr = ptr;
+    entry.size = size;
+    entry.is_managed = true;
+    reg.entries[ptr] = std::move(entry);
     return ptr;
 }
 
 void* FFIMemory::realloc(void* ptr, size_t new_size) {
 	if (!ptr) return alloc_bytes(new_size);
-	if (new_size == 0) { std::free(ptr); return nullptr; }
+	if (new_size == 0) { free(ptr); return nullptr; }
 
 	void* new_ptr = std::realloc(ptr, new_size);
+	if (!new_ptr) return nullptr;
+
+	auto &reg = registry();
+	std::lock_guard<std::mutex> lock(reg.mutex);
+	auto it = reg.entries.find(ptr);
+	if (it != reg.entries.end()) {
+		Allocation entry = std::move(it->second);
+		entry.ptr = new_ptr;
+		entry.size = new_size;
+		reg.entries.erase(it);
+		reg.entries[new_ptr] = std::move(entry);
+	}
 	return new_ptr;
 }
 
 void FFIMemory::free(void* ptr) {
 	if (!ptr) return;
+
+	Allocation entry;
+	bool tracked = false;
+	{
+		auto &reg = registry();
+		std::lock_guard<std::mutex> lock(reg.mutex);
+		auto it = reg.entries.find(ptr);
+		if (it != reg.entries.end()) {
+			entry = std::move(it->second);
+			reg.entries.erase(it);
+			tracked = true;
+		}
+	}
+	if (tracked && entry.finalizer) {
+		try {
+			entry.finalizer(entry.ptr);
+		} catch (...) {
+		}
+	}
 	std::free(ptr);
 }
 
@@ -44,15 +117,21 @@ void* FFIMemory::cast(void* ptr, std::shared_ptr<FFIType> new_type) {
 }
 
 void FFIMemory::mark(void* ptr) {
-    // No-op without tracking
+    // Reserved for GC integration; FFI buffers are raw allocations managed
+    // by the registry, not traced heap values.
+    (void)ptr;
 }
 
 void FFIMemory::sweep() {
-    // No-op without tracking
+    // Reserved for GC integration; see mark().
 }
 
 void FFIMemory::attach_finalizer(void* ptr, std::function<void(void*)> finalizer) {
-    // No-op without tracking
+	auto &reg = registry();
+	std::lock_guard<std::mutex> lock(reg.mutex);
+	auto it = reg.entries.find(ptr);
+	if (it == reg.entries.end()) return;
+	it->second.finalizer = std::move(finalizer);
 }
 
 void* FFIMemory::to_native(const Value& v, std::shared_ptr<FFIType> type) {
@@ -198,18 +277,34 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
 }
 
 void FFIMemory::dump_stats() {
+	auto &reg = registry();
+	std::lock_guard<std::mutex> lock(reg.mutex);
+	size_t bytes = 0;
+	for (const auto &[_, entry] : reg.entries) {
+		bytes += entry.size;
+	}
+	::havel::info("[ffi] {} allocations, {} bytes live", reg.entries.size(), bytes);
 }
 
 bool FFIMemory::is_valid(void* ptr) {
-    return ptr != nullptr;
+	if (!ptr) return false;
+	auto &reg = registry();
+	std::lock_guard<std::mutex> lock(reg.mutex);
+	return reg.entries.find(ptr) != reg.entries.end();
 }
 
 size_t FFIMemory::total_allocated() {
-    return 0;
+	auto &reg = registry();
+	std::lock_guard<std::mutex> lock(reg.mutex);
+	size_t bytes = 0;
+	for (const auto &[_, entry] : reg.entries) {
+		bytes += entry.size;
+	}
+	return bytes;
 }
 
 size_t FFIMemory::total_used() {
-    return 0;
+	return total_allocated();
 }
 
 } // namespace havel::ffi

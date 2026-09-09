@@ -42,9 +42,6 @@ public:
     static bool is_valid(void* ptr);
     static size_t total_allocated();
     static size_t total_used();
-    
-private:
-    // No static tracking - use simple malloc/free to avoid double-free at exit
 };
 
 }

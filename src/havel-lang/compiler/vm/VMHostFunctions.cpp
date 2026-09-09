@@ -128,6 +128,20 @@ void VM::registerDefaultHostFunctions() {
                            io->Map(toStr(args[0]), toStr(args[1]));
                            return Value::makeBool(true);
                          });
+    // Public aliases (used in mode enter/exit blocks):
+    //   io.map("e", "click")   == io._map
+    //   io.remap("e", "d")     == io._remap
+    //   io.unmap("e")          == io._unmap
+    api.registerFunction("io.map",
+                         [getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 2)
+                             return Value::makeBool(false);
+                           io->Map(toStr(args[0]), toStr(args[1]));
+                           return Value::makeBool(true);
+                         });
     api.registerFunction("io._remap",
                          [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
@@ -139,6 +153,16 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._unmap",
+                         [getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 1)
+                             return Value::makeBool(false);
+                           io->Unmap(toStr(args[0]));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io.unmap",
                          [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
@@ -4442,6 +4466,15 @@ void VM::buildNamespaceGlobals() {
           if (existing.isHostFuncId() || existing.isNull())
             setHostObjectField(ref, fname, fval);
         }
+        // A bare host function with the same name (e.g. `mode`) must stay
+        // reachable as a callable: expose it as __call on the namespace so
+        // both mode() and mode.set() work.
+        auto bareIt = host_function_globals_.find(prefix);
+        if (bareIt != host_function_globals_.end() &&
+            getHostObjectField(ref, "__call").isNull()) {
+          setHostObjectField(ref, "__call", bareIt->second);
+        }
+        continue;
       }
       // Non-object global with the same name wins; do not overwrite.
       continue;
@@ -4449,6 +4482,12 @@ void VM::buildNamespaceGlobals() {
     auto obj = heap_.allocateObject();
     for (const auto &[fname, fval] : fields)
       setHostObjectField(ObjectRef{obj.id, true}, fname, fval);
+    // Same __call wiring for freshly built namespaces: bare `mode` host
+    // function must remain callable via mode().
+    auto bareIt = host_function_globals_.find(prefix);
+    if (bareIt != host_function_globals_.end()) {
+      setHostObjectField(ObjectRef{obj.id, true}, "__call", bareIt->second);
+    }
     setGlobal(prefix, Value::makeObjectId(obj.id));
   }
 }

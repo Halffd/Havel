@@ -2629,6 +2629,17 @@ case ast::NodeType::TryExpression:
  // Call mode.register with 9 args
  emit(OpCode::CALL, Value(static_cast<uint32_t>(9)));
  emit(OpCode::POP); // Discard result
+
+ // Compile mode-scoped hotkeys: mode "name" { hotkeys { ... } }.
+ // The parser already stamped binding.mode = name on each hotkey
+ // statement, so the compiled wrapper gates on mode() == name.
+ if (modeDef.hotkeysBlock) {
+   for (const auto &stmt : modeDef.hotkeysBlock->body) {
+     if (stmt) {
+       compileStatement(*stmt);
+     }
+   }
+ }
  }
     break;
   }

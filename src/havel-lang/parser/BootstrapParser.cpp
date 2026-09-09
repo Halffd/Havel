@@ -2992,7 +2992,7 @@ position = savePos; // restore position
       binding->hotkeys.push_back(
           makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
       binding->action = std::move(action);
-      binding->mode = modeAttr;
+      binding->mode = modeAttr.empty() ? context.modeContext : modeAttr;
       binding->policy = policyAttr;
 
       // Combine conditions if needed
@@ -3097,6 +3097,7 @@ position = savePos; // restore position
         binding->hotkeys.push_back(
             makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
         binding->action = std::move(action);
+        binding->mode = context.modeContext;
 
         if (prefixCondition) {
           binding->conditionExpr = std::move(prefixCondition);
@@ -3184,7 +3185,7 @@ position = savePos; // restore position
         binding->hotkeys.push_back(
             makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
         binding->action = std::move(action);
-        binding->mode = modeAttr;
+        binding->mode = modeAttr.empty() ? context.modeContext : modeAttr;
         binding->policy = policyAttr;
 
         if (prefixCondition || suffixCondition) {
@@ -3351,6 +3352,7 @@ auto binding = makeNode<havel::ast::HotkeyBinding>();
 binding->hotkeys.push_back(
 makeNode<havel::ast::HotkeyLiteral>(hotkeyStr));
 binding->action = std::move(action);
+binding->mode = context.modeContext;
 
 if (suffixCondition) {
 auto finalCondition = combineConditions(nullptr, std::move(suffixCondition));
@@ -3631,12 +3633,13 @@ case havel::TokenType::Struct:
         while (at().type == havel::TokenType::NewLine)
           advance();
 
-        // Check if this is a full definition (starts with
-        // condition/enter/exit/on)
+// Check if this is a full definition (starts with
+        // condition/enter/exit/on/hotkeys)
         bool isFullDefinition =
             ((at().type == havel::TokenType::Identifier &&
-             (at().value == "condition" || at().value == "enter" ||
-              at().value == "exit" || at().value == "on")) ||
+              (at().value == "condition" || at().value == "enter" ||
+               at().value == "exit" || at().value == "on" ||
+               at().value == "hotkeys")) ||
              at().type == havel::TokenType::On);
         position = savedPos; // restore position
 
@@ -10727,10 +10730,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   std::unique_ptr<havel::ast::BlockStatement> onMinimizeBlock;
   std::unique_ptr<havel::ast::BlockStatement> onMaximizeBlock;
   std::unique_ptr<havel::ast::BlockStatement> onOpenBlock;
+  std::unique_ptr<havel::ast::BlockStatement> hotkeysBlock;
   std::string onEnterFromMode;
   std::string onExitToMode;
 
-  // Parse condition, enter, exit, and transition hooks
+  // Parse condition, enter, exit, hotkeys, and transition hooks
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Semicolon) {
@@ -10752,10 +10756,77 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       }
       advance(); // consume '=' or ':'
       condition = parseExpression();
+    } else if (keyword == "hotkeys") {
+      // Mode-scoped hotkeys: bind every bare hotkey statement in the block
+      // to this mode via context.modeContext (explicit mode="..." attrs win).
+      bool openBrace = false;
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::OpenBrace) {
+        advance(); // consume '{'
+        openBrace = true;
+      }
+      std::string prevModeCtx = context.modeContext;
+      context.modeContext = modeName;
+      auto block = makeNode<havel::ast::BlockStatement>();
+      if (openBrace) {
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+          if (at().type == havel::TokenType::NewLine ||
+              at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+          }
+          auto stmt = parseStatement();
+          if (stmt) {
+            block->body.push_back(std::move(stmt));
+          }
+        }
+        if (at().type != havel::TokenType::CloseBrace) {
+          context.modeContext = prevModeCtx;
+          failAt(at(), "Expected '}' to close hotkeys block");
+        }
+        advance(); // consume '}'
+      } else {
+        // single statement form: hotkeys F1 => { } (no braces around list)
+        auto stmt = parseStatement();
+        if (stmt) {
+          block->body.push_back(std::move(stmt));
+        }
+      }
+      context.modeContext = prevModeCtx;
+      hotkeysBlock = std::move(block);
     } else if (keyword == "enter") {
-      enterBlock = parseBlockStatement();
+      // enter { ... } or enter from "mode" { ... } / enter from mode { ... }
+      if (at().type == havel::TokenType::From ||
+          (at().type == havel::TokenType::Identifier && at().value == "from")) {
+        advance(); // consume 'from'
+        if (at().type != havel::TokenType::String &&
+            at().type != havel::TokenType::Identifier &&
+            !isKeywordToken(at().type)) {
+          failAt(at(), "Expected mode name after 'enter from'");
+        }
+        onEnterFromMode = at().value;
+        advance();
+        onEnterFromBlock = parseBlockStatement();
+      } else {
+        enterBlock = parseBlockStatement();
+      }
     } else if (keyword == "exit") {
-      exitBlock = parseBlockStatement();
+      // exit { ... } or exit from "mode" { ... } / exit to "mode" { ... }
+      if (at().type == havel::TokenType::From ||
+          (at().type == havel::TokenType::Identifier && at().value == "from") ||
+          (at().type == havel::TokenType::Identifier && at().value == "to")) {
+        advance(); // consume 'from'/'to'
+        if (at().type != havel::TokenType::String &&
+            at().type != havel::TokenType::Identifier &&
+            !isKeywordToken(at().type)) {
+          failAt(at(), "Expected mode name after 'exit from'");
+        }
+        onExitToMode = at().value;
+        advance();
+        onExitToBlock = parseBlockStatement();
+      } else {
+        exitBlock = parseBlockStatement();
+      }
     } else if (keyword == "on") {
       // Parse transition hooks: on enter from "mode" { ... } or on exit to
       // "mode" { ... } Or window events: on close { ... }, on minimize { ... },
@@ -10828,6 +10899,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   modeDef.onMinimizeBlock = std::move(onMinimizeBlock);
   modeDef.onMaximizeBlock = std::move(onMaximizeBlock);
   modeDef.onOpenBlock = std::move(onOpenBlock);
+  modeDef.hotkeysBlock = std::move(hotkeysBlock);
   modes.push_back(std::move(modeDef));
   return makeNode<havel::ast::ModesBlock>(std::move(modes));
 }

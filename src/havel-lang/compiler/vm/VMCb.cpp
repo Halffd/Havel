@@ -18,6 +18,18 @@ CallbackId VM::registerCallback(const Value &closure) {
     COMPILER_THROW("registerCallback expects a closure or function");
   }
 
+  // Close open upvalue cells now, while the creating frame's locals are
+  // still mapped (same discipline as spawnGoroutine): a callback can be
+  // invoked long after its creating frame returned — e.g. a timeout
+  // closure capturing a fn parameter — and an open cell would read the
+  // spawning frame's locals region, which is recycled by then. Closing
+  // captures the current value so the callback sees the creating scope's
+  // state. Without this, timer callbacks observed captured variables as
+  // null (test: f=fn(x){ timeout 50 { res = x } }).
+  if (closure.isClosureId()) {
+    closeOpenUpvaluesForSpawn(closure.asClosureId());
+  }
+
   // Pin the closure as an external root (GC will not collect it)
   CallbackId id = static_cast<CallbackId>(pinExternalRoot(closure));
 

@@ -127,6 +127,7 @@ void registerTimeModule(const VMApi &api) {
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
 
+
 if (api.isInGoroutine()) {
           api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
                                        reinterpret_cast<void*>(static_cast<intptr_t>(ms)));

@@ -265,6 +265,7 @@ void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
   auto *closure = heap_.closure(closure_id);
   if (!closure)
     return;
+
   for (auto &cell : closure->upvalues) {
     if (!cell)
       continue;
@@ -592,10 +593,16 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
-        // Persistent goroutines (hotkey/update) park forever by design;
-        // when they are all that remains, the script is done. Otherwise
-        // (async host call, channel wait, timer await) keep pumping.
-        if (scheduler_->suspendedAwaitingResume() == 0) break;
+        // A goroutine sleeping with a deadline will wake on its own —
+        // the deadline poll below handles it. Only decide "script done"
+        // when nothing sleeps and nothing awaits an event-driven resume.
+        auto deadline = scheduler_->nextSleepDeadline();
+        if (!deadline) {
+          // Persistent goroutines (hotkey/update) park forever by design;
+          // when they are all that remains, the script is done. Otherwise
+          // (async host call, channel wait, thread join) keep pumping.
+          if (scheduler_->suspendedAwaitingResume() == 0) break;
+        }
         if (::getenv("HAVEL_TRACE_SCHED_STALL")) {
           // Only log when this null-stall actually persists: the pickNext-null
           // state is a *normal* transient whenever two goroutines are asleep at
@@ -609,12 +616,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
             scheduler_->dumpGoroutineStates("pickNext-null stall");
           }
         }
-        auto deadline = scheduler_->nextSleepDeadline();
         if (!deadline) {
           // Suspended goroutines await event-driven resume (async host
           // call on a worker, channel, thread join) — no sleep deadline.
           // Wait on the deferred-wakeup fd so the resume jolts the
           // loop; exit_requested_ at the loop top still honors exit.
+          // If only persistent hotkey goroutines remain, the script is
+          // done (checked above before the stall log).
           int wakeupFd = scheduler_->deferredWakeupFd();
           if (wakeupFd >= 0) {
             struct pollfd pfd;

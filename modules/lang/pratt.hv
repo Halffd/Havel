@@ -906,6 +906,12 @@ else if tt == TID.Async {
     fnDecl = parseFnDeclaration()
     return AsyncExpression(fnDecl, l, c)
   }
+  // async.sleep(...) / async(x) — the async module global (modules/async.hv).
+  // Mirror the C++ parser: keyword used as a value context falls back to
+  // an identifier, so member calls on the module keep parsing.
+  if current().tid == TID.Dot || current().tid == TID.OpenParen {
+    return Identifier("async", l, c)
+  }
   return error("Expected '{' or 'fn' after 'async'", l, c)
 }
 else if tt == TID.LeftArrow {

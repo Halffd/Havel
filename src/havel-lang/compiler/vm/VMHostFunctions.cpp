@@ -2359,6 +2359,10 @@ void VM::registerDefaultHostFunctions() {
         }
         int ms = toInt(args[0]);
         auto closure = args[1];
+        // Close open upvalue cells now (creating frame still mapped):
+        // the timer fires long after the frame returned; an open cell
+        // would read recycled locals. Same discipline as spawnGoroutine.
+        if (closure.isClosureId()) closeOpenUpvaluesForSpawn(closure.asClosureId());
         auto intervalIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, intervalIdPtr]() {
           // Timer thread: only ever push events. Never call the closure
@@ -2472,6 +2476,11 @@ void VM::registerDefaultHostFunctions() {
         }
         int ms = toInt(args[0]);
         auto closure = args[1];
+        // Close open upvalue cells now (creating frame still mapped):
+        // the timer fires long after the frame returned; an open cell
+        // would read recycled locals (fn-param captures read as null).
+        // Same discipline as spawnGoroutine.
+        if (closure.isClosureId()) closeOpenUpvaluesForSpawn(closure.asClosureId());
         auto timeoutIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, timeoutIdPtr]() {
           // Timer thread: only ever push events. Never call the closure

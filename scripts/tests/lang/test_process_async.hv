@@ -1,0 +1,15 @@
+// process.run + runCapture in goroutine: must park, not stall the VM.
+ticks = 0
+r = null
+out = ""
+interval 10 { ticks++ }
+go {
+    r = process.run("printf run-async-ok")
+    out = runCapture("printf captured-ok")
+}
+sleep(800)
+assert(ticks > 30, "scheduler stalled during process.run: ticks=" + str(ticks))
+assert(r.exitCode == 0, "exit=" + str(r.exitCode))
+assert(r.stdout.trim() == "run-async-ok", "stdout=" + str(r.stdout))
+assert(out.trim() == "captured-ok", "cap=" + str(out))
+print("PASS process_async")

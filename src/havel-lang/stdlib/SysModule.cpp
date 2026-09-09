@@ -25,6 +25,7 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <spawn.h>
 #else
 #include <windows.h>
 #include <tlhelp32.h>
@@ -951,22 +952,50 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0)
       throw std::runtime_error("__proc.spawn() pipe failed");
 
-    pid_t pid = fork();
-    if (pid == -1) {
+    // posix_spawn instead of fork(): fork() in this heavily multithreaded
+    // process (VM thread, executor workers, timers, input threads) is unsafe
+    // (child can inherit held mutexes and deadlock before execl) and the
+    // child inherited havel's process group, so any group-directed SIGTERM
+    // (shell `kill 0`, `timeout` wrappers, script traps) killed the whole
+    // havel process "randomly". posix_spawn + POSIX_SPAWN_SETSID gives the
+    // child its own session: stray signals no longer reach us.
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
+    posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
+    posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, stdout_pipe[1]);
+    posix_spawn_file_actions_addclose(&actions, stderr_pipe[1]);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    sigset_t emptyMask;
+    sigemptyset(&emptyMask);
+    (void)posix_spawnattr_setsigmask(&attr, &emptyMask);
+    (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                             POSIX_SPAWN_SETSID);
+    // Reset signal dispositions in the child so an inherited handler
+    // (e.g. our fatal-signal handler) cannot fire there.
+    (void)posix_spawnattr_setpgroup(&attr, 0);
+
+    std::vector<char*> argv;
+    argv.push_back(const_cast<char*>("sh"));
+    argv.push_back(const_cast<char*>("-c"));
+    argv.push_back(const_cast<char*>(cmd.c_str()));
+    argv.push_back(nullptr);
+
+    pid_t pid = -1;
+    int spawn_rc = posix_spawnp(&pid, "/bin/sh", &actions, &attr,
+                                argv.data(), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+
+    if (spawn_rc != 0) {
       close(stdout_pipe[0]); close(stdout_pipe[1]);
       close(stderr_pipe[0]); close(stderr_pipe[1]);
-      throw std::runtime_error("__proc.spawn() fork failed");
-    }
-
-    if (pid == 0) {
-      close(stdout_pipe[0]);
-      close(stderr_pipe[0]);
-      dup2(stdout_pipe[1], STDOUT_FILENO);
-      dup2(stderr_pipe[1], STDERR_FILENO);
-      close(stdout_pipe[1]);
-      close(stderr_pipe[1]);
-      execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-      _exit(127);
+      throw std::runtime_error("__proc.spawn() posix_spawn failed: " +
+                               std::string(strerror(spawn_rc)));
     }
 
     close(stdout_pipe[1]);

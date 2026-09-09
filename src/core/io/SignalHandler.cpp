@@ -35,10 +35,13 @@ void SignalHandler::SignalCleanupHandler(int sig) {
 }
 
 static void SignalExitHandler(int sig) {
-  ExitReason reason = ExitReason::SignalInt;
-  if (sig == SIGTERM) reason = ExitReason::SignalTerm;
-  else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
-  havel::exit(reason, 0);
+  // Async-signal-safe: only record the signal number. NEVER call
+  // havel::exit() from a signal handler on an arbitrary thread: random
+  // SIGTERM delivery to an unblocked worker thread was instantly killing
+  // the process. The event loop observes the flag and runs the real
+  // shutdown. Keep the actual signal number so the event loop can
+  // distinguish fatal (TERM/QUIT) from benign (CHLD/WINCH) flags.
+  gSignalFlag.store(sig, std::memory_order_relaxed);
 }
 
 static void FatalSignalHandler(int sig) {

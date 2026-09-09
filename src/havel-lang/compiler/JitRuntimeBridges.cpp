@@ -1398,7 +1398,19 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
         if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
-            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
+            // Prototype methods are receiver-bound by definition: the
+            // interpreter's OBJECT_GET materializes them as
+            // allocateBoundMethod(hostfn, receiver), so the host function
+            // sees the receiver as its first argument. callArgs does not
+            // carry it yet when passReceiverAsSelf was false - insert it,
+            // or receiver-dependent builtins blow up (node.keys() reached
+            // object.keys with no self and threw "Object.keys() requires
+            // object" from JIT-compiled containsYield).
+            std::vector<Value> boundArgs;
+            boundArgs.reserve(callArgs.size() + 1);
+            boundArgs.push_back(receiver);
+            boundArgs.insert(boundArgs.end(), callArgs.begin(), callArgs.end());
+            Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
             if (!result.isNull()) return result.rawBits();
         }
     }

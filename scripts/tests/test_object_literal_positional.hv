@@ -1,0 +1,28 @@
+// Test: object literal C++-pipeline-specific forms.
+// The self-hosted parser requires a key for every {} entry, so positional
+// elements and ';' pair separators exist only under --no-self-hosted.
+// What: those forms still parse after the ';' key-node validation landed.
+// Expected: all checks pass under --no-self-hosted only.
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+// 1. comma-separated positional sets stay legal (modules/lang TYPES sets)
+posset = {"alpha", "beta"}
+check(posset[0] == "alpha", "comma positional 0")
+check(posset[1] == "beta", "comma positional 1")
+
+// 2. ';'-separated key:value pairs stay legal
+sep = {"a": 1; "b": 2}
+check(sep.a == 1, "semicolon pair 1")
+check(sep.b == 2, "semicolon pair 2")
+
+// 3. partial key access on the ';'-separated object
+check(sep.b == 2, "semicolon pair 2 b")
+
+print("OK")

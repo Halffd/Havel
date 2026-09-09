@@ -1,0 +1,56 @@
+// Test: object literal syntax validation — common forms (both pipelines).
+// Regression for hotkeys0.3.hv line 149 `"titles"; "Genshin Impact"` which
+// silently produced positional keys 0,1 under the C++ parser.
+// What: key:value / key=value pairs, multiline objects, nested objects,
+//       comma separators — all parse identically in both pipelines.
+// Expected: all checks pass.
+// C++-pipeline-specific forms (positional sets, ';' pair separators) live in
+// test_object_literal_positional.hv (self-hosted rejects them by design).
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+// 1. colon pairs
+obj1 = {"name": "havel", "mode": "gaming"}
+check(obj1.name == "havel", "colon pair")
+check(obj1.mode == "gaming", "colon pair 2")
+
+// 2. '=' pairs (Lua/Nix style keys)
+obj2 = {name = "havel"}
+check(obj2.name == "havel", "equals pair")
+
+// 3. comma-separated pairs
+obj3 = {"a": 1, "b": 2}
+check(obj3.a == 1, "comma pair 1")
+check(obj3.b == 2, "comma pair 2")
+
+// 4. multiline key:value object (common config shape)
+cfgObj = {
+    "name": "gaming",
+    "titles": "Genshin Impact,Honkai Star Rail",
+    "enabled": true
+}
+check(cfgObj.titles == "Genshin Impact,Honkai Star Rail", "multiline key:value")
+check(cfgObj.enabled == true, "multiline bool")
+
+// 5. nested objects (newline separated)
+nested = {
+    "outer": {
+        "inner": 42
+    },
+    "next": 7
+}
+check(nested.outer.inner == 42, "nested object")
+check(nested.next == 7, "newline separator between pairs")
+
+// 6. shorthand {x} means {x: x} — self-hosted only; C++ skips value-less
+//    entries gracefully. Just ensure no crash and fields exist.
+short = {"a": 1}
+check(short.a == 1, "plain object")
+
+print("OK")

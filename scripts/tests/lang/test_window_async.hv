@@ -1,0 +1,45 @@
+// Regression test: window.active() must not stall the VM thread (A+C model).
+//
+// Bug this guards against: window.active() ran its X11 round-trip
+// synchronously on the VM thread. Any concurrent goroutine, interval or
+// hotkey stalled for the full round-trip; a slow/hung X server froze the
+// whole runtime.
+//
+// Expected behavior with the fix (runBlocking seam):
+//   1. goroutine context: the query parks the goroutine (worker thread
+//      does the X11 call), a concurrent interval keeps ticking DURING
+//      the in-flight call, and the goroutine resumes with a real value
+//      (or null if no WM info) — never a <pending> marker.
+//   2. top-level context: still works synchronously (init paths rely
+//      on it) and returns a real value.
+
+ticks = 0
+res = null
+started = false
+
+// Ticker running for the whole test: must advance while window.active()
+// is in flight on the worker.
+interval 10 { ticks++ }
+
+go {
+    started = true
+    res = window.active()
+}
+sleep(500)
+
+// The ticker must have advanced while the call was in flight: if the
+// VM thread had blocked on the X11 round-trip, ticks would freeze at
+// the pre-call value. 500ms / 10ms = >=40 ticks expected with a free
+// scheduler; the stall signature is ticks stuck near zero mid-run.
+assert(ticks > 30, "scheduler stalled during window.active(): ticks=" + str(ticks))
+assert(started, "goroutine never ran")
+
+// Resume value must be a real object (or explicit null), never a
+// leaked <pending:N> marker.
+assert(res == null || type(res) == "object", "window.active() leaked a pending marker: " + str(res))
+
+// Top-level sync fallback: init paths call this at module scope.
+w = window.active()
+assert(w == null || type(w) == "object", "top-level window.active() broken: " + str(w))
+
+print("PASS window_async")

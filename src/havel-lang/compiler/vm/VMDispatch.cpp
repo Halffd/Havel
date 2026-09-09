@@ -2292,6 +2292,10 @@ op_default: {
         }
     }
     if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
+    // Fiber-suspending host call via CALL_METHOD or another complex
+    // opcode: executeInstruction pushed a Pending marker; park the
+    // goroutine on the pending token (see parkIfPendingCallResult).
+    if (parkIfPendingCallResult()) return;
     counter++;
     if ((counter & 8191) == 0) {
         profiler_.recordInstructions(8192);

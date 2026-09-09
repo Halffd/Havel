@@ -1860,14 +1860,30 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
   if (!ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
-  ::havel::host::WindowService winService(ctx->windowManager);
-  auto info = winService.getActiveWindowInfo();
-  if (!info.valid) {
-    return Value::makeNull();
-  }
-  return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
-                            info.title, info.windowClass, info.exe, info.pid,
-                            info.cmdline);
+  // X11 round-trip: fiber-suspending under the A+C model. In a goroutine
+  // the query runs on an EventQueue worker (XInitThreads makes Xlib
+  // thread-safe process-wide); the window object is built VM-side on
+  // resume. Top-level/init calls run inline — cost identical to today.
+  auto *wm = ctx->windowManager;
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [wm]() -> compiler::AsyncCxxResult {
+        ::havel::host::WindowService winService(wm);
+        auto info = winService.getActiveWindowInfo();
+        // C++ payload across the boundary: never Values.
+        return std::static_pointer_cast<void>(
+            std::make_shared<::havel::WindowInfo>(std::move(info)));
+      },
+      [vm, ctx](const compiler::AsyncCxxResult &cell) -> Value {
+        auto info = std::static_pointer_cast<::havel::WindowInfo>(cell);
+        if (!info || !info->valid) {
+          return Value::makeNull();
+        }
+        return createWindowObject(vm, ctx, info->id, info->title,
+                                  info->windowClass, info->exe, info->pid,
+                                  info->cmdline);
+      });
 }
 
 Value UIBridge::handleWindowCmd(const std::vector<Value> &args,

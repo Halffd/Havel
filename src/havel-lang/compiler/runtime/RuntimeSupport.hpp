@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <array>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -351,6 +352,22 @@ public:
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunkMmap(const std::string& filePath);
   std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536);
+
+  // Source identity embedded by serializeChunk(chunk, sourcePath):
+  // {path, byte size, sha256}. size/hash are zero when the chunk was
+  // serialized without a source path (older writers), in which case
+  // hasInfo is false and callers must fall back to their own freshness
+  // checks (mtime). Used by the --build cache-reuse gate so an hvc whose
+  // mtime was bumped without recompiling (GLBS trailer appends, touch)
+  // is not served as fresh: the embedded hash is checked against the
+  // live source before reuse.
+  struct SourceInfo {
+      std::string path;
+      uint64_t size = 0;
+      std::array<uint8_t, 32> hash{};
+      bool hasInfo = false;
+  };
+  static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
 
 private:
   std::string valueToJson(const Value& value);

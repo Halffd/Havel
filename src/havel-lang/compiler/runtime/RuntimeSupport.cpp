@@ -1318,6 +1318,58 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
   }
 }
 
+ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint8_t> data) {
+  SourceInfo info;
+  size_t pos = 0;
+  auto read = [&data, &pos](void* out, size_t size) -> bool {
+    if (pos + size > data.size()) return false;
+    std::memcpy(out, data.data() + pos, size);
+    pos += size;
+    return true;
+  };
+
+  // Header must be HVC2 (HVC1 lacks the source-info section entirely).
+  if (data.size() < 4 || std::memcmp(data.data(), "HVC2", 4) != 0) {
+    return info;
+  }
+  pos = 4;
+
+  uint32_t version = 0;
+  if (!read(&version, sizeof(version))) return info;
+  if (version < 2 || version > 4) return info;
+
+  uint32_t flags = 0;
+  if (!read(&flags, sizeof(flags))) return info;
+
+  if ((flags & 1) && version >= 3) {
+    uint32_t idLen = 0;
+    if (!read(&idLen, sizeof(idLen))) return info;
+    if (idLen > data.size() || pos + idLen > data.size()) return info;
+    pos += idLen;
+  }
+
+  uint32_t srcPathLen = 0;
+  if (!read(&srcPathLen, sizeof(srcPathLen))) return info;
+  if (srcPathLen > 0) {
+    if (pos + srcPathLen > data.size()) return info;
+    info.path.assign(reinterpret_cast<const char*>(data.data() + pos),
+                     srcPathLen);
+    pos += srcPathLen;
+  }
+
+  uint64_t srcSize = 0;
+  if (!read(&srcSize, sizeof(srcSize))) return info;
+  std::array<uint8_t, 32> srcHash{};
+  if (!read(srcHash.data(), srcHash.size())) return info;
+
+  // Writers that passed a sourcePath always record a nonzero hash
+  // alongside a nonzero size; the no-sourcePath form leaves both zero.
+  info.size = srcSize;
+  info.hash = srcHash;
+  info.hasInfo = srcSize != 0 || !info.path.empty();
+  return info;
+}
+
 std::string ValueSerializer::valueToJson(const Value& value) {
   if (value.isNull()) return "null";
   if (value.isBool()) return value.asBool() ? "true" : "false";

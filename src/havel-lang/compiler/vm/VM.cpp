@@ -6873,7 +6873,46 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 }
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
-    // Append globals data to existing .hvc file
+    // Replace any existing globals section(s) instead of blindly
+    // appending. The old "ab"-only mode stacked a fresh
+    // [globals][GLBS][size] section on every cold module load, so after
+    // N runs the .hvc carried N nested sections (observed 78 sections /
+    // 37MB dead weight on lang.scope.hvc) while readers only look at
+    // the last one. Walk the trailing sections back to the chunk
+    // boundary, truncate there, then append this run's section once.
+    std::error_code ec;
+    if (std::filesystem::exists(hvcPath, ec) && !ec) {
+        std::ifstream probe(hvcPath, std::ios::binary | std::ios::ate);
+        if (probe) {
+            std::streamsize end = probe.tellg();
+            bool truncated = false;
+            while (end >= 8) {
+                probe.seekg(end - 8, std::ios::beg);
+                char m[4] = {0};
+                uint32_t s = 0;
+                probe.read(m, 4);
+                probe.read(reinterpret_cast<char *>(&s), 4);
+                if (!probe || m[0] != 'G' || m[1] != 'L' ||
+                    m[2] != 'B' || m[3] != 'S') {
+                    break;
+                }
+                const std::streamsize secLen =
+                    static_cast<std::streamsize>(s) + 8;
+                if (secLen <= 0 || secLen > end) break;
+                end -= secLen;
+                truncated = true;
+            }
+            if (truncated) {
+                std::filesystem::resize_file(
+                    hvcPath, static_cast<std::uintmax_t>(end), ec);
+                if (ec) {
+                    ::havel::debug(
+                        "[writeGlobalsToHvc] truncate failed for {}: {}",
+                        hvcPath, ec.message());
+                }
+            }
+        }
+    }
     FILE* file = fopen(hvcPath.c_str(), "ab");
     if (file) {
         fwrite(globalsData.data(), 1, globalsData.size(), file);

@@ -2219,6 +2219,26 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               }
             }
             if (reusable) {
+              // Strip trailing GLBS globals trailer(s): cold module loads
+              // APPEND a [globals][GLBS][globals_size:u32] section per
+              // load via writeGlobalsToHvc (mode "ab"), so the cache
+              // accumulates one nested section per run (observed 78
+              // sections / 37MB of dead weight) and warm restore of the
+              // section is disabled anyway (VM hasCachedGlobals=false).
+              // Walk back repeatedly: each section ends with GLBS + a
+              // u32 counting only that section's globals bytes.
+              while (buffer.size() >= 8) {
+                const uint8_t *tail =
+                    buffer.data() + buffer.size() - 8;
+                if (std::memcmp(tail, "GLBS", 4) != 0) break;
+                uint32_t gsize = 0;
+                std::memcpy(&gsize, tail + 4, sizeof(gsize));
+                const uint64_t total =
+                    static_cast<uint64_t>(gsize) + 8;
+                if (total == 0 || total > buffer.size()) break;
+                buffer.resize(buffer.size() -
+                              static_cast<size_t>(total));
+              }
               // Only write if output path differs from cache path.
               // If outputPath == cachePath, the cache file already contains
               // the correct data - don't rewrite it (avoids mtime update).

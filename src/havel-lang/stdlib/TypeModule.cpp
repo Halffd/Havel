@@ -174,6 +174,7 @@ void registerTypeModule(const VMApi &api) {
     api.setField(typeObj, "isEnum", api.makeFunctionRef("isEnum"));
     api.setField(typeObj, "toString", api.makeFunctionRef("toString"));
     api.setField(typeObj, "toNumber", api.makeFunctionRef("toNumber"));
+    api.setField(typeObj, "of", api.makeFunctionRef("type.of"));
     api.setField(typeObj, "newEnum", api.makeFunctionRef("newEnum"));
     api.setField(typeObj, "getVariant", api.makeFunctionRef("getVariant"));
     api.setField(typeObj, "getVariantPayload", api.makeFunctionRef("getVariantPayload"));

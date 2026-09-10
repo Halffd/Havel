@@ -1743,16 +1743,7 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // type() builtin returns type name
-  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-    const auto &value = args[0];
-    fprintf(stderr, "[TYPEENTRY] rawBits=0x%llx isCoId=%d isInt=%d isStr=%d isStrVal=%d isBoxed=%d isDbl=%d\n",
-      (unsigned long long)value.rawBits(),
-      (int)value.isCoroutineId(),
-      (int)value.isInt(),
-      (int)value.isStringId(),
-      (int)value.isStringValId(),
-      (int)(value.rawBits() & 0x8000000000000000ULL ? 1 : 0),
-      (int)value.isDouble());
+  auto typeNameOf = [this](const Value &value) -> std::string {
     std::string typeName;
     if (value.isNull())
       typeName = "null";
@@ -1789,7 +1780,20 @@ void VM::registerDefaultHostFunctions() {
       typeName = "coroutine";
     else
       typeName = "unknown";
-    auto strRef = heap_.allocateString(typeName);
+    return typeName;
+  };
+
+  registerHostFunction("type", 1, [this, typeNameOf](const std::vector<Value> &args) {
+    const auto &value = args[0];
+    auto strRef = heap_.allocateString(typeNameOf(value));
+    return Value::makeStringId(strRef.id);
+  });
+
+  // type.of(value) - method form of type(), resolvable as a dotted host
+  // function on the bare `type` global (CALL_METHOD dotted-name dispatch)
+  // and as a field on the Type module object.
+  registerHostFunction("type.of", 1, [this, typeNameOf](const std::vector<Value> &args) {
+    auto strRef = heap_.allocateString(typeNameOf(args[0]));
     return Value::makeStringId(strRef.id);
   });
 

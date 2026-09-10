@@ -1957,6 +1957,13 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           traceInstruction(instruction, function, frame_count_ - 1, ip);
         }
         executeInstruction(instruction);
+        // exit() host calls must stop the script immediately (see slow path).
+        if ((instruction.opcode == OpCode::CALL ||
+             instruction.opcode == OpCode::CALL_DYN ||
+             instruction.opcode == OpCode::CALL_SPREAD) &&
+            exit_requested_.load()) {
+          break;
+        }
         // The switch-based executeInstruction (used by the slow dispatch
         // loop) does not propagate suspension_requested_ into last_suspension_*.
         // Host calls (e.g. sleep) set suspension_requested_ + suspension_reason_
@@ -2107,6 +2114,15 @@ slow_path:
       // is ip + 1.
       pending_call_return_ip_ = static_cast<int32_t>(ip) + 1;
       executeInstruction(instruction);
+      // exit() host calls must stop the script immediately, not on the next
+      // 4096-instruction boundary: a short script would otherwise run to
+      // completion before the launcher sees exit_requested_.
+      if ((instruction.opcode == OpCode::CALL ||
+           instruction.opcode == OpCode::CALL_DYN ||
+           instruction.opcode == OpCode::CALL_SPREAD) &&
+          exit_requested_.load()) {
+        break;
+      }
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }

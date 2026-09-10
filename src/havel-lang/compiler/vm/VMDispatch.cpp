@@ -1,20 +1,20 @@
-#include "VM.hpp"
-#include "VMInternals.hpp"
 #include "../../../utils/Logger.hpp"
-#include "../../utils/ErrorPrinter.hpp"
-#include "../runtime/RuntimeSupport.hpp"
 #include "../../runtime/concurrency/DependencyTracker.hpp"
-#include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
-#include "../prototypes/PrototypeRegistry.hpp"
+#include "../../runtime/concurrency/WatcherRegistry.hpp"
+#include "../../utils/ErrorPrinter.hpp"
 #include "../core/config/ConfigManager.hpp"
+#include "../prototypes/PrototypeRegistry.hpp"
+#include "../runtime/RuntimeSupport.hpp"
+#include "VM.hpp"
+#include "VMInternals.hpp"
 
+#include "../../stdlib/LogModule.hpp"
 #include <cmath>
 #include <iostream>
 #include <set>
 #include <sstream>
-#include "../../stdlib/LogModule.hpp"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #define HAVE_COMPUTED_GOTO 1
@@ -31,256 +31,270 @@ namespace havel::compiler {
 // ============================================================================
 
 void VM::executeInstruction(const Instruction &instruction) {
-if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].chunk) {
-        current_chunk = frame_arena_[frame_count_ - 1].chunk;
-}
-switch (instruction.opcode) {
+  if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].chunk) {
+    current_chunk = frame_arena_[frame_count_ - 1].chunk;
+  }
+  switch (instruction.opcode) {
   case OpCode::LOAD_CONST: {
     uint32_t const_index = instruction.operands[0].asInt();
     pushStack(getConstant(const_index));
     break;
   }
 
-case OpCode::LOAD_GLOBAL: {
-            if (instruction.operands.empty() ||
-                !instruction.operands[0].isStringValId()) {
-                COMPILER_THROW("LOAD_GLOBAL expects string operand");
-            }
-            uint32_t strIndex = instruction.operands[0].asStringValId();
-            // Resolve the global-name string index against the chunk that
-            // emitted the instruction: the operand is a StringValId (a chunk-
-            // local index), so it only has meaning in the table of the chunk
-            // owning the executing frame (current_chunk is refreshed from the
-            // frame's chunk at the top of executeInstruction). Resolving
-            // against main_chunk_ instead aliases modules whose string tables
-            // differ from the main script's, silently corrupting globals (two
-            // different global names sharing one index collide in globals map).
-            // main_chunk_ is only a fallback for pre-frame execution.
-            const BytecodeChunk* resolveChunk = current_chunk;
-            if (!resolveChunk) resolveChunk = main_chunk_.get();
-            std::string name;
-            if (resolveChunk) {
-                name = resolveChunk->getString(strIndex);
-            } else {
-                name = "<unknown:" + std::to_string(strIndex) + ">";
-            }
+  case OpCode::LOAD_GLOBAL: {
+    if (instruction.operands.empty() ||
+        !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("LOAD_GLOBAL expects string operand");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    // Resolve the global-name string index against the chunk that
+    // emitted the instruction: the operand is a StringValId (a chunk-
+    // local index), so it only has meaning in the table of the chunk
+    // owning the executing frame (current_chunk is refreshed from the
+    // frame's chunk at the top of executeInstruction). Resolving
+    // against main_chunk_ instead aliases modules whose string tables
+    // differ from the main script's, silently corrupting globals (two
+    // different global names sharing one index collide in globals map).
+    // main_chunk_ is only a fallback for pre-frame execution.
+    const BytecodeChunk *resolveChunk = current_chunk;
+    if (!resolveChunk)
+      resolveChunk = main_chunk_.get();
+    std::string name;
+    if (resolveChunk) {
+      name = resolveChunk->getString(strIndex);
+    } else {
+      name = "<unknown:" + std::to_string(strIndex) + ">";
+    }
 
-  auto it = globals.find(name);
-  if (it != globals.end()) {
-        if (it->second.isObjectId()) {
-            auto *obj = heap_.object(it->second.asObjectId());
-            if (obj) {
-                auto *lf = obj->get("__lazy__");
-                if (lf && lf->isBool() && lf->asBool()) {
-                    auto *modNameVal = obj->get("__module__");
-                    std::string modName;
-                    if (modNameVal) {
-                        if (modNameVal->isStringId()) {
-                            if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
-                        } else if (modNameVal->isStringValId() && current_chunk) {
-                            modName = current_chunk->getString(modNameVal->asStringValId());
-                        }
-                    }
-                    if (!modName.empty()) {
-                        if (isLazyModuleRegistered(modName)) {
-                            ensureModuleLoaded(modName);
-                        }
-                        auto git2 = globals.find(name);
-                        if (git2 != globals.end()) {
-                            trackGlobalAccess(name);
-                            pushStack(git2->second);
-                    break;
-                }
+    auto it = globals.find(name);
+    if (it != globals.end()) {
+      if (it->second.isObjectId()) {
+        auto *obj = heap_.object(it->second.asObjectId());
+        if (obj) {
+          auto *lf = obj->get("__lazy__");
+          if (lf && lf->isBool() && lf->asBool()) {
+            auto *modNameVal = obj->get("__module__");
+            std::string modName;
+            if (modNameVal) {
+              if (modNameVal->isStringId()) {
+                if (auto *s = heap_.string(modNameVal->asStringId()))
+                  modName = *s;
+              } else if (modNameVal->isStringValId() && current_chunk) {
+                modName = current_chunk->getString(modNameVal->asStringValId());
+              }
             }
+            if (!modName.empty()) {
+              if (isLazyModuleRegistered(modName)) {
+                ensureModuleLoaded(modName);
+              }
+              auto git2 = globals.find(name);
+              if (git2 != globals.end()) {
+                trackGlobalAccess(name);
+                pushStack(git2->second);
+                break;
+              }
+            }
+          }
         }
       }
+      trackGlobalAccess(name);
+      pushStack(it->second);
+      break;
     }
-    trackGlobalAccess(name);
-    pushStack(it->second);
-    break;
-  }
 
-auto hostIt = host_function_globals_.find(name);
-  if (hostIt != host_function_globals_.end()) {
-    trackGlobalAccess(name);
-    pushStack(hostIt->second);
-    break;
-  }
-
-  // Fall back to the executing frame's closure sidecar. Nested captures
-  // compile to LOAD_GLOBAL with per-closure module_globals sidecars (see
-  // the make_counter pattern); a goroutine suspension/resume can leave the
-  // ambient globals map without the sidecar's keys (fiber switches churn
-  // ambient), losing counter state like `count`. The sidecar is the
-  // authoritative store for such names — STORE_GLOBAL persists there.
-  {
-    const auto &cf_fallback = currentFrame();
-    if (cf_fallback.closure_id != 0) {
-      auto *closure_fb = heap_.closure(cf_fallback.closure_id);
-      if (closure_fb && closure_fb->module_globals) {
-        auto sideIt = closure_fb->module_globals->find(name);
-        if (sideIt != closure_fb->module_globals->end()) {
-          // Heal ambient so subsequent reads hit the fast path.
-          globals[name] = sideIt->second;
-          trackGlobalAccess(name);
-          pushStack(sideIt->second);
-          break;
-        }
-      }
+    auto hostIt = host_function_globals_.find(name);
+    if (hostIt != host_function_globals_.end()) {
+      trackGlobalAccess(name);
+      pushStack(hostIt->second);
+      break;
     }
-  }
 
-  trackGlobalAccess(name);
-  COMPILER_THROW("Undefined variable: '" + name + "'");
-  break;
-  }
-
-case OpCode::STORE_GLOBAL: {
-            if (instruction.operands.empty() ||
-                !instruction.operands[0].isStringValId()) {
-                COMPILER_THROW("STORE_GLOBAL expects string operand");
-            }
-            uint32_t strIndex = instruction.operands[0].asStringValId();
-            // Same ruling as LOAD_GLOBAL: the index refers to the executing
-            // frame's chunk table, not the main chunk's.
-            const auto& cf_store = currentFrame();
-            const BytecodeChunk* resolveChunk = current_chunk;
-            if (!resolveChunk) resolveChunk = main_chunk_.get();
-            std::string name;
-            if (resolveChunk) {
-                name = resolveChunk->getString(strIndex);
-            } else {
-                name = "<unknown:" + std::to_string(strIndex) + ">";
-            }
-Value value = popStack();
-
-            // Materialize StringValId to heap StringId so cross-chunk reads work
-            if (value.isStringValId() || value.isRegexValId()) {
-                const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
-                if (matChunk) {
-                    std::string s;
-                    if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
-                    else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
-                    if (!s.empty()) {
-                        auto ref = heap_.allocateString(std::move(s));
-                        value = Value::makeStringId(ref.id);
-                    }
-                }
-            }
-
-            if (immutable_globals_.count(name)) {
-                auto existing = globals.find(name);
-                if (existing != globals.end() && existing->second == value) {
-                    break;
-                }
-                COMPILER_THROW("Cannot reassign val global: " + name);
-            }
-            auto insert_result = globals.insert({name, value});
-            if (!insert_result.second) {
-                // Key already existed, update it
-                globals[name] = value;
-            }
-
-            // Persist to the shared module_globals map so subsequent calls
-            // see the updated value. Gate on closure_id only: module function
-            // frames have a non-zero closure id whether they are nested
-            // (owns_globals=true) or running inside the ClosureId host wrapper
-            // (owns_globals=false). The wrapper never pushes to globals_stack_,
-            // so persisting is safe; dropping owns_globals here is what lets
-            // module functions maintain module-global state (caches, etc).
-            if (cf_store.closure_id != 0) {
-                auto* closure = heap_.closure(cf_store.closure_id);
-                if (closure && closure->module_globals) {
-                    (*closure->module_globals)[name] = value;
-                    // Track the key so doReturn can refresh the caller's
-                    // stale globals copy cheaply (per-key, not full map).
-                    if (!frame_arena_.empty() && frame_count_ > 0) {
-                        auto &wf = frame_arena_[frame_count_ - 1];
-                        if (std::find(wf.written_globals.begin(),
-                                      wf.written_globals.end(), name) ==
-                            wf.written_globals.end()) {
-                            wf.written_globals.push_back(name);
-                        }
-                    }
-                }
-            }
-
-            heap_.writeBarrier(Value::makeNull(), value);
-            emitVariableChanged(name);
+    // Fall back to the executing frame's closure sidecar. Nested captures
+    // compile to LOAD_GLOBAL with per-closure module_globals sidecars (see
+    // the make_counter pattern); a goroutine suspension/resume can leave the
+    // ambient globals map without the sidecar's keys (fiber switches churn
+    // ambient), losing counter state like `count`. The sidecar is the
+    // authoritative store for such names — STORE_GLOBAL persists there.
+    {
+      const auto &cf_fallback = currentFrame();
+      if (cf_fallback.closure_id != 0) {
+        auto *closure_fb = heap_.closure(cf_fallback.closure_id);
+        if (closure_fb && closure_fb->module_globals) {
+          auto sideIt = closure_fb->module_globals->find(name);
+          if (sideIt != closure_fb->module_globals->end()) {
+            // Heal ambient so subsequent reads hit the fast path.
+            globals[name] = sideIt->second;
+            trackGlobalAccess(name);
+            pushStack(sideIt->second);
             break;
-        }
-
-        case OpCode::STORE_IMMUT_GLOBAL: {
-            if (instruction.operands.empty() ||
-                !instruction.operands[0].isStringValId()) {
-                COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
-            }
-            uint32_t strIndex = instruction.operands[0].asStringValId();
-            const auto& cf_imut = currentFrame();
-            const BytecodeChunk* resolveChunkImut = cf_imut.chunk ? cf_imut.chunk : current_chunk;
-            std::string name;
-            if (resolveChunkImut) {
-                name = resolveChunkImut->getString(strIndex);
-            } else {
-                name = "<unknown:" + std::to_string(strIndex) + ">";
-            }
-        Value value = popStack();
-
-  // Materialize StringValId to heap StringId so cross-chunk reads work
-  if (value.isStringValId() || value.isRegexValId()) {
-      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
-      if (matChunk) {
-          std::string s;
-          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
-          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
-          if (!s.empty()) {
-              auto ref = heap_.allocateString(std::move(s));
-              value = Value::makeStringId(ref.id);
           }
-      }
-  }
-
-  // Materialize StringValId to heap StringId so cross-chunk reads work
-  if (value.isStringValId() || value.isRegexValId()) {
-      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
-      if (matChunk) {
-          std::string s;
-          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
-          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
-          if (!s.empty()) {
-              auto ref = heap_.allocateString(std::move(s));
-              value = Value::makeStringId(ref.id);
-          }
-      }
-  }
-
-        immutable_globals_.insert(name);
-        globals[name] = value;
-
-        // Persist to shared module_globals (see STORE_GLOBAL above)
-        if (cf_imut.closure_id != 0) {
-            auto* closure = heap_.closure(cf_imut.closure_id);
-            if (closure && closure->module_globals) {
-                (*closure->module_globals)[name] = value;
-                // Track the key so doReturn can refresh the caller's
-                // stale globals copy cheaply (per-key, not full map).
-                if (!frame_arena_.empty() && frame_count_ > 0) {
-                    auto &wf = frame_arena_[frame_count_ - 1];
-                    if (std::find(wf.written_globals.begin(),
-                                  wf.written_globals.end(), name) ==
-                        wf.written_globals.end()) {
-                        wf.written_globals.push_back(name);
-                    }
-                }
-            }
         }
-
-        heap_.writeBarrier(Value::makeNull(), value);
-        emitVariableChanged(name);
-        break;
+      }
     }
 
-case OpCode::LOAD_VAR: {
+    trackGlobalAccess(name);
+    COMPILER_THROW("Undefined variable: '" + name + "'");
+    break;
+  }
+
+  case OpCode::STORE_GLOBAL: {
+    if (instruction.operands.empty() ||
+        !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("STORE_GLOBAL expects string operand");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    // Same ruling as LOAD_GLOBAL: the index refers to the executing
+    // frame's chunk table, not the main chunk's.
+    const auto &cf_store = currentFrame();
+    const BytecodeChunk *resolveChunk = current_chunk;
+    if (!resolveChunk)
+      resolveChunk = main_chunk_.get();
+    std::string name;
+    if (resolveChunk) {
+      name = resolveChunk->getString(strIndex);
+    } else {
+      name = "<unknown:" + std::to_string(strIndex) + ">";
+    }
+    Value value = popStack();
+
+    // Materialize StringValId to heap StringId so cross-chunk reads work
+    if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk *matChunk =
+          current_chunk ? current_chunk
+                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+        std::string s;
+        if (value.isStringValId())
+          s = matChunk->getString(value.asStringValId());
+        else if (value.isRegexValId())
+          s = matChunk->getString(value.asRegexValId());
+        if (!s.empty()) {
+          auto ref = heap_.allocateString(std::move(s));
+          value = Value::makeStringId(ref.id);
+        }
+      }
+    }
+
+    if (immutable_globals_.count(name)) {
+      auto existing = globals.find(name);
+      if (existing != globals.end() && existing->second == value) {
+        break;
+      }
+      COMPILER_THROW("Cannot reassign val global: " + name);
+    }
+    auto insert_result = globals.insert({name, value});
+    if (!insert_result.second) {
+      // Key already existed, update it
+      globals[name] = value;
+    }
+
+    // Persist to the shared module_globals map so subsequent calls
+    // see the updated value. Gate on closure_id only: module function
+    // frames have a non-zero closure id whether they are nested
+    // (owns_globals=true) or running inside the ClosureId host wrapper
+    // (owns_globals=false). The wrapper never pushes to globals_stack_,
+    // so persisting is safe; dropping owns_globals here is what lets
+    // module functions maintain module-global state (caches, etc).
+    if (cf_store.closure_id != 0) {
+      auto *closure = heap_.closure(cf_store.closure_id);
+      if (closure && closure->module_globals) {
+        (*closure->module_globals)[name] = value;
+        // Track the key so doReturn can refresh the caller's
+        // stale globals copy cheaply (per-key, not full map).
+        if (!frame_arena_.empty() && frame_count_ > 0) {
+          auto &wf = frame_arena_[frame_count_ - 1];
+          if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
+                        name) == wf.written_globals.end()) {
+            wf.written_globals.push_back(name);
+          }
+        }
+      }
+    }
+
+    heap_.writeBarrier(Value::makeNull(), value);
+    emitVariableChanged(name);
+    break;
+  }
+
+  case OpCode::STORE_IMMUT_GLOBAL: {
+    if (instruction.operands.empty() ||
+        !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto &cf_imut = currentFrame();
+    const BytecodeChunk *resolveChunkImut =
+        cf_imut.chunk ? cf_imut.chunk : current_chunk;
+    std::string name;
+    if (resolveChunkImut) {
+      name = resolveChunkImut->getString(strIndex);
+    } else {
+      name = "<unknown:" + std::to_string(strIndex) + ">";
+    }
+    Value value = popStack();
+
+    // Materialize StringValId to heap StringId so cross-chunk reads work
+    if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk *matChunk =
+          current_chunk ? current_chunk
+                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+        std::string s;
+        if (value.isStringValId())
+          s = matChunk->getString(value.asStringValId());
+        else if (value.isRegexValId())
+          s = matChunk->getString(value.asRegexValId());
+        if (!s.empty()) {
+          auto ref = heap_.allocateString(std::move(s));
+          value = Value::makeStringId(ref.id);
+        }
+      }
+    }
+
+    // Materialize StringValId to heap StringId so cross-chunk reads work
+    if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk *matChunk =
+          current_chunk ? current_chunk
+                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+        std::string s;
+        if (value.isStringValId())
+          s = matChunk->getString(value.asStringValId());
+        else if (value.isRegexValId())
+          s = matChunk->getString(value.asRegexValId());
+        if (!s.empty()) {
+          auto ref = heap_.allocateString(std::move(s));
+          value = Value::makeStringId(ref.id);
+        }
+      }
+    }
+
+    immutable_globals_.insert(name);
+    globals[name] = value;
+
+    // Persist to shared module_globals (see STORE_GLOBAL above)
+    if (cf_imut.closure_id != 0) {
+      auto *closure = heap_.closure(cf_imut.closure_id);
+      if (closure && closure->module_globals) {
+        (*closure->module_globals)[name] = value;
+        // Track the key so doReturn can refresh the caller's
+        // stale globals copy cheaply (per-key, not full map).
+        if (!frame_arena_.empty() && frame_count_ > 0) {
+          auto &wf = frame_arena_[frame_count_ - 1];
+          if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
+                        name) == wf.written_globals.end()) {
+            wf.written_globals.push_back(name);
+          }
+        }
+      }
+    }
+
+    heap_.writeBarrier(Value::makeNull(), value);
+    emitVariableChanged(name);
+    break;
+  }
+
+  case OpCode::LOAD_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
@@ -293,7 +307,7 @@ case OpCode::LOAD_VAR: {
         fb.execution_count++;
         fb.result_type_mask |= getFeedbackMask(value);
         if (fb.execution_count == 1000) {
-          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
         }
       }
     }
@@ -302,14 +316,15 @@ case OpCode::LOAD_VAR: {
     break;
   }
 
-case OpCode::STORE_VAR: {
+  case OpCode::STORE_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
     Value value = popStack();
 
     if (immutable_locals_.count(abs)) {
-      COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+      COMPILER_THROW("Cannot reassign val local at index " +
+                     std::to_string(var_index));
     }
 
     if (hot_func_cb_) {
@@ -319,7 +334,7 @@ case OpCode::STORE_VAR: {
         fb.execution_count++;
         fb.left_type_mask |= getFeedbackMask(value);
         if (fb.execution_count == 1000) {
-          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
         }
       }
     }
@@ -329,7 +344,7 @@ case OpCode::STORE_VAR: {
     break;
   }
 
-case OpCode::STORE_IMMUT_VAR: {
+  case OpCode::STORE_IMMUT_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
@@ -344,7 +359,7 @@ case OpCode::STORE_IMMUT_VAR: {
         fb.execution_count++;
         fb.left_type_mask |= getFeedbackMask(value);
         if (fb.execution_count == 1000) {
-          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
         }
       }
     }
@@ -354,11 +369,11 @@ case OpCode::STORE_IMMUT_VAR: {
     break;
   }
 
-    case OpCode::INCLOCAL: {
+  case OpCode::INCLOCAL: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value& val = locals[abs];
+    Value &val = locals[abs];
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -366,7 +381,7 @@ case OpCode::STORE_IMMUT_VAR: {
         fb.execution_count++;
         fb.left_type_mask |= getFeedbackMask(val);
         if (fb.execution_count == 1000) {
-          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
         }
       }
     }
@@ -382,11 +397,11 @@ case OpCode::STORE_IMMUT_VAR: {
     break;
   }
 
-case OpCode::DECLOCAL: {
+  case OpCode::DECLOCAL: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value& val = locals[abs];
+    Value &val = locals[abs];
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -394,7 +409,7 @@ case OpCode::DECLOCAL: {
         fb.execution_count++;
         fb.left_type_mask |= getFeedbackMask(val);
         if (fb.execution_count == 1000) {
-          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
         }
       }
     }
@@ -410,7 +425,7 @@ case OpCode::DECLOCAL: {
     break;
   }
 
-case OpCode::INCLOCAL_POST: {
+  case OpCode::INCLOCAL_POST: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
@@ -434,7 +449,7 @@ case OpCode::INCLOCAL_POST: {
     break;
   }
 
-case OpCode::DECLOCAL_POST: {
+  case OpCode::DECLOCAL_POST: {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
@@ -455,57 +470,59 @@ case OpCode::DECLOCAL_POST: {
     } else {
       COMPILER_THROW("Cannot decrement non-numeric value");
     }
-  break;
-}
+    break;
+  }
 
-case OpCode::LOAD_UPVALUE: {
+  case OpCode::LOAD_UPVALUE: {
     uint32_t upvalue_index = instruction.operands[0].asInt();
     uint32_t closure_id = currentFrame().closure_id;
     if (closure_id == 0) {
-        ::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 upvalue_idx={} frame_count={} func='{}'", 
-            upvalue_index, frame_count_, 
-            currentFrame().function ? currentFrame().function->name : "?");
-        COMPILER_THROW("LOAD_UPVALUE used without active closure");
+      ::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 "
+                     "upvalue_idx={} frame_count={} func='{}'",
+                     upvalue_index, frame_count_,
+                     currentFrame().function ? currentFrame().function->name
+                                             : "?");
+      COMPILER_THROW("LOAD_UPVALUE used without active closure");
     }
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-        COMPILER_THROW("Closure not found for LOAD_UPVALUE");
+      COMPILER_THROW("Closure not found for LOAD_UPVALUE");
     }
     if (upvalue_index >= closure->upvalues.size() ||
         !closure->upvalues[upvalue_index]) {
-        COMPILER_THROW("LOAD_UPVALUE index out of range");
+      COMPILER_THROW("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
     Value value;
     if (cell->is_open) {
-        uint32_t abs_index = cell->locals_base + cell->open_index;
-        this->ensureLocalIndex(abs_index);
-        value = locals[abs_index];
+      uint32_t abs_index = cell->locals_base + cell->open_index;
+      this->ensureLocalIndex(abs_index);
+      value = locals[abs_index];
     } else {
-        value = cell->closed_value;
+      value = cell->closed_value;
     }
     pushStack(value);
     break;
-}
+  }
 
-case OpCode::STORE_UPVALUE: {
-uint32_t upvalue_index = instruction.operands[0].asInt();
-uint32_t closure_id = currentFrame().closure_id;
-if (closure_id == 0) {
-COMPILER_THROW("STORE_UPVALUE used without active closure");
-}
-auto *closure = heap_.closure(closure_id);
-if (!closure) {
-COMPILER_THROW("Closure not found for STORE_UPVALUE");
-}
-if (upvalue_index >= closure->upvalues.size() ||
-!closure->upvalues[upvalue_index]) {
-COMPILER_THROW("STORE_UPVALUE index out of range");
-}
-auto &cell = closure->upvalues[upvalue_index];
-Value value = popStack();
+  case OpCode::STORE_UPVALUE: {
+    uint32_t upvalue_index = instruction.operands[0].asInt();
+    uint32_t closure_id = currentFrame().closure_id;
+    if (closure_id == 0) {
+      COMPILER_THROW("STORE_UPVALUE used without active closure");
+    }
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
+      COMPILER_THROW("Closure not found for STORE_UPVALUE");
+    }
+    if (upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
+      COMPILER_THROW("STORE_UPVALUE index out of range");
+    }
+    auto &cell = closure->upvalues[upvalue_index];
+    Value value = popStack();
 
-if (cell->is_open) {
+    if (cell->is_open) {
       uint32_t abs_index = cell->locals_base + cell->open_index;
       this->ensureLocalIndex(abs_index);
       locals[abs_index] = value;
@@ -542,7 +559,7 @@ if (cell->is_open) {
     break;
   }
 
-case OpCode::ADD:
+  case OpCode::ADD:
   case OpCode::SUB:
   case OpCode::MUL:
   case OpCode::DIV:
@@ -576,51 +593,58 @@ case OpCode::ADD:
     execLogicalOp(instruction.opcode);
     break;
 
-        case OpCode::NOT: {
-            Value v = popStack();
-            if (v.isObjectId()) {
-                Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_not");
-                if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-                    pushStack(callFunction(opMethod, {v}));
-                } else {
-                    pushStack(!isTruthy(v));
-                }
-            } else {
-                pushStack(!isTruthy(v));
-            }
-            break;
-        }
+  case OpCode::NOT: {
+    Value v = popStack();
+    if (v.isObjectId()) {
+      Value opMethod =
+          getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_not");
+      if (!opMethod.isNull() &&
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
+           opMethod.isHostFuncId())) {
+        pushStack(callFunction(opMethod, {v}));
+      } else {
+        pushStack(!isTruthy(v));
+      }
+    } else {
+      pushStack(!isTruthy(v));
+    }
+    break;
+  }
 
-	case OpCode::BIT_NOT: {
-		Value v = popStack();
-		if (v.isInt()) {
-			pushStack(~v.asInt());
-		} else if (v.isDouble()) {
-			pushStack(~static_cast<int64_t>(v.asDouble()));
-		} else if (v.isObjectId()) {
-			Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_bit_not");
-			if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-				pushStack(callFunction(opMethod, {v}));
-			} else {
-				COMPILER_THROW("Bitwise NOT requires integer operand or op_bit_not method");
-			}
-		} else {
-			COMPILER_THROW("Bitwise NOT requires integer operand");
-		}
-		break;
-	}
+  case OpCode::BIT_NOT: {
+    Value v = popStack();
+    if (v.isInt()) {
+      pushStack(~v.asInt());
+    } else if (v.isDouble()) {
+      pushStack(~static_cast<int64_t>(v.asDouble()));
+    } else if (v.isObjectId()) {
+      Value opMethod =
+          getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_bit_not");
+      if (!opMethod.isNull() &&
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
+           opMethod.isHostFuncId())) {
+        pushStack(callFunction(opMethod, {v}));
+      } else {
+        COMPILER_THROW(
+            "Bitwise NOT requires integer operand or op_bit_not method");
+      }
+    } else {
+      COMPILER_THROW("Bitwise NOT requires integer operand");
+    }
+    break;
+  }
 
-	case OpCode::NEGATE:
-		execNegate();
-		break;
+  case OpCode::NEGATE:
+    execNegate();
+    break;
 
-case OpCode::LENGTH: {
+  case OpCode::LENGTH: {
     Value v = popStack();
     pushStack(execLengthOp(v));
     break;
-}
+  }
 
-	case OpCode::JUMP:
+  case OpCode::JUMP:
     execJump(instruction);
     break;
 
@@ -645,17 +669,20 @@ case OpCode::LENGTH: {
     if (value.isNull()) {
       currentFrame().ip = target;
     }
-	break;
-}
+    break;
+  }
 
-default:
-	if (execCollectionOp(instruction)) break;
-	if (execControlFlowOp(instruction)) break;
-	if (execConcurrencyOp(instruction)) break;
-	if (execBuiltinOp(instruction)) break;
-	COMPILER_THROW(
-        "Unknown opcode: " +
-        std::to_string(static_cast<int>(instruction.opcode)));
+  default:
+    if (execCollectionOp(instruction))
+      break;
+    if (execControlFlowOp(instruction))
+      break;
+    if (execConcurrencyOp(instruction))
+      break;
+    if (execBuiltinOp(instruction))
+      break;
+    COMPILER_THROW("Unknown opcode: " +
+                   std::to_string(static_cast<int>(instruction.opcode)));
   }
 }
 
@@ -667,874 +694,1053 @@ default:
 
 #if HAVE_COMPUTED_GOTO
 
-#define DISPATCH_NEXT() do { \
-    if (frame_count_ > stop_frame_depth) { \
-        auto &frm = frame_arena_[frame_count_ - 1]; \
-        if (frm.ip == saved_ip) frm.ip++; \
-        goto *dispatch_table[static_cast<uint8_t>( \
-            frm.function->instructions[frm.ip].opcode)]; \
-    } \
-    return; \
-} while(0)
+#define DISPATCH_NEXT()                                                        \
+  do {                                                                         \
+    if (frame_count_ > stop_frame_depth) {                                     \
+      auto &frm = frame_arena_[frame_count_ - 1];                              \
+      if (frm.ip == saved_ip)                                                  \
+        frm.ip++;                                                              \
+      goto *dispatch_table[static_cast<uint8_t>(                               \
+          frm.function->instructions[frm.ip].opcode)];                         \
+    }                                                                          \
+    return;                                                                    \
+  } while (0)
 
-#define DISPATCH_OP(op) do { \
-    if (frame_count_ > stop_frame_depth) { \
-        auto &frm = frame_arena_[frame_count_ - 1]; \
-        if (frm.ip == saved_ip) frm.ip++; \
-        goto *dispatch_table[static_cast<uint8_t>(OpCode::op)]; \
-    } \
-    return; \
-} while(0)
+#define DISPATCH_OP(op)                                                        \
+  do {                                                                         \
+    if (frame_count_ > stop_frame_depth) {                                     \
+      auto &frm = frame_arena_[frame_count_ - 1];                              \
+      if (frm.ip == saved_ip)                                                  \
+        frm.ip++;                                                              \
+      goto *dispatch_table[static_cast<uint8_t>(OpCode::op)];                  \
+    }                                                                          \
+    return;                                                                    \
+  } while (0)
 
-__attribute__((hot, noinline))
-void VM::runDispatchFast(size_t stop_frame_depth) {
-    static void* dispatch_table[256];
-    static bool dispatch_initialized = false;
-    if (!dispatch_initialized) {
-        for (int i = 0; i < 256; ++i) dispatch_table[i] = &&op_default;
-        dispatch_table[static_cast<uint8_t>(OpCode::LOAD_CONST)] = &&op_LOAD_CONST;
-        dispatch_table[static_cast<uint8_t>(OpCode::LOAD_GLOBAL)] = &&op_LOAD_GLOBAL;
-        dispatch_table[static_cast<uint8_t>(OpCode::STORE_GLOBAL)] = &&op_STORE_GLOBAL;
-        dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_GLOBAL)] = &&op_STORE_IMMUT_GLOBAL;
-        dispatch_table[static_cast<uint8_t>(OpCode::LOAD_VAR)] = &&op_LOAD_VAR;
-        dispatch_table[static_cast<uint8_t>(OpCode::STORE_VAR)] = &&op_STORE_VAR;
-        dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_VAR)] = &&op_STORE_IMMUT_VAR;
-        dispatch_table[static_cast<uint8_t>(OpCode::LOAD_UPVALUE)] = &&op_LOAD_UPVALUE;
-        dispatch_table[static_cast<uint8_t>(OpCode::STORE_UPVALUE)] = &&op_STORE_UPVALUE;
-        dispatch_table[static_cast<uint8_t>(OpCode::POP)] = &&op_POP;
-        dispatch_table[static_cast<uint8_t>(OpCode::DUP)] = &&op_DUP;
-        dispatch_table[static_cast<uint8_t>(OpCode::SWAP)] = &&op_SWAP;
-        dispatch_table[static_cast<uint8_t>(OpCode::PUSH_NULL)] = &&op_PUSH_NULL;
-        dispatch_table[static_cast<uint8_t>(OpCode::ADD)] = &&op_ADD;
-        dispatch_table[static_cast<uint8_t>(OpCode::SUB)] = &&op_SUB;
-        dispatch_table[static_cast<uint8_t>(OpCode::MUL)] = &&op_MUL;
-        dispatch_table[static_cast<uint8_t>(OpCode::DIV)] = &&op_DIV;
-        dispatch_table[static_cast<uint8_t>(OpCode::INT_DIV)] = &&op_INT_DIV;
-        dispatch_table[static_cast<uint8_t>(OpCode::DIVMOD)] = &&op_DIVMOD;
-        dispatch_table[static_cast<uint8_t>(OpCode::REMAINDER)] = &&op_REMAINDER;
-        dispatch_table[static_cast<uint8_t>(OpCode::MOD)] = &&op_MOD;
-        dispatch_table[static_cast<uint8_t>(OpCode::ADD_INT)] = &&op_ADD_INT;
-        dispatch_table[static_cast<uint8_t>(OpCode::SUB_INT)] = &&op_ADD_INT;
-        dispatch_table[static_cast<uint8_t>(OpCode::MUL_INT)] = &&op_ADD_INT;
-        dispatch_table[static_cast<uint8_t>(OpCode::DIV_INT)] = &&op_ADD_INT;
-        dispatch_table[static_cast<uint8_t>(OpCode::MOD_INT)] = &&op_ADD_INT;
-        dispatch_table[static_cast<uint8_t>(OpCode::POW)] = &&op_POW;
-        dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL)] = &&op_INCLOCAL;
-        dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL)] = &&op_DECLOCAL;
-        dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL_POST)] = &&op_INCLOCAL_POST;
-        dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL_POST)] = &&op_DECLOCAL_POST;
-        dispatch_table[static_cast<uint8_t>(OpCode::EQ)] = &&op_EQ;
-        dispatch_table[static_cast<uint8_t>(OpCode::NEQ)] = &&op_NEQ;
-        dispatch_table[static_cast<uint8_t>(OpCode::IS)] = &&op_IS;
-        dispatch_table[static_cast<uint8_t>(OpCode::LT)] = &&op_LT;
-        dispatch_table[static_cast<uint8_t>(OpCode::LTE)] = &&op_LTE;
-        dispatch_table[static_cast<uint8_t>(OpCode::GT)] = &&op_GT;
-        dispatch_table[static_cast<uint8_t>(OpCode::GTE)] = &&op_GTE;
-        dispatch_table[static_cast<uint8_t>(OpCode::AND)] = &&op_AND;
-        dispatch_table[static_cast<uint8_t>(OpCode::OR)] = &&op_OR;
-        dispatch_table[static_cast<uint8_t>(OpCode::NOT)] = &&op_NOT;
-        dispatch_table[static_cast<uint8_t>(OpCode::NEGATE)] = &&op_NEGATE;
-        dispatch_table[static_cast<uint8_t>(OpCode::IS_NULL)] = &&op_IS_NULL;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_AND)] = &&op_BIT_AND;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_OR)] = &&op_BIT_OR;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_XOR)] = &&op_BIT_XOR;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_LSH)] = &&op_BIT_LSH;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_RSH)] = &&op_BIT_RSH;
-        dispatch_table[static_cast<uint8_t>(OpCode::BIT_NOT)] = &&op_BIT_NOT;
-        dispatch_table[static_cast<uint8_t>(OpCode::LENGTH)] = &&op_LENGTH;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_GET_FAST)] = &&op_STRING_GET_FAST;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_SET_FAST)] = &&op_STRING_SET_FAST;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_NEW)] = &&op_STRING_CURSOR_NEW;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_CURRENT)] = &&op_STRING_CURSOR_CURRENT;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_ADVANCE)] = &&op_STRING_CURSOR_ADVANCE;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_PEEK)] = &&op_STRING_CURSOR_PEEK;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] = &&op_STRING_CURSOR_RESET;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_GET_POS)] = &&op_STRING_CURSOR_GET_POS;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_SET_POS)] = &&op_STRING_CURSOR_SET_POS;
-        dispatch_table[static_cast<uint8_t>(OpCode::STRING_CONCAT)] = &&op_STRING_CONCAT;
-        dispatch_table[static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP;
-        dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] = &&op_JUMP_IF_FALSE;
-        dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE;
-        dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] = &&op_JUMP_IF_NULL;
-        dispatch_table[static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL;
-        dispatch_table[static_cast<uint8_t>(OpCode::CALL_DYN)] = &&op_CALL;
-        dispatch_table[static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL;
-        dispatch_table[static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN;
-        dispatch_table[static_cast<uint8_t>(OpCode::YIELD)] = &&op_YIELD;
-        dispatch_initialized = true;
+__attribute__((hot,
+               noinline)) void VM::runDispatchFast(size_t stop_frame_depth) {
+  static void *dispatch_table[256];
+  static bool dispatch_initialized = false;
+  if (!dispatch_initialized) {
+    for (int i = 0; i < 256; ++i)
+      dispatch_table[i] = &&op_default;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_CONST)] = &&op_LOAD_CONST;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_GLOBAL)] =
+        &&op_LOAD_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_GLOBAL)] =
+        &&op_STORE_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_GLOBAL)] =
+        &&op_STORE_IMMUT_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_VAR)] = &&op_LOAD_VAR;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_VAR)] = &&op_STORE_VAR;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_VAR)] =
+        &&op_STORE_IMMUT_VAR;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_UPVALUE)] =
+        &&op_LOAD_UPVALUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_UPVALUE)] =
+        &&op_STORE_UPVALUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::POP)] = &&op_POP;
+    dispatch_table[static_cast<uint8_t>(OpCode::DUP)] = &&op_DUP;
+    dispatch_table[static_cast<uint8_t>(OpCode::SWAP)] = &&op_SWAP;
+    dispatch_table[static_cast<uint8_t>(OpCode::PUSH_NULL)] = &&op_PUSH_NULL;
+    dispatch_table[static_cast<uint8_t>(OpCode::ADD)] = &&op_ADD;
+    dispatch_table[static_cast<uint8_t>(OpCode::SUB)] = &&op_SUB;
+    dispatch_table[static_cast<uint8_t>(OpCode::MUL)] = &&op_MUL;
+    dispatch_table[static_cast<uint8_t>(OpCode::DIV)] = &&op_DIV;
+    dispatch_table[static_cast<uint8_t>(OpCode::INT_DIV)] = &&op_INT_DIV;
+    dispatch_table[static_cast<uint8_t>(OpCode::DIVMOD)] = &&op_DIVMOD;
+    dispatch_table[static_cast<uint8_t>(OpCode::REMAINDER)] = &&op_REMAINDER;
+    dispatch_table[static_cast<uint8_t>(OpCode::MOD)] = &&op_MOD;
+    dispatch_table[static_cast<uint8_t>(OpCode::ADD_INT)] = &&op_ADD_INT;
+    dispatch_table[static_cast<uint8_t>(OpCode::SUB_INT)] = &&op_ADD_INT;
+    dispatch_table[static_cast<uint8_t>(OpCode::MUL_INT)] = &&op_ADD_INT;
+    dispatch_table[static_cast<uint8_t>(OpCode::DIV_INT)] = &&op_ADD_INT;
+    dispatch_table[static_cast<uint8_t>(OpCode::MOD_INT)] = &&op_ADD_INT;
+    dispatch_table[static_cast<uint8_t>(OpCode::POW)] = &&op_POW;
+    dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL)] = &&op_INCLOCAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL)] = &&op_DECLOCAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL_POST)] =
+        &&op_INCLOCAL_POST;
+    dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL_POST)] =
+        &&op_DECLOCAL_POST;
+    dispatch_table[static_cast<uint8_t>(OpCode::EQ)] = &&op_EQ;
+    dispatch_table[static_cast<uint8_t>(OpCode::NEQ)] = &&op_NEQ;
+    dispatch_table[static_cast<uint8_t>(OpCode::IS)] = &&op_IS;
+    dispatch_table[static_cast<uint8_t>(OpCode::LT)] = &&op_LT;
+    dispatch_table[static_cast<uint8_t>(OpCode::LTE)] = &&op_LTE;
+    dispatch_table[static_cast<uint8_t>(OpCode::GT)] = &&op_GT;
+    dispatch_table[static_cast<uint8_t>(OpCode::GTE)] = &&op_GTE;
+    dispatch_table[static_cast<uint8_t>(OpCode::AND)] = &&op_AND;
+    dispatch_table[static_cast<uint8_t>(OpCode::OR)] = &&op_OR;
+    dispatch_table[static_cast<uint8_t>(OpCode::NOT)] = &&op_NOT;
+    dispatch_table[static_cast<uint8_t>(OpCode::NEGATE)] = &&op_NEGATE;
+    dispatch_table[static_cast<uint8_t>(OpCode::IS_NULL)] = &&op_IS_NULL;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_AND)] = &&op_BIT_AND;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_OR)] = &&op_BIT_OR;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_XOR)] = &&op_BIT_XOR;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_LSH)] = &&op_BIT_LSH;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_RSH)] = &&op_BIT_RSH;
+    dispatch_table[static_cast<uint8_t>(OpCode::BIT_NOT)] = &&op_BIT_NOT;
+    dispatch_table[static_cast<uint8_t>(OpCode::LENGTH)] = &&op_LENGTH;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_GET_FAST)] =
+        &&op_STRING_GET_FAST;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_SET_FAST)] =
+        &&op_STRING_SET_FAST;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_NEW)] =
+        &&op_STRING_CURSOR_NEW;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_CURRENT)] =
+        &&op_STRING_CURSOR_CURRENT;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_ADVANCE)] =
+        &&op_STRING_CURSOR_ADVANCE;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_PEEK)] =
+        &&op_STRING_CURSOR_PEEK;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] =
+        &&op_STRING_CURSOR_RESET;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_GET_POS)] =
+        &&op_STRING_CURSOR_GET_POS;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_SET_POS)] =
+        &&op_STRING_CURSOR_SET_POS;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CONCAT)] =
+        &&op_STRING_CONCAT;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] =
+        &&op_JUMP_IF_FALSE;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] =
+        &&op_JUMP_IF_TRUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] =
+        &&op_JUMP_IF_NULL;
+    dispatch_table[static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL;
+    dispatch_table[static_cast<uint8_t>(OpCode::CALL_DYN)] = &&op_CALL;
+    dispatch_table[static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL;
+    dispatch_table[static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN;
+    dispatch_table[static_cast<uint8_t>(OpCode::YIELD)] = &&op_YIELD;
+    dispatch_initialized = true;
+  }
+
+  size_t counter = 0;
+
+  // Fetch first instruction
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &frm = frame_arena_[frame_count_ - 1];
+    if (frm.ip >= frm.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-
-    size_t counter = 0;
-
-    // Fetch first instruction
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &frm = frame_arena_[frame_count_ - 1];
-        if (frm.ip >= frm.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        if (trace_execution_) {
-          traceInstruction(frm.function->instructions[frm.ip], frm.function, frame_count_ - 1, frm.ip);
-        }
-        goto *dispatch_table[static_cast<uint8_t>(frm.function->instructions[frm.ip].opcode)];
+    if (trace_execution_) {
+      traceInstruction(frm.function->instructions[frm.ip], frm.function,
+                       frame_count_ - 1, frm.ip);
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        frm.function->instructions[frm.ip].opcode)];
+  }
 
-    // --- Hot opcodes (most frequent in self-hosted compilation) ---
+  // --- Hot opcodes (most frequent in self-hosted compilation) ---
 
 op_LOAD_CONST: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t saved_ip = frm.ip;
-    frm.ip++;
-    pushStack(getConstant(inst.operands[0].asInt()));
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { 
-            // Transfer suspension info to last_suspension_* so caller can handle it
-            last_suspension_reason_ = suspension_reason_;
-            last_suspension_context_ = suspension_context_;
-            suspension_requested_ = false;
-            suspension_context_ = nullptr;
-            return; 
-        }
-        // Check for suspension request (e.g., channel receive, thread join)
-        if (suspension_requested_) {
-            last_suspension_reason_ = suspension_reason_;
-            last_suspension_context_ = suspension_context_;
-            suspension_requested_ = false;
-            suspension_context_ = nullptr;
-            return;
-        }
-        if (!pending_calls.empty()) {
-            processPendingCalls();
-            if (exit_requested_.load()) return;
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t saved_ip = frm.ip;
+  frm.ip++;
+  pushStack(getConstant(inst.operands[0].asInt()));
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      // Transfer suspension info to last_suspension_* so caller can handle it
+      last_suspension_reason_ = suspension_reason_;
+      last_suspension_context_ = suspension_context_;
+      suspension_requested_ = false;
+      suspension_context_ = nullptr;
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            Instruction retInst{OpCode::RETURN};
-            try { executeInstruction(retInst); } catch (...) { throw; }
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    // Check for suspension request (e.g., channel receive, thread join)
+    if (suspension_requested_) {
+      last_suspension_reason_ = suspension_reason_;
+      last_suspension_context_ = suspension_context_;
+      suspension_requested_ = false;
+      suspension_context_ = nullptr;
+      return;
     }
+    if (!pending_calls.empty()) {
+      processPendingCalls();
+      if (exit_requested_.load())
+        return;
+    }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      Instruction retInst{OpCode::RETURN};
+      try {
+        executeInstruction(retInst);
+      } catch (...) {
+        throw;
+      }
+      return;
+    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_LOAD_VAR: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t saved_ip = frm.ip;
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    pushStack(locals[abs]);
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t saved_ip = frm.ip;
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  pushStack(locals[abs]);
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STORE_VAR: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t saved_ip = frm.ip;
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value value = popStack();
-    if (immutable_locals_.count(abs)) {
-        COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t saved_ip = frm.ip;
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  Value value = popStack();
+  if (immutable_locals_.count(abs)) {
+    COMPILER_THROW("Cannot reassign val local at index " +
+                   std::to_string(var_index));
+  }
+  locals[abs] = value;
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    locals[abs] = value;
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_POP: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    popStack();
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  popStack();
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_PUSH_NULL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    pushStack(Value::makeNull());
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  pushStack(Value::makeNull());
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_CALL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    // ip now points at the instruction AFTER this CALL — the exact address
-    // a coroutine yield must return to. Stash it for doCall's resume path.
-    pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
-    try {
-        executeInstruction(inst);
-    } catch (const ScriptThrow &thrown) {
-        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-        if (!handleScriptThrow(thrown.value)) {
-            throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-        }
-    } catch (const std::runtime_error &e) {
-        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        if (handleScriptThrow(exceptionValue)) {
-            // caught
-        } else {
-            throw std::runtime_error(e.what());
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  // ip now points at the instruction AFTER this CALL — the exact address
+  // a coroutine yield must return to. Stash it for doCall's resume path.
+  pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
+  try {
+    executeInstruction(inst);
+  } catch (const ScriptThrow &thrown) {
+    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+    if (!handleScriptThrow(thrown.value)) {
+      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
     }
-    // IMMEDIATE check for suspension after CALL - host functions may request suspension
+  } catch (const std::runtime_error &e) {
+    Value exceptionValue =
+        Value::makeStringId(heap_.allocateString(e.what()).id);
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    if (handleScriptThrow(exceptionValue)) {
+      // caught
+    } else {
+      throw std::runtime_error(e.what());
+    }
+  }
+  // IMMEDIATE check for suspension after CALL - host functions may request
+  // suspension
+  if (suspension_requested_ || last_suspension_reason_ != 0) {
+    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d
+      // executing_fiber=%d\n", (int)suspension_reason_,
+      // (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
+    }
+    // If it's a SLEEP suspension, handle it immediately like the periodic check
+    // does Only when this is a FRESH request: a module-fn wrapper's dispatch
+    // loop already transferred suspension_reason_/context_ into
+    // last_suspension_* (VM.cpp ~2032) and cleared suspension_context_;
+    // re-copying suspension_context_ here would overwrite the real
+    // deadline-ms (transferred intact) with nullptr -> the goroutine
+    // parks with ms=0 and wakes immediately (async_mod.sleep(50)
+    // measured ~4ms).
+    if (suspension_requested_ &&
+        suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+      if (scheduler_ && current_executing_fiber_) {
+        // For SLEEP, the IP was already advanced before the CALL (at start of
+        // op_CALL) No need to adjust IP further
+        last_suspension_reason_ = suspension_reason_;
+        last_suspension_context_ = suspension_context_;
+        suspension_requested_ = false;
+        suspension_context_ = nullptr;
+        return;
+      }
+    }
+    goto slow_dispatch_fallback;
+  }
+
+  // Fiber-suspending host call: the CALL left a Pending marker; park
+  // the current goroutine on the pending token and suspend.
+  if (parkIfPendingCallResult())
+    return;
+
+  // exit() may have been called by this CALL (host functions set
+  // exit_requested_/exit_code_). Stop executing immediately so the
+  // launcher can report the requested code instead of running the
+  // rest of the script.
+  if (exit_requested_.load())
+    return;
+
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
     if (suspension_requested_ || last_suspension_reason_ != 0) {
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
-            // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d executing_fiber=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
-        }
-        // If it's a SLEEP suspension, handle it immediately like the periodic check does
-        // Only when this is a FRESH request: a module-fn wrapper's dispatch
-        // loop already transferred suspension_reason_/context_ into
-        // last_suspension_* (VM.cpp ~2032) and cleared suspension_context_;
-        // re-copying suspension_context_ here would overwrite the real
-        // deadline-ms (transferred intact) with nullptr -> the goroutine
-        // parks with ms=0 and wakes immediately (async_mod.sleep(50)
-        // measured ~4ms).
-        if (suspension_requested_ &&
-            suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-            if (scheduler_ && current_executing_fiber_) {
-                // For SLEEP, the IP was already advanced before the CALL (at start of op_CALL)
-                // No need to adjust IP further
-                last_suspension_reason_ = suspension_reason_;
-                last_suspension_context_ = suspension_context_;
-                suspension_requested_ = false;
-                suspension_context_ = nullptr;
-                return;
-            }
-        }
-        goto slow_dispatch_fallback;
+      return;
     }
-    // Fiber-suspending host call: the CALL left a Pending marker; park
-    // the current goroutine on the pending token and suspend.
-    if (parkIfPendingCallResult()) return;
-    // exit() may have been called by this CALL (host functions set
-    // exit_requested_/exit_code_). Stop executing immediately so the
-    // launcher can report the requested code instead of running the
-    // rest of the script.
-    if (exit_requested_.load()) return;
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_ || last_suspension_reason_ != 0) { return; }
-        if (!pending_calls.empty()) {
-            processPendingCalls();
-            if (exit_requested_.load()) return;
-        }
+    if (!pending_calls.empty()) {
+      processPendingCalls();
+      if (exit_requested_.load())
+        return;
     }
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_RETURN: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    try {
-        executeInstruction(inst);
-    } catch (const ScriptThrow &thrown) {
-        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-        if (!handleScriptThrow(thrown.value)) {
-            throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-        }
-    } catch (const std::runtime_error &e) {
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        throw std::runtime_error(e.what());
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  try {
+    executeInstruction(inst);
+  } catch (const ScriptThrow &thrown) {
+    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+    if (!handleScriptThrow(thrown.value)) {
+      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
     }
-if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-        {
-            auto &f2 = frame_arena_[frame_count_ - 1];
-if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        if (trace_execution_) {
-          traceInstruction(f2.function->instructions[f2.ip], f2.function, frame_count_ - 1, f2.ip);
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-        }
+  } catch (const std::runtime_error &e) {
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    throw std::runtime_error(e.what());
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
+    }
+    if (trace_execution_) {
+      traceInstruction(f2.function->instructions[f2.ip], f2.function,
+                       frame_count_ - 1, f2.ip);
+    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_YIELD: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    
-    // Check if there's a value on the stack to yield
-    Value yieldValue;
-    if (!stack.empty()) {
-        yieldValue = popStack();
-    } else {
-        yieldValue = Value::makeNull();
-    }
-    
-    // Coroutine context: save the coroutine's state, pop the caller frame
-    // and hand the yielded value back to the caller without suspending the
-    // goroutine (mirrors the slow-path YIELD handler in VMConcurrency.cpp).
-    if (current_coroutine_id_ != UINT32_MAX) {
-        auto *co = heap_.coroutine(current_coroutine_id_);
-        if (co) {
-            auto saved_ip = frm.ip;
-            co->ip = saved_ip;
-            co->locals = locals;
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
 
-            co->stack.clear();
-            {
-                std::vector<Value> tmp;
-                while (!stack.empty()) {
-                    tmp.push_back(stack.top());
-                    stack.pop();
-                }
-                for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-                    co->stack.push_back(*it);
-                }
-            }
+  // Check if there's a value on the stack to yield
+  Value yieldValue;
+  if (!stack.empty()) {
+    yieldValue = popStack();
+  } else {
+    yieldValue = Value::makeNull();
+  }
 
-            co->state = GCHeap::Coroutine::Waiting;
+  // Coroutine context: save the coroutine's state, pop the caller frame
+  // and hand the yielded value back to the caller without suspending the
+  // goroutine (mirrors the slow-path YIELD handler in VMConcurrency.cpp).
+  if (current_coroutine_id_ != UINT32_MAX) {
+    auto *co = heap_.coroutine(current_coroutine_id_);
+    if (co) {
+      auto saved_ip = frm.ip;
+      co->ip = saved_ip;
+      co->locals = locals;
 
-            if (!co->caller_stack.empty()) {
-                auto &caller = co->caller_stack.back();
-                frame_count_ = caller.frame_count;
-                locals = caller.locals;
-                current_coroutine_id_ = caller.coroutine_id;
-
-                frame_arena_[frame_count_ - 1].ip = caller.ip;
-
-                stack = std::stack<Value>();
-                for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-                    stack.push(*it);
-                }
-
-                co->caller_stack.pop_back();
-            }
-
-            pushStack(yieldValue);
-            goto dispatch_next;
+      co->stack.clear();
+      {
+        std::vector<Value> tmp;
+        while (!stack.empty()) {
+          tmp.push_back(stack.top());
+          stack.pop();
         }
-    }
+        for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+          co->stack.push_back(*it);
+        }
+      }
 
-    // Non-coroutine yield: keep the value on the stack and continue
-    pushStack(yieldValue);
-    goto dispatch_next;
+      co->state = GCHeap::Coroutine::Waiting;
+
+      if (!co->caller_stack.empty()) {
+        auto &caller = co->caller_stack.back();
+        frame_count_ = caller.frame_count;
+        locals = caller.locals;
+        current_coroutine_id_ = caller.coroutine_id;
+
+        frame_arena_[frame_count_ - 1].ip = caller.ip;
+
+        stack = std::stack<Value>();
+        for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+          stack.push(*it);
+        }
+
+        co->caller_stack.pop_back();
+      }
+
+      pushStack(yieldValue);
+      goto dispatch_next;
+    }
+  }
+
+  // Non-coroutine yield: keep the value on the stack and continue
+  pushStack(yieldValue);
+  goto dispatch_next;
 }
 
 dispatch_next:
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 
-    // --- Remaining opcodes: delegate to executeInstruction ---
+  // --- Remaining opcodes: delegate to executeInstruction ---
 
 op_LOAD_GLOBAL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    try {
-        executeInstruction(inst);
-    } catch (const ScriptThrow &thrown) {
-        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-        if (!handleScriptThrow(thrown.value)) {
-            throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-        }
-    } catch (const std::runtime_error &e) {
-        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        if (handleScriptThrow(exceptionValue)) {
-            // caught - continue
-        } else {
-            throw std::runtime_error(e.what());
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  try {
+    executeInstruction(inst);
+  } catch (const ScriptThrow &thrown) {
+    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+    if (!handleScriptThrow(thrown.value)) {
+      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  } catch (const std::runtime_error &e) {
+    Value exceptionValue =
+        Value::makeStringId(heap_.allocateString(e.what()).id);
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    if (handleScriptThrow(exceptionValue)) {
+      // caught - continue
+    } else {
+      throw std::runtime_error(e.what());
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
+    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STORE_GLOBAL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    try {
-        executeInstruction(inst);
-    } catch (const std::runtime_error &e) {
-        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        if (handleScriptThrow(exceptionValue)) {
-            // caught
-        } else {
-            throw std::runtime_error(e.what());
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  try {
+    executeInstruction(inst);
+  } catch (const std::runtime_error &e) {
+    Value exceptionValue =
+        Value::makeStringId(heap_.allocateString(e.what()).id);
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    if (handleScriptThrow(exceptionValue)) {
+      // caught
+    } else {
+      throw std::runtime_error(e.what());
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STORE_IMMUT_GLOBAL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    try {
-        executeInstruction(inst);
-    } catch (const std::runtime_error &e) {
-        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        if (handleScriptThrow(exceptionValue)) {
-        } else {
-            throw std::runtime_error(e.what());
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  try {
+    executeInstruction(inst);
+  } catch (const std::runtime_error &e) {
+    Value exceptionValue =
+        Value::makeStringId(heap_.allocateString(e.what()).id);
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    if (handleScriptThrow(exceptionValue)) {
+    } else {
+      throw std::runtime_error(e.what());
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STORE_IMMUT_VAR: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    try {
-        executeInstruction(inst);
-    } catch (const std::runtime_error &e) {
-        throw std::runtime_error(e.what());
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  try {
+    executeInstruction(inst);
+  } catch (const std::runtime_error &e) {
+    throw std::runtime_error(e.what());
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_LOAD_UPVALUE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    try { executeInstruction(frm.function->instructions[frm.ip - 1]); }
-    catch (const std::runtime_error &e) { throw std::runtime_error(e.what()); }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  try {
+    executeInstruction(frm.function->instructions[frm.ip - 1]);
+  } catch (const std::runtime_error &e) {
+    throw std::runtime_error(e.what());
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STORE_UPVALUE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    try { executeInstruction(frm.function->instructions[frm.ip - 1]); }
-    catch (const std::runtime_error &e) { throw std::runtime_error(e.what()); }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  try {
+    executeInstruction(frm.function->instructions[frm.ip - 1]);
+  } catch (const std::runtime_error &e) {
+    throw std::runtime_error(e.what());
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_DUP: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value value = popStack();
-    pushStack(value);
-    pushStack(value);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value value = popStack();
+  pushStack(value);
+  pushStack(value);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_SWAP: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value top = popStack();
-    Value next = popStack();
-    pushStack(top);
-    pushStack(next);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value top = popStack();
+  Value next = popStack();
+  pushStack(top);
+  pushStack(next);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_INCLOCAL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value& val = locals[abs];
-    if (val.isInt()) {
-        val = Value::makeInt(val.asInt() + 1);
-        pushStack(val);
-    } else if (val.isDouble()) {
-        val = Value::makeDouble(val.asDouble() + 1.0);
-        pushStack(val);
-    } else {
-        COMPILER_THROW("Cannot increment non-numeric value");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  Value &val = locals[abs];
+  if (val.isInt()) {
+    val = Value::makeInt(val.asInt() + 1);
+    pushStack(val);
+  } else if (val.isDouble()) {
+    val = Value::makeDouble(val.asDouble() + 1.0);
+    pushStack(val);
+  } else {
+    COMPILER_THROW("Cannot increment non-numeric value");
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_DECLOCAL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value& val = locals[abs];
-    if (val.isInt()) {
-        val = Value::makeInt(val.asInt() - 1);
-        pushStack(val);
-    } else if (val.isDouble()) {
-        val = Value::makeDouble(val.asDouble() - 1.0);
-        pushStack(val);
-    } else {
-        COMPILER_THROW("Cannot decrement non-numeric value");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  Value &val = locals[abs];
+  if (val.isInt()) {
+    val = Value::makeInt(val.asInt() - 1);
+    pushStack(val);
+  } else if (val.isDouble()) {
+    val = Value::makeDouble(val.asDouble() - 1.0);
+    pushStack(val);
+  } else {
+    COMPILER_THROW("Cannot decrement non-numeric value");
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_INCLOCAL_POST: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value old = locals[abs];
-    pushStack(old);
-    if (old.isInt()) {
-        locals[abs] = Value::makeInt(old.asInt() + 1);
-    } else if (old.isDouble()) {
-        locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  Value old = locals[abs];
+  pushStack(old);
+  if (old.isInt()) {
+    locals[abs] = Value::makeInt(old.asInt() + 1);
+  } else if (old.isDouble()) {
+    locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_DECLOCAL_POST: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    uint32_t var_index = inst.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value old = locals[abs];
-    pushStack(old);
-    if (old.isInt()) {
-        locals[abs] = Value::makeInt(old.asInt() - 1);
-    } else if (old.isDouble()) {
-        locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  uint32_t var_index = inst.operands[0].asInt();
+  uint32_t abs = this->toAbsoluteLocal(var_index);
+  this->ensureLocalIndex(abs);
+  Value old = locals[abs];
+  pushStack(old);
+  if (old.isInt()) {
+    locals[abs] = Value::makeInt(old.asInt() - 1);
+  } else if (old.isDouble()) {
+    locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
-op_ADD: op_SUB: op_MUL: op_DIV:
-op_INT_DIV: op_MOD: op_DIVMOD:
-op_REMAINDER: op_POW: op_EQ:
-op_NEQ: op_IS: op_LT:
-op_LTE: op_GT: op_GTE:
-op_BIT_AND: op_BIT_OR: op_BIT_XOR:
-op_BIT_LSH: op_BIT_RSH: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    execBinaryOp(inst);
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) { return; }
+op_ADD:
+op_SUB:
+op_MUL:
+op_DIV:
+op_INT_DIV:
+op_MOD:
+op_DIVMOD:
+op_REMAINDER:
+op_POW:
+op_EQ:
+op_NEQ:
+op_IS:
+op_LT:
+op_LTE:
+op_GT:
+op_GTE:
+op_BIT_AND:
+op_BIT_OR:
+op_BIT_XOR:
+op_BIT_LSH:
+op_BIT_RSH: {
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  execBinaryOp(inst);
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 // Fast integer arithmetic: the optimizer's FastIntegerLowering pass rewrites
@@ -1545,236 +1751,298 @@ op_BIT_LSH: op_BIT_RSH: {
 // was hand-built, so bail to the generic slow path rather than corrupting
 // the stack.
 op_ADD_INT: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    {
-        Value r = popStack();
-        Value l = popStack();
-        if (r.isInt() && l.isInt()) {
-            const int64_t li = l.asInt();
-            const int64_t ri = r.asInt();
-            int64_t result;
-            switch (inst.opcode) {
-                case OpCode::ADD_INT: result = li + ri; break;
-                case OpCode::SUB_INT: result = li - ri; break;
-                case OpCode::MUL_INT: result = li * ri; break;
-                case OpCode::DIV_INT:
-                    if (ri == 0) COMPILER_THROW_AT("Division by zero", inst);
-                    result = li / ri;
-                    break;
-                case OpCode::MOD_INT:
-                    if (ri == 0) COMPILER_THROW_AT("Modulo by zero", inst);
-                    result = li % ri;
-                    break;
-                default:
-                    result = 0;
-                    break;
-            }
-            pushStack(result);
-            counter++;
-            if ((counter & 8191) == 0) {
-                profiler_.recordInstructions(8192);
-                if (exit_requested_.load()) return;
-                maybeCollectGarbage();
-                periodicYieldCheck();
-                if (suspension_requested_) { return; }
-            }
-            if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-            {
-                auto &f2 = frame_arena_[frame_count_ - 1];
-                if (f2.ip >= f2.function->instructions.size()) {
-                    stack.push(nullptr);
-                    executeInstruction(Instruction{OpCode::RETURN});
-                    return;
-                }
-                goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-            }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  {
+    Value r = popStack();
+    Value l = popStack();
+    if (r.isInt() && l.isInt()) {
+      const int64_t li = l.asInt();
+      const int64_t ri = r.asInt();
+      int64_t result;
+      switch (inst.opcode) {
+      case OpCode::ADD_INT:
+        result = li + ri;
+        break;
+      case OpCode::SUB_INT:
+        result = li - ri;
+        break;
+      case OpCode::MUL_INT:
+        result = li * ri;
+        break;
+      case OpCode::DIV_INT:
+        if (ri == 0)
+          COMPILER_THROW_AT("Division by zero", inst);
+        result = li / ri;
+        break;
+      case OpCode::MOD_INT:
+        if (ri == 0)
+          COMPILER_THROW_AT("Modulo by zero", inst);
+        result = li % ri;
+        break;
+      default:
+        result = 0;
+        break;
+      }
+      pushStack(result);
+      counter++;
+      if ((counter & 8191) == 0) {
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
         }
-        // Not proven ints: the optimizer's proof was wrong or the bytecode
-        // was hand-built. Restore the operands and let the generic path
-        // handle every shape, including method dispatch on objects.
-        pushStack(std::move(l));
-        pushStack(std::move(r));
-        execBinaryOp(inst);
-        counter++;
-    }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
+          stack.push(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
         }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+        goto *dispatch_table[static_cast<uint8_t>(
+            f2.function->instructions[f2.ip].opcode)];
+      }
     }
+    // Not proven ints: the optimizer's proof was wrong or the bytecode
+    // was hand-built. Restore the operands and let the generic path
+    // handle every shape, including method dispatch on objects.
+    pushStack(std::move(l));
+    pushStack(std::move(r));
+    execBinaryOp(inst);
+    counter++;
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
+    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
-op_AND: op_OR: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    execLogicalOp(inst.opcode);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+op_AND:
+op_OR: {
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  execLogicalOp(inst.opcode);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_NOT: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value v = popStack();
-    pushStack(!isTruthy(v));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value v = popStack();
+  pushStack(!isTruthy(v));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_BIT_NOT: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value v = popStack();
-    if (v.isInt()) pushStack(~v.asInt());
-    else if (v.isDouble()) pushStack(~static_cast<int64_t>(v.asDouble()));
-    else COMPILER_THROW("Bitwise NOT requires integer operand");
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value v = popStack();
+  if (v.isInt())
+    pushStack(~v.asInt());
+  else if (v.isDouble())
+    pushStack(~static_cast<int64_t>(v.asDouble()));
+  else
+    COMPILER_THROW("Bitwise NOT requires integer operand");
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_NEGATE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    execNegate();
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  execNegate();
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_GET_FAST: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    {
-        auto &frm = frame_arena_[frame_count_ - 1];
-        const auto &inst = frm.function->instructions[frm.ip];
-        frm.ip++;
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  {
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
     // STRING_GET_FAST expects operands: [string_id (int), instruction_ip (int)]
     // Stack: index
-    if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
-        COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
+    if (inst.operands.size() != 2 || !inst.operands[0].isInt() ||
+        !inst.operands[1].isInt()) {
+      COMPILER_THROW(
+          "STRING_GET_FAST expects operands: <string_id, instruction_ip>");
     }
     uint32_t string_id = inst.operands[0].asInt();
 
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-        COMPILER_THROW("STRING_GET_FAST expects integer index");
+      COMPILER_THROW("STRING_GET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     const std::string *str = heap_.string(string_id);
     if (!str) {
-        COMPILER_THROW("STRING_GET_FAST unknown string id");
+      COMPILER_THROW("STRING_GET_FAST unknown string id");
     }
 
     int64_t numCodepoints = 0;
     size_t bytePos = 0;
     while (bytePos < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
-        size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (bytePos + cpLen > str->size()) { cpLen = 1; }
-        numCodepoints++;
-        bytePos += cpLen;
+      unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+      size_t cpLen = 1;
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (bytePos + cpLen > str->size()) {
+        cpLen = 1;
+      }
+      numCodepoints++;
+      bytePos += cpLen;
     }
 
-    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0)
+      idx = numCodepoints + idx;
     if (idx < 0 || idx >= numCodepoints) {
-        pushStack(Value::makeNull());
+      pushStack(Value::makeNull());
     } else {
-        size_t targetByte = 0;
-        int64_t cpIdx = 0;
-        while (cpIdx < idx && targetByte < str->size()) {
-            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-            size_t cpLen = 1;
-            if (c < 0x80) { cpLen = 1; }
-            else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-            else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-            else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-            if (targetByte + cpLen > str->size()) { cpLen = 1; }
-            targetByte += cpLen;
-            cpIdx++;
-        }
+      size_t targetByte = 0;
+      int64_t cpIdx = 0;
+      while (cpIdx < idx && targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
         size_t cpLen = 1;
-        if (targetByte < str->size()) {
-            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-            if (c < 0x80) { cpLen = 1; }
-            else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-            else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-            else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-            if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
         }
-        auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
-        pushStack(Value::makeStringId(ref.id));
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
+        targetByte += cpLen;
+        cpIdx++;
+      }
+      size_t cpLen = 1;
+      if (targetByte < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
+      }
+      auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
+      pushStack(Value::makeStringId(ref.id));
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
     {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(
+          f2.function->instructions[f2.ip].opcode)];
     }
-}
+  }
 
 op_STRING_SET_FAST: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    {
-        auto &frm = frame_arena_[frame_count_ - 1];
-        const auto &inst = frm.function->instructions[frm.ip];
-        frm.ip++;
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  {
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
     // STRING_SET_FAST expects operands: [string_id (int), instruction_ip (int)]
     // Stack: value, index
-    if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
-        COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
+    if (inst.operands.size() != 2 || !inst.operands[0].isInt() ||
+        !inst.operands[1].isInt()) {
+      COMPILER_THROW(
+          "STRING_SET_FAST expects operands: <string_id, instruction_ip>");
     }
     uint32_t string_id = inst.operands[0].asInt();
 
@@ -1782,571 +2050,674 @@ op_STRING_SET_FAST: {
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-        COMPILER_THROW("STRING_SET_FAST expects integer index");
+      COMPILER_THROW("STRING_SET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     auto *str_obj = heap_.object(string_id);
     if (!str_obj) {
-        COMPILER_THROW("STRING_SET_FAST unknown string id");
+      COMPILER_THROW("STRING_SET_FAST unknown string id");
     }
     auto *val = str_obj->get("__string_value");
     if (!val || !val->isStringId()) {
-        COMPILER_THROW("STRING_SET_FAST invalid string object");
+      COMPILER_THROW("STRING_SET_FAST invalid string object");
     }
     std::string *str = heap_.string(val->asStringId());
     if (!str) {
-        COMPILER_THROW("STRING_SET_FAST string not found in heap");
+      COMPILER_THROW("STRING_SET_FAST string not found in heap");
     }
 
     // Use a block to limit scope of new_char for goto compatibility
     {
-        std::string new_char = toString(value);
-        if (new_char.size() != 1) {
-            COMPILER_THROW("STRING_SET_FAST value must be a single character");
-        }
+      std::string new_char = toString(value);
+      if (new_char.size() != 1) {
+        COMPILER_THROW("STRING_SET_FAST value must be a single character");
+      }
 
-        int64_t numCodepoints = 0;
-    size_t bytePos = 0;
-    while (bytePos < str->size()) {
+      int64_t numCodepoints = 0;
+      size_t bytePos = 0;
+      while (bytePos < str->size()) {
         unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
         size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (bytePos + cpLen > str->size()) { cpLen = 1; }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (bytePos + cpLen > str->size()) {
+          cpLen = 1;
+        }
         numCodepoints++;
         bytePos += cpLen;
-    }
+      }
 
-    if (idx < 0) idx = numCodepoints + idx;
-    if (idx < 0 || idx >= numCodepoints) {
+      if (idx < 0)
+        idx = numCodepoints + idx;
+      if (idx < 0 || idx >= numCodepoints) {
         COMPILER_THROW("STRING_SET_FAST index out of bounds");
-    }
+      }
 
-    size_t targetByte = 0;
-    int64_t cpIdx = 0;
-    while (cpIdx < idx && targetByte < str->size()) {
+      size_t targetByte = 0;
+      int64_t cpIdx = 0;
+      while (cpIdx < idx && targetByte < str->size()) {
         unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
         size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
         targetByte += cpLen;
         cpIdx++;
-    }
-    size_t cpLen = 1;
-    if (targetByte < str->size()) {
+      }
+      size_t cpLen = 1;
+      if (targetByte < str->size()) {
         unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (targetByte + cpLen > str->size()) { cpLen = 1; }
-    }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
+      }
 
-    str->replace(targetByte, cpLen, new_char);
+      str->replace(targetByte, cpLen, new_char);
     }
     heap_.bumpArrayVersion(string_id);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
     {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(
+          f2.function->instructions[f2.ip].opcode)];
     }
-    }
+  }
 }
 
 op_LENGTH: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    pushStack(execLengthOp(popStack()));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  pushStack(execLengthOp(popStack()));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_NEW: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    if (inst.operands.size() != 1 || !inst.operands[0].isInt()) {
-        COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  if (inst.operands.size() != 1 || !inst.operands[0].isInt()) {
+    COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
+  }
+  uint32_t string_id = inst.operands[0].asInt();
+  auto cursorRef = heap_.allocateStringCursor(string_id);
+  pushStack(Value::makeStringCursorId(cursorRef.id));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    uint32_t string_id = inst.operands[0].asInt();
-    auto cursorRef = heap_.allocateStringCursor(string_id);
-    pushStack(Value::makeStringCursorId(cursorRef.id));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_CURRENT: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
+  }
+  const std::string *str = heap_.string(cursor->string_id);
+  if (!str) {
+    COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
+  }
+  if (cursor->byte_pos >= str->size()) {
+    pushStack(Value::makeNull());
+  } else {
+    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+    size_t cpLen = 1;
+    if (c < 0x80) {
+      cpLen = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+      cpLen = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      cpLen = 3;
+    } else if ((c & 0xF8) == 0xF0) {
+      cpLen = 4;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
+    if (cursor->byte_pos + cpLen > str->size()) {
+      cpLen = 1;
     }
-    const std::string *str = heap_.string(cursor->string_id);
-    if (!str) {
-        COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
+    auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+    pushStack(Value::makeStringId(ref.id));
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (cursor->byte_pos >= str->size()) {
-        pushStack(Value::makeNull());
-    } else {
-        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-        size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
-        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
-        pushStack(Value::makeStringId(ref.id));
-    }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_ADVANCE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
+  }
+  const std::string *str = heap_.string(cursor->string_id);
+  if (!str) {
+    COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
+  }
+  if (cursor->byte_pos >= str->size()) {
+    pushStack(Value::makeBool(false));
+  } else {
+    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+    size_t cpLen = 1;
+    if (c < 0x80) {
+      cpLen = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+      cpLen = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      cpLen = 3;
+    } else if ((c & 0xF8) == 0xF0) {
+      cpLen = 4;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
+    if (cursor->byte_pos + cpLen > str->size()) {
+      cpLen = 1;
     }
-    const std::string *str = heap_.string(cursor->string_id);
-    if (!str) {
-        COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
+    cursor->byte_pos += cpLen;
+    cursor->codepoint_index++;
+    pushStack(Value::makeBool(true));
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (cursor->byte_pos >= str->size()) {
-        pushStack(Value::makeBool(false));
-    } else {
-        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-        size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
-        cursor->byte_pos += cpLen;
-        cursor->codepoint_index++;
-        pushStack(Value::makeBool(true));
-    }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_PEEK: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
+  }
+  const std::string *str = heap_.string(cursor->string_id);
+  if (!str) {
+    COMPILER_THROW("STRING_CURSOR_PEEK string not found");
+  }
+  if (cursor->byte_pos >= str->size()) {
+    pushStack(Value::makeNull());
+  } else {
+    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+    size_t cpLen = 1;
+    if (c < 0x80) {
+      cpLen = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+      cpLen = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      cpLen = 3;
+    } else if ((c & 0xF8) == 0xF0) {
+      cpLen = 4;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
+    if (cursor->byte_pos + cpLen > str->size()) {
+      cpLen = 1;
     }
-    const std::string *str = heap_.string(cursor->string_id);
-    if (!str) {
-        COMPILER_THROW("STRING_CURSOR_PEEK string not found");
+    auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+    pushStack(Value::makeStringId(ref.id));
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    if (cursor->byte_pos >= str->size()) {
-        pushStack(Value::makeNull());
-    } else {
-        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-        size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
-        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
-        pushStack(Value::makeStringId(ref.id));
-    }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_RESET: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
+  }
+  cursor->byte_pos = 0;
+  cursor->codepoint_index = 0;
+  pushStack(Value::makeNull());
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
-    }
-    cursor->byte_pos = 0;
-    cursor->codepoint_index = 0;
-    pushStack(Value::makeNull());
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_GET_POS: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
+  }
+  pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
-    }
-    pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CURSOR_SET_POS: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value pos_val = popStack();
-    Value cursor_val = popStack();
-    if (!cursor_val.isStringCursorId()) {
-        COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value pos_val = popStack();
+  Value cursor_val = popStack();
+  if (!cursor_val.isStringCursorId()) {
+    COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
+  }
+  auto pos = indexFromValue(pos_val);
+  if (!pos) {
+    COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
+  }
+  uint32_t cursor_id = cursor_val.asStringCursorId();
+  auto *cursor = heap_.stringCursor(cursor_id);
+  if (!cursor) {
+    COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
+  }
+  const std::string *str = heap_.string(cursor->string_id);
+  if (!str) {
+    COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
+  }
+  size_t new_pos = static_cast<size_t>(*pos);
+  if (new_pos > str->size()) {
+    new_pos = str->size();
+  }
+  cursor->byte_pos = new_pos;
+  cursor->codepoint_index = 0;
+  size_t bytePos = 0;
+  while (bytePos < new_pos && bytePos < str->size()) {
+    unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+    size_t cpLen = 1;
+    if (c < 0x80) {
+      cpLen = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+      cpLen = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      cpLen = 3;
+    } else if ((c & 0xF8) == 0xF0) {
+      cpLen = 4;
     }
-    auto pos = indexFromValue(pos_val);
-    if (!pos) {
-        COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
+    if (bytePos + cpLen > str->size()) {
+      cpLen = 1;
     }
-    uint32_t cursor_id = cursor_val.asStringCursorId();
-    auto *cursor = heap_.stringCursor(cursor_id);
-    if (!cursor) {
-        COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
+    bytePos += cpLen;
+    cursor->codepoint_index++;
+  }
+  pushStack(Value::makeNull());
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    const std::string *str = heap_.string(cursor->string_id);
-    if (!str) {
-        COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
-    }
-    size_t new_pos = static_cast<size_t>(*pos);
-    if (new_pos > str->size()) {
-        new_pos = str->size();
-    }
-    cursor->byte_pos = new_pos;
-    cursor->codepoint_index = 0;
-    size_t bytePos = 0;
-    while (bytePos < new_pos && bytePos < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
-        size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (bytePos + cpLen > str->size()) { cpLen = 1; }
-        bytePos += cpLen;
-        cursor->codepoint_index++;
-    }
-    pushStack(Value::makeNull());
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_STRING_CONCAT: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value right = popStack();
-    Value left = popStack();
-    auto str_ref = heap_.allocateString(toString(left) + toString(right));
-    pushStack(Value::makeStringId(str_ref.id));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value right = popStack();
+  Value left = popStack();
+  auto str_ref = heap_.allocateString(toString(left) + toString(right));
+  pushStack(Value::makeStringId(str_ref.id));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_JUMP: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t target = inst.operands[0].asInt();
-    if (target < frm.ip) {
-        recordBackedgePublic(frm.ip);
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t target = inst.operands[0].asInt();
+  if (target < frm.ip) {
+    recordBackedgePublic(frm.ip);
+  }
+  execJump(inst);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    execJump(inst);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_JUMP_IF_FALSE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t target = inst.operands[0].asInt();
-    Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
-    if (!isTruthy(cond_peek) && target < frm.ip) {
-        recordBackedgePublic(frm.ip);
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t target = inst.operands[0].asInt();
+  Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+  if (!isTruthy(cond_peek) && target < frm.ip) {
+    recordBackedgePublic(frm.ip);
+  }
+  execJumpIfFalse(inst);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    execJumpIfFalse(inst);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_JUMP_IF_TRUE: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t target = inst.operands[0].asInt();
-    Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
-    if (isTruthy(cond_peek) && target < frm.ip) {
-        recordBackedgePublic(frm.ip);
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t target = inst.operands[0].asInt();
+  Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+  if (isTruthy(cond_peek) && target < frm.ip) {
+    recordBackedgePublic(frm.ip);
+  }
+  execJumpIfTrue(inst);
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
-    execJumpIfTrue(inst);
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
-    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_IS_NULL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    frm.ip++;
-    Value value = popStack();
-    pushStack(Value::makeBool(value.isNull()));
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  frm.ip++;
+  Value value = popStack();
+  pushStack(Value::makeBool(value.isNull()));
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 op_JUMP_IF_NULL: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    uint32_t target = inst.operands[0].asInt();
-    Value value = popStack();
-    if (value.isNull()) {
-        if (target < frm.ip) {
-            recordBackedgePublic(frm.ip);
-        }
-        frm.ip = target;
-    } else {
-        frm.ip++;
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  uint32_t target = inst.operands[0].asInt();
+  Value value = popStack();
+  if (value.isNull()) {
+    if (target < frm.ip) {
+      recordBackedgePublic(frm.ip);
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    frm.ip = target;
+  } else {
+    frm.ip++;
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
     }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
 
 slow_dispatch_fallback:
-    // Suspension or complex opcode encountered — return to caller's slow path
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
-        // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d last_before=%d exec_fiber=%d\n", (int)suspension_requested_, (int)suspension_reason_, (int)last_suspension_reason_, (int)(current_executing_fiber_!=nullptr));
-    }
-    if (suspension_requested_) {
-        // Transfer suspension info to last_suspension_* so caller can handle it
-        last_suspension_reason_ = suspension_reason_;
-        last_suspension_context_ = suspension_context_;
-        suspension_requested_ = false;
-        suspension_context_ = nullptr;
-    }
-    return;
+  // Suspension or complex opcode encountered — return to caller's slow path
+  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d
+    // last_before=%d exec_fiber=%d\n", (int)suspension_requested_,
+    // (int)suspension_reason_, (int)last_suspension_reason_,
+    // (int)(current_executing_fiber_!=nullptr));
+  }
+  if (suspension_requested_) {
+    // Transfer suspension info to last_suspension_* so caller can handle it
+    last_suspension_reason_ = suspension_reason_;
+    last_suspension_context_ = suspension_context_;
+    suspension_requested_ = false;
+    suspension_context_ = nullptr;
+  }
+  return;
 
 op_default: {
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    auto &frm = frame_arena_[frame_count_ - 1];
-    const auto &inst = frm.function->instructions[frm.ip];
-    frm.ip++;
-    // Stash post-increment ip as the return address for coroutine resumes
-    // triggered inside this instruction (e.g. YIELD_RESUME). See VM.hpp.
-    pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
-    try {
-        executeInstruction(inst);
-    } catch (const ScriptThrow &thrown) {
-        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-        if (!handleScriptThrow(thrown.value)) {
-            throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-        }
-    } catch (const std::runtime_error &e) {
-        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        if (handleScriptThrow(exceptionValue)) {
-        } else {
-            throw std::runtime_error(e.what());
-        }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  auto &frm = frame_arena_[frame_count_ - 1];
+  const auto &inst = frm.function->instructions[frm.ip];
+  frm.ip++;
+  // Stash post-increment ip as the return address for coroutine resumes
+  // triggered inside this instruction (e.g. YIELD_RESUME). See VM.hpp.
+  pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
+  try {
+    executeInstruction(inst);
+  } catch (const ScriptThrow &thrown) {
+    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+    if (!handleScriptThrow(thrown.value)) {
+      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
     }
-    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
-    // Fiber-suspending host call via CALL_METHOD or another complex
-    // opcode: executeInstruction pushed a Pending marker; park the
-    // goroutine on the pending token (see parkIfPendingCallResult).
-    if (parkIfPendingCallResult()) return;
-    counter++;
-    if ((counter & 8191) == 0) {
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load()) return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_ || last_suspension_reason_ != 0) {
-            // Transfer suspension info to last_suspension_* so caller can handle it
-            last_suspension_reason_ = suspension_reason_;
-            last_suspension_context_ = suspension_context_;
-            suspension_requested_ = false;
-            suspension_context_ = nullptr;
-            return;
-        }
-        if (!pending_calls.empty()) {
-            processPendingCalls();
-            if (exit_requested_.load()) return;
-        }
+  } catch (const std::runtime_error &e) {
+    Value exceptionValue =
+        Value::makeStringId(heap_.allocateString(e.what()).id);
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    if (handleScriptThrow(exceptionValue)) {
+    } else {
+      throw std::runtime_error(e.what());
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
-    {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+  }
+  if (suspension_requested_ || last_suspension_reason_ != 0)
+    goto slow_dispatch_fallback;
+  // Fiber-suspending host call via CALL_METHOD or another complex
+  // opcode: executeInstruction pushed a Pending marker; park the
+  // goroutine on the pending token (see parkIfPendingCallResult).
+  if (parkIfPendingCallResult())
+    return;
+  counter++;
+  if ((counter & 8191) == 0) {
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_ || last_suspension_reason_ != 0) {
+      // Transfer suspension info to last_suspension_* so caller can handle it
+      last_suspension_reason_ = suspension_reason_;
+      last_suspension_context_ = suspension_context_;
+      suspension_requested_ = false;
+      suspension_context_ = nullptr;
+      return;
     }
+    if (!pending_calls.empty()) {
+      processPendingCalls();
+      if (exit_requested_.load())
+        return;
+    }
+  }
+  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+    return;
+  {
+    auto &f2 = frame_arena_[frame_count_ - 1];
+    if (f2.ip >= f2.function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      return;
+    }
+    goto *dispatch_table[static_cast<uint8_t>(
+        f2.function->instructions[f2.ip].opcode)];
+  }
 }
- 
- }
- 
- #undef DISPATCH_NEXT
+}
+
+#undef DISPATCH_NEXT
 #undef DISPATCH_OP
 }
 
 #endif // HAVE_COMPUTED_GOTO
-
 
 } // namespace havel::compiler

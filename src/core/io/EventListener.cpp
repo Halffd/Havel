@@ -740,7 +740,7 @@ void EventListener::EventLoop() {
   if (debugging::debug_io)
     debug("EventListener: EventLoop started, running={}", running.load());
   eventLoopReady_.store(false);
-  int loopCount = 0;
+  auto lastDeviceRecheck = std::chrono::steady_clock::now();
   while (running.load() && !shutdown.load()) {
 
     // Poll input events non-blocking
@@ -806,6 +806,22 @@ void EventListener::EventLoop() {
       break;
 
 
+    // Periodic device re-check (~5s) to handle hotplug/disconnect. Runs
+    // BEFORE the runnable-fiber fast path so a busy scheduler cannot starve
+    // reconnection: with the old loopCount++ placement, a VM with permanent
+    // runnable work skipped RecheckDevices forever, so a device that
+    // disconnected once (POLLHUP on suspend/resume or replug) stayed dead
+    // and every hotkey silently stopped firing.
+    {
+      auto now = std::chrono::steady_clock::now();
+      if (now - lastDeviceRecheck >= std::chrono::seconds(5)) {
+        lastDeviceRecheck = now;
+        if (backend_) {
+          backend_->RecheckDevices();
+        }
+      }
+    }
+
     // Fast path: when goroutines are runnable, skip the device re-check
     // gap and re-enter executeFrame() immediately so VM work (hotkey
     // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
@@ -815,15 +831,6 @@ void EventListener::EventLoop() {
     if (executionEngine && executionEngine->getScheduler() &&
         executionEngine->getScheduler()->hasRunnableFibers()) {
       continue;
-    }
-
-    // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
-    loopCount++;
-    if (loopCount >= 500) { // 500 * 10ms = 5 seconds
-      loopCount = 0;
-      if (backend_) {
-        backend_->RecheckDevices();
-      }
     }
   }
 

@@ -2541,7 +2541,11 @@ case ast::NodeType::TryExpression:
 
  // Compile condition expression (or null if not provided)
  if (modeDef.condition) {
+ // Conditions are never in tail position (same rule as compileIfStatement)
+ bool saved_tail_cond = in_tail_position_;
+ in_tail_position_ = false;
  compileExpression(*modeDef.condition);
+ in_tail_position_ = saved_tail_cond;
  } else {
  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
  }
@@ -3744,8 +3748,11 @@ break;
     case ast::NodeType::IfExpression: {
       const auto &ifExpr = static_cast<const ast::IfExpression &>(expression);
 
-      // Compile condition
+      // Conditions are never in tail position (same rule as compileIfStatement)
+      bool saved_tail_cond = in_tail_position_;
+      in_tail_position_ = false;
       compileExpression(*ifExpr.condition);
+      in_tail_position_ = saved_tail_cond;
 
       // Jump to else branch if false
       uint32_t elseJump = emitJump(OpCode::JUMP_IF_FALSE);
@@ -3783,7 +3790,11 @@ break;
       if (!discriminant) {
         COMPILER_THROW("Match expression has null discriminant");
       }
+      // Discriminants are never in tail position (same rule as compileIfStatement)
+      bool saved_tail_disc = in_tail_position_;
+      in_tail_position_ = false;
       compileExpression(*discriminant);
+      in_tail_position_ = saved_tail_disc;
       uint32_t slot = next_local_index++;
       reserveLocalSlot(slot);
       emit(OpCode::STORE_VAR, slot);
@@ -3830,7 +3841,11 @@ break;
 
       // If there's a guard condition, evaluate it
       if (arm.guard) {
+        // Guards are never in tail position (same rule as compileIfStatement)
+        bool saved_tail_guard = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*arm.guard);
+        in_tail_position_ = saved_tail_guard;
         // Jump to next case if guard is false
         uint32_t guardFailJump = emitJump(OpCode::JUMP_IF_FALSE);
         
@@ -6566,7 +6581,12 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
     COMPILER_THROW("Malformed if statement");
   }
 
-    compileExpression(*statement.condition);
+  // Conditions are never in tail position: a bare function-call condition
+  // inside an else-if of a tail-position if must not compile to TAIL_CALL.
+  bool saved_tail_cond = in_tail_position_;
+  in_tail_position_ = false;
+  compileExpression(*statement.condition);
+  in_tail_position_ = saved_tail_cond;
   uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
   bool was_tail = in_tail_position_;
@@ -6722,8 +6742,13 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     iterSlots.push_back(slot);
   }
 
-  // Compile iterable and store in temp variable: [iterable]
-  compileExpression(*statement.iterable);
+  // Compile iterable and store in temp variable (not in tail position)
+  {
+    bool saved_tail_iter = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*statement.iterable);
+    in_tail_position_ = saved_tail_iter;
+  }
   emit(OpCode::STRING_PROMOTE);
   
   uint32_t iterableSlot = next_local_index++;
@@ -6997,8 +7022,13 @@ void ByteCompiler::compileForExpression(const ast::ForExpression &expression) {
   emit(OpCode::ARRAY_NEW);
   emit(OpCode::STORE_VAR, arraySlot);
 
-  // Compile iterable
-  compileExpression(*expression.iterable);
+  // Compile iterable (not in tail position)
+  {
+    bool saved_tail_iter = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*expression.iterable);
+    in_tail_position_ = saved_tail_iter;
+  }
   emit(OpCode::STRING_PROMOTE);
   emit(OpCode::STORE_VAR, iterableSlot);
 
@@ -7026,9 +7056,14 @@ void ByteCompiler::compileForExpression(const ast::ForExpression &expression) {
   emit(OpCode::OBJECT_GET);
   emit(OpCode::STORE_VAR, bindSlot);
 
-  // Evaluate mapping expression and push to array
+  // Evaluate mapping expression and push to array (not in tail position)
   emit(OpCode::LOAD_VAR, arraySlot);
-  compileExpression(*expression.mapping);
+  {
+    bool saved_tail_map = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*expression.mapping);
+    in_tail_position_ = saved_tail_map;
+  }
   emit(OpCode::ARRAY_PUSH);
 
   // Continue loop
@@ -7047,7 +7082,11 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
 
     // Check if this is a count-based loop: loop 5 { ... }
     if (statement.countExpr) {
+        // Count expression is not in tail position (same rule as compileIfStatement)
+        bool saved_tail_count = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*statement.countExpr);
+        in_tail_position_ = saved_tail_count;
 
         uint32_t countSlot = next_local_index++;
         reserveLocalSlot(countSlot);
@@ -8717,7 +8756,11 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
     // Compiled as a loop that checks condition and sleeps a bit
     uint32_t startLabel =
         static_cast<uint32_t>(current_function->instructions.size());
+    // Conditions are never in tail position (same rule as compileIfStatement)
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
     compileExpression(*statement.condition);
+    in_tail_position_ = saved_tail_cond;
     uint32_t jumpToEnd = emitJump(OpCode::JUMP_IF_TRUE);
 
  // Sleep a bit (10ms) to avoid high CPU usage

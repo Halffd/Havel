@@ -1003,21 +1003,21 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     std::array<uint8_t, 32> srcHash{};
     if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
 
-    // Validate hash if source path exists
-    if (!srcPath.empty()) {
-      if (std::filesystem::exists(srcPath)) {
-        auto actualSize = std::filesystem::file_size(srcPath);
-        if (actualSize != srcSize) return std::nullopt;
-        auto actualHash = sha256_file(srcPath);
-        if (actualHash != srcHash) return std::nullopt;
-      } else {
-        // Source file recorded in .hvc no longer exists on disk.
-        // This is a stale cache — the source was probably moved or deleted.
-        // Refusing to load prevents silent bytecode mismatch errors
-        // (function index out of bounds, wrong local slot assignment, etc.).
-        ::havel::warn("[Cache] rejecting .hvc: source file '{}' no longer exists", srcPath);
-        return std::nullopt;
-      }
+    // Validate hash if the recorded source path exists. A missing
+    // source is NOT grounds for rejection: release installs ship .hvc
+    // bundles compiled on a build machine whose source tree does not
+    // exist on end-user systems (CompileStdlibBytecode -> installed to
+    // share/havel/modules, consumed via addCacheDir), and rejecting
+    // those would break the whole precompiled distribution. Freshness
+    // for sourceless consumption is the caller's contract: the loader's
+    // hash-index/mtime gates and runBuild's reuse gate both refuse
+    // stale caches when a live source exists, and fall back to
+    // recompiling from source when it does not.
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      auto actualSize = std::filesystem::file_size(srcPath);
+      if (actualSize != srcSize) return std::nullopt;
+      auto actualHash = sha256_file(srcPath);
+      if (actualHash != srcHash) return std::nullopt;
     }
   }
 

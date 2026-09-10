@@ -2818,6 +2818,7 @@ if k == "ModesBlock" {
     enterScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = enterScope
+    bc.func_push()
     enterIdx = bc.func_new("mode_enter_" + modeDef.name, 0, 16)
     if modeDef.enter.kind == "BlockStatement" {
      for s in modeDef.enter.body {
@@ -2830,8 +2831,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(enterScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(enterIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(enterIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2841,6 +2843,7 @@ if k == "ModesBlock" {
     exitScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = exitScope
+    bc.func_push()
     exitIdx = bc.func_new("mode_exit_" + modeDef.name, 0, 16)
     if modeDef.exit.kind == "BlockStatement" {
      for s in modeDef.exit.body {
@@ -2853,8 +2856,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(exitScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(exitIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(exitIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2872,6 +2876,7 @@ if k == "ModesBlock" {
     efScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = efScope
+    bc.func_push()
     efIdx = bc.func_new("mode_onEnterFrom_" + modeDef.name, 1, 16)
     scopeDeclare(efScope, "fromMode")
     if modeDef.onEnterFromBlock.kind == "BlockStatement" {
@@ -2885,8 +2890,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(efScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(efIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(efIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2904,6 +2910,7 @@ if k == "ModesBlock" {
     etScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = etScope
+    bc.func_push()
     etIdx = bc.func_new("mode_onExitTo_" + modeDef.name, 1, 16)
     scopeDeclare(etScope, "toMode")
     if modeDef.onExitToBlock.kind == "BlockStatement" {
@@ -2917,8 +2924,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(etScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(etIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(etIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2932,8 +2940,7 @@ if k == "ModesBlock" {
    }
   }
  }
- return
- }
+}
   if k == "GoStatement" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))

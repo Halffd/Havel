@@ -294,6 +294,7 @@ fn Parser(tokenList) {
   allowBraceSugar = true
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
+  modeContext = ""
 
   fn current() {
     return _cur
@@ -1212,27 +1213,29 @@ else if tt == TID.Arrow {
     binding.hotkeys.push(HotkeyLiteral(el.name, l, c))
    }
   }
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
+if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
   }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
- }
- // Check if left is a HotkeyExpression: F1 => { ... }
- if left.kind == "HotkeyExpression" {
-  binding = HotkeyBinding([], null, l, c)
-  binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
-  }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
+  // Check if left is a HotkeyExpression: F1 => { ... }
+  if left.kind == "HotkeyExpression" {
+   binding = HotkeyBinding([], null, l, c)
+   binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
+   if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
  }
  // Single-parameter lambda: x => body
  if left == null || left.kind != "Identifier" {
@@ -2467,7 +2470,7 @@ expect(TID.CloseBrace)
         // DSL statements
         if tt == TID.On { return parseOnStatement() }
         if tt == TID.Mode {
-          if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
+          if at(1).tid == TID.Identifier || at(1).tid == TID.String { return parseModeBlockStatement() }
           return ExpressionStatement(parseExpr(0), l, c)
         }
         if tt == TID.Modes { return parseModesBlockStatement() }
@@ -3414,7 +3417,11 @@ fn parseHotkeyStatement() {
         }
 	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
-	if modeAttr != "": node.mode = modeAttr
+	if modeAttr != "" {
+		node.mode = modeAttr
+	} else if modeContext != "" {
+		node.mode = modeContext
+	}
 	if policyAttr != "": node.policy = policyAttr
 	node
 
@@ -3455,7 +3462,11 @@ fn parseHotkeyAssignmentStatement() {
         }
 	binding = HotkeyBinding([key], body, l, c)
 	if condition != null: binding.condition = condition
-	if modeAttr != "": binding.mode = modeAttr
+	if modeAttr != "" {
+		binding.mode = modeAttr
+	} else if modeContext != "" {
+		binding.mode = modeContext
+	}
 	if policyAttr != "": binding.policy = policyAttr
 	hkExpr = HotkeyExpression(binding, l, c)
         assign = AssignmentExpression(target, hkExpr, "=", false, l, c)
@@ -3626,7 +3637,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   firstTok = current()
   pos = savedPos
   syncCur()
-  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
+  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on" || firstTok.value == "hotkeys")) || firstTok.tid == TID.On
   if isFullDefinition {
    return parseModeFullDefinition(name, priority, l, c)
   }
@@ -3639,13 +3650,14 @@ fn parseOnKeyDownOrKeyUpStatement() {
  fn parseModeFullDefinition(name, priority, l, c) {
  advance() // consume '{'
  skipNewlines()
- condition = null
- enterBlock = null
- exitBlock = null
- onEnterFrom = ""
- onExitTo = ""
- onEnterFromBlock = null
- onExitToBlock = null
+condition = null
+  enterBlock = null
+  exitBlock = null
+  onEnterFrom = ""
+  onExitTo = ""
+  onEnterFromBlock = null
+  onExitToBlock = null
+  hotkeysBlock = null
  while current().tid != TID.CloseBrace && current().tid != TID.EOF {
   if current().tid == TID.Newline || current().tid == TID.Semicolon {
    advance()
@@ -3665,10 +3677,45 @@ if keyword == "condition" {
       condition = parseExpr(0)
   }
   else if keyword == "enter" {
-   enterBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && current().value == "from") {
+    advance()
+    onEnterFrom = current().value
+    advance()
+    onEnterFromBlock = parseBlock()
+   }
+   else {
+    enterBlock = parseBlock()
+   }
   }
   else if keyword == "exit" {
-   exitBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && (current().value == "from" || current().value == "to")) {
+    advance()
+    onExitTo = current().value
+    advance()
+    onExitToBlock = parseBlock()
+   }
+   else {
+    exitBlock = parseBlock()
+   }
+  }
+  else if keyword == "hotkeys" {
+   if current().tid != TID.OpenBrace {
+    error("Expected '{' after 'hotkeys'", current().line, current().col)
+   }
+   advance()
+   savedModeContext = modeContext
+   modeContext = name
+   hkStmts = []
+   while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+    if current().tid == TID.Newline || current().tid == TID.Semicolon {
+     advance()
+     continue
+    }
+    hkStmts.push(parseStatement())
+   }
+   modeContext = savedModeContext
+   if current().tid == TID.CloseBrace { advance() }
+   hotkeysBlock = BlockStatement(hkStmts, l, c)
   }
   else if keyword == "on" {
    if current().tid != TID.Identifier { break }
@@ -3705,12 +3752,13 @@ if keyword == "condition" {
  }
  if current().tid == TID.CloseBrace { advance() }
  modeDef = ModeDefinition(name, condition, enterBlock, exitBlock)
- modeDef.priority = priority
- modeDef.onEnterFrom = onEnterFrom
- modeDef.onExitTo = onExitTo
- modeDef.onEnterFromBlock = onEnterFromBlock
- modeDef.onExitToBlock = onExitToBlock
- return ModesBlock([modeDef])
+modeDef.priority = priority
+  modeDef.onEnterFrom = onEnterFrom
+  modeDef.onExitTo = onExitTo
+  modeDef.onEnterFromBlock = onEnterFromBlock
+  modeDef.onExitToBlock = onExitToBlock
+  modeDef.hotkeys = hotkeysBlock
+  return ModesBlock([modeDef])
 
  }
  fn parseModesBlockStatement() {

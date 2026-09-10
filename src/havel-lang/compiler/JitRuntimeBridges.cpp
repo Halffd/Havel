@@ -734,6 +734,27 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         return vm->lookupGlobalByKey(*key_str).rawBits();
     }
 
+    // Lazy module proxies must not enter (or be served from) the IC:
+    // their whole point is to be swapped for the real namespace on first
+    // touch (memberGetPublic performs the swap, mirroring the
+    // interpreter's OBJECT_GET). Caching the proxy's pre-init reads
+    // (null fields) pinned stale nulls forever - the self-hosted
+    // parser's skipCommentsAndNewlines read TID.NewLine through a cached
+    // proxy entry and never stopped looping.
+    {
+        auto* proxy = vm->getHeap().object(obj_id);
+        if (proxy) {
+            auto* lazyFlag = proxy->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                Value out;
+                if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+                    return out.rawBits();
+                }
+                return Value::makeNull().rawBits();
+            }
+        }
+    }
+
     const uint64_t version = vm->objectLookupVersion(obj_id);
     const size_t primary = static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
     for (size_t probe = 0; probe < cache.size(); ++probe) {
@@ -1323,6 +1344,44 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     const std::string method_name = chunk->getString(method_name_id);
     if (method_name.empty()) return Value::makeNull().rawBits();
 
+    // Lazy module proxy: the interpreter's CALL_METHOD path
+    // (VMControlFlow) triggers module initialization before field lookup -
+    // a proxy object only carries __lazy__/__module__ markers. Without
+    // this, JIT-compiled calls resolved methods against the bare proxy:
+    // scopeResolveUpvalue's bc.add_upvalue_to returned null from JIT code
+    // (no descriptor ever registered), while interpreted it worked.
+    if (receiver.isObjectId()) {
+        auto* proxy = vm->getHeap().object(receiver.asObjectId());
+        if (proxy) {
+            auto* lazyFlag = proxy->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                auto* modNameVal = proxy->get("__module__");
+                std::string modName;
+                if (modNameVal) {
+                    if (modNameVal->isStringId()) {
+                        if (auto* s = vm->getHeap().string(modNameVal->asStringId()))
+                            modName = *s;
+                    } else if (modNameVal->isStringValId()) {
+                        modName = chunk->getString(modNameVal->asStringValId());
+                    }
+                }
+                if (!modName.empty()) {
+                    vm->ensureModuleLoaded(modName);
+                    Value loaded;
+                    if (vm->resolveGlobalPublic(modName, &loaded) && loaded.isObjectId()) {
+                        receiver = loaded;
+                    } else {
+                        std::string capModName = modName;
+                        capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+                        if (vm->resolveGlobalPublic(capModName, &loaded) && loaded.isObjectId()) {
+                            receiver = loaded;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     std::vector<Value> callArgs;
     callArgs.reserve(static_cast<size_t>(arg_count) + 1);
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -1401,15 +1460,22 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
             // Prototype methods are receiver-bound by definition: the
             // interpreter's OBJECT_GET materializes them as
             // allocateBoundMethod(hostfn, receiver), so the host function
-            // sees the receiver as its first argument. callArgs does not
-            // carry it yet when passReceiverAsSelf was false - insert it,
-            // or receiver-dependent builtins blow up (node.keys() reached
-            // object.keys with no self and threw "Object.keys() requires
-            // object" from JIT-compiled containsYield).
+            // sees the receiver as its first argument. callArgs already
+            // carries it when passReceiverAsSelf was true (the receiver
+            // was inserted up front - non-object receivers like arrays
+            // take that path); insert it only when it is missing, or
+            // receiver-dependent builtins see a doubled receiver
+            // (array.push reached with [recv, recv, value] and threw
+            // "expects 2 arguments, got 3" from JIT-compiled pusher).
             std::vector<Value> boundArgs;
-            boundArgs.reserve(callArgs.size() + 1);
-            boundArgs.push_back(receiver);
-            boundArgs.insert(boundArgs.end(), callArgs.begin(), callArgs.end());
+            if (passReceiverAsSelf) {
+                boundArgs = callArgs;
+            } else {
+                boundArgs.reserve(callArgs.size() + 1);
+                boundArgs.push_back(receiver);
+                boundArgs.insert(boundArgs.end(), callArgs.begin(),
+                                 callArgs.end());
+            }
             Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
             if (!result.isNull()) return result.rawBits();
         }

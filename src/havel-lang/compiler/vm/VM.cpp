@@ -456,9 +456,19 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
     stack.pop();
   }
 
-  // Restore all VM state
+  // Restore all VM state. locals is the critical one: the callee's
+  // region (>= saved_locals.size(), grown by doCall) is discarded, but
+  // the CALLER region below it must reflect writes made DURING the call.
+  // The callee's open upvalues can point INTO the caller's region
+  // (nested closures like the self-hosted parser's advance() capturing
+  // pos), and STORE_UPVALUE writes land there via
+  // havel_vm_upvalue_set / interpreter upvalue stores. Restoring the
+  // pre-call snapshot wiped those writes: a JIT-compiled
+  // skipCommentsAndNewlines looping over havel_vm_call ->
+  // callFunctionSync(advance) saw pos revert to its pre-call value
+  // every iteration and never terminated.
   stack = std::move(saved_stack);
-  locals = std::move(saved_locals);
+  locals.resize(saved_locals.size());
   immutable_locals_.clear();
   frame_count_ = saved_frame_count;
   current_chunk = outer_chunk;
@@ -3037,6 +3047,17 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       frame_count_++;
     }
     const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    // JIT-compiled body runs without the dispatch loop, so current_chunk
+    // must be swapped here like the interpreter path does (below): the
+    // Runtime-ABI bridges (havel_vm_call_method string ids,
+    // havel_vm_closure_new function indices) resolve chunk-relative ids
+    // via getCurrentChunk(). Without the swap they resolve against the
+    // CALLER's chunk: JIT-compiled scopeResolveUpvalue's bc.add_upvalue_to
+    // looked up the method name in a foreign chunk, got an empty string,
+    // and silently returned null - the emitted skipLoop closure carried
+    // zero upvalue descriptors and LOAD_UPVALUE threw "index out of range".
+    const BytecodeChunk *prev_chunk = current_chunk;
+    current_chunk = resolve_chunk;
     auto jit_teardown = [&]() {
       // Pop the synthetic frame and restore the ambient snapshot. Nested
       // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
@@ -3045,6 +3066,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         frame_count_ = jit_frame_base - 1;
       }
       locals.resize(jit_locals_base);
+      current_chunk = prev_chunk;
       if (jit_owns_globals && !globals_stack_.empty()) {
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -3855,6 +3877,55 @@ bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
   }
 
   if (receiver.isObjectId()) {
+    // Lazy module proxy trap, mirroring the interpreter's OBJECT_GET
+    // (VMCollections.cpp): a proxy carries only __lazy__/__module__
+    // markers; trigger module initialization and swap in the loaded
+    // namespace. Without this, JIT-compiled member reads (TID.NewLine in
+    // the self-hosted parser's skipCommentsAndNewlines, bc.* fields in
+    // scopeResolveUpvalue) resolved against the bare proxy and read
+    // null - the parser loop then never advanced and hung.
+    auto* proxy = heap_.object(receiver.asObjectId());
+    if (proxy) {
+      auto* lazyFlag = proxy->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+        auto* modNameVal = proxy->get("__module__");
+        std::string modName;
+        if (modNameVal) {
+          if (modNameVal->isStringId()) {
+            if (auto* s = heap_.string(modNameVal->asStringId())) modName = *s;
+          } else if (modNameVal->isStringValId()) {
+            modName = current_chunk
+                        ? current_chunk->getString(modNameVal->asStringValId())
+                        : std::string();
+          }
+        }
+        if (!modName.empty()) {
+          ensureModuleLoaded(modName);
+          auto git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            auto* proxyObj = heap_.object(git->second.asObjectId());
+            if (proxyObj) {
+              auto* lf = proxyObj->get("__lazy__");
+              if (lf && lf->isBool() && lf->asBool()) {
+                globals.erase(git);
+              }
+            }
+          }
+          git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            receiver = git->second;
+          } else {
+            std::string capModName = modName;
+            capModName[0] = static_cast<char>(
+                toupper(static_cast<unsigned char>(capModName[0])));
+            git = globals.find(capModName);
+            if (git != globals.end() && git->second.isObjectId()) {
+              receiver = git->second;
+            }
+          }
+        }
+      }
+    }
     auto key = resolveKey(key_value);
     if (key) {
       if (receiver.asObjectId() == globals_mirror_object_id_) {

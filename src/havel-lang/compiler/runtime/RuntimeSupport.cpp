@@ -1,5 +1,6 @@
 #include "havel-lang/errors/ErrorSystem.h"
 #include "RuntimeSupport.hpp"
+#include <algorithm>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -1002,21 +1003,21 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     std::array<uint8_t, 32> srcHash{};
     if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
 
-    // Validate hash if source path exists
-    if (!srcPath.empty()) {
-      if (std::filesystem::exists(srcPath)) {
-        auto actualSize = std::filesystem::file_size(srcPath);
-        if (actualSize != srcSize) return std::nullopt;
-        auto actualHash = sha256_file(srcPath);
-        if (actualHash != srcHash) return std::nullopt;
-      } else {
-        // Source file recorded in .hvc no longer exists on disk.
-        // This is a stale cache — the source was probably moved or deleted.
-        // Refusing to load prevents silent bytecode mismatch errors
-        // (function index out of bounds, wrong local slot assignment, etc.).
-        ::havel::warn("[Cache] rejecting .hvc: source file '{}' no longer exists", srcPath);
-        return std::nullopt;
-      }
+    // Validate hash if the recorded source path exists. A missing
+    // source is NOT grounds for rejection: release installs ship .hvc
+    // bundles compiled on a build machine whose source tree does not
+    // exist on end-user systems (CompileStdlibBytecode -> installed to
+    // share/havel/modules, consumed via addCacheDir), and rejecting
+    // those would break the whole precompiled distribution. Freshness
+    // for sourceless consumption is the caller's contract: the loader's
+    // hash-index/mtime gates and runBuild's reuse gate both refuse
+    // stale caches when a live source exists, and fall back to
+    // recompiling from source when it does not.
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      auto actualSize = std::filesystem::file_size(srcPath);
+      if (actualSize != srcSize) return std::nullopt;
+      auto actualHash = sha256_file(srcPath);
+      if (actualHash != srcHash) return std::nullopt;
     }
   }
 
@@ -1244,15 +1245,13 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 // Returns the effective chunk data size, excluding a trailing
 // [globals payload][GLBS][globals_size:u32] section appended by
 // VM::writeGlobalsToHvc. Files without the trailer parse unchanged.
+// Uses the FIRST marker's arithmetic (chunk_end = firstMarker - size),
+// which also crosses the marker-less partial sections interrupted
+// writes leave behind; a backward walk from EOF stops at the first
+// gap and would keep parsing garbage as chunk data.
 static size_t chunkDataSizeExcludingGlobalsTrailer(const uint8_t* data, size_t size) {
-  if (size < 8) return size;
-  const uint8_t* tail = data + size - 8;
-  if (std::memcmp(tail, "GLBS", 4) != 0) return size;
-  uint32_t gsize = 0;
-  std::memcpy(&gsize, tail + 4, sizeof(gsize));
-  uint64_t total = static_cast<uint64_t>(gsize) + 8;
-  if (total > size) return size; // corrupt trailer — fall back to full parse
-  return size - static_cast<size_t>(total);
+  return ValueSerializer::chunkDataEnd(
+      std::span<const uint8_t>(data, size));
 }
 
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string& filePath) {
@@ -1316,6 +1315,78 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
     size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data.data(), data.size());
     return deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
   }
+}
+
+size_t ValueSerializer::chunkDataEnd(std::span<const uint8_t> data) {
+  if (data.size() < 8) return data.size();
+  // No trailer at all: the whole span is chunk data (or a corrupt mix
+  // we cannot reason about - caller treats it as full size).
+  const auto firstIt =
+      std::search(data.begin(), data.end(),
+                  reinterpret_cast<const uint8_t *>("GLBS"),
+                  reinterpret_cast<const uint8_t *>("GLBS") + 4);
+  if (firstIt == data.end()) return data.size();
+  const size_t firstMarker = static_cast<size_t>(firstIt - data.begin());
+  if (firstMarker + 8 > data.size()) return data.size();
+  uint32_t gsize = 0;
+  std::memcpy(&gsize, data.data() + firstMarker + 4, sizeof(gsize));
+  // Marker must sit at chunk_end + globals_size.
+  if (static_cast<uint64_t>(gsize) + 8 > firstMarker) return data.size();
+  const size_t chunkEnd = firstMarker - gsize;
+  if (chunkEnd == 0) return data.size();
+  return chunkEnd;
+}
+
+ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint8_t> data) {
+  SourceInfo info;
+  size_t pos = 0;
+  auto read = [&data, &pos](void* out, size_t size) -> bool {
+    if (pos + size > data.size()) return false;
+    std::memcpy(out, data.data() + pos, size);
+    pos += size;
+    return true;
+  };
+
+  // Header must be HVC2 (HVC1 lacks the source-info section entirely).
+  if (data.size() < 4 || std::memcmp(data.data(), "HVC2", 4) != 0) {
+    return info;
+  }
+  pos = 4;
+
+  uint32_t version = 0;
+  if (!read(&version, sizeof(version))) return info;
+  if (version < 2 || version > 4) return info;
+
+  uint32_t flags = 0;
+  if (!read(&flags, sizeof(flags))) return info;
+
+  if ((flags & 1) && version >= 3) {
+    uint32_t idLen = 0;
+    if (!read(&idLen, sizeof(idLen))) return info;
+    if (idLen > data.size() || pos + idLen > data.size()) return info;
+    pos += idLen;
+  }
+
+  uint32_t srcPathLen = 0;
+  if (!read(&srcPathLen, sizeof(srcPathLen))) return info;
+  if (srcPathLen > 0) {
+    if (pos + srcPathLen > data.size()) return info;
+    info.path.assign(reinterpret_cast<const char*>(data.data() + pos),
+                     srcPathLen);
+    pos += srcPathLen;
+  }
+
+  uint64_t srcSize = 0;
+  if (!read(&srcSize, sizeof(srcSize))) return info;
+  std::array<uint8_t, 32> srcHash{};
+  if (!read(srcHash.data(), srcHash.size())) return info;
+
+  // Writers that passed a sourcePath always record a nonzero hash
+  // alongside a nonzero size; the no-sourcePath form leaves both zero.
+  info.size = srcSize;
+  info.hash = srcHash;
+  info.hasInfo = srcSize != 0 || !info.path.empty();
+  return info;
 }
 
 std::string ValueSerializer::valueToJson(const Value& value) {

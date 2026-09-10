@@ -525,10 +525,16 @@ void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
         std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         size_t i = static_cast<size_t>(idx);
         if (i < devices_.size() && devices_[i].fd >= 0) {
-            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), removing", devices_[i].path, devices_[i].fd);
+            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect", devices_[i].path, devices_[i].fd);
+            // Release grab state first: the kernel drops EVIOCGRAB on fd
+            // close, so the RAII wrapper must not try to ungrab a closed fd.
+            devices_[i].grab.reset();
+            grabbedFds_.erase(fd);
             close(devices_[i].fd);
             devices_[i].fd = -1;
-            devices_[i].path.clear();
+            // Keep path/name: RecheckDevices() reopens this device on the
+            // next cycle. Clearing the path here would make the reconnect
+            // permanently impossible and silently kill all hotkeys.
         }
     }
 
@@ -588,8 +594,42 @@ void EvdevAdapter::RecheckDevices() {
     for (auto &dev : devices_) {
         if (dev.fd >= 0 && currentPaths.find(dev.path) == currentPaths.end()) {
             if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect", dev.path, dev.fd);
+            dev.grab.reset();
+            grabbedFds_.erase(dev.fd);
             close(dev.fd);
             dev.fd = -1;
+        }
+    }
+    
+    // Adopt devices that (re)appeared with a path we are not tracking yet.
+    // A replug can renumber /dev/input/eventN (e.g. event5 -> event7), so
+    // matching by path alone would lose the device forever.
+    for (const auto &info : currentDevices) {
+        bool tracked = false;
+        for (const auto &dev : devices_) {
+            if (dev.path == info.path) {
+                tracked = true;
+                break;
+            }
+        }
+        if (!tracked) {
+            std::string lowerName = info.name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            if (lowerName.find("havel-virtual") != std::string::npos ||
+                lowerName.find("havel uinput") != std::string::npos) {
+                if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Skipping own virtual device {} ({})", info.name, info.path);
+                continue;
+            }
+            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: New device appeared ({}), adopting ({})", info.name, info.path);
+            if (OpenDevice(info.path)) {
+                // Match the treatment of reconnected devices: re-grab when
+                // grabs are enabled so hotkeys keep intercepting it.
+                if (grabEnabled_) {
+                    GrabDevice(info.path);
+                } else {
+                    DrainDeviceEvents(devices_.back());
+                }
+            }
         }
     }
     

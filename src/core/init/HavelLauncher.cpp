@@ -746,7 +746,11 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
@@ -850,6 +854,8 @@ public:
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
       auto t2 = std::chrono::high_resolution_clock::now();
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
       auto t3 = std::chrono::high_resolution_clock::now();
 
@@ -866,6 +872,8 @@ public:
              "total={:.1f}ms",
              init_ms, exec_ms, shut_ms, total_ms);
       }
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Bytecode error: {}", e.what());
@@ -1221,7 +1229,11 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(launcherCode, "__main__", launcherPath);
       havel::startup_timing_report("engine.execute", exec_t0);
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Self-hosted error: {}", e.what());
@@ -2171,27 +2183,80 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-            // Only write if output path differs from cache path.
-            // If outputPath == cachePath, the cache file already contains
-            // the correct data - don't rewrite it (avoids mtime update).
-            if (outputPath != cachePath) {
-              std::ofstream outFile(outputPath, std::ios::binary);
-              if (outFile.is_open()) {
-                outFile.write(reinterpret_cast<const char *>(buffer.data()),
-                              buffer.size());
-                if (!outFile.good()) {
-                  error("Failed to write output file: {}", outputPath);
-                  return 1;
+            // mtime alone lies: GLBS trailer appends and other runtime
+            // writers rewrite the .hvc (bumping its mtime) without
+            // recompiling, so a source edit can end up older than a cache
+            // that still holds pre-edit bytecode. When the cache embeds a
+            // source hash (serializeChunk with a source path), verify it
+            // against the live source before reusing; hash-less legacy
+            // caches fall back to the mtime check above.
+            auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                std::span<const uint8_t>(buffer));
+            bool reusable = true;
+            if (srcInfo.hasInfo) {
+              std::error_code liveEc;
+              if (std::filesystem::exists(srcInfo.path, liveEc) && !liveEc) {
+                const std::string actualHashHex =
+                    havel::ModuleLoader::sha256FileHex(srcInfo.path);
+                static const char hexDigits[] = "0123456789abcdef";
+                std::string embeddedHex;
+                embeddedHex.reserve(srcInfo.hash.size() * 2);
+                for (uint8_t b : srcInfo.hash) {
+                  embeddedHex += hexDigits[b >> 4];
+                  embeddedHex += hexDigits[b & 0x0F];
                 }
-                outFile.close();
+                if (!actualHashHex.empty() && actualHashHex == embeddedHex) {
+                  reusable = true;
+                } else {
+                  reusable = false;
+                  info("Bytecode cache hash mismatch (source changed), recompiling: {}",
+                       cachePath);
+                }
               } else {
-                error("Cannot open output file: {}", outputPath);
-                return 1;
+                // Recorded source no longer exists: can't validate, and
+                // the compile below targets the current primaryFile anyway.
+                reusable = false;
               }
             }
-            info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
-            info("Build successful: {} ({} bytes)", outputPath, buffer.size());
-            return 0;
+            if (reusable) {
+              // Strip the GLBS globals trailer: cold module loads append a
+              // [globals][GLBS][size] section per load via
+              // writeGlobalsToHvc, and interrupted writes can leave
+              // partial sections no backward walk can cross. The first
+              // marker's position gives the true chunk boundary
+              // (chunk_end = firstMarker - size@firstMarker), so derive
+              // it arithmetically - the warm-restore consumer is
+              // disabled anyway (VM hasCachedGlobals=false).
+              {
+                const size_t chunkEnd =
+                    havel::compiler::ValueSerializer::chunkDataEnd(
+                        std::span<const uint8_t>(buffer));
+                if (chunkEnd > 0 && chunkEnd < buffer.size()) {
+                  buffer.resize(chunkEnd);
+                }
+              }
+              // Only write if output path differs from cache path.
+              // If outputPath == cachePath, the cache file already contains
+              // the correct data - don't rewrite it (avoids mtime update).
+              if (outputPath != cachePath) {
+                std::ofstream outFile(outputPath, std::ios::binary);
+                if (outFile.is_open()) {
+                  outFile.write(reinterpret_cast<const char *>(buffer.data()),
+                                buffer.size());
+                  if (!outFile.good()) {
+                    error("Failed to write output file: {}", outputPath);
+                    return 1;
+                  }
+                  outFile.close();
+                } else {
+                  error("Cannot open output file: {}", outputPath);
+                  return 1;
+                }
+              }
+              info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
+              info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+              return 0;
+            }
           }
         }
       }
@@ -2933,9 +2998,13 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
 #endif
 
-    // Serialize and write bytecode
+    // Serialize and write bytecode. Pass the source path so the .hvc
+    // embeds the source size + sha256: the cache-reuse gate above
+    // validates this hash against the live source, making reuse immune
+    // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
+    // and bump its mtime without recompiling).
     havel::compiler::ValueSerializer serializer;
-    auto data = serializer.serializeChunk(*chunk);
+    auto data = serializer.serializeChunk(*chunk, primaryFile);
 
     info("Serialization complete, {} bytes", data.size());
 

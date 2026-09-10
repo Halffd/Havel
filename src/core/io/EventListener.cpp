@@ -740,7 +740,7 @@ void EventListener::EventLoop() {
   if (debugging::debug_io)
     debug("EventListener: EventLoop started, running={}", running.load());
   eventLoopReady_.store(false);
-  int loopCount = 0;
+  auto lastDeviceRecheck = std::chrono::steady_clock::now();
   while (running.load() && !shutdown.load()) {
 
     // Poll input events non-blocking
@@ -755,6 +755,25 @@ void EventListener::EventLoop() {
 
     if (shutdown.load())
       break;
+
+    // Stray-signal check: SignalExitHandler (async handler on threads with
+    // a stale unblocked mask) only sets a flag; observe it here on the
+    // event-loop thread and run the orderly signal shutdown.
+    // NOTE: gSignalFlag is also written by SignalCleanupHandler for benign
+    // signals (SIGCHLD, SIGWINCH, ...). Only a fatal signal value here
+    // means shutdown; SIGCHLD==17 must NOT trigger it (that was killing
+    // havel after every spawned child exited).
+    {
+      int sig = SignalHandler::GetSignalFlag();
+      if (sig == SIGTERM || sig == SIGINT || sig == SIGHUP ||
+          sig == SIGQUIT) {
+        SignalHandler::ClearSignalFlag();
+        SignalSafeShutdown(sig, true);
+        break;
+      } else if (sig != 0) {
+        SignalHandler::ClearSignalFlag();
+      }
+    }
 
     if (executionEngine) {
       if (modules_)
@@ -787,6 +806,22 @@ void EventListener::EventLoop() {
       break;
 
 
+    // Periodic device re-check (~5s) to handle hotplug/disconnect. Runs
+    // BEFORE the runnable-fiber fast path so a busy scheduler cannot starve
+    // reconnection: with the old loopCount++ placement, a VM with permanent
+    // runnable work skipped RecheckDevices forever, so a device that
+    // disconnected once (POLLHUP on suspend/resume or replug) stayed dead
+    // and every hotkey silently stopped firing.
+    {
+      auto now = std::chrono::steady_clock::now();
+      if (now - lastDeviceRecheck >= std::chrono::seconds(5)) {
+        lastDeviceRecheck = now;
+        if (backend_) {
+          backend_->RecheckDevices();
+        }
+      }
+    }
+
     // Fast path: when goroutines are runnable, skip the device re-check
     // gap and re-enter executeFrame() immediately so VM work (hotkey
     // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
@@ -796,15 +831,6 @@ void EventListener::EventLoop() {
     if (executionEngine && executionEngine->getScheduler() &&
         executionEngine->getScheduler()->hasRunnableFibers()) {
       continue;
-    }
-
-    // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
-    loopCount++;
-    if (loopCount >= 500) { // 500 * 10ms = 5 seconds
-      loopCount = 0;
-      if (backend_) {
-        backend_->RecheckDevices();
-      }
     }
   }
 
@@ -2474,11 +2500,28 @@ void EventListener::RegisterGestureHotkey(
 }
 
 void EventListener::SetupSignalHandling() {
+  // Block SIGTERM/SIGHUP on the calling thread AND make signalfd the only
+  // delivery path. sigprocmask only affects this thread, but every thread
+  // spawned by havel inherits the creator's mask at spawn time; threads
+  // created before this point (module loading, executor warmup) keep the
+  // default mask. SignalExitHandler (installed by InstallAsyncHandlers)
+  // hard-exits on SIGTERM from any unblocked thread, which was the source
+  // of "random SIGTERM" deaths: any stray group-directed SIGTERM (from
+  // forked children sharing our process group, `timeout` wrappers, or
+  // shell scripts running `kill 0`) landed on an unblocked worker thread
+  // and killed the whole process instantly.
+  //
+  // Fix strategy:
+  //  1. Block here (main thread) before any input threads spawn.
+  //  2. Reset SignalExitHandler for SIGTERM to a flag-setter that never
+  //     hard-exits; the signalfd event loop owns the shutdown decision.
+  //     Threads with a stale unblocked mask therefore only set a flag
+  //     instead of killing the process.
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGTERM);
   sigaddset(&mask, SIGHUP);
-  sigprocmask(SIG_BLOCK, &mask, nullptr);
+  pthread_sigmask(SIG_BLOCK, &mask, nullptr);
   signalHandler->SetupSignalfd();
 
   // SIGINT must NOT be blocked so it reaches the handler immediately

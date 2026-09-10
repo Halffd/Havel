@@ -15,7 +15,6 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -295,6 +294,54 @@ extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
   return Value::makeBool(ld == rd).rawBits();
 }
 
+// VM-aware equality: EQ/NEQ may compare strings, and string content lives
+// in the heap (or chunk string tables), so the pure (l, r) bridges can never
+// implement the interpreter's valuesEqualDeep string rule. JIT-compiled
+// `node.kind == "NumberLiteral"` compares a heap StringId against a
+// chunk-local StringValId - with only bit/NaN semantics both sides coerce to
+// NaN, the comparison reads "not equal", and dispatch code (the self-hosted
+// emitter's AST walker) falls through every branch. These variants take the
+// vm pointer so strings compare by CONTENT like the interpreter.
+extern "C" uint64_t havel_vm_eq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(true).rawBits();
+  if (vm_ptr) {
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value lv = Value::fromRawBits(l);
+    Value rv = Value::fromRawBits(r);
+    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
+    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
+    if (l_is_str || r_is_str) {
+      if (l_is_str && r_is_str) {
+        return Value::makeBool(vm->stringsEqualPublic(l, r)).rawBits();
+      }
+      return Value::makeBool(false).rawBits();
+    }
+  }
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  return Value::makeBool(ld == rd).rawBits();
+}
+
+extern "C" uint64_t havel_vm_neq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
+  if (l == r) return Value::makeBool(false).rawBits();
+  if (vm_ptr) {
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value lv = Value::fromRawBits(l);
+    Value rv = Value::fromRawBits(r);
+    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
+    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
+    if (l_is_str || r_is_str) {
+      if (l_is_str && r_is_str) {
+        return Value::makeBool(!vm->stringsEqualPublic(l, r)).rawBits();
+      }
+      return Value::makeBool(true).rawBits();
+    }
+  }
+  const double ld = valueToDouble(l), rd = valueToDouble(r);
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
+  return Value::makeBool(ld != rd).rawBits();
+}
+
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
   if (l == r) return Value::makeBool(false).rawBits();
   const double ld = valueToDouble(l), rd = valueToDouble(r);
@@ -509,9 +556,14 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
         uint64_t version = 0;
         uint64_t key_bits = 0;
         uint64_t value_bits = 0;
+        uint64_t gc_epoch = 0;
         bool valid = false;
     };
 
+    // Same GC-epoch discipline as object_get_raw_ic: container ids are
+    // recycled after a sweep, so the epoch must ride along in the key or
+    // a dead container's entry can be served to its id's new owner.
+    thread_local uint64_t last_epoch = 0;
     thread_local std::array<CacheEntry, 8> cache{};
 
     if (!vm_ptr) return Value::makeNull().rawBits();
@@ -519,6 +571,11 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
     Value container, key_val;
     std::memcpy(&container, &container_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    const uint64_t epoch = vm->getHeap().gcEpoch();
+    if (epoch != last_epoch) {
+        last_epoch = epoch;
+        for (auto& e : cache) e.valid = false;
+    }
 
     uint64_t version = 0;
     if (container.isArrayId()) version = vm->arrayVersion(container.asArrayId());
@@ -529,13 +586,14 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
     const size_t primary = static_cast<size_t>((container_bits ^ key_bits ^ (version >> 1)) & (cache.size() - 1));
     for (size_t probe = 0; probe < cache.size(); ++probe) {
         const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
-        if (entry.valid && entry.container_bits == container_bits && entry.version == version && entry.key_bits == key_bits) {
+        if (entry.valid && entry.container_bits == container_bits && entry.version == version && entry.key_bits == key_bits &&
+            entry.gc_epoch == epoch) {
             return entry.value_bits;
         }
     }
 
     auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
-    cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, true};
+    cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }
 
@@ -634,9 +692,18 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         uint64_t shape_version = 0;
         uint64_t key_bits = 0;
         uint64_t value_bits = 0;
+        uint64_t gc_epoch = 0;
         bool valid = false;
     };
 
+    // GC epoch: heap ids are RECYCLED, so an (obj_id, shape_version, key)
+    // key alone can hit a dead object's stale entry when a new object
+    // reuses its id (the self-hosted emitter's AST nodes - one per
+    // expression, churned fast - read each other's `kind` through exactly
+    // this collision once a collection cycle ran mid-emission, and every
+    // node dispatched into the wrong emit branch). Folding the epoch in
+    // makes every cache die with the collection that invalidated it.
+    thread_local uint64_t last_epoch = 0;
     thread_local std::array<CacheEntry, 4> cache{};
 
     if (!vm_ptr) return Value::makeNull().rawBits();
@@ -644,6 +711,11 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
     Value obj, key_val;
     std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    const uint64_t epoch = vm->getHeap().gcEpoch();
+    if (epoch != last_epoch) {
+        last_epoch = epoch;
+        for (auto& e : cache) e.valid = false;
+    }
     if (!obj.isObjectId()) {
         // Non-object receivers take the un-cached parity path
         // (memberGetPublic); arrays are mutable so the IC's shape-version
@@ -662,17 +734,39 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         return vm->lookupGlobalByKey(*key_str).rawBits();
     }
 
+    // Lazy module proxies must not enter (or be served from) the IC:
+    // their whole point is to be swapped for the real namespace on first
+    // touch (memberGetPublic performs the swap, mirroring the
+    // interpreter's OBJECT_GET). Caching the proxy's pre-init reads
+    // (null fields) pinned stale nulls forever - the self-hosted
+    // parser's skipCommentsAndNewlines read TID.NewLine through a cached
+    // proxy entry and never stopped looping.
+    {
+        auto* proxy = vm->getHeap().object(obj_id);
+        if (proxy) {
+            auto* lazyFlag = proxy->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                Value out;
+                if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+                    return out.rawBits();
+                }
+                return Value::makeNull().rawBits();
+            }
+        }
+    }
+
     const uint64_t version = vm->objectLookupVersion(obj_id);
     const size_t primary = static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
     for (size_t probe = 0; probe < cache.size(); ++probe) {
         const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
-        if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version && entry.key_bits == key_bits) {
+        if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version && entry.key_bits == key_bits &&
+            entry.gc_epoch == epoch) {
             return entry.value_bits;
         }
     }
 
     auto result_bits = havel_vm_object_get_raw(vm_ptr, obj_bits, key_bits);
-    cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, true};
+    cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }
 
@@ -1248,11 +1342,45 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     Value receiver;
     std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
     const std::string method_name = chunk->getString(method_name_id);
-    if (std::getenv("HCLB_TRACE_CM")) {
-        fprintf(stderr, "[CALL_METHOD] chunk=%p id=%u name=%s nargs=%u\n",
-                (const void*)chunk, method_name_id, method_name.c_str(), arg_count);
-    }
     if (method_name.empty()) return Value::makeNull().rawBits();
+
+    // Lazy module proxy: the interpreter's CALL_METHOD path
+    // (VMControlFlow) triggers module initialization before field lookup -
+    // a proxy object only carries __lazy__/__module__ markers. Without
+    // this, JIT-compiled calls resolved methods against the bare proxy:
+    // scopeResolveUpvalue's bc.add_upvalue_to returned null from JIT code
+    // (no descriptor ever registered), while interpreted it worked.
+    if (receiver.isObjectId()) {
+        auto* proxy = vm->getHeap().object(receiver.asObjectId());
+        if (proxy) {
+            auto* lazyFlag = proxy->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                auto* modNameVal = proxy->get("__module__");
+                std::string modName;
+                if (modNameVal) {
+                    if (modNameVal->isStringId()) {
+                        if (auto* s = vm->getHeap().string(modNameVal->asStringId()))
+                            modName = *s;
+                    } else if (modNameVal->isStringValId()) {
+                        modName = chunk->getString(modNameVal->asStringValId());
+                    }
+                }
+                if (!modName.empty()) {
+                    vm->ensureModuleLoaded(modName);
+                    Value loaded;
+                    if (vm->resolveGlobalPublic(modName, &loaded) && loaded.isObjectId()) {
+                        receiver = loaded;
+                    } else {
+                        std::string capModName = modName;
+                        capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+                        if (vm->resolveGlobalPublic(capModName, &loaded) && loaded.isObjectId()) {
+                            receiver = loaded;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     std::vector<Value> callArgs;
     callArgs.reserve(static_cast<size_t>(arg_count) + 1);
@@ -1329,7 +1457,26 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
         if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
-            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
+            // Prototype methods are receiver-bound by definition: the
+            // interpreter's OBJECT_GET materializes them as
+            // allocateBoundMethod(hostfn, receiver), so the host function
+            // sees the receiver as its first argument. callArgs already
+            // carries it when passReceiverAsSelf was true (the receiver
+            // was inserted up front - non-object receivers like arrays
+            // take that path); insert it only when it is missing, or
+            // receiver-dependent builtins see a doubled receiver
+            // (array.push reached with [recv, recv, value] and threw
+            // "expects 2 arguments, got 3" from JIT-compiled pusher).
+            std::vector<Value> boundArgs;
+            if (passReceiverAsSelf) {
+                boundArgs = callArgs;
+            } else {
+                boundArgs.reserve(callArgs.size() + 1);
+                boundArgs.push_back(receiver);
+                boundArgs.insert(boundArgs.end(), callArgs.begin(),
+                                 callArgs.end());
+            }
+            Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
             if (!result.isNull()) return result.rawBits();
         }
     }

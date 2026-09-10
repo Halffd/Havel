@@ -48,7 +48,9 @@ static void print_usage(const char *prog) {
 "modes:\n"
  " (default) run all tests\n"
  " --smoke run .hv smoke tests (scripts/smoke/*.hv, self-hosted)\n"
+ "         an extra NAME arg filters by substring: hvtest --smoke closure\n"
  " --hvmoke run .hv smoke tests (scripts/smoke/*.hv)\n"
+ "          also accepts a NAME substring filter like --smoke\n"
  " --scripts run .hv script tests (smoke + integration + main)\n"
 " --cpp run C++ unit tests via ctest\n"
 " --jit   run JIT smoke tests (requires LLVM build)\n"
@@ -115,8 +117,20 @@ int main(int argc, char **argv) {
 		else { std::cerr << "unknown option: " << arg << std::endl; return 1; }
 	}
 
-	if (havel_bin.empty()) havel_bin = find_havel_binary();
+		if (havel_bin.empty()) havel_bin = find_havel_binary();
 	if (scripts_root.empty()) scripts_root = find_scripts_root();
+
+    // A positional name next to a suite mode (--smoke/--hvmoke) is a
+    // name FILTER, not a script path: running `hvtest --smoke NAME`
+    // used to push NAME into single_files, where it executed as a
+    // nonexistent script file and always reported [FAIL ... exit=1] -
+    // misleading output that cost real debugging time. Keep positional
+    // args as files only when no suite mode requested a filter.
+    std::vector<std::string> suite_filters;
+    if (mode_smoke || mode_hvmoke) {
+        suite_filters = std::move(single_files);
+        single_files.clear();
+    }
 
     if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_compare && !mode_all && single_files.empty()) {
 		mode_all = true;
@@ -163,7 +177,8 @@ int main(int argc, char **argv) {
             self_hosted_path.string(),
             "--minimal"
         };
-        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout,
+                                            suite_filters);
     }
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -195,7 +210,8 @@ int main(int argc, char **argv) {
             self_hosted_path.string(),
             "--minimal"
         };
-        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout,
+                                            suite_filters);
     }
 
 if (mode_compare) {

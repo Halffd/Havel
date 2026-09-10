@@ -145,6 +145,7 @@ private:
     bool suppressBraceLambda = false; // In control-flow conditions: (x) { is not a lambda
     bool inMatchExpression = false; // Inside match expression (disable arrow functions)
     bool inConfigContext = false; // Inside config block (bare identifiers are strings)
+    std::string modeContext; // Enclosing mode "name" { ... } for hotkeys
   };
 
   ParserContext context;

@@ -85,19 +85,26 @@ uint32_t VM::getStringId(const Value &str) {
   return 0;
 }
 
- void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
- Value value) {
- auto *object = heap_.object(object_ref.id);
- if (!object) {
- COMPILER_THROW("setHostObjectField unknown object id");
- }
- if (key != "__frozen__" && key != "__sealed__") {
- auto it = object->find("__frozen__");
- if (it != object->end() && it->second.isBool() && it->second.asBool())
- COMPILER_THROW("cannot set field on frozen object");
- }
- (*object)[key] = std::move(value);
- }
+void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
+                             Value value) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) {
+    COMPILER_THROW("setHostObjectField unknown object id");
+  }
+  if (key != "__frozen__" && key != "__sealed__") {
+    auto it = object->find("__frozen__");
+    if (it != object->end() && it->second.isBool() && it->second.asBool())
+      COMPILER_THROW("cannot set field on frozen object");
+  }
+  // ObjectEntry::set (not operator[]) so shape_version bumps: the JIT
+  // OBJECT_GET inline cache keys on (obj_id, shape_version, key). The
+  // raw operator[] path skipped the bump, so a write through this seam
+  // (havel_vm_object_set_raw -> setHostObjectField, e.g. scope.upcount
+  // from JIT-compiled scopeResolveUpvalue) left the IC serving the
+  // PRE-write value: the compiled parent-scope walk read a stale null
+  // for scope.parent, resolved nothing, and every capture came back -1.
+  object->set(key, std::move(value));
+}
 
 void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
   auto *array = heap_.array(array_ref.id);

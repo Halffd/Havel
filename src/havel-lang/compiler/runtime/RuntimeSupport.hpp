@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <array>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -351,6 +352,33 @@ public:
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunkMmap(const std::string& filePath);
   std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536);
+
+  // Source identity embedded by serializeChunk(chunk, sourcePath):
+  // {path, byte size, sha256}. size/hash are zero when the chunk was
+  // serialized without a source path (older writers), in which case
+  // hasInfo is false and callers must fall back to their own freshness
+  // checks (mtime). Used by the --build cache-reuse gate so an hvc whose
+  // mtime was bumped without recompiling (GLBS trailer appends, touch)
+  // is not served as fresh: the embedded hash is checked against the
+  // live source before reuse.
+  struct SourceInfo {
+      std::string path;
+      uint64_t size = 0;
+      std::array<uint8_t, 32> hash{};
+      bool hasInfo = false;
+  };
+  static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
+
+  // Byte length of the serialized-chunk section of an .hvc (everything
+  // before the FIRST [globals][GLBS][size] trailer section). The first
+  // appended section's marker sits exactly at chunk_end + globals_size,
+  // so chunk_end = firstMarker - size@firstMarker - this crosses the
+  // marker-less partial sections that interrupted writes leave behind,
+  // which a backward walk from EOF can never get past (observed: a
+  // lang.*.hvc stuck at 37MB of unreachable history because every
+  // truncated process left a gap). Returns 0 when the boundary cannot
+  // be established; callers fall back to their own heuristics.
+  static size_t chunkDataEnd(std::span<const uint8_t> data);
 
 private:
   std::string valueToJson(const Value& value);

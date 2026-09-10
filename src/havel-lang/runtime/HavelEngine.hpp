@@ -574,7 +574,10 @@ vm_->addIntervalResult(timer_id, result);
         // Process all goroutines until they're done
         processGoroutines();
 
-        // Return null for now (result capture would need more infrastructure)
+        // Return the script result from the VM stack (if any)
+        if (vm_->getStackSizePublic() > 0) {
+            return vm_->popStackPublic();
+        }
         return compiler::Value::makeNull();
     }
 

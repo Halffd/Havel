@@ -28,7 +28,9 @@
 #include "dl/Loader.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "../../stdlib/LogModule.hpp"
@@ -456,9 +458,19 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
     stack.pop();
   }
 
-  // Restore all VM state
+  // Restore all VM state. locals is the critical one: the callee's
+  // region (>= saved_locals.size(), grown by doCall) is discarded, but
+  // the CALLER region below it must reflect writes made DURING the call.
+  // The callee's open upvalues can point INTO the caller's region
+  // (nested closures like the self-hosted parser's advance() capturing
+  // pos), and STORE_UPVALUE writes land there via
+  // havel_vm_upvalue_set / interpreter upvalue stores. Restoring the
+  // pre-call snapshot wiped those writes: a JIT-compiled
+  // skipCommentsAndNewlines looping over havel_vm_call ->
+  // callFunctionSync(advance) saw pos revert to its pre-call value
+  // every iteration and never terminated.
   stack = std::move(saved_stack);
-  locals = std::move(saved_locals);
+  locals.resize(saved_locals.size());
   immutable_locals_.clear();
   frame_count_ = saved_frame_count;
   current_chunk = outer_chunk;
@@ -2037,6 +2049,13 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           traceInstruction(instruction, function, frame_count_ - 1, ip);
         }
         executeInstruction(instruction);
+        // exit() host calls must stop the script immediately (see slow path).
+        if ((instruction.opcode == OpCode::CALL ||
+             instruction.opcode == OpCode::CALL_DYN ||
+             instruction.opcode == OpCode::CALL_SPREAD) &&
+            exit_requested_.load()) {
+          break;
+        }
         // The switch-based executeInstruction (used by the slow dispatch
         // loop) does not propagate suspension_requested_ into last_suspension_*.
         // Host calls (e.g. sleep) set suspension_requested_ + suspension_reason_
@@ -2187,6 +2206,15 @@ slow_path:
       // is ip + 1.
       pending_call_return_ip_ = static_cast<int32_t>(ip) + 1;
       executeInstruction(instruction);
+      // exit() host calls must stop the script immediately, not on the next
+      // 4096-instruction boundary: a short script would otherwise run to
+      // completion before the launcher sees exit_requested_.
+      if ((instruction.opcode == OpCode::CALL ||
+           instruction.opcode == OpCode::CALL_DYN ||
+           instruction.opcode == OpCode::CALL_SPREAD) &&
+          exit_requested_.load()) {
+        break;
+      }
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }
@@ -3052,6 +3080,17 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       frame_count_++;
     }
     const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    // JIT-compiled body runs without the dispatch loop, so current_chunk
+    // must be swapped here like the interpreter path does (below): the
+    // Runtime-ABI bridges (havel_vm_call_method string ids,
+    // havel_vm_closure_new function indices) resolve chunk-relative ids
+    // via getCurrentChunk(). Without the swap they resolve against the
+    // CALLER's chunk: JIT-compiled scopeResolveUpvalue's bc.add_upvalue_to
+    // looked up the method name in a foreign chunk, got an empty string,
+    // and silently returned null - the emitted skipLoop closure carried
+    // zero upvalue descriptors and LOAD_UPVALUE threw "index out of range".
+    const BytecodeChunk *prev_chunk = current_chunk;
+    current_chunk = resolve_chunk;
     auto jit_teardown = [&]() {
       // Pop the synthetic frame and restore the ambient snapshot. Nested
       // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
@@ -3060,6 +3099,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         frame_count_ = jit_frame_base - 1;
       }
       locals.resize(jit_locals_base);
+      current_chunk = prev_chunk;
       if (jit_owns_globals && !globals_stack_.empty()) {
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -3870,6 +3910,55 @@ bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
   }
 
   if (receiver.isObjectId()) {
+    // Lazy module proxy trap, mirroring the interpreter's OBJECT_GET
+    // (VMCollections.cpp): a proxy carries only __lazy__/__module__
+    // markers; trigger module initialization and swap in the loaded
+    // namespace. Without this, JIT-compiled member reads (TID.NewLine in
+    // the self-hosted parser's skipCommentsAndNewlines, bc.* fields in
+    // scopeResolveUpvalue) resolved against the bare proxy and read
+    // null - the parser loop then never advanced and hung.
+    auto* proxy = heap_.object(receiver.asObjectId());
+    if (proxy) {
+      auto* lazyFlag = proxy->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+        auto* modNameVal = proxy->get("__module__");
+        std::string modName;
+        if (modNameVal) {
+          if (modNameVal->isStringId()) {
+            if (auto* s = heap_.string(modNameVal->asStringId())) modName = *s;
+          } else if (modNameVal->isStringValId()) {
+            modName = current_chunk
+                        ? current_chunk->getString(modNameVal->asStringValId())
+                        : std::string();
+          }
+        }
+        if (!modName.empty()) {
+          ensureModuleLoaded(modName);
+          auto git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            auto* proxyObj = heap_.object(git->second.asObjectId());
+            if (proxyObj) {
+              auto* lf = proxyObj->get("__lazy__");
+              if (lf && lf->isBool() && lf->asBool()) {
+                globals.erase(git);
+              }
+            }
+          }
+          git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            receiver = git->second;
+          } else {
+            std::string capModName = modName;
+            capModName[0] = static_cast<char>(
+                toupper(static_cast<unsigned char>(capModName[0])));
+            git = globals.find(capModName);
+            if (git != globals.end() && git->second.isObjectId()) {
+              receiver = git->second;
+            }
+          }
+        }
+      }
+    }
     auto key = resolveKey(key_value);
     if (key) {
       if (receiver.asObjectId() == globals_mirror_object_id_) {
@@ -6828,11 +6917,77 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 }
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
-    // Append globals data to existing .hvc file
-    FILE* file = fopen(hvcPath.c_str(), "ab");
-    if (file) {
-        fwrite(globalsData.data(), 1, globalsData.size(), file);
-        fclose(file);
+    // Rewrite the .hvc as [chunk][globals-section] in one atomic
+    // temp-file rename, under an advisory lock. History: the old
+    // "ab"-only mode stacked one [globals][GLBS][size] section per cold
+    // load (268 nested sections / 26MB dead weight observed), and a
+    // truncate-then-append fix still raced when concurrent processes
+    // cold-loaded the same module (the test suite runs 4 workers): one
+    // process truncated while another was mid-append, leaving a second
+    // section plus garbage after it. The section start is found by
+    // first-marker arithmetic (chunk_end = firstMarker - size@marker),
+    // which also crosses the marker-less partial sections interrupted
+    // writes leave behind; then the whole surviving chunk plus this
+    // run's section is written via rename so readers never observe a
+    // torn file.
+    std::error_code ec;
+    // Serialize writers on the target file. The lock file is a sibling
+    // .lock path so it never aliases the cache file itself.
+    const std::string lockPath = hvcPath + ".lock";
+    int lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_EX);
+    }
+
+    std::vector<uint8_t> existing;
+    bool haveExisting = false;
+    if (std::filesystem::exists(hvcPath, ec) && !ec) {
+        std::ifstream probe(hvcPath, std::ios::binary | std::ios::ate);
+        if (probe) {
+            const std::streamsize fileSize = probe.tellg();
+            if (fileSize > 0) {
+                existing.resize(static_cast<size_t>(fileSize));
+                probe.seekg(0, std::ios::beg);
+                probe.read(reinterpret_cast<char *>(existing.data()),
+                           fileSize);
+                haveExisting = probe.good() || probe.eof();
+            }
+        }
+    }
+
+    std::vector<uint8_t> out;
+    if (haveExisting) {
+        const size_t chunkEnd =
+            ValueSerializer::chunkDataEnd(
+                std::span<const uint8_t>(existing));
+        if (chunkEnd > 0 && chunkEnd <= existing.size()) {
+            out.assign(existing.begin(), existing.begin() + chunkEnd);
+        } else {
+            out = std::move(existing);
+        }
+    }
+    out.insert(out.end(), globalsData.begin(), globalsData.end());
+
+    const std::string tmpPath =
+        hvcPath + ".tmp." +
+        std::to_string(static_cast<uint64_t>(::getpid()));
+    {
+        std::ofstream tmp(tmpPath, std::ios::binary | std::ios::trunc);
+        if (tmp) {
+            tmp.write(reinterpret_cast<const char *>(out.data()),
+                      static_cast<std::streamsize>(out.size()));
+            tmp.flush();
+        }
+    }
+    std::filesystem::rename(tmpPath, hvcPath, ec);
+    if (ec) {
+        ::havel::debug("[writeGlobalsToHvc] rename failed for {}: {}",
+                       hvcPath, ec.message());
+        std::filesystem::remove(tmpPath, ec);
+    }
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_UN);
+        ::close(lockFd);
     }
 }
 

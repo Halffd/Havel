@@ -5,6 +5,10 @@
 //   use "app/brightness" as brightness
 //   b = brightness.get()
 //   brightness.set(0.5)
+//
+// Per-monitor control:
+//   brightness.increase(amount, monitorName)
+//   brightness.decrease(amount, monitorName)
 
 // Host functions are registered as global brightness.* functions
 // No need to import anything - they're available as brightness.get(), etc.
@@ -49,7 +53,7 @@ fn getMonitors() {
     brightness.getMonitors()
 }
 
-// Convenience functions
+// Convenience functions (global - primary monitor)
 fn increase(amount = 0.02) {
     let current = brightness.get()
     brightness.set(current + amount)
@@ -59,6 +63,15 @@ fn decrease(amount = 0.02) {
     let current = brightness.get()
     brightness.set(current - amount)
 }
+
+// Per-monitor brightness control:
+// Use brightness.increase(amount, monitorName) and brightness.decrease(amount, monitorName)
+// directly for per-monitor control.
+// Example:
+//   let monitors = brightness.getMonitors()
+//   let m0 = monitors[0]
+//   brightness.increase(0.1, m0.name)
+//   brightness.decrease(0.1, m0.name)
 
 fn toggle() {
     let current = brightness.get()

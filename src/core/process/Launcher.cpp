@@ -343,8 +343,22 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   argv.push_back(nullptr);
 
   pid_t pid;
-  int spawn_result = posix_spawnp(&pid, executable.c_str(), &actions, nullptr,
+  // Own process group + clean signal mask: the child must not share havel's
+  // process group (group-directed SIGTERM from wrappers/scripts killed the
+  // whole havel process) and must not inherit our blocked-signal mask
+  // (SIGTERM/SIGHUP are blocked on the main thread for signalfd).
+  posix_spawnattr_t attr;
+  posix_spawnattr_init(&attr);
+  sigset_t emptyMask;
+  sigemptyset(&emptyMask);
+  (void)posix_spawnattr_setsigmask(&attr, &emptyMask);
+  (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                           POSIX_SPAWN_SETPGROUP);
+  (void)posix_spawnattr_setpgroup(&attr, 0);
+
+  int spawn_result = posix_spawnp(&pid, executable.c_str(), &actions, &attr,
                                   argv.data(), environ);
+  posix_spawnattr_destroy(&attr);
 
   // Clean up file actions
   posix_spawn_file_actions_destroy(&actions);
@@ -411,8 +425,14 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
                       .count();
 
               if (elapsed >= params.timeoutMs) {
-                // Timeout reached, kill the process
+                // Timeout reached: kill the child's whole process group
+                // (children get POSIX_SPAWN_SETPGROUP, so -pid == the group)
+                // so shell pipelines don't leave orphans, then escalate to
+                // SIGKILL if SIGTERM is ignored.
+                kill(-pid, SIGTERM);
                 kill(pid, SIGTERM);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                kill(-pid, SIGKILL);
                 timed_out = true;
                 result.error = "Process timed out";
                 result.success = false;
@@ -493,10 +513,13 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
         // Implement timeout using signals (simplified)
         waitResult = waitpid(pid, &status, WNOHANG);
         if (waitResult == 0) {
-          // Still running, kill after timeout
+          // Still running, kill after timeout (group + escalation)
           std::this_thread::sleep_for(
               std::chrono::milliseconds(params.timeoutMs));
+          kill(-pid, SIGTERM);
           kill(pid, SIGTERM);
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          kill(-pid, SIGKILL);
           waitpid(pid, &status, 0);
           result.error = "Process timed out";
         }
@@ -689,8 +712,78 @@ ProcessResult Launcher::executeShell(const std::string &command,
     }
   }
 
-  pid_t pid = fork();
-  if (pid == -1) {
+  // posix_spawn instead of fork(): fork() in this multithreaded process is
+  // unsafe (the child can inherit held mutexes and deadlock pre-exec) and
+  // it leaked every grabbed evdev/X11 fd into the child while keeping the
+  // child in havel's process group. Children in our process group receive
+  // group-directed SIGTERM (timeout wrappers, `kill 0` in scripts), which
+  // was the "havel randomly gets SIGTERM" root cause. POSIX_SPAWN_SETSID
+  // puts the child in its own session.
+  posix_spawn_file_actions_t actions;
+  posix_spawn_file_actions_init(&actions);
+
+  if (!params.detachFromParent) {
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[1]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stdout[0]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stderr[0]);
+    posix_spawn_file_actions_adddup2(&actions, pipe_stdin[0], STDIN_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, pipe_stdout[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, pipe_stderr[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[0]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stdout[1]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stderr[1]);
+  } else {
+    // Detached: close inherited fds (grabbed devices, X11 sockets, eventfds)
+    // so the child cannot hold device grabs open or receive our wakeup reads.
+    for (int fd = 3; fd < 256; ++fd) {
+      posix_spawn_file_actions_addclose(&actions, fd);
+    }
+    if (params.windowState == WindowState::Hidden) {
+      posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+      posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+      posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+    }
+  }
+
+  posix_spawnattr_t attr;
+  posix_spawnattr_init(&attr);
+  sigset_t emptyMask;
+  sigemptyset(&emptyMask);
+  (void)posix_spawnattr_setsigmask(&attr, &emptyMask);
+  if (params.detachFromParent) {
+    (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                             POSIX_SPAWN_SETSID);
+  } else {
+    (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                             POSIX_SPAWN_SETPGROUP);
+    (void)posix_spawnattr_setpgroup(&attr, 0);
+  }
+
+  std::vector<char *> argv;
+  // chdir() equivalent for the shell child: prefix the command.
+  // (posix_spawn has no cwd attribute; workingDir in shell mode was
+  // previously handled by chdir() in the forked child.)
+  std::string effectiveCommand = command;
+  if (!params.workingDir.empty()) {
+    effectiveCommand = "cd " + params.workingDir + " && " + command;
+  }
+  argv.push_back(const_cast<char *>("sh"));
+  argv.push_back(const_cast<char *>("-c"));
+  argv.push_back(const_cast<char *>(effectiveCommand.c_str()));
+  argv.push_back(nullptr);
+
+  char *envp[] = {nullptr};
+  pid_t pid = -1;
+  int spawn_result = posix_spawnp(&pid, "/bin/sh", &actions, &attr,
+                                  argv.data(),
+                                  params.detachFromParent ? envp : environ);
+  posix_spawn_file_actions_destroy(&actions);
+  posix_spawnattr_destroy(&attr);
+
+  if (spawn_result != 0) {
     if (!params.detachFromParent) {
       close(pipe_stdin[0]);
       close(pipe_stdin[1]);
@@ -699,69 +792,18 @@ ProcessResult Launcher::executeShell(const std::string &command,
       close(pipe_stderr[0]);
       close(pipe_stderr[1]);
     }
-    result.error = "fork failed: " + std::string(strerror(errno));
+    result.error =
+        "posix_spawn failed: " + std::string(strerror(spawn_result));
     result.success = false;
     return result;
   }
 
-  if (pid == 0) {
-    // Child process
-    if (params.detachFromParent) {
-      // Create new session and process group
-      if (setsid() < 0) {
-        _exit(127);
-      }
-
-      // Close all inherited file descriptors
-      for (int fd = 3; fd < 256; ++fd) {
-        close(fd);
-      }
-
-      // Redirect standard I/O to /dev/null if window is hidden
-      if (params.windowState == WindowState::Hidden) {
-        int devnull = open("/dev/null", O_RDWR);
-        if (devnull >= 0) {
-          dup2(devnull, STDIN_FILENO);
-          dup2(devnull, STDOUT_FILENO);
-          dup2(devnull, STDERR_FILENO);
-          if (devnull > 2)
-            close(devnull);
-        }
-      }
-    } else {
-      // Regular child with pipes
-      close(pipe_stdin[1]);
-      close(pipe_stdout[0]);
-      close(pipe_stderr[0]);
-
-      dup2(pipe_stdin[0], STDIN_FILENO);
-      dup2(pipe_stdout[1], STDOUT_FILENO);
-      dup2(pipe_stderr[1], STDERR_FILENO);
-
-      close(pipe_stdin[0]);
-      close(pipe_stdout[1]);
-      close(pipe_stderr[1]);
-    }
-
-    // Set up environment and working directory
-    setupUnixEnvironment(params);
-
-    if (!params.workingDir.empty()) {
-      chdir(params.workingDir.c_str());
-    }
-
-    // Execute the command using shell to preserve shell features
-    execl("/bin/sh", "sh", "-c", command.c_str(), (char *)NULL);
-
-    // If we get here, execl failed
-    _exit(127);
-  } else {
-    // Parent process
-    if (!params.detachFromParent) {
-      close(pipe_stdin[0]);
-      close(pipe_stdout[1]);
-      close(pipe_stderr[1]);
-    }
+  // Parent process
+  if (!params.detachFromParent) {
+    close(pipe_stdin[0]);
+    close(pipe_stdout[1]);
+    close(pipe_stderr[1]);
+  }
 
     result.pid = static_cast<int64_t>(pid);
     result.success = true;
@@ -814,8 +856,11 @@ ProcessResult Launcher::executeShell(const std::string &command,
                   .count();
 
           if (elapsed >= params.timeoutMs) {
-            // Timeout reached, kill the process
+            // Timeout reached: kill the child's process group, escalate.
+            kill(-pid, SIGTERM);
             kill(pid, SIGTERM);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            kill(-pid, SIGKILL);
             timed_out = true;
             result.error = "Process timed out";
             result.success = false;
@@ -878,13 +923,13 @@ ProcessResult Launcher::executeShell(const std::string &command,
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
 
-      // If still running, force kill it
+      // If still running, force kill it (group: pipelines leave orphans)
       if (waitpid(pid, &status, WNOHANG) != pid) {
+        kill(-pid, SIGKILL);
         kill(pid, SIGKILL);
         waitpid(pid, &status, 0);
       }
-    }
-  }
+    } // if (timed_out)
 #endif
 
   return result;

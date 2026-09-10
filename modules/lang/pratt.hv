@@ -294,6 +294,7 @@ fn Parser(tokenList) {
   allowBraceSugar = true
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
+  modeContext = ""
 
   fn current() {
     return _cur
@@ -1222,27 +1223,29 @@ else if tt == TID.Arrow {
     binding.hotkeys.push(HotkeyLiteral(el.name, l, c))
    }
   }
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
+if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
   }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
- }
- // Check if left is a HotkeyExpression: F1 => { ... }
- if left.kind == "HotkeyExpression" {
-  binding = HotkeyBinding([], null, l, c)
-  binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
-  }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
+  // Check if left is a HotkeyExpression: F1 => { ... }
+  if left.kind == "HotkeyExpression" {
+   binding = HotkeyBinding([], null, l, c)
+   binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
+   if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
  }
  // Single-parameter lambda: x => body
  if left == null || left.kind != "Identifier" {
@@ -1398,56 +1401,79 @@ fn parseCallArgs() {
     // ===================================================================
     // HELPER: Parse interpolated string into parts
     // ===================================================================
-    fn parseInterpolatedString(value, l, c) {
-        parts = []
-        i = 0
-        buf = ""
+fn parseInterpolatedString(value, l, c) {
+         parts = []
+         i = 0
+         buf = ""
 
-        while i < value.len {
-            ch = value.sub(i, 1)
+         while i < value.len {
+             ch = value.sub(i, 1)
 
-            // {...} interpolation (works in all strings, not just f-strings)
-            if ch == "{" {
-                if buf.len > 0 {
-                    // Strip the interpolation marker: ${expr} → the '$' before '{'
-                    if buf.sub(buf.len - 1, 1) == "$" {
-                        buf = buf.slice(0, buf.len - 1)
-                    }
-                }
-                if buf.len > 0 {
-                    parts.push(StringLiteral(buf, l, c))
-                    buf = ""
-                }
-                i = i + 1
-                depth = 1
-                exprStr = ""
-                while i < value.len and depth > 0 {
-                    ch2 = value.sub(i, 1)
-                    if ch2 == "{": depth = depth + 1
-                    else if ch2 == "}": depth = depth - 1
-                    if depth > 0: exprStr = exprStr + ch2
-                    i = i + 1
-                }
-                subTokens = tokenize(exprStr)
-                subParser = Parser(subTokens)
-                subExpr = subParser.parseExpr(0)
-                if subExpr != null: parts.push(subExpr)
-                else: parts.push(Identifier(exprStr, l, c))
+             // Interpolation markers: the native tokenizer encodes $name and
+             // ${expr} as \x01 expr \x02 inside the string value. The pure
+             // Havel scanner (lexer.hv _scan) instead emits {expr}; both
+             // encodings are accepted here.
+             if ch == "\x01" {
+                 if buf.len > 0 {
+                     parts.push(StringLiteral(buf, l, c))
+                     buf = ""
+                 }
+                 i = i + 1
+                 exprStr = ""
+                 while i < value.len && value.sub(i, 1) != "\x02" {
+                     exprStr = exprStr + value.sub(i, 1)
+                     i = i + 1
+                 }
+                 i = i + 1 // skip \x02
+                 subTokens = tokenize(exprStr)
+                 subParser = Parser(subTokens)
+                 subExpr = subParser.parseExpr(0)
+                 if subExpr != null: parts.push(subExpr)
+                 else: parts.push(Identifier(exprStr, l, c))
 
-            }
-            else {
-                buf = buf + ch
-                i = i + 1
+             }
+             // {...} interpolation (works in all strings, not just f-strings)
+             else if ch == "{" {
+                 if buf.len > 0 {
+                     // Strip the interpolation marker: ${expr} → the '$' before '{'
+                     if buf.sub(buf.len - 1, 1) == "$" {
+                         buf = buf.slice(0, buf.len - 1)
+                     }
+                 }
+                 if buf.len > 0 {
+                     parts.push(StringLiteral(buf, l, c))
+                     buf = ""
+                 }
+                 i = i + 1
+                 depth = 1
+                 exprStr = ""
+                 while i < value.len and depth > 0 {
+                     ch2 = value.sub(i, 1)
+                     if ch2 == "{": depth = depth + 1
+                     else if ch2 == "}": depth = depth - 1
+                     if depth > 0: exprStr = exprStr + ch2
+                     i = i + 1
+                 }
+                 subTokens = tokenize(exprStr)
+                 subParser = Parser(subTokens)
+                 subExpr = subParser.parseExpr(0)
+                 if subExpr != null: parts.push(subExpr)
+                 else: parts.push(Identifier(exprStr, l, c))
 
-            }
-        }
-        if buf.len > 0 {
-            parts.push(StringLiteral(buf, l, c))
+             }
+             else {
+                 buf = buf + ch
+                 i = i + 1
 
-  }
-  return InterpolatedString(parts, l, c)
+             }
+         }
+         if buf.len > 0 {
+             parts.push(StringLiteral(buf, l, c))
 
-  }
+   }
+   return InterpolatedString(parts, l, c)
+
+   }
     // ===================================================================
     // HELPER: Parenthesized expression or lambda
     // ===================================================================
@@ -2512,7 +2538,7 @@ if tt == TID.Defer {
         // DSL statements
         if tt == TID.On { return parseOnStatement() }
         if tt == TID.Mode {
-          if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
+          if at(1).tid == TID.Identifier || at(1).tid == TID.String { return parseModeBlockStatement() }
           return ExpressionStatement(parseExpr(0), l, c)
         }
         if tt == TID.Modes { return parseModesBlockStatement() }
@@ -3459,7 +3485,11 @@ fn parseHotkeyStatement() {
         }
 	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
-	if modeAttr != "": node.mode = modeAttr
+	if modeAttr != "" {
+		node.mode = modeAttr
+	} else if modeContext != "" {
+		node.mode = modeContext
+	}
 	if policyAttr != "": node.policy = policyAttr
 	node
 
@@ -3500,7 +3530,11 @@ fn parseHotkeyAssignmentStatement() {
         }
 	binding = HotkeyBinding([key], body, l, c)
 	if condition != null: binding.condition = condition
-	if modeAttr != "": binding.mode = modeAttr
+	if modeAttr != "" {
+		binding.mode = modeAttr
+	} else if modeContext != "" {
+		binding.mode = modeContext
+	}
 	if policyAttr != "": binding.policy = policyAttr
 	hkExpr = HotkeyExpression(binding, l, c)
         assign = AssignmentExpression(target, hkExpr, "=", false, l, c)
@@ -3653,6 +3687,10 @@ fn parseOnKeyDownOrKeyUpStatement() {
  c = current().col
  advance() // consume 'mode'
  skipNewlines()
+ // String-named modes are always full definitions (modern syntax);
+ // identifier-named modes are simple blocks unless the body starts
+ // with a definition keyword. Mirrors BootstrapParser.cpp dispatch.
+ nameIsString = current().tid == TID.String
  name = advance().value
  skipNewlines()
  // Parse optional priority
@@ -3671,7 +3709,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   firstTok = current()
   pos = savedPos
   syncCur()
-  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
+  isFullDefinition = nameIsString || (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on" || firstTok.value == "hotkeys")) || firstTok.tid == TID.On
   if isFullDefinition {
    return parseModeFullDefinition(name, priority, l, c)
   }
@@ -3684,13 +3722,14 @@ fn parseOnKeyDownOrKeyUpStatement() {
  fn parseModeFullDefinition(name, priority, l, c) {
  advance() // consume '{'
  skipNewlines()
- condition = null
- enterBlock = null
- exitBlock = null
- onEnterFrom = ""
- onExitTo = ""
- onEnterFromBlock = null
- onExitToBlock = null
+condition = null
+  enterBlock = null
+  exitBlock = null
+  onEnterFrom = ""
+  onExitTo = ""
+  onEnterFromBlock = null
+  onExitToBlock = null
+  hotkeysBlock = null
  while current().tid != TID.CloseBrace && current().tid != TID.EOF {
   if current().tid == TID.Newline || current().tid == TID.Semicolon {
    advance()
@@ -3710,10 +3749,45 @@ if keyword == "condition" {
       condition = parseExpr(0)
   }
   else if keyword == "enter" {
-   enterBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && current().value == "from") {
+    advance()
+    onEnterFrom = current().value
+    advance()
+    onEnterFromBlock = parseBlock()
+   }
+   else {
+    enterBlock = parseBlock()
+   }
   }
   else if keyword == "exit" {
-   exitBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && (current().value == "from" || current().value == "to")) {
+    advance()
+    onExitTo = current().value
+    advance()
+    onExitToBlock = parseBlock()
+   }
+   else {
+    exitBlock = parseBlock()
+   }
+  }
+  else if keyword == "hotkeys" {
+   if current().tid != TID.OpenBrace {
+    error("Expected '{' after 'hotkeys'", current().line, current().col)
+   }
+   advance()
+   savedModeContext = modeContext
+   modeContext = name
+   hkStmts = []
+   while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+    if current().tid == TID.Newline || current().tid == TID.Semicolon {
+     advance()
+     continue
+    }
+    hkStmts.push(parseStatement())
+   }
+   modeContext = savedModeContext
+   if current().tid == TID.CloseBrace { advance() }
+   hotkeysBlock = BlockStatement(hkStmts, l, c)
   }
   else if keyword == "on" {
    if current().tid != TID.Identifier { break }
@@ -3750,12 +3824,13 @@ if keyword == "condition" {
  }
  if current().tid == TID.CloseBrace { advance() }
  modeDef = ModeDefinition(name, condition, enterBlock, exitBlock)
- modeDef.priority = priority
- modeDef.onEnterFrom = onEnterFrom
- modeDef.onExitTo = onExitTo
- modeDef.onEnterFromBlock = onEnterFromBlock
- modeDef.onExitToBlock = onExitToBlock
- return ModesBlock([modeDef])
+modeDef.priority = priority
+  modeDef.onEnterFrom = onEnterFrom
+  modeDef.onExitTo = onExitTo
+  modeDef.onEnterFromBlock = onEnterFromBlock
+  modeDef.onExitToBlock = onExitToBlock
+  modeDef.hotkeys = hotkeysBlock
+  return ModesBlock([modeDef])
 
  }
  fn parseModesBlockStatement() {

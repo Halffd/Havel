@@ -1488,6 +1488,15 @@ if (container.isSetId()) {
         auto *obj = heap_.object(objRef.id);
         if (!obj) {
             auto stats = heap_.stats();
+            ::havel::error(
+                "[GC] OBJECT_GET unknown object id {} (heap: {} objects "
+                "cached, {} old objects, {} closures, {} collections; "
+                "external roots pinned: {}; gc epoch: {}; current fn: {})",
+                objRef.id, heap_.cachedObjectCount(), heap_.oldObjectCount(),
+                heap_.closures().size(), stats.collections,
+                heap_.externalRootCount(), heap_.gcEpoch(),
+                currentFrame().function ? currentFrame().function->name
+                                        : std::string("?"));
             COMPILER_THROW("OBJECT_GET unknown object id");
         }
 
@@ -1506,9 +1515,6 @@ if (container.isSetId()) {
     }
 if (!modName.empty()) {
       ensureModuleLoaded(modName);
-      write(2, "OBJGET_LAZY mod=", 17);
-      write(2, modName.c_str(), modName.size());
-      write(2, "\n", 1);
       auto git = globals.find(modName);
       if (git != globals.end() && git->second.isObjectId()) {
         auto *proxyObj = heap_.object(git->second.asObjectId());

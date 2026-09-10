@@ -490,7 +490,7 @@ fn ModeBlock(modeName, body, line, col) {
 
 }
 fn ModeDefinition(name, condition, enterBlock, exitBlock) {
- {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock, priority: 0, onEnterFrom: "", onExitTo: "", onEnterFromBlock: null, onExitToBlock: null}
+ {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock, priority: 0, onEnterFrom: "", onExitTo: "", onEnterFromBlock: null, onExitToBlock: null, hotkeys: null}
 
 }
 fn ConfigSection(sectionName, args, pairs, line, col) {

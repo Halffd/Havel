@@ -1144,8 +1144,12 @@ return
 
 }
 if k == "TernaryExpression" {
-  emitExpr(emitter, node.condition)
-  elseJump = bc.emit("JUMP_IF_FALSE", 0)
+   // Conditions are never in tail position (a bare call would become TAIL_CALL)
+   savedTailCond = emitter.inTailPosition
+   emitter.inTailPosition = false
+   emitExpr(emitter, node.condition)
+   emitter.inTailPosition = savedTailCond
+   elseJump = bc.emit("JUMP_IF_FALSE", 0)
   emitExpr(emitter, node.true_expr)
   endJump = bc.emit("JUMP", 0)
   bc.patch_jump(elseJump, bc.instr_count())
@@ -1310,8 +1314,11 @@ arrayIdx = scopeDeclare(loopScope, "__for_result__")
 bc.emit("ARRAY_NEW")
 bc.emit("STORE_VAR", arrayIdx)
 iterableIdx = scopeDeclare(loopScope, "__for_iterable__")
-emitExpr(emitter, node.iterable)
-bc.emit("STRING_PROMOTE")
+	savedTailIter = emitter.inTailPosition
+	emitter.inTailPosition = false
+	emitExpr(emitter, node.iterable)
+	emitter.inTailPosition = savedTailIter
+	bc.emit("STRING_PROMOTE")
 bc.emit("STORE_VAR", iterableIdx)
 iterVarIdx = scopeDeclare(loopScope, "__for_iter__")
 bc.emit("LOAD_VAR", iterableIdx)
@@ -1334,11 +1341,14 @@ bc.emit("LOAD_CONST", bc.add_const(secondSid))
 bc.emit("OBJECT_GET")
 bc.emit("STORE_VAR", bindIdx)
 bc.emit("LOAD_VAR", arrayIdx)
-emitExpr(emitter, node.expr)
-bc.emit("ARRAY_PUSH")
-bc.emit("JUMP", loopTop)
-bc.patch_jump(endJump, bc.instr_count())
-bc.emit("LOAD_VAR", arrayIdx)
+	savedTailMap = emitter.inTailPosition
+	emitter.inTailPosition = false
+	emitExpr(emitter, node.expr)
+	emitter.inTailPosition = savedTailMap
+	bc.emit("ARRAY_PUSH")
+	bc.emit("JUMP", loopTop)
+	bc.patch_jump(endJump, bc.instr_count())
+	bc.emit("LOAD_VAR", arrayIdx)
 oldScope.count = loopScope.count
 emitter.scope = oldScope
 return
@@ -1668,7 +1678,11 @@ if k == "WaitExpression" {
     return
   }
   if k == "IfExpression" {
+    // Conditions are never in tail position (a bare call would become TAIL_CALL)
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, node.condition)
+    emitter.inTailPosition = savedTailCond
     elseJump = bc.emit("JUMP_IF_FALSE", 0)
     if node.then != null {
       emitBlockWithReturn(emitter, node.then)
@@ -1901,6 +1915,8 @@ if iterNameRaw.kind == "Identifier" {
 iterName = iterNameRaw.name
 }
 iterNode = node.iterator
+	savedTailIter = emitter.inTailPosition
+	emitter.inTailPosition = false
 if iterNode.kind == "RangeExpression" {
 emitExpr(emitter, iterNode.start)
 emitExpr(emitter, iterNode.end)
@@ -1915,6 +1931,7 @@ if iterNode.kind != "RangeExpression" {
 emitExpr(emitter, iterNode)
 }
 bc.emit("STRING_PROMOTE")
+	emitter.inTailPosition = savedTailIter
 	// Push loop scope AFTER evaluating iterable
 	oldScope = emitter.scope
     loopScope = Scope(oldScope, null, null)
@@ -1962,8 +1979,11 @@ bc.emit("OBJECT_GET")
       bc.emit("LOAD_CONST", bc.add_const(secondSid))
       bc.emit("OBJECT_GET")
       bc.emit("STORE_VAR", localIdx)
-	// Body
+	// Body (not in tail position)
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	// Loop back
 	bc.emit("JUMP", loopTop)
 	// Exit
@@ -2022,7 +2042,12 @@ isYield = node.expr.kind == "YieldExpression"
 		return
 	}
 	if k == "IfStatement" {
+		// Conditions are never in tail position (a bare call condition in an
+		// else-if of a tail-position if must not become TAIL_CALL)
+		savedTailCond = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.condition)
+		emitter.inTailPosition = savedTailCond
 		elseJump = bc.emit("JUMP_IF_FALSE", 0)
 		elseBranch = node["else"]
 		wasTail = emitter.inTailPosition
@@ -2069,13 +2094,20 @@ isYield = node.expr.kind == "YieldExpression"
         loopTop = bc.instr_count()
         emitter.breakStack.push([])
         emitter.continueStack.push(loopTop)
+	// Loop conditions are never in tail position
+	savedTailCond = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitExpr(emitter, node.condition)
+	emitter.inTailPosition = savedTailCond
 	exitJump = bc.emit("JUMP_IF_FALSE", 0)
 	// Push scope for body
 	oldWhileScope = emitter.scope
 	whileScope = Scope(oldWhileScope, null, null)
 	emitter.scope = whileScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldWhileScope.count = whileScope.count
 	emitter.scope = oldWhileScope
 	bc.emit("JUMP", loopTop)
@@ -2099,10 +2131,17 @@ if k == "DoWhileStatement" {
 	oldScope = emitter.scope
 	doScope = Scope(oldScope, null, null)
 	emitter.scope = doScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldScope.count = doScope.count
 	emitter.scope = oldScope
+	// Loop conditions are never in tail position
+	savedTailCond = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitExpr(emitter, node.condition)
+	emitter.inTailPosition = savedTailCond
 	bc.emit("JUMP_IF_TRUE", loopTop)
 	// Patch break jumps
 	breakTarget = bc.instr_count()
@@ -2119,7 +2158,11 @@ if k == "DoWhileStatement" {
 	if k == "LoopStatement" {
 	// Check for count-based loop: loop N { ... }
 	if node.has("count") {
+		// Count expression is not in tail position
+		savedTailCount = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.count)
+		emitter.inTailPosition = savedTailCount
 		countSlot = scopeDeclare(emitter.scope, "__loop_count__")
 		bc.emit("STORE_VAR", countSlot)
 		counterSlot = scopeDeclare(emitter.scope, "__loop_counter__")
@@ -2135,7 +2178,10 @@ if k == "DoWhileStatement" {
 		bc.emit("LOAD_VAR", countSlot)
 		bc.emit("LT")
 		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		savedTailBody = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitBlock(emitter, node.body)
+		emitter.inTailPosition = savedTailBody
 		oldLoopScope.count = loopScope.count
 		emitter.scope = oldLoopScope
 		bc.emit("LOAD_VAR", counterSlot)
@@ -2163,9 +2209,16 @@ if k == "DoWhileStatement" {
 		oldLoopScope = emitter.scope
 		loopScope = Scope(oldLoopScope)
 		emitter.scope = loopScope
+		// Loop conditions are never in tail position
+		savedTailCond = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.condition)
+		emitter.inTailPosition = savedTailCond
 		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		savedTailBody = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitBlock(emitter, node.body)
+		emitter.inTailPosition = savedTailBody
 		oldLoopScope.count = loopScope.count
 		emitter.scope = oldLoopScope
 		bc.emit("JUMP", loopTop)
@@ -2188,7 +2241,10 @@ if k == "DoWhileStatement" {
 	oldLoopScope = emitter.scope
 	loopScope = Scope(oldLoopScope)
 	emitter.scope = loopScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldLoopScope.count = loopScope.count
 	emitter.scope = oldLoopScope
 	bc.emit("JUMP", loopTop)
@@ -2205,8 +2261,12 @@ if k == "DoWhileStatement" {
 }
 if k == "RepeatStatement" {
 	// repeat count { body } → for i in 0..(count-1) { body }
+	// Count expression is not in tail position
+	savedTailCount = emitter.inTailPosition
+	emitter.inTailPosition = false
 	bc.emit("LOAD_CONST", bc.add_const(0))
 	emitExpr(emitter, node.count)
+	emitter.inTailPosition = savedTailCount
 	bc.emit("LOAD_CONST", bc.add_const(1))
 	bc.emit("SUB")
 	bc.emit("RANGE_NEW")
@@ -2236,7 +2296,11 @@ if k == "RepeatStatement" {
 	bc.emit("LOAD_CONST", bc.add_const(secondSid))
 	bc.emit("OBJECT_GET")
 	bc.emit("STORE_VAR", _dummyIdx)
+	// Loop body is never in tail position
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	bc.emit("JUMP", loopTop)
 	bc.patch_jump(exitJump, bc.instr_count())
 	bc.emit("PUSH_NULL")
@@ -2719,7 +2783,11 @@ bc.emit("CALL", 2)
       emitter.scope = condScope
       bc.func_push()
       condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+      // Conditions are never in tail position
+      savedTailCond = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, node.condition)
+      emitter.inTailPosition = savedTailCond
       bc.emit("RETURN")
       bc.set_local_count(scopeLocalCount(condScope))
       bc.func_pop()
@@ -2808,7 +2876,11 @@ if k == "ModesBlock" {
    bc.emit("LOAD_CONST", mNameIdx)
    bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
    if modeDef.condition != null {
+    // Conditions are never in tail position
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, modeDef.condition)
+    emitter.inTailPosition = savedTailCond
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2818,6 +2890,7 @@ if k == "ModesBlock" {
     enterScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = enterScope
+    bc.func_push()
     enterIdx = bc.func_new("mode_enter_" + modeDef.name, 0, 16)
     if modeDef.enter.kind == "BlockStatement" {
      for s in modeDef.enter.body {
@@ -2830,8 +2903,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(enterScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(enterIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(enterIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2841,6 +2915,7 @@ if k == "ModesBlock" {
     exitScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = exitScope
+    bc.func_push()
     exitIdx = bc.func_new("mode_exit_" + modeDef.name, 0, 16)
     if modeDef.exit.kind == "BlockStatement" {
      for s in modeDef.exit.body {
@@ -2853,8 +2928,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(exitScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(exitIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(exitIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2872,6 +2948,7 @@ if k == "ModesBlock" {
     efScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = efScope
+    bc.func_push()
     efIdx = bc.func_new("mode_onEnterFrom_" + modeDef.name, 1, 16)
     scopeDeclare(efScope, "fromMode")
     if modeDef.onEnterFromBlock.kind == "BlockStatement" {
@@ -2885,8 +2962,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(efScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(efIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(efIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2904,6 +2982,7 @@ if k == "ModesBlock" {
     etScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = etScope
+    bc.func_push()
     etIdx = bc.func_new("mode_onExitTo_" + modeDef.name, 1, 16)
     scopeDeclare(etScope, "toMode")
     if modeDef.onExitToBlock.kind == "BlockStatement" {
@@ -2917,18 +2996,23 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(etScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(etIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(etIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
    }
    bc.emit("CALL", 9)
    bc.emit("POP")
+   if modeDef.hotkeys != null && modeDef.hotkeys.body != null {
+    for s in modeDef.hotkeys.body {
+     emitStmt(emitter, s)
+    }
+   }
   }
  }
- return
- }
+}
   if k == "GoStatement" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
@@ -3140,7 +3224,11 @@ if k == "SwitchStatement" {
 // ============================================================
 
 fn emitIfExpr(emitter, node) {
+    // Conditions are never in tail position (a bare call would become TAIL_CALL)
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, node.condition)
+    emitter.inTailPosition = savedTailCond
     elseJump = bc.emit("JUMP_IF_FALSE", 0)
     elseBranch = node["else"]
     if elseBranch != null {
@@ -3977,7 +4065,11 @@ fn emitMatchExpr(emitter, node) {
   if discs != null {
     i = 0
     while i < #discs {
+      // Discriminants are never in tail position
+      savedTailDisc = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, discs[i])
+      emitter.inTailPosition = savedTailDisc
       slot = scopeDeclare(emitter.scope, "_match_disc_" + str(i))
       bc.emit("STORE_VAR", slot)
       discSlots.push(slot)
@@ -4016,7 +4108,11 @@ fn emitMatchExpr(emitter, node) {
     failJump = bc.emit("JUMP_IF_FALSE", 0)
     // Check guard if present
     if c.guard != null {
+      // Guards are never in tail position
+      savedTailGuard = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, c.guard)
+      emitter.inTailPosition = savedTailGuard
       guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
       // Emit result
       if c.body != null {
@@ -4812,7 +4908,11 @@ fn compileCondHotkeyCondition(emitter, condition) {
   emitter.scope = newScope
   bc.func_push()
   condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+  // Conditions are never in tail position
+  savedTailCond = emitter.inTailPosition
+  emitter.inTailPosition = false
   emitExpr(emitter, condition)
+  emitter.inTailPosition = savedTailCond
   bc.emit("RETURN")
   bc.set_local_count(scopeLocalCount(newScope))
   bc.func_pop()
@@ -4846,9 +4946,13 @@ fn emitWhenBlock(emitter, node) {
   emitter.scope = condScope
   bc.func_push()
   condChunkIdx = bc.func_new("when_condition", 0, 16)
+  // Conditions are never in tail position
+  savedTailCond = emitter.inTailPosition
+  emitter.inTailPosition = false
   if node.condition != null {
     emitExpr(emitter, node.condition)
   }
+  emitter.inTailPosition = savedTailCond
   if node.condition == null {
     bc.emit("LOAD_CONST", bc.add_const(true))
   }

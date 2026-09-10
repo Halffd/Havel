@@ -1206,6 +1206,21 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       return VMExecutionResult::Suspended();
     }
 
+    // A suspension already transferred into last_suspension_* by a nested
+    // runDispatchLoop inside a host wrapper (module-fn sleep: the wrapper
+    // consumed suspension_requested_ and propagated (reason, context)
+    // into last_*). Without this check, executeOneStep reports a normal
+    // yield, the engine re-queues the goroutine, and it resumes at the
+    // NEXT instruction — the sleep is silently dropped (async_mod.sleep
+    // measured ~0ms via namespace calls).
+    if (last_suspension_reason_ != 0 && current_fiber) {
+      void *context = last_suspension_context_;
+      auto reason = static_cast<SuspensionReason>(last_suspension_reason_);
+      current_fiber->suspend(reason, context);
+      current_executing_fiber_ = nullptr;
+      return VMExecutionResult::Suspended();
+    }
+
     // Return normal yield (instruction completed successfully)
     current_executing_fiber_ = nullptr;
     return VMExecutionResult::Yield(nullptr);
@@ -2204,7 +2219,7 @@ slow_path:
           }
         }
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          // fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d frames=%zu\n", (int)last_suspension_reason_, frame_count_);
+          fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d ctx=%p frames=%zu\n", (int)last_suspension_reason_, last_suspension_context_, frame_count_);
         }
         break;
       }
@@ -5935,13 +5950,40 @@ load_from_source:
   // during __main__ (e.g., 'flags = DebugFlags()').
   for (const auto &[func_name, func_index] : chunk->getFunctionIndices()) {
     if (globals.find(func_name) == globals.end()) {
+      const auto *func = chunk->getFunction(func_index);
+      // Build upvalues for the closure from the function's upvalue descriptors
+      std::vector<std::shared_ptr<GCHeap::UpvalueCell>> closureUpvalues;
+      if (func && !func->upvalues.empty()) {
+        closureUpvalues.reserve(func->upvalues.size());
+        for (const auto &desc : func->upvalues) {
+          if (desc.captures_local) {
+            uint32_t abs = toAbsoluteLocal(desc.index);
+            ensureLocalIndex(abs);
+            auto open_it = open_upvalues.find(abs);
+            if (open_it == open_upvalues.end()) {
+              auto cell = std::make_shared<GCHeap::UpvalueCell>();
+              cell->is_open = true;
+              cell->open_index = desc.index;
+              cell->locals_base = 0; // module-level, frame locals_base is 0
+              open_upvalues.emplace(abs, cell);
+              closureUpvalues.push_back(std::move(cell));
+            } else {
+              closureUpvalues.push_back(open_it->second);
+            }
+          } else {
+            // Upvalue from parent closure - module top-level functions don't have parent closures
+            // This should not happen for module top-level functions, but handle gracefully
+            closureUpvalues.push_back(nullptr);
+          }
+        }
+      }
       auto closureRef = heap_.allocateClosure(
           GCHeap::RuntimeClosure{.function_index = func_index,
                                  .chunk_index = 0,
                                  .chunk = chunk.get(),
                                  .chunk_ref = chunk,
                                  .module_globals = nullptr,
-                                 .upvalues = {}});
+                                 .upvalues = std::move(closureUpvalues)});
       globals[func_name] = Value::makeClosureId(closureRef.id);
       // std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " <<
       // func_index

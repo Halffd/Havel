@@ -1016,10 +1016,10 @@ Token Lexer::scanIdentifier() {
 }
 
 Token Lexer::scanHotkey() {
-std::string hotkey;
-size_t safetyPos [[maybe_unused]] = position;
-// Include the already consumed character
-hotkey += source[position - 1];
+    std::string hotkey;
+    size_t safetyPos [[maybe_unused]] = position;
+    // Include the already consumed character
+    hotkey += source[position - 1];
 
   // Continue consuming characters that are part of a hotkey until a terminator
   while (!isAtEnd()) {
@@ -1044,6 +1044,11 @@ hotkey += source[position - 1];
           hotkey += advance();
         }
         continue;
+      }
+      // If hotkey is just a single modifier like "+" followed by whitespace
+      // and then letters, treat it as an operator not a hotkey modifier
+      if (hotkey.size() == 1 && (hotkey[0] == '+' || hotkey[0] == '-' || hotkey[0] == '^' || hotkey[0] == '!' || hotkey[0] == '#' || hotkey[0] == '@' || hotkey[0] == '|' || hotkey[0] == '*' || hotkey[0] == '&' || hotkey[0] == ':' || hotkey[0] == '~' || hotkey[0] == '$' || hotkey[0] == '.' || hotkey[0] == ',' || hotkey[0] == '/')) {
+        break;
       }
       break;
     }
@@ -1389,6 +1394,31 @@ std::vector<Token> Lexer::tokenize() {
         havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
+    }
+
+    // Compute isStatementStart for operator checks
+    bool isStatementStart2 = currentTokens.empty();
+    if (!isStatementStart2) {
+        TokenType prevType2 = currentTokens.back().type;
+        isStatementStart2 = (prevType2 == TokenType::NewLine ||
+                            prevType2 == TokenType::Semicolon ||
+                            prevType2 == TokenType::Arrow ||
+                            prevType2 == TokenType::OpenBrace ||
+                            prevType2 == TokenType::CloseBrace);
+    }
+
+    // Handle "+ whitespace alnum" or "- whitespace alnum" at statement start - treat as binary operator
+    if ((c == '+' || c == '-') && isStatementStart2) {
+        size_t look = position;
+        // Must have at least one whitespace between operator and alnum
+        if (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
+            while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
+            if (look < source.size() && std::isalnum(static_cast<unsigned char>(source[look]))) {
+                // This is "+ alnum" or "- alnum" at statement start - treat as binary operator
+                currentTokens.push_back(makeToken(std::string(1, c), c == '+' ? TokenType::Plus : TokenType::Minus));
+                continue;
+            }
+        }
     }
 
 

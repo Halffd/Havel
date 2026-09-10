@@ -3123,17 +3123,23 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     return;
   }
 
-  if (statement.isFileImport) {
+if (statement.isFileImport) {
     uint32_t path_sid = addStringConstant(statement.filePath);
     emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
     emit(OpCode::IMPORT);
+
+    // Handle wildcard import: use * from "module" or use module.*
+    if (statement.isWildcard) {
+      emit(OpCode::IMPORT_WILDCARD);
+      return;
+    }
 
     if (statement.isNamedImport && !statement.importNames.empty()) {
       for (size_t i = 0; i < statement.importNames.size(); ++i) {
         const auto &name = statement.importNames[i];
         const auto &alias = (i < statement.importAliases.size())
-                                ? statement.importAliases[i]
-                                : name;
+                            ? statement.importAliases[i]
+                            : name;
         if (name == "*" && statement.isWildcard) {
           emit(OpCode::IMPORT_WILDCARD);
           return;
@@ -6235,9 +6241,159 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         emit(OpCode::CALL, Value(totalArgs));
         in_tail_position_ = saved_tail_position;
             return;
- }
+}
 
- if (binding->kind == ResolvedBindingKind::HostFunction) {
+    if (binding->kind == ResolvedBindingKind::Upvalue) {
+        // Upvalue (captured variable) - load via LOAD_UPVALUE
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+
+        // Compile args, expanding spread
+        uint32_t totalArgs = 0;
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            totalArgs++;
+            continue;
+          }
+          if (arg->kind == ast::NodeType::SpreadExpression) {
+            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+              for (const auto &elem : arrLit.elements) {
+                if (elem) {
+                  compileExpression(*elem);
+                  totalArgs++;
+                }
+              }
+            } else {
+              // Dynamic spread: compile target without SPREAD opcode
+              compileExpression(*spread.target);
+              hasDynamicSpread = true;
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        }
+        if (hasKwargs) {
+          if (hasDynamicSpread) {
+            COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
+          }
+          emit(OpCode::OBJECT_NEW);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+          { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+          for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+
+        in_tail_position_ = saved_tail_position;
+        if (hasDynamicSpread) {
+          uint32_t lit_before = 0;
+          uint32_t lit_after = 0;
+          bool found_spread = false;
+          for (const auto &arg : expression.args) {
+            if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+              found_spread = true;
+            } else if (!found_spread) {
+              lit_before++;
+            } else {
+              lit_after++;
+            }
+          }
+          emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+          return;
+        }
+        if (in_tail_position_ && try_depth_ == 0) {
+          emit(OpCode::TAIL_CALL, totalArgs);
+          emit(OpCode::RETURN);
+          emitted_tail_call_ = true;
+        } else {
+          emit(OpCode::CALL, totalArgs);
+        }
+        return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::Local) {
+        // Local variable - load via LOAD_VAR
+        emit(OpCode::LOAD_VAR, binding->slot);
+
+        // Compile args, expanding spread
+        uint32_t totalArgs = 0;
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            totalArgs++;
+            continue;
+          }
+          if (arg->kind == ast::NodeType::SpreadExpression) {
+            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+              for (const auto &elem : arrLit.elements) {
+                if (elem) {
+                  compileExpression(*elem);
+                  totalArgs++;
+                }
+              }
+            } else {
+              // Dynamic spread: compile target without SPREAD opcode
+              compileExpression(*spread.target);
+              hasDynamicSpread = true;
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        }
+        if (hasKwargs) {
+          if (hasDynamicSpread) {
+            COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
+          }
+          emit(OpCode::OBJECT_NEW);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+          { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+          for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+
+        in_tail_position_ = saved_tail_position;
+        if (hasDynamicSpread) {
+          uint32_t lit_before = 0;
+          uint32_t lit_after = 0;
+          bool found_spread = false;
+          for (const auto &arg : expression.args) {
+            if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+              found_spread = true;
+            } else if (!found_spread) {
+              lit_before++;
+            } else {
+              lit_after++;
+            }
+          }
+          emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+          return;
+        }
+        if (in_tail_position_ && try_depth_ == 0) {
+          emit(OpCode::TAIL_CALL, totalArgs);
+          emit(OpCode::RETURN);
+          emitted_tail_call_ = true;
+        } else {
+          emit(OpCode::CALL, totalArgs);
+        }
+        return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::HostFunction) {
  // Host function - call via LOAD_GLOBAL + CALL, expanding spread args
  uint32_t strId = addStringConstant(binding->name);
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));

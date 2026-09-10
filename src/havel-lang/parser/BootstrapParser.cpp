@@ -1518,8 +1518,16 @@ case TokenType::Timeout:
     }
     return parseTimeoutExpression();
 
-    case TokenType::Async:
+    case TokenType::Async: {
+        // async is a contextual keyword: only a keyword when starting an async expression
+        // Valid forms: async { ... }, async fn ..., async (expr)
+        // In all other contexts (e.g., use async, str(async), async.method()), treat as identifier
+        TokenType nextType = at().type;
+        if (nextType == TokenType::OpenBrace || nextType == TokenType::Fn || nextType == TokenType::OpenParen) {
+            return parseAsyncExpression();
+        }
         return makeNodeAt<ast::Identifier>(token, token.value);
+    }
 
     // Coroutines
     case TokenType::Yield:
@@ -11433,6 +11441,105 @@ std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
   expr->line = channelToken.line;
   expr->column = channelToken.column;
   return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseAsyncExpression() {
+  auto asyncToken = at();
+  // Note: 'async' token was already consumed by the caller
+  
+  // async { ... } - async block
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after async block");
+      return nullptr;
+    }
+    advance(); // consume '}'
+    auto expr = makeNode<ast::AsyncExpression>(std::move(blockStmt));
+    expr->line = asyncToken.line;
+    expr->column = asyncToken.column;
+    return expr;
+  }
+  
+  // async fn ... - async function
+  if (at().type == havel::TokenType::Fn) {
+    advance(); // consume 'fn'
+    
+    // Parse function signature
+    std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      while (at().type != havel::TokenType::CloseParen) {
+        if (at().type == havel::TokenType::NewLine) { advance(); continue; }
+        if (at().type == havel::TokenType::Comma) { advance(); continue; }
+        
+        auto ident = makeNode<ast::Identifier>(at().value);
+        auto param = std::make_unique<ast::FunctionParameter>(std::move(ident));
+        advance(); // consume parameter name
+        
+        // Optional type annotation
+        if (at().type == havel::TokenType::Colon) {
+          advance(); // consume ':'
+          // For now, skip type annotation parsing
+        }
+        
+        params.push_back(std::move(param));
+        
+        if (at().type == havel::TokenType::Comma) {
+          advance(); // consume ','
+        }
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after parameter list");
+        return nullptr;
+      }
+      advance(); // consume ')'
+    }
+    
+    // Parse function body
+    std::unique_ptr<ast::BlockStatement> body;
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance();
+      auto blockStmt = makeNode<ast::BlockStatement>();
+      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+        if (at().type == havel::TokenType::NewLine) { advance(); continue; }
+        blockStmt->body.push_back(parseStatement());
+      }
+      if (at().type != havel::TokenType::CloseBrace) {
+        failAt(at(), "Expected '}' after function body");
+        return nullptr;
+      }
+      advance(); // consume '}'
+      body = std::move(blockStmt);
+    } else {
+      // fn expression without body (forward declaration)
+      failAt(at(), "Async function must have a body");
+      return nullptr;
+    }
+    
+    auto fnExpr = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(fnExpr));
+    auto expr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
+    expr->line = asyncToken.line;
+    expr->column = asyncToken.column;
+    return expr;
+  }
+  
+  // async (expr) - wrap expression in async
+  auto expr = parseExpression();
+  auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(expr));
+  auto asyncExpr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
+  asyncExpr->line = asyncToken.line;
+  asyncExpr->column = asyncToken.column;
+  return asyncExpr;
 }
 
 void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {

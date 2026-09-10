@@ -966,7 +966,15 @@ op_CALL: {
             // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d executing_fiber=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
         }
         // If it's a SLEEP suspension, handle it immediately like the periodic check does
-        if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+        // Only when this is a FRESH request: a module-fn wrapper's dispatch
+        // loop already transferred suspension_reason_/context_ into
+        // last_suspension_* (VM.cpp ~2032) and cleared suspension_context_;
+        // re-copying suspension_context_ here would overwrite the real
+        // deadline-ms (transferred intact) with nullptr -> the goroutine
+        // parks with ms=0 and wakes immediately (async_mod.sleep(50)
+        // measured ~4ms).
+        if (suspension_requested_ &&
+            suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
             if (scheduler_ && current_executing_fiber_) {
                 // For SLEEP, the IP was already advanced before the CALL (at start of op_CALL)
                 // No need to adjust IP further

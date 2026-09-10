@@ -3608,6 +3608,10 @@ case havel::TokenType::Struct:
       // Check if this is a simple mode block or full mode definition
       // Full definition: mode name [priority N] { condition/enter/exit/on ... }
       // Simple block: mode name { statements }
+      // String-named modes are always full definitions (modern syntax);
+      // identifier-named modes are simple blocks unless the body starts
+      // with a definition keyword.
+      bool modeNameIsString = (at(1).type == havel::TokenType::String);
       size_t savedPos = position;
       advance();
       advance(); // skip mode, name
@@ -3636,6 +3640,7 @@ case havel::TokenType::Struct:
 // Check if this is a full definition (starts with
         // condition/enter/exit/on/hotkeys)
         bool isFullDefinition =
+            modeNameIsString ||
             ((at().type == havel::TokenType::Identifier &&
               (at().value == "condition" || at().value == "enter" ||
                at().value == "exit" || at().value == "on" ||

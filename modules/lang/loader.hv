@@ -232,7 +232,7 @@ fn loaderResolve(state, modulePath) {
 // AST helpers — collect export names from top-level declarations
 // ============================================================
 
-fn collectExports(ast) {
+fn collectExports(ast, state) {
     // Walk top-level body, collect fn/val/var names not prefixed with _
     names = []
     body = ast.body
@@ -250,6 +250,50 @@ fn collectExports(ast) {
             nm = stmt.name
             if !nm.startsWith("_") {
                 names.push(nm)
+            }
+        }
+        if stmt.kind == "UseStatement" && stmt.isNamedImport == true {
+            // Named imports: use { a, b as c } from "module"
+            // These create local bindings that should be re-exported
+            iNames = stmt.importNames
+            iAliases = stmt.importAliases
+            if iNames != null {
+                ii = 0
+                while ii < #iNames {
+                    name = iNames[ii]
+                    if name == "" { ii = ii + 1; continue }
+                    alias = name
+                    if iAliases != null {
+                        if ii < #iAliases {
+                            alias = iAliases[ii]
+                        }
+                    }
+                    if alias != "" && !alias.startsWith("_") {
+                        names.push(alias)
+                    }
+                    ii = ii + 1
+                }
+            }
+        }
+        if stmt.kind == "UseStatement" && stmt.isWildcard == true {
+            // Wildcard import: use * from "module"
+            // The source module should already be loaded (dependencies loaded first)
+            // so we can get its exportNames from the cache
+            modPath = stmt.filePath
+            if modPath == null { modPath = stmt.module }
+            if modPath != null && state != null {
+                // Resolve the canonical path for the dependency
+                canonical = loaderResolve(state, modPath)
+                if canonical != null && state.cache[canonical] != null {
+                    record = state.cache[canonical]
+                    if record != null && record.exportNames != null {
+                        for en in record.exportNames {
+                            if !en.startsWith("_") {
+                                names.push(en)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -270,6 +314,14 @@ fn collectUseDeps(ast) {
             }
             if stmt.isFileImport != true && stmt.module != null {
                 // bare use: use math, use string — these are stdlib modules
+                deps.push(stmt.module)
+            }
+            if stmt.isNamedImport == true && stmt.module != null {
+                // named imports: use { a, b } from "module"
+                deps.push(stmt.module)
+            }
+            if stmt.isWildcard == true && stmt.module != null {
+                // wildcard imports: use module.* or use * from "module"
                 deps.push(stmt.module)
             }
         }
@@ -340,7 +392,7 @@ for dep in deps {
 }
 
 // 7. Collect export names
-exportNames = collectExports(ast)
+exportNames = collectExports(ast, state)
 
 // 8. Create a fresh emitter for this module, with func_idx
 //    starting at bc.func_count() so function indices don't collide
@@ -363,10 +415,21 @@ entryName = "__init_" + safeName
     // 12. Build exports descriptor
     // The module's top-level names are now in VM globals.
     // Consumers access them via LOAD_GLOBAL at runtime.
+    // Export all non-private globals (matching C++ VM behavior in loadModule)
     exports = {}
+    // Get all globals by iterating through the VM's global map
+    // We can't directly iterate globals from Havel, so we use exportNames
+    // for explicitly declared names, and also check for wildcard imports
     for nm in exportNames {
         exports[nm] = bc.get_global(nm)
     }
+    // Also include any other non-private globals that might have been added
+    // by wildcard imports (use * from "module")
+    // Note: We can't enumerate globals from Havel, so we rely on the fact
+    // that wildcard imports create bindings in the module's global scope
+    // which should be captured by exportNames if collectExports is fixed.
+    // For now, the C++ VM will also export all non-private globals when
+    // the module is loaded through loadModule.
 
     // 12b. Store exports object in VM globals under the module path
     // so the IMPORT opcode can find it when the consumer's bytecode runs

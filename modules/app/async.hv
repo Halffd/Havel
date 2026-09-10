@@ -4,4 +4,5 @@
 // wrappers here: a function body resolving its own name recurses
 // infinitely (stack overflow at call depth 16384), which used to make
 // sleep()/go()/etc. hang or die when reached through `use async`.
-use { debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker, sleep, go, await } from "app/async_mod"
+use { sleep, go, debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker } from "async_mod"
+fn await(x) { x }

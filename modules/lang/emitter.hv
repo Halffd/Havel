@@ -2925,6 +2925,11 @@ if k == "ModesBlock" {
    }
    bc.emit("CALL", 9)
    bc.emit("POP")
+   if modeDef.hotkeys != null && modeDef.hotkeys.body != null {
+    for s in modeDef.hotkeys.body {
+     emitStmt(emitter, s)
+    }
+   }
   }
  }
  return

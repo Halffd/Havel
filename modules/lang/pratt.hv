@@ -3642,6 +3642,10 @@ fn parseOnKeyDownOrKeyUpStatement() {
  c = current().col
  advance() // consume 'mode'
  skipNewlines()
+ // String-named modes are always full definitions (modern syntax);
+ // identifier-named modes are simple blocks unless the body starts
+ // with a definition keyword. Mirrors BootstrapParser.cpp dispatch.
+ nameIsString = current().tid == TID.String
  name = advance().value
  skipNewlines()
  // Parse optional priority
@@ -3660,7 +3664,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   firstTok = current()
   pos = savedPos
   syncCur()
-  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on" || firstTok.value == "hotkeys")) || firstTok.tid == TID.On
+  isFullDefinition = nameIsString || (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on" || firstTok.value == "hotkeys")) || firstTok.tid == TID.On
   if isFullDefinition {
    return parseModeFullDefinition(name, priority, l, c)
   }

@@ -28,7 +28,9 @@
 #include "dl/Loader.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "../../stdlib/LogModule.hpp"
@@ -6873,50 +6875,77 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 }
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
-    // Replace any existing globals section(s) instead of blindly
-    // appending. The old "ab"-only mode stacked a fresh
-    // [globals][GLBS][size] section on every cold module load, so after
-    // N runs the .hvc carried N nested sections (observed 78 sections /
-    // 37MB dead weight on lang.scope.hvc) while readers only look at
-    // the last one. Walk the trailing sections back to the chunk
-    // boundary, truncate there, then append this run's section once.
+    // Rewrite the .hvc as [chunk][globals-section] in one atomic
+    // temp-file rename, under an advisory lock. History: the old
+    // "ab"-only mode stacked one [globals][GLBS][size] section per cold
+    // load (268 nested sections / 26MB dead weight observed), and a
+    // truncate-then-append fix still raced when concurrent processes
+    // cold-loaded the same module (the test suite runs 4 workers): one
+    // process truncated while another was mid-append, leaving a second
+    // section plus garbage after it. The section start is found by
+    // first-marker arithmetic (chunk_end = firstMarker - size@marker),
+    // which also crosses the marker-less partial sections interrupted
+    // writes leave behind; then the whole surviving chunk plus this
+    // run's section is written via rename so readers never observe a
+    // torn file.
     std::error_code ec;
+    // Serialize writers on the target file. The lock file is a sibling
+    // .lock path so it never aliases the cache file itself.
+    const std::string lockPath = hvcPath + ".lock";
+    int lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_EX);
+    }
+
+    std::vector<uint8_t> existing;
+    bool haveExisting = false;
     if (std::filesystem::exists(hvcPath, ec) && !ec) {
         std::ifstream probe(hvcPath, std::ios::binary | std::ios::ate);
         if (probe) {
-            std::streamsize end = probe.tellg();
-            bool truncated = false;
-            while (end >= 8) {
-                probe.seekg(end - 8, std::ios::beg);
-                char m[4] = {0};
-                uint32_t s = 0;
-                probe.read(m, 4);
-                probe.read(reinterpret_cast<char *>(&s), 4);
-                if (!probe || m[0] != 'G' || m[1] != 'L' ||
-                    m[2] != 'B' || m[3] != 'S') {
-                    break;
-                }
-                const std::streamsize secLen =
-                    static_cast<std::streamsize>(s) + 8;
-                if (secLen <= 0 || secLen > end) break;
-                end -= secLen;
-                truncated = true;
-            }
-            if (truncated) {
-                std::filesystem::resize_file(
-                    hvcPath, static_cast<std::uintmax_t>(end), ec);
-                if (ec) {
-                    ::havel::debug(
-                        "[writeGlobalsToHvc] truncate failed for {}: {}",
-                        hvcPath, ec.message());
-                }
+            const std::streamsize fileSize = probe.tellg();
+            if (fileSize > 0) {
+                existing.resize(static_cast<size_t>(fileSize));
+                probe.seekg(0, std::ios::beg);
+                probe.read(reinterpret_cast<char *>(existing.data()),
+                           fileSize);
+                haveExisting = probe.good() || probe.eof();
             }
         }
     }
-    FILE* file = fopen(hvcPath.c_str(), "ab");
-    if (file) {
-        fwrite(globalsData.data(), 1, globalsData.size(), file);
-        fclose(file);
+
+    std::vector<uint8_t> out;
+    if (haveExisting) {
+        const size_t chunkEnd =
+            ValueSerializer::chunkDataEnd(
+                std::span<const uint8_t>(existing));
+        if (chunkEnd > 0 && chunkEnd <= existing.size()) {
+            out.assign(existing.begin(), existing.begin() + chunkEnd);
+        } else {
+            out = std::move(existing);
+        }
+    }
+    out.insert(out.end(), globalsData.begin(), globalsData.end());
+
+    const std::string tmpPath =
+        hvcPath + ".tmp." +
+        std::to_string(static_cast<uint64_t>(::getpid()));
+    {
+        std::ofstream tmp(tmpPath, std::ios::binary | std::ios::trunc);
+        if (tmp) {
+            tmp.write(reinterpret_cast<const char *>(out.data()),
+                      static_cast<std::streamsize>(out.size()));
+            tmp.flush();
+        }
+    }
+    std::filesystem::rename(tmpPath, hvcPath, ec);
+    if (ec) {
+        ::havel::debug("[writeGlobalsToHvc] rename failed for {}: {}",
+                       hvcPath, ec.message());
+        std::filesystem::remove(tmpPath, ec);
+    }
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_UN);
+        ::close(lockFd);
     }
 }
 

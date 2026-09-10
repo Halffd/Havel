@@ -369,6 +369,17 @@ public:
   };
   static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
 
+  // Byte length of the serialized-chunk section of an .hvc (everything
+  // before the FIRST [globals][GLBS][size] trailer section). The first
+  // appended section's marker sits exactly at chunk_end + globals_size,
+  // so chunk_end = firstMarker - size@firstMarker - this crosses the
+  // marker-less partial sections that interrupted writes leave behind,
+  // which a backward walk from EOF can never get past (observed: a
+  // lang.*.hvc stuck at 37MB of unreachable history because every
+  // truncated process left a gap). Returns 0 when the boundary cannot
+  // be established; callers fall back to their own heuristics.
+  static size_t chunkDataEnd(std::span<const uint8_t> data);
+
 private:
   std::string valueToJson(const Value& value);
   Value jsonToValue(const std::string& json);

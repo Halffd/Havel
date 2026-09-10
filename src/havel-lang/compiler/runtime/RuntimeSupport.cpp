@@ -1,5 +1,6 @@
 #include "havel-lang/errors/ErrorSystem.h"
 #include "RuntimeSupport.hpp"
+#include <algorithm>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -1244,15 +1245,13 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 // Returns the effective chunk data size, excluding a trailing
 // [globals payload][GLBS][globals_size:u32] section appended by
 // VM::writeGlobalsToHvc. Files without the trailer parse unchanged.
+// Uses the FIRST marker's arithmetic (chunk_end = firstMarker - size),
+// which also crosses the marker-less partial sections interrupted
+// writes leave behind; a backward walk from EOF stops at the first
+// gap and would keep parsing garbage as chunk data.
 static size_t chunkDataSizeExcludingGlobalsTrailer(const uint8_t* data, size_t size) {
-  if (size < 8) return size;
-  const uint8_t* tail = data + size - 8;
-  if (std::memcmp(tail, "GLBS", 4) != 0) return size;
-  uint32_t gsize = 0;
-  std::memcpy(&gsize, tail + 4, sizeof(gsize));
-  uint64_t total = static_cast<uint64_t>(gsize) + 8;
-  if (total > size) return size; // corrupt trailer — fall back to full parse
-  return size - static_cast<size_t>(total);
+  return ValueSerializer::chunkDataEnd(
+      std::span<const uint8_t>(data, size));
 }
 
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string& filePath) {
@@ -1316,6 +1315,26 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
     size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data.data(), data.size());
     return deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
   }
+}
+
+size_t ValueSerializer::chunkDataEnd(std::span<const uint8_t> data) {
+  if (data.size() < 8) return data.size();
+  // No trailer at all: the whole span is chunk data (or a corrupt mix
+  // we cannot reason about - caller treats it as full size).
+  const auto firstIt =
+      std::search(data.begin(), data.end(),
+                  reinterpret_cast<const uint8_t *>("GLBS"),
+                  reinterpret_cast<const uint8_t *>("GLBS") + 4);
+  if (firstIt == data.end()) return data.size();
+  const size_t firstMarker = static_cast<size_t>(firstIt - data.begin());
+  if (firstMarker + 8 > data.size()) return data.size();
+  uint32_t gsize = 0;
+  std::memcpy(&gsize, data.data() + firstMarker + 4, sizeof(gsize));
+  // Marker must sit at chunk_end + globals_size.
+  if (static_cast<uint64_t>(gsize) + 8 > firstMarker) return data.size();
+  const size_t chunkEnd = firstMarker - gsize;
+  if (chunkEnd == 0) return data.size();
+  return chunkEnd;
 }
 
 ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint8_t> data) {

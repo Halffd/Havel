@@ -1,0 +1,29 @@
+// test_exit_code: exit(code) must halt the script immediately and
+// propagate the code as the process exit status.
+// Regression: exit() was a no-op in --run mode — the script kept
+// executing past it and the launcher always returned 0 (headless
+// strategies hardcoded return 0; the VM only checked exit_requested_
+// every 4096/8191 instructions).
+// How: spawn a child havel run of a tiny script that calls exit(1) then
+// prints AFTER-EXIT. The child must return rc=1 and never print.
+// Mirrors the pipeline it runs under (native or self-hosted).
+
+ppid = "$" + "PPID"
+exe = runCapture("readlink -f /proc/" + ppid + "/exe").trim()
+selfPath = runCapture("tr '\\0' '\\n' < /proc/" + ppid + "/cmdline | grep -A1 -- '--self-hosted-path' | tail -1").trim()
+
+childFile = "/tmp/opencode/havel_exit_child_" + str(sys.pid) + ".hv"
+fs.append(childFile, "exit(1)\nprint(\"AFTER-EXIT\")\n")
+
+childCmd = exe
+if selfPath != "" {
+    childCmd = childCmd + " --self-hosted-path " + selfPath
+}
+childCmd = childCmd + " --run " + childFile
+child = process.run(childCmd)
+
+fs.delete(childFile)
+
+assert(child.exitCode == 1, "exit code not propagated: rc=" + str(child.exitCode))
+assert(child.stdout.find("AFTER-EXIT") == -1, "script continued after exit(): stdout=" + child.stdout)
+print("PASS exit_code")

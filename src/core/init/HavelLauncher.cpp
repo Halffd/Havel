@@ -746,7 +746,11 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
@@ -850,6 +854,8 @@ public:
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
       auto t2 = std::chrono::high_resolution_clock::now();
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
       auto t3 = std::chrono::high_resolution_clock::now();
 
@@ -866,6 +872,8 @@ public:
              "total={:.1f}ms",
              init_ms, exec_ms, shut_ms, total_ms);
       }
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Bytecode error: {}", e.what());
@@ -1221,7 +1229,11 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(launcherCode, "__main__", launcherPath);
       havel::startup_timing_report("engine.execute", exec_t0);
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Self-hosted error: {}", e.what());

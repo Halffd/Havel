@@ -618,8 +618,8 @@ uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
 
   public:
     // Epoch accessor mirrored from main worktree (VMCollections OBJECT_GET
-    // diagnostic reports "gc epoch" via GCHeap::gcEpoch()).
-    uint64_t gcEpoch() const { return collections_; }
+    // diagnostic reports "gc epoch" via GCHeap::gcEpoch()). gcEpoch() is
+    // declared once above (line ~405); do not redeclare here.
 
   private:
     IncrementalState gc_state_ = IncrementalState::Idle;

@@ -3719,6 +3719,17 @@ fn emitUseStatement(emitter, node) {
     }
   }
 
+  // Form 2: use * from "module" or use module.* — wildcard (check BEFORE Form 1)
+  if node.isWildcard == true {
+    path = node.filePath
+    if path == null { path = node.module }
+    pathIdx = bc.add_const(path)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    bc.emit("IMPORT_WILDCARD")
+    return
+  }
+
   // Form 1: use mod1, mod2 — bare module names, import each as whole object
   if node.moduleNames != null {
     if node.isFileImport != true {
@@ -3732,17 +3743,6 @@ fn emitUseStatement(emitter, node) {
       }
       return
     }
-  }
-
-  // Form 2: use * from "module" or use module.* — wildcard
-  if node.isWildcard == true {
-    path = node.filePath
-    if path == null { path = node.module }
-    pathIdx = bc.add_const(path)
-    bc.emit("LOAD_CONST", pathIdx)
-    bc.emit("IMPORT")
-    bc.emit("IMPORT_WILDCARD")
-    return
   }
 
   // Form 3: use { a, b as c } from "module" — named imports

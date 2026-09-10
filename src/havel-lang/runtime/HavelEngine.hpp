@@ -1152,6 +1152,9 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // For SLEEP, set the deadline on the wait_handle
         if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
           auto ms = reinterpret_cast<intptr_t>(lastContext);
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            std::cerr << "[SLEEPDBG] park gid=" << g->id << " ms=" << ms << " lastReason=" << (int)lastReason << "\n";
+          }
           {
             std::lock_guard wlock(g->wait_handle_mutex_);
             g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;

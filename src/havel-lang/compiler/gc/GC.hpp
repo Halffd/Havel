@@ -395,6 +395,14 @@ const ::havel::Interval* interval(uint32_t id) const;
     uint64_t totalAllocations() const {
         return total_allocations_.load(std::memory_order_relaxed);
     }
+
+    // GC epoch for identity-sensitive caches outside the heap (the JIT's
+    // inline caches in JitRuntimeBridges): heap object ids are RECYCLED
+    // after a sweep, so a cache keyed on (obj_id, shape_version, key)
+    // survives an id reuse and serves the dead object's stale entry.
+    // Bumped once per completed collection; caches fold it into their key
+    // to self-invalidate across GC cycles.
+    uint64_t gcEpoch() const { return collections_; }
   uint64_t cachedObjectCount() const { return cached_object_count_.load(std::memory_order_relaxed); }
   size_t oldArrayCount() const { return old_arrays_.size(); }
   size_t oldObjectCount() const { return old_objects_.size(); }
@@ -597,6 +605,14 @@ uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
     std::vector<bool> external_roots_active_;
     uint64_t next_external_root_id_ = 1;
     uint64_t collections_ = 0;
+
+    // GC epoch for identity-sensitive caches outside the heap (the JIT's
+    // inline caches in JitRuntimeBridges): heap object ids are RECYCLED
+    // after a sweep, so a cache keyed on (obj_id, shape_version, key)
+    // survives an id reuse and serves the DEAD object's stale entry. Bump
+    // the epoch every completed collection so caches can fold it into
+    // their key and self-invalidate across GC cycles.
+
     uint64_t last_pause_ns_ = 0;
     uint64_t total_recovered_ = 0;
 

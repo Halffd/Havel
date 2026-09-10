@@ -724,44 +724,48 @@ if (instanceObj) {
         all_args.insert(all_args.end(), args2.begin(), args2.end());
     }
 
-    if (found_host) {
+if (found_host) {
         if (host_func_idx < host_function_names_.size()) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
                 Value result = fnIt->second(all_args);
                 pushStack(result);
-    if (hot_func_cb_) {
-      if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
-        currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
-      }
-    }
-        } else {
-          pushStack(Value::makeNull());
-        }
+                if (hot_func_cb_) {
+                  if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
+                    currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
+                  }
+                }
+            } else {
+              pushStack(Value::makeNull());
+            }
+          } else {
+            pushStack(Value::makeNull());
+          }
       } else {
-        pushStack(Value::makeNull());
+          // Call VM function
+          doCall(vm_func, all_args);
       }
-    } else {
-        // Call VM function
-        doCall(vm_func, all_args);
-    }
 
-    // Check for suspension after host function call (e.g., channel.receive suspending).
-    // NOTE: do NOT advance the frame IP here. Every caller of executeInstruction
-    // already advances past the current instruction when the frame IP is still
-    // pointing at it:
-    //   - fast path op_default pre-advances frm.ip before calling executeInstruction,
-    //     so an advance here double-advances (37 -> 38 -> 39) and the suspended
-    //     fiber resumes at the WRONG instruction with a mismatched stack
-    //     (observed: "Stack underflow in function '__main__' at IP 41").
-    //   - slow path runDispatchLoop and executeOneStep advance conditionally
-    //     (frame.ip == saved_ip) in their suspension handling, which covers
-    //     this instruction too.
-    if (suspension_requested_) {
-        break; // Return to caller to process suspension
-    }
-    break;
+      // Check for suspension after host function call (e.g., channel.receive suspending).
+      // NOTE: do NOT advance the frame IP here. Every caller of executeInstruction
+      // already advances past the current instruction when the frame IP is still
+      // pointing at it:
+      //   - fast path op_default pre-advances frm.ip before calling executeInstruction,
+      //     so an advance here double-advances (37 -> 38 -> 39) and the suspended
+      //     fiber resumes at the WRONG instruction with a mismatched stack
+      //     (observed: "Stack underflow in function '__main__' at IP 41").
+      //   - slow path runDispatchLoop and executeOneStep advance conditionally
+      //     (frame.ip == saved_ip) in their suspension handling, which covers
+      //     this instruction too.
+      if (suspension_requested_) {
+          break; // Return to caller to process suspension
+      }
+      // Also check for Pending result from host function (e.g., async module functions)
+      if (parkIfPendingCallResult()) {
+          break;
+      }
+      break;
   }
 
   case OpCode::CALL_METHOD_SPREAD: {

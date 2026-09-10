@@ -11,18 +11,9 @@ namespace havel::compiler {
 
 ConcurrencyBridge::ConcurrencyBridge(const ::havel::HostContext &ctx) : ctx_(&ctx), vm_(ctx.vm) {
   event_queue_ = std::make_unique<EventQueue>();
-  initThreadPool();
 }
 
 ConcurrencyBridge::~ConcurrencyBridge() {
-  shutdown_ = true;
-  queue_cv_.notify_all();
-  
-  for (auto &thread : thread_pool_) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
 
   // Clean up active threads
   {
@@ -34,38 +25,6 @@ ConcurrencyBridge::~ConcurrencyBridge() {
     }
   }
 
-  // Clean up timers (timer queue is automatically cleaned up when vector is destroyed)
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  timers_.clear();
-}
-
-void ConcurrencyBridge::initThreadPool(size_t pool_size) {
-  for (size_t i = 0; i < pool_size; ++i) {
-    thread_pool_.emplace_back([this] {
-      while (true) {
-        ThreadTask task;
-        {
-          std::unique_lock<std::mutex> lock(queue_mutex_);
-          queue_cv_.wait(lock, [this] {
-            return shutdown_ || !task_queue_.empty();
-          });
-          
-          if (shutdown_ && task_queue_.empty()) {
-            return;
-          }
-          
-          if (!task_queue_.empty()) {
-            task = std::move(task_queue_.front());
-            task_queue_.pop();
-          }
-        }
-        
-        if (task.task) {
-          task.task();
-        }
-      }
-    });
-  }
 }
 
 void ConcurrencyBridge::install(PipelineOptions &options) {
@@ -500,37 +459,13 @@ Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {
 }
 
 void ConcurrencyBridge::checkTimers() {
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  auto now = std::chrono::steady_clock::now();
-  
-for (auto &timer : timers_) {
-if (timer.active && !timer.paused && timer.next_run <= now) {
-      // Execute the callback via VM if available
-      if (vm_) {
-        try {
-          // Register callback and invoke it
-          CallbackId cbId = vm_->registerCallback(timer.callback);
-          vm_->invokeCallback(cbId, {});
-          vm_->releaseCallback(cbId);
-        } catch (const std::exception &e) {
-          ::havel::error("Error executing timer callback: {}", e.what());
-        }
-      }
-      
-      if (timer.interval_ms > 0) {
-        // Interval timer - schedule next run
-        timer.next_run = now + std::chrono::milliseconds(timer.interval_ms);
-      } else {
-        // One-shot timeout timer - deactivate
-        timer.active = false;
-      }
-    }
-  }
-  
-  // Remove inactive timers
-  timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
-                            [](const Timer &t) { return !t.active; }),
-               timers_.end());
+  // Legacy entry point, still called from EventListener/VM timer-check
+  // hooks. The old Timer-list machinery here was never populated (no
+  // producers) and its would-be callback path invoked the VM from this
+  // thread — a boundary violation under the A+C model. Live timers are
+  // Interval/Timeout heap objects whose worker threads push TIMER_FIRE
+  // events into the EventQueue; the VM thread drains them in
+  // processPendingEvents. Nothing to do here anymore.
 }
 
 // ============================================================================

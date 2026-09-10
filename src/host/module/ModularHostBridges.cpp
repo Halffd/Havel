@@ -62,7 +62,6 @@
 #include <chrono>
 #include <climits>
 #include <cstdlib>
-#include <deque>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -73,76 +72,10 @@ namespace havel::compiler {
 
 namespace {
 
-struct AsyncTaskRecord {
-  bool running = false;
-  bool completed = false;
-  bool cancelled = false;
-  Value result = nullptr;
-  std::string error;
-};
-
-struct ChannelRecord {
-  std::deque<Value> queue;
-  bool closed = false;
-};
-
-struct ThreadRecord {
-  CallbackId callback = INVALID_CALLBACK_ID;
-  bool running = true;
-  bool paused = false;
-};
-
-struct TimerRecord {
-  CallbackId callback = INVALID_CALLBACK_ID;
-  bool running = true;
-  bool paused = false;
-  bool repeating = false;
-  int64_t delay_ms = 0;
-  std::string task_id;
-};
-
-std::mutex g_async_mutex;
-std::mutex g_vm_invoke_mutex;
-std::atomic<uint64_t> g_next_task_id{1};
-std::unordered_map<std::string, AsyncTaskRecord> g_async_tasks;
-
+// Resolve a string-ish Value to std::string. Used across bridges.
 static std::string strVal(const Value &v, const compiler::VM *vm) {
     if (vm && (v.isStringValId() || v.isStringId())) return vm->resolveStringKey(v);
     return v.toString();
-}
-std::unordered_map<std::string, ChannelRecord> g_async_channels;
-std::unordered_map<std::string, ThreadRecord> g_threads;
-std::unordered_map<std::string, TimerRecord> g_timers;
-
-std::string allocateTaskId() {
-  return "task-" + std::to_string(g_next_task_id.fetch_add(1));
-}
-
-ObjectRef makeHandleObject(VM *vm, const std::string &kind,
-                           const std::string &id) {
-  auto obj = vm->createHostObject();
-  // TODO: Store strings properly via string pool
-  vm->setHostObjectField(obj, "__kind", Value::makeNull());
-  vm->setHostObjectField(obj, "__id", Value::makeNull());
-  (void)kind; (void)id;
-  return obj;
-}
-
-std::optional<std::pair<std::string, std::string>>
-extractHandle(const std::vector<Value> &args, VM *vm,
-              size_t index = 0) {
-  if (!vm || index >= args.size() ||
-      !args[index].isObjectId()) {
-    return std::nullopt;
-  }
-  // args[index] is already an ObjectId (uint64_t), not an ObjectRef
-  uint64_t objId = args[index].asObjectId();
-  ObjectRef obj{static_cast<uint32_t>(objId), true};
-  Value kind = vm->getHostObjectField(obj, "__kind");
-  Value id = vm->getHostObjectField(obj, "__id");
-  // TODO: Retrieve strings properly from string pool
-  (void)kind; (void)id;
-  return std::nullopt; // TODO: implement string retrieval
 }
 
 } // namespace
@@ -339,13 +272,26 @@ Value IOBridge::handleSendText(const std::vector<Value> &args,
 
 Value IOBridge::handleWait(const std::vector<Value> &args,
                          const HostContext *ctx) {
-    (void)ctx;
     if (args.empty() || !args[0].isInt()) {
         return Value::makeBool(false);
     }
     int64_t ms = args[0].asInt();
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-    return Value::makeBool(true);
+    // io.wait: same semantics as timer.after — sleep on a worker so
+    // goroutines park; top-level blocks inline exactly as before.
+    if (!ctx || !ctx->vm) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        return Value::makeBool(true);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    compiler::VMApi api(*vm);
+    return api.runBlocking(
+        [ms]() -> compiler::AsyncCxxResult {
+          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+          return nullptr;
+        },
+        [](const compiler::AsyncCxxResult &) -> Value {
+          return Value::makeBool(true);
+        });
 }
 
 Value IOBridge::handleMouseClick(const std::vector<Value> &args,
@@ -1369,23 +1315,36 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.run() requires a string or array command");
   }
-  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
-  auto obj = vm->createHostObject();
-  auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
-  vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
-    vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
-    vm->setHostObjectField(obj, "success", Value::makeBool(result.success));
-    if (result.error.empty()) {
-        vm->setHostObjectField(obj, "error", Value::makeNull());
-    } else {
-        auto errRef = vm->getHeap().allocateString(result.error);
-        vm->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
-    }
-    auto outRef = vm->getHeap().allocateString(result.stdout);
-    vm->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
-    auto errOutRef = vm->getHeap().allocateString(result.stderr);
-    vm->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
-    return Value::makeObjectId(obj.id);
+  // Subprocess spawn+wait: runs on a worker under the A+C model; the
+  // result object is built VM-side on resume.
+  auto *vm_ = vm;
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [cmd]() -> compiler::AsyncCxxResult {
+        auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
+        return std::static_pointer_cast<void>(
+            std::make_shared<::havel::ProcessResult>(std::move(result)));
+      },
+      [vm_](const compiler::AsyncCxxResult &cell) -> Value {
+        auto result =
+            std::static_pointer_cast<::havel::ProcessResult>(cell);
+        auto obj = vm_->createHostObject();
+        auto guard = vm_->makeRoot(Value::makeObjectId(obj.id));
+        vm_->setHostObjectField(obj, "pid", Value::makeInt(result->pid));
+        vm_->setHostObjectField(obj, "exitCode", Value::makeInt(result->exitCode));
+        vm_->setHostObjectField(obj, "success", Value::makeBool(result->success));
+        if (result->error.empty()) {
+            vm_->setHostObjectField(obj, "error", Value::makeNull());
+        } else {
+            auto errRef = vm_->getHeap().allocateString(result->error);
+            vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
+        }
+        auto outRef = vm_->getHeap().allocateString(result->stdout);
+        vm_->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
+        auto errOutRef = vm_->getHeap().allocateString(result->stderr);
+        vm_->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
+        return Value::makeObjectId(obj.id);
+      });
 }
 
 Value
@@ -1411,9 +1370,20 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("runCapture() requires a string or array command");
   }
-  auto result = ::havel::Launcher::runSync(cmd);
-  auto strRef = vm->getHeap().allocateString(result.stdout);
-  return Value::makeStringId(strRef.id);
+  // Subprocess spawn+wait+capture: worker-side under the A+C model.
+  auto *vm_ = vm;
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [cmd]() -> compiler::AsyncCxxResult {
+        auto result = ::havel::Launcher::runSync(cmd);
+        return std::static_pointer_cast<void>(
+            std::make_shared<std::string>(std::move(result.stdout)));
+      },
+      [vm_](const compiler::AsyncCxxResult &cell) -> Value {
+        auto out = std::static_pointer_cast<std::string>(cell);
+        auto strRef = vm_->getHeap().allocateString(*out);
+        return Value::makeStringId(strRef.id);
+      });
 }
 
 Value
@@ -1929,14 +1899,30 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
   if (!ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
-  ::havel::host::WindowService winService(ctx->windowManager);
-  auto info = winService.getActiveWindowInfo();
-  if (!info.valid) {
-    return Value::makeNull();
-  }
-  return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
-                            info.title, info.windowClass, info.exe, info.pid,
-                            info.cmdline);
+  // X11 round-trip: fiber-suspending under the A+C model. In a goroutine
+  // the query runs on an EventQueue worker (XInitThreads makes Xlib
+  // thread-safe process-wide); the window object is built VM-side on
+  // resume. Top-level/init calls run inline — cost identical to today.
+  auto *wm = ctx->windowManager;
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [wm]() -> compiler::AsyncCxxResult {
+        ::havel::host::WindowService winService(wm);
+        auto info = winService.getActiveWindowInfo();
+        // C++ payload across the boundary: never Values.
+        return std::static_pointer_cast<void>(
+            std::make_shared<::havel::WindowInfo>(std::move(info)));
+      },
+      [vm, ctx](const compiler::AsyncCxxResult &cell) -> Value {
+        auto info = std::static_pointer_cast<::havel::WindowInfo>(cell);
+        if (!info || !info->valid) {
+          return Value::makeNull();
+        }
+        return createWindowObject(vm, ctx, info->id, info->title,
+                                  info->windowClass, info->exe, info->pid,
+                                  info->cmdline);
+      });
 }
 
 Value UIBridge::handleWindowCmd(const std::vector<Value> &args,
@@ -3327,11 +3313,12 @@ Value UIBridge::handleWindowWait(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   if (args.size() < 2 || !ctx->windowManager)
     return Value::makeBool(false);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  uint64_t wid = resolveWindowId(args[0], winService, vm);
   if (wid == 0)
     return Value::makeBool(false);
-  auto *vm = static_cast<VM *>(ctx->vm);
   std::string state = "show";
   if (args[1].isStringId()) {
     auto s = vm->toString(args[1]);
@@ -3341,22 +3328,38 @@ Value UIBridge::handleWindowWait(const std::vector<Value> &args,
   if (args.size() >= 3 && args[2].isInt())
     timeoutMs = static_cast<int>(args[2].asInt());
   bool waitVisible = (state == "show" || state == "visible" || state == "map");
-  auto deadline = std::chrono::steady_clock::now() +
-                  std::chrono::milliseconds(timeoutMs);
-  while (std::chrono::steady_clock::now() < deadline) {
-    auto info = winService.getWindowInfo(wid);
-    if (info.valid) {
-      if (waitVisible && !info.minimized)
-        return Value::makeBool(true);
-      if (!waitVisible && info.minimized)
-        return Value::makeBool(true);
-    } else {
-      if (!waitVisible)
-        return Value::makeBool(true);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-  return Value::makeBool(false);
+
+  // Poll loop with X11 round-trips + sleeps: runs on a worker under the
+  // A+C model; goroutines park instead of stalling the VM thread for up
+  // to the full timeout.
+  auto *wm = ctx->windowManager;
+  return api.runBlocking(
+      [wm, wid, waitVisible, timeoutMs]() -> compiler::AsyncCxxResult {
+        ::havel::host::WindowService svc(wm);
+        auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeoutMs);
+        while (std::chrono::steady_clock::now() < deadline) {
+          auto info = svc.getWindowInfo(wid);
+          if (info.valid) {
+            if (waitVisible && !info.minimized) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+            if (!waitVisible && info.minimized) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+          } else {
+            if (!waitVisible) {
+              return std::static_pointer_cast<void>(std::make_shared<bool>(true));
+            }
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        return std::static_pointer_cast<void>(std::make_shared<bool>(false));
+      },
+      [](const compiler::AsyncCxxResult &cell) -> Value {
+        auto ok = std::static_pointer_cast<bool>(cell);
+        return Value::makeBool(ok && *ok);
+      });
 }
 
 Value UIBridge::handleWindowMapObj(const std::vector<Value> &args,
@@ -4266,601 +4269,6 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
   }
   return Value::makeArrayId(arr.id);
 #endif
-}
-
-Value AsyncBridge::handleSleep(const std::vector<Value> &args,
-    const HostContext *ctx) {
-    if (args.empty()) {
-        throw std::runtime_error("sleep() requires milliseconds");
-    }
-    int64_t ms = 0;
-    if (args[0].isInt()) {
-        ms = args[0].asInt();
-    } else if (args[0].isDouble()) {
-        ms = static_cast<int64_t>(args[0].asDouble());
-    } else {
-        throw std::runtime_error("sleep() requires a number");
-    }
-    if (ms < 0) {
-        throw std::runtime_error("sleep() milliseconds must be non-negative");
-    }
-
-    if (ms == 0) return Value::makeNull();
-
-    auto *vm = static_cast<VM *>(ctx->vm);
-    auto *sched = vm ? vm->getScheduler() : nullptr;
-    if (sched) {
-        auto *current = sched->current();
-        if (current) {
-            current->wait_handle.type = Scheduler::AwaitableType::SLEEP;
-            current->wait_handle.deadline = std::chrono::steady_clock::now() +
-                std::chrono::milliseconds(ms);
-            sched->suspend(current, Scheduler::SuspensionReason::SleepWait);
-            return Value::makeNull();
-        }
-    }
-
-    // Fallback: blocking sleep (no scheduler)
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-    return Value::makeNull();
-}
-
-Value AsyncBridge::handleTimeNow(const std::vector<Value> &args,
-                                         const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  auto now = std::chrono::system_clock::now();
-  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now.time_since_epoch())
-                       .count();
-  return Value::makeInt(static_cast<int64_t>(timestamp));
-}
-
-// Async task handlers
-Value
-AsyncBridge::handleAsyncRun(const std::vector<Value> &args,
-                            const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.run() requires a function argument");
-  }
-
-  if (!ctx || !ctx->vm) {
-    throw std::runtime_error("async.run() requires an active VM context");
-  }
-
-  // Execute VM callback immediately and persist result under a task id.
-  // This removes placeholder behavior and allows async.await() to return
-  // actual closure results while keeping VM interaction single-threaded.
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string taskId = allocateTaskId();
-  AsyncTaskRecord record;
-  record.running = true;
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_async_tasks[taskId] = record;
-  }
-
-  try {
-    CallbackId callback = vm->registerCallback(args[0]);
-    Value result = vm->invokeCallback(callback, {});
-    vm->releaseCallback(callback);
-
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto &task = g_async_tasks[taskId];
-    task.running = false;
-    task.completed = true;
-    task.result = std::move(result);
-  } catch (const std::exception &e) {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto &task = g_async_tasks[taskId];
-    task.running = false;
-    task.completed = true;
-    task.error = e.what();
-  }
-
-  // TODO: string pool integration - for now return null
-  (void)taskId;
-  return Value::makeNull();
-}
-
-Value
-AsyncBridge::handleAsyncAwait(const std::vector<Value> &args,
-                              const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.await() requires a task ID");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.await() requires a string task ID");
-  }
-
-  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_tasks.find(taskId);
-    if (it != g_async_tasks.end()) {
-      if (!it->second.error.empty()) {
-        throw std::runtime_error("async.await() task failed: " +
-                                 it->second.error);
-      }
-      return it->second.result;
-    }
-}
-
-	return Value::makeBool(false);
-}
-
-Value
-AsyncBridge::handleAsyncCancel(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.cancel() requires a task ID");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.cancel() requires a string task ID");
-  }
-
-  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_tasks.find(taskId);
-    if (it != g_async_tasks.end()) {
-      it->second.cancelled = true;
-      it->second.running = false;
-      return Value::makeBool(true);
-    }
-  }
-
-
-  return Value::makeBool(false);
-}
-
-Value
-AsyncBridge::handleAsyncIsRunning(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.isRunning() requires a task ID");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.isRunning() requires a string task ID");
-  }
-
-  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_tasks.find(taskId);
-    if (it != g_async_tasks.end()) {
-      return Value::makeBool(it->second.running);
-    }
-  }
-
-
-  return Value::makeBool(false);
-}
-
-// Channel handlers
-Value
-AsyncBridge::handleChannelCreate(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.channel() requires a channel name");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.channel() requires a string name");
-  }
-
-  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto &channel = g_async_channels[name];
-    channel.closed = false;
-  }
-
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleChannelSend(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-  if (args.size() < 2) {
-    throw std::runtime_error("async.send() requires channel name and value");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.send() requires a string channel name");
-  }
-
-  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_channels.find(name);
-    if (it == g_async_channels.end() || it->second.closed) {
-      return Value::makeBool(false);
-    }
-    it->second.queue.push_back(args[1]);
-  }
-
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleChannelReceive(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.receive() requires a channel name");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error("async.receive() requires a string channel name");
-  }
-
-  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_channels.find(name);
-    if (it == g_async_channels.end() || it->second.queue.empty()) {
-      return Value::makeNull();
-    }
-    Value value = it->second.queue.front();
-    it->second.queue.pop_front();
-    return value;
-  }
-}
-
-Value
-AsyncBridge::handleChannelTryReceive(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.tryReceive() requires a channel name");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error(
-        "async.tryReceive() requires a string channel name");
-  }
-
-  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_channels.find(name);
-    if (it == g_async_channels.end() || it->second.queue.empty()) {
-      return Value::makeNull();
-    }
-    Value value = it->second.queue.front();
-    it->second.queue.pop_front();
-    return value;
-  }
-}
-
-Value
-AsyncBridge::handleChannelClose(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("async.channel.close() requires a channel name");
-  }
-
-  if (!args[0].isStringValId()) {
-    throw std::runtime_error(
-        "async.channel.close() requires a string channel name");
-  }
-
-  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_async_channels.find(name);
-    if (it == g_async_channels.end()) {
-      return Value::makeBool(false);
-    }
-    it->second.closed = true;
-    it->second.queue.clear();
-  }
-
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleThreadCreate(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  if (!ctx || !ctx->vm || args.empty()) {
-    throw std::runtime_error("thread(fn) requires VM context and callback");
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  CallbackId callback = vm->registerCallback(args[0]);
-  const std::string id = allocateTaskId();
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_threads[id] =
-        ThreadRecord{.callback = callback, .running = true, .paused = false};
-  }
-  return Value::makeObjectId(makeHandleObject(vm, "thread", id).id);
-}
-
-Value
-AsyncBridge::handleThreadSend(const std::vector<Value> &args,
-                              const HostContext *ctx) {
-  if (!ctx || !ctx->vm || args.size() < 2) {
-    throw std::runtime_error("thread.send(handle, message) requires 2 args");
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "thread") {
-    return Value::makeBool(false);
-  }
-
-  ThreadRecord record;
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    auto it = g_threads.find(handle->second);
-    if (it == g_threads.end() || !it->second.running || it->second.paused) {
-      return Value::makeBool(false);
-    }
-    record = it->second;
-  }
-
-  auto *sched = vm ? vm->getScheduler() : nullptr;
-  if (sched) {
-    sched->deferToVM([vm, record, msg = args[1]]() {
-      std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-      try {
-        (void)vm->invokeCallback(record.callback, {msg});
-      } catch (...) {
-      }
-    });
-  } else {
-    std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-    try {
-      (void)vm->invokeCallback(record.callback, {args[1]});
-    } catch (...) {
-      }
-  }
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleThreadPause(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "thread") {
-    return Value::makeBool(false);
-  }
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_threads.find(handle->second);
-  if (it == g_threads.end())
-    return Value::makeBool(false);
-  it->second.paused = true;
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleThreadResume(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "thread") {
-    return Value::makeBool(false);
-  }
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_threads.find(handle->second);
-  if (it == g_threads.end())
-    return Value::makeBool(false);
-  it->second.paused = false;
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleThreadStop(const std::vector<Value> &args,
-                              const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "thread") {
-    return Value::makeBool(false);
-  }
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_threads.find(handle->second);
-  if (it == g_threads.end())
-    return Value::makeBool(false);
-  if (vm) {
-    vm->releaseCallback(it->second.callback);
-  }
-  it->second.running = false;
-  it->second.paused = false;
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleThreadRunning(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "thread") {
-    return Value::makeBool(false);
-  }
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_threads.find(handle->second);
-  return Value::makeBool(it != g_threads.end() && it->second.running);
-}
-
-Value
-AsyncBridge::handleIntervalCreate(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-  if (!ctx || !ctx->vm || args.size() < 2) {
-    throw std::runtime_error("interval(ms, fn) requires delay and callback");
-  }
-  int64_t delay_ms = 0;
-  if (args[0].isInt()) {
-    delay_ms = args[0].asInt();
-  } else if (args[0].isDouble()) {
-    delay_ms = static_cast<int64_t>(args[0].asDouble());
-  } else {
-    throw std::runtime_error("interval delay must be number");
-  }
-  if (delay_ms < 1)
-    delay_ms = 1;
-
-  auto *vm = static_cast<VM *>(ctx->vm);
-  const CallbackId callback = vm->registerCallback(args[1]);
-  const std::string id = allocateTaskId();
-
-  TimerRecord timer{.callback = callback,
-                    .running = true,
-                    .paused = false,
-                    .repeating = true,
-                    .delay_ms = delay_ms,
-                    .task_id = ""};
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id] = timer;
-  }
-
-  std::thread([ctx, id, callback, delay_ms]() {
-    auto *vm_local = static_cast<VM *>(ctx->vm);
-    auto *sched = vm_local ? vm_local->getScheduler() : nullptr;
-    while (true) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-      bool should_run = false;
-      {
-        std::lock_guard<std::mutex> lock(g_async_mutex);
-        auto it = g_timers.find(id);
-        if (it == g_timers.end() || !it->second.running) {
-          break;
-        }
-        should_run = !it->second.paused;
-      }
-      if (!should_run || !vm_local) {
-        continue;
-      }
-      if (sched) {
-        sched->deferToVM([callback, vm_local]() {
-          std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-          try {
-            (void)vm_local->invokeCallback(callback, {});
-          } catch (...) {
-          }
-        });
-      } else {
-        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-        try {
-          (void)vm_local->invokeCallback(callback, {});
-        } catch (...) {
-          }
-      }
-    }
-  }).detach();
-
-  return Value::makeObjectId(makeHandleObject(vm, "interval", id).id);
-}
-
-Value
-AsyncBridge::handleIntervalPause(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval")
-    return Value::makeBool(false);
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_timers.find(handle->second);
-  if (it == g_timers.end())
-    return Value::makeBool(false);
-  it->second.paused = true;
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleIntervalResume(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval")
-    return Value::makeBool(false);
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_timers.find(handle->second);
-  if (it == g_timers.end())
-    return Value::makeBool(false);
-  it->second.paused = false;
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleIntervalStop(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval")
-    return Value::makeBool(false);
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_timers.find(handle->second);
-  if (it == g_timers.end())
-    return Value::makeBool(false);
-  it->second.running = false;
-  if (vm) {
-    vm->releaseCallback(it->second.callback);
-  }
-  return Value::makeBool(true);
-}
-
-Value
-AsyncBridge::handleTimeoutCreate(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  if (!ctx || !ctx->vm || args.size() < 2) {
-    throw std::runtime_error("timeout(ms, fn) requires delay and callback");
-  }
-  int64_t delay_ms = 0;
-  if (args[0].isInt()) {
-    delay_ms = args[0].asInt();
-  } else if (args[0].isDouble()) {
-    delay_ms = static_cast<int64_t>(args[0].asDouble());
-  } else {
-    throw std::runtime_error("timeout delay must be number");
-  }
-  if (delay_ms < 1)
-    delay_ms = 1;
-
-  auto *vm = static_cast<VM *>(ctx->vm);
-  const CallbackId callback = vm->registerCallback(args[1]);
-  const std::string id = allocateTaskId();
-  {
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id] = TimerRecord{.callback = callback,
-                               .running = true,
-                               .paused = false,
-                               .repeating = false,
-                               .delay_ms = delay_ms,
-                               .task_id = ""};
-  }
-
-
-  return Value::makeObjectId(makeHandleObject(vm, "timeout", id).id);
-}
-
-Value
-AsyncBridge::handleTimeoutCancel(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
-  auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "timeout")
-    return Value::makeBool(false);
-  std::lock_guard<std::mutex> lock(g_async_mutex);
-  auto it = g_timers.find(handle->second);
-  if (it == g_timers.end())
-    return Value::makeBool(false);
-  it->second.running = false;
-  if (vm) {
-    vm->releaseCallback(it->second.callback);
-  }
-  return Value::makeBool(true);
 }
 
 // ============================================================================
@@ -6861,7 +6269,6 @@ void TimerBridge::install(PipelineOptions &options) {
 
 Value TimerBridge::handleAfter(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("timer.after() requires delay_ms");
   }
@@ -6872,9 +6279,24 @@ Value TimerBridge::handleAfter(const std::vector<Value> &args,
 
   int64_t delay_ms = args[0].asInt();
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-
-	return Value::makeNull();
+  // Legacy shim: sleep for delay_ms (callback argument is ignored —
+  // scripts use timeout{} for real callbacks). The sleep runs on a
+  // worker under the A+C model so goroutines park instead of stalling
+  // the VM thread; top-level calls block inline exactly as before.
+  if (!ctx || !ctx->vm) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [delay_ms]() -> compiler::AsyncCxxResult {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        return nullptr;
+      },
+      [](const compiler::AsyncCxxResult &) -> Value {
+        return Value::makeNull();
+      });
 }
 
 Value TimerBridge::handleEvery(const std::vector<Value> &args,

@@ -79,6 +79,7 @@ enum class SuspensionReason {
     HotkeyWait, // Parked waiting for next hotkey trigger (persistent)
     CoroutineWait, // Suspended on coroutine await
     ChannelSendWait, // Suspended on send() to full channel
+    AWAIT, // Fiber parked on a fiber-suspending host call (async cxx bridge)
     Yield // Suspended on YIELD opcode
 };
 
@@ -562,6 +563,19 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Wake persistent hotkey goroutines matching the given alias
     // Used by hotkey.trigger() to reach persistent goroutines without HotkeyManager
     bool wakeHotkeyByAlias(const std::string& alias);
+
+    // Complete a fiber-suspending host call (AwaitableType::EXTERNAL).
+    // Stashes the VM-side-built result in the parked goroutine's
+    // wait_handle and unparks it; unmatched tokens drop harmlessly.
+    // Must run on the VM thread (the deferToVM delivery side).
+    bool resumeExternalWithValue(uint32_t token, Value result);
+
+    // Count suspended goroutines awaiting an event-driven resume that
+    // still matters for script completion (async host calls, channel
+    // waits) — i.e. excluding persistent hotkey/update goroutines,
+    // which park forever by design and must not keep a finished
+    // script's scheduler loop spinning.
+    size_t suspendedAwaitingResume() const;
 
     // Find a persistent goroutine by its hotkey alias
     // Returns nullptr if not found

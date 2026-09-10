@@ -572,23 +572,35 @@ case OpCode::INCLOCAL:
             
             // Slow path: bridge function
             B.SetInsertPoint(slowBB);
+            // EQ/NEQ may compare string CONTENT (heap StringId vs
+            // chunk-local StringValId), which needs the heap: route them
+            // through the vm-aware bridges. Ordering comparisons stay pure.
             const char* fname = nullptr;
+            bool vm_aware = false;
             switch (instr.opcode) {
-                case OpCode::EQ:  fname = "havel_vm_eq";  break;
-                case OpCode::NEQ: fname = "havel_vm_neq"; break;
+                case OpCode::EQ:  fname = "havel_vm_eq_vm";  vm_aware = true;  break;
+                case OpCode::NEQ: fname = "havel_vm_neq_vm"; vm_aware = true;  break;
                 case OpCode::LT:  fname = "havel_vm_lt";  break;
                 case OpCode::LTE: fname = "havel_vm_lte"; break;
                 case OpCode::GT:  fname = "havel_vm_gt";  break;
                 case OpCode::GTE: fname = "havel_vm_gte"; break;
-                default: fname = "havel_vm_eq"; break;
+                default: fname = "havel_vm_eq_vm"; vm_aware = true;  break;
             }
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
-                fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i64, i64}, false),
-                    llvm::Function::ExternalLinkage, fname, &module);
+                if (vm_aware) {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                } else {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                }
             }
-            llvm::Value* slowResult = B.CreateCall(fnComp, {l, r});
+            llvm::Value* slowResult = vm_aware
+                ? B.CreateCall(fnComp, {vmArg, l, r})
+                : B.CreateCall(fnComp, {l, r});
             auto* slowExitBB = B.GetInsertBlock();
             B.CreateBr(mergeBB);
             
@@ -600,23 +612,34 @@ case OpCode::INCLOCAL:
             vstack.push_back(phi);
         } else {
             // No feedback or polymorphic: use bridge
+            // See the feedback-path comment: EQ/NEQ need the heap for
+            // string-content comparison.
             const char* fname = nullptr;
+            bool vm_aware = false;
             switch (instr.opcode) {
-              case OpCode::EQ:  fname = "havel_vm_eq";  break;
-              case OpCode::NEQ: fname = "havel_vm_neq"; break;
+              case OpCode::EQ:  fname = "havel_vm_eq_vm";  vm_aware = true;  break;
+              case OpCode::NEQ: fname = "havel_vm_neq_vm"; vm_aware = true;  break;
               case OpCode::LT:  fname = "havel_vm_lt";  break;
               case OpCode::LTE: fname = "havel_vm_lte"; break;
               case OpCode::GT:  fname = "havel_vm_gt";  break;
               case OpCode::GTE: fname = "havel_vm_gte"; break;
-              default: fname = "havel_vm_eq"; break;
+              default: fname = "havel_vm_eq_vm"; vm_aware = true;  break;
             }
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
-                fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i64, i64}, false),
-                    llvm::Function::ExternalLinkage, fname, &module);
+                if (vm_aware) {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                } else {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                }
             }
-            vstack.push_back(B.CreateCall(fnComp, {l, r}));
+            vstack.push_back(vm_aware
+                ? B.CreateCall(fnComp, {vmArg, l, r})
+                : B.CreateCall(fnComp, {l, r}));
         }
         break;
       }

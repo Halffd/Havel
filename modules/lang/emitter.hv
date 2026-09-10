@@ -3705,13 +3705,29 @@ fn emitUseStatement(emitter, node) {
         pathIdx = bc.add_const(node.module)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
-        sid = bc.add_const(node.alias)
+        // Store-global name operands index the CHUNK STRING TABLE
+        // (globalIdx/add_chunk_string), not the const table: add_const
+        // returns a const index and wrapping it as a string id makes
+        // STORE_GLOBAL write to a garbage name (named imports then
+        // fail with Undefined variable at first use).
+        sid = globalIdx(emitter, node.alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
         return
       }
       }
       }
     }
+  }
+
+  // Form 2: use * from "module" or use module.* — wildcard (check BEFORE Form 1)
+  if node.isWildcard == true {
+    path = node.filePath
+    if path == null { path = node.module }
+    pathIdx = bc.add_const(path)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    bc.emit("IMPORT_WILDCARD")
+    return
   }
 
   // Form 1: use mod1, mod2 — bare module names, import each as whole object
@@ -3722,22 +3738,11 @@ fn emitUseStatement(emitter, node) {
         pathIdx = bc.add_const(modName)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
-        sid = bc.add_const(modName)
+        sid = globalIdx(emitter, modName)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       return
     }
-  }
-
-  // Form 2: use * from "module" or use module.* — wildcard
-  if node.isWildcard == true {
-    path = node.filePath
-    if path == null { path = node.module }
-    pathIdx = bc.add_const(path)
-    bc.emit("LOAD_CONST", pathIdx)
-    bc.emit("IMPORT")
-    bc.emit("IMPORT_WILDCARD")
-    return
   }
 
   // Form 3: use { a, b as c } from "module" — named imports
@@ -3769,7 +3774,7 @@ fn emitUseStatement(emitter, node) {
         keyIdx = bc.add_const(name)
         bc.emit("LOAD_CONST", keyIdx)
         bc.emit("OBJECT_GET")
-        sid = bc.add_const(alias)
+        sid = globalIdx(emitter, alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
         ii = ii + 1
       }
@@ -3785,7 +3790,7 @@ fn emitUseStatement(emitter, node) {
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
       if node.alias != null && node.alias != "" {
-        sid = bc.add_const(node.alias)
+        sid = globalIdx(emitter, node.alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       else {
@@ -3850,7 +3855,7 @@ fn emitImportStatement(emitter, node) {
       keyIdx = bc.add_const(name)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("OBJECT_GET")
-      sid = bc.add_const(alias)
+      sid = globalIdx(emitter, alias)
       bc.emit("STORE_GLOBAL", bc.str_id(sid))
       ii2 = ii2 + 1
     }
@@ -4916,27 +4921,23 @@ fn compileCondHotkeyCondition(emitter, condition) {
 }
 
 fn emitClosureBody(emitter, body, name) {
-   oldScope = emitter.scope
-	newScope = Scope(oldScope)
-	emitter.scope = newScope
-	bc.func_push()
-	funcIdx = bc.func_new(name, 0, 16)
-   if body != null {
-     if body.kind == "BlockStatement" {
-       for s in body.body {
-         emitStmt(emitter, s)
-       }
-     }
-     else {
-       emitStmt(emitter, body)
-     }
+   // Compile the block body as a zero-param lambda so upvalue CAPTURE
+   // analysis runs (scope.hv walks free variables, registers captures,
+   // newScope.upcount > 0 -> CLOSURE with cells). The old hand-rolled
+   // scope+func_push path never ran the capture pass: block closures
+   // like `timeout 50 { use x }` inside a fn compiled `x` as a bare
+   // upvalue/global load with NO capture cell — invoked after the
+   // creating frame returned, they read null (test_async debounce).
+   // Callers expect the closure value left on the stack.
+   result = compileLambda(emitter, name, [], body, null, false)
+   upcount = result[0]
+   chunkIdx = result[1]
+   if upcount > 0 {
+      bc.emit("CLOSURE", chunkIdx)
    }
-   bc.emit("PUSH_NULL")
-   bc.emit("RETURN")
-	bc.set_local_count(scopeLocalCount(newScope))
-	bc.func_pop()
-	emitter.scope = oldScope
-	bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(funcIdx)))
+   else {
+      bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(chunkIdx)))
+   }
 }
 
 fn emitWhenBlock(emitter, node) {

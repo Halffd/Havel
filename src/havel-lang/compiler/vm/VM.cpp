@@ -1,6 +1,4 @@
 #include "VM.hpp"
-#include <cstdio>
-#include <cstdlib>
 #include "VMApi.hpp"
 #include "VMInternals.hpp"
 #ifdef HAVEL_ENABLE_CRANELIFT
@@ -30,7 +28,9 @@
 #include "dl/Loader.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "../../stdlib/LogModule.hpp"
@@ -267,6 +267,7 @@ void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
   auto *closure = heap_.closure(closure_id);
   if (!closure)
     return;
+
   for (auto &cell : closure->upvalues) {
     if (!cell)
       continue;
@@ -457,9 +458,19 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
     stack.pop();
   }
 
-  // Restore all VM state
+  // Restore all VM state. locals is the critical one: the callee's
+  // region (>= saved_locals.size(), grown by doCall) is discarded, but
+  // the CALLER region below it must reflect writes made DURING the call.
+  // The callee's open upvalues can point INTO the caller's region
+  // (nested closures like the self-hosted parser's advance() capturing
+  // pos), and STORE_UPVALUE writes land there via
+  // havel_vm_upvalue_set / interpreter upvalue stores. Restoring the
+  // pre-call snapshot wiped those writes: a JIT-compiled
+  // skipCommentsAndNewlines looping over havel_vm_call ->
+  // callFunctionSync(advance) saw pos revert to its pre-call value
+  // every iteration and never terminated.
   stack = std::move(saved_stack);
-  locals = std::move(saved_locals);
+  locals.resize(saved_locals.size());
   immutable_locals_.clear();
   frame_count_ = saved_frame_count;
   current_chunk = outer_chunk;
@@ -594,6 +605,16 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
+        // A goroutine sleeping with a deadline will wake on its own —
+        // the deadline poll below handles it. Only decide "script done"
+        // when nothing sleeps and nothing awaits an event-driven resume.
+        auto deadline = scheduler_->nextSleepDeadline();
+        if (!deadline) {
+          // Persistent goroutines (hotkey/update) park forever by design;
+          // when they are all that remains, the script is done. Otherwise
+          // (async host call, channel wait, thread join) keep pumping.
+          if (scheduler_->suspendedAwaitingResume() == 0) break;
+        }
         if (::getenv("HAVEL_TRACE_SCHED_STALL")) {
           // Only log when this null-stall actually persists: the pickNext-null
           // state is a *normal* transient whenever two goroutines are asleep at
@@ -607,8 +628,29 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
             scheduler_->dumpGoroutineStates("pickNext-null stall");
           }
         }
-        auto deadline = scheduler_->nextSleepDeadline();
-        if (!deadline) break;
+        if (!deadline) {
+          // Suspended goroutines await event-driven resume (async host
+          // call on a worker, channel, thread join) — no sleep deadline.
+          // Wait on the deferred-wakeup fd so the resume jolts the
+          // loop; exit_requested_ at the loop top still honors exit.
+          // If only persistent hotkey goroutines remain, the script is
+          // done (checked above before the stall log).
+          int wakeupFd = scheduler_->deferredWakeupFd();
+          if (wakeupFd >= 0) {
+            struct pollfd pfd;
+            pfd.fd = wakeupFd;
+            pfd.events = POLLIN;
+            pfd.revents = 0;
+            int pr = ::poll(&pfd, 1, 100);
+            if (pr > 0 && (pfd.revents & POLLIN)) {
+              uint64_t val;
+              while (::read(wakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+            }
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          continue;
+        }
         auto now = std::chrono::steady_clock::now();
         if (*deadline <= now) continue;
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -659,6 +701,17 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
                  cur->state == Scheduler::GoroutineState::Running) {
         if (cur->fiber) {
           loadFiberState(cur->fiber);
+          // Resumed from a parked wait (async host call, channel):
+          // swap the Pending placeholder for the delivered result.
+          // Mirrors the HavelEngine resume path.
+          {
+            std::lock_guard wlock(cur->wait_handle_mutex_);
+            if (cur->wait_handle.type == Scheduler::AwaitableType::EXTERNAL ||
+                cur->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV) {
+              if (!stack.empty()) replaceStackTop(cur->wait_handle.resume_value);
+              cur->wait_handle.clear();
+            }
+          }
           current_executing_fiber_ = cur->fiber;
           runDispatchLoop(0);
           current_executing_fiber_ = nullptr;
@@ -680,6 +733,11 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         case F::TIMER: schedReason = S::TimerWait; break;
         case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
         case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
+        // AWAIT/EXTERNAL: fiber-suspending host call or general await.
+        // No dedicated Scheduler reason; wait_handle (EXTERNAL+token)
+        // is the authoritative resume key. None is correct.
+        case F::AWAIT:
+        case F::EXTERNAL: schedReason = S::None; break;
         default: break;
         }
         cur->state = Scheduler::GoroutineState::Suspended;
@@ -1129,7 +1187,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       suspension_requested_ = false;
 
       // Suspend the current fiber with the stored reason and context
-      // The context pointer contains thread_id or other relevant data
+      // The context pointer contains thread_id or other relevant info
       void *context = suspension_context_;
       SuspensionReason reason =
           static_cast<SuspensionReason>(suspension_reason_);
@@ -1145,6 +1203,32 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
         }
       }
 
+      current_executing_fiber_ = nullptr;
+      return VMExecutionResult::Suspended();
+    }
+
+    // Fiber-suspending host call: the instruction (CALL) left a Pending
+    // marker; park the current goroutine on the pending token. Mirrors
+    // the op_CALL fast-path check in VMDispatch.cpp.
+    if (parkIfPendingCallResult()) {
+      if (current_fiber) {
+        current_fiber->suspend(SuspensionReason::AWAIT, nullptr);
+      }
+      current_executing_fiber_ = nullptr;
+      return VMExecutionResult::Suspended();
+    }
+
+    // A suspension already transferred into last_suspension_* by a nested
+    // runDispatchLoop inside a host wrapper (module-fn sleep: the wrapper
+    // consumed suspension_requested_ and propagated (reason, context)
+    // into last_*). Without this check, executeOneStep reports a normal
+    // yield, the engine re-queues the goroutine, and it resumes at the
+    // NEXT instruction — the sleep is silently dropped (async_mod.sleep
+    // measured ~0ms via namespace calls).
+    if (last_suspension_reason_ != 0 && current_fiber) {
+      void *context = last_suspension_context_;
+      auto reason = static_cast<SuspensionReason>(last_suspension_reason_);
+      current_fiber->suspend(reason, context);
       current_executing_fiber_ = nullptr;
       return VMExecutionResult::Suspended();
     }
@@ -1874,6 +1958,14 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  // VM-thread ownership guard: latch dispatch to this thread for the
+  // duration (nested re-entry keeps the original latch). Every exit path
+  // below must unlatch; the guard struct covers exceptions too.
+  latchDispatchThread();
+  struct DispatchLatchGuard {
+    VM &vm;
+    ~DispatchLatchGuard() { vm.unlatchDispatchThread(); }
+  } _latch_guard{*this};
   Fiber *saved_fiber_flag = current_executing_fiber_;
   const bool has_instruction_limit = (max_instructions_ > 0);
   const bool has_timer = static_cast<bool>(timer_check_func_);
@@ -2155,7 +2247,7 @@ slow_path:
           }
         }
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          // fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d frames=%zu\n", (int)last_suspension_reason_, frame_count_);
+          fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d ctx=%p frames=%zu\n", (int)last_suspension_reason_, last_suspension_context_, frame_count_);
         }
         break;
       }
@@ -2266,6 +2358,25 @@ slow_path:
           last_suspension_context_ = ctx;
           break;
         }
+      }
+
+      // Fiber-suspending host call: the CALL pushed a Pending marker.
+      // Park the current goroutine on the token and break with the
+      // slow-path IP advance (mirrors the propagate-block convention so
+      // the suspended goroutine resumes at the instruction AFTER the
+      // CALL). parkIfPendingCallResult sets last_suspension_reason_
+      // (AWAIT) for the outer runner to consume.
+      if (parkIfPendingCallResult()) {
+        if (frame_count_ > stop_frame_depth) {
+          auto idx = frame_count_ - 1;
+          if (frame_count_ == entry_frame_count &&
+              frame_arena_[idx].ip == ip) {
+            frame_arena_[idx].ip++;
+          } else if (frame_count_ > entry_frame_count) {
+            frame_arena_[entry_frame_count - 1].ip++;
+          }
+        }
+        break;
       }
     } catch (const ScriptThrow &thrown) {
       ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
@@ -2927,11 +3038,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // fflush(stderr);
   }
   if (callee->jit_compiled && backend_ && !debugger_attached_) {
-    if (std::getenv("HCLB_TRACE_JITCALL")) {
-      fprintf(stderr, "[JITCALL] %s closure_id=%u closure_globals=%p\n",
-              callee->name.c_str(), closure_id,
-              closure_globals ? (void*)closure_globals.get() : nullptr);
-    }
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     // Compiled-module-function call context, mirroring the interpreter's
     // frame setup below: swap the ambient globals snapshot when the callee
@@ -2974,6 +3080,17 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       frame_count_++;
     }
     const size_t jit_frame_base = frame_count_;  // 1 past the pushed frame
+    // JIT-compiled body runs without the dispatch loop, so current_chunk
+    // must be swapped here like the interpreter path does (below): the
+    // Runtime-ABI bridges (havel_vm_call_method string ids,
+    // havel_vm_closure_new function indices) resolve chunk-relative ids
+    // via getCurrentChunk(). Without the swap they resolve against the
+    // CALLER's chunk: JIT-compiled scopeResolveUpvalue's bc.add_upvalue_to
+    // looked up the method name in a foreign chunk, got an empty string,
+    // and silently returned null - the emitted skipLoop closure carried
+    // zero upvalue descriptors and LOAD_UPVALUE threw "index out of range".
+    const BytecodeChunk *prev_chunk = current_chunk;
+    current_chunk = resolve_chunk;
     auto jit_teardown = [&]() {
       // Pop the synthetic frame and restore the ambient snapshot. Nested
       // interpreter re-entries (havel_vm_call -> callFunctionSync) save and
@@ -2982,6 +3099,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         frame_count_ = jit_frame_base - 1;
       }
       locals.resize(jit_locals_base);
+      current_chunk = prev_chunk;
       if (jit_owns_globals && !globals_stack_.empty()) {
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -3757,6 +3875,223 @@ Value VM::popStack() {
   Value value = stack.top();
   stack.pop();
   return value;
+}
+
+bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
+                         Value* out) {
+  Value receiver = Value::fromRawBits(receiver_bits);
+  Value key_value = Value::fromRawBits(key_bits);
+
+  // Interpreter OBJECT_GET parity (VMCollections.cpp) for receivers the
+  // object bridges see: arrays support numeric indices and `len`;
+  // everything object-like resolves through the class chain. Function
+  // objects, intervals, and string prototypes go through the dispatch
+  // fallback at the end.
+
+  if (receiver.isArrayId()) {
+    auto* array = heap_.array(receiver.asArrayId());
+    if (key_value.isInt() && array) {
+      int64_t index = key_value.asInt();
+      if (index < 0) index = static_cast<int64_t>(array->size()) + index;
+      if (index >= 0 && static_cast<size_t>(index) < array->size()) {
+        *out = (*array)[static_cast<size_t>(index)];
+        return true;
+      }
+      *out = Value::makeNull();
+      return true;
+    }
+    auto key = resolveKey(key_value);
+    if (key && *key == "len" && array) {
+      *out = Value::makeInt(static_cast<int64_t>(array->size()));
+      return true;
+    }
+    // Prototype methods (push/map/...) bind host functions; fall through
+    // to the generic dispatch so the method binding matches exactly.
+  }
+
+  if (receiver.isObjectId()) {
+    // Lazy module proxy trap, mirroring the interpreter's OBJECT_GET
+    // (VMCollections.cpp): a proxy carries only __lazy__/__module__
+    // markers; trigger module initialization and swap in the loaded
+    // namespace. Without this, JIT-compiled member reads (TID.NewLine in
+    // the self-hosted parser's skipCommentsAndNewlines, bc.* fields in
+    // scopeResolveUpvalue) resolved against the bare proxy and read
+    // null - the parser loop then never advanced and hung.
+    auto* proxy = heap_.object(receiver.asObjectId());
+    if (proxy) {
+      auto* lazyFlag = proxy->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+        auto* modNameVal = proxy->get("__module__");
+        std::string modName;
+        if (modNameVal) {
+          if (modNameVal->isStringId()) {
+            if (auto* s = heap_.string(modNameVal->asStringId())) modName = *s;
+          } else if (modNameVal->isStringValId()) {
+            modName = current_chunk
+                        ? current_chunk->getString(modNameVal->asStringValId())
+                        : std::string();
+          }
+        }
+        if (!modName.empty()) {
+          ensureModuleLoaded(modName);
+          auto git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            auto* proxyObj = heap_.object(git->second.asObjectId());
+            if (proxyObj) {
+              auto* lf = proxyObj->get("__lazy__");
+              if (lf && lf->isBool() && lf->asBool()) {
+                globals.erase(git);
+              }
+            }
+          }
+          git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            receiver = git->second;
+          } else {
+            std::string capModName = modName;
+            capModName[0] = static_cast<char>(
+                toupper(static_cast<unsigned char>(capModName[0])));
+            git = globals.find(capModName);
+            if (git != globals.end() && git->second.isObjectId()) {
+              receiver = git->second;
+            }
+          }
+        }
+      }
+    }
+    auto key = resolveKey(key_value);
+    if (key) {
+      if (receiver.asObjectId() == globals_mirror_object_id_) {
+        *out = lookupGlobalByKey(*key);
+        return true;
+      }
+      *out = objectGetWithClassChain(receiver.asObjectId(), *key);
+      return true;
+    }
+    *out = Value::makeNull();
+    return true;
+  }
+
+  // Function objects, intervals/timeouts, strings, sets: execute the real
+  // OBJECT_GET against the shared stack (balanced push/pull, isolated).
+  const size_t depth_before = stack.size();
+  pushStack(receiver);
+  pushStack(key_value);
+  Instruction instr;
+  instr.opcode = OpCode::OBJECT_GET;
+  try {
+    executeInstruction(instr);
+    if (!stack.empty()) {
+      *out = stack.top();
+      stack.pop();
+    } else {
+      *out = Value::makeNull();
+    }
+    truncateStackPublic(depth_before);
+    return true;
+  } catch (...) {
+    truncateStackPublic(depth_before);
+    *out = Value::makeNull();
+    return false;
+  }
+}
+
+uint64_t VM::indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
+                               uint64_t val_bits) {
+  Value container = Value::fromRawBits(container_bits);
+  Value index_or_key = Value::fromRawBits(key_bits);
+  Value value = Value::fromRawBits(val_bits);
+
+  // Parity with the interpreter's ARRAY_SET (VMCollections.cpp): array fast
+  // path, then set, then object semantics including op_index_set dispatch,
+  // the globals-mirror special case, resolveKey, and the object GC write
+  // barrier. On bail shapes the caller contract returns the value word.
+
+  if (container.isArrayId()) {
+    if (!index_or_key.isInt()) return val_bits;
+    auto index = indexFromValue(index_or_key);
+    if (!index) return val_bits;
+    auto* array = heap_.array(container.asArrayId());
+    if (!array) return val_bits;
+    if (array->frozen) return val_bits;
+    int64_t idx = *index;
+    if (idx < 0) {
+      idx = static_cast<int64_t>(array->size()) + idx;
+      if (idx < 0) return val_bits;
+    }
+    const auto idx_size = static_cast<size_t>(idx);
+    if (idx_size >= 100'000'000) return val_bits;
+    const size_t old_size = array->size();
+    if (idx_size >= old_size) {
+      array->resize(idx_size + 1, Value::makeNull());
+    }
+    (*array)[idx_size] = value;
+    heap_.writeArrayBarrier(array->data, value);
+    heap_.bumpArrayVersion(container.asArrayId());
+    if (old_size != array->size()) {
+      emitVariableChanged("@A" + std::to_string(container.asArrayId()) +
+                          ":length");
+    }
+    emitVariableChanged("@A" + std::to_string(container.asArrayId()) +
+                        ":[" + std::to_string(idx) + "]");
+    return container_bits;
+  }
+
+  if (container.isSetId()) {
+    auto key = resolveKey(index_or_key);
+    if (!key) return val_bits;
+    auto* set = heap_.set(container.asSetId());
+    if (!set) return val_bits;
+    bool present = false;
+    if (value.isBool()) {
+      present = value.asBool();
+    } else if (value.isInt()) {
+      present = value.asInt() != 0;
+    } else if (value.isDouble()) {
+      present = value.asDouble() != 0.0;
+    } else {
+      return val_bits;
+    }
+    if (present) {
+      (*set)[*key] = Value::makeNull();
+      heap_.writeSetBarrier(*set, *key, Value::makeNull());
+      heap_.bumpSetVersion(container.asSetId());
+    } else {
+      set->erase(*key);
+      heap_.bumpSetVersion(container.asSetId());
+    }
+    return container_bits;
+  }
+
+  if (container.isObjectId()) {
+    // Operator overloading: op_index_set takes precedence (matches the
+    // interpreter), executing the method and pushing the container.
+    Value opIndexSet = getHostObjectField(
+        ObjectRef{container.asObjectId(), true}, "op_index_set");
+    if (!opIndexSet.isNull() &&
+        (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() ||
+         opIndexSet.isHostFuncId())) {
+      callFunction(opIndexSet, {container, index_or_key, value});
+      return container_bits;
+    }
+    auto key = resolveKey(index_or_key);
+    if (!key) return val_bits;
+    auto* object = heap_.object(container.asObjectId());
+    if (!object) return val_bits;
+    // object->set() bumps shape_version, which the JIT's inline-cached
+    // collection reads (object_get_raw_ic) key their staleness check on;
+    // (*object)[key] does not bump, so cached reads would serve stale
+    // values forever after any write (the binding-power table built by
+    // JIT'd getBPTABLE read back as empty through the cache).
+    object->set(*key, value);
+    if (container.asObjectId() == globals_mirror_object_id_) {
+      globals[*key] = value;
+    }
+    heap_.writeObjectBarrier(object->data, *key, value);
+    return container_bits;
+  }
+
+  return val_bits;
 }
 
 void VM::pushStack(Value value) {
@@ -5704,13 +6039,40 @@ load_from_source:
   // during __main__ (e.g., 'flags = DebugFlags()').
   for (const auto &[func_name, func_index] : chunk->getFunctionIndices()) {
     if (globals.find(func_name) == globals.end()) {
+      const auto *func = chunk->getFunction(func_index);
+      // Build upvalues for the closure from the function's upvalue descriptors
+      std::vector<std::shared_ptr<GCHeap::UpvalueCell>> closureUpvalues;
+      if (func && !func->upvalues.empty()) {
+        closureUpvalues.reserve(func->upvalues.size());
+        for (const auto &desc : func->upvalues) {
+          if (desc.captures_local) {
+            uint32_t abs = toAbsoluteLocal(desc.index);
+            ensureLocalIndex(abs);
+            auto open_it = open_upvalues.find(abs);
+            if (open_it == open_upvalues.end()) {
+              auto cell = std::make_shared<GCHeap::UpvalueCell>();
+              cell->is_open = true;
+              cell->open_index = desc.index;
+              cell->locals_base = 0; // module-level, frame locals_base is 0
+              open_upvalues.emplace(abs, cell);
+              closureUpvalues.push_back(std::move(cell));
+            } else {
+              closureUpvalues.push_back(open_it->second);
+            }
+          } else {
+            // Upvalue from parent closure - module top-level functions don't have parent closures
+            // This should not happen for module top-level functions, but handle gracefully
+            closureUpvalues.push_back(nullptr);
+          }
+        }
+      }
       auto closureRef = heap_.allocateClosure(
           GCHeap::RuntimeClosure{.function_index = func_index,
                                  .chunk_index = 0,
                                  .chunk = chunk.get(),
                                  .chunk_ref = chunk,
                                  .module_globals = nullptr,
-                                 .upvalues = {}});
+                                 .upvalues = std::move(closureUpvalues)});
       globals[func_name] = Value::makeClosureId(closureRef.id);
       // std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " <<
       // func_index
@@ -6555,11 +6917,77 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 }
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
-    // Append globals data to existing .hvc file
-    FILE* file = fopen(hvcPath.c_str(), "ab");
-    if (file) {
-        fwrite(globalsData.data(), 1, globalsData.size(), file);
-        fclose(file);
+    // Rewrite the .hvc as [chunk][globals-section] in one atomic
+    // temp-file rename, under an advisory lock. History: the old
+    // "ab"-only mode stacked one [globals][GLBS][size] section per cold
+    // load (268 nested sections / 26MB dead weight observed), and a
+    // truncate-then-append fix still raced when concurrent processes
+    // cold-loaded the same module (the test suite runs 4 workers): one
+    // process truncated while another was mid-append, leaving a second
+    // section plus garbage after it. The section start is found by
+    // first-marker arithmetic (chunk_end = firstMarker - size@marker),
+    // which also crosses the marker-less partial sections interrupted
+    // writes leave behind; then the whole surviving chunk plus this
+    // run's section is written via rename so readers never observe a
+    // torn file.
+    std::error_code ec;
+    // Serialize writers on the target file. The lock file is a sibling
+    // .lock path so it never aliases the cache file itself.
+    const std::string lockPath = hvcPath + ".lock";
+    int lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_EX);
+    }
+
+    std::vector<uint8_t> existing;
+    bool haveExisting = false;
+    if (std::filesystem::exists(hvcPath, ec) && !ec) {
+        std::ifstream probe(hvcPath, std::ios::binary | std::ios::ate);
+        if (probe) {
+            const std::streamsize fileSize = probe.tellg();
+            if (fileSize > 0) {
+                existing.resize(static_cast<size_t>(fileSize));
+                probe.seekg(0, std::ios::beg);
+                probe.read(reinterpret_cast<char *>(existing.data()),
+                           fileSize);
+                haveExisting = probe.good() || probe.eof();
+            }
+        }
+    }
+
+    std::vector<uint8_t> out;
+    if (haveExisting) {
+        const size_t chunkEnd =
+            ValueSerializer::chunkDataEnd(
+                std::span<const uint8_t>(existing));
+        if (chunkEnd > 0 && chunkEnd <= existing.size()) {
+            out.assign(existing.begin(), existing.begin() + chunkEnd);
+        } else {
+            out = std::move(existing);
+        }
+    }
+    out.insert(out.end(), globalsData.begin(), globalsData.end());
+
+    const std::string tmpPath =
+        hvcPath + ".tmp." +
+        std::to_string(static_cast<uint64_t>(::getpid()));
+    {
+        std::ofstream tmp(tmpPath, std::ios::binary | std::ios::trunc);
+        if (tmp) {
+            tmp.write(reinterpret_cast<const char *>(out.data()),
+                      static_cast<std::streamsize>(out.size()));
+            tmp.flush();
+        }
+    }
+    std::filesystem::rename(tmpPath, hvcPath, ec);
+    if (ec) {
+        ::havel::debug("[writeGlobalsToHvc] rename failed for {}: {}",
+                       hvcPath, ec.message());
+        std::filesystem::remove(tmpPath, ec);
+    }
+    if (lockFd >= 0) {
+        flock(lockFd, LOCK_UN);
+        ::close(lockFd);
     }
 }
 

@@ -738,7 +738,13 @@ fn Lexer(source) {
             else if word == "import" {
                 print("WARNING: '" + word + "' is deprecated, use 'use' instead at line " + str(line) + ", col " + str(col - word.len))
             }
-            addToken(keywords[word], word)
+            // async is a contextual keyword: treat as identifier when followed by dot (member access)
+            // or in 'use async' import form. Otherwise it's a keyword for async/await expressions.
+            if word == "async" && idx < n && codepoints[idx] == 46 {
+                addToken("Identifier", word)
+            } else {
+                addToken(keywords[word], word)
+            }
         } else {
             addToken("Identifier", word)
         }
@@ -1217,7 +1223,7 @@ if c == 33 && cp(1) == 123 {
                 addToken("PlusAssign", "+=")
                 continue
             }
-            // Plus: context-aware (operator vs hotkey modifier)
+// Plus: context-aware (operator vs hotkey modifier)
             if c == 43 {
                 if afterExpression() && !isHotkeyAssign() {
                     advance()
@@ -1225,7 +1231,7 @@ if c == 33 && cp(1) == 123 {
                 } else {
                     advance()
                     s = "+"
-      while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
+                    while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 && current() != 32 {
                         if current() == 61 && cp(1) == 62 { break }
                         if !isHotkeyCharCp(current()) { break }
                         s = s + string.fromCodePoint(current())

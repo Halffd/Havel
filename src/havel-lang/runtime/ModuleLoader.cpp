@@ -407,6 +407,14 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     return *bc;
   }
 
+  // 3. app.<name>.hvc (app modules)
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / ("app." + name + ".hvc"),
+        fs::path(cacheDir) / ("app." + name + ".hv"),
+        "app." + name)) {
+    return *bc;
+  }
+
   // 2. Check script directory for local .hv modules. The flat cache is
   // consulted for each resolved source; there is no scriptDir/name.hvc.
   if (!scriptDir.empty()) {

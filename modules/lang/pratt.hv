@@ -907,7 +907,17 @@ else if tt == TID.Async {
     fnDecl = parseFnDeclaration()
     return AsyncExpression(fnDecl, l, c)
   }
-  return error("Expected '{' or 'fn' after 'async'", l, c)
+  // async (expr) — wrap expression in async
+  if current().tid == TID.OpenParen {
+    advance()
+    expr = parseExpr(0)
+    expect(TID.CloseParen)
+    return AsyncExpression(expr, l, c)
+  }
+  // async.sleep(...) / async(x) / use async / str(async) — the async module global or identifier.
+  // async is a contextual keyword: only a keyword when starting an async expression
+  // (async { ... }, async fn ..., async (expr)). In all other contexts, treat as identifier.
+  return Identifier("async", l, c)
 }
 else if tt == TID.LeftArrow {
   // <- as await prefix: <-expr
@@ -2221,6 +2231,30 @@ fn parseBlock() {
   c = current().col
   prevSugar = allowBraceSugar
 
+  // Helper: check if expression is a line continuation (unary operator that's actually binary continuation)
+  fn isContinuationExpr(expr) {
+    if expr == null or expr.kind != "UnaryExpression": return false
+    op = expr.operator
+    if op != "+" and op != "-" and op != "*" and op != "/" and op != "%" and
+       op != "||" and op != "&&" and op != "==" and op != "!=" and
+       op != "<" and op != ">" and op != "<=" and op != ">=" and
+       op != "|" and op != "&" and op != "^" and op != "<<" and op != ">>" and
+       op != "..":
+      return false
+    // Heuristic: operand is a call, member access, index, or identifier (not a simple literal)
+    operand = expr.operand
+    if operand == null: return false
+    return operand.kind == "CallExpression" or operand.kind == "MemberExpression" or
+           operand.kind == "IndexExpression" or operand.kind == "Identifier"
+  }
+
+  // Helper: combine previous expression with continuation
+  fn combineContinuation(prevExpr, contExpr) {
+    op = contExpr.operator
+    right = contExpr.operand
+    return BinaryExpression(prevExpr, op, right)
+  }
+
   if current().tid == TID.OpenBrace {
     advance()
     skipNewlines()
@@ -2230,7 +2264,18 @@ fn parseBlock() {
       if current().tid == TID.CloseBrace: break
       s = parseStatement()
       if s != null and s.kind != "ErrorNode" {
-        stmts.push(s)
+        // Handle line continuations: combine with previous expression statement
+        if s.kind == "ExpressionStatement" and isContinuationExpr(s.expr) and #stmts > 0 {
+          prev = stmts[#stmts - 1]
+          if prev.kind == "ExpressionStatement" {
+            combined = combineContinuation(prev.expr, s.expr)
+            stmts[#stmts - 1] = ExpressionStatement(combined, prev.line, prev.column)
+          } else {
+            stmts.push(s)
+          }
+        } else {
+          stmts.push(s)
+        }
       }
       if s != null and s.kind == "ErrorNode" {
         synchronize()
@@ -2476,11 +2521,11 @@ if tt == TID.Defer {
 		stmts = []
 		skipNewlines()
 		while current().tid != TID.CloseBrace and notEOF() {
-			if current().tid == TID.NewLine { advance(); continue }
+			if current().tid == TID.NewLine || current().tid == TID.Semicolon { advance(); continue }
 			stmts.push(parseStatement())
 			skipNewlines()
 		}
-expect(TID.CloseBrace)
+	expect(TID.CloseBrace)
         block = BlockStatement(stmts, l, c)
         expr = LambdaExpression([], block)
         return DeferStatement(expr, l, c)

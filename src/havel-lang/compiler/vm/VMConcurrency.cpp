@@ -57,7 +57,7 @@ case OpCode::THREAD_JOIN: {
         }
       }
       suspension_requested_ = true;
-      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+      suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
       suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(wg_id));
     }
     pushStack(Value::makeNull());
@@ -89,7 +89,7 @@ case OpCode::THREAD_JOIN: {
   }
 
   suspension_requested_ = true;
-  suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+  suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
   suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
   pushStack(Value::makeNull());
   break;
@@ -565,7 +565,7 @@ if (awaitable.isThreadId()) {
       g->wait_handle.target_id = tid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume by HavelEngine
     break;
@@ -605,7 +605,7 @@ if (awaitable.isIntervalId()) {
       g->wait_handle.target_id = iid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(iid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume
     break;
@@ -648,7 +648,7 @@ if (awaitable.isTimeoutId()) {
       g->wait_handle.target_id = tid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume
     break;

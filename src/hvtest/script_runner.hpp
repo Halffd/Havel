@@ -253,11 +253,36 @@ inline int list_scripts(const std::vector<std::string> &directories) {
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 60) {
+                           int timeout_seconds = 60,
+                           const std::vector<std::string> &name_filters = {}) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
         return 1;
+    }
+    if (!name_filters.empty()) {
+        // Substring match on the file stem, mirroring how people invoke
+        // a single test: `hvtest --smoke coroutine_call_resume`.
+        std::vector<std::string> filtered;
+        for (const auto &s : scripts) {
+            const std::string stem = fs::path(s).stem().string();
+            for (const auto &f : name_filters) {
+                if (stem.find(f) != std::string::npos) {
+                    filtered.push_back(s);
+                    break;
+                }
+            }
+        }
+        if (filtered.empty()) {
+            std::cerr << "no smoke tests match filter:";
+            for (const auto &f : name_filters) std::cerr << " " << f;
+            std::cerr << " (in " << smoke_dir << ")" << std::endl;
+            return 1;
+        }
+        scripts = std::move(filtered);
+        std::cout << "filter: " << scripts.size() << " of "
+                  << discover_scripts({smoke_dir}).size() << " scripts match"
+                  << std::endl;
     }
 
     // Detect bytecode/self-hosted modules path: derived from havel_bin's location.

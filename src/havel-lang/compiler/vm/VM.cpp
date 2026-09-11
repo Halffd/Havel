@@ -4149,8 +4149,20 @@ void VM::doReturn() {
     }
   }
 
+  // Entry stack depth of the frame being returned. A callee's RETURN only
+  // pops a value when its body actually pushed one above this depth.
+  // Statement-final implicit returns leave nothing above stack_depth, so an
+  // unconditional pop steals a pending operand the CALLER left beneath the
+  // frame (e.g. `go worker()` = LOAD_GLOBAL thread_spawn; LOAD_GLOBAL
+  // worker; CALL 0; CALL 1: CALL 0 runs the worker inline with thread_spawn
+  // still on the stack; the worker's implicit return popped thread_spawn as
+  // its "return value" and the re-push left the stack at [thread_spawn],
+  // making CALL 1 underflow).
+  auto finished = frame_arena_[frame_count_ - 1];
+  const size_t frame_entry_depth = finished.stack_depth;
+
   Value ret = nullptr;
-  if (!stack.empty()) {
+  if (stack.size() > frame_entry_depth) {
     ret = popStack();
   }
 
@@ -4163,7 +4175,6 @@ void VM::doReturn() {
     ret = deepMaterializeStrings(ret, current_chunk);
   }
 
-  auto finished = frame_arena_[frame_count_ - 1];
   frame_count_--;
 
   // Restore current_chunk from parent frame

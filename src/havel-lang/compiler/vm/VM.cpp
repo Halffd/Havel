@@ -708,7 +708,9 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
             std::lock_guard wlock(cur->wait_handle_mutex_);
             if (cur->wait_handle.type == Scheduler::AwaitableType::EXTERNAL ||
                 cur->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV) {
-              if (!stack.empty()) replaceStackTop(cur->wait_handle.resume_value);
+              deliverResumeValue(cur->wait_handle.type,
+                                cur->wait_handle.resume_value,
+                                cur->wait_handle.target_id);
               cur->wait_handle.clear();
             }
           }
@@ -1408,6 +1410,8 @@ void VM::loadFiberState(Fiber *fiber) {
           VM::TryHandler{handler.catch_ip, handler.finally_ip,
                          handler.finally_return_ip, handler.stack_depth});
     }
+    // Restore defers registered before the suspension (see saveFiberState).
+    vm_frame.defer_stack = fiber_frame.defer_stack;
 
     frame_count_++;
   }
@@ -1449,8 +1453,31 @@ void VM::loadFiberState(Fiber *fiber) {
   // foreign entries and names written by the goroutine's script frames before
   // the module call (e.g. a nested-capture counter's `count`) vanish from
   // ambient.
+  //
+  // Merge, never wholesale-replace: the saved stack holds deep copies taken
+  // at suspension. While the fiber was parked, timer callbacks and other
+  // goroutines can write into the maps still on the LIVE globals_stack_ (see
+  // STORE_GLOBAL's pushed-map mirroring for the debounce counter case).
+  // Replacing the stack with the stale copies threw those writes away, so
+  // async_mod.debounce's counter reset to 0 after every sleep. The live
+  // maps stay primary; saved entries only fill missing depths/keys.
   if (fiber->has_saved_globals && !fiber->saved_globals_stack.empty()) {
-    globals_stack_ = fiber->saved_globals_stack;
+    if (globals_stack_.size() < fiber->saved_globals_stack.size()) {
+      globals_stack_.resize(fiber->saved_globals_stack.size());
+    }
+    for (size_t gsi = 0; gsi < fiber->saved_globals_stack.size(); ++gsi) {
+      auto &live_map = globals_stack_[gsi];
+      auto &saved_map = fiber->saved_globals_stack[gsi];
+      if (live_map.empty()) {
+        live_map = saved_map;
+        continue;
+      }
+      for (const auto &[k, v] : saved_map) {
+        if (!live_map.count(k)) {
+          live_map.emplace(k, v);
+        }
+      }
+    }
     globals_mirror_object_id_ = fiber->saved_globals_mirror_id;
   }
   uint32_t top_closure_id = UINT32_MAX;
@@ -1559,6 +1586,9 @@ void VM::saveFiberState(Fiber *fiber) {
           TryHandlerType{vm_handler.catch_ip, vm_handler.finally_ip,
                          vm_handler.finally_return_ip, vm_handler.stack_depth});
     }
+    // Persist defers: suspending goroutines must run their deferred
+    // closures after resume, on frame exit (doReturn reads defer_stack).
+    fiber_cf.defer_stack = vm_frame.defer_stack;
 
     fiber->call_stack.push_back(fiber_cf);
   }
@@ -4365,9 +4395,11 @@ void VM::tickScheduler() {
       // Resumed goroutine (unparked from await/sleep)
       if (g->fiber) {
         loadFiberStatePublic(g->fiber);
-        if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
-            g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
-          replaceStackTop(g->wait_handle.resume_value);
+         if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
+             g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
+          deliverResumeValue(g->wait_handle.type,
+                             g->wait_handle.resume_value,
+                             g->wait_handle.target_id);
           g->wait_handle.clear();
         }
       }
@@ -4573,16 +4605,24 @@ Value VM::deepWrapModuleFunctions(
             callArgs.erase(callArgs.begin());
           }
           auto *savedChunk = current_chunk;
-          auto savedGlobals = globals;
-          auto savedMirrorId = globals_mirror_object_id_;
-          Value savedG = globals["_G"];
+          // Push the caller's globals onto globals_stack_ (move, not copy) and
+          // swap ambient to the module map — same discipline as doCall for
+          // module closures. The old copy-into-local approach left nothing on
+          // globals_stack_, so closures from the MAIN script invoked from the
+          // module fn (throttle's `func` argument) could not see script
+          // globals: LOAD_GLOBAL 'counter' failed with "Undefined variable"
+          // (the LOAD_GLOBAL globals_stack_ fallback had nothing to find).
+          bool wrapper_owns_globals = true;
+          globals_stack_.push_back(std::move(globals));
           globals = *moduleGlobals;
+          auto savedMirrorId = globals_mirror_object_id_;
+          Value savedG = globals_stack_.back()["_G"];
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);
           if (!callee) {
-            globals = std::move(savedGlobals);
+            globals = std::move(globals_stack_.back());
+            globals_stack_.pop_back();
             globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
             current_chunk = savedChunk;
             return Value::makeNull();
           }
@@ -4597,6 +4637,14 @@ Value VM::deepWrapModuleFunctions(
             cf.ip = 0;
             cf.locals_base = base;
             cf.stack_depth = frame_stack_depth;
+            // owns_globals stays false: this wrapper pushes/pops
+            // globals_stack_ itself. A stale true value (reused arena slot
+            // from a suspended wrapper frame) would make the wrapped fn's
+            // RET pop a foreign globals_stack_ entry.
+            cf.owns_globals = false;
+            cf.written_globals.clear();
+            cf.defer_stack.clear();
+            cf.try_stack.clear();
             frame_arena_.push_back(std::move(cf));
           } else {
             frame_arena_[frame_count_].function = callee;
@@ -4604,6 +4652,10 @@ Value VM::deepWrapModuleFunctions(
             frame_arena_[frame_count_].ip = 0;
             frame_arena_[frame_count_].locals_base = base;
             frame_arena_[frame_count_].stack_depth = frame_stack_depth;
+            frame_arena_[frame_count_].owns_globals = false;
+            frame_arena_[frame_count_].written_globals.clear();
+            frame_arena_[frame_count_].defer_stack.clear();
+            frame_arena_[frame_count_].try_stack.clear();
           }
           frame_count_++;
           for (uint32_t i = 0; i < callee->param_count; i++) {
@@ -4657,25 +4709,14 @@ Value VM::deepWrapModuleFunctions(
               // module function) and returned as if complete. The fiber
               // machinery saved execution state at the suspension point and
               // resumes by re-entering the dispatch loop directly, so the
-              // completion path below must NOT run: restoring globals to the
-              // caller's map (and current_chunk) here would make the
-              // subsequent saveFiberState capture the wrong globals, and the
-              // resumed function would resolve its module globals against the
-              // caller's map. Leave stack/globals/chunk as the suspension
-              // left them and propagate to the CALL site (op_CALL checks
-              // suspension_requested_ || last_suspension_reason_ after host
-              // calls). The return value is ignored by the suspension path.
-              //
-              // The caller's globals map now lives ONLY in savedGlobals (a
-              // C++ local that dies with this invocation). Preserve it for
-              // the resume: push it onto globals_stack_ and flip the wrapped
-              // frame to owns_globals so its eventual RET pops the stack and
-              // restores the caller's scope. Ambient stays the module map —
-              // exactly what the resumed module function must see.
+              // completion path below must NOT run. The caller's map is
+              // ALREADY on globals_stack_ (pushed at entry). Flip the
+              // wrapped frame to owns_globals so its eventual RET pops the
+              // stack and restores the caller's scope. Ambient stays the
+              // module map — exactly what the resumed module function sees.
               if (frame_count_ > 0) {
                 frame_arena_[frame_count_ - 1].owns_globals = true;
               }
-              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
@@ -4686,9 +4727,9 @@ Value VM::deepWrapModuleFunctions(
             if (locals.size() > savedLocalsSize) {
               locals.resize(savedLocalsSize);
             }
-            globals = std::move(savedGlobals);
+            globals = std::move(globals_stack_.back());
+            globals_stack_.pop_back();
             globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
             current_chunk = savedChunk;
             throw;
           }
@@ -4702,9 +4743,9 @@ Value VM::deepWrapModuleFunctions(
                 moduleGlobals, fnCapturedKey, fnCapturedField + "_ret", depth + 1, visitedPtr);
           }
           *moduleGlobals = std::move(globals);
-          globals = std::move(savedGlobals);
+          globals = std::move(globals_stack_.back());
+          globals_stack_.pop_back();
           globals_mirror_object_id_ = savedMirrorId;
-          globals["_G"] = savedG;
           current_chunk = savedChunk;
           return result;
         });
@@ -4753,17 +4794,21 @@ Value VM::deepWrapModuleFunctions(
             return Value::makeNull();
 
           auto *savedChunk = current_chunk;
-          auto savedGlobals = globals;
-          auto savedMirrorId = globals_mirror_object_id_;
-          Value savedG = globals["_G"];
+          // Push caller globals and swap ambient to the closure's module
+          // map — same push/pop discipline as the $module_fn_ wrapper (see
+          // there for rationale). Script closures invoked from the module
+          // closure (async_mod.throttle's `func`) need the script map
+          // reachable via globals_stack_ or LOAD_GLOBAL 'counter' fails.
+          globals_stack_.push_back(std::move(globals));
           globals = *closureGlobals;
+          auto savedMirrorId = globals_mirror_object_id_;
           current_chunk = moduleChunk.get();
 
           const auto *callee = moduleChunk->getFunction(funcIdx);
           if (!callee) {
-            globals = std::move(savedGlobals);
+            globals = std::move(globals_stack_.back());
+            globals_stack_.pop_back();
             globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
             current_chunk = savedChunk;
             return Value::makeNull();
           }
@@ -4771,19 +4816,13 @@ Value VM::deepWrapModuleFunctions(
           size_t base = locals.size();
           locals.resize(base + callee->local_count, nullptr);
           uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
-          // IMPORTANT: owns_globals must be FALSE here. This wrapper saves
-          // globals into a local C++ variable (savedGlobals above) and
-          // restores it explicitly on return (line ~4193); it does NOT push
-          // onto globals_stack_. If owns_globals were true, the RET opcode
-          // inside the wrapped bytecode would pop a stale globals_stack_
-          // entry (one pushed by an ancestor caller), corrupting the
-          // goroutine's globals scope. This was the root cause of the
-          // "_atoms_cache undefined" crash when a goroutine called
-          // window.active() -> display.open() (a ClosureId-wrapped module
-          // function): each wrapped call leaked one globals_stack_ pop,
-          // eventually unwinding the goroutine's TCO-pushed ambient and
-          // restoring globals to a map lacking the protocols module's
-          // _atoms_cache, so the next LOAD_GLOBAL in _atom threw.
+          // IMPORTANT: owns_globals must be FALSE here. This wrapper pushes
+          // the caller's globals onto globals_stack_ at entry and pops it
+          // explicitly on completion; the wrapped frame's RET must NOT pop
+          // (the suspension path flips owns_globals to true so the RESUMED
+          // fn's RET performs the pop). A stale true value in a reused arena
+          // slot would pop a foreign globals_stack_ entry — the historic
+          // "_atoms_cache undefined" root cause.
           if (frame_arena_.size() <= frame_count_) {
             CallFrame cf;
             cf.function = callee;
@@ -4802,6 +4841,9 @@ Value VM::deepWrapModuleFunctions(
             frame_arena_[frame_count_].closure_id = closureId;
             frame_arena_[frame_count_].stack_depth = frame_stack_depth;
             frame_arena_[frame_count_].owns_globals = false;
+            frame_arena_[frame_count_].written_globals.clear();
+            frame_arena_[frame_count_].defer_stack.clear();
+            frame_arena_[frame_count_].try_stack.clear();
           }
           frame_count_++;
 
@@ -4856,13 +4898,11 @@ Value VM::deepWrapModuleFunctions(
               // yield) inside the closure body must propagate to the CALL
               // site without restoring globals/current_chunk, or the fiber
               // resume would run module code against the caller's globals.
-              // Preserve the caller's map (see that wrapper for details):
-              // push it on globals_stack_ and mark the frame so its RET
-              // pops it after the resume.
+              // The caller's map is already on globals_stack_ (pushed at
+              // entry); just flip the frame so its RET pops it.
               if (frame_count_ > 0) {
                 frame_arena_[frame_count_ - 1].owns_globals = true;
               }
-              globals_stack_.push_back(std::move(savedGlobals));
               return Value::makeNull();
             }
             if (std::getenv("HAVEL_TRACE_SLEEP")) {
@@ -4873,9 +4913,9 @@ Value VM::deepWrapModuleFunctions(
             if (locals.size() > base) {
               locals.resize(base);
             }
-            globals = std::move(savedGlobals);
+            globals = std::move(globals_stack_.back());
+            globals_stack_.pop_back();
             globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
             current_chunk = savedChunk;
             throw;
           }
@@ -4885,15 +4925,39 @@ Value VM::deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
                 closureGlobals, capturedKey, capturedField + "_ret", depth + 1, visitedPtr);
           }
-          globals = std::move(savedGlobals);
+          globals = std::move(globals_stack_.back());
+          globals_stack_.pop_back();
           globals_mirror_object_id_ = savedMirrorId;
-          globals["_G"] = savedG;
           current_chunk = savedChunk;
           return result;
         });
     uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
     if (wantsSelfClosure) {
       host_function_wants_self_.insert(hostIdx);
+    }
+    // Carry over user-set closure properties (e.g. wrapped.cancel on the
+    // debounce closure) so `wrapper.cancel(args)` keeps working after the
+    // closure crossed the module export boundary. OBJECT_SET on a HostFuncId
+    // stores into hostfunc_properties_[hostIdx], and the closure branch of
+    // this function appended its own props to closure_properties_[id] —
+    // copy them onto the wrapper's hostfunc properties object.
+    {
+      auto propIt = closure_properties_.find(closureId);
+      if (propIt != closure_properties_.end()) {
+        auto *srcProps = heap_.object(propIt->second.id);
+        auto &dstRef = hostfunc_properties_[hostIdx];
+        if (dstRef.id == 0) {
+          dstRef = heap_.allocateObject(true);
+        }
+        auto *dstProps = heap_.object(dstRef.id);
+        if (srcProps && dstProps) {
+          for (const auto &[pk, pv] : *srcProps) {
+            if (!dstProps->get(pk)) {
+              dstProps->set(pk, pv);
+            }
+          }
+        }
+      }
     }
     resumeGcGuard();
     return Value::makeHostFuncId(hostIdx);

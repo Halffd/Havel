@@ -2183,21 +2183,33 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-            // mtime alone lies: GLBS trailer appends and other runtime
-            // writers rewrite the .hvc (bumping its mtime) without
-            // recompiling, so a source edit can end up older than a cache
-            // that still holds pre-edit bytecode. When the cache embeds a
-            // source hash (serializeChunk with a source path), verify it
-            // against the live source before reusing; hash-less legacy
-            // caches fall back to the mtime check above.
-            auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
-                std::span<const uint8_t>(buffer));
-            bool reusable = true;
-            if (srcInfo.hasInfo) {
-              std::error_code liveEc;
-              if (std::filesystem::exists(srcInfo.path, liveEc) && !liveEc) {
-                const std::string actualHashHex =
-                    havel::ModuleLoader::sha256FileHex(srcInfo.path);
+             // mtime alone lies: GLBS trailer rewrites and other runtime
+             // writers rewrite the .hvc (bumping its mtime) without
+             // recompiling, so a source edit can end up older than a
+             // cache that still holds pre-edit bytecode. When the cache
+             // embeds a source hash (serializeChunk with a source
+             // path), verify it against the live source before reusing.
+             // Hash-less legacy caches compare the cache-copy .hv's
+             // content hash against the live source instead - plain
+             // mtime reuse is NOT safe for them (observed: a legacy
+             // cache served pre-edit bytecode after a GLBS rewrite
+             // bumped its mtime past the edit).
+              auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                  std::span<const uint8_t>(buffer));
+              bool reusable = true;
+              if (srcInfo.hasInfo) {
+                // The cache is global (~/.cache/havel) but source trees
+                // are not: a parallel worktree's havel binary may have
+                // compiled this entry against ITS copy of the module
+                // (observed: lang.scope.hvc embedding a /havel-3/ path
+                // while this tree's build happily reused it). The
+                // recorded path says nothing about THIS tree's source,
+                // so validate against the file being built: bytecode
+                // depends only on source CONTENT, so compare the
+                // embedded size+sha256 with primaryFile directly.
+                // Identical content across trees reuses without a
+                // ping-pong of recompiles; diverged content recompiles
+                // and re-stamps the entry with this tree's identity.
                 static const char hexDigits[] = "0123456789abcdef";
                 std::string embeddedHex;
                 embeddedHex.reserve(srcInfo.hash.size() * 2);
@@ -2205,17 +2217,44 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                   embeddedHex += hexDigits[b >> 4];
                   embeddedHex += hexDigits[b & 0x0F];
                 }
-                if (!actualHashHex.empty() && actualHashHex == embeddedHex) {
+                const std::string primaryHashHex =
+                    havel::ModuleLoader::sha256FileHex(primaryFile);
+                std::error_code sizeEc;
+                const uintmax_t primarySize =
+                    std::filesystem::file_size(primaryFile, sizeEc);
+                if (!primaryHashHex.empty() && !sizeEc &&
+                    primarySize == srcInfo.size &&
+                    primaryHashHex == embeddedHex) {
                   reusable = true;
                 } else {
                   reusable = false;
-                  info("Bytecode cache hash mismatch (source changed), recompiling: {}",
+                  info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built from {} bytes/hash {}), recompiling: {}",
+                       sizeEc ? std::string("?")
+                              : std::to_string(primarySize),
+                       primaryHashHex.empty() ? "?" : primaryHashHex.substr(0, 12),
+                       srcInfo.hasInfo ? std::to_string(srcInfo.size) : "?",
+                       embeddedHex.empty() ? "?" : embeddedHex.substr(0, 12),
                        cachePath);
                 }
               } else {
-                // Recorded source no longer exists: can't validate, and
-                // the compile below targets the current primaryFile anyway.
+              // Legacy hash-less cache: the file predates source-hash
+              // embedding and could have been written by any older
+              // binary. The cache-copy .hv beside it is NOT evidence of
+              // the hvc's content - emit_pipeline.sh copies the source
+              // next to the cache unconditionally AFTER the build step,
+              // so the copy can hold a newer source than the bytecode
+              // beside it (observed live). mtime also lies: GLBS
+              // rewrites bump it without recompiling. When a live
+              // source exists, the only safe move is recompiling (and
+              // the fresh compile embeds a hash, healing the cache for
+              // future runs). Bundles with no live source (AOT
+              // distribution) keep the mtime decision.
+              std::error_code liveEc;
+              if (std::filesystem::exists(primaryFile, liveEc) &&
+                  !liveEc) {
                 reusable = false;
+                info("Legacy bytecode cache without source hash, recompiling: {}",
+                     cachePath);
               }
             }
             if (reusable) {

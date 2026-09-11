@@ -524,6 +524,25 @@ int32_t pending_call_return_ip_ = -1;
     uint64_t executed_instructions_ = 0;
     uint64_t max_instructions_ = 0; // 0 = no limit
 
+    // Scheduler time-slice budget for runDispatchFast: when nonzero, the
+    // fast dispatch loop returns at its next periodic check (the
+    // 8192-instruction backedge hook) once this many instructions ran,
+    // so a goroutine tick can hand control back to the scheduler without
+    // per-instruction stepping. The driver (processGoroutinesInline /
+    // ExecutionEngine) sets it per tick, reads instructions consumed via
+    // fastTickConsumed(), and clears it for unbounded (callFunctionSync)
+    // execution.
+    uint64_t fast_tick_budget_ = 0;
+    uint64_t fast_tick_consumed_ = 0;
+
+    bool fastTickExpired() const { return fast_tick_budget_ != 0; }
+    uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
+    void beginFastTick(uint64_t budget) {
+      fast_tick_budget_ = budget;
+      fast_tick_consumed_ = 0;
+    }
+    void endFastTick() { fast_tick_budget_ = 0; }
+
     // System object initializer - called after registerDefaultHostGlobals()
     using SystemObjectInitializer = std::function<void(VM *)>;
     SystemObjectInitializer system_object_initializer_;
@@ -685,6 +704,70 @@ public:
             pushStack(std::move(value));
         }
     }
+    // Deliver a channel/external resume value onto the suspended stack.
+    // A channel ITER_NEXT suspension leaves a Pending marker (see ITER_NEXT
+    // in VMCollections.cpp); the loop body expects the {first, second, done}
+    // iterator-result object, so wrap the delivered value. All resume sites
+    // (processGoroutines, resumeGoroutine, HavelEngine, ExecutionEngine)
+    // must go through this helper or `for v in ch` reads a null first item.
+    // A resume on a closed+drained channel (close unparked the waiter)
+    // wraps as done:true so the iteration terminates instead of yielding
+    // the null placeholder as a data item.
+    //
+    // The marker may sit BELOW the stack top: when ITER_NEXT suspends
+    // inside a module-fn wrapper (async_mod.parallelMap's collection loop),
+    // the wrapper returns null to the outer CALL, whose handler pushes a
+    // null result slot ABOVE the marker before the fiber is saved. Scan
+    // for the marker instead of assuming it is top-of-stack.
+    void deliverResumeValue(Scheduler::AwaitableType type, Value value,
+                            uint32_t target_id = 0) {
+        if (type == Scheduler::AwaitableType::CHANNEL_RECV && !stack.empty()) {
+          // Unwind the stack looking for the marker (topmost wins; only one
+          // channel-iter suspension can be active per fiber). Cap the scan:
+          // the marker sits just below the null slots pushed by the CALL
+          // unwinding (one per module-wrapper level), so it is near the top.
+          std::vector<Value> above;
+          bool found = false;
+          for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
+            if (stack.top().isPending()) {
+              found = true;
+              break;
+            }
+            above.push_back(popStackPublic());
+          }
+          if (found) {
+            bool done = false;
+            if (value.isNull() && target_id != 0) {
+              Value state = invokeHostFunctionDirect(
+                  "channel_state", {Value::makeChannelId(target_id)});
+              done = state.isInt() && state.asInt() == 2;
+            }
+            auto resultObj = heap_.allocateObject();
+            auto *obj = heap_.object(resultObj.id);
+            // Value mirrored into first AND second (channels have no keys):
+            // the C++ loop compiler's fallback reads result.first while
+            // the self-hosted emitter reads result.second.
+            (*obj)["first"] = value;
+            (*obj)["second"] = std::move(value);
+            (*obj)["done"] = Value::makeBool(done);
+            replaceStackTop(Value::makeObjectId(resultObj.id));
+            // DROP the slots above the marker: they are the null result
+            // slots the module-fn wrapper's outer CALL pushed while the
+            // suspension unwound (one per wrapper level). The re-dispatch
+            // resumes INSIDE the suspended fn, whose next instructions
+            // consume the wrapped result at the marker's position; when
+            // the fn eventually returns, its RET re-pushes a result into
+            // the outer slot (doReturn preserves exactly one value).
+            return;
+          }
+          // No marker within reach: restore whatever was scanned off and
+          // fall back to plain replaceStackTop (ordinary receive resume).
+          for (auto it = above.rbegin(); it != above.rend(); ++it) {
+            pushStack(std::move(*it));
+          }
+        }
+        replaceStackTop(std::move(value));
+    }
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
   GCHeap::RuntimeClosure* currentClosurePublic() {
@@ -813,9 +896,17 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
+        // Hot path: this runs on EVERY loop backedge (millions in the
+        // benchmarks). Keep the sub-threshold path to a counter bump:
+        // the site-key string hash, the hot-trace mutex, tier-2 site
+        // dedup and maybeTierUp only matter once the site is hot
+        // (>= tier1_threshold_ backedges at this ip).
         auto count = ++backedge_counters_[ip];
         trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
         profiler_.recordBackedgeTotal();
+        if (count < tier1_threshold_) {
+            return;
+        }
         if (!hasActiveFrames()) {
             return;
         }
@@ -829,7 +920,7 @@ Value lookupGlobalByKey(const std::string& key) {
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
         // Trace callback fires once per site past the tier-1 threshold
         // (hot-trace hooks; separate from function tier-up).
-        if (count >= tier1_threshold_) {
+        {
             bool should_fire = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);

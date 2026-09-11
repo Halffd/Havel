@@ -4069,8 +4069,9 @@ case ast::NodeType::AtExpression: {
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
       }
     } else if (isDirective && current_function->is_timer_closure) {
-      // Inside interval/timeout closure: interval ID is in the first upvalue
-      emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));
+      // Inside interval/timeout closure: the timer ID is the LAST upvalue
+      // (compileClosureBody appends it after the resolver-assigned ones)
+      emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(current_function->upvalues.size() - 1));
     } else {
       // Non-class context: fall back to global (for hotkey directives)
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
@@ -5844,6 +5845,19 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         dynamic_cast<const ast::Identifier *>(member.property.get());
     if (!member.object || !property) {
       COMPILER_THROW("Unsupported member call expression");
+    }
+
+    // waitgroup.new() → single WAITGROUP_NEW. The parser turns `waitgroup`
+    // into a WaitGroupExpression node; emitting that node followed by the
+    // generic member-call path produced WAITGROUP_NEW + CALL_METHOD "new",
+    // and the bogus method call (waitgroup has no `new` prototype method)
+    // replaced the fresh WaitGroupId with null — every wg.add/done/wait
+    // after that silently no-op'd (parallelMap lost items).
+    if (property->symbol == "new" &&
+        member.object->kind == ast::NodeType::WaitGroupExpression) {
+      emit(OpCode::WAITGROUP_NEW);
+      in_tail_position_ = saved_tail_position;
+      return;
     }
 
  // Namespace/module call: window.activeTitle(), system.detect(), etc.
@@ -9105,21 +9119,22 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   if (precomputedUpvalues) {
     upvalues = *precomputedUpvalues;
   } else {
-    if (precomputedUpvalues) {
-    upvalues = *precomputedUpvalues;
-  } else {
     collectUpvaluesFromBody(body, upvalues);
-  }
-  }
-
-  if (capturedIntervalIdSlot.has_value()) {
-    // Add the captured interval/timeout ID as an upvalue
-    upvalues.insert(upvalues.begin(), {*capturedIntervalIdSlot, true});
-    current_function->is_timer_closure = true;
   }
 
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf(name, 0, 0);
+  if (capturedIntervalIdSlot.has_value()) {
+    // Add the captured interval/timeout ID as the LAST upvalue. Identifier
+    // upvalue indices in the body come from the LexicalResolver and must not
+    // be shifted: prepending (the old code) moved every resolver-assigned
+    // index by +1, so timeout closures read the ID cell instead of the
+    // captured variable (debounce called a null callee). The flag also
+    // belongs on the closure itself, not the enclosing function.
+    upvalues.push_back({*capturedIntervalIdSlot, true});
+    bf.is_timer_closure = true;
+  }
+
   bf.upvalues = std::move(upvalues);
   bool has_upvalues = !bf.upvalues.empty();
 

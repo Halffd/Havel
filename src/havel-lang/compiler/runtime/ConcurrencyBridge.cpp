@@ -94,6 +94,30 @@ options.host_functions["interval.resume"] = options.host_functions["interval_res
     return channelClose(args);
   };
   options.host_functions["channel.close"] = options.host_functions["channel_close"];
+
+  // Non-blocking state query for channel iterators (see ITER_NEXT in
+  // VMCollections.cpp): a resume on a closed+drained channel must yield
+  // iteration-done, not a null data value.
+  options.host_functions["channel_state"] =
+      [this](const std::vector<Value> &args) -> Value {
+        if (args.empty() || !args[0].isChannelId()) {
+          return Value::makeInt(-1); // not a channel
+        }
+        std::lock_guard<std::mutex> lock(channels_mutex_);
+        auto it = channels_.find(args[0].asChannelId());
+        if (it == channels_.end()) {
+          // Closed channels are erased from the map when drained: absent ==
+          // closed and empty.
+          return Value::makeInt(2);
+        }
+        if (it->second->closed && it->second->queue.empty()) {
+          return Value::makeInt(2); // closed and drained
+        }
+        if (it->second->closed) {
+          return Value::makeInt(1); // closed, buffered items remain
+        }
+        return Value::makeInt(0); // open
+      };
 }
 
 Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
@@ -445,6 +469,32 @@ Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {
   if (it != channels_.end()) {
     it->second->closed = true;
     it->second->cv.notify_all();
+    // Close must unpark suspended receivers: a goroutine (or the main
+    // fiber) parked in CHANNEL_RECV on an empty channel would otherwise
+    // sleep forever — `for v in ch` / receive() after close must wake,
+    // see null, and treat the channel as drained. channelReceive returns
+    // null for closed+empty, which both call sites translate to
+    // iteration-done / immediate null.
+    if (vm_ && vm_->scheduler_) {
+      std::vector<Scheduler::Goroutine *> waiters;
+      vm_->scheduler_->forEachGoroutine([&](Scheduler::Goroutine *g) {
+        if (!g || g->state.load(std::memory_order_acquire) !=
+                      Scheduler::GoroutineState::Suspended)
+          return;
+        std::lock_guard wlock(g->wait_handle_mutex_);
+        if (g->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV &&
+            g->wait_handle.target_id == channel_id) {
+          waiters.push_back(g);
+        }
+      });
+      for (auto *g : waiters) {
+        std::lock_guard wlock(g->wait_handle_mutex_);
+        g->wait_handle.resume_value = Value::makeNull();
+        vm_->scheduler_->unpark(g);
+      }
+      // Main-fiber channel waiters (channel_wait_map_) too.
+      vm_->resumeChannelWait(channel_id);
+    }
     // Clean up closed channels with empty queues
     for (auto ci = channels_.begin(); ci != channels_.end(); ) {
       if (ci->second->closed && ci->second->queue.empty()) {

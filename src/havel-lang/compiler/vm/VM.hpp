@@ -813,9 +813,17 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
+        // Hot path: this runs on EVERY loop backedge (millions in the
+        // benchmarks). Keep the sub-threshold path to a counter bump:
+        // the site-key string hash, the hot-trace mutex, tier-2 site
+        // dedup and maybeTierUp only matter once the site is hot
+        // (>= tier1_threshold_ backedges at this ip).
         auto count = ++backedge_counters_[ip];
         trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
         profiler_.recordBackedgeTotal();
+        if (count < tier1_threshold_) {
+            return;
+        }
         if (!hasActiveFrames()) {
             return;
         }
@@ -829,7 +837,7 @@ Value lookupGlobalByKey(const std::string& key) {
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
         // Trace callback fires once per site past the tier-1 threshold
         // (hot-trace hooks; separate from function tier-up).
-        if (count >= tier1_threshold_) {
+        {
             bool should_fire = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);

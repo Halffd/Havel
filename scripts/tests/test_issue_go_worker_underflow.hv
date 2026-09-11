@@ -1,0 +1,25 @@
+// Regression: implicit-return callee must not pop a caller operand.
+//
+// Bug: `go worker()` compiled to LOAD_GLOBAL thread_spawn; LOAD_GLOBAL
+// worker; CALL 0; CALL 1. CALL 0 ran the worker inline with thread_spawn
+// still on the stack. The worker's body is statement-final (implicit null
+// return), so nothing sat above the frame's entry stack_depth; doReturn()
+// popped the raw stack top (thread_spawn) as the return value and re-pushed
+// it, leaving the stack at [thread_spawn] -> CALL 1 underflow.
+//
+// Fix: doReturn only pops a return value when stack.size() > frame entry
+// stack_depth.
+//
+// Expected: script runs to completion without "Stack underflow during CALL".
+
+fn worker() {
+    counter = counter + 1
+    done = true
+}
+counter = 0
+done = false
+go worker()
+bc.tick()
+assert(done == true, "worker must finish")
+print("PASS")
+exit(0)

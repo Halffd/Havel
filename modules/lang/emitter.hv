@@ -630,6 +630,17 @@ return
 		argc = #node.args
 		savedArgc = argc
 		hasKwargs = node.kwargs != null and #node.kwargs > 0
+		// waitgroup.new() → single WAITGROUP_NEW. The parser special-cases
+		// `waitgroup` into a WaitGroupExpression; the trailing `.new()`
+		// MemberExpression then produced WAITGROUP_NEW + CALL_METHOD "new",
+		// and the bogus method call (waitgroup has no `new` prototype
+		// method) replaced the fresh WaitGroupId with null — every
+		// wg.add/done/wait call after that silently no-op'd.
+		if callee.kind == "MemberExpression" && callee.property == "new" &&
+		   callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
+			bc.emit("WAITGROUP_NEW")
+			return
+		}
 		// When compiling sub-expressions (callee, args), disable tail position
 		savedTail = emitter.inTailPosition
 		// Super call: @->method(args) → load parent class, OBJECT_GET_RAW method, CALL with self + args

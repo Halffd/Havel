@@ -4314,6 +4314,23 @@ void VM::tickScheduler() {
   auto *g = sched->pickNext();
   if (!g) return;
 
+  // bc.tick can be called from INSIDE running bytecode (e.g. a script's
+  // main function). startGoroutineCall clears stack/locals/frames for the
+  // fresh goroutine context, which would destroy the CALLER's in-flight
+  // frames — after the tick, the outer dispatch loop would see
+  // frame_count_ == 0 and silently end the script (rc=0, no continuation).
+  // Snapshot the caller's state and restore it after the goroutine ran.
+  ExecutionState caller_state = saveState();
+  auto restore_caller = [&]() {
+    restoreState(caller_state);
+    if (caller_state.frame_count > 0) {
+      // restoreState does not repin current_chunk; the goroutine may have
+      // left a different chunk installed. Repoint at the top restored
+      // frame's chunk so the caller resumes in its own code.
+      current_chunk = caller_state.frames[caller_state.frame_count - 1].chunk;
+    }
+  };
+
   sched->setCurrent(g);
 
   if (g->state == Scheduler::GoroutineState::Created) {
@@ -4427,6 +4444,12 @@ void VM::tickScheduler() {
       g->update_callback_id = 0;
     }
   }
+
+  // Goroutine bookkeeping (fiber save, suspension reasons, scheduler state)
+  // is done above against the goroutine's own context. Give the caller back
+  // its in-flight frames/stack/locals so it resumes where bc.tick() was
+  // invoked from.
+  restore_caller();
 }
 
 void VM::throwError(const std::string &msg) { COMPILER_THROW(msg); }

@@ -4,7 +4,7 @@
 
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
 use { traceEmitter, isOn } from "debug"
-use { LambdaExpression, BlockStatement } from "ast"
+use { LambdaExpression, BlockStatement, ExpressionStatement } from "ast"
 use "bytecodeBuilder"
 use { emitterError } from "error"
 
@@ -785,24 +785,29 @@ return
         target = node.target
     if target.kind == "Identifier" {
         emitExpr(emitter, node.value)
+        // Leave the assigned value on the stack like the C++ compiler:
+        // chained assignment a = b = value compiles as nested
+        // AssignmentExpressions and each inner store must observe the
+        // RHS. Statement position consumes it with POP in emitStmt.
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)
-        bc.emit("POP")
         return
     }
         if target.kind == "MemberExpression" {
+            tempIdx = scopeLocalCount(emitter.scope)
+            emitter.scope.count = emitter.scope.count + 1
             emitExpr(emitter, target.obj)
             emitExpr(emitter, node.value)
+            bc.emit("STORE_VAR", tempIdx)
+            bc.emit("LOAD_VAR", tempIdx)
             keyIdx = bc.add_string(target.property)
             bc.emit("LOAD_CONST", keyIdx)
             bc.emit("OBJECT_SET")
-            // OBJECT_SET pops [obj, value, key] and pushes the object back
-            // for chaining; statement-position assignments must consume it,
-            // matching the Identifier branch's self-cleaning shape - without
-            // this POP every obj.field = value in a loop leaked one stack
-            // slot per iteration (the objects benchmark overflowed the
-            // expression stack at 500k iterations).
+            // OBJECT_SET pops [obj, value, key] and pushes the object back.
+            // Discard the object and re-push the value so statement position
+            // sees exactly one slot (POP in emitStmt), like the C++ compiler.
             bc.emit("POP")
+            bc.emit("LOAD_VAR", tempIdx)
             return
         }
 if target.kind == "IndexExpression" {
@@ -1712,7 +1717,15 @@ if k == "WaitExpression" {
   if k == "GoExpression" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.call != null {
+    // Legacy C++ wraps `go fn()` calls in a <go> closure so thread_spawn
+    // receives a function value instead of the call's result (which is
+    // null for a bare statement -> "go requires a closure argument").
+    if node.call != null && type(node.call) == "object" && node.call.kind == "CallExpression" {
+      wrapperStmt = ExpressionStatement(node.call, node.line, node.col)
+      wrapperBlock = BlockStatement([wrapperStmt], node.line, node.col)
+      emitClosureBody(emitter, wrapperBlock, "<go>")
+    }
+    else if node.call != null {
       emitExpr(emitter, node.call)
     }
     else {
@@ -2015,8 +2028,9 @@ bc.emit("OBJECT_GET")
 			bc.emit("CALL_IF_FUNCTION")
 		}
 isYield = node.expr.kind == "YieldExpression"
-        // AssignmentExpression already emits POP, so skip for assignments
-        if !isYield && node.expr.kind != "AssignmentExpression" {
+        // Assignments leave the RHS value on the stack (matches C++);
+        // statement position pops it once.
+        if !isYield {
             bc.emit("POP")
         }
         return
@@ -3016,7 +3030,12 @@ if k == "ModesBlock" {
   if k == "GoStatement" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.call != null {
+    if node.call != null && type(node.call) == "object" && node.call.kind == "CallExpression" {
+      wrapperStmt = ExpressionStatement(node.call, node.line, node.col)
+      wrapperBlock = BlockStatement([wrapperStmt], node.line, node.col)
+      emitClosureBody(emitter, wrapperBlock, "<go>")
+    }
+    else if node.call != null {
       emitExpr(emitter, node.call)
     }
     else {
@@ -3452,9 +3471,9 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
 if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
-      // Discard expression result when used as a statement
-      // AssignmentExpression already emits POP, so skip for assignments
-      if node.expr.kind != "YieldExpression" && node.expr.kind != "AssignmentExpression" {
+      // Discard expression result when used as a statement.
+      // Assignments leave the RHS value on the stack (matches C++).
+      if node.expr.kind != "YieldExpression" {
         bc.emit("POP")
       }
     }

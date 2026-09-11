@@ -2069,11 +2069,12 @@ void VM::registerDefaultHostFunctions() {
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-  registerHostFunction("async.await", 1, [](const std::vector<Value> &args) {
-    if (args.empty())
-      return Value::makeNull();
-    return args[0];
-  });
+  // NOTE: no "async.await" host function. A dotted registration here is
+  // the ONLY async.* host function in the system, and buildNamespaceGlobals()
+  // would turn it into an `async` namespace object containing just `await`.
+  // The IMPORT opcode short-circuits on that object, so `use async` never
+  // loaded modules/app/async.hv and consumers saw async.sleep == null.
+  // The .hv module (which re-exports async_mod's await) is the real provider.
   registerHostFunction("await", 1, [](const std::vector<Value> &args) {
     if (args.empty())
       return Value::makeNull();
@@ -2551,6 +2552,7 @@ void VM::registerDefaultHostFunctions() {
         auto *wg = heap_.waitgroup(wg_id);
         if (wg) {
           int64_t prev = wg->counter.fetch_sub(1);
+          ::havel::debug("[wg] done: wg={} prev={} (unpark when prev<=1)", wg_id, prev);
           if (prev <= 1) {
             std::lock_guard<std::mutex> lock(wg->mutex);
             wg->cv.notify_all();
@@ -2576,8 +2578,34 @@ void VM::registerDefaultHostFunctions() {
         }
         auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
         if (wg && wg->counter.load() > 0) {
-          std::unique_lock<std::mutex> lock(wg->mutex);
-          wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+          ::havel::debug("[wg] wait: wg={} counter={} -> suspending", args[0].asWaitGroupId(), wg->counter.load());
+          if (scheduler_ && current_executing_fiber_) {
+            // Suspend instead of blocking: cv.wait would hold the single VM
+            // thread hostage while the workers that must call done() need
+            // that same thread to run (parallelMap's closer goroutine).
+            // waitgroup.done (or WAITGROUP_DONE) unparks via the EXTERNAL
+            // wait target.
+            auto *g = scheduler_->current();
+            if (g) {
+              std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
+              g->wait_handle.type = Scheduler::AwaitableType::EXTERNAL;
+              g->wait_handle.target_id = args[0].asWaitGroupId();
+            }
+            // AWAIT, not THREAD_JOIN: a THREAD_JOIN suspension registers
+            // the fiber in thread_wait_map_ keyed by the wg id, which
+            // collides with channel ids — resumeChannelWait(channel_id)
+            // then woke the waiter spuriously (parallelMap's closer closed
+            // the results channel before the last workers sent). The
+            // EXTERNAL wait_handle + waitgroup.done's unpark is the resume
+            // path; nothing else should wake it.
+            requestSuspension(
+                static_cast<uint8_t>(SuspensionReason::AWAIT),
+                reinterpret_cast<void *>(static_cast<uintptr_t>(
+                    args[0].asWaitGroupId())));
+          } else {
+            std::unique_lock<std::mutex> lock(wg->mutex);
+            wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+          }
         }
         return Value::makeNull();
       });

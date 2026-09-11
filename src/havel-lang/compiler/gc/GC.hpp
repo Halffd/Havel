@@ -616,11 +616,6 @@ uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
     uint64_t last_pause_ns_ = 0;
     uint64_t total_recovered_ = 0;
 
-  public:
-    // Epoch accessor mirrored from main worktree (VMCollections OBJECT_GET
-    // diagnostic reports "gc epoch" via GCHeap::gcEpoch()).
-    uint64_t gcEpoch() const { return collections_; }
-
   private:
     IncrementalState gc_state_ = IncrementalState::Idle;
     bool stop_the_world_ = true;

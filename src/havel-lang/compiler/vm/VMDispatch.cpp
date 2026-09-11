@@ -47,6 +47,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       COMPILER_THROW("LOAD_GLOBAL expects string operand");
     }
     uint32_t strIndex = instruction.operands[0].asStringValId();
+    const size_t depth_at_entry = stack.size();
     // Resolve the global-name string index against the chunk that
     // emitted the instruction: the operand is a StringValId (a chunk-
     // local index), so it only has meaning in the table of the chunk
@@ -132,6 +133,26 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
 
+    // Last resort: the pushed globals maps on globals_stack_. A call into
+    // a module-scope closure (e.g. a timer callback executing a <timeout>
+    // closure created inside async_mod.debounce) swaps ambient globals for
+    // the module map; closures from the MAIN script invoked from there
+    // (debounce's `func` argument, a script closure) must still see the
+    // script globals — they live on globals_stack_ for the duration of the
+    // swap. Read (never write) through them so module sandboxes stay intact.
+    for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
+         ++git) {
+      auto pushedIt = git->find(name);
+      if (pushedIt != git->end()) {
+        trackGlobalAccess(name);
+        pushStack(pushedIt->second);
+        break;
+      }
+    }
+    if (stack.size() > depth_at_entry) {
+      break;
+    }
+
     trackGlobalAccess(name);
     COMPILER_THROW("Undefined variable: '" + name + "'");
     break;
@@ -208,6 +229,24 @@ void VM::executeInstruction(const Instruction &instruction) {
             wf.written_globals.push_back(name);
           }
         }
+      }
+    }
+
+    // Mirror stores into the innermost pushed globals_stack_ map that
+    // already carries the key: a script closure invoked from a
+    // module-closure context (timer callback running a <timeout> closure
+    // from async_mod.debounce, with the script's func argument writing
+    // script globals) writes into the swapped ambient copy — the caller's
+    // real map sits on globals_stack_ and would never see the update.
+    // Only pre-existing keys are mirrored (innermost first, matching the
+    // LOAD_GLOBAL read order) so module sandbox maps are not polluted
+    // with foreign names.
+    for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
+         ++git) {
+      auto pushedIt = git->find(name);
+      if (pushedIt != git->end()) {
+        pushedIt->second = value;
+        break;
       }
     }
 

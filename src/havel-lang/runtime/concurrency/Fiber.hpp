@@ -54,6 +54,14 @@ struct CallFrame {
   };
   std::vector<TryHandler> try_stack;
 
+  // ===== DEFERRED CLOSURES =====
+  // Deferred closures registered by DEFER_PUSH in this frame. Without this
+  // field a goroutine suspending (sleep/channel/etc.) lost its defers at
+  // saveFiberState: waitgroup.done()/semaphore releases scheduled in
+  // `defer {}` never ran, so parallelMap's closer fired early and dropped
+  // the last worker's results.send on a closed channel.
+  std::vector<Value> defer_stack;
+
   // ===== CONSTRUCTOR =====
   CallFrame()
       : function_id(0), chunk_index(0), chunk_ptr(nullptr), ip(0),

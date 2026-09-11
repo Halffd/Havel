@@ -836,6 +836,12 @@ case OpCode::CHANNEL_SEND: {
   case OpCode::DEFER_PUSH: {
     Value closure = popStack();
     if (frame_count_ > 0) {
+      ::havel::debug("[DEFER_PUSH] fn={} ip={} depth={}",
+                     frame_arena_[frame_count_ - 1].function
+                         ? frame_arena_[frame_count_ - 1].function->name
+                         : std::string("?"),
+                     frame_arena_[frame_count_ - 1].ip,
+                     frame_arena_[frame_count_ - 1].defer_stack.size());
       frame_arena_[frame_count_ - 1].defer_stack.push_back(closure);
     }
     break;
@@ -872,6 +878,18 @@ case OpCode::CHANNEL_SEND: {
       if (prev <= 1) {
         std::lock_guard<std::mutex> lock(wg->mutex);
         wg->cv.notify_all();
+        // Unpark goroutines suspended on waitgroup.wait (EXTERNAL target):
+        // mirrors the waitgroup.done host function. Without this, a closer
+        // parked via the suspending wait never resumed and the channel
+        // stayed open forever.
+        if (scheduler_) {
+          auto *g = scheduler_->findGoroutineByWaitTarget(
+              Scheduler::AwaitableType::EXTERNAL, wg_val.asWaitGroupId());
+          if (g) {
+            g->wait_handle.resume_value = Value::makeNull();
+            scheduler_->unpark(g);
+          }
+        }
       }
     }
     break;

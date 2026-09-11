@@ -357,37 +357,51 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     // signal (observed live: appended probe global invisible after
     // edit + run). When the embedded path exists, hash it directly.
     {
-      std::ifstream hvcIn(hvcPath, std::ios::binary | std::ios::ate);
-      if (hvcIn) {
-        std::streamsize sz = hvcIn.tellg();
-        if (sz > 0) {
-          std::vector<uint8_t> buf(static_cast<size_t>(sz));
-          hvcIn.seekg(0, std::ios::beg);
-          if (hvcIn.read(reinterpret_cast<char *>(buf.data()), sz)) {
-            auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
-                std::span<const uint8_t>(buf));
-            if (srcInfo.hasInfo &&
-                fs::exists(srcInfo.path)) {
-              std::string liveHash = sha256_file_hex(srcInfo.path);
-              // hex-encode the embedded hash
-              static const char hexDigits[] = "0123456789abcdef";
-              std::string embeddedHex;
-              embeddedHex.reserve(srcInfo.hash.size() * 2);
-              for (uint8_t b : srcInfo.hash) {
-                embeddedHex += hexDigits[b >> 4];
-                embeddedHex += hexDigits[b & 0x0F];
-              }
-              if (!liveHash.empty() && liveHash != embeddedHex) {
-                // Live source changed since this .hvc was compiled -
-                // stale, do not serve it.
-                return std::nullopt;
-              }
-              if (liveHash == embeddedHex) {
-                return makeBcCache(hvcPath, hvPath, modulePath);
-              }
-            }
+      // Header-prefix read only: this lambda runs on every bare-name
+      // module resolution and .hvc files can be megabytes, so never load
+      // the whole file just to validate the source identity.
+      auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfoFile(
+          hvcPath.string());
+      if (srcInfo.hasInfo) {
+        // The flat cache is global but source trees are not: a parallel
+        // worktree's binary may have compiled this entry against ITS
+        // module tree. The embedded path naming a source outside this
+        // tree's search paths is not evidence about OUR modules - the
+        // live-source check below must resolve through THIS loader's
+        // search paths, never the recorded path directly.
+        std::error_code canonEc;
+        const std::string embeddedCanonical =
+            std::filesystem::weakly_canonical(srcInfo.path, canonEc).string();
+        bool fromThisTree = false;
+        for (const auto &sp : searchPaths_) {
+          const std::string spCanonical =
+              std::filesystem::weakly_canonical(sp, canonEc).string();
+          if (!spCanonical.empty() &&
+              embeddedCanonical.rfind(spCanonical, 0) == 0) {
+            fromThisTree = true;
+            break;
           }
         }
+        if (fromThisTree && fs::exists(srcInfo.path)) {
+          std::string liveHash = sha256_file_hex(srcInfo.path);
+          static const char hexDigits[] = "0123456789abcdef";
+          std::string embeddedHex;
+          embeddedHex.reserve(srcInfo.hash.size() * 2);
+          for (uint8_t b : srcInfo.hash) {
+            embeddedHex += hexDigits[b >> 4];
+            embeddedHex += hexDigits[b & 0x0F];
+          }
+          if (!liveHash.empty() && liveHash != embeddedHex) {
+            // Live source changed since this .hvc was compiled -
+            // stale, do not serve it.
+            return std::nullopt;
+          }
+          if (liveHash == embeddedHex) {
+            return makeBcCache(hvcPath, hvPath, modulePath);
+          }
+        }
+        // Foreign-tree or unresolvable identity: fall through to the
+        // legacy validations below rather than trusting it.
       }
     }
 

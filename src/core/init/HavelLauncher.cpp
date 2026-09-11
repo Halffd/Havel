@@ -2194,34 +2194,55 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
              // mtime reuse is NOT safe for them (observed: a legacy
              // cache served pre-edit bytecode after a GLBS rewrite
              // bumped its mtime past the edit).
-            auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
-                std::span<const uint8_t>(buffer));
-            bool reusable = true;
-            if (srcInfo.hasInfo) {
-              std::error_code liveEc;
-              if (std::filesystem::exists(srcInfo.path, liveEc) && !liveEc) {
-                const std::string actualHashHex =
-                    havel::ModuleLoader::sha256FileHex(srcInfo.path);
-                static const char hexDigits[] = "0123456789abcdef";
-                std::string embeddedHex;
-                embeddedHex.reserve(srcInfo.hash.size() * 2);
-                for (uint8_t b : srcInfo.hash) {
-                  embeddedHex += hexDigits[b >> 4];
-                  embeddedHex += hexDigits[b & 0x0F];
-                }
-                if (!actualHashHex.empty() && actualHashHex == embeddedHex) {
-                  reusable = true;
-                } else {
-                  reusable = false;
-                  info("Bytecode cache hash mismatch (source changed), recompiling: {}",
-                       cachePath);
-                }
-              } else {
-                // Recorded source no longer exists: can't validate, and
-                // the compile below targets the current primaryFile anyway.
-                reusable = false;
-              }
-            } else {
+             auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                 std::span<const uint8_t>(buffer));
+             bool reusable = true;
+             if (srcInfo.hasInfo) {
+               // The cache is global (~/.cache/havel) but source trees
+               // are not: a parallel worktree's havel binary may have
+               // compiled this entry against ITS copy of the module
+               // (observed: lang.scope.hvc embedding a /havel-3/ path
+               // while this tree's build happily reused it). Hash-match
+               // alone then says nothing about THIS tree's source.
+               // Reuse only when the embedded path IS the file being
+               // built; anything else compiles locally and overwrites
+               // the entry with this tree's identity.
+               std::error_code canonEc;
+               const std::string embeddedCanonical =
+                   std::filesystem::weakly_canonical(srcInfo.path, canonEc)
+                       .string();
+               const std::string primaryCanonical =
+                   std::filesystem::weakly_canonical(primaryFile, canonEc)
+                       .string();
+               if (!embeddedCanonical.empty() &&
+                   embeddedCanonical != primaryCanonical) {
+                 reusable = false;
+                 info("Bytecode cache compiled from a different source tree ({}), recompiling: {}",
+                      srcInfo.path, cachePath);
+               } else if (std::filesystem::exists(srcInfo.path, canonEc) &&
+                          !canonEc) {
+                 const std::string actualHashHex =
+                     havel::ModuleLoader::sha256FileHex(srcInfo.path);
+                 static const char hexDigits[] = "0123456789abcdef";
+                 std::string embeddedHex;
+                 embeddedHex.reserve(srcInfo.hash.size() * 2);
+                 for (uint8_t b : srcInfo.hash) {
+                   embeddedHex += hexDigits[b >> 4];
+                   embeddedHex += hexDigits[b & 0x0F];
+                 }
+                 if (!actualHashHex.empty() && actualHashHex == embeddedHex) {
+                   reusable = true;
+                 } else {
+                   reusable = false;
+                   info("Bytecode cache hash mismatch (source changed), recompiling: {}",
+                        cachePath);
+                 }
+               } else {
+                 // Recorded source no longer exists: can't validate, and
+                 // the compile below targets the current primaryFile anyway.
+                 reusable = false;
+               }
+             } else {
               // Legacy hash-less cache: the file predates source-hash
               // embedding and could have been written by any older
               // binary. The cache-copy .hv beside it is NOT evidence of

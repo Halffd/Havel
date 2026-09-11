@@ -849,6 +849,17 @@ op_LOAD_CONST: {
   pushStack(getConstant(inst.operands[0].asInt()));
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -908,6 +919,17 @@ op_LOAD_VAR: {
   pushStack(locals[abs]);
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -949,6 +971,17 @@ op_STORE_VAR: {
   locals[abs] = value;
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -980,6 +1013,17 @@ op_POP: {
   popStack();
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1094,6 +1138,17 @@ op_CALL: {
 
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1262,6 +1317,17 @@ op_LOAD_GLOBAL: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1305,6 +1371,17 @@ op_STORE_GLOBAL: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1347,6 +1424,17 @@ op_STORE_IMMUT_GLOBAL: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1383,6 +1471,17 @@ op_STORE_IMMUT_VAR: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1418,6 +1517,17 @@ op_LOAD_UPVALUE: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1453,6 +1563,17 @@ op_STORE_UPVALUE: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1542,6 +1663,17 @@ op_INCLOCAL: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1586,6 +1718,17 @@ op_DECLOCAL: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1627,6 +1770,17 @@ op_INCLOCAL_POST: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1668,6 +1822,17 @@ op_DECLOCAL_POST: {
   }
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1720,6 +1885,17 @@ op_BIT_RSH: {
   execBinaryOp(inst);
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;
@@ -1790,6 +1966,13 @@ op_ADD_INT: {
       pushStack(result);
       counter++;
       if ((counter & 8191) == 0) {
+        // Scheduler time-slice checkpoint (see the unindented twin above).
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
         profiler_.recordInstructions(8192);
         if (exit_requested_.load())
           return;
@@ -2680,6 +2863,17 @@ op_default: {
     return;
   counter++;
   if ((counter & 8191) == 0) {
+    // Scheduler time-slice: when a tick budget is armed, return at this
+    // periodic checkpoint so the driving loop (processGoroutinesInline /
+    // ExecutionEngine) can run other goroutines. counter granularity
+    // means a tick may overshoot by up to 8191 instructions; drivers
+    // treat the budget as approximate, not exact.
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
     profiler_.recordInstructions(8192);
     if (exit_requested_.load())
       return;

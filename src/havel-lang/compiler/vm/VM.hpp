@@ -524,6 +524,25 @@ int32_t pending_call_return_ip_ = -1;
     uint64_t executed_instructions_ = 0;
     uint64_t max_instructions_ = 0; // 0 = no limit
 
+    // Scheduler time-slice budget for runDispatchFast: when nonzero, the
+    // fast dispatch loop returns at its next periodic check (the
+    // 8192-instruction backedge hook) once this many instructions ran,
+    // so a goroutine tick can hand control back to the scheduler without
+    // per-instruction stepping. The driver (processGoroutinesInline /
+    // ExecutionEngine) sets it per tick, reads instructions consumed via
+    // fastTickConsumed(), and clears it for unbounded (callFunctionSync)
+    // execution.
+    uint64_t fast_tick_budget_ = 0;
+    uint64_t fast_tick_consumed_ = 0;
+
+    bool fastTickExpired() const { return fast_tick_budget_ != 0; }
+    uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
+    void beginFastTick(uint64_t budget) {
+      fast_tick_budget_ = budget;
+      fast_tick_consumed_ = 0;
+    }
+    void endFastTick() { fast_tick_budget_ = 0; }
+
     // System object initializer - called after registerDefaultHostGlobals()
     using SystemObjectInitializer = std::function<void(VM *)>;
     SystemObjectInitializer system_object_initializer_;

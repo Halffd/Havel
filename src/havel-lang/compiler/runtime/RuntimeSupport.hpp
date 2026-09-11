@@ -369,6 +369,13 @@ public:
   };
   static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
 
+  // File variant for validation-only call sites: reads just the header
+  // prefix (4 KB) instead of the whole file - checkBcCache runs on every
+  // bare-name module resolution, and .hvc files can be megabytes. A
+  // source path longer than the prefix is treated as absent info and
+  // the caller falls back to its other freshness checks.
+  static SourceInfo peekSourceInfoFile(const std::string& filePath);
+
   // Byte length of the serialized-chunk section of an .hvc (everything
   // before the FIRST [globals][GLBS][size] trailer section). The first
   // appended section's marker sits exactly at chunk_end + globals_size,

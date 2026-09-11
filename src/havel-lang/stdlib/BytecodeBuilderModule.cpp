@@ -839,17 +839,29 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
         return Value::makeInt(0);
     });
 
-    api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
-        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-            throw std::runtime_error("bc.serialize: requires path (string)");
-        }
-	    auto path = api.resolveString(args[0]);
-	    auto &chunk = *g_builder.chunk;
-	    if (chunk.getFunctionCount() == 0) {
+     api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
+         if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+             throw std::runtime_error("bc.serialize: requires path (string)");
+         }
+ 	    auto path = api.resolveString(args[0]);
+ 	    auto &chunk = *g_builder.chunk;
+ 	    if (chunk.getFunctionCount() == 0) {
 	        throw std::runtime_error("bc.serialize: no functions in chunk");
+ 	    }
+	    // Embed the source identity when the builder knows it
+	    // (bc.set_source_file, as the self-hosted emitter does at its
+	    // start). Hash-less hvcs are the legacy form every cache
+	    // validator must work around - they cannot be freshness-checked
+	    // and force recompiles (see runBuild / ModuleLoader
+	    // checkBcCache). When no source was recorded the chunk stays
+	    // hash-less, matching the old behavior for in-memory-only uses.
+	    std::string srcPath;
+	    if (g_builder.current_source_file.isStringId() ||
+	        g_builder.current_source_file.isStringValId()) {
+	        srcPath = api.resolveString(g_builder.current_source_file);
 	    }
 	    havel::compiler::ValueSerializer serializer;
-	    auto data = serializer.serializeChunk(chunk);
+	    auto data = serializer.serializeChunk(chunk, srcPath);
 	    std::ofstream out(path, std::ios::binary);
 	    if (!out.is_open()) {
 	        throw std::runtime_error("bc.serialize: cannot open " + path);

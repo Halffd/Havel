@@ -4179,8 +4179,20 @@ void VM::doReturn() {
     }
   }
 
+  // Entry stack depth of the frame being returned. A callee's RETURN only
+  // pops a value when its body actually pushed one above this depth.
+  // Statement-final implicit returns leave nothing above stack_depth, so an
+  // unconditional pop steals a pending operand the CALLER left beneath the
+  // frame (e.g. `go worker()` = LOAD_GLOBAL thread_spawn; LOAD_GLOBAL
+  // worker; CALL 0; CALL 1: CALL 0 runs the worker inline with thread_spawn
+  // still on the stack; the worker's implicit return popped thread_spawn as
+  // its "return value" and the re-push left the stack at [thread_spawn],
+  // making CALL 1 underflow).
+  auto finished = frame_arena_[frame_count_ - 1];
+  const size_t frame_entry_depth = finished.stack_depth;
+
   Value ret = nullptr;
-  if (!stack.empty()) {
+  if (stack.size() > frame_entry_depth) {
     ret = popStack();
   }
 
@@ -4193,7 +4205,6 @@ void VM::doReturn() {
     ret = deepMaterializeStrings(ret, current_chunk);
   }
 
-  auto finished = frame_arena_[frame_count_ - 1];
   frame_count_--;
 
   // Restore current_chunk from parent frame
@@ -4333,6 +4344,23 @@ void VM::tickScheduler() {
   auto *g = sched->pickNext();
   if (!g) return;
 
+  // bc.tick can be called from INSIDE running bytecode (e.g. a script's
+  // main function). startGoroutineCall clears stack/locals/frames for the
+  // fresh goroutine context, which would destroy the CALLER's in-flight
+  // frames — after the tick, the outer dispatch loop would see
+  // frame_count_ == 0 and silently end the script (rc=0, no continuation).
+  // Snapshot the caller's state and restore it after the goroutine ran.
+  ExecutionState caller_state = saveState();
+  auto restore_caller = [&]() {
+    restoreState(caller_state);
+    if (caller_state.frame_count > 0) {
+      // restoreState does not repin current_chunk; the goroutine may have
+      // left a different chunk installed. Repoint at the top restored
+      // frame's chunk so the caller resumes in its own code.
+      current_chunk = caller_state.frames[caller_state.frame_count - 1].chunk;
+    }
+  };
+
   sched->setCurrent(g);
 
   if (g->state == Scheduler::GoroutineState::Created) {
@@ -4448,6 +4476,12 @@ void VM::tickScheduler() {
       g->update_callback_id = 0;
     }
   }
+
+  // Goroutine bookkeeping (fiber save, suspension reasons, scheduler state)
+  // is done above against the goroutine's own context. Give the caller back
+  // its in-flight frames/stack/locals so it resumes where bc.tick() was
+  // invoked from.
+  restore_caller();
 }
 
 void VM::throwError(const std::string &msg) { COMPILER_THROW(msg); }

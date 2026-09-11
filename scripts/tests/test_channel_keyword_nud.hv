@@ -1,0 +1,22 @@
+// Regression: `channel` parsed as identifier call go-style (keyword-ident
+// fallback swallowed the channel token before the TID.Channel NUD ran), so
+// `val ch = channel()` emitted a call of the global `channel` host object
+// and failed at runtime with:
+//   TypeError: Attempted to call non-callable value of type object
+// The Channel NUD must build ChannelExpression -> channel.new.
+//
+// Expected: creates a channel, send/receive roundtrip through a goroutine,
+// prints PASS.
+
+val ch = channel()
+assert(ch != null, "channel() must create a channel value")
+
+fn sender() {
+    ch.send(42)
+}
+go sender()
+bc.tick()
+
+got = ch.receive()
+assert(got == 42, "receive must return the sent value, got " + str(got))
+print("PASS")

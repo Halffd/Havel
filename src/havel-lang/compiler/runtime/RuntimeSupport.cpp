@@ -1337,6 +1337,18 @@ size_t ValueSerializer::chunkDataEnd(std::span<const uint8_t> data) {
   return chunkEnd;
 }
 
+ValueSerializer::SourceInfo ValueSerializer::peekSourceInfoFile(const std::string& filePath) {
+  SourceInfo info;
+  std::ifstream in(filePath, std::ios::binary);
+  if (!in) return info;
+  std::array<uint8_t, 4096> buf{};
+  in.read(reinterpret_cast<char*>(buf.data()), buf.size());
+  const std::streamsize got = in.gcount();
+  if (got <= 0) return info;
+  info = peekSourceInfo(std::span<const uint8_t>(buf.data(), static_cast<size_t>(got)));
+  return info;
+}
+
 ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint8_t> data) {
   SourceInfo info;
   size_t pos = 0;

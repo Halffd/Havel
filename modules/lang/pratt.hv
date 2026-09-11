@@ -678,7 +678,7 @@ else if tt == TID.Thread {
   body = parseBlock()
   return ThreadExpression(body, l, c)
 }
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield) {
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield and tt != TID.Go and tt != TID.Channel) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {
@@ -2233,26 +2233,25 @@ fn parseBlock() {
 
   // Helper: check if expression is a line continuation (unary operator that's actually binary continuation)
   fn isContinuationExpr(expr) {
-    if expr == null or expr.kind != "UnaryExpression": return false
-    op = expr.operator
-    if op != "+" and op != "-" and op != "*" and op != "/" and op != "%" and
-       op != "||" and op != "&&" and op != "==" and op != "!=" and
-       op != "<" and op != ">" and op != "<=" and op != ">=" and
-       op != "|" and op != "&" and op != "^" and op != "<<" and op != ">>" and
-       op != "..":
-      return false
-    // Heuristic: operand is a call, member access, index, or identifier (not a simple literal)
-    operand = expr.operand
-    if operand == null: return false
-    return operand.kind == "CallExpression" or operand.kind == "MemberExpression" or
-           operand.kind == "IndexExpression" or operand.kind == "Identifier"
+    if expr == null: return false
+    if expr.kind != "UnaryExpression": return false
+    opName = expr.operator
+    // Single-line condition: the C++ bootstrap parser does not support
+    // multi-line boolean chains (line-END 'and' / operator-start continuation).
+    if opName == "+" or opName == "-" or opName == "*" or opName == "/" or opName == "%" or opName == "||" or opName == "&&" or opName == "==" or opName == "!=" or opName == "<" or opName == ">" or opName == "<=" or opName == ">=" or opName == "|" or opName == "&" or opName == "^" or opName == "<<" or opName == ">>" or opName == ".." {
+      // Heuristic: operand is a call, member access, index, or identifier (not a simple literal)
+      operand = expr.operand
+      if operand == null: return false
+      return operand.kind == "CallExpression" or operand.kind == "MemberExpression" or operand.kind == "IndexExpression" or operand.kind == "Identifier"
+    }
+    return false
   }
 
   // Helper: combine previous expression with continuation
   fn combineContinuation(prevExpr, contExpr) {
-    op = contExpr.operator
+    opName = contExpr.operator
     right = contExpr.operand
-    return BinaryExpression(prevExpr, op, right)
+    return BinaryExpression(prevExpr, opName, right)
   }
 
   if current().tid == TID.OpenBrace {

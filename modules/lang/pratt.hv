@@ -678,7 +678,7 @@ else if tt == TID.Thread {
   body = parseBlock()
   return ThreadExpression(body, l, c)
 }
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield and tt != TID.Go) {
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield and tt != TID.Go and tt != TID.Channel) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {

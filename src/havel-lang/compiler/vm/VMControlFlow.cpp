@@ -417,6 +417,34 @@ case OpCode::CALL_METHOD: {
   } else if (receiver.isRangeId()) {
         type_name = "range";
     } else if (receiver.isHostFuncId()) {
+        // Property call first: hostfunc.prop(args) — properties attached
+        // via OBJECT_SET (fn.prop = ...) live in hostfunc_properties_.
+        // Module-exported closures are wrapped as host functions and carry
+        // their closure properties over (deepWrapModuleFunctions), e.g.
+        // debounce's wrapped.cancel. Without this lookup those calls fell
+        // through to the dotted-name resolution and silently returned null.
+        {
+            uint32_t recvIdx = receiver.asHostFuncId();
+            auto propIt = hostfunc_properties_.find(recvIdx);
+            if (propIt != hostfunc_properties_.end()) {
+                auto *props = heap_.object(propIt->second.id);
+                if (props) {
+                    auto it = props->find(method_name);
+                    if (it != props->end()) {
+                        if (it->second.isHostFuncId()) {
+                            host_func_idx = it->second.asHostFuncId();
+                            found_host = true;
+                            found_via_module = true; // prop call: no implicit receiver arg
+                        } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+                            vm_func = it->second;
+                            isInstanceFunc = false;
+                            found_via_module = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (!found_host) {
         // Dotted host function call: e.g. interval.start(100, fn)
         // Resolve "interval.start" by concatenating receiver name + "." + method_name
         std::string receiver_name;
@@ -432,12 +460,44 @@ case OpCode::CALL_METHOD: {
                 break;
             }
         }
-        if (!found_host) {
+        }
+        if (!found_host && vm_func.isNull()) {
             for (uint32_t i = 0; i < arg_count; ++i) popStack();
             popStack();
             pushStack(Value::makeNull());
             break;
         }
+    } else if (receiver.isClosureId()) {
+      // Closure field call: `closure.prop(args)` — properties live in
+      // closure_properties_ (OBJECT_SET stores them there for closures).
+      // Without this arm the generic else below silently pushed null, so
+      // `wrapped.cancel()` on debounce's returned closure never ran the
+      // cancel fn and the debouncer kept firing.
+      auto propIt = closure_properties_.find(receiver.asClosureId());
+      if (propIt != closure_properties_.end()) {
+        auto *props = heap_.object(propIt->second.id);
+        if (props) {
+          auto it = props->find(method_name);
+          if (it != props->end()) {
+            if (it->second.isHostFuncId()) {
+              host_func_idx = it->second.asHostFuncId();
+              found_host = true;
+              found_via_module = true; // closure props: don't pass receiver as self
+            } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+              vm_func = it->second;
+              isInstanceFunc = false; // closure props get no implicit self
+              found_via_module = true;
+            }
+          }
+        }
+      }
+      if (!found_host && vm_func.isNull()) {
+        // No such property: return null like other receivers
+        for (uint32_t i = 0; i < arg_count; ++i) popStack();
+        popStack(); // receiver
+        pushStack(Value::makeNull());
+        break;
+      }
     } else {
         for (uint32_t i = 0; i < arg_count; ++i) popStack();
         popStack(); // receiver
@@ -729,6 +789,7 @@ if (found_host) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
+                ::havel::debug("[CALL_METHOD] invoking host fn '{}' args={}", resolved_name, all_args.size());
                 Value result = fnIt->second(all_args);
                 pushStack(result);
                 if (hot_func_cb_) {
@@ -1074,6 +1135,7 @@ if (found_host) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
+                ::havel::debug("[CALL_METHOD] invoking host fn '{}' args={}", resolved_name, all_args.size());
                 Value result = fnIt->second(call_args);
                 pushStack(result);
                 if (hot_func_cb_) {

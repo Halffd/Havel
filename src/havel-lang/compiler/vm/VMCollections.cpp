@@ -291,6 +291,68 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     }
 
     uint32_t id = iterator_val.asIteratorId();
+
+    // Channel iterators: `for v in ch` must receive through the channel
+    // (suspending the fiber when empty — same as channel.receive). The
+    // generic GCHeap::iteratorNext cannot do this: channel queues live in
+    // the ConcurrencyBridge, not the heap, and suspension needs VM context.
+    // Iteration ends when the channel is closed AND drained.
+    {
+      auto *iter = heap_.iterator(id);
+      if (iter && iter->iterable.isChannelId()) {
+        Value recv = invokeHostFunctionDirect("channel.receive",
+                                              {iter->iterable});
+        if (suspension_requested_ || last_suspension_reason_ != 0) {
+          // channel.receive parked the fiber on an empty channel. Push a
+          // Pending marker as the placeholder: the CHANNEL_RECV resume path
+          // (processGoroutines / resumeGoroutine) recognizes the marker on
+          // the suspended stack and swaps it for a WRAPPED {first,second,
+          // done:false} iterator-result object carrying the received value
+          // — a plain replaceStackTop would leave the raw value on the
+          // stack and the loop's `result.done` read would see null.
+          ::havel::debug("[ITER-NEXT] suspending on empty channel (iter id={} ch={})",
+                         id, iter->iterable.asChannelId());
+          pushStack(Value::makePending(0));
+          break;
+        }
+        ::havel::debug("[ITER-NEXT] channel recv immediate: null={} susp={} last={}",
+                       recv.isNull() ? "y" : "n",
+                       suspension_requested_ ? "y" : "n",
+                       (int)last_suspension_reason_);
+        if (recv.isNull()) {
+          // Closed and drained: iteration done.
+          auto resultObj = heap_.allocateObject();
+          auto *obj = heap_.object(resultObj.id);
+          (*obj)["first"] = Value::makeNull();
+          (*obj)["second"] = Value::makeNull();
+          (*obj)["done"] = Value::makeBool(true);
+          pushStack(Value::makeObjectId(resultObj.id));
+          break;
+        }
+        {
+          // Value in BOTH first and second: the self-hosted emitter's
+          // single-var loop reads result.second, but the C++ compiler's
+          // fallback path (non-array/string/range iterables — including
+          // channels) reads result.first. Channels have no keys, so
+          // mirroring the value into first is unambiguous.
+          auto resultObj = heap_.allocateObject();
+          auto *obj = heap_.object(resultObj.id);
+          (*obj)["first"] = recv;
+          (*obj)["second"] = std::move(recv);
+          (*obj)["done"] = Value::makeBool(false);
+          pushStack(Value::makeObjectId(resultObj.id));
+          break;
+        }
+        auto resultObj = heap_.allocateObject();
+        auto *obj = heap_.object(resultObj.id);
+        (*obj)["first"] = Value::makeNull();
+        (*obj)["second"] = recv;
+        (*obj)["done"] = Value::makeBool(false);
+        pushStack(Value::makeObjectId(resultObj.id));
+        break;
+      }
+    }
+
     auto result = heap_.iteratorNext(id);
 
     // result is {value, done} object

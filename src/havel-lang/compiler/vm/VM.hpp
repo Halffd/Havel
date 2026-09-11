@@ -704,6 +704,70 @@ public:
             pushStack(std::move(value));
         }
     }
+    // Deliver a channel/external resume value onto the suspended stack.
+    // A channel ITER_NEXT suspension leaves a Pending marker (see ITER_NEXT
+    // in VMCollections.cpp); the loop body expects the {first, second, done}
+    // iterator-result object, so wrap the delivered value. All resume sites
+    // (processGoroutines, resumeGoroutine, HavelEngine, ExecutionEngine)
+    // must go through this helper or `for v in ch` reads a null first item.
+    // A resume on a closed+drained channel (close unparked the waiter)
+    // wraps as done:true so the iteration terminates instead of yielding
+    // the null placeholder as a data item.
+    //
+    // The marker may sit BELOW the stack top: when ITER_NEXT suspends
+    // inside a module-fn wrapper (async_mod.parallelMap's collection loop),
+    // the wrapper returns null to the outer CALL, whose handler pushes a
+    // null result slot ABOVE the marker before the fiber is saved. Scan
+    // for the marker instead of assuming it is top-of-stack.
+    void deliverResumeValue(Scheduler::AwaitableType type, Value value,
+                            uint32_t target_id = 0) {
+        if (type == Scheduler::AwaitableType::CHANNEL_RECV && !stack.empty()) {
+          // Unwind the stack looking for the marker (topmost wins; only one
+          // channel-iter suspension can be active per fiber). Cap the scan:
+          // the marker sits just below the null slots pushed by the CALL
+          // unwinding (one per module-wrapper level), so it is near the top.
+          std::vector<Value> above;
+          bool found = false;
+          for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
+            if (stack.top().isPending()) {
+              found = true;
+              break;
+            }
+            above.push_back(popStackPublic());
+          }
+          if (found) {
+            bool done = false;
+            if (value.isNull() && target_id != 0) {
+              Value state = invokeHostFunctionDirect(
+                  "channel_state", {Value::makeChannelId(target_id)});
+              done = state.isInt() && state.asInt() == 2;
+            }
+            auto resultObj = heap_.allocateObject();
+            auto *obj = heap_.object(resultObj.id);
+            // Value mirrored into first AND second (channels have no keys):
+            // the C++ loop compiler's fallback reads result.first while
+            // the self-hosted emitter reads result.second.
+            (*obj)["first"] = value;
+            (*obj)["second"] = std::move(value);
+            (*obj)["done"] = Value::makeBool(done);
+            replaceStackTop(Value::makeObjectId(resultObj.id));
+            // DROP the slots above the marker: they are the null result
+            // slots the module-fn wrapper's outer CALL pushed while the
+            // suspension unwound (one per wrapper level). The re-dispatch
+            // resumes INSIDE the suspended fn, whose next instructions
+            // consume the wrapped result at the marker's position; when
+            // the fn eventually returns, its RET re-pushes a result into
+            // the outer slot (doReturn preserves exactly one value).
+            return;
+          }
+          // No marker within reach: restore whatever was scanned off and
+          // fall back to plain replaceStackTop (ordinary receive resume).
+          for (auto it = above.rbegin(); it != above.rend(); ++it) {
+            pushStack(std::move(*it));
+          }
+        }
+        replaceStackTop(std::move(value));
+    }
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
   GCHeap::RuntimeClosure* currentClosurePublic() {

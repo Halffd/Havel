@@ -1133,10 +1133,14 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           // Resumed goroutine (unparked from await/sleep)
           if (g->fiber) {
             vm_->loadFiberStatePublic(g->fiber);
-            // Replace placeholder null with actual resume_value
+            // Replace placeholder null with actual resume_value.
+            // deliverResumeValue wraps channel-iterator resumes (Pending
+            // marker) into the {first,second,done} object the loop expects.
             if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
                 g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
-              vm_->replaceStackTop(g->wait_handle.resume_value);
+              vm_->deliverResumeValue(g->wait_handle.type,
+                                       g->wait_handle.resume_value,
+                                       g->wait_handle.target_id);
               g->wait_handle.clear();
             }
           }

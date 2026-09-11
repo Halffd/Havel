@@ -84,14 +84,7 @@ done
 
 echo "emit_pipeline: building app modules -> $CACHE_DIR (app.*)"
 for hv in "$APP_SRC_DIR"/*.hv; do
-    name="$(basename "$hv" .hv)"
-    # Skip async and async_mod - they have C++ compiler bugs with named imports
-    # They will be compiled on-demand by the self-hosted compiler
-    if [ "$name" = "async" ] || [ "$name" = "async_mod" ]; then
-        echo "emit_pipeline: skipping $name (on-demand compile)"
-        continue
-    fi
-    emit_one "$hv" "app." "app.$name" "$APP_OUT_DIR"
+    emit_one "$hv" "app." "app.$(basename "$hv" .hv)" "$APP_OUT_DIR"
 done
 
 # Write VERSION file with module sizes

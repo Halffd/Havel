@@ -23,11 +23,15 @@ fn await(x) { x }
 
 fn debounce(func, ms) {
     timer = nil
+    cancelled = false
     wrapped = fn(...args) {
+        if cancelled { return nil }
         if timer != nil { timeout.cancel(timer) }
         timer = timeout ms { func(...args) }
     }
-    wrapped.cancel = fn() { if timer != nil { timeout.cancel(timer); timer = nil } }
+    // cancel() permanently disables the debouncer: pending call is dropped
+    // and subsequent wrapped calls become no-ops (see test_async.hv).
+    wrapped.cancel = fn() { cancelled = true; if timer != nil { timeout.cancel(timer); timer = nil } }
     wrapped
 }
 
@@ -37,8 +41,6 @@ fn debounce(func, ms) {
 
 fn throttle(func, ms) {
     last = 0
-    pending = nil
-    timer = nil
     
     wrapped = fn(...args) {
         now = time.now()
@@ -46,19 +48,12 @@ fn throttle(func, ms) {
         if elapsed >= ms {
             last = now
             func(...args)
-        } else if pending == nil {
-            pending = args
-            delay = ms - elapsed
-            timer = timeout delay {
-                pending = nil
-                last = time.now()
-                func(...pending)
-            }
-        } else {
-            pending = args
         }
+        // Calls inside the window are dropped (leading-edge only):
+        // throttle(fn, 50) fires the first call immediately and ignores
+        // the rest until the window elapses (see test_async.hv).
     }
-    wrapped.cancel = fn() { if timer != nil { timeout.cancel(timer); timer = nil; pending = nil } }
+    wrapped.cancel = fn() { }
     wrapped
 }
 
@@ -70,26 +65,25 @@ fn retry(func, attempts, baseDelay, maxDelay, backoff) {
     if backoff == nil { backoff = 2.0 }
     if maxDelay == nil { maxDelay = 30000 }
     
-    wrapped = fn(...args) {
-        lastErr = nil
-        delay = baseDelay || 100
-        i = 0
-        while i < attempts {
-            try {
-                return func(...args)
-            } catch err {
-                lastErr = err
-                i += 1
-                if i < attempts {
-                    sleep(int(delay))
-                    delay = int(delay * backoff)
-                    if delay > maxDelay { delay = maxDelay }
-                }
+    // Immediate invocation: retry(func, n, delay) runs func now with backoff
+    // between failures and returns the first success (see test_async.hv).
+    lastErr = nil
+    delay = baseDelay || 100
+    i = 0
+    while i < attempts {
+        try {
+            return func()
+        } catch err {
+            lastErr = err
+            i += 1
+            if i < attempts {
+                sleep(int(delay))
+                delay = int(delay * backoff)
+                if delay > maxDelay { delay = maxDelay }
             }
         }
-        throw lastErr
     }
-    wrapped
+    throw lastErr
 }
 
 // ============================================================
@@ -130,27 +124,37 @@ fn withTimeout(func, ms, onTimeout) {
     result.receive()
 }
 
+// withTimeout without an onTimeout handler.
+// Returns {ok: true, value: res} or {ok: false, error: "timeout"}.
+// (Exported as `timeout` via the alias in async.hv's import list — do NOT
+// rebind the name `timeout` here: the timeout DSL (`timeout ms {}`) and
+// timeout.cancel prototype calls must keep resolving to the host runtime.)
+fn timeoutWrap(func, ms) { withTimeout(func, ms, nil) }
+
 // ============================================================
 // Race - first to complete wins
 // ============================================================
 
 fn race(funcs) {
     result = channel.new()
-    done = false
     
+    // Each competitor sends its outcome; the first send queued wins because
+    // channel.send never blocks (it queues) and we receive exactly once.
+    // The old `done` flag had a TOCTOU race: two goroutines suspended at
+    // f() could both pass the !done check, both set done, and both send.
+    // Late sends just queue a value nobody reads — no goroutine blocks.
+    // IIFE: loop vars share one upvalue cell, so capture f per iteration.
     for f in funcs {
-        go fn() {
-            if !done {
+        (fn(comp) {
+            go fn() {
                 try {
-                    res = f()
-                    done = true
+                    res = comp()
                     result.send({ok: true, value: res})
                 } catch err {
-                    done = true
                     result.send({ok: false, error: str(err)})
                 }
             }
-        }
+        })(f)
     }
     
     result.receive()
@@ -205,17 +209,26 @@ fn parallelMap(items, func, concurrency) {
     wg = waitgroup.new()
     sem = channel.new()
     
+    // Count ALL workers up-front: adding wg.add(1) per loop iteration let
+    // the counter hit zero (workers 1..k done, item k+1 still waiting on a
+    // semaphore token) before every item had spawned — the closer's
+    // wg.wait() fired, closed `results`, and the last worker's send was
+    // dropped by the closed channel (parallelMap lost its final item).
+    wg.add(#items)
+    
     // Initialize semaphore
     for i in 0..concurrency { sem.send(true) }
     
     for i, item in items {
         sem.receive()
-        wg.add(1)
-        go fn() {
-            defer { wg.done(); sem.send(true) }
-            res = func(item)
-            results.send({index: i, value: res, ok: true})
-        }
+        // IIFE: loop vars share one upvalue cell — capture i/item per iteration
+        (fn(idx, val) {
+            go fn() {
+                defer { wg.done(); sem.send(true) }
+                res = func(val)
+                results.send({index: idx, value: res, ok: true})
+            }
+        })(i, item)
     }
     
     go fn() {
@@ -276,7 +289,10 @@ fn then(promiseCh, onFulfilled, onRejected) {
 fn all(channels) {
     results = []
     for i, ch in channels {
-        go fn() { results[i] = ch.receive() }
+        // IIFE: loop vars share one upvalue cell — capture i/ch per iteration
+        (fn(idx, c) {
+            go fn() { results[idx] = c.receive() }
+        })(i, ch)
     }
     wg = waitgroup.new()
     wg.add(#channels)
@@ -312,9 +328,12 @@ fn chanSelect(channels) {
 fn merge(channels) {
     out = channel.new()
     for ch in channels {
-        go fn() {
-            for v in ch { out.send(v) }
-        }
+        // IIFE: loop vars share one upvalue cell — capture ch per iteration
+        (fn(c) {
+            go fn() {
+                for v in c { out.send(v) }
+            }
+        })(ch)
     }
     out
 }

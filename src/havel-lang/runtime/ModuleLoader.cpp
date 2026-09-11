@@ -1,6 +1,7 @@
 #include "ModuleLoader.hpp"
 #include "c/ModulePlugin.h"
 #include "dl/Loader.h"
+#include "../compiler/runtime/RuntimeSupport.hpp"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <system_error>
 #include <array>
 #include <fstream>
+#include <span>
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -295,6 +297,40 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     return "";
   }
 
+  // Map a bytecode-cache key ("lang.<stem>", "std.<stem>", "app.<stem>",
+  // or a user flat-cache "stem.<8hex>") back to a live source file with the
+  // same stem on the module search path. Returns "" when no live candidate
+  // exists (installed bundles / AOT-only deployments).
+  static std::string findLiveSourceForCacheName(
+      const std::string& hashKey,
+      const std::vector<std::string>& searchPaths) {
+    namespace fs = std::filesystem;
+    std::string stem;
+    for (const char* prefix : {"lang.", "std.", "app."}) {
+      if (hashKey.starts_with(prefix)) {
+        stem = hashKey.substr(std::strlen(prefix));
+        break;
+      }
+    }
+    if (stem.empty()) {
+      // User flat-cache name: stem.<8 hex chars>
+      auto dot = hashKey.rfind('.');
+      if (dot != std::string::npos && hashKey.size() - dot == 9) {
+        stem = hashKey.substr(0, dot);
+      } else {
+        stem = hashKey;
+      }
+    }
+    for (const auto& sp : searchPaths) {
+      fs::path cand = fs::path(sp) / (stem + ".hv");
+      if (fs::exists(cand)) {
+        try { return fs::canonical(cand).string(); }
+        catch (...) { return cand.string(); }
+      }
+    }
+    return "";
+  }
+
   std::optional<ModuleLoader::ResolvedModule>
   ModuleLoader::resolve(const std::string& modulePath,
                         const std::string& scriptDir) const {
@@ -311,20 +347,97 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
                           const std::string& hashKey) -> std::optional<ResolvedModule> {
     if (!fs::exists(hvcPath)) return std::nullopt;
 
-    // Check persistent hash index first
+    // Prefer validating against the LIVE source embedded in the .hvc
+    // header (serializeChunk embeds the canonical path + sha256 of the
+    // tree it was compiled from). The cache-copy .hv next to the .hvc
+    // is refreshed only when a compile actually happens, so editing
+    // modules/lang/<name>.hv leaves the copy - and the hash index that
+    // hashes it - matching the OLD content forever: bare-name loads
+    // (use scope, use lexer) kept serving pre-edit bytecode with no
+    // signal (observed live: appended probe global invisible after
+    // edit + run). When the embedded path exists, hash it directly.
+    {
+      std::ifstream hvcIn(hvcPath, std::ios::binary | std::ios::ate);
+      if (hvcIn) {
+        std::streamsize sz = hvcIn.tellg();
+        if (sz > 0) {
+          std::vector<uint8_t> buf(static_cast<size_t>(sz));
+          hvcIn.seekg(0, std::ios::beg);
+          if (hvcIn.read(reinterpret_cast<char *>(buf.data()), sz)) {
+            auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                std::span<const uint8_t>(buf));
+            if (srcInfo.hasInfo &&
+                fs::exists(srcInfo.path)) {
+              std::string liveHash = sha256_file_hex(srcInfo.path);
+              // hex-encode the embedded hash
+              static const char hexDigits[] = "0123456789abcdef";
+              std::string embeddedHex;
+              embeddedHex.reserve(srcInfo.hash.size() * 2);
+              for (uint8_t b : srcInfo.hash) {
+                embeddedHex += hexDigits[b >> 4];
+                embeddedHex += hexDigits[b & 0x0F];
+              }
+              if (!liveHash.empty() && liveHash != embeddedHex) {
+                // Live source changed since this .hvc was compiled -
+                // stale, do not serve it.
+                return std::nullopt;
+              }
+              if (liveHash == embeddedHex) {
+                return makeBcCache(hvcPath, hvPath, modulePath);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Check persistent hash index first (cache-copy based; legacy path
+    // for hvcs without embedded source info)
     loadHashIndex();
     auto hashIt = bytecode_hash_index_.find(hashKey);
     if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
       // Compute current source hash
       std::string currentHash = sha256_file_hex(hvPath.string());
       if (currentHash == hashIt->second) {
-        // Hash matches - cache is valid
+        // Index matches the cache COPY. The copy only refreshes when a
+        // compile actually happens, so a live source edit is invisible
+        // to it. When the copy mirrors a live source file that exists
+        // on the search path, require that match too; otherwise
+        // (installed bundles with no live source) the copy match is
+        // the best available validation.
+        std::string liveCandidate =
+            findLiveSourceForCacheName(hashKey, searchPaths_);
+        if (!liveCandidate.empty()) {
+          std::string liveHash = sha256_file_hex(liveCandidate);
+          if (!liveHash.empty() && liveHash != currentHash) {
+            // Live source drifted from the copy - stale, fall through.
+            return std::nullopt;
+          }
+        }
         return makeBcCache(hvcPath, hvPath, modulePath);
       }
       // Hash mismatch - cache is stale, fall through to mtime check
     }
 
-    // Fallback to mtime check
+    // Fallback to mtime check. The hvc's mtime is NOT trustworthy for
+    // hash-less caches: GLBS rewrites bump it on every cold load
+    // without recompiling, and emit_pipeline copies the source beside
+    // the cache after the build step, so both mtimes can be newer than
+    // the bytecode inside. When a live source for this cache name
+    // exists on the search path, serve only if the hvc is at least as
+    // new as the LIVE source (dev flow); installed bundles without live
+    // sources keep the cache-copy comparison.
+    std::string liveCandidate =
+        findLiveSourceForCacheName(hashKey, searchPaths_);
+    if (!liveCandidate.empty()) {
+      auto hvcTime = fs::last_write_time(hvcPath);
+      bool liveNewer = false;
+      std::error_code liveEc;
+      auto liveTime = fs::last_write_time(liveCandidate, liveEc);
+      if (!liveEc && liveTime > hvcTime) liveNewer = true;
+      if (liveNewer) return std::nullopt;
+      return makeBcCache(hvcPath, hvPath, modulePath);
+    }
     auto hvcTime = fs::last_write_time(hvcPath);
     bool newerOrEqual = !fs::exists(hvPath) ||
                         hvcTime >= fs::last_write_time(hvPath);

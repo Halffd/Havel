@@ -365,25 +365,19 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
       if (srcInfo.hasInfo) {
         // The flat cache is global but source trees are not: a parallel
         // worktree's binary may have compiled this entry against ITS
-        // module tree. The embedded path naming a source outside this
-        // tree's search paths is not evidence about OUR modules - the
-        // live-source check below must resolve through THIS loader's
-        // search paths, never the recorded path directly.
-        std::error_code canonEc;
-        const std::string embeddedCanonical =
-            std::filesystem::weakly_canonical(srcInfo.path, canonEc).string();
-        bool fromThisTree = false;
-        for (const auto &sp : searchPaths_) {
-          const std::string spCanonical =
-              std::filesystem::weakly_canonical(sp, canonEc).string();
-          if (!spCanonical.empty() &&
-              embeddedCanonical.rfind(spCanonical, 0) == 0) {
-            fromThisTree = true;
-            break;
-          }
-        }
-        if (fromThisTree && fs::exists(srcInfo.path)) {
-          std::string liveHash = sha256_file_hex(srcInfo.path);
+        // copy of the module, and the recorded path says nothing about
+        // THIS tree's sources. Bytecode depends only on source CONTENT,
+        // so validate by hashing the live source this loader would use
+        // (via the search paths) and comparing size+sha256 with the
+        // embedded identity. Identical content across trees reuses;
+        // diverged content falls through to recompile.
+        std::string liveCandidate =
+            findLiveSourceForCacheName(hashKey, searchPaths_);
+        if (!liveCandidate.empty() && fs::exists(liveCandidate)) {
+          std::error_code sizeEc;
+          const auto liveSize =
+              fs::file_size(liveCandidate, sizeEc);
+          std::string liveHash = sha256_file_hex(liveCandidate);
           static const char hexDigits[] = "0123456789abcdef";
           std::string embeddedHex;
           embeddedHex.reserve(srcInfo.hash.size() * 2);
@@ -391,17 +385,24 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
             embeddedHex += hexDigits[b >> 4];
             embeddedHex += hexDigits[b & 0x0F];
           }
+          if (!liveHash.empty() && liveHash == embeddedHex &&
+              !sizeEc && liveSize == srcInfo.size) {
+            return makeBcCache(hvcPath, hvPath, modulePath);
+          }
           if (!liveHash.empty() && liveHash != embeddedHex) {
             // Live source changed since this .hvc was compiled -
             // stale, do not serve it.
             return std::nullopt;
           }
-          if (liveHash == embeddedHex) {
-            return makeBcCache(hvcPath, hvPath, modulePath);
+          // Size differs but hash matches: identity must hold on BOTH
+          // fields - treat as stale.
+          if (!liveHash.empty() && liveHash == embeddedHex &&
+              !sizeEc && liveSize != srcInfo.size) {
+            return std::nullopt;
           }
         }
-        // Foreign-tree or unresolvable identity: fall through to the
-        // legacy validations below rather than trusting it.
+        // No live candidate (installed bundles) or unresolved identity:
+        // fall through to the legacy validations below.
       }
     }
 

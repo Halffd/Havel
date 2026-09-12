@@ -1340,6 +1340,12 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     // this gate additionally requires the JIT path to establish the
     // callee's frame context (closure_id/module_globals) for the bridges.
     // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    // Reproduced 2026-09-12: with it set, an 80-fn --lint run compiled
+    // tier1=6 self-hosted parser functions; the lint completed rc=0 but
+    // the expected "Linting successful" line never printed AND parseAST
+    // doubled (2395 -> 4510ms) - tiered module functions diverge
+    // semantically (globals land in the caller's frame) and run slower.
+    // The gate stays until the JIT path establishes callee frame context.
     static const bool allow_module_tiering =
         std::getenv("HAVEL_TIER1_MODULES") != nullptr;
     if (!allow_module_tiering && frame_count_ > 0) {

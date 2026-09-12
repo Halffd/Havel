@@ -854,7 +854,7 @@ private:
     // the script blocks inside a chunked sleep host function, our
     // yield_callback fires into this method, and startGoroutineCall
     // below then wipes the shared VM stack (`while(!stack.empty())
-    // stack.pop()` in startGoroutineCall). Without saving the
+    // stack.pop_back()` in startGoroutineCall). Without saving the
     // half-consumed operand stack + frame arena into a fiber here
     // and restoring them afterwards, the next CALL opcode in __main__
     // reports "CALL Underflow! Stack size: 0 Expected: 2" (e.g. the

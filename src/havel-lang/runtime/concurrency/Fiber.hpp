@@ -136,7 +136,14 @@ public:
         sp_ = 0;
         data_.clear();
     }
-    
+
+    // Bulk load from the VM's flat operand vector (bottom-to-top order).
+    // Replaces the per-value push loop the std::stack era needed.
+    void assign(const std::vector<Value>& values) {
+        data_ = values;
+        sp_ = values.size();
+    }
+
     // Reserve space
     void reserve(size_t capacity) {
         data_.reserve(capacity);

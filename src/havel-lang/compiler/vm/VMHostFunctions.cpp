@@ -4621,8 +4621,8 @@ Value VM::invokeHostFunction(const std::string &name, uint32_t arg_count) {
     if (stack.empty()) {
       COMPILER_THROW("Stack underflow while reading host arguments");
     }
-    args[arg_count - 1 - i] = stack.top();
-    stack.pop();
+    args[arg_count - 1 - i] = stack.back();
+    stack.pop_back();
   }
 
   Value result = it->second(args);

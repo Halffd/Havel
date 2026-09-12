@@ -461,8 +461,8 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
   // Get result from stack top BEFORE restoring state
   Value result;
   if (!stack.empty()) {
-    result = stack.top();
-    stack.pop();
+    result = stack.back();
+    stack.pop_back();
   }
 
   // Restore all VM state. locals is the critical one: the callee's
@@ -500,7 +500,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
 
   while (!stack.empty()) {
-    stack.pop();
+    stack.pop_back();
   }
   locals.clear();
   frame_count_ = 0;
@@ -803,8 +803,8 @@ vm_in_execute_.store(false, std::memory_order_release);
     return nullptr;
   }
 
-  Value result = stack.top();
-  stack.pop();
+  Value result = stack.back();
+  stack.pop_back();
   return result;
 }
 
@@ -838,7 +838,7 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   // locals, stack, and frames. We only clear them here for the
   // persistent execution context.
   while (!stack.empty()) {
-    stack.pop();
+    stack.pop_back();
   }
   locals.clear();
   frame_count_ = 0;
@@ -936,8 +936,8 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   // the host function restores the caller's state.
   Value persistent_result;
   if (!stack.empty()) {
-    persistent_result = stack.top();
-    stack.pop();
+    persistent_result = stack.back();
+    stack.pop_back();
   }
 
   current_chunk = saved_chunk;
@@ -985,7 +985,7 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   }
 
   // Save current stack state (conditions shouldn't consume/modify main stack)
-  std::stack<Value> saved_stack = stack;
+  std::vector<Value> saved_stack = stack;
   size_t saved_frame_count = frame_count_;
   auto saved_locals = locals;
   auto saved_frame_arena = frame_arena_;
@@ -1022,7 +1022,7 @@ Value VM::evaluateExpressionBytecode(uint32_t func_index, size_t ip) {
     return Value::makeNull();
   }
 
-  std::stack<Value> saved_stack = stack;
+  std::vector<Value> saved_stack = stack;
   size_t saved_frame_count = frame_count_;
   auto saved_locals = locals;
   auto saved_frame_arena = frame_arena_;
@@ -1126,7 +1126,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
     // Boundary check - if IP past function end, return
     if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       // After RETURN, check frame count to determine if function returned
       if (frame_count_ < entry_frame_count) {
@@ -1134,8 +1134,8 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
           current_executing_fiber_ = nullptr;
           return VMExecutionResult::Returned(nullptr);
         }
-        Value ret_val = stack.top();
-        stack.pop();
+        Value ret_val = stack.back();
+        stack.pop_back();
         current_executing_fiber_ = nullptr;
         return VMExecutionResult::Returned(ret_val);
       }
@@ -1325,21 +1325,16 @@ void VM::loadFiberState(Fiber *fiber) {
 
   // STEP 1: Clear VM's current execution state
   // These will be repopulated from the fiber
-  while (!stack.empty()) {
-    stack.pop();
-  }
+  stack.clear();
   locals.clear();
   immutable_locals_.clear();
   frame_count_ = 0;
 
   // STEP 2: Restore operand stack from fiber's stack
-  // FiberStack uses a data vector and size_t sp (stack pointer)
-  // We need to copy all pushed values onto the VM's stack
+  // FiberStack is bottom-to-top like the VM's flat operand vector.
   const auto &fiber_stack_data = fiber->stack.data();
   const size_t fiber_sp = fiber->stack.size();
-  for (size_t i = 0; i < fiber_sp; ++i) {
-    stack.push(fiber_stack_data[i]);
-  }
+  stack.assign(fiber_stack_data.begin(), fiber_stack_data.begin() + fiber_sp);
 
   // STEP 3: Restore locals from fiber's map into VM's vector
   // VM locals is a vector indexed by absolute position
@@ -1533,20 +1528,10 @@ void VM::saveFiberState(Fiber *fiber) {
   }
 
   // STEP 1: Save operand stack from VM back to fiber's stack
-  fiber->stack.clear();
-
-  // Convert VM's std::stack<Value> to fiber's FiberStack
-  // std::stack is LIFO, so we need to extract in reverse order
-  std::vector<Value> temp_values;
-  auto temp_stack = stack; // Copy the stack
-  while (!temp_stack.empty()) {
-    temp_values.push_back(temp_stack.top());
-    temp_stack.pop();
-  }
-  // Now push in correct order (reverse of extraction)
-  for (auto it = temp_values.rbegin(); it != temp_values.rend(); ++it) {
-    fiber->stack.push(*it);
-  }
+  // Operand stack is a flat vector in bottom-to-top order; the fiber's
+  // stack holds the same shape, so bulk-assign replaces the old LIFO
+  // extraction (std::stack copy + reverse push).
+  fiber->stack.assign(stack);
 
   // STEP 2: Save locals from VM's vector back to fiber's map
   fiber->locals.clear();
@@ -1625,7 +1610,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
                                                const std::vector<Value> &args) {
   // Clear VM state for fresh goroutine context
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   immutable_locals_.clear();
   frame_count_ = 0;
@@ -1797,7 +1782,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
 
   // Push args onto VM stack
   for (const auto &arg : args) {
-    stack.push(arg);
+    stack.push_back(arg);
   }
 
   // Set up locals with room for params + locals
@@ -2069,7 +2054,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       const size_t entry_frame_count = frame_count_;
 
       if (ip >= function->instructions.size()) {
-        stack.push(nullptr);
+        stack.push_back(nullptr);
         executeInstruction(Instruction{OpCode::RETURN});
         continue;
       }
@@ -2223,7 +2208,7 @@ slow_path:
     size_t entry_frame_count = frame_count_;
 
     if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       continue;
     }
@@ -2524,7 +2509,7 @@ bool VM::handleScriptThrow(const Value &value) {
         target_depth = 0; // Reset to empty if corrupted
       }
       while (stack.size() > target_depth) {
-        stack.pop();
+        stack.pop_back();
       }
 
       // Jump to catch block (finally is compiled into the catch block if it
@@ -2661,8 +2646,8 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
   if (stack.empty()) {
     return nullptr;
   }
-  Value result = stack.top();
-  stack.pop();
+  Value result = stack.back();
+  stack.pop_back();
   return result;
 }
 
@@ -2771,8 +2756,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       {
         std::vector<Value> tmp;
         while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
+          tmp.push_back(stack.back());
+          stack.pop_back();
         }
         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
           cf.stack.push_back(*it);
@@ -3705,11 +3690,11 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
 
 std::vector<Value> VM::stackValuesForRoots() const {
   std::vector<Value> values;
-  std::stack<Value> copy = stack;
-  values.reserve(copy.size() + 64);
-  while (!copy.empty()) {
-    values.push_back(copy.top());
-    copy.pop();
+  values.reserve(stack.size() + 64);
+  // Same order as the old std::stack extraction (top to bottom) so
+  // diagnostic outputs and root ordering stay identical.
+  for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+    values.push_back(*it);
   }
   for (const auto &gmap : globals_stack_) {
     for (const auto &[_, v] : gmap) {
@@ -3916,8 +3901,8 @@ Value VM::popStack() {
     }
     COMPILER_THROW("Stack underflow");
   }
-  Value value = stack.top();
-  stack.pop();
+  Value value = stack.back();
+  stack.pop_back();
   return value;
 }
 
@@ -4026,8 +4011,8 @@ bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
   try {
     executeInstruction(instr);
     if (!stack.empty()) {
-      *out = stack.top();
-      stack.pop();
+      *out = stack.back();
+      stack.pop_back();
     } else {
       *out = Value::makeNull();
     }
@@ -4142,7 +4127,7 @@ void VM::pushStack(Value value) {
   if (stack.size() >= 1'000'000) {
     COMPILER_THROW("Expression stack overflow");
   }
-  stack.push(std::move(value));
+  stack.push_back(std::move(value));
 }
 
 uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
@@ -4299,9 +4284,9 @@ void VM::doReturn() {
 
         currentFrame().ip = caller.ip;
 
-        stack = std::stack<Value>();
+        stack.clear();
         for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-          stack.push(*it);
+          stack.push_back(*it);
         }
 
         co->caller_stack.pop_back();
@@ -6251,7 +6236,7 @@ load_from_source:
   }
 
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   frame_count_ = 0;
   open_upvalues.clear();
@@ -6274,8 +6259,8 @@ load_from_source:
   try {
     runDispatchLoop(0);
     if (!stack.empty()) {
-      exec_result = stack.top();
-      stack.pop();
+      exec_result = stack.back();
+      stack.pop_back();
     }
   } catch (...) {
     // Restore caller's globals and execution state on error
@@ -7322,7 +7307,7 @@ Value VM::loadScript(const std::string &path) {
   }
 
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   frame_count_ = 0;
   open_upvalues.clear();
@@ -7343,8 +7328,8 @@ Value VM::loadScript(const std::string &path) {
   try {
     runDispatchLoop(0);
     if (!stack.empty()) {
-      exec_result = stack.top();
-      stack.pop();
+      exec_result = stack.back();
+      stack.pop_back();
     }
   } catch (...) {
     stack = std::move(saved_stack);

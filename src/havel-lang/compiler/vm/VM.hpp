@@ -302,7 +302,12 @@ struct CallFrame {
 };
   public:
 
-  std::stack<Value> stack;
+  // Operand stack. Flat vector instead of std::stack (deque-backed):
+  // deque chunk allocation showed as kernel clear_pages + per-op overhead
+  // in dispatch profiles (push 4%, pop 2.7%). The vector keeps capacity
+  // across calls; save/restore copies are contiguous memcpy-able.
+  // Stack-op mapping: push->push_back, pop->pop_back, top->back.
+  std::vector<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
  size_t frame_count_ = 0;
@@ -590,7 +595,7 @@ int32_t pending_call_return_ip_ = -1;
 
   // State snapshot for re-entrant calls (HOF callbacks)
   struct ExecutionState {
-    std::stack<Value> stack;
+    std::vector<Value> stack;
     std::vector<Value> locals;
     std::vector<CallFrame> frames;
     size_t frame_count = 0;
@@ -701,7 +706,7 @@ public:
     // itself behind public seams.
     size_t stackDepthPublic() const { return stack.size(); }
     void truncateStackPublic(size_t depth) {
-      while (stack.size() > depth) stack.pop();
+      while (stack.size() > depth) stack.pop_back();
     }
     void execBinaryOpPublic(const Instruction &instr) {
       execBinaryOp(instr);
@@ -717,7 +722,7 @@ public:
     // Replace top-of-stack with a new value (used when resuming from await)
     void replaceStackTop(Value value) {
         if (!stack.empty()) {
-            stack.top() = std::move(value);
+            stack.back() = std::move(value);
         } else {
             pushStack(std::move(value));
         }
@@ -747,7 +752,7 @@ public:
           std::vector<Value> above;
           bool found = false;
           for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
-            if (stack.top().isPending()) {
+            if (stack.back().isPending()) {
               found = true;
               break;
             }
@@ -1862,14 +1867,14 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // is a broken invariant: log loudly and neutralize to null.
   bool parkIfPendingCallResult() {
     if (!scheduler_ || !current_executing_fiber_ || stack.empty()) {
-      if (!stack.empty() && stack.top().isPending()) {
+      if (!stack.empty() && stack.back().isPending()) {
         ::havel::error("[VM] Pending host-call result outside goroutine "
                        "context; check runBlockingHostCall preconditions");
-        stack.top() = Value::makeNull();
+        stack.back() = Value::makeNull();
       }
       return false;
     }
-    Value top = stack.top();
+    Value top = stack.back();
     if (!top.isPending()) return false;
     uint32_t token = top.asPendingToken();
     Scheduler::Goroutine *g = scheduler_->current();
@@ -1886,7 +1891,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
     }
     ::havel::error("[VM] Pending value escaped without a matching current "
                    "goroutine (token {})", token);
-    stack.top() = Value::makeNull();
+    stack.back() = Value::makeNull();
     return false;
   }
   void pinModuleCacheExports(const std::string &key, const Value &exports);

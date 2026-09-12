@@ -337,12 +337,12 @@ Value callee_value = popStack();
     if (stack.empty()) {
       COMPILER_THROW("CALL_IF_FUNCTION: stack underflow");
     }
-    Value callee_value = stack.top();
+    Value callee_value = stack.back();
     if (callee_value.isHostFuncId() ||
         callee_value.isFunctionObjId() ||
         callee_value.isClosureId() ||
         callee_value.isBoundMethodId()) {
-      stack.pop();
+      stack.pop_back();
       doCall(callee_value, {});
     }
     // Not callable: leave value on stack (no-op)
@@ -376,10 +376,10 @@ case OpCode::CALL_METHOD: {
     std::vector<Value> temp_args;
     temp_args.reserve(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      temp_args.push_back(stack.top());
-      stack.pop();
+      temp_args.push_back(stack.back());
+      stack.pop_back();
     }
-    Value receiver = stack.top();
+    Value receiver = stack.back();
     // Push args back in reverse order
     for (auto it = temp_args.rbegin(); it != temp_args.rend(); ++it) {
       pushStack(*it);

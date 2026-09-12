@@ -370,7 +370,23 @@ fn Lexer(source) {
                 chunkStart = bytePos()
             } else if current() == 36 && braceDepth == 0 {
                 nextCp = cp(1)
-                if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
+                if nextCp == 123 {
+                    // dollar-brace expression interpolation. Emit the opening
+                    // brace into the token value (the parser re-lexes the
+                    // brace-delimited body, same scheme as the dollar-var
+                    // branch) and raise braceDepth so nesting inside the
+                    // expression is tracked. Without this branch the dollar
+                    // became a literal char (brace failed the alpha check)
+                    // and the expression text after it was parsed as code.
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    advance()
+                    advance()
+                    s = s + "{"
+                    braceDepth = braceDepth + 1
+                    chunkStart = bytePos()
+                } else if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
                     isInterpolated = true
@@ -476,7 +492,23 @@ fn Lexer(source) {
                 chunkStart = bytePos()
             } else if current() == 36 && braceDepth == 0 {
                 nextCp = cp(1)
-                if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
+                if nextCp == 123 {
+                    // dollar-brace expression interpolation. Emit the opening
+                    // brace into the token value (the parser re-lexes the
+                    // brace-delimited body, same scheme as the dollar-var
+                    // branch) and raise braceDepth so nesting inside the
+                    // expression is tracked. Without this branch the dollar
+                    // became a literal char (brace failed the alpha check)
+                    // and the expression text after it was parsed as code.
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    advance()
+                    advance()
+                    s = s + "{"
+                    braceDepth = braceDepth + 1
+                    chunkStart = bytePos()
+                } else if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
                     isInterpolated = true

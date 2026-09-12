@@ -1111,6 +1111,51 @@ op_CALL: {
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
+  // CALL_SPREAD shares this label but has different operand semantics
+  // (lit_before/lit_after, array expansion) - fast path only for plain
+  // CALL/CALL_DYN. CALL_DYN pops arg_count from the stack, not operands.
+  const uint32_t call_arg_count =
+      (inst.opcode == OpCode::CALL && !inst.operands.empty() &&
+               inst.operands[0].isInt()
+           ? static_cast<uint32_t>(inst.operands[0].asInt())
+           : UINT32_MAX);
+  // Common-case inline: closure/function/host callee with no exotic
+  // dispatch. ip is advanced BEFORE doCall (frame_arena_ may reallocate
+  // inside the callee - incrementing through the frm reference after
+  // would be a dangling-reference write). Rejoins the shared tail after.
+  // Falls through to the full executeInstruction path for anything else
+  // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
+  if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (suspension_requested_ || last_suspension_reason_ != 0)
+      goto slow_dispatch_fallback;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(
+          f2.function->instructions[f2.ip].opcode)];
+    }
+  }
   frm.ip++;
   // ip now points at the instruction AFTER this CALL — the exact address
   // a coroutine yield must return to. Stash it for doCall's resume path.

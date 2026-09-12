@@ -640,6 +640,42 @@ int32_t pending_call_return_ip_ = -1;
 	bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args);
+
+  // Fast path for the computed-goto op_CALL label: handles the common
+  // callee shapes (closure / function object / host function) inline,
+  // skipping the executeInstruction switch re-dispatch. Exotic callee
+  // shapes (callable objects, bound methods, coroutines) return false and
+  // the caller falls back to the full CALL case in executeInstruction.
+  // Shared with the slow-path CALL case: both use takeCallArgScratch, so
+  // arg pooling logic stays in one place.
+  inline bool execSimpleCall(uint32_t arg_count) {
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      return false; // underflow diagnostics live in the slow path
+    }
+    // Stack layout: callee pushed first, then args (callee at the bottom
+    // of the arg window). The slow-path CALL case pops args then callee.
+    const size_t callee_pos = stack.size() - 1 - arg_count;
+    Value callee_value = stack[callee_pos];
+    if (!callee_value.isClosureId() && !callee_value.isFunctionObjId() &&
+        !callee_value.isHostFuncId()) {
+      return false;
+    }
+    // Advance the caller's ip BEFORE doCall: doCall may push frames and
+    // reallocate frame_arena_, so the dispatch label must not touch its
+    // frm reference afterwards. Do it here while we still only hold an
+    // index.
+    if (frame_count_ > 0) {
+      frame_arena_[frame_count_ - 1].ip++;
+    }
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[i] = stack[callee_pos + 1 + i];
+    }
+    stack.resize(callee_pos);
+    doCall(std::move(callee_value), std::move(args));
+    return true;
+  }
   void doTailCall(Value callee_value, std::vector<Value> args);
   void packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee);
   void runDispatchLoop(size_t stop_frame_depth);

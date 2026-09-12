@@ -4325,7 +4325,7 @@ void VM::emitVariableChanged(const std::string &var_name) {
   event_queue_->push(change_event);
 }
 
-void VM::tickScheduler() {
+void VM::tickScheduler(bool wait_for_sleepers) {
   auto *sched = scheduler_;
   if (!sched) return;
   if (event_queue_) {
@@ -4334,6 +4334,25 @@ void VM::tickScheduler() {
 
   sched->drainDeferredCallbacks(FiberPriority::NORMAL);
   sched->wakeSleepingGoroutines();
+
+  // bc.tick() semantics: a script explicitly advancing the scheduler
+  // expects sleeping goroutines to make progress across ticks (the
+  // scheduler_goroutine smoke test spawns a sleep(10) worker and
+  // asserts completion after 3 ticks). When nothing is runnable but a
+  // sleeper has a deadline, wait for the NEAREST deadline once and
+  // re-wake, so one tick advances past the sleep instead of returning
+  // with the goroutine still parked. The REPL's tickGoroutines keeps
+  // wait_for_sleepers=false - its select loop must not block.
+  if (wait_for_sleepers && !sched->hasRunnableFibers()) {
+    auto next_deadline = sched->nextSleepDeadline();
+    if (next_deadline) {
+      auto now = std::chrono::steady_clock::now();
+      if (*next_deadline > now) {
+        std::this_thread::sleep_until(*next_deadline);
+      }
+      sched->wakeSleepingGoroutines();
+    }
+  }
 
   // Execute at most one goroutine per tick so the REPL select loop can
   // process stdin between ticks. Draining ALL runnable goroutines froze the

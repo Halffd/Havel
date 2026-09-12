@@ -280,6 +280,14 @@ struct VMApi {
         break;
       }
       processPendingEvents();
+      // Fire the yield callback (like the VM's own sleep host fn at
+      // VMHostFunctions.cpp:~1500) so runnable goroutines actually get
+      // scheduled while the MAIN script blocks in this chunked loop.
+      // Without it, a script whose main branch does sleep(5000) while a
+      // spawned goroutine is still Created never starts the goroutine
+      // (processPendingEvents only WAKES sleepers; it never dispatches
+      // them), and window_goroutine_monitor.hv times out.
+      vm().fireYieldCallbackPublic();
       auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - std::chrono::steady_clock::now());
       auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));

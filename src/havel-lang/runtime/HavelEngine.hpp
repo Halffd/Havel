@@ -893,10 +893,11 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          // fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
+          fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
         }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
+          if (_trace) ::havel::info("[INLINE_YIELD] g={} startGoroutineCall result={} -> Done", g->id, (int)call_result);
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
           g->state = compiler::Scheduler::GoroutineState::Done;
           executed++;
@@ -925,8 +926,26 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // (8192-instruction checkpoints; a tick overshoots by < 8192).
         const uint64_t tick_budget = 65536;
         vm_->beginFastTick(tick_budget);
-        const size_t entry_frames = vm_->frameCountPublic();
+        // Stop depth 0: startGoroutineCall/loadFiberState left ONLY this
+        // goroutine's frames on the VM stack (startGoroutineCall clears it;
+        // the main snapshot was saved to main_script_fiber_ above), so
+        // "drained" means every frame popped. Passing the entry depth here
+        // (as an earlier revision did) made runDispatchFast's
+        // `frame_count_ <= stop_frame_depth` guard return immediately —
+        // zero instructions executed — and frames_drained trivially true,
+        // so every goroutine picked inline was marked Done without running
+        // anything (window_goroutine_monitor.hv regression).
+        const size_t entry_frames = 0;
+        // parkIfPendingCallResult (fiber-suspending host calls) matches
+        // the current goroutine via current_executing_fiber_, like the
+        // engine processGoroutines loop does. Without it, runBlocking
+        // gate passes (sched->current() is set by pickNext) but the park
+        // mismatches: the Pending marker escapes, is neutralized to
+        // null, and window.active() in a goroutine returns null
+        // (window_goroutine_monitor.hv regression).
+        vm_->current_executing_fiber_ = g->fiber;
         vm_->runDispatchLoopPublic(entry_frames);
+        vm_->current_executing_fiber_ = nullptr;
         vm_->endFastTick();
         g->instructions_executed += static_cast<uint64_t>(vm_->fastTickConsumed());
         executed++;
@@ -939,7 +958,11 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         const bool frames_drained =
             vm_->frameCountPublic() <= entry_frames;
         const auto last_reason = vm_->getLastSuspensionReason();
-
+        if (_trace) {
+          ::havel::info("[INLINE_YIELD] g={} dispatch exit frames={} last_reason={} instructions={}",
+                        g->id, vm_->frameCountPublic(), (int)last_reason,
+                        g->instructions_executed);
+        }
         if (frames_drained) {
           // Goroutine's entry function returned.
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);

@@ -696,6 +696,11 @@ public:
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
+    // Fire yield_callback_ if set. Unguarded by design: the inline-yield
+    // reentrancy guard lives in HavelEngine::processGoroutinesInline, so
+    // calling this from a chunked host-fn loop while siblings run inline
+    // is safe (the guard returns instead of recursing).
+    void fireYieldCallbackPublic() { if (yield_callback_) yield_callback_(); }
     // Replace top-of-stack with a new value (used when resuming from await)
     void replaceStackTop(Value value) {
         if (!stack.empty()) {
@@ -820,8 +825,11 @@ public:
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
   // Run one scheduler tick: drain events, wake sleeping goroutines, then
   // execute a single runnable goroutine. Shared by the engine REPL pump and
-  // the self-hosted launcher REPL (bc.tick).
-  void tickScheduler();
+  // the self-hosted launcher REPL (bc.tick). wait_for_sleepers=true (script
+  // bc.tick) blocks out the NEAREST sleep deadline when nothing else is
+  // runnable so one tick advances past a goroutine's sleep; the REPL pump
+  // keeps false so its select loop never blocks.
+  void tickScheduler(bool wait_for_sleepers = false);
   size_t frameCountPublic() const { return frame_count_; }
   void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
                       size_t stack_depth) {

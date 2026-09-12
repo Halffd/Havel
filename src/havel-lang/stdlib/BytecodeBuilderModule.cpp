@@ -1228,7 +1228,9 @@ return result;
     // self-hosted REPL to keep hotkey/update goroutines alive while reading
     // stdin.
     api.registerFunction("bc.tick", [api](const std::vector<Value> &) -> Value {
-        api.vm().tickScheduler();
+        // Script-requested tick: wait out the nearest sleep deadline when
+        // nothing else is runnable (see VM::tickScheduler).
+        api.vm().tickScheduler(true);
         return Value::makeNull();
     });
 

@@ -346,14 +346,28 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
                       << std::flush;
           skip++;
         } else if (!pre_flags.empty() && result.exit_code != 255) {
-          // Self-hosted mode: script return value becomes exit code.
-          // exit=255 means process.exit(255) was called (assertion failure).
-          // Any other exit code is the script's return value (success).
-          if (verbose)
-            std::cout << "[PASS] " << name << " (" << result.elapsed_ms
-                      << "ms)" << std::endl
+          // Self-hosted mode: the script's return value becomes the exit
+          // code. The suite's success convention is return 0 ('val
+          // __result = 0; return __result' in 269 of 279 scripts; the
+          // rest fall off the end as 0). exit=255 is process.exit(255)
+          // (explicit assertion failure). Any OTHER nonzero code is a
+          // script error - uncaught assert() throws surface as exit 1 -
+          // and must FAIL, not pass: this branch used to print PASS for
+          // any exit != 255, reporting scheduler_goroutine.hv green
+          // while its goroutines never ran (observed: counter stuck at
+          // 1, exit 1, PASS).
+          if (result.exit_code == 0) {
+            if (verbose)
+              std::cout << "[PASS] " << name << " (" << result.elapsed_ms
+                        << "ms)" << std::endl
+                        << std::flush;
+            pass++;
+          } else {
+            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
+                      << ")" << std::endl
                       << std::flush;
-          pass++;
+            fail++;
+          }
         } else {
           std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
                     << ")" << std::endl

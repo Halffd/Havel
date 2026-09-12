@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <string>
+#include <sstream>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -79,6 +80,61 @@ inline int read_test_timeout(const std::string &script_path) {
 	return 0; // 0 means use default
 }
 
+// Read per-test extra runner flags from the file header.
+// Format: // smoke: flags = --tiering --foo   (whitespace-separated,
+// appended to the default self-hosted invocation flags).
+inline std::vector<std::string> read_test_flags(const std::string &script_path) {
+	std::vector<std::string> out;
+	std::ifstream ifs(script_path);
+	if (!ifs) return out;
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: flags =", 0) == 0 || line.rfind("// test: flags =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				std::istringstream iss(val);
+				std::string tok;
+				while (iss >> tok) out.push_back(tok);
+			}
+			break;
+		}
+	}
+	return out;
+}
+
+// Read per-test environment overrides from the file header.
+// Format: // smoke: env = VAR=value VAR2=value  (whitespace-separated,
+// added on top of the inherited environment for this test's child).
+inline std::vector<std::pair<std::string, std::string>> read_test_env(const std::string &script_path) {
+	std::vector<std::pair<std::string, std::string>> out;
+	std::ifstream ifs(script_path);
+	if (!ifs) return out;
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: env =", 0) == 0 || line.rfind("// test: env =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				std::istringstream iss(val);
+				std::string tok;
+				while (iss >> tok) {
+					size_t eq2 = tok.find('=');
+					if (eq2 != std::string::npos && eq2 > 0) {
+						out.emplace_back(tok.substr(0, eq2), tok.substr(eq2 + 1));
+					}
+				}
+			}
+			break;
+		}
+	}
+	return out;
+}
+
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
                                int timeout_seconds = 60,
                                const std::vector<std::string> &pre_flags = {}) {
@@ -121,6 +177,12 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
             fs::path repo_root = bin_path.parent_path().parent_path();
             fs::path self_hosted_path = repo_root / "out";
             flags = {"--run", "--self-hosted-path", self_hosted_path.string()};
+            // Per-test header flags (e.g. // smoke: flags = --tiering)
+            // extend the default invocation; they only apply to the
+            // default pipeline, never override explicit pre_flags.
+            for (const auto &f : read_test_flags(script_path)) {
+                flags.push_back(f);
+            }
         } else {
             flags = pre_flags;
         }
@@ -132,10 +194,17 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         args.push_back(const_cast<char *>(script_path.c_str()));
         args.push_back(nullptr);
         
-        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR)
+        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR),
+        // then apply per-test header env overrides (// smoke: env = VAR=v).
         std::vector<char *> env;
         for (char **e = ::environ; *e; ++e) {
             env.push_back(*e);
+        }
+        for (const auto &kv : read_test_env(script_path)) {
+            std::string entry = kv.first + "=" + kv.second;
+            // setenv so execvpe's envp AND the child see the override
+            ::setenv(kv.first.c_str(), kv.second.c_str(), 1);
+            env.push_back(entry);
         }
         env.push_back(nullptr);
         execvpe(havel_bin.c_str(), args.data(), env.data());

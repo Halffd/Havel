@@ -80,6 +80,10 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 - **C++ unit tests**: `tests/` directory, gtest-based, built when ENABLE_TESTS=ON
 - **Havel script tests**: `scripts/*.hv` files
 - **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
+- **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
+  - `// smoke: timeout = <seconds>` — per-test timeout override
+  - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
+  - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash

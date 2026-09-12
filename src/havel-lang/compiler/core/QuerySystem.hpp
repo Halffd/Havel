@@ -181,6 +181,95 @@ class DepGraph {
            prev_[it->second].color == DepColor::Green;
   }
 
+  // -----------------------------------------------------------------------
+  // On-disk serialization (TODO.md Phase 2.1/2.4 groundwork)
+  //
+  // Session-end writes the dep graph (nodes + edges; colors are all green
+  // by construction — a node only entered the graph because its query ran
+  // or was promoted red-green). Next session loads it via setPreviousGraph
+  // and tryMarkGreen revalidates against fresh inputs. Fingerprints live in
+  // the node identity, so the format needs no separate fingerprint table.
+  //
+  // Format (all little-endian, versioned):
+  //   u32 magic 'HVDG', u32 version, u64 node_count
+  //   per node: u16 kind, u8 reserved, u64 key,
+  //             u64 edge_count, edge_count * u32 edge indices
+  //
+  // -----------------------------------------------------------------------
+
+  static constexpr uint32_t kMagic = 0x48564447u;  // 'HVDG'
+  static constexpr uint32_t kVersion = 1;
+
+  std::vector<uint8_t> serializePrevGraph() const {
+    std::vector<uint8_t> out;
+    auto put32 = [&](uint32_t v) {
+      for (int i = 0; i < 4; ++i) out.push_back((v >> (8 * i)) & 0xFF);
+    };
+    auto put64 = [&](uint64_t v) {
+      for (int i = 0; i < 8; ++i) out.push_back((v >> (8 * i)) & 0xFF);
+    };
+    put32(kMagic);
+    put32(kVersion);
+    put64(prev_.size());
+    for (const PrevNode &pn : prev_) {
+      put32(static_cast<uint32_t>(pn.node.kind));
+      put32(0);  // reserved
+      put64(pn.node.key);
+      put64(pn.edges.size());
+      for (PrevDepNodeIndex e : pn.edges) put32(e);
+    }
+    return out;
+  }
+
+  // Loads a serialized graph as the PREVIOUS-session graph. Returns
+  // false on magic/version/count mismatch or malformed edges without
+  // partially mutating this graph.
+  bool loadPrevGraph(const std::vector<uint8_t> &data) {
+    auto get32 = [&](size_t off, uint32_t *out) -> bool {
+      if (off + 4 > data.size()) return false;
+      *out = 0;
+      for (int i = 0; i < 4; ++i) *out |= uint32_t(data[off + i]) << (8 * i);
+      return true;
+    };
+    auto get64 = [&](size_t off, uint64_t *out) -> bool {
+      if (off + 8 > data.size()) return false;
+      *out = 0;
+      for (int i = 0; i < 8; ++i) *out |= uint64_t(data[off + i]) << (8 * i);
+      return true;
+    };
+    uint32_t magic = 0, version = 0;
+    uint64_t count = 0;
+    if (!get32(0, &magic) || magic != kMagic) return false;
+    if (!get32(4, &version) || version != kVersion) return false;
+    if (!get64(8, &count)) return false;
+    size_t off = 16;
+    std::vector<PrevNode> parsed;
+    parsed.reserve(count);
+    for (uint64_t n = 0; n < count; ++n) {
+      uint32_t kind = 0, reserved = 0;
+      uint64_t key = 0, edge_count = 0;
+      if (!get32(off, &kind) || !get32(off + 4, &reserved) ||
+          !get64(off + 8, &key) || !get64(off + 16, &edge_count)) {
+        return false;
+      }
+      if (edge_count > count) return false;  // malformed: more edges than nodes
+      off += 24;
+      PrevNode pn;
+      pn.node = DepNode{static_cast<DepKind>(kind), key};
+      pn.edges.reserve(static_cast<size_t>(edge_count));
+      for (uint64_t e = 0; e < edge_count; ++e) {
+        uint32_t edge = 0;
+        if (!get32(off, &edge)) return false;
+        if (edge >= count) return false;  // edge out of range
+        pn.edges.push_back(edge);
+        off += 4;
+      }
+      parsed.push_back(std::move(pn));
+    }
+    setPreviousGraph(std::move(parsed));
+    return true;
+  }
+
  private:
   std::vector<DepGraphNode> nodes_;
   std::unordered_map<DepNode, DepNodeIndex, DepNodeHash> node_index_;

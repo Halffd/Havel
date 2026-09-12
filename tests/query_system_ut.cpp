@@ -282,5 +282,91 @@ TEST(DepGraphTest, InternDeduplicatesNodes) {
   EXPECT_EQ(g.size(), 2u);
 }
 
+// ---------------------------------------------------------------------------
+// Prev-graph serialization (Phase 2.1/2.4 groundwork)
+// ---------------------------------------------------------------------------
+
+TEST(DepGraphSerializeTest, RoundTripPreservesNodesAndEdges) {
+  // Build a prev graph: bytecode(1) -> ast(1) -> source(1) -> (leaf).
+  DepGraph original;
+  std::vector<DepGraph::PrevNode> prev(3);
+  prev[0] = {{DepKind::SourceText, 11}, {}, DepColor::Green, 0, false};
+  prev[1] = {{DepKind::Ast, 22}, {0}, DepColor::Green, 0, false};
+  prev[2] = {{DepKind::BytecodeChunk, 33}, {1}, DepColor::Green, 0, false};
+  original.setPreviousGraph(std::move(prev));
+
+  std::vector<uint8_t> bytes = original.serializePrevGraph();
+  ASSERT_FALSE(bytes.empty());
+
+  DepGraph reloaded;
+  ASSERT_TRUE(reloaded.loadPrevGraph(bytes));
+
+  // try_mark_green walks the reloaded chain and promotes everything.
+  auto root = reloaded.tryMarkGreen(DepNode{DepKind::BytecodeChunk, 33});
+  ASSERT_TRUE(root.has_value());
+  EXPECT_TRUE(reloaded.prevIsGreen(DepNode{DepKind::SourceText, 11}));
+  EXPECT_TRUE(reloaded.prevIsGreen(DepNode{DepKind::Ast, 22}));
+  EXPECT_EQ(reloaded.tryMarkGreen(DepNode{DepKind::SourceText, 11}),
+            reloaded.tryMarkGreen(DepNode{DepKind::SourceText, 11}));
+}
+
+TEST(DepGraphSerializeTest, RejectsBadMagic) {
+  DepGraph g;
+  std::vector<uint8_t> garbage = {0xDE, 0xAD, 0xBE, 0xEF, 1, 0, 0, 0};
+  EXPECT_FALSE(g.loadPrevGraph(garbage));
+  // Failed load must not have mutated the graph: still no prev nodes.
+  EXPECT_EQ(g.tryMarkGreen(DepNode{DepKind::Ast, 1}), std::nullopt);
+}
+
+TEST(DepGraphSerializeTest, RejectsTruncatedData) {
+  DepGraph original;
+  std::vector<DepGraph::PrevNode> prev(2);
+  prev[0] = {{DepKind::SourceText, 1}, {}, DepColor::Green, 0, false};
+  prev[1] = {{DepKind::Ast, 2}, {0}, DepColor::Green, 0, false};
+  original.setPreviousGraph(std::move(prev));
+  std::vector<uint8_t> bytes = original.serializePrevGraph();
+  ASSERT_GE(bytes.size(), 4u);
+
+  // Truncate at several points: every prefix must fail cleanly.
+  for (size_t cut = 1; cut < bytes.size(); ++cut) {
+    DepGraph g;
+    std::vector<uint8_t> trunc(bytes.begin(), bytes.begin() + cut);
+    EXPECT_FALSE(g.loadPrevGraph(trunc)) << "cut=" << cut;
+  }
+  // Full bytes still load (sanity).
+  DepGraph g2;
+  EXPECT_TRUE(g2.loadPrevGraph(bytes));
+}
+
+TEST(DepGraphSerializeTest, RejectsOutOfRangeEdges) {
+  // Hand-craft a buffer whose single node claims an edge to node 5 (which
+  // does not exist in a 1-node graph).
+  std::vector<uint8_t> bytes;
+  auto put32 = [&](uint32_t v) {
+    for (int i = 0; i < 4; ++i) bytes.push_back((v >> (8 * i)) & 0xFF);
+  };
+  auto put64 = [&](uint64_t v) {
+    for (int i = 0; i < 8; ++i) bytes.push_back((v >> (8 * i)) & 0xFF);
+  };
+  put32(DepGraph::kMagic);
+  put32(DepGraph::kVersion);
+  put64(1);           // one node
+  put32(0);           // kind SourceText
+  put32(0);           // reserved
+  put64(7);           // key
+  put64(1);           // one edge
+  put32(5);           // edge to nonexistent node 5
+  DepGraph g;
+  EXPECT_FALSE(g.loadPrevGraph(bytes));
+}
+
+TEST(DepGraphSerializeTest, EmptyGraphRoundTrip) {
+  DepGraph g;
+  std::vector<uint8_t> bytes = g.serializePrevGraph();
+  DepGraph g2;
+  EXPECT_TRUE(g2.loadPrevGraph(bytes));
+  EXPECT_EQ(g2.tryMarkGreen(DepNode{DepKind::Ast, 1}), std::nullopt);
+}
+
 }  // namespace
 }  // namespace havel::compiler

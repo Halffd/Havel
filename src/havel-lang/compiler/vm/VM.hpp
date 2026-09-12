@@ -1933,7 +1933,8 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
   Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                 std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath,
-                                int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
+                                int depth = 0,
+                                std::shared_ptr<std::unordered_set<uint32_t>> visited = nullptr);
 
 Value loadModule(const std::string& path);
     Value loadScript(const std::string& path);

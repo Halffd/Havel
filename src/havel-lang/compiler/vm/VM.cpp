@@ -4553,9 +4553,17 @@ Value VM::deepWrapModuleFunctions(
     Value value, std::shared_ptr<BytecodeChunk> chunk,
     std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
     const std::string &canonicalKey, const std::string &fieldPath, int depth,
-    std::unordered_set<uint32_t> *visitedPtr) {
+    std::shared_ptr<std::unordered_set<uint32_t>> visited) {
   if (depth > 64)
     return value;
+  // The visited set must outlive this call: the wrapper lambdas registered
+  // below capture it and may be invoked long after deepWrapModuleFunctions
+  // returned (e.g. from processGoroutines). A stack-local set left a
+  // dangling pointer in those lambdas and crashed the VM with SIGSEGV
+  // inside unordered_set::count (test_mini_lexer.hv: lx.run() on a Lexer
+  // exported from the self-hosted lexer module).
+  if (!visited)
+    visited = std::make_shared<std::unordered_set<uint32_t>>();
   // Mark wrapping active at the outermost frame so emitVariableChanged can
   // defer conditional-hotkey re-eval (synchronous callFunctionSync from
   // inside a host wrapper wedges the frame; see HavelEngine.hpp).
@@ -4595,7 +4603,7 @@ Value VM::deepWrapModuleFunctions(
     registerHostFunction(
         wrapperName,
         [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName,
-         fnCapturedKey, fnCapturedField, wantsSelf, depth, visitedPtr](const std::vector<Value> &args) -> Value {
+         fnCapturedKey, fnCapturedField, wantsSelf, depth, visited](const std::vector<Value> &args) -> Value {
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
           bool isVariadic = preCheckCallee &&
@@ -4740,7 +4748,7 @@ Value VM::deepWrapModuleFunctions(
           if (bc_execute_depth_ == 0) {
             result = deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
-                moduleGlobals, fnCapturedKey, fnCapturedField + "_ret", depth + 1, visitedPtr);
+                moduleGlobals, fnCapturedKey, fnCapturedField + "_ret", depth + 1, visited);
           }
           *moduleGlobals = std::move(globals);
           globals = std::move(globals_stack_.back());
@@ -4788,7 +4796,7 @@ Value VM::deepWrapModuleFunctions(
     registerHostFunction(
         wrapperName,
         [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName,
-         capturedKey, capturedField, depth, visitedPtr](const std::vector<Value> &args) -> Value {
+         capturedKey, capturedField, depth, visited](const std::vector<Value> &args) -> Value {
           auto *rc2 = heap_.closure(closureId);
           if (!rc2 || !rc2->chunk)
             return Value::makeNull();
@@ -4923,7 +4931,7 @@ Value VM::deepWrapModuleFunctions(
           if (bc_execute_depth_ == 0) {
             result = deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
-                closureGlobals, capturedKey, capturedField + "_ret", depth + 1, visitedPtr);
+                closureGlobals, capturedKey, capturedField + "_ret", depth + 1, visited);
           }
           globals = std::move(globals_stack_.back());
           globals_stack_.pop_back();
@@ -4965,7 +4973,7 @@ Value VM::deepWrapModuleFunctions(
 
   if (value.isObjectId()) {
     uint32_t objId = value.asObjectId();
-    if (visitedPtr && visitedPtr->count(objId)) {
+    if (visited->count(objId)) {
       resumeGcGuard();
       return value;
     }
@@ -4977,20 +4985,17 @@ Value VM::deepWrapModuleFunctions(
     bool anyWrapped = false;
     std::vector<std::pair<std::string, Value>> entries;
     entries.reserve(srcObj->size());
-    std::unordered_set<uint32_t> localVisited;
-    if (!visitedPtr)
-      visitedPtr = &localVisited;
-    visitedPtr->insert(objId);
+    visited->insert(objId);
     for (const auto &[k, v] : *srcObj) {
       Value wrapped = deepWrapModuleFunctions(
           v, chunk, moduleGlobals, canonicalKey,
-          fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1, visitedPtr);
+          fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1, visited);
       if (!(wrapped == v))
         anyWrapped = true;
       entries.emplace_back(k, std::move(wrapped));
     }
     if (!anyWrapped) {
-      visitedPtr->erase(objId);
+      visited->erase(objId);
       resumeGcGuard();
       return value;
     }
@@ -4999,7 +5004,7 @@ Value VM::deepWrapModuleFunctions(
     for (auto &[k, v] : entries) {
       (*copyObj)[k] = std::move(v);
     }
-    visitedPtr->erase(objId);
+    visited->erase(objId);
     uint64_t copyRootId = pinExternalRoot(Value::makeObjectId(copyRef.id));
     resumeGcGuard();
     unpinExternalRoot(copyRootId);
@@ -5008,7 +5013,7 @@ Value VM::deepWrapModuleFunctions(
 
   if (value.isArrayId()) {
     uint32_t arrId = value.asArrayId();
-    if (visitedPtr && visitedPtr->count(arrId)) {
+    if (visited->count(arrId)) {
       resumeGcGuard();
       return value;
     }
@@ -5020,20 +5025,17 @@ Value VM::deepWrapModuleFunctions(
     bool anyWrapped = false;
     std::vector<Value> elements;
     elements.reserve(srcArr->size());
-    std::unordered_set<uint32_t> localVisited;
-    if (!visitedPtr)
-      visitedPtr = &localVisited;
-    visitedPtr->insert(arrId);
+    visited->insert(arrId);
     for (size_t i = 0; i < srcArr->size(); i++) {
       Value wrapped = deepWrapModuleFunctions(
           (*srcArr)[i], chunk, moduleGlobals, canonicalKey,
-          fieldPath + "[" + std::to_string(i) + "]", depth + 1, visitedPtr);
+          fieldPath + "[" + std::to_string(i) + "]", depth + 1, visited);
       if (!(wrapped == (*srcArr)[i]))
         anyWrapped = true;
       elements.push_back(std::move(wrapped));
     }
     if (!anyWrapped) {
-      visitedPtr->erase(arrId);
+      visited->erase(arrId);
       resumeGcGuard();
       return value;
     }
@@ -5043,7 +5045,7 @@ Value VM::deepWrapModuleFunctions(
     for (auto &elem : elements) {
       copyArr->push_back(std::move(elem));
     }
-    visitedPtr->erase(arrId);
+    visited->erase(arrId);
     uint64_t copyRootId = pinExternalRoot(Value::makeArrayId(copyRef.id));
     resumeGcGuard();
     unpinExternalRoot(copyRootId);

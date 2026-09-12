@@ -720,8 +720,10 @@ public:
     // null result slot ABOVE the marker before the fiber is saved. Scan
     // for the marker instead of assuming it is top-of-stack.
     void deliverResumeValue(Scheduler::AwaitableType type, Value value,
-                            uint32_t target_id = 0) {
-        if (type == Scheduler::AwaitableType::CHANNEL_RECV && !stack.empty()) {
+                            uint32_t target_id = 0,
+                            bool channel_iter_pending = false) {
+        if (type == Scheduler::AwaitableType::CHANNEL_RECV &&
+            channel_iter_pending && !stack.empty()) {
           // Unwind the stack looking for the marker (topmost wins; only one
           // channel-iter suspension can be active per fiber). Cap the scan:
           // the marker sits just below the null slots pushed by the CALL

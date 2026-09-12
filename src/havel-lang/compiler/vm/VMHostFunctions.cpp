@@ -2552,7 +2552,6 @@ void VM::registerDefaultHostFunctions() {
         auto *wg = heap_.waitgroup(wg_id);
         if (wg) {
           int64_t prev = wg->counter.fetch_sub(1);
-          ::havel::debug("[wg] done: wg={} prev={} (unpark when prev<=1)", wg_id, prev);
           if (prev <= 1) {
             std::lock_guard<std::mutex> lock(wg->mutex);
             wg->cv.notify_all();
@@ -2578,7 +2577,6 @@ void VM::registerDefaultHostFunctions() {
         }
         auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
         if (wg && wg->counter.load() > 0) {
-          ::havel::debug("[wg] wait: wg={} counter={} -> suspending", args[0].asWaitGroupId(), wg->counter.load());
           if (scheduler_ && current_executing_fiber_) {
             // Suspend instead of blocking: cv.wait would hold the single VM
             // thread hostage while the workers that must call done() need

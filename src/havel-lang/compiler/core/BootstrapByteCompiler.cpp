@@ -5860,6 +5860,17 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
       return;
     }
 
+    // channel.new() → CHANNEL_NEW. Same story: `channel` parses to a
+    // ChannelExpression; the generic member-call path emitted
+    // CHANNEL_NEW + CALL_METHOD "new", and the bogus call nulled the
+    // fresh ChannelId (withTimeout's `result` channel was null).
+    if (property->symbol == "new" &&
+        member.object->kind == ast::NodeType::ChannelExpression) {
+      emit(OpCode::CHANNEL_NEW);
+      in_tail_position_ = saved_tail_position;
+      return;
+    }
+
  // Namespace/module call: window.activeTitle(), system.detect(), etc.
  // Always emit LOAD_GLOBAL + CALL_METHOD — the VM dispatches at runtime.
  // Host namespace objects (window, system, etc.) have HostFuncId fields

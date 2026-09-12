@@ -710,8 +710,10 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
                 cur->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV) {
               deliverResumeValue(cur->wait_handle.type,
                                 cur->wait_handle.resume_value,
-                                cur->wait_handle.target_id);
+                                cur->wait_handle.target_id,
+                                cur->channel_iter_pending);
               cur->wait_handle.clear();
+              cur->channel_iter_pending = false;
             }
           }
           current_executing_fiber_ = cur->fiber;
@@ -4399,8 +4401,10 @@ void VM::tickScheduler() {
              g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
           deliverResumeValue(g->wait_handle.type,
                              g->wait_handle.resume_value,
-                             g->wait_handle.target_id);
+                             g->wait_handle.target_id,
+                             g->channel_iter_pending);
           g->wait_handle.clear();
+          g->channel_iter_pending = false;
         }
       }
       current_executing_fiber_ = g->fiber;

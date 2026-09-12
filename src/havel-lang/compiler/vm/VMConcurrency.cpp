@@ -836,12 +836,6 @@ case OpCode::CHANNEL_SEND: {
   case OpCode::DEFER_PUSH: {
     Value closure = popStack();
     if (frame_count_ > 0) {
-      ::havel::debug("[DEFER_PUSH] fn={} ip={} depth={}",
-                     frame_arena_[frame_count_ - 1].function
-                         ? frame_arena_[frame_count_ - 1].function->name
-                         : std::string("?"),
-                     frame_arena_[frame_count_ - 1].ip,
-                     frame_arena_[frame_count_ - 1].defer_stack.size());
       frame_arena_[frame_count_ - 1].defer_stack.push_back(closure);
     }
     break;

@@ -270,8 +270,10 @@ vm_->saveFiberState(g->fiber);
             if (g->wait_handle.type != Scheduler::AwaitableType::NONE) {
                 vm_->deliverResumeValue(g->wait_handle.type,
                                         g->wait_handle.resume_value,
-                                        g->wait_handle.target_id);
+                                        g->wait_handle.target_id,
+                                        g->channel_iter_pending);
                 g->wait_handle.clear();
+                g->channel_iter_pending = false;
             }
         }
 

@@ -226,6 +226,13 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Persistent goroutine: re-suspend instead of Done on completion
     // Used by hotkey system to avoid per-press goroutine allocation
     bool persistent = false;
+    // Channel-iterator suspension marker (ITER_NEXT channel branch in
+    // VMCollections.cpp pushes a Pending placeholder before parking).
+    // deliverResumeValue scans the stack for that placeholder ONLY when
+    // this flag is set — unrelated Pending values (async host calls) on
+    // the stack of an ordinary channel receive must not be mistaken for
+    // the iterator marker.
+    bool channel_iter_pending = false;
   // Hotkey reset fields (stored from registration for reuse)
   std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;

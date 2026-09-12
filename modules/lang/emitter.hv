@@ -636,9 +636,19 @@ return
 		// and the bogus method call (waitgroup has no `new` prototype
 		// method) replaced the fresh WaitGroupId with null — every
 		// wg.add/done/wait call after that silently no-op'd.
-		if callee.kind == "MemberExpression" && callee.property == "new" &&
-		   callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
+		isWgNew = callee.kind == "MemberExpression" && callee.property == "new"
+		if isWgNew && callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
 			bc.emit("WAITGROUP_NEW")
+			return
+		}
+		// channel.new() → single CHANNEL_NEW. Same story: `channel` parses
+		// to a ChannelExpression; the trailing CALL_METHOD "new" had no
+		// prototype method and nulled the fresh ChannelId.
+		isChNew = callee.kind == "MemberExpression" && callee.property == "new"
+		if isChNew && callee.obj != null && callee.obj.kind == "ChannelExpression" {
+			sid = globalIdx(emitter, "channel.new")
+			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+			bc.emit("CALL", 0)
 			return
 		}
 		// When compiling sub-expressions (callee, args), disable tail position

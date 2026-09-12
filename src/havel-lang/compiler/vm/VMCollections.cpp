@@ -310,15 +310,17 @@ bool VM::execCollectionOp(const Instruction &instruction) {
           // done:false} iterator-result object carrying the received value
           // — a plain replaceStackTop would leave the raw value on the
           // stack and the loop's `result.done` read would see null.
-          ::havel::debug("[ITER-NEXT] suspending on empty channel (iter id={} ch={})",
-                         id, iter->iterable.asChannelId());
+          // Flag the goroutine so deliverResumeValue scans for the marker
+          // only for this suspension (unrelated Pending values elsewhere
+          // on the stack must not be mistaken for it).
           pushStack(Value::makePending(0));
+          if (scheduler_ && scheduler_->current()) {
+            std::lock_guard<std::mutex> wm(
+                scheduler_->current()->wait_handle_mutex_);
+            scheduler_->current()->channel_iter_pending = true;
+          }
           break;
         }
-        ::havel::debug("[ITER-NEXT] channel recv immediate: null={} susp={} last={}",
-                       recv.isNull() ? "y" : "n",
-                       suspension_requested_ ? "y" : "n",
-                       (int)last_suspension_reason_);
         if (recv.isNull()) {
           // Closed and drained: iteration done.
           auto resultObj = heap_.allocateObject();

@@ -789,7 +789,6 @@ if (found_host) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
-                ::havel::debug("[CALL_METHOD] invoking host fn '{}' args={}", resolved_name, all_args.size());
                 Value result = fnIt->second(all_args);
                 pushStack(result);
                 if (hot_func_cb_) {

@@ -1140,8 +1140,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                 g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
               vm_->deliverResumeValue(g->wait_handle.type,
                                        g->wait_handle.resume_value,
-                                       g->wait_handle.target_id);
+                                       g->wait_handle.target_id,
+                                       g->channel_iter_pending);
               g->wait_handle.clear();
+              g->channel_iter_pending = false;
             }
           }
           if (std::getenv("HAVEL_TRACE_RESUME")) {

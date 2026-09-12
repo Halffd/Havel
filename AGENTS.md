@@ -24,7 +24,7 @@ Common commands:
 |--------|---------|
 | `build-debug/havel` | Main application |
 | `build-debug/havel-lsp` | Language Server Protocol |
-| `build-debug/havel-bytecode-smoke` | Bytecode smoke test (Debug only) |
+| `build-debug/hvtest` | Unified .hv test runner (smoke/cfg suites) |
 
 Run Havel scripts: `./build-debug/havel script.hv`
 
@@ -76,7 +76,7 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 
 - **C++ unit tests**: `tests/` directory, gtest-based, built when ENABLE_TESTS=ON
 - **Havel script tests**: `scripts/*.hv` files
-- **Bytecode smoke test**: `havel-bytecode-smoke` (Debug builds only - Release LTO causes relocation overflow)
+- **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash
@@ -84,7 +84,7 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   ```
   Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
 
-CI runs: CMake configure → build → bytecode-smoke → ctest
+CI runs: CMake configure → build → hvtest smoke → ctest
 
 ```bash
 # Run a single Havel script

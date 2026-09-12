@@ -672,6 +672,28 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Earliest deadline among all sleeping goroutines. Empty optional if none sleeping.
     std::optional<std::chrono::steady_clock::time_point> nextSleepDeadline() const;
 
+    // Cheap probe: does a scheduler tick have anything to do right now?
+    // - a runnable/created goroutine queued (hasRunnableFibers)
+    // - a deferred action pending (deferred_* queues; also covers the
+    //   deferred_wakeup_fd_ pipe, which only receives bytes alongside
+    //   a deferred post)
+    // - a sleeping goroutine whose deadline has passed (wake pending)
+    // Used by HavelEngine::processGoroutinesInline to skip the expensive
+    // main-fiber save/restore when a single-threaded script (no siblings)
+    // fires the yield callback from its dispatch loop.
+    bool hasPendingWork() const {
+      if (hasRunnableFibers()) return true;
+      {
+        std::lock_guard lock(deferred_mutex_);
+        if (!deferred_hotkey_.empty() || !deferred_normal_.empty() ||
+            !deferred_background_.empty()) {
+          return true;
+        }
+      }
+      auto dl = nextSleepDeadline();
+      return dl && *dl <= std::chrono::steady_clock::now();
+    }
+
   // ===== Deferred VM Callbacks =====
   // Thread-safe queue for callbacks from non-VM threads (e.g. monitoring thread).
   // The VM thread drains these via drainDeferredCallbacks() each tick.

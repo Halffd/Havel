@@ -735,8 +735,21 @@ vm_->addIntervalResult(timer_id, result);
 
     void tickGoroutines() {
         if (!initialized_) return;
-        auto* sched = vm_->getScheduler();
-        if (!sched) return;
+    auto* sched = vm_->getScheduler();
+    if (!sched) return;
+
+    // Cheap idle probe. The dispatch loop's periodicYieldCheck fires this
+    // callback every 8192 instructions; when a script runs with no sibling
+    // goroutines, no deferred callbacks and no due sleepers, the full
+    // main-fiber save below (operand-stack copy, globals map copy,
+    // globals_stack_ vector-of-maps copy) plus the symmetric restore is
+    // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
+    // _M_move_assign). Skip it when a tick has nothing to do.
+    if (!sched->hasPendingWork()) {
+      if (std::getenv("HAVEL_TRACE_CYCLE"))
+        ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
+      return;
+    }
         vm_->tickScheduler();
     }
 

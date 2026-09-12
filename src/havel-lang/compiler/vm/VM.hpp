@@ -318,6 +318,18 @@ struct CallFrame {
  // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
  // (2M-iteration closure benchmark: ~2M mallocs).
  std::vector<std::vector<Value>> call_arg_pool_;
+ // Memoize the temporary closures doCall allocates for FunctionObjId
+ // callees. The temp closure's identity is (function index, parent
+ // module_globals pointer) - nothing else varies - so a repeated global-fn
+ // call reuses the memoized closure instead of allocating a fresh
+ // RuntimeClosure per call (a 2M-iteration plain-fn loop allocated ~2M
+ // closures: one heap mutex pair, hash insert, ages bookkeeping and a page
+ // of memory each time).
+ std::unordered_map<uint64_t, uint32_t> foid_closure_memo_;
+ static uint64_t foidMemoKey(uint32_t function_index, const void *globals_ptr) {
+   return (static_cast<uint64_t>(function_index) << 32) ^
+          (reinterpret_cast<uintptr_t>(globals_ptr) >> 3);
+ }
  inline std::vector<Value> takeCallArgScratch() {
    call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
    auto &slot = call_arg_pool_[frame_count_];

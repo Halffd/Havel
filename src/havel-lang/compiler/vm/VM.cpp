@@ -2849,14 +2849,37 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       }
     }
     if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
-      auto closureRef = heap_.allocateClosure(
-          GCHeap::RuntimeClosure{.function_index = function_index,
-                                 .chunk_index = 0,
-                                 .chunk = resolve_chunk,
-                                 .chunk_ref = resolve_chunk_ref,
-                                 .module_globals = std::move(foid_globals),
-                                 .upvalues = {}});
-      closure_id = closureRef.id;
+      // Memoized temp closure: the identity of these synthesized closures
+      // is (function_index, parent module_globals pointer) - see
+      // foid_closure_memo_. First call allocates; every later call with the
+      // same parent context reuses it. GC keeps the RuntimeClosure alive
+      // like any other (the memo holds the id, and the closure table owns
+      // the entry).
+      const uint64_t memo_key = foidMemoKey(function_index, foid_globals.get());
+      uint32_t memo_cid = 0;
+      auto mit = foid_closure_memo_.find(memo_key);
+      if (mit != foid_closure_memo_.end()) {
+        memo_cid = mit->second;
+        if (heap_.closure(memo_cid)) {
+          closure_id = memo_cid;
+        } else {
+          // GC swept it (closure became unreachable through normal
+          // channels): fall through and re-allocate below.
+          foid_closure_memo_.erase(memo_key);
+          memo_cid = 0;
+        }
+      }
+      if (closure_id == 0) {
+        auto closureRef = heap_.allocateClosure(
+            GCHeap::RuntimeClosure{.function_index = function_index,
+                                   .chunk_index = 0,
+                                   .chunk = resolve_chunk,
+                                   .chunk_ref = resolve_chunk_ref,
+                                   .module_globals = foid_globals,
+                                   .upvalues = {}});
+        closure_id = closureRef.id;
+        foid_closure_memo_[memo_key] = closure_id;
+      }
     }
   } else if (callee_value.isClosureId()) {
     closure_id = callee_value.asClosureId();

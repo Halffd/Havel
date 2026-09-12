@@ -196,15 +196,20 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         
         // Pass through environment variables (needed for HAVEL_EXTENSION_DIR),
         // then apply per-test header env overrides (// smoke: env = VAR=v).
+        // entry_strings must outlive env (we store c_str pointers into it
+        // up to the execvpe call).
         std::vector<char *> env;
+        std::vector<std::string> entry_strings;
         for (char **e = ::environ; *e; ++e) {
             env.push_back(*e);
         }
         for (const auto &kv : read_test_env(script_path)) {
-            std::string entry = kv.first + "=" + kv.second;
-            // setenv so execvpe's envp AND the child see the override
+            entry_strings.push_back(kv.first + "=" + kv.second);
+            // setenv so any pre-exec code in this child sees the override
             ::setenv(kv.first.c_str(), kv.second.c_str(), 1);
-            env.push_back(entry);
+        }
+        for (const auto &s : entry_strings) {
+            env.push_back(const_cast<char *>(s.c_str()));
         }
         env.push_back(nullptr);
         execvpe(havel_bin.c_str(), args.data(), env.data());

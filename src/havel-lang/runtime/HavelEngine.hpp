@@ -745,8 +745,9 @@ vm_->addIntervalResult(timer_id, result);
     // globals_stack_ vector-of-maps copy) plus the symmetric restore is
     // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
     // _M_move_assign). Skip it when a tick has nothing to do.
+    static const bool _idle_trace = std::getenv("HAVEL_TRACE_CYCLE") != nullptr;
     if (!sched->hasPendingWork()) {
-      if (std::getenv("HAVEL_TRACE_CYCLE"))
+      if (_idle_trace)
         ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
       return;
     }
@@ -893,7 +894,9 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     try {
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    // hoisted trace gates: this fires per yield callback (per 8192 instrs)
+    static const bool _sleep_trace_inl = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+    if (_sleep_trace_inl) {
       // fprintf(stderr, "[SLEEPDBG] processGoroutinesInline enter susp_req=%d last_reason=%d inline_active=%d\n", (int)vm_->isSuspensionRequested(), (int)vm_->getLastSuspensionReason(), (int)inline_yield_active_);
     }
 
@@ -910,7 +913,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        if (_sleep_trace_inl) {
           fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
         }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||

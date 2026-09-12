@@ -81,6 +81,13 @@ static const std::unordered_set<std::string> &runtimeGlobalsSkipList() {
 
 namespace havel::compiler {
 
+// Sleep/wake instrumentation gate. Hoisted: these probes sit on hot paths
+// (dispatch slow path, per-CALL suspension checks) and a per-call getenv
+// measured at 3.5% of a closure-call benchmark profile.
+namespace {
+const bool g_sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+}
+
 VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig &cfg) {
@@ -2005,7 +2012,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool use_fast_path = !debugger_attached_ && !has_profiling &&
                              !has_tracing && !has_instruction_limit;
 
-  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+  if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n", stop_frame_depth, frame_count_, (int)last_suspension_reason_, (int)suspension_requested_);
     if (last_suspension_reason_ != 0) {
       for (size_t fi = 0; fi < frame_count_ && fi < 6; ++fi) {
@@ -2019,7 +2026,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     runDispatchFast(stop_frame_depth);
     // If suspension was requested (indicated by last_suspension_reason_),
     // return immediately so caller can handle it
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    if (g_sleep_trace) {
       // fprintf(stderr, "[SLEEPDBG] runDispatchLoop post-fast last=%d frames=%zu stop=%zu\n", (int)last_suspension_reason_, frame_count_, stop_frame_depth);
     }
     if (last_suspension_reason_ != 0) {
@@ -2276,14 +2283,14 @@ slow_path:
             frame_arena_[entry_frame_count - 1].ip++;
           }
         }
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        if (g_sleep_trace) {
           fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d ctx=%p frames=%zu\n", (int)last_suspension_reason_, last_suspension_context_, frame_count_);
         }
         break;
       }
 
       if (suspension_requested_) {
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        if (g_sleep_trace) {
           // fprintf(stderr, "[SLEEPDBG] dispatch susp_reason=%d last_reason=%d frame_depth=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, (int)frame_count_);
         }
         // Call yield callback ONLY for explicit yields (time slice exhausted),
@@ -2690,7 +2697,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   // stale value from a previous opcode leaking into indirect doCall callers.
   int32_t stashed_return_ip_ = pending_call_return_ip_;
   pending_call_return_ip_ = -1;
-  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+  if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] doCall enter hf=%d fn=%d cl=%d suspend_req=%d\n", (int)callee_value.isHostFuncId(), (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId(), (int)suspension_requested_);
   }
 
@@ -2717,7 +2724,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
     // Check for suspension request after host function returns
     if (suspension_requested_) {
-      if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      if (g_sleep_trace) {
         // fprintf(stderr, "[SLEEPDBG] doCall host %s susp propagated\n", name.c_str());
       }
       // Propagate into last_suspension_* so the caller (scheduler) reads the
@@ -4717,7 +4724,7 @@ Value VM::deepWrapModuleFunctions(
             }
           }
           try {
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper enter name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
             // Prevent stack overflow from deeply nested module wrapper executions
@@ -4745,7 +4752,7 @@ Value VM::deepWrapModuleFunctions(
               }
               return Value::makeNull();
             }
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
@@ -4906,7 +4913,7 @@ Value VM::deepWrapModuleFunctions(
           }
 
           try {
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper enter frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
             // Prevent stack overflow from deeply nested module wrapper executions
@@ -4931,7 +4938,7 @@ Value VM::deepWrapModuleFunctions(
               }
               return Value::makeNull();
             }
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {

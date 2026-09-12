@@ -122,6 +122,7 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
 }
 
 uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
+    assertVMThread("spawnCallback");
     auto closure = externalRootValue(id);
     if (!closure) {
         ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
@@ -131,6 +132,7 @@ uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
 }
 
 uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args) {
+    assertVMThread("spawnCallback");
     if (!scheduler_) {
         ::havel::warn("[VM] spawnCallback: No scheduler available");
         return 0;
@@ -169,6 +171,7 @@ uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priorit
 const std::vector<Value> &args,
 HotkeyPolicy policy,
 const std::string &alias) {
+    assertVMThread("createPersistentHotkeyCallback");
     if (!scheduler_) {
         ::havel::warn("[VM] createPersistentHotkeyCallback: No scheduler available");
         return 0;

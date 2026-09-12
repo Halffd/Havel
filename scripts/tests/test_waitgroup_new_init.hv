@@ -1,0 +1,24 @@
+// Regression: `waitgroup.new()` compiled to WAITGROUP_NEW + a bogus
+// CALL_METHOD "new" that replaced the fresh WaitGroupId with null, so
+// every wg.add/done/wait after that silently no-op'd (17f07a1c).
+//
+// Also exercises the emitter condition guarding that path: it must stay
+// single-line — the bootstrap parser rejects multi-line boolean chains.
+//
+// Expected: two goroutines each increment count and call done; wait
+// blocks until both; count == 2.
+
+wg = waitgroup.new()
+count = 0
+fn worker() {
+    count = count + 1
+    wg.done()
+}
+wg.add(2)
+go worker()
+go worker()
+bc.tick()
+bc.tick()
+wg.wait()
+assert(count == 2, "both workers must run, got " + str(count))
+print("PASS")

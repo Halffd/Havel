@@ -636,8 +636,9 @@ return
 		// and the bogus method call (waitgroup has no `new` prototype
 		// method) replaced the fresh WaitGroupId with null — every
 		// wg.add/done/wait call after that silently no-op'd.
-		if callee.kind == "MemberExpression" && callee.property == "new" &&
-		   callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
+		// Single-line condition: the bootstrap parser rejects multi-line
+		// boolean chains (trailing && across a newline).
+		if callee.kind == "MemberExpression" && callee.property == "new" && callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
 			bc.emit("WAITGROUP_NEW")
 			return
 		}

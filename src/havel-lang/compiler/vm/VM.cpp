@@ -3808,6 +3808,13 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 void VM::maybeCollectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  // Building the root snapshot is expensive (full operand-stack copy plus
+  // globals, closure table and scheduler roots — measured at 41% of a
+  // property-heavy benchmark's runtime). The dispatch loop calls this
+  // every 8192 instructions, so probe the cheap gate first and only pay
+  // for the snapshot when a collection will actually run.
+  if (!heap_.shouldMaybeCollect())
+    return;
   std::vector<Value> scheduler_roots;
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();

@@ -487,13 +487,25 @@ public:
 
   void setStopTheWorldMode(bool v) { stop_the_world_ = v; }
   bool isStopTheWorld() const { return stop_the_world_; }
-
   void maybeCollectGarbage(
-      const std::vector<Value> &stack_values, const std::vector<Value> &locals,
+      const std::vector<Value> &stack_values,
+      const std::vector<Value> &locals,
       const std::unordered_map<std::string, Value> &globals,
       const std::vector<uint32_t> &active_closure_ids,
       const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
       const std::vector<Value> &extra_roots = {});
+
+  // Cheap probe: will maybeCollectGarbage do any work with the current
+  // allocation counters? Callers that build expensive root snapshots
+  // (VM::maybeCollectGarbage copies the whole operand stack, globals,
+  // closure table and scheduler roots) check this first and skip the
+  // snapshot when false. Evaluates the same condition the collection
+  // gate uses (budget exceeded OR an external collection request).
+  // Single-threaded with the allocation path (both VM thread).
+  bool shouldMaybeCollect() const {
+    return collection_requested_ ||
+           allocations_since_last_ >= allocation_budget_;
+  }
 
   void abortIncrementalCollection() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);

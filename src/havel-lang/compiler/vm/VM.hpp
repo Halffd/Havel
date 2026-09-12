@@ -1705,9 +1705,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
             }
         }
     }
-  void eraseGlobal(const std::string &name) {
-    globals.erase(name);
-  }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }

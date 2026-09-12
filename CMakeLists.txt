@@ -2485,6 +2485,21 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
     target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
+
+    # Query-system unit tests (TODO.md Phase 1: Query System Foundation).
+    # QuerySystem.hpp is header-only: the test compiles standalone.
+    add_executable(query_system_test
+        tests/query_system_ut.cpp
+    )
+    target_include_directories(query_system_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(query_system_test PRIVATE cxx_std_23)
+    target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME query_system_test COMMAND query_system_test)
 endif()
 
 # ==============================================================================

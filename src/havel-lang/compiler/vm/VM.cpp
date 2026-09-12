@@ -91,6 +91,9 @@ const bool g_sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
 VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig &cfg) {
+  // Heap owner-thread fast path: constructed here, re-asserted on every
+  // dispatch loop entry (same thread in practice; idempotent store).
+  heap_.setOwnerThread();
   vm_config_ = cfg;
   tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
   tier2_threshold_ = cfg.tier2_threshold > 0
@@ -1980,6 +1983,10 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  // Heap owner fast path for read accessors: the dispatch thread owns the
+  // heap (cross-thread work arrives via deferToVM/EventQueue on this
+  // thread), so closure/array/object lookups below skip the heap mutex.
+  heap_.setOwnerThread();
   // VM-thread ownership guard: latch dispatch to this thread for the
   // duration (nested re-entry keeps the original latch). Every exit path
   // below must unlatch; the guard struct covers exceptions too.

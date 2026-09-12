@@ -487,7 +487,6 @@ public:
 
   void setStopTheWorldMode(bool v) { stop_the_world_ = v; }
   bool isStopTheWorld() const { return stop_the_world_; }
-
   void maybeCollectGarbage(
       const std::vector<Value> &stack_values,
       const std::vector<Value> &locals,

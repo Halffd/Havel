@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/Value.hpp"
+#include <cstdio>
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
@@ -734,21 +735,21 @@ vm_->addIntervalResult(timer_id, result);
 
     void tickGoroutines() {
         if (!initialized_) return;
-        auto* sched = vm_->getScheduler();
-        if (!sched) return;
+    auto* sched = vm_->getScheduler();
+    if (!sched) return;
 
-        // Cheap idle probe. The dispatch loop's periodicYieldCheck fires this
-        // callback every 8192 instructions; when a script runs with no sibling
-        // goroutines, no deferred callbacks and no due sleepers, the full
-        // main-fiber save below (operand-stack copy, globals map copy,
-        // globals_stack_ vector-of-maps copy) plus the symmetric restore is
-        // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
-        // _M_move_assign). Skip it when a tick has nothing to do.
-        if (!sched->hasPendingWork()) {
-          if (std::getenv("HAVEL_TRACE_CYCLE"))
-            ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
-          return;
-        }
+    // Cheap idle probe. The dispatch loop's periodicYieldCheck fires this
+    // callback every 8192 instructions; when a script runs with no sibling
+    // goroutines, no deferred callbacks and no due sleepers, the full
+    // main-fiber save below (operand-stack copy, globals map copy,
+    // globals_stack_ vector-of-maps copy) plus the symmetric restore is
+    // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
+    // _M_move_assign). Skip it when a tick has nothing to do.
+    if (!sched->hasPendingWork()) {
+      if (std::getenv("HAVEL_TRACE_CYCLE"))
+        ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
+      return;
+    }
         vm_->tickScheduler();
     }
 
@@ -823,7 +824,10 @@ private:
     if (_trace) {
       auto* _s = vm_->getScheduler();
     }
-    if (inline_yield_active_) return;
+    if (inline_yield_active_) {
+      if (_trace) ::havel::info("[INLINE_YIELD] early-return: inline_yield_active_");
+      return;
+    }
     auto* sched = vm_->getScheduler();
     if (!sched) return;
 
@@ -836,6 +840,7 @@ private:
     // the outer engine loop, which runs after the caller suspends and the
     // suspended module frame's state has been saved.
     if (vm_->moduleWrapperDepth() > 0) {
+      if (_trace) ::havel::info("[INLINE_YIELD] early-return: moduleWrapperDepth={}", vm_->moduleWrapperDepth());
       return;
     }
 
@@ -910,7 +915,6 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
-          if (_trace) ::havel::info("[INLINE_YIELD] g={} startGoroutineCall result={} -> Done", g->id, (int)call_result);
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
           g->state = compiler::Scheduler::GoroutineState::Done;
           executed++;
@@ -943,11 +947,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // goroutine's frames on the VM stack (startGoroutineCall clears it;
         // the main snapshot was saved to main_script_fiber_ above), so
         // "drained" means every frame popped. Passing the entry depth here
-        // (as an earlier revision did) made runDispatchFast's
-        // `frame_count_ <= stop_frame_depth` guard return immediately —
-        // zero instructions executed — and frames_drained trivially true,
-        // so every goroutine picked inline was marked Done without running
-        // anything (window_goroutine_monitor.hv regression).
+        // (as an earlier revision did) made the loop run ZERO instructions
+        // and frames_drained trivially true — every goroutine picked
+        // inline was marked Done without executing anything
+        // (window_goroutine_monitor.hv regression).
         const size_t entry_frames = 0;
         // parkIfPendingCallResult (fiber-suspending host calls) matches
         // the current goroutine via current_executing_fiber_, like the
@@ -971,11 +974,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         const bool frames_drained =
             vm_->frameCountPublic() <= entry_frames;
         const auto last_reason = vm_->getLastSuspensionReason();
-        if (_trace) {
-          ::havel::info("[INLINE_YIELD] g={} dispatch exit frames={} last_reason={} instructions={}",
-                        g->id, vm_->frameCountPublic(), (int)last_reason,
-                        g->instructions_executed);
-        }
+
         if (frames_drained) {
           // Goroutine's entry function returned.
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
@@ -988,6 +987,9 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
           auto fiber_reason = g->fiber->suspended_reason;
           void* context = g->fiber->suspension_context;
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            fprintf(stderr, "[SLEEPDBG] inline suspend gid=%d fiber_reason=%d last_reason=%d\n", g->id, (int)fiber_reason, (int)last_reason);
+          }
           sched->suspend(g, toSchedulerReasonPublic(static_cast<uint8_t>(fiber_reason)));
           if (fiber_reason == compiler::SuspensionReason::SLEEP) {
             int64_t ms = reinterpret_cast<intptr_t>(context);
@@ -1018,6 +1020,9 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           // Tick budget expired (or complex-opcode fallback): remain
           // Runnable and let the scheduler re-queue.
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            fprintf(stderr, "[SLEEPDBG] inline tick-done gid=%d frames=%zu entry=%zu\n", g->id, vm_->frameCountPublic(), entry_frames);
+          }
         }
       }
 

@@ -672,11 +672,15 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Earliest deadline among all sleeping goroutines. Empty optional if none sleeping.
     std::optional<std::chrono::steady_clock::time_point> nextSleepDeadline() const;
 
-    // True when a scheduler tick has real work: a runnable goroutine, a
-    // deferred callback, or a sleeping goroutine whose deadline has passed
-    // (wake pending). Used by HavelEngine::processGoroutinesInline to skip
-    // the expensive main-fiber save/restore when a single-threaded script
-    // (no siblings) fires the yield callback from its dispatch loop.
+    // Cheap probe: does a scheduler tick have anything to do right now?
+    // - a runnable/created goroutine queued (hasRunnableFibers)
+    // - a deferred action pending (deferred_* queues; also covers the
+    //   deferred_wakeup_fd_ pipe, which only receives bytes alongside
+    //   a deferred post)
+    // - a sleeping goroutine whose deadline has passed (wake pending)
+    // Used by HavelEngine::processGoroutinesInline to skip the expensive
+    // main-fiber save/restore when a single-threaded script (no siblings)
+    // fires the yield callback from its dispatch loop.
     bool hasPendingWork() const {
       if (hasRunnableFibers()) return true;
       {

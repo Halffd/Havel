@@ -280,8 +280,8 @@ struct VMApi {
         break;
       }
       processPendingEvents();
-      // Fire the yield callback (like the VM's own sleep host fn at
-      // VMHostFunctions.cpp:~1500) so runnable goroutines actually get
+      // Fire the yield callback (like the VM's own sleep_ms host fn at
+      // VMHostFunctions.cpp:1411) so runnable goroutines actually get
       // scheduled while the MAIN script blocks in this chunked loop.
       // Without it, a script whose main branch does sleep(5000) while a
       // spawned goroutine is still Created never starts the goroutine

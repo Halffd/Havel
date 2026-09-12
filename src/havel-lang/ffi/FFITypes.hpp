@@ -47,7 +47,7 @@ struct FFIType {
     }
 };
 
-class FFITypeRegistry {
+class __attribute__((visibility("default"))) FFITypeRegistry {
 public:
     static std::shared_ptr<FFIType> void_type();
     static std::shared_ptr<FFIType> bool_type();

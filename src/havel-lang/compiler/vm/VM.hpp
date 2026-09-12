@@ -1340,12 +1340,21 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     // this gate additionally requires the JIT path to establish the
     // callee's frame context (closure_id/module_globals) for the bridges.
     // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
-    // Reproduced 2026-09-12: with it set, an 80-fn --lint run compiled
-    // tier1=6 self-hosted parser functions; the lint completed rc=0 but
-    // the expected "Linting successful" line never printed AND parseAST
-    // doubled (2395 -> 4510ms) - tiered module functions diverge
-    // semantically (globals land in the caller's frame) and run slower.
-    // The gate stays until the JIT path establishes callee frame context.
+    // Status 2026-09-12: the doCall JIT branch now establishes callee
+    // frame context (synthetic CallFrame with closure_id/chunk, globals
+    // sidecar swap, current_chunk swap - see VM.cpp doCall jit path), and
+    // module tiering passed a correctness sweep with it: 16 real smoke
+    // tests (an initial 5 "failures" were nonexistent filenames, caught
+    // and rerun), full --lint parse+typecheck+emit, and an 80-fn
+    // parse-verification script (AST stmt count exact) all pass with
+    // tier1=5 parser functions compiled. An earlier note claiming
+    // divergence was a flawed test (missing --lint flag + load-confounded
+    // timings), not a real repro. Gate remains until the remaining risk
+    // is covered by the full suite: tiered module functions still bypass
+    // interpreter frame management (coroutine/suspension opcodes route
+    // through the JitCoroutineSignal fallback) and the old BP_TABLE
+    // divergence class deserves a targeted regression test before
+    // lifting by default.
     static const bool allow_module_tiering =
         std::getenv("HAVEL_TIER1_MODULES") != nullptr;
     if (!allow_module_tiering && frame_count_ > 0) {

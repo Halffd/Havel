@@ -306,6 +306,19 @@ struct CallFrame {
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
  size_t frame_count_ = 0;
+ // CALL argument scratch pool, keyed by frame depth. CALL builds its
+ // argument vector in pool[depth] and MOVES it out into doCall's by-value
+ // parameter, so nested calls (which run at a deeper frame_count_) use a
+ // different slot and cannot alias. Slots keep their capacity across calls,
+ // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
+ // (2M-iteration closure benchmark: ~2M mallocs).
+ std::vector<std::vector<Value>> call_arg_pool_;
+ inline std::vector<Value> takeCallArgScratch() {
+   call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
+   auto &slot = call_arg_pool_[frame_count_];
+   if (!slot.empty()) slot.clear();
+   return std::move(slot);
+ }
  int bc_execute_depth_ = 0;
  GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>

@@ -34,7 +34,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                 COMPILER_THROW("Stack underflow during CALL_DYN");
             }
             {
-            std::vector<Value> args(arg_count);
+            std::vector<Value> args = takeCallArgScratch();
+            args.resize(arg_count);
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
             }
@@ -94,7 +95,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                 COMPILER_THROW("Stack underflow during CALL");
             }
 
-            std::vector<Value> args(arg_count);
+            std::vector<Value> args = takeCallArgScratch();
+            args.resize(arg_count);
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
   }
@@ -235,7 +237,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
     }
     
     // Pop arg_count arguments
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
         args[arg_count - 1 - i] = popStack();
     }
@@ -268,7 +271,8 @@ case OpCode::TAIL_CALL: {
       COMPILER_THROW("Stack underflow during TAIL_CALL");
     }
 
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }
@@ -1174,7 +1178,8 @@ if (found_host) {
     }
 
     // Pop arguments from stack
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }

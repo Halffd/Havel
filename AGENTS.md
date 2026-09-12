@@ -10,7 +10,10 @@ Primary build: `./build.sh [mode] [command]`
 | 0 | Debug | ✓ | ✓ | ✓ | build-debug |
 | 5 | Release | ✓ | ✓ | ✓ | build-release |
 | 6 | Debug | ✓ | ✓ | ✗ | build-debug (default) |
+| 8 | Debug | ✗ | ✓ | ✗ | build-debug |
 | 9 | Release | ✓ | ✓ | ✗ | build-release |
+
+Other modes (1-4, 7, 10-13) exist in build.sh BUILD_CONFIGS; the table lists the common ones.
 
 Common commands:
 - `./build.sh 5 build` - Full release with LLVM

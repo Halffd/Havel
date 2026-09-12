@@ -24,7 +24,7 @@ Common commands:
 |--------|---------|
 | `build-debug/havel` | Main application |
 | `build-debug/havel-lsp` | Language Server Protocol |
-| `build-debug/havel-bytecode-smoke` | Bytecode smoke test (Debug only) |
+| `build-debug/hvtest` | Unified .hv test runner (smoke/cfg suites) |
 
 Run Havel scripts: `./build-debug/havel script.hv`
 

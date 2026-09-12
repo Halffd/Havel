@@ -1403,7 +1403,18 @@ return
                 bc.emit("STRING_CONCAT")
             }
             else {
+                // Interpolation segments are NEVER tail positions: the
+                // string still has to be assembled after they evaluate.
+                // Without this clear, a return-expr interpolation like
+                // return o["a${str(k)}"] inherited inTailPosition from
+                // the enclosing return, the str(k) segment emitted
+                // TAIL_CALL, and the function aborted with the segment
+                // value ("5") instead of running the subscript - the key
+                // expression never completed and ARRAY_GET popped garbage.
+                savedTail = emitter.inTailPosition
+                emitter.inTailPosition = false
                 emitExpr(emitter, seg)
+                emitter.inTailPosition = savedTail
                 bc.emit("TO_STRING")
                 bc.emit("STRING_CONCAT")
             }

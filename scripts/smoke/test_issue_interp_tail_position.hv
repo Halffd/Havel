@@ -1,0 +1,25 @@
+// Regression: interpolation segments must not inherit tail position.
+// A return-expr interpolated key like return o["a${str(k)}"] used to
+// propagate inTailPosition into the str(k) segment: the segment emitted
+// TAIL_CALL, the function aborted with the raw segment value (the
+// argument "5") and the subscript never ran. Same bug in both emitters
+// (modules/lang/emitter.hv and the C++ BootstrapByteCompiler); both now
+// clear tail position around segment evaluation.
+// Expected: every context returns the mapped value 42, rc 0.
+
+fn implicit(k) { o = {"a5": 42}; o["a${str(k)}"] }
+fn direct_return(k) { o = {"a5": 42}; return o["a${str(k)}"] }
+fn via_local(k) { o = {"a5": 42}; v = o["a${str(k)}"]; return v }
+fn in_interp(k) { o = {"a5": 42}; return "x${o["a${str(k)}"]}" }
+fn call_arg(k) { o = {"a5": 42}; return len(str(o["a${str(k)}"])) }
+
+ok = 1
+if implicit(5) != 42 { print("FAIL interp-tail-pos: implicit=${implicit(5)}"); ok = 0 }
+if direct_return(5) != 42 { print("FAIL interp-tail-pos: direct_return=${direct_return(5)}"); ok = 0 }
+if via_local(5) != 42 { print("FAIL interp-tail-pos: via_local=${via_local(5)}"); ok = 0 }
+if in_interp(5) != "x42" { print("FAIL interp-tail-pos: in_interp=${in_interp(5)}"); ok = 0 }
+if call_arg(5) != 2 { print("FAIL interp-tail-pos: call_arg=${call_arg(5)}"); ok = 0 }
+if ok != 1 {
+	process.exit(255)
+}
+return ok

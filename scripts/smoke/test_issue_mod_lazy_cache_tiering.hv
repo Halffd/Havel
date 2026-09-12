@@ -1,0 +1,47 @@
+// Regression: module-tiering globals-sidecar coherence (BP_TABLE class).
+// Drives module functions past the tier-1 threshold so they JIT-compile
+// under --tiering, then asserts the module's lazy cache was built exactly
+// once and serves correct values THROUGH the tiered functions. If a tiered
+// module fn wrote CACHE/BUILDS against the caller's frame (the old
+// divergence), BUILDS climbs past 1 or lookups return wrong values.
+// Run with: --tiering (module tiering gate must permit it or this test
+// degrades to an interpreter-only check, which still passes).
+// Expected: builds == 1, spot checks exact, rc 0.
+
+use { ensureCache, lookup, buildCount } from "./test_mod_lazy_cache.hv"
+
+s = 0
+i = 0
+while i < 30000 {
+    // Calls through lookup -> ensureCache tier up around invocation 10000.
+    v = lookup(i % 64)
+    if v == null {
+        print("FAIL mod-lazy-cache-tiering: lookup(${i % 64}) returned null")
+        process.exit(255)
+    }
+    s = s + v
+    i = i + 1
+}
+
+builds = buildCount()
+if builds != 1 {
+    print("FAIL mod-lazy-cache-tiering: cache built ${builds} times, expected 1 (tiered module fn wrote globals to the caller's frame)")
+    process.exit(255)
+}
+
+// Expected sum: 3 * sum(i%64 over 30000 iters). 30000 = 468*64 + 48.
+// sum(0..63) = 2016, so full cycles contribute 468*3*2016; remainder 0..47
+// contributes 3*sum(0..47) = 3*1128.
+expected = 3 * (468 * 2016 + 1128)
+if s != expected {
+    print("FAIL mod-lazy-cache-tiering: sum ${s} != expected ${expected}")
+    process.exit(255)
+}
+
+// Spot-check a value through the (tiered) reader path.
+if lookup(63) != 189 {
+    print("FAIL mod-lazy-cache-tiering: lookup(63) = ${lookup(63)}, expected 189")
+    process.exit(255)
+}
+
+builds

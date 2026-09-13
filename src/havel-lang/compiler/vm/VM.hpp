@@ -1627,6 +1627,14 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
     int exitCode() const { return exit_code_.load(); }
+    // Cooperative exit request, shared by the exit()/sys.exit host fns
+    // (VMHostFunctions) and stdlib modules (SysModule's sys.exit): sets the
+    // flag + code so the engine's loops shut down cleanly instead of
+    // calling std::exit mid-goroutine.
+    void requestExit(int code) {
+        exit_code_.store(code);
+        exit_requested_.store(true);
+    }
   
     void setGlobal(std::string name, Value value) {
         assertVMThread("setGlobal");

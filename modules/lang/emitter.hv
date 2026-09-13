@@ -1464,16 +1464,38 @@ return
           bc.patch_jump(nullJump, bc.instr_count())
         }
         else {
-          bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
-          bc.emit("LOAD_VAR", pipeSlot)
-          myArgc = 1
-          if right.args != null {
-            for a in right.args {
-              emitExpr(emitter, a)
+          // f(x) with pipe value prepended. If the callee is a script-level
+          // binding, call it as a global function with (pipeVal, ...args).
+          // Otherwise treat it as a method on the pipe value (CALL_METHOD
+          // with the explicit args): query-syntax desugaring produces
+          // `src | filter(fn)` / `src | map(fn)` and arrays/strings carry
+          // those as prototype methods — the previous unconditional
+          // LOAD_GLOBAL resolved filter/map to null and every
+          // from-where-select query silently evaluated to [].
+          if emitter.global_names[calleeName] != null {
+            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+            bc.emit("LOAD_VAR", pipeSlot)
+            myArgc = 1
+            if right.args != null {
+              for a in right.args {
+                emitExpr(emitter, a)
+              }
+              myArgc = 1 + #right.args
             }
-            myArgc = 1 + #right.args
+            bc.emit("CALL", myArgc)
           }
-          bc.emit("CALL", myArgc)
+          else {
+            bc.emit("LOAD_VAR", pipeSlot)
+            propIdx = bc.add_chunk_string(calleeName)
+            myArgc = 0
+            if right.args != null {
+              for a in right.args {
+                emitExpr(emitter, a)
+                myArgc = myArgc + 1
+              }
+            }
+            bc.emit("CALL_METHOD", bc.str_id(propIdx), myArgc)
+          }
         }
       }
       else if right.callee.kind == "LambdaExpression" {

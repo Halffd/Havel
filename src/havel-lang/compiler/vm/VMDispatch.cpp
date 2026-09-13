@@ -864,7 +864,7 @@ __attribute__((hot,
   {
     auto &frm = frame_arena_[frame_count_ - 1];
     if (frm.ip >= frm.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -931,7 +931,7 @@ op_LOAD_CONST: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       Instruction retInst{OpCode::RETURN};
       try {
         executeInstruction(retInst);
@@ -983,7 +983,7 @@ op_LOAD_VAR: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1035,7 +1035,7 @@ op_STORE_VAR: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1077,7 +1077,7 @@ op_POP: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1097,7 +1097,7 @@ op_PUSH_NULL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1111,6 +1111,51 @@ op_CALL: {
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
+  // CALL_SPREAD shares this label but has different operand semantics
+  // (lit_before/lit_after, array expansion) - fast path only for plain
+  // CALL/CALL_DYN. CALL_DYN pops arg_count from the stack, not operands.
+  const uint32_t call_arg_count =
+      (inst.opcode == OpCode::CALL && !inst.operands.empty() &&
+               inst.operands[0].isInt()
+           ? static_cast<uint32_t>(inst.operands[0].asInt())
+           : UINT32_MAX);
+  // Common-case inline: closure/function/host callee with no exotic
+  // dispatch. ip is advanced BEFORE doCall (frame_arena_ may reallocate
+  // inside the callee - incrementing through the frm reference after
+  // would be a dangling-reference write). Rejoins the shared tail after.
+  // Falls through to the full executeInstruction path for anything else
+  // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
+  if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (suspension_requested_ || last_suspension_reason_ != 0)
+      goto slow_dispatch_fallback;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(
+          f2.function->instructions[f2.ip].opcode)];
+    }
+  }
   frm.ip++;
   // ip now points at the instruction AFTER this CALL — the exact address
   // a coroutine yield must return to. Stash it for doCall's resume path.
@@ -1135,7 +1180,10 @@ op_CALL: {
   // IMMEDIATE check for suspension after CALL - host functions may request
   // suspension
   if (suspension_requested_ || last_suspension_reason_ != 0) {
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    // static init: getenv on every CALL was 3.5% of a closure-call
+    // benchmark profile
+    static const bool _sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+    if (_sleep_trace) {
       // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d
       // executing_fiber=%d\n", (int)suspension_reason_,
       // (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
@@ -1237,7 +1285,7 @@ op_RETURN: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1279,8 +1327,8 @@ op_YIELD: {
       {
         std::vector<Value> tmp;
         while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
+          tmp.push_back(stack.back());
+          stack.pop_back();
         }
         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
           co->stack.push_back(*it);
@@ -1297,9 +1345,9 @@ op_YIELD: {
 
         frame_arena_[frame_count_ - 1].ip = caller.ip;
 
-        stack = std::stack<Value>();
+        stack.clear();
         for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-          stack.push(*it);
+          stack.push_back(*it);
         }
 
         co->caller_stack.pop_back();
@@ -1321,7 +1369,7 @@ dispatch_next:
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1381,7 +1429,7 @@ op_LOAD_GLOBAL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1435,7 +1483,7 @@ op_STORE_GLOBAL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1488,7 +1536,7 @@ op_STORE_IMMUT_GLOBAL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1535,7 +1583,7 @@ op_STORE_IMMUT_VAR: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1581,7 +1629,7 @@ op_LOAD_UPVALUE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1627,7 +1675,7 @@ op_STORE_UPVALUE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1649,7 +1697,7 @@ op_DUP: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1672,7 +1720,7 @@ op_SWAP: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1727,7 +1775,7 @@ op_INCLOCAL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1782,7 +1830,7 @@ op_DECLOCAL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1834,7 +1882,7 @@ op_INCLOCAL_POST: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1886,7 +1934,7 @@ op_DECLOCAL_POST: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -1949,7 +1997,7 @@ op_BIT_RSH: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2026,7 +2074,7 @@ op_ADD_INT: {
       {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
-          stack.push(nullptr);
+          stack.push_back(nullptr);
           executeInstruction(Instruction{OpCode::RETURN});
           return;
         }
@@ -2047,7 +2095,7 @@ op_ADD_INT: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2069,7 +2117,7 @@ op_OR: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2090,7 +2138,7 @@ op_NOT: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2116,7 +2164,7 @@ op_BIT_NOT: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2136,7 +2184,7 @@ op_NEGATE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2243,7 +2291,7 @@ op_STRING_GET_FAST: {
     {
       auto &f2 = frame_arena_[frame_count_ - 1];
       if (f2.ip >= f2.function->instructions.size()) {
-        stack.push(nullptr);
+        stack.push_back(nullptr);
         executeInstruction(Instruction{OpCode::RETURN});
         return;
       }
@@ -2368,7 +2416,7 @@ op_STRING_SET_FAST: {
     {
       auto &f2 = frame_arena_[frame_count_ - 1];
       if (f2.ip >= f2.function->instructions.size()) {
-        stack.push(nullptr);
+        stack.push_back(nullptr);
         executeInstruction(Instruction{OpCode::RETURN});
         return;
       }
@@ -2389,7 +2437,7 @@ op_LENGTH: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2415,7 +2463,7 @@ op_STRING_CURSOR_NEW: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2467,7 +2515,7 @@ op_STRING_CURSOR_CURRENT: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2520,7 +2568,7 @@ op_STRING_CURSOR_ADVANCE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2572,7 +2620,7 @@ op_STRING_CURSOR_PEEK: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2603,7 +2651,7 @@ op_STRING_CURSOR_RESET: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2632,7 +2680,7 @@ op_STRING_CURSOR_GET_POS: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2695,7 +2743,7 @@ op_STRING_CURSOR_SET_POS: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2718,7 +2766,7 @@ op_STRING_CONCAT: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2742,7 +2790,7 @@ op_JUMP: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2757,7 +2805,7 @@ op_JUMP_IF_FALSE: {
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
   uint32_t target = inst.operands[0].asInt();
-  Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+  Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
   if (!isTruthy(cond_peek) && target < frm.ip) {
     recordBackedgePublic(frm.ip);
   }
@@ -2767,7 +2815,7 @@ op_JUMP_IF_FALSE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2782,7 +2830,7 @@ op_JUMP_IF_TRUE: {
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
   uint32_t target = inst.operands[0].asInt();
-  Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+  Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
   if (isTruthy(cond_peek) && target < frm.ip) {
     recordBackedgePublic(frm.ip);
   }
@@ -2792,7 +2840,7 @@ op_JUMP_IF_TRUE: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2813,7 +2861,7 @@ op_IS_NULL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2842,7 +2890,7 @@ op_JUMP_IF_NULL: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
@@ -2853,7 +2901,10 @@ op_JUMP_IF_NULL: {
 
 slow_dispatch_fallback:
   // Suspension or complex opcode encountered — return to caller's slow path
-  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+  // static init: getenv on every slow-path return was 3.5% of a closure
+  // call benchmark profile
+  static const bool _sleep_trace_fb = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+  if (_sleep_trace_fb) {
     // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d
     // last_before=%d exec_fiber=%d\n", (int)suspension_requested_,
     // (int)suspension_reason_, (int)last_suspension_reason_,
@@ -2937,7 +2988,7 @@ op_default: {
   {
     auto &f2 = frame_arena_[frame_count_ - 1];
     if (f2.ip >= f2.function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }

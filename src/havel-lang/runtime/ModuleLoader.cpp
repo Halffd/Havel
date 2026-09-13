@@ -880,6 +880,16 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
   }
 
   std::string ModuleLoader::getDefaultCacheDir() {
+    // Same XDG_CACHE_HOME semantics as havel::Env::cache(): both writers
+    // (autoCacheBytecodeChunk, HavelLauncher) and readers (module
+    // resolution) must agree on ONE location, and tests need to be able
+    // to point the whole binary at a scratch cache via XDG_CACHE_HOME.
+    // This used to hardcode $HOME/.cache, silently ignoring the override
+    // and forcing test runs onto the shared cache.
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    if (xdg && *xdg) {
+      return (std::filesystem::path(xdg) / "havel").string();
+    }
     const char* home = std::getenv("HOME");
     if (!home) home = "/tmp";
     return (std::filesystem::path(home) / ".cache" / "havel").string();

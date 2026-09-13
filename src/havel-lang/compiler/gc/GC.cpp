@@ -508,39 +508,63 @@ bool GCHeap::isCollectionInProgress() const {
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
+  if (onOwnerThread()) {
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = closures_.find(id);
+  return it == closures_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
+  if (onOwnerThread()) {
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = closures_.find(id);
+  return it == closures_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-auto it = arrays_.find(id);
-return it == arrays_.end() ? nullptr : &it->second;
+  if (onOwnerThread()) {
+    auto it = arrays_.find(id);
+    return it == arrays_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = arrays_.find(id);
+  return it == arrays_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-auto it = arrays_.find(id);
-return it == arrays_.end() ? nullptr : &it->second;
+  if (onOwnerThread()) {
+    auto it = arrays_.find(id);
+    return it == arrays_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = arrays_.find(id);
+  return it == arrays_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-auto it = objects_.find(id);
-return it == objects_.end() ? nullptr : &it->second;
+  if (onOwnerThread()) {
+    auto it = objects_.find(id);
+    return it == objects_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = objects_.find(id);
+  return it == objects_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ObjectEntry *GCHeap::object(uint32_t id) const {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-auto it = objects_.find(id);
-return it == objects_.end() ? nullptr : &it->second;
+  if (onOwnerThread()) {
+    auto it = objects_.find(id);
+    return it == objects_.end() ? nullptr : &it->second;
+  }
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  auto it = objects_.find(id);
+  return it == objects_.end() ? nullptr : &it->second;
 }
 
 std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) {

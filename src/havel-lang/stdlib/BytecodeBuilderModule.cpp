@@ -647,7 +647,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     auto saved_chunk = vm.current_chunk;
     auto saved_frame_count = vm.frame_count_;
     auto saved_frame_arena = vm.frame_arena_;
-    std::stack<Value> saved_stack = vm.stack;
+    std::vector<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
   auto saved_main_chunk = vm.getMainChunk();
 
@@ -705,7 +705,7 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
     auto saved_chunk = vm.current_chunk;
     auto saved_frame_count = vm.frame_count_;
     auto saved_frame_arena = vm.frame_arena_;
-    std::stack<Value> saved_stack = vm.stack;
+    std::vector<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
     auto saved_immutable_locals = vm.immutable_locals_;
     auto saved_main_chunk = vm.getMainChunk();
@@ -1153,7 +1153,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
       auto saved_chunk = vm.current_chunk;
       auto saved_frame_count = vm.frame_count_;
       auto saved_frame_arena = vm.frame_arena_;
-      std::stack<Value> saved_stack = vm.stack;
+      std::vector<Value> saved_stack = vm.stack;
       auto saved_locals = vm.locals;
       auto saved_immutable_locals = vm.immutable_locals_;
       auto saved_main_chunk = vm.getMainChunk();
@@ -1228,7 +1228,9 @@ return result;
     // self-hosted REPL to keep hotkey/update goroutines alive while reading
     // stdin.
     api.registerFunction("bc.tick", [api](const std::vector<Value> &) -> Value {
-        api.vm().tickScheduler();
+        // Script-requested tick: wait out the nearest sleep deadline when
+        // nothing else is runnable (see VM::tickScheduler).
+        api.vm().tickScheduler(true);
         return Value::makeNull();
     });
 

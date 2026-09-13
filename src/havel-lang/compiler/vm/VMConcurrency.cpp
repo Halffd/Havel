@@ -223,8 +223,8 @@ if (co) {
                     {
                         std::vector<Value> tmp;
                         while (!stack.empty()) {
-                            tmp.push_back(stack.top());
-                            stack.pop();
+                            tmp.push_back(stack.back());
+                            stack.pop_back();
                         }
                         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
                             co->stack.push_back(*it);
@@ -242,9 +242,9 @@ if (co) {
 
                         currentFrame().ip = caller.ip;
 
-                        stack = std::stack<Value>();
+                        stack.clear();
                         for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-                            stack.push(*it);
+                            stack.push_back(*it);
                         }
 
                         co->caller_stack.pop_back();
@@ -297,8 +297,8 @@ if (co) {
                 {
                     std::vector<Value> tmp;
                     while (!stack.empty()) {
-                        tmp.push_back(stack.top());
-                        stack.pop();
+                        tmp.push_back(stack.back());
+                        stack.pop_back();
                     }
                     for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
                         cf.stack.push_back(*it);
@@ -312,9 +312,9 @@ if (co) {
         current_coroutine_id_ = coroutine_id;
 
         // Restore coroutine's stack (stack[0]=bottom, [N-1]=top)
-        stack = std::stack<Value>();
+        stack.clear();
         for (auto it = co->stack.begin(); it != co->stack.end(); ++it) {
-            stack.push(*it);
+            stack.push_back(*it);
         }
 
         // Restore coroutine's locals
@@ -376,7 +376,7 @@ break;
  }
 
  struct VMState {
- std::stack<Value> stack;
+ std::vector<Value> stack;
  std::vector<Value> locals;
  size_t frame_count;
  std::vector<CallFrame> frame_arena;
@@ -694,8 +694,8 @@ case OpCode::FIBER_SLEEP: {
       {
         std::vector<Value> tmp;
         while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
+          tmp.push_back(stack.back());
+          stack.pop_back();
         }
         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
           co->stack.push_back(*it);

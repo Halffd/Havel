@@ -1405,6 +1405,13 @@ fn parseInterpolatedString(value, l, c) {
          parts = []
          i = 0
          buf = ""
+        // The native tokenizer (\x01 expr \x02 markers) already resolved
+        // every interpolation boundary; after it, a literal open brace in
+        // the string is plain text, never another interpolation start.
+        // The pure Havel scanner instead encodes interpolations as bare
+        // {expr} with an optional stripped $. Only honor the bare-brace
+        // branch while no native marker has been seen.
+        nativeMarkers = false
 
          while i < value.len {
              ch = value.sub(i, 1)
@@ -1414,6 +1421,7 @@ fn parseInterpolatedString(value, l, c) {
              // Havel scanner (lexer.hv _scan) instead emits {expr}; both
              // encodings are accepted here.
              if ch == "\x01" {
+                 nativeMarkers = true
                  if buf.len > 0 {
                      parts.push(StringLiteral(buf, l, c))
                      buf = ""
@@ -1433,7 +1441,7 @@ fn parseInterpolatedString(value, l, c) {
 
              }
              // {...} interpolation (works in all strings, not just f-strings)
-             else if ch == "{" {
+             else if ch == "{" and !nativeMarkers {
                  if buf.len > 0 {
                      // Strip the interpolation marker: ${expr} → the '$' before '{'
                      if buf.sub(buf.len - 1, 1) == "$" {

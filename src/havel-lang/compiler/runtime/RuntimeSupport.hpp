@@ -14,6 +14,9 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 // Macro for throwing errors with source location info
 #undef COMPILER_THROW
@@ -418,16 +421,51 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
         std::filesystem::path(cacheDir) / (cacheName + ".hvc");
     std::filesystem::path hvPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hv");
-    std::ofstream file(hvcPath, std::ios::binary);
-    if (file.is_open()) {
-      file.write(reinterpret_cast<const char*>(data.data()), data.size());
-      file.close();
+
+    // Write via tmp + atomic rename under an advisory lock, mirroring
+    // VM::writeGlobalsToHvc. History: this used a bare ofstream on the
+    // target, truncating the .hvc in place while concurrent readers
+    // (test-suite workers and any other havel process sharing the cache)
+    // had it mmap'd; a truncate past the mapped range raised SIGBUS and
+    // killed the reader mid-deserialize. rename swaps the inode, so
+    // readers keep the old mapping until they unmap.
+    const std::string lockPath = hvcPath.string() + ".lock";
+    int lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0) {
+      flock(lockFd, LOCK_EX);
     }
-    // Also copy source .hv next to .hvc for hash/mtime validation
-    std::error_code ec;
-    if (std::filesystem::exists(compileUnitName, ec) && !ec) {
-      std::filesystem::copy_file(compileUnitName, hvPath,
-                                 std::filesystem::copy_options::overwrite_existing, ec);
+    std::error_code writeEc;
+    {
+      const std::string tmpPath = hvcPath.string() + ".tmp." +
+          std::to_string(static_cast<uint64_t>(::getpid()));
+      std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
+      if (file.is_open()) {
+        file.write(reinterpret_cast<const char *>(data.data()), data.size());
+        file.flush();
+        file.close();
+        std::filesystem::rename(tmpPath, hvcPath, writeEc);
+        if (writeEc) {
+          std::filesystem::remove(tmpPath, writeEc);
+        }
+      }
+    }
+    // Also copy source .hv next to .hvc for hash/mtime validation.
+    // Same tmp + rename discipline (copy_file with overwrite truncates
+    // in place; a reader hashing the .hv mid-copy sees a torn file).
+    if (std::filesystem::exists(compileUnitName, writeEc) && !writeEc) {
+      const std::string hvTmp = hvPath.string() + ".tmp." +
+          std::to_string(static_cast<uint64_t>(::getpid()));
+      std::filesystem::copy_file(compileUnitName, hvTmp, writeEc);
+      if (!writeEc) {
+        std::filesystem::rename(hvTmp, hvPath, writeEc);
+        if (writeEc) {
+          std::filesystem::remove(hvTmp, writeEc);
+        }
+      }
+    }
+    if (lockFd >= 0) {
+      flock(lockFd, LOCK_UN);
+      ::close(lockFd);
     }
   } catch (...) {
   }

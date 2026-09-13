@@ -10,7 +10,10 @@ Primary build: `./build.sh [mode] [command]`
 | 0 | Debug | ✓ | ✓ | ✓ | build-debug |
 | 5 | Release | ✓ | ✓ | ✓ | build-release |
 | 6 | Debug | ✓ | ✓ | ✗ | build-debug (default) |
+| 8 | Debug | ✗ | ✓ | ✗ | build-debug |
 | 9 | Release | ✓ | ✓ | ✗ | build-release |
+
+Other modes (1-4, 7, 10-13) exist in build.sh BUILD_CONFIGS; the table lists the common ones.
 
 Common commands:
 - `./build.sh 5 build` - Full release with LLVM
@@ -24,7 +27,7 @@ Common commands:
 |--------|---------|
 | `build-debug/havel` | Main application |
 | `build-debug/havel-lsp` | Language Server Protocol |
-| `build-debug/havel-bytecode-smoke` | Bytecode smoke test (Debug only) |
+| `build-debug/hvtest` | Unified .hv test runner (smoke/cfg suites) |
 
 Run Havel scripts: `./build-debug/havel script.hv`
 
@@ -76,7 +79,11 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 
 - **C++ unit tests**: `tests/` directory, gtest-based, built when ENABLE_TESTS=ON
 - **Havel script tests**: `scripts/*.hv` files
-- **Bytecode smoke test**: `havel-bytecode-smoke` (Debug builds only - Release LTO causes relocation overflow)
+- **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
+- **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
+  - `// smoke: timeout = <seconds>` — per-test timeout override
+  - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
+  - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash
@@ -84,7 +91,7 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   ```
   Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
 
-CI runs: CMake configure → build → bytecode-smoke → ctest
+CI runs: CMake configure → build → hvtest smoke → ctest
 
 ```bash
 # Run a single Havel script

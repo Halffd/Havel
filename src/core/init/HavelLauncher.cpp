@@ -3064,7 +3064,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         outFile.close();
         
         std::error_code ec;
-        std::filesystem::rename(tempPath, outputPath, ec);
+        std::filesystem::rename(tempPath, targetPath, ec);
         if (ec) {
             // Cross-device rename failed, fall back to copy + remove
             if (ec == std::errc::cross_device_link) {

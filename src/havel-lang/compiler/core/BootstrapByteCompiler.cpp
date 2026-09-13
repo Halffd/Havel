@@ -3552,8 +3552,16 @@ case ast::NodeType::NumberLiteral: {
         { uint32_t _sid = addStringConstant(segment.stringValue); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::STRING_CONCAT);
       } else {
-        // Evaluate pre-parsed expression and convert to string
+        // Interpolation segments are never tail positions: the string
+        // still has to be assembled after they evaluate. Without this
+        // clear, a return-expr interpolation like return o["a${str(k)}"]
+        // inherited in_tail_position_ from the enclosing return; the
+        // str(k) segment emitted TAIL_CALL and the function aborted
+        // with the raw segment value instead of running the subscript.
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*segment.expression);
+        in_tail_position_ = saved_tail;
         emit(OpCode::TO_STRING);
         emit(OpCode::STRING_CONCAT);
       }

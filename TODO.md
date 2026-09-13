@@ -2387,6 +2387,20 @@ struct QueryLatch {
 4. Implement `try_mark_green` / red-green algorithm
 
 ### Phase 2: Incremental Compilation
+
+> Status note (2026-09-12): Phase 1 foundation landed as
+> `compiler/core/QuerySystem.hpp` (QueryContext, SingleCache/DefIdCache,
+> DepGraph red/green, prev-graph serialization; `query_system_test` 18/18).
+> Scoping finding from live experiments: havel module chunks are LATE-BOUND
+> to imports (verified: editing module B and re-running A picks up B's new
+> value without recompiling A), and the .hvc cache already validates by
+> source content hash per module. So per-module incremental correctness is
+> DONE by the existing cache; red/green DepGraph invalidation only becomes
+> load-bearing when cross-module CONTENT dependencies appear (IR/AOT
+> inlining, cross-module constant folding). Wire queries into the real
+> pipeline at that point, not before - until then the query system stays a
+> tested foundation without call sites.
+
 1. Add on-disk cache (serialize bytecode + type info + fingerprints)
 2. Implement work product tracking for `.hvb` files
 3. Add command-line hash for cache invalidation

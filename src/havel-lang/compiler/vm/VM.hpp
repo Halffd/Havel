@@ -302,10 +302,40 @@ struct CallFrame {
 };
   public:
 
-  std::stack<Value> stack;
+  // Operand stack. Flat vector instead of std::stack (deque-backed):
+  // deque chunk allocation showed as kernel clear_pages + per-op overhead
+  // in dispatch profiles (push 4%, pop 2.7%). The vector keeps capacity
+  // across calls; save/restore copies are contiguous memcpy-able.
+  // Stack-op mapping: push->push_back, pop->pop_back, top->back.
+  std::vector<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
  size_t frame_count_ = 0;
+ // CALL argument scratch pool, keyed by frame depth. CALL builds its
+ // argument vector in pool[depth] and MOVES it out into doCall's by-value
+ // parameter, so nested calls (which run at a deeper frame_count_) use a
+ // different slot and cannot alias. Slots keep their capacity across calls,
+ // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
+ // (2M-iteration closure benchmark: ~2M mallocs).
+ std::vector<std::vector<Value>> call_arg_pool_;
+ // Memoize the temporary closures doCall allocates for FunctionObjId
+ // callees. The temp closure's identity is (function index, parent
+ // module_globals pointer) - nothing else varies - so a repeated global-fn
+ // call reuses the memoized closure instead of allocating a fresh
+ // RuntimeClosure per call (a 2M-iteration plain-fn loop allocated ~2M
+ // closures: one heap mutex pair, hash insert, ages bookkeeping and a page
+ // of memory each time).
+ std::unordered_map<uint64_t, uint32_t> foid_closure_memo_;
+ static uint64_t foidMemoKey(uint32_t function_index, const void *globals_ptr) {
+   return (static_cast<uint64_t>(function_index) << 32) ^
+          (reinterpret_cast<uintptr_t>(globals_ptr) >> 3);
+ }
+ inline std::vector<Value> takeCallArgScratch() {
+   call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
+   auto &slot = call_arg_pool_[frame_count_];
+   if (!slot.empty()) slot.clear();
+   return std::move(slot);
+ }
  int bc_execute_depth_ = 0;
  GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
@@ -577,7 +607,7 @@ int32_t pending_call_return_ip_ = -1;
 
   // State snapshot for re-entrant calls (HOF callbacks)
   struct ExecutionState {
-    std::stack<Value> stack;
+    std::vector<Value> stack;
     std::vector<Value> locals;
     std::vector<CallFrame> frames;
     size_t frame_count = 0;
@@ -622,6 +652,42 @@ int32_t pending_call_return_ip_ = -1;
 	bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args);
+
+  // Fast path for the computed-goto op_CALL label: handles the common
+  // callee shapes (closure / function object / host function) inline,
+  // skipping the executeInstruction switch re-dispatch. Exotic callee
+  // shapes (callable objects, bound methods, coroutines) return false and
+  // the caller falls back to the full CALL case in executeInstruction.
+  // Shared with the slow-path CALL case: both use takeCallArgScratch, so
+  // arg pooling logic stays in one place.
+  inline bool execSimpleCall(uint32_t arg_count) {
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      return false; // underflow diagnostics live in the slow path
+    }
+    // Stack layout: callee pushed first, then args (callee at the bottom
+    // of the arg window). The slow-path CALL case pops args then callee.
+    const size_t callee_pos = stack.size() - 1 - arg_count;
+    Value callee_value = stack[callee_pos];
+    if (!callee_value.isClosureId() && !callee_value.isFunctionObjId() &&
+        !callee_value.isHostFuncId()) {
+      return false;
+    }
+    // Advance the caller's ip BEFORE doCall: doCall may push frames and
+    // reallocate frame_arena_, so the dispatch label must not touch its
+    // frm reference afterwards. Do it here while we still only hold an
+    // index.
+    if (frame_count_ > 0) {
+      frame_arena_[frame_count_ - 1].ip++;
+    }
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[i] = stack[callee_pos + 1 + i];
+    }
+    stack.resize(callee_pos);
+    doCall(std::move(callee_value), std::move(args));
+    return true;
+  }
   void doTailCall(Value callee_value, std::vector<Value> args);
   void packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee);
   void runDispatchLoop(size_t stop_frame_depth);
@@ -688,7 +754,7 @@ public:
     // itself behind public seams.
     size_t stackDepthPublic() const { return stack.size(); }
     void truncateStackPublic(size_t depth) {
-      while (stack.size() > depth) stack.pop();
+      while (stack.size() > depth) stack.pop_back();
     }
     void execBinaryOpPublic(const Instruction &instr) {
       execBinaryOp(instr);
@@ -696,10 +762,15 @@ public:
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
+    // Fire yield_callback_ if set (guarded the same way the dispatch loop's
+    // periodicYieldCheck does NOT guard: the inline-yield reentrancy guard
+    // lives in HavelEngine::processGoroutinesInline, so calling this from a
+    // host fn chunked loop while siblings run inline is safe).
+    void fireYieldCallbackPublic() { if (yield_callback_) yield_callback_(); }
     // Replace top-of-stack with a new value (used when resuming from await)
     void replaceStackTop(Value value) {
         if (!stack.empty()) {
-            stack.top() = std::move(value);
+            stack.back() = std::move(value);
         } else {
             pushStack(std::move(value));
         }
@@ -731,7 +802,7 @@ public:
           std::vector<Value> above;
           bool found = false;
           for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
-            if (stack.top().isPending()) {
+            if (stack.back().isPending()) {
               found = true;
               break;
             }
@@ -823,7 +894,7 @@ public:
   // Run one scheduler tick: drain events, wake sleeping goroutines, then
   // execute a single runnable goroutine. Shared by the engine REPL pump and
   // the self-hosted launcher REPL (bc.tick).
-  void tickScheduler();
+  void tickScheduler(bool wait_for_sleepers = false);
   size_t frameCountPublic() const { return frame_count_; }
   void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
                       size_t stack_depth) {
@@ -1283,6 +1354,21 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     // this gate additionally requires the JIT path to establish the
     // callee's frame context (closure_id/module_globals) for the bridges.
     // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    // Status 2026-09-12: the doCall JIT branch now establishes callee
+    // frame context (synthetic CallFrame with closure_id/chunk, globals
+    // sidecar swap, current_chunk swap - see VM.cpp doCall jit path), and
+    // module tiering passed a correctness sweep with it: 16 real smoke
+    // tests (an initial 5 "failures" were nonexistent filenames, caught
+    // and rerun), full --lint parse+typecheck+emit, and an 80-fn
+    // parse-verification script (AST stmt count exact) all pass with
+    // tier1=5 parser functions compiled. An earlier note claiming
+    // divergence was a flawed test (missing --lint flag + load-confounded
+    // timings), not a real repro. Gate remains until the remaining risk
+    // is covered by the full suite: tiered module functions still bypass
+    // interpreter frame management (coroutine/suspension opcodes route
+    // through the JitCoroutineSignal fallback) and the old BP_TABLE
+    // divergence class deserves a targeted regression test before
+    // lifting by default.
     static const bool allow_module_tiering =
         std::getenv("HAVEL_TIER1_MODULES") != nullptr;
     if (!allow_module_tiering && frame_count_ > 0) {
@@ -1621,9 +1707,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
             }
         }
     }
-  void eraseGlobal(const std::string &name) {
-    globals.erase(name);
-  }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }
@@ -1846,14 +1929,14 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // is a broken invariant: log loudly and neutralize to null.
   bool parkIfPendingCallResult() {
     if (!scheduler_ || !current_executing_fiber_ || stack.empty()) {
-      if (!stack.empty() && stack.top().isPending()) {
+      if (!stack.empty() && stack.back().isPending()) {
         ::havel::error("[VM] Pending host-call result outside goroutine "
                        "context; check runBlockingHostCall preconditions");
-        stack.top() = Value::makeNull();
+        stack.back() = Value::makeNull();
       }
       return false;
     }
-    Value top = stack.top();
+    Value top = stack.back();
     if (!top.isPending()) return false;
     uint32_t token = top.asPendingToken();
     Scheduler::Goroutine *g = scheduler_->current();
@@ -1870,7 +1953,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
     }
     ::havel::error("[VM] Pending value escaped without a matching current "
                    "goroutine (token {})", token);
-    stack.top() = Value::makeNull();
+    stack.back() = Value::makeNull();
     return false;
   }
   void pinModuleCacheExports(const std::string &key, const Value &exports);

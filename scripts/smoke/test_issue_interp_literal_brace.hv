@@ -1,0 +1,32 @@
+// Regression: after the native tokenizer encodes one interpolation
+// (as \x01 expr \x02 markers), every later open brace inside the same
+// string was misparsed as another interpolation start by
+// parseInterpolatedString in modules/lang/pratt.hv. A literal like
+// "pre ${"a"} { b } post" failed with "Undefined variable: b" because
+// the { b } segment was tokenized and evaluated as code. Fixed by
+// honoring the bare-brace branch only while no native marker has been
+// seen (the pure-Havel scanner encodes interpolations as {expr}).
+// Also covers the pure-scanner ${expr} form (modules/lang/lexer.hv
+// scanString/scanMultilineString learned dollar-brace directly).
+// Expected: all six interpolation forms produce the correct strings.
+obj = {k: "K"}
+x7 = 7
+
+r1 = "v=${1+2}"
+r2 = "n=${"a"} { b } tail"
+r3 = "nested ${obj["k"]} end"
+r4 = "call ${str(42)} x"
+r5 = "dollar-var $obj itself"
+r6 = "pre $x7 post"
+
+ok = 1
+if r1 != "v=3" { print("FAIL interp-literal-brace: r1=${r1}"); ok = 0 }
+if r2 != "n=a { b } tail" { print("FAIL interp-literal-brace: r2=${r2}"); ok = 0 }
+if r3 != "nested K end" { print("FAIL interp-literal-brace: r3=${r3}"); ok = 0 }
+if r4 != "call 42 x" { print("FAIL interp-literal-brace: r4=${r4}"); ok = 0 }
+if r5 != "dollar-var {k: K} itself" { print("FAIL interp-literal-brace: r5=${r5}"); ok = 0 }
+if r6 != "pre 7 post" { print("FAIL interp-literal-brace: r6=${r6}"); ok = 0 }
+if ok != 1 {
+	process.exit(255)
+}
+return ok

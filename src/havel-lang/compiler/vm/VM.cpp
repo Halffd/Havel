@@ -81,9 +81,19 @@ static const std::unordered_set<std::string> &runtimeGlobalsSkipList() {
 
 namespace havel::compiler {
 
+// Sleep/wake instrumentation gate. Hoisted: these probes sit on hot paths
+// (dispatch slow path, per-CALL suspension checks) and a per-call getenv
+// measured at 3.5% of a closure-call benchmark profile.
+namespace {
+const bool g_sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+}
+
 VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig &cfg) {
+  // Heap owner-thread fast path: constructed here, re-asserted on every
+  // dispatch loop entry (same thread in practice; idempotent store).
+  heap_.setOwnerThread();
   vm_config_ = cfg;
   tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
   tier2_threshold_ = cfg.tier2_threshold > 0
@@ -454,8 +464,8 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
   // Get result from stack top BEFORE restoring state
   Value result;
   if (!stack.empty()) {
-    result = stack.top();
-    stack.pop();
+    result = stack.back();
+    stack.pop_back();
   }
 
   // Restore all VM state. locals is the critical one: the callee's
@@ -493,7 +503,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
 
   while (!stack.empty()) {
-    stack.pop();
+    stack.pop_back();
   }
   locals.clear();
   frame_count_ = 0;
@@ -798,8 +808,8 @@ vm_in_execute_.store(false, std::memory_order_release);
     return nullptr;
   }
 
-  Value result = stack.top();
-  stack.pop();
+  Value result = stack.back();
+  stack.pop_back();
   return result;
 }
 
@@ -833,7 +843,7 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   // locals, stack, and frames. We only clear them here for the
   // persistent execution context.
   while (!stack.empty()) {
-    stack.pop();
+    stack.pop_back();
   }
   locals.clear();
   frame_count_ = 0;
@@ -931,8 +941,8 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   // the host function restores the caller's state.
   Value persistent_result;
   if (!stack.empty()) {
-    persistent_result = stack.top();
-    stack.pop();
+    persistent_result = stack.back();
+    stack.pop_back();
   }
 
   current_chunk = saved_chunk;
@@ -980,7 +990,7 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   }
 
   // Save current stack state (conditions shouldn't consume/modify main stack)
-  std::stack<Value> saved_stack = stack;
+  std::vector<Value> saved_stack = stack;
   size_t saved_frame_count = frame_count_;
   auto saved_locals = locals;
   auto saved_frame_arena = frame_arena_;
@@ -1017,7 +1027,7 @@ Value VM::evaluateExpressionBytecode(uint32_t func_index, size_t ip) {
     return Value::makeNull();
   }
 
-  std::stack<Value> saved_stack = stack;
+  std::vector<Value> saved_stack = stack;
   size_t saved_frame_count = frame_count_;
   auto saved_locals = locals;
   auto saved_frame_arena = frame_arena_;
@@ -1121,7 +1131,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
     // Boundary check - if IP past function end, return
     if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       // After RETURN, check frame count to determine if function returned
       if (frame_count_ < entry_frame_count) {
@@ -1129,8 +1139,8 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
           current_executing_fiber_ = nullptr;
           return VMExecutionResult::Returned(nullptr);
         }
-        Value ret_val = stack.top();
-        stack.pop();
+        Value ret_val = stack.back();
+        stack.pop_back();
         current_executing_fiber_ = nullptr;
         return VMExecutionResult::Returned(ret_val);
       }
@@ -1320,21 +1330,16 @@ void VM::loadFiberState(Fiber *fiber) {
 
   // STEP 1: Clear VM's current execution state
   // These will be repopulated from the fiber
-  while (!stack.empty()) {
-    stack.pop();
-  }
+  stack.clear();
   locals.clear();
   immutable_locals_.clear();
   frame_count_ = 0;
 
   // STEP 2: Restore operand stack from fiber's stack
-  // FiberStack uses a data vector and size_t sp (stack pointer)
-  // We need to copy all pushed values onto the VM's stack
+  // FiberStack is bottom-to-top like the VM's flat operand vector.
   const auto &fiber_stack_data = fiber->stack.data();
   const size_t fiber_sp = fiber->stack.size();
-  for (size_t i = 0; i < fiber_sp; ++i) {
-    stack.push(fiber_stack_data[i]);
-  }
+  stack.assign(fiber_stack_data.begin(), fiber_stack_data.begin() + fiber_sp);
 
   // STEP 3: Restore locals from fiber's map into VM's vector
   // VM locals is a vector indexed by absolute position
@@ -1528,20 +1533,10 @@ void VM::saveFiberState(Fiber *fiber) {
   }
 
   // STEP 1: Save operand stack from VM back to fiber's stack
-  fiber->stack.clear();
-
-  // Convert VM's std::stack<Value> to fiber's FiberStack
-  // std::stack is LIFO, so we need to extract in reverse order
-  std::vector<Value> temp_values;
-  auto temp_stack = stack; // Copy the stack
-  while (!temp_stack.empty()) {
-    temp_values.push_back(temp_stack.top());
-    temp_stack.pop();
-  }
-  // Now push in correct order (reverse of extraction)
-  for (auto it = temp_values.rbegin(); it != temp_values.rend(); ++it) {
-    fiber->stack.push(*it);
-  }
+  // Operand stack is a flat vector in bottom-to-top order; the fiber's
+  // stack holds the same shape, so bulk-assign replaces the old LIFO
+  // extraction (std::stack copy + reverse push).
+  fiber->stack.assign(stack);
 
   // STEP 2: Save locals from VM's vector back to fiber's map
   fiber->locals.clear();
@@ -1620,7 +1615,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
                                                const std::vector<Value> &args) {
   // Clear VM state for fresh goroutine context
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   immutable_locals_.clear();
   frame_count_ = 0;
@@ -1792,7 +1787,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
 
   // Push args onto VM stack
   for (const auto &arg : args) {
-    stack.push(arg);
+    stack.push_back(arg);
   }
 
   // Set up locals with room for params + locals
@@ -1990,6 +1985,10 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  // Heap owner fast path for read accessors: the dispatch thread owns the
+  // heap (cross-thread work arrives via deferToVM/EventQueue on this
+  // thread), so closure/array/object lookups below skip the heap mutex.
+  heap_.setOwnerThread();
   // VM-thread ownership guard: latch dispatch to this thread for the
   // duration (nested re-entry keeps the original latch). Every exit path
   // below must unlatch; the guard struct covers exceptions too.
@@ -2007,7 +2006,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool use_fast_path = !debugger_attached_ && !has_profiling &&
                              !has_tracing && !has_instruction_limit;
 
-  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+  if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n", stop_frame_depth, frame_count_, (int)last_suspension_reason_, (int)suspension_requested_);
     if (last_suspension_reason_ != 0) {
       for (size_t fi = 0; fi < frame_count_ && fi < 6; ++fi) {
@@ -2021,7 +2020,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     runDispatchFast(stop_frame_depth);
     // If suspension was requested (indicated by last_suspension_reason_),
     // return immediately so caller can handle it
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    if (g_sleep_trace) {
       // fprintf(stderr, "[SLEEPDBG] runDispatchLoop post-fast last=%d frames=%zu stop=%zu\n", (int)last_suspension_reason_, frame_count_, stop_frame_depth);
     }
     if (last_suspension_reason_ != 0) {
@@ -2064,7 +2063,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       const size_t entry_frame_count = frame_count_;
 
       if (ip >= function->instructions.size()) {
-        stack.push(nullptr);
+        stack.push_back(nullptr);
         executeInstruction(Instruction{OpCode::RETURN});
         continue;
       }
@@ -2218,7 +2217,7 @@ slow_path:
     size_t entry_frame_count = frame_count_;
 
     if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
+      stack.push_back(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       continue;
     }
@@ -2278,14 +2277,14 @@ slow_path:
             frame_arena_[entry_frame_count - 1].ip++;
           }
         }
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        if (g_sleep_trace) {
           fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d ctx=%p frames=%zu\n", (int)last_suspension_reason_, last_suspension_context_, frame_count_);
         }
         break;
       }
 
       if (suspension_requested_) {
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        if (g_sleep_trace) {
           // fprintf(stderr, "[SLEEPDBG] dispatch susp_reason=%d last_reason=%d frame_depth=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, (int)frame_count_);
         }
         // Call yield callback ONLY for explicit yields (time slice exhausted),
@@ -2519,7 +2518,7 @@ bool VM::handleScriptThrow(const Value &value) {
         target_depth = 0; // Reset to empty if corrupted
       }
       while (stack.size() > target_depth) {
-        stack.pop();
+        stack.pop_back();
       }
 
       // Jump to catch block (finally is compiled into the catch block if it
@@ -2656,8 +2655,8 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
   if (stack.empty()) {
     return nullptr;
   }
-  Value result = stack.top();
-  stack.pop();
+  Value result = stack.back();
+  stack.pop_back();
   return result;
 }
 
@@ -2692,7 +2691,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   // stale value from a previous opcode leaking into indirect doCall callers.
   int32_t stashed_return_ip_ = pending_call_return_ip_;
   pending_call_return_ip_ = -1;
-  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+  if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] doCall enter hf=%d fn=%d cl=%d suspend_req=%d\n", (int)callee_value.isHostFuncId(), (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId(), (int)suspension_requested_);
   }
 
@@ -2719,7 +2718,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
     // Check for suspension request after host function returns
     if (suspension_requested_) {
-      if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      if (g_sleep_trace) {
         // fprintf(stderr, "[SLEEPDBG] doCall host %s susp propagated\n", name.c_str());
       }
       // Propagate into last_suspension_* so the caller (scheduler) reads the
@@ -2766,8 +2765,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       {
         std::vector<Value> tmp;
         while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
+          tmp.push_back(stack.back());
+          stack.pop_back();
         }
         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
           cf.stack.push_back(*it);
@@ -2852,14 +2851,37 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       }
     }
     if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
-      auto closureRef = heap_.allocateClosure(
-          GCHeap::RuntimeClosure{.function_index = function_index,
-                                 .chunk_index = 0,
-                                 .chunk = resolve_chunk,
-                                 .chunk_ref = resolve_chunk_ref,
-                                 .module_globals = std::move(foid_globals),
-                                 .upvalues = {}});
-      closure_id = closureRef.id;
+      // Memoized temp closure: the identity of these synthesized closures
+      // is (function_index, parent module_globals pointer) - see
+      // foid_closure_memo_. First call allocates; every later call with the
+      // same parent context reuses it. GC keeps the RuntimeClosure alive
+      // like any other (the memo holds the id, and the closure table owns
+      // the entry).
+      const uint64_t memo_key = foidMemoKey(function_index, foid_globals.get());
+      uint32_t memo_cid = 0;
+      auto mit = foid_closure_memo_.find(memo_key);
+      if (mit != foid_closure_memo_.end()) {
+        memo_cid = mit->second;
+        if (heap_.closure(memo_cid)) {
+          closure_id = memo_cid;
+        } else {
+          // GC swept it (closure became unreachable through normal
+          // channels): fall through and re-allocate below.
+          foid_closure_memo_.erase(memo_key);
+          memo_cid = 0;
+        }
+      }
+      if (closure_id == 0) {
+        auto closureRef = heap_.allocateClosure(
+            GCHeap::RuntimeClosure{.function_index = function_index,
+                                   .chunk_index = 0,
+                                   .chunk = resolve_chunk,
+                                   .chunk_ref = resolve_chunk_ref,
+                                   .module_globals = foid_globals,
+                                   .upvalues = {}});
+        closure_id = closureRef.id;
+        foid_closure_memo_[memo_key] = closure_id;
+      }
     }
   } else if (callee_value.isClosureId()) {
     closure_id = callee_value.asClosureId();
@@ -3700,11 +3722,11 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
 
 std::vector<Value> VM::stackValuesForRoots() const {
   std::vector<Value> values;
-  std::stack<Value> copy = stack;
-  values.reserve(copy.size() + 64);
-  while (!copy.empty()) {
-    values.push_back(copy.top());
-    copy.pop();
+  values.reserve(stack.size() + 64);
+  // Same order as the old std::stack extraction (top to bottom) so
+  // diagnostic outputs and root ordering stay identical.
+  for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+    values.push_back(*it);
   }
   for (const auto &gmap : globals_stack_) {
     for (const auto &[_, v] : gmap) {
@@ -3810,6 +3832,13 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 void VM::maybeCollectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  // Building the root snapshot is expensive (full operand-stack copy plus
+  // globals, closure table and scheduler roots — measured at 41% of a
+  // property-heavy benchmark's runtime). The dispatch loop calls this
+  // every 8192 instructions, so probe the cheap gate first and only pay
+  // for the snapshot when a collection will actually run.
+  if (!heap_.shouldMaybeCollect())
+    return;
   std::vector<Value> scheduler_roots;
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
@@ -3904,8 +3933,8 @@ Value VM::popStack() {
     }
     COMPILER_THROW("Stack underflow");
   }
-  Value value = stack.top();
-  stack.pop();
+  Value value = stack.back();
+  stack.pop_back();
   return value;
 }
 
@@ -4014,8 +4043,8 @@ bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
   try {
     executeInstruction(instr);
     if (!stack.empty()) {
-      *out = stack.top();
-      stack.pop();
+      *out = stack.back();
+      stack.pop_back();
     } else {
       *out = Value::makeNull();
     }
@@ -4130,7 +4159,7 @@ void VM::pushStack(Value value) {
   if (stack.size() >= 1'000'000) {
     COMPILER_THROW("Expression stack overflow");
   }
-  stack.push(std::move(value));
+  stack.push_back(std::move(value));
 }
 
 uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
@@ -4287,9 +4316,9 @@ void VM::doReturn() {
 
         currentFrame().ip = caller.ip;
 
-        stack = std::stack<Value>();
+        stack.clear();
         for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-          stack.push(*it);
+          stack.push_back(*it);
         }
 
         co->caller_stack.pop_back();
@@ -4327,7 +4356,7 @@ void VM::emitVariableChanged(const std::string &var_name) {
   event_queue_->push(change_event);
 }
 
-void VM::tickScheduler() {
+void VM::tickScheduler(bool wait_for_sleepers) {
   auto *sched = scheduler_;
   if (!sched) return;
   if (event_queue_) {
@@ -4336,6 +4365,25 @@ void VM::tickScheduler() {
 
   sched->drainDeferredCallbacks(FiberPriority::NORMAL);
   sched->wakeSleepingGoroutines();
+
+  // bc.tick() semantics: a script explicitly advancing the scheduler
+  // expects sleeping goroutines to make progress across ticks (the
+  // scheduler_goroutine smoke test spawns a sleep(10) worker and
+  // asserts completion after 3 ticks). When nothing is runnable but a
+  // sleeper has a deadline, wait for the NEAREST deadline once and
+  // re-wake, so one tick advances past the sleep instead of returning
+  // with the goroutine still parked. The REPL's tickGoroutines keeps
+  // wait_for_sleepers=false - its select loop must not block.
+  if (wait_for_sleepers && !sched->hasRunnableFibers()) {
+    auto next_deadline = sched->nextSleepDeadline();
+    if (next_deadline) {
+      auto now = std::chrono::steady_clock::now();
+      if (*next_deadline > now) {
+        std::this_thread::sleep_until(*next_deadline);
+      }
+      sched->wakeSleepingGoroutines();
+    }
+  }
 
   // Execute at most one goroutine per tick so the REPL select loop can
   // process stdin between ticks. Draining ALL runnable goroutines froze the
@@ -4703,7 +4751,7 @@ Value VM::deepWrapModuleFunctions(
             }
           }
           try {
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper enter name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
             // Prevent stack overflow from deeply nested module wrapper executions
@@ -4731,7 +4779,7 @@ Value VM::deepWrapModuleFunctions(
               }
               return Value::makeNull();
             }
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
@@ -4892,7 +4940,7 @@ Value VM::deepWrapModuleFunctions(
           }
 
           try {
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper enter frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
             // Prevent stack overflow from deeply nested module wrapper executions
@@ -4917,7 +4965,7 @@ Value VM::deepWrapModuleFunctions(
               }
               return Value::makeNull();
             }
-            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            if (g_sleep_trace) {
               // fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
             }
           } catch (...) {
@@ -6224,7 +6272,7 @@ load_from_source:
   }
 
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   frame_count_ = 0;
   open_upvalues.clear();
@@ -6247,8 +6295,8 @@ load_from_source:
   try {
     runDispatchLoop(0);
     if (!stack.empty()) {
-      exec_result = stack.top();
-      stack.pop();
+      exec_result = stack.back();
+      stack.pop_back();
     }
   } catch (...) {
     // Restore caller's globals and execution state on error
@@ -6581,28 +6629,18 @@ current_script_dir_ = prev_script_dir;
       moduleLoader_.updateHashIndex(moduleName, hash);
     }
   }
-  
-// Serialize and append globals to .hvc file for fast warm loading.
-// Serialized strings become real heap strings and imported closures become
-// ClosureImportRefs re-bound against the exporting module's exports at
-// restore time, so no chunk-relative IDs cross the round-trip.
-  try {
-    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
-    std::filesystem::path hvcPath = resolved->canonicalPath;
-    hvcPath.replace_extension(".hvc");
-    writeGlobalsToHvc(hvcPath.string(), globalsData);
-    // Also write to canonicalKey path if different (e.g. out/ build directory)
-    if (canonicalKey != resolved->canonicalPath) {
-      std::filesystem::path hvcPath2 = canonicalKey;
-      hvcPath2.replace_extension(".hvc");
-      if (hvcPath2 != hvcPath) {
-        writeGlobalsToHvc(hvcPath2.string(), globalsData);
-      }
-    }
-  } catch (...) {
-    // Ignore serialization errors; warm loads fall back to running __main__
-  }
-  
+
+// The GLBS globals-append write used to live here. Removed: the warm
+// restore path is disabled (hasCachedGlobals pinned false above after
+// stale closure re-binding produced "non-callable value" failures), so
+// nothing ever read these sections. The write itself was pure cost AND
+// actively harmful on corrupt targets: chunkDataEnd's first-marker
+// arithmetic cannot parse a globals-only blob (no HVC chunk header), so
+// it fell back to "whole file is chunk data" and re-appended a fresh
+// [globals][GLBS] section on every cold load - scripts/tests/
+// cross_chunk_helper.hvc grew 109KB -> 440KB+ in stacked sections,
+// rewriting a tracked fixture on every test run.
+
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
   globals[path] = exports;
@@ -7318,7 +7356,7 @@ Value VM::loadScript(const std::string &path) {
   }
 
   while (!stack.empty())
-    stack.pop();
+    stack.pop_back();
   locals.clear();
   frame_count_ = 0;
   open_upvalues.clear();
@@ -7339,8 +7377,8 @@ Value VM::loadScript(const std::string &path) {
   try {
     runDispatchLoop(0);
     if (!stack.empty()) {
-      exec_result = stack.top();
-      stack.pop();
+      exec_result = stack.back();
+      stack.pop_back();
     }
   } catch (...) {
     stack = std::move(saved_stack);

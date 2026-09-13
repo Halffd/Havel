@@ -29,7 +29,7 @@ detect_cores() {
 
 # Cap automatic build parallel jobs to leave CPU headroom for other work.
 # Users can override with THREADS=N to use all cores or a higher cap.
-MAX_AUTODETECT_THREADS=4
+MAX_AUTODETECT_THREADS=2
 
 detect_libraries() {
   check_lib() {

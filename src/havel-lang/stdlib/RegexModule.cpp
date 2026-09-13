@@ -35,8 +35,12 @@ void registerRegexModule(const VMApi &api) {
     if (args.size() < 2)
       throw std::runtime_error("regex_search() requires pattern and text");
 
-    std::string text = getString(api, args[0]);
-    std::string pattern = getString(api, args[1]);
+    // Args are (pattern, text) like regex_match/regex_replace. This used
+    // to read text=args[0], pattern=args[1] — the reversed order was
+    // undocumented except by a smoke test written around it, and every
+    // natural (pattern, text) caller got inverted results.
+    std::string pattern = getString(api, args[0]);
+    std::string text = getString(api, args[1]);
 
     try {
       std::regex re(pattern);

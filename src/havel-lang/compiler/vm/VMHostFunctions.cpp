@@ -1637,7 +1637,7 @@ void VM::registerDefaultHostFunctions() {
   // Instead of calling std::exit() (which crashes during static destruction
   // while Qt widgets are alive), we set a flag on the VM for cooperative
   // shutdown. The EventListener detects this and stops cleanly.
-  registerHostFunction("exit", [this](const std::vector<Value> &args) {
+  auto requestExit = [this](const std::vector<Value> &args) {
     int exit_code = 0;
     if (!args.empty() && args[0].isInt()) {
       exit_code = static_cast<int>(args[0].asInt());
@@ -1645,7 +1645,11 @@ void VM::registerDefaultHostFunctions() {
     exit_requested_ = true;
     exit_code_ = exit_code;
     return Value::makeNull();
-  });
+  };
+  registerHostFunction("exit", requestExit);
+  // sys.exit and process.exit are bound to this same cooperative shutdown
+  // path (SysModule/ModularHostBridges build refs to "sys.exit").
+  registerHostFunction("sys.exit", requestExit);
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
   registerHostFunction("clock_ns", 0, [](const std::vector<Value> &) {

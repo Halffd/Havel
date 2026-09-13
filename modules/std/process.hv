@@ -135,7 +135,12 @@ fn pipe(cmd1, cmd2) {
 }
 
 // Exit the current process with the given exit code
+// Route through the cooperative sys.exit host fn, never libc exit() via
+// FFI. Raw exit() mid-goroutine runs static destructors while the
+// EventListener thread and parked hotkey fibers are alive; the process
+// deadlocks in thread joins (observed: hotkey script calling
+// process.exit from a goroutine hung until timeout). The VMHostFunctions
+// "exit" host fn sets a flag and lets the engine's loop exit cleanly.
 fn exit(code) {
-  _exit_fn = ffi.sym(_c, "exit")
-  ffi.call(_exit_fn, "void", ["int32"], code)
+  sys.exit(code)
 }

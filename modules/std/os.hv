@@ -77,8 +77,9 @@ fn uptime() {
 }
 
 fn exit(code) {
-    _exit_fn = ffi.sym(_c, "exit")
-    ffi.call(_exit_fn, "void", ["int32"], code)
+    // Cooperative exit via the sys.exit host fn. Raw libc exit() via FFI
+    // deadlocks when threads are alive (see process.hv exit for history).
+    sys.exit(code)
 }
 
 // ============================================================

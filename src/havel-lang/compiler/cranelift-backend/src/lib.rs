@@ -139,6 +139,12 @@ pub const OP_CALL_METHOD: u32 = 49;
 // instruction; CALL_METHOD needs both the method-name id and the arg
 // count). Never a jump target; always immediately follows its op.
 pub const OP_EXTENDED_ARG: u32 = 50;
+pub const OP_OBJECT_NEW: u32 = 51;
+pub const OP_OBJECT_NEW_UNSORTED: u32 = 52;
+pub const OP_ARRAY_NEW: u32 = 53;
+pub const OP_SET_NEW: u32 = 54;
+pub const OP_RANGE_NEW: u32 = 55;
+pub const OP_SET_SET: u32 = 56;
 
 #[derive(Debug)]
 pub struct LoweringError(pub String);
@@ -195,6 +201,13 @@ fn stack_effect(op: u32, operand: u32, next_operand: Option<u32>) -> Result<(i64
         OP_ARRAY_SET => (3, 0),
         OP_ARRAY_LEN | OP_ITER_NEW => (1, 1),
         OP_ARRAY_PUSH => (2, 1),
+        // Constructors: (vm) -> new value.
+        OP_OBJECT_NEW | OP_OBJECT_NEW_UNSORTED | OP_ARRAY_NEW | OP_SET_NEW => (0, 1),
+        // RANGE_NEW pops end then start, pushes the range (2, 1).
+        OP_RANGE_NEW => (2, 1),
+        // SET_SET pops key, value, set; pushes nothing (interpreter: the
+        // caller keeps managing the set on the stack).
+        OP_SET_SET => (3, 0),
         OP_RETURN => (1, 0),
         _ => return Err(format!("stack effect: unsupported opcode {op}")),
     })
@@ -510,6 +523,12 @@ mod fallback_shims {
             "havel_vm_string_lower" => Some(shim_string_null as *const u8),
             "havel_vm_string_trim" => Some(shim_string_null as *const u8),
             "havel_vm_string_promote" => Some(shim_string_null as *const u8),
+            "havel_vm_object_new" => Some(shim_string_null as *const u8),
+            "havel_vm_object_new_unsorted" => Some(shim_string_null as *const u8),
+            "havel_vm_array_new" => Some(shim_string_null as *const u8),
+            "havel_vm_set_new" => Some(shim_string_null as *const u8),
+            "havel_vm_range_new" => Some(shim_string_concat as *const u8),
+            "havel_vm_set_set" => Some(shim_object_set_echo as *const u8),
             "havel_vm_string_concat" => Some(shim_string_concat as *const u8),
             _ => None,
         }
@@ -800,6 +819,52 @@ impl CraneliftBackend {
                 .declare_function(sym, Linkage::Import, &s)
                 .map_err(|e| err(format!("declare {sym}: {e}")))?;
             bridge_ids.insert(sym, id);
+        }
+        // Constructors: (vm) -> new value, a single pointer param.
+        let mut ctor_sig = self.module.make_signature();
+        ctor_sig.params = vec![AbiParam::new(pointer_ty)];
+        ctor_sig.returns = vec![AbiParam::new(int64)];
+        for sym in [
+            "havel_vm_object_new",
+            "havel_vm_object_new_unsorted",
+            "havel_vm_array_new",
+            "havel_vm_set_new",
+        ] {
+            let s = ctor_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Range construction: (vm, start, end) -> range value (bridge_sig
+        // shape).
+        {
+            let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function("havel_vm_range_new", Linkage::Import, &s)
+                .map_err(|e| err(format!("declare havel_vm_range_new: {e}")))?;
+            bridge_ids.insert("havel_vm_range_new", id);
+        }
+        // Set membership write: havel_vm_set_set(vm, set, val, key) ->
+        // result (result unused; the interpreter pushes nothing back).
+        // NOTE the (set, val, key) argument order, unlike
+        // havel_vm_object_set_raw's (obj, key, val).
+        {
+            let mut set_set_sig = self.module.make_signature();
+            set_set_sig.params = vec![
+                AbiParam::new(pointer_ty),
+                AbiParam::new(int64),
+                AbiParam::new(int64),
+                AbiParam::new(int64),
+            ];
+            set_set_sig.returns = vec![AbiParam::new(int64)];
+            let id = self
+                .module
+                .declare_function("havel_vm_set_set", Linkage::Import, &set_set_sig)
+                .map_err(|e| err(format!("declare havel_vm_set_set: {e}")))?;
+            bridge_ids.insert("havel_vm_set_set", id);
         }
         // Pure unary bridges: (v) -> result, no vm. NOT and BIT_NOT are pure
         // word semantics per RuntimeABI.hpp.
@@ -1739,6 +1804,51 @@ impl CraneliftBackend {
                         builder.ins().call(array_push_ref, &[vm, arr, val]);
                         vstack.push(arr);
                     }
+                    OP_OBJECT_NEW | OP_OBJECT_NEW_UNSORTED | OP_ARRAY_NEW | OP_SET_NEW => {
+                        // Constructors: (vm) -> new value; no operand.
+                        let name = match op {
+                            OP_OBJECT_NEW => "havel_vm_object_new",
+                            OP_OBJECT_NEW_UNSORTED => "havel_vm_object_new_unsorted",
+                            OP_ARRAY_NEW => "havel_vm_array_new",
+                            _ => "havel_vm_set_new",
+                        };
+                        let func_ref = *bridge_refs.get(name).expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_RANGE_NEW => {
+                        // Stack: [..., start, end]; pop end first, then
+                        // start (interpreter order).
+                        let end = vstack
+                            .pop()
+                            .ok_or_else(|| err("RANGE_NEW with empty stack".into()))?;
+                        let start = vstack
+                            .pop()
+                            .ok_or_else(|| err("RANGE_NEW with shallow stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_range_new")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, start, end]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_SET_SET => {
+                        // Stack: [..., set, value, key]; pop key, value,
+                        // set; push NOTHING back. Bridge argument order is
+                        // (vm, set, value, key).
+                        let key = vstack
+                            .pop()
+                            .ok_or_else(|| err("SET_SET with empty stack".into()))?;
+                        let val = vstack
+                            .pop()
+                            .ok_or_else(|| err("SET_SET with shallow stack".into()))?;
+                        let set = vstack
+                            .pop()
+                            .ok_or_else(|| err("SET_SET with shallow stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_set_set")
+                            .expect("bridge declared above");
+                        builder.ins().call(func_ref, &[vm, set, val, key]);
+                    }
                     OP_JUMP_IF_NULL => {
                         // Inline null check: null is a single canonical
                         // NaN-boxed word, so a raw equality compare matches
@@ -2489,6 +2599,64 @@ mod tests {
             pack_int48(77),
             "OBJECT_SET must push the object back, popping key/value/obj in order: {out:#x}"
         );
+    }
+
+    #[test]
+    fn constructors_lower_via_bridge() {
+        // OBJECT_NEW/OBJECT_NEW_UNSORTED/ARRAY_NEW: (vm) -> value, no
+        // operand, push 1. Standalone shims yield null; the test proves
+        // the lowering emits valid code and keeps the stream shape.
+        let mut backend = CraneliftBackend::new().unwrap();
+        //   0: OBJECT_NEW
+        //   1: ARRAY_NEW
+        //   2: RETURN   (returns the array - both pushes tracked)
+        let code = [
+            OP_OBJECT_NEW,
+            0, //
+            OP_ARRAY_NEW,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("ctors", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            out, NULL_TAGGED,
+            "null-vm constructor must be null: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn range_new_pops_end_then_start() {
+        // RANGE_NEW pops end first, then start (interpreter order) and
+        // passes them to the bridge in (vm, start, end) order. The
+        // standalone shim returns null, so this only proves stream
+        // well-formedness; the pop ORDER is cross-checked by the e2e
+        // probe scripts (for i in 0..n loops).
+        let mut backend = CraneliftBackend::new().unwrap();
+        //   0: LOAD_CONST 0      (start)
+        //   1: LOAD_CONST 1      (end)
+        //   2: RANGE_NEW
+        //   3: RETURN
+        let code = [
+            OP_LOAD_CONST,
+            0, //
+            OP_LOAD_CONST,
+            1, //
+            OP_RANGE_NEW,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants = [pack_int48(0), pack_int48(10)];
+        let f = backend
+            .compile_function("rangenew", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(out, NULL_TAGGED, "null-vm range must be null: {out:#x}");
     }
 
     #[test]

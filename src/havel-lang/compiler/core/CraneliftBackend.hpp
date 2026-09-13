@@ -23,6 +23,8 @@
 //   ITER_NEW / ITER_NEXT
 //   ARRAY_GET / ARRAY_SET / ARRAY_LEN / ARRAY_PUSH (GET via the
 //   collection inline-cache bridge)
+//   OBJECT_NEW / OBJECT_NEW_UNSORTED / ARRAY_NEW / SET_NEW / RANGE_NEW
+//   (constructors)
 //   JUMP_IF_NULL (inline null-word compare)
 // Everything else is refused by can_lower() so a function is never
 // partially compiled: a backend that declines leaves the function to the
@@ -109,6 +111,18 @@ public:
         reinterpret_cast<const void*>(&havel_vm_string_trim));
     add("havel_vm_string_promote",
         reinterpret_cast<const void*>(&havel_vm_string_promote));
+    add("havel_vm_object_new",
+        reinterpret_cast<const void*>(&havel_vm_object_new));
+    add("havel_vm_object_new_unsorted",
+        reinterpret_cast<const void*>(&havel_vm_object_new_unsorted));
+    add("havel_vm_array_new",
+        reinterpret_cast<const void*>(&havel_vm_array_new));
+    add("havel_vm_set_new",
+        reinterpret_cast<const void*>(&havel_vm_set_new));
+    add("havel_vm_range_new",
+        reinterpret_cast<const void*>(&havel_vm_range_new));
+    add("havel_vm_set_set",
+        reinterpret_cast<const void*>(&havel_vm_set_set));
     add("havel_vm_not", reinterpret_cast<const void*>(&havel_vm_not));
     add("havel_vm_bit_and",
         reinterpret_cast<const void*>(&havel_vm_bit_and));
@@ -183,6 +197,12 @@ public:
         case OpCode::ARRAY_SET:
         case OpCode::ARRAY_LEN:
         case OpCode::ARRAY_PUSH:
+        case OpCode::OBJECT_NEW:
+        case OpCode::OBJECT_NEW_UNSORTED:
+        case OpCode::ARRAY_NEW:
+        case OpCode::SET_NEW:
+        case OpCode::RANGE_NEW:
+        case OpCode::SET_SET:
         case OpCode::ADD:
         case OpCode::SUB:
         case OpCode::MUL:
@@ -357,6 +377,12 @@ private:
         case OpCode::ARRAY_PUSH: op = 47; break;
         case OpCode::JUMP_IF_NULL: op = 48; break;
         case OpCode::CALL_METHOD: op = 49; break;
+        case OpCode::OBJECT_NEW: op = 51; break;
+        case OpCode::OBJECT_NEW_UNSORTED: op = 52; break;
+        case OpCode::ARRAY_NEW: op = 53; break;
+        case OpCode::SET_NEW: op = 54; break;
+        case OpCode::RANGE_NEW: op = 55; break;
+        case OpCode::SET_SET: op = 56; break;
         default: break;  // can_lower() already refused anything else
       }
       if (!inst.operands.empty()) {

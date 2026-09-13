@@ -7,7 +7,7 @@ fn sub(a: num, b: num) -> num {
     _n(a) - _n(b)
 }
 
-let PI: num = 3.14159
+PI = 3.14159
 
 // Private (not exported)
 fn _n(x: num) -> num {

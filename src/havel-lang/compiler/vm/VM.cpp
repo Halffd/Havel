@@ -6474,6 +6474,29 @@ load_from_source:
     }
   }
 
+  // Make the module namespace callable when it exports a function named
+  // after the module itself (e.g. module print exporting fn print).
+  // `use "print"` binds the namespace over the builtin print host fn;
+  // without a __call on the namespace object, plain print("x") then dies
+  // with "Attempted to call non-callable value of type object" (see
+  // scripts/tests/main/test_print.hv). CALL on objects already honors
+  // __call / op_call (VMControlFlow.cpp), so wiring the same-named export
+  // as __call restores both spellings: print.fmt(...) and print(...).
+  {
+    std::string selfName = path;
+    size_t slashPos = selfName.find_last_of('/');
+    if (slashPos != std::string::npos)
+      selfName = selfName.substr(slashPos + 1);
+    auto *selfExport = obj->get(selfName);
+    if (selfExport && (selfExport->isHostFuncId() ||
+                       selfExport->isFunctionObjId() ||
+                       selfExport->isClosureId())) {
+      if (!obj->get("__call")) {
+        (*obj)["__call"] = *selfExport;
+      }
+    }
+  }
+
   // Restore caller's globals and execution state
   // But first, capture any lazy module objects that were initialized
   // during the module's execution (e.g., fs, sys) so we can propagate

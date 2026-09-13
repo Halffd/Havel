@@ -124,9 +124,25 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
 				}
 			}
         if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
-          // Call __call with self as first arg
+          // Module wrapper functions (registered by deepWrapModuleFunctions
+          // under $module_fn_/$module_closure_ names) take no self: Havel
+          // modules have no implicit receiver (AGENTS: only classes with @
+          // have receiver semantics). Prepending the namespace object would
+          // leak it into variadic exports like print's fn print(...args).
+          bool isModuleWrapper = false;
+          if (callFn.isHostFuncId() &&
+              callFn.asHostFuncId() < host_function_names_.size()) {
+            const std::string &wname =
+                host_function_names_[callFn.asHostFuncId()];
+            isModuleWrapper =
+                wname.rfind("$module_fn_", 0) == 0 ||
+                wname.rfind("$module_closure_", 0) == 0;
+          }
           std::vector<Value> callArgs;
-          callArgs.push_back(callee_value);
+          if (!isModuleWrapper) {
+            // Call __call with self as first arg
+            callArgs.push_back(callee_value);
+          }
           callArgs.insert(callArgs.end(), args.begin(), args.end());
           doCall(callFn, std::move(callArgs));
           break;

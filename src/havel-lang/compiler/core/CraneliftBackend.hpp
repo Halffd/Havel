@@ -10,7 +10,11 @@
 // Supported lowering subset (see the Rust lib for the full contract):
 //   LOAD_CONST / LOAD_VAR / STORE_VAR
 //   ADD / SUB / MUL / EQ / NEQ / LT / LTE / GT / GTE
-//   JUMP / JUMP_IF_FALSE / CALL / RETURN
+//   JUMP / JUMP_IF_FALSE / JUMP_IF_TRUE / CALL / RETURN
+//   POP / DUP / SWAP / PUSH_NULL / IS_NULL / NOT / LENGTH
+//   STRING_LEN / STRING_UPPER / STRING_LOWER / STRING_TRIM / STRING_CONCAT
+//   BIT_AND / BIT_OR / BIT_XOR / BIT_NOT / BIT_LSH / BIT_RSH
+//   LOAD_GLOBAL / STORE_GLOBAL
 // Everything else is refused by can_lower() so a function is never
 // partially compiled: a backend that declines leaves the function to the
 // interpreter (the VM's tiering only marks jit_compiled on success).
@@ -24,7 +28,10 @@
 #include "BytecodeIR.hpp"
 #include "../runtime/RuntimeABI.hpp"
 
+#include "../../../utils/Logger.hpp"
+
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -75,6 +82,36 @@ public:
         reinterpret_cast<const void*>(&havel_vm_global_get));
     add("havel_vm_global_set",
         reinterpret_cast<const void*>(&havel_vm_global_set));
+    // VM-aware equality: EQ/NEQ may compare string content via the heap.
+    add("havel_vm_eq_vm",
+        reinterpret_cast<const void*>(&havel_vm_eq_vm));
+    add("havel_vm_neq_vm",
+        reinterpret_cast<const void*>(&havel_vm_neq_vm));
+    add("havel_vm_string_concat",
+        reinterpret_cast<const void*>(&havel_vm_string_concat));
+    add("havel_vm_length", reinterpret_cast<const void*>(&havel_vm_length));
+    add("havel_vm_string_len",
+        reinterpret_cast<const void*>(&havel_vm_string_len));
+    add("havel_vm_string_upper",
+        reinterpret_cast<const void*>(&havel_vm_string_upper));
+    add("havel_vm_string_lower",
+        reinterpret_cast<const void*>(&havel_vm_string_lower));
+    add("havel_vm_string_trim",
+        reinterpret_cast<const void*>(&havel_vm_string_trim));
+    add("havel_vm_not", reinterpret_cast<const void*>(&havel_vm_not));
+    add("havel_vm_bit_and",
+        reinterpret_cast<const void*>(&havel_vm_bit_and));
+    add("havel_vm_bit_or", reinterpret_cast<const void*>(&havel_vm_bit_or));
+    add("havel_vm_bit_xor",
+        reinterpret_cast<const void*>(&havel_vm_bit_xor));
+    add("havel_vm_bit_not",
+        reinterpret_cast<const void*>(&havel_vm_bit_not));
+    add("havel_vm_bit_lsh",
+        reinterpret_cast<const void*>(&havel_vm_bit_lsh));
+    add("havel_vm_bit_rsh",
+        reinterpret_cast<const void*>(&havel_vm_bit_rsh));
+    add("havel_vm_backedge",
+        reinterpret_cast<const void*>(&havel_vm_backedge));
     handle_ = hclb_create_with_symbols(
         names.data(), addrs.data(), static_cast<uint32_t>(names.size()));
   }
@@ -99,6 +136,7 @@ public:
         case OpCode::STORE_VAR:
         case OpCode::POP:
         case OpCode::DUP:
+        case OpCode::SWAP:
         case OpCode::PUSH_NULL:
         case OpCode::LOAD_GLOBAL:
         case OpCode::STORE_GLOBAL:
@@ -112,9 +150,24 @@ public:
         case OpCode::GT:
         case OpCode::GTE:
         case OpCode::RETURN:
+        case OpCode::NOT:
+        case OpCode::IS_NULL:
+        case OpCode::LENGTH:
+        case OpCode::STRING_LEN:
+        case OpCode::STRING_UPPER:
+        case OpCode::STRING_LOWER:
+        case OpCode::STRING_TRIM:
+        case OpCode::STRING_CONCAT:
+        case OpCode::BIT_AND:
+        case OpCode::BIT_OR:
+        case OpCode::BIT_XOR:
+        case OpCode::BIT_NOT:
+        case OpCode::BIT_LSH:
+        case OpCode::BIT_RSH:
           break;
         case OpCode::JUMP:
-        case OpCode::JUMP_IF_FALSE: {
+        case OpCode::JUMP_IF_FALSE:
+        case OpCode::JUMP_IF_TRUE: {
           if (inst.operands.empty() || !inst.operands[0].isInt()) return false;
           const int64_t t = inst.operands[0].asInt();
           if (t < 0 || static_cast<size_t>(t) >= n) return false;
@@ -124,8 +177,17 @@ public:
           // CALL's operand is the argument count; the runtime bridge
           // (havel_vm_call) resolves the callee.
           break;
-        default:
+        default: {
+          // Diagnostic: which opcode kept a function out of the fast
+          // tier. Gated by HAVEL_CRANELIFT_TRACE; one line per refusal.
+          static const bool trace_refusals =
+              std::getenv("HAVEL_CRANELIFT_TRACE") != nullptr;
+          if (trace_refusals) {
+            ::havel::debug("[cranelift] can_lower refused {} (opcode {})",
+                           func.name, opcodeName(inst.opcode));
+          }
           return false;
+        }
       }
     }
     return n > 0;
@@ -199,6 +261,22 @@ private:
         case OpCode::GT: op = 13; break;
         case OpCode::GTE: op = 14; break;
         case OpCode::CALL: op = 15; break;
+        case OpCode::NOT: op = 21; break;
+        case OpCode::IS_NULL: op = 22; break;
+        case OpCode::LENGTH: op = 23; break;
+        case OpCode::STRING_LEN: op = 24; break;
+        case OpCode::STRING_UPPER: op = 25; break;
+        case OpCode::STRING_LOWER: op = 26; break;
+        case OpCode::STRING_TRIM: op = 27; break;
+        case OpCode::STRING_CONCAT: op = 28; break;
+        case OpCode::BIT_AND: op = 29; break;
+        case OpCode::BIT_OR: op = 30; break;
+        case OpCode::BIT_XOR: op = 31; break;
+        case OpCode::BIT_NOT: op = 32; break;
+        case OpCode::BIT_LSH: op = 33; break;
+        case OpCode::BIT_RSH: op = 34; break;
+        case OpCode::SWAP: op = 35; break;
+        case OpCode::JUMP_IF_TRUE: op = 36; break;
         default: break;  // can_lower() already refused anything else
       }
       if (!inst.operands.empty()) {

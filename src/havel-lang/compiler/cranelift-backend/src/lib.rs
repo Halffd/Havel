@@ -102,6 +102,23 @@ pub const OP_NEQ: u32 = 11;
 pub const OP_LTE: u32 = 12;
 pub const OP_GT: u32 = 13;
 pub const OP_GTE: u32 = 14;
+// Extension set: bridge-lowered ops (semantics stay in the runtime).
+pub const OP_NOT: u32 = 21;
+pub const OP_IS_NULL: u32 = 22;
+pub const OP_LENGTH: u32 = 23;
+pub const OP_STRING_LEN: u32 = 24;
+pub const OP_STRING_UPPER: u32 = 25;
+pub const OP_STRING_LOWER: u32 = 26;
+pub const OP_STRING_TRIM: u32 = 27;
+pub const OP_STRING_CONCAT: u32 = 28;
+pub const OP_BIT_AND: u32 = 29;
+pub const OP_BIT_OR: u32 = 30;
+pub const OP_BIT_XOR: u32 = 31;
+pub const OP_BIT_NOT: u32 = 32;
+pub const OP_BIT_LSH: u32 = 33;
+pub const OP_BIT_RSH: u32 = 34;
+pub const OP_SWAP: u32 = 35;
+pub const OP_JUMP_IF_TRUE: u32 = 36;
 
 #[derive(Debug)]
 pub struct LoweringError(pub String);
@@ -244,6 +261,86 @@ mod fallback_shims {
         pack_int48(900123)
     }
 
+    unsafe extern "C" fn shim_not(v: u64) -> u64 {
+        // Mirrors the C bridge: !valueIsTruthy(v) for the scalar shapes.
+        pack_bool(!match (v & TAG_MASK) >> TAG_SHIFT {
+            TAG_NULL => false,
+            TAG_BOOL => (v & PAYLOAD_MASK) != 0,
+            TAG_INT48 => unpack_int48(v) != 0,
+            _ => {
+                if v & TAG_MASK == 0 && (v as f64) == 0.0 {
+                    false
+                } else {
+                    true
+                }
+            }
+        })
+    }
+
+    unsafe extern "C" fn shim_bit_and(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) & unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_or(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) | unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_xor(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) ^ unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_not(v: u64) -> u64 {
+        if is_int48(v) {
+            pack_int48(!unpack_int48(v))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_lsh(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) << unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_rsh(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) >> unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_backedge(_vm: *mut c_void, _ip: u32) {}
+
+    // Null-vm unary bridges mirror the C behavior for a null vm: LENGTH and
+    // STRING_LEN yield int 0, the string transforms yield null.
+    unsafe extern "C" fn shim_length_zero(_vm: *mut c_void, _v: u64) -> u64 {
+        pack_int48(0)
+    }
+
+    unsafe extern "C" fn shim_string_null(_vm: *mut c_void, _v: u64) -> u64 {
+        NULL_TAGGED
+    }
+
+    unsafe extern "C" fn shim_string_concat(_vm: *mut c_void, _l: u64, _r: u64) -> u64 {
+        NULL_TAGGED
+    }
+
     pub fn fallback_symbol(name: &str) -> Option<*const u8> {
         match name {
             "havel_vm_add" => Some(shim_add as *const u8),
@@ -257,6 +354,25 @@ mod fallback_shims {
             "havel_vm_gte" => Some(shim_gte as *const u8),
             "havel_vm_is_truthy" => Some(shim_is_truthy as *const u8),
             "havel_vm_call" => Some(shim_call as *const u8),
+            // VM-aware equality falls back to the pure int shims: the
+            // standalone harness has no heap, so int operands are all it
+            // can answer (mirrors havel_vm_eq_vm's non-string path).
+            "havel_vm_eq_vm" => Some(shim_eq as *const u8),
+            "havel_vm_neq_vm" => Some(shim_neq as *const u8),
+            "havel_vm_not" => Some(shim_not as *const u8),
+            "havel_vm_bit_and" => Some(shim_bit_and as *const u8),
+            "havel_vm_bit_or" => Some(shim_bit_or as *const u8),
+            "havel_vm_bit_xor" => Some(shim_bit_xor as *const u8),
+            "havel_vm_bit_not" => Some(shim_bit_not as *const u8),
+            "havel_vm_bit_lsh" => Some(shim_bit_lsh as *const u8),
+            "havel_vm_bit_rsh" => Some(shim_bit_rsh as *const u8),
+            "havel_vm_backedge" => Some(shim_backedge as *const u8),
+            "havel_vm_length" => Some(shim_length_zero as *const u8),
+            "havel_vm_string_len" => Some(shim_length_zero as *const u8),
+            "havel_vm_string_upper" => Some(shim_string_null as *const u8),
+            "havel_vm_string_lower" => Some(shim_string_null as *const u8),
+            "havel_vm_string_trim" => Some(shim_string_null as *const u8),
+            "havel_vm_string_concat" => Some(shim_string_concat as *const u8),
             _ => None,
         }
     }
@@ -334,7 +450,7 @@ impl CraneliftBackend {
         leader[0] = true;
         for i in 0..n {
             match code[2 * i] {
-                OP_JUMP | OP_JUMP_IF_FALSE => {
+                OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE => {
                     let t = code[2 * i + 1] as usize;
                     if t >= n {
                         return Err(err(format!("jump target {t} out of range")));
@@ -408,6 +524,85 @@ impl CraneliftBackend {
                 .map_err(|e| err(format!("declare {sym}: {e}")))?;
             bridge_ids.insert(sym, id);
         }
+        // VM-aware equality bridges: (vm, l, r) -> result. EQ/NEQ may compare
+        // string CONTENT (heap StringId vs chunk-local StringValId) via the
+        // heap, so the pure word bridges are not enough - mirror the ORC
+        // lowering, which routes EQ/NEQ slow paths through these.
+        for sym in ["havel_vm_eq_vm", "havel_vm_neq_vm"] {
+            let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // String concat: (vm, l, r) -> result (bridge_sig shape).
+        {
+            let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function("havel_vm_string_concat", Linkage::Import, &s)
+                .map_err(|e| err(format!("declare havel_vm_string_concat: {e}")))?;
+            bridge_ids.insert("havel_vm_string_concat", id);
+        }
+        // Unary vm bridges: (vm, v) -> result. LENGTH plus the string
+        // intrinsics all take the value word and hand semantics to the
+        // runtime.
+        let mut unary_vm_sig = self.module.make_signature();
+        unary_vm_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int64)];
+        unary_vm_sig.returns = vec![AbiParam::new(int64)];
+        for sym in [
+            "havel_vm_length",
+            "havel_vm_string_len",
+            "havel_vm_string_upper",
+            "havel_vm_string_lower",
+            "havel_vm_string_trim",
+        ] {
+            let s = unary_vm_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Pure unary bridges: (v) -> result, no vm. NOT and BIT_NOT are pure
+        // word semantics per RuntimeABI.hpp.
+        let mut pure_unary_sig = self.module.make_signature();
+        pure_unary_sig.params = vec![AbiParam::new(int64)];
+        pure_unary_sig.returns = vec![AbiParam::new(int64)];
+        for sym in ["havel_vm_not", "havel_vm_bit_not"] {
+            let s = pure_unary_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Pure binary bitwise bridges: (l, r) -> result (cmp_sig shape).
+        for sym in [
+            "havel_vm_bit_and",
+            "havel_vm_bit_or",
+            "havel_vm_bit_xor",
+            "havel_vm_bit_lsh",
+            "havel_vm_bit_rsh",
+        ] {
+            let s = cmp_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Backedge hook: (vm, ip) -> (). Native loops must surface to the
+        // VM (loop hotness, tier-up decisions, coroutine yield requests)
+        // exactly like the interpreter's taken backedges.
+        let mut backedge_sig = self.module.make_signature();
+        backedge_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int32)];
+        backedge_sig.returns = vec![];
+        let backedge_id = self
+            .module
+            .declare_function("havel_vm_backedge", Linkage::Import, &backedge_sig)
+            .map_err(|e| err(format!("declare havel_vm_backedge: {e}")))?;
         // havel_vm_is_truthy is (value) -> i32: its own signature
         // (RuntimeABI.hpp; the C side returns int).
         let mut truthy_sig = self.module.make_signature();
@@ -505,6 +700,9 @@ impl CraneliftBackend {
             let global_set_ref = self
                 .module
                 .declare_func_in_func(global_set_id, &mut builder.func);
+            let backedge_ref = self
+                .module
+                .declare_func_in_func(backedge_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first
@@ -599,17 +797,23 @@ impl CraneliftBackend {
                     OP_SUB => "havel_vm_sub",
                     OP_MUL => "havel_vm_mul",
                     OP_LT => "havel_vm_lt",
-                    OP_EQ => "havel_vm_eq",
-                    OP_NEQ => "havel_vm_neq",
+                    // EQ/NEQ may compare string CONTENT across
+                    // representations (heap StringId vs chunk-local
+                    // StringValId) via the heap, so the pure word bridges
+                    // are not enough: route through the vm-aware bridges,
+                    // mirroring the ORC lowering's EQ/NEQ slow path.
+                    OP_EQ => "havel_vm_eq_vm",
+                    OP_NEQ => "havel_vm_neq_vm",
                     OP_LTE => "havel_vm_lte",
                     OP_GT => "havel_vm_gt",
                     _ => "havel_vm_gte",
                 };
-                // Arithmetic bridges take (vm, l, r); comparison bridges
-                // are pure word semantics and take (l, r) per RuntimeABI.
+                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
+                // comparisons are pure word semantics and take (l, r) per
+                // RuntimeABI.
                 let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let is_comparison = matches!(op, OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE);
-                let bridged = if is_comparison {
+                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
+                let bridged = if is_pure_comparison {
                     let call = b.ins().call(func_ref, &[l, r]);
                     b.inst_results(call)[0]
                 } else {
@@ -765,10 +969,50 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
+                            // A taken backward edge is an interpreter
+                            // backedge (recordBackedgePublic): surface it to
+                            // the VM so loop hotness, tier-up and coroutine
+                            // yield requests keep working in native loops.
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
                             builder.ins().brif(truthy, else_blk, &[], then_blk, &[]);
                         } else {
                             // No fall-through instruction: both arms exit
                             // through the target.
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
+                            builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
+                        }
+                        terminated = true;
+                    }
+                    OP_JUMP_IF_TRUE => {
+                        // Mirror of JUMP_IF_FALSE: branch to the target when
+                        // the condition is truthy, else fall through.
+                        let target = operand as usize;
+                        let cond_word = vstack
+                            .pop()
+                            .ok_or_else(|| err("JUMP_IF_TRUE with empty stack".into()))?;
+                        let truthy = lower_truthy(&mut builder, cond_word);
+                        let then_blk = block_of[target]
+                            .ok_or_else(|| err("jump target has no block".into()))?;
+                        let else_idx = cur + 1;
+                        if else_idx < n && leader[else_idx] {
+                            let else_blk = block_of[else_idx]
+                                .ok_or_else(|| err("fall-through has no block".into()))?;
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
+                            builder.ins().brif(truthy, then_blk, &[], else_blk, &[]);
+                        } else {
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
                             builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
                         }
                         terminated = true;
@@ -777,6 +1021,12 @@ impl CraneliftBackend {
                         let target = operand as usize;
                         let blk = block_of[target]
                             .ok_or_else(|| err("jump target has no block".into()))?;
+                        // Backward unconditional jump: interpreter
+                        // recordBackedgePublic on every iteration.
+                        if target <= cur {
+                            let ip_w = builder.ins().iconst(int32, cur as i64);
+                            builder.ins().call(backedge_ref, &[vm, ip_w]);
+                        }
                         builder.ins().jump(blk, &[]);
                         terminated = true;
                     }
@@ -807,9 +1057,108 @@ impl CraneliftBackend {
                             .ok_or_else(|| err("DUP with empty stack".into()))?;
                         vstack.push(v);
                     }
+                    OP_SWAP => {
+                        // Top two stack values exchange places.
+                        if vstack.len() < 2 {
+                            return Err(err("SWAP with shallow stack".into()));
+                        }
+                        let len = vstack.len();
+                        vstack.swap(len - 1, len - 2);
+                    }
                     OP_PUSH_NULL => {
                         let null_w = builder.ins().iconst(int64, NULL_TAGGED as i64);
                         vstack.push(null_w);
+                    }
+                    OP_IS_NULL => {
+                        // Inline tag check: null is the NULL tag word.
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("IS_NULL with empty stack".into()))?;
+                        let t = builder.ins().band(v, tag_mask);
+                        let is_null = builder.ins().icmp(IntCC::Equal, t, tag_null_bits);
+                        let on = {
+                            let bit = builder.ins().uextend(int64, is_null);
+                            builder.ins().bor(bit, bool_tagged)
+                        };
+                        vstack.push(on);
+                    }
+                    OP_NOT => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("NOT with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_not")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_LENGTH => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("LENGTH with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_length")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STRING_LEN | OP_STRING_UPPER | OP_STRING_LOWER | OP_STRING_TRIM => {
+                        // Unary string intrinsics: (vm, v) -> Value.
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("string intrinsic with empty stack".into()))?;
+                        let name = match op {
+                            OP_STRING_LEN => "havel_vm_string_len",
+                            OP_STRING_UPPER => "havel_vm_string_upper",
+                            OP_STRING_LOWER => "havel_vm_string_lower",
+                            _ => "havel_vm_string_trim",
+                        };
+                        let func_ref = *bridge_refs.get(name).expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STRING_CONCAT => {
+                        // (vm, l, r) -> concatenated string Value.
+                        let r = vstack
+                            .pop()
+                            .ok_or_else(|| err("STRING_CONCAT with empty stack".into()))?;
+                        let l = vstack
+                            .pop()
+                            .ok_or_else(|| err("STRING_CONCAT with shallow stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_string_concat")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, l, r]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_LSH | OP_BIT_RSH => {
+                        // Pure word bitwise bridges: (l, r) -> Value.
+                        let r = vstack
+                            .pop()
+                            .ok_or_else(|| err("bitwise op with empty stack".into()))?;
+                        let l = vstack
+                            .pop()
+                            .ok_or_else(|| err("bitwise op with shallow stack".into()))?;
+                        let name = match op {
+                            OP_BIT_AND => "havel_vm_bit_and",
+                            OP_BIT_OR => "havel_vm_bit_or",
+                            OP_BIT_XOR => "havel_vm_bit_xor",
+                            OP_BIT_LSH => "havel_vm_bit_lsh",
+                            _ => "havel_vm_bit_rsh",
+                        };
+                        let func_ref = *bridge_refs.get(name).expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[l, r]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_BIT_NOT => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("BIT_NOT with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_bit_not")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[v]);
+                        vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_RETURN => {
                         let v = vstack
@@ -1324,6 +1673,196 @@ mod tests {
         assert_eq!(unpack_int48(out4), 222, "false must be falsy");
         let out5 = unsafe { f(std::ptr::null_mut(), [pack_bool(true)].as_ptr(), 1) };
         assert_eq!(unpack_int48(out5), 111, "true must be truthy");
+    }
+
+    #[test]
+    fn is_null_lowers_and_runs() {
+        // fn (a) = a == null via IS_NULL
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [OP_LOAD_VAR, 0, OP_IS_NULL, 0, OP_RETURN, 0];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("isnull", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [NULL_TAGGED].as_ptr(), 1) };
+        assert_eq!(out, pack_bool(true), "null must be null: {out:#x}");
+        let out2 = unsafe { f(std::ptr::null_mut(), [pack_int48(7)].as_ptr(), 1) };
+        assert_eq!(out2, pack_bool(false), "int must not be null");
+    }
+
+    #[test]
+    fn swap_lowers_and_runs() {
+        // fn (a, b) = (a + b) after SWAP twice -> identical result; use one
+        // SWAP to reverse operand order: (b - a) == (a,b=1,5) -> 4.
+        //   0: LOAD_VAR a
+        //   1: LOAD_VAR b
+        //   2: SWAP          -> [b, a]
+        //   3: SUB           -> b - a
+        //   4: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [
+            OP_LOAD_VAR,
+            0, // a
+            OP_LOAD_VAR,
+            1, // b
+            OP_SWAP,
+            0,
+            OP_SUB,
+            0,
+            OP_RETURN,
+            0,
+        ];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("swapsub", &code, &constants, 2)
+            .expect("lowering");
+        let out = unsafe {
+            f(
+                std::ptr::null_mut(),
+                [pack_int48(1), pack_int48(5)].as_ptr(),
+                2,
+            )
+        };
+        assert_eq!(unpack_int48(out), 4, "SWAP must reverse operands: {out:#x}");
+    }
+
+    #[test]
+    fn not_and_bitnot_lowers_and_runs() {
+        let mut backend = CraneliftBackend::new().unwrap();
+        // NOT with a null vm: the C bridge valueIsTruthy(null) = false, so
+        // !false = true.
+        let code = [OP_PUSH_NULL, 0, OP_NOT, 0, OP_RETURN, 0];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("notnull", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(out, pack_bool(true), "not(null) must be true: {out:#x}");
+    }
+
+    #[test]
+    fn bitwise_ops_lowers_and_runs() {
+        let mut backend = CraneliftBackend::new().unwrap();
+        // fn (a, b) = (a & b) | (a ^ b): 12&10=8, 12^10=6, 8|6=14
+        let code = [
+            OP_LOAD_VAR,
+            0, //
+            OP_LOAD_VAR,
+            1, //
+            OP_BIT_AND,
+            0, //
+            OP_LOAD_VAR,
+            0, //
+            OP_LOAD_VAR,
+            1, //
+            OP_BIT_XOR,
+            0, //
+            OP_BIT_OR,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("bitmix", &code, &constants, 2)
+            .expect("lowering");
+        let out = unsafe {
+            f(
+                std::ptr::null_mut(),
+                [pack_int48(12), pack_int48(10)].as_ptr(),
+                2,
+            )
+        };
+        assert_eq!(unpack_int48(out), 14, "12&10 | 12^10 must be 14: {out:#x}");
+    }
+
+    #[test]
+    fn jump_if_true_lowers_and_runs() {
+        // fn (a) { if (a) { return 111 } return 222 }
+        //   0: LOAD_VAR a
+        //   1: JUMP_IF_TRUE 4
+        //   2: LOAD_CONST 222
+        //   3: RETURN
+        //   4: LOAD_CONST 111
+        //   5: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_VAR,
+            0, // 0
+            OP_JUMP_IF_TRUE,
+            4, // 1
+            OP_LOAD_CONST,
+            0, // 2
+            OP_RETURN,
+            0, // 3
+            OP_LOAD_CONST,
+            1, // 4
+            OP_RETURN,
+            0, // 5
+        ];
+        let constants = [pack_int48(222), pack_int48(111)];
+        let f = backend
+            .compile_function("iftrue", &code, &constants, 1)
+            .expect("lowering");
+        let out_then = unsafe { f(std::ptr::null_mut(), [pack_int48(1)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_then), 111, "truthy must jump");
+        let out_else = unsafe { f(std::ptr::null_mut(), [pack_int48(0)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_else), 222, "falsy must fall through");
+    }
+
+    #[test]
+    fn backward_jump_calls_backedge_bridge() {
+        // fn (n) { s = 0; i = 0; while (i < n) { s = s + i; i = i + 1 } s }
+        // A backward JUMP lowers a havel_vm_backedge(vm, ip) call. With a
+        // NULL vm the bridge is a no-op, so the loop must still compute the
+        // same sum as before the backedge hook existed.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0: 0
+            OP_STORE_VAR,
+            1, // 1: s = 0
+            OP_LOAD_CONST,
+            0, // 2: 0
+            OP_STORE_VAR,
+            2, // 3: i = 0
+            OP_LOAD_VAR,
+            2, // 4: loop head: i
+            OP_LOAD_VAR,
+            0, // 5: n
+            OP_LT,
+            0, // 6: i < n
+            OP_JUMP_IF_FALSE,
+            17, // 7: exit to 17 when false
+            OP_LOAD_VAR,
+            1, // 8: s
+            OP_LOAD_VAR,
+            2, // 9: i
+            OP_ADD,
+            0, // 10: s + i
+            OP_STORE_VAR,
+            1, // 11: s =
+            OP_LOAD_VAR,
+            2, // 12: i
+            OP_LOAD_CONST,
+            1, // 13: 1
+            OP_ADD,
+            0, // 14: i + 1
+            OP_STORE_VAR,
+            2, // 15: i =
+            OP_JUMP,
+            4, // 16: backward jump -> backedge bridge
+            OP_LOAD_VAR,
+            1, // 17: s
+            OP_RETURN,
+            0, // 18
+        ];
+        let constants = [pack_int48(0), pack_int48(1)];
+        let f = backend
+            .compile_function("loopbackedge", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(10)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out), 45, "sum(0..10) must be 45: {out:#x}");
     }
 }
 

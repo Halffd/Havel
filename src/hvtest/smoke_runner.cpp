@@ -30,7 +30,12 @@ namespace {
 
 using havel::compiler::Value;
 
-std::string opcodeName(havel::compiler::OpCode opcode) {
+// Local opcode names for smoke bytecode dumps. Distinct name from
+// havel::compiler::opcodeName (BytecodeIR.hpp declares the global one
+// now): unqualified lookup at the call site found both and the build
+// broke on ambiguity. This local set covers more opcodes than the
+// Pipeline.cpp one (46 vs 35 cases).
+std::string smokeOpcodeName(havel::compiler::OpCode opcode) {
   using havel::compiler::OpCode;
   switch (opcode) {
   case OpCode::LOAD_CONST:
@@ -212,7 +217,7 @@ void dumpBytecode(const std::string &name, const std::string &source) {
 
  for (size_t i = 0; i < function.instructions.size(); ++i) {
       const auto &instruction = function.instructions[i];
-      std::cout << "  " << i << ": " << opcodeName(instruction.opcode);
+      std::cout << "  " << i << ": " << smokeOpcodeName(instruction.opcode);
       if (!instruction.operands.empty()) {
         std::cout << " ";
         for (size_t j = 0; j < instruction.operands.size(); ++j) {

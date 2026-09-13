@@ -135,6 +135,42 @@ inline std::vector<std::pair<std::string, std::string>> read_test_env(const std:
 	return out;
 }
 
+// Read per-test tier from the file header.
+// Format: // smoke: tier = slow   (or // test: tier = slow)
+// slow-tier tests are GC/tiering stress runs that dominate suite time
+// (one 208s tiering test + two ~40s GC stress tests = ~17% of the whole
+// suite). Default (no directive) = fast tier. Dev-loop runs pass --fast
+// to skip slow; pre-merge/CI runs the full set (or --only-slow to run
+// just the slow tier after a fast pass).
+inline std::string read_test_tier(const std::string &script_path) {
+	std::ifstream ifs(script_path);
+	if (!ifs) return "default";
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: tier =", 0) == 0 || line.rfind("// test: tier =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				val.erase(0, val.find_first_not_of(" \t"));
+				val.erase(val.find_last_not_of(" \t") + 1);
+				if (!val.empty()) return val;
+			}
+			break;
+		}
+	}
+	return "default";
+}
+
+enum class TestTier { Default, Slow };
+
+inline TestTier parse_test_tier(const std::string &script_path) {
+	std::string tier = read_test_tier(script_path);
+	if (tier == "slow") return TestTier::Slow;
+	return TestTier::Default; // unknown values stay in the default tier
+}
+
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
                                int timeout_seconds = 60,
                                const std::vector<std::string> &pre_flags = {}) {
@@ -324,15 +360,39 @@ inline int list_scripts(const std::vector<std::string> &directories) {
     return 0;
 }
 
+// Tier selection for a suite run. Default (no flags) runs everything,
+// matching CI and pre-merge expectations. --fast skips slow-tier tests
+// (the dev loop); --only-slow runs just the slow tier (follow-up pass
+// after a fast iteration, or pre-merge).
+enum class TierMode { All, Fast, OnlySlow };
+
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
                            int timeout_seconds = 60,
-                           const std::vector<std::string> &name_filters = {}) {
+                           const std::vector<std::string> &name_filters = {},
+                           TierMode tier_mode = TierMode::All) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
         return 1;
+    }
+    const size_t total_discovered = scripts.size();
+    if (tier_mode != TierMode::All) {
+        std::vector<std::string> filtered;
+        for (const auto &s : scripts) {
+            bool slow = parse_test_tier(s) == TestTier::Slow;
+            bool keep = (tier_mode == TierMode::Fast) ? !slow : slow;
+            if (keep) filtered.push_back(s);
+        }
+        if (filtered.empty()) {
+            std::cerr << (tier_mode == TierMode::Fast
+                              ? "no fast-tier tests found (all slow?) in "
+                              : "no slow-tier tests found in ")
+                      << smoke_dir << std::endl;
+            return 1;
+        }
+        scripts = std::move(filtered);
     }
     if (!name_filters.empty()) {
         // Substring match on the file stem, mirroring how people invoke
@@ -355,8 +415,12 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         }
         scripts = std::move(filtered);
         std::cout << "filter: " << scripts.size() << " of "
-                  << discover_scripts({smoke_dir}).size() << " scripts match"
-                  << std::endl;
+                  << total_discovered << " scripts match" << std::endl;
+    }
+    if (tier_mode != TierMode::All) {
+        std::cout << "tier: " << scripts.size() << " of " << total_discovered
+                  << " scripts in " << (tier_mode == TierMode::Fast ? "fast" : "slow")
+                  << " tier" << std::endl;
     }
 
     // Detect bytecode/self-hosted modules path: derived from havel_bin's location.

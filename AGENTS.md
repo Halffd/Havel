@@ -84,6 +84,11 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   - `// smoke: timeout = <seconds>` — per-test timeout override
   - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
   - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
+  - `// smoke: tier = slow` — marks a GC/tiering stress test as slow-tier
+- **Test tiers**: bare `hvtest --smoke` skips slow-tier tests (dev loop).
+  The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
+  set). `--only-slow` runs just the slow tier. When touching GC internals
+  or the tiering system, run the full set deliberately.
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash

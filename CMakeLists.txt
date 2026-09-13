@@ -1703,7 +1703,9 @@ target_link_libraries(havel_api_test PRIVATE
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
-  add_test(NAME hvtest-smoke COMMAND hvtest --smoke)
+  # Pre-merge gate: full tier including slow stress runs. Dev-loop
+  # invocations (bare `hvtest --smoke`) skip the slow tier by default.
+  add_test(NAME hvtest-smoke COMMAND hvtest --smoke --slow-too)
   # Module globals drift guard: fails if a setGlobal() module global is not
   # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
   # for --build/--full-aot depends on.

@@ -160,7 +160,10 @@ fn stack_effect(op: u32, operand: u32, next_operand: Option<u32>) -> Result<(i64
         OP_LOAD_CONST | OP_LOAD_VAR | OP_PUSH_NULL | OP_IS_NULL => (0, 1),
         OP_STORE_VAR | OP_POP | OP_STORE_GLOBAL => (1, 0),
         OP_DUP => (0, 1), // pops 0, pushes a copy of the top
-        OP_SWAP | OP_STORE_UPVALUE => (0, 0),
+        OP_SWAP => (0, 0),
+        // STORE_UPVALUE pops the value to write (interpreter
+        // VMDispatch.cpp); the bridge takes (vm, slot, value).
+        OP_STORE_UPVALUE => (1, 0),
         OP_LOAD_UPVALUE => (0, 1),
         OP_ADD | OP_SUB | OP_MUL | OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE => (2, 1),
         OP_STRING_CONCAT | OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_LSH | OP_BIT_RSH => (2, 1),
@@ -1021,7 +1024,8 @@ impl CraneliftBackend {
                 }
             }
 
-            // Constants reused across the lowering.
+            // Constants reused across the lowering (defined in the entry
+            // block BEFORE its terminator, so they dominate everything).
             let tag_int_bits = builder.ins().iconst(int64, (TAG_INT48 << TAG_SHIFT) as i64);
             let tag_bool_bits = builder.ins().iconst(int64, (TAG_BOOL << TAG_SHIFT) as i64);
             let tag_null_bits = builder.ins().iconst(int64, (TAG_NULL << TAG_SHIFT) as i64);
@@ -1035,6 +1039,11 @@ impl CraneliftBackend {
             let zero64 = builder.ins().iconst(int64, 0);
             let zero8 = builder.ins().iconst(types::I8, 0);
             let one8 = builder.ins().iconst(types::I8, 1);
+
+            // Entry terminator: unconditional edge into instruction 0's
+            // leader block. Emitted after the argument seeding below (see
+            // the jump next to the locals setup) so the loads live in the
+            // unterminated entry block and dominate the function body.
 
             // Resolve every bridge FuncRef up front so the lowering
             // closures never touch self.module (single-borrow discipline).
@@ -1104,6 +1113,13 @@ impl CraneliftBackend {
                 let v = builder.ins().load(int64, MemFlags::new(), p, 0);
                 builder.def_var(var, v);
                 var_of.insert(i, var);
+            }
+            // Entry terminator: edge into instruction 0's leader block
+            // (last instruction in the entry block; constants and argument
+            // loads above stay unterminated and dominate the body).
+            {
+                let first = block_of[0].ok_or_else(|| err("no entry leader".into()))?;
+                builder.ins().jump(first, &[]);
             }
             let declare_local = |operand: u32,
                                  var_of: &mut HashMap<u32, Variable>,

@@ -35,11 +35,11 @@ class AutoF : AutoBase {
 }
 
 // Create instances and test
-let base = AutoBase()
+base = AutoBase()
 base.init()
 print("Base running:", base.run?())
 
-let auto = AutoF()
+auto = AutoF()
 auto.init()
 auto.start()
 print("AutoF running:", auto.run?())

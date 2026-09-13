@@ -2,7 +2,7 @@
 
 print("Testing object.set:\n")
 
-let obj = {a: 1}
+obj = {a: 1}
 print("Before set:")
 print(object.keys(obj))
 

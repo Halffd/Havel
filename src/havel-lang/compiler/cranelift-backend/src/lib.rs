@@ -29,6 +29,8 @@
 
 use cranelift::frontend::Variable;
 use cranelift::prelude::*;
+// Block arguments (block params on edges) are BlockArg, not Value.
+use cranelift::codegen::ir::BlockArg;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{default_libcall_names, Linkage, Module};
 use std::collections::HashMap;
@@ -140,6 +142,60 @@ pub const OP_EXTENDED_ARG: u32 = 50;
 
 #[derive(Debug)]
 pub struct LoweringError(pub String);
+
+// Edge arguments: block params on CFG edges are BlockArg; the subset only
+// ever passes plain Values (no try_call exception args).
+fn edge_args(stack: &[Value]) -> Vec<BlockArg> {
+    stack.iter().map(|v| BlockArg::Value(*v)).collect()
+}
+
+// Static stack effect of one subset instruction: (pops, pushes) beyond the
+// pops the operand implies. RETURN consumes 1; jumps consume their
+// condition (except JUMP). CALL/CALL_METHOD pop their argument count plus
+// the callee/receiver and push one result. The flat stream's (op, operand)
+// pairs carry CALL_METHOD's arg count in the following OP_EXTENDED_ARG
+// pair, which itself is data (no effect).
+fn stack_effect(op: u32, operand: u32, next_operand: Option<u32>) -> Result<(i64, i64), String> {
+    Ok(match op {
+        OP_LOAD_CONST | OP_LOAD_VAR | OP_PUSH_NULL | OP_IS_NULL => (0, 1),
+        OP_STORE_VAR | OP_POP | OP_STORE_GLOBAL => (1, 0),
+        OP_DUP => (0, 1), // pops 0, pushes a copy of the top
+        OP_SWAP | OP_STORE_UPVALUE => (0, 0),
+        OP_LOAD_UPVALUE => (0, 1),
+        OP_ADD | OP_SUB | OP_MUL | OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE => (2, 1),
+        OP_STRING_CONCAT | OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_LSH | OP_BIT_RSH => (2, 1),
+        OP_NOT | OP_LENGTH | OP_BIT_NOT | OP_STRING_LEN | OP_STRING_UPPER | OP_STRING_LOWER
+        | OP_STRING_TRIM | OP_STRING_PROMOTE => (1, 1),
+        OP_JUMP => (0, 0),
+        OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE | OP_JUMP_IF_NULL => (1, 0),
+        OP_CALL => {
+            let argc = operand as i64;
+            (argc + 1, 1)
+        }
+        OP_CALL_METHOD => {
+            let argc = next_operand
+                .ok_or_else(|| "CALL_METHOD without EXTENDED_ARG pair".to_string())?
+                as i64;
+            (argc + 1, 1)
+        }
+        OP_EXTENDED_ARG => (0, 0),
+        OP_LOAD_GLOBAL => (0, 1),
+        OP_OBJECT_GET | OP_ARRAY_GET => (2, 1),
+        // ITER_NEXT pops the iterator and pushes the wrapped result
+        // object {first, second, done} - (1, 1), NOT (2, 1).
+        OP_ITER_NEXT => (1, 1),
+        // OBJECT_SET pops obj/val/key and pushes the OBJECT back for
+        // chaining (interpreter VMCollections.cpp); ARRAY_SET pushes
+        // nothing on the plain paths (the emitter always re-loads the
+        // stored temp right after); ARRAY_PUSH pushes the container.
+        OP_OBJECT_SET => (3, 1),
+        OP_ARRAY_SET => (3, 0),
+        OP_ARRAY_LEN | OP_ITER_NEW => (1, 1),
+        OP_ARRAY_PUSH => (2, 1),
+        OP_RETURN => (1, 0),
+        _ => return Err(format!("stack effect: unsupported opcode {op}")),
+    })
+}
 
 impl std::fmt::Display for LoweringError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -548,6 +604,103 @@ impl CraneliftBackend {
             }
         }
 
+        // ---- Static stack-depth pre-pass ----
+        // Real bytecode keeps operand-stack values across basic blocks
+        // (short-circuit operators, loop-carried temps), so the virtual
+        // stack must flow along CFG edges like the ORC lowering's PHIs.
+        // Every subset opcode has a static stack effect, so an abstract
+        // interpretation of the stream yields the stack depth at every
+        // instruction; each leader block then receives its incoming depth
+        // as block parameters.
+        let mut depth_at: Vec<i64> = vec![-1; n];
+        depth_at[0] = 0;
+        let mut work: Vec<usize> = vec![0];
+        while let Some(i) = work.pop() {
+            let d = depth_at[i];
+            let op = code[2 * i];
+            // OP_EXTENDED_ARG is data for the preceding CALL_METHOD: it
+            // carries no effect and falls through with the same depth.
+            let after = if op == OP_EXTENDED_ARG {
+                d
+            } else {
+                let next_operand = if op == OP_CALL_METHOD && i + 1 < n {
+                    Some(code[2 * (i + 1) + 1])
+                } else {
+                    None
+                };
+                let (pops, pushes) = stack_effect(op, code[2 * i + 1], next_operand)
+                    .map_err(|m| err(format!("instruction {i} ({name}): {m}")))?;
+                if d < pops {
+                    return Err(err(format!(
+                        "instruction {i} ({name}): stack underflow ({d} < {pops}) at op {op} operand {}",
+                        code[2 * i + 1]
+                    )));
+                }
+                d - pops + pushes
+            };
+            let mut edges: Vec<(usize, i64)> = Vec::new();
+            match op {
+                OP_JUMP => {
+                    edges.push((code[2 * i + 1] as usize, after));
+                }
+                OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE | OP_JUMP_IF_NULL => {
+                    edges.push((code[2 * i + 1] as usize, after));
+                    if i + 1 < n {
+                        edges.push((i + 1, after));
+                    }
+                }
+                OP_RETURN => {}
+                _ => {
+                    if i + 1 < n {
+                        edges.push((i + 1, after));
+                    }
+                }
+            }
+            for (t, dep) in edges {
+                if t >= n {
+                    return Err(err(format!("jump target {t} out of range")));
+                }
+                match depth_at[t] {
+                    -1 => {
+                        depth_at[t] = dep;
+                        work.push(t);
+                    }
+                    prev if prev == dep => {}
+                    // Depths only converge: a fork pushing less is a
+                    // different-shaped stream than the static model (the
+                    // interpreter would underflow one arm).
+                    prev => {
+                        return Err(err(format!(
+                            "instruction {t} ({name}): join depth conflict ({prev} vs {dep})"
+                        )))
+                    }
+                }
+            }
+        }
+        // Reachable instructions all have depths now. UNREACHABLE code (the
+        // emitter produces it after unconditional jumps/returns) defaults to
+        // depth 0: it lowers as dead blocks that never execute, which the
+        // verifier still requires to be well-formed. Dead blocks enter with
+        // a synthesized null-filled stack; pops that would underflow inside
+        // dead regions take a synthesized null so every terminator stays
+        // well-formed.
+        let dead: Vec<bool> = (0..n).map(|i| depth_at[i] < 0).collect();
+        for d in depth_at.iter_mut() {
+            if *d < 0 {
+                *d = 0;
+            }
+        }
+        // Entry depth of each leader block.
+        let entry_depth: Vec<usize> = (0..n)
+            .map(|i| {
+                if leader[i] {
+                    depth_at[i].max(0) as usize
+                } else {
+                    0
+                }
+            })
+            .collect();
+
         let pointer_ty = self.module.isa().pointer_type();
         let int64 = types::I64;
         let int32 = types::I32;
@@ -827,19 +980,46 @@ impl CraneliftBackend {
             let mut fb_ctx = FunctionBuilderContext::new();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb_ctx);
 
-            // One Cranelift block per leader instruction, created up front.
+            // One Cranelift block per leader instruction, created up front
+            // with its incoming stack depth as block params (values flow
+            // across block boundaries like the ORC lowering's PHIs).
             let mut block_of: Vec<Option<Block>> = vec![None; n];
+            // Incoming stack values of each leader block, as plain Values
+            // (block params are BlockArg::Value only in this subset - no
+            // try_call exception args).
+            let mut stack_params: Vec<Vec<Value>> = vec![Vec::new(); n];
+            // Function-entry block: holds ONLY the function params. A real
+            // bytecode loop can jump back to instruction 0 (the emitter's
+            // loop-to-entry shape), and such an edge cannot target the
+            // param block - so instruction 0's leader is a SEPARATE block
+            // that the entry jumps to. The first instruction runs at depth
+            // 0 (a loop-to-entry edge carrying stack would join-conflict
+            // in the pre-pass and refuse), so the edge passes no args.
+            let func_entry = builder.create_block();
+            builder.append_block_params_for_function_params(func_entry);
             for i in 0..n {
                 if leader[i] {
-                    block_of[i] = Some(builder.create_block());
+                    let blk = builder.create_block();
+                    for _ in 0..entry_depth[i] {
+                        builder.append_block_param(blk, int64);
+                    }
+                    block_of[i] = Some(blk);
                 }
             }
-            let entry = block_of[0].ok_or_else(|| err("no entry block".into()))?;
-            builder.append_block_params_for_function_params(entry);
-            builder.switch_to_block(entry);
+            builder.switch_to_block(func_entry);
+            let vm = builder.block_params(func_entry)[0];
+            let args_ptr = builder.block_params(func_entry)[1];
 
-            let vm = builder.block_params(entry)[0];
-            let args_ptr = builder.block_params(entry)[1];
+            // Fill each leader block's stack-param values. Instruction 0's
+            // block has only stack params (the function params live on
+            // func_entry), so no stripping is needed.
+            for i in 0..n {
+                if leader[i] {
+                    if let Some(blk) = block_of[i] {
+                        stack_params[i] = builder.block_params(blk).to_vec();
+                    }
+                }
+            }
 
             // Constants reused across the lowering.
             let tag_int_bits = builder.ins().iconst(int64, (TAG_INT48 << TAG_SHIFT) as i64);
@@ -1066,9 +1246,10 @@ impl CraneliftBackend {
                 }
             };
 
-            // Straight-line lowering; the virtual stack is per-block (the
-            // subset never carries stack values across a block boundary -
-            // branch conditions are consumed by their branch).
+            // Straight-line lowering. The virtual stack flows across block
+            // boundaries: each leader block's incoming values are its block
+            // params (filled by the pre-pass depths), and every edge to a
+            // block passes the current stack values as block arguments.
             let mut cur: usize = 0;
             let mut vstack: Vec<Value> = Vec::new();
             let mut terminated = true;
@@ -1078,12 +1259,13 @@ impl CraneliftBackend {
                 if leader[cur] {
                     let blk = block_of[cur].ok_or_else(|| err("missing leader block".into()))?;
                     if !terminated {
-                        // Fall-through edge into this leader: Cranelift
-                        // blocks do not fall through implicitly.
-                        builder.ins().jump(blk, &[]);
+                        // Fall-through edge into this leader: pass the
+                        // current stack (the pre-pass guarantees its depth
+                        // equals the target's entry depth).
+                        builder.ins().jump(blk, &edge_args(&vstack));
                     }
                     builder.switch_to_block(blk);
-                    vstack.clear();
+                    vstack = stack_params[cur].clone();
                     terminated = false;
                 }
                 if terminated {
@@ -1226,7 +1408,13 @@ impl CraneliftBackend {
                                 let ip_w = builder.ins().iconst(int32, cur as i64);
                                 builder.ins().call(backedge_ref, &[vm, ip_w]);
                             }
-                            builder.ins().brif(truthy, else_blk, &[], then_blk, &[]);
+                            builder.ins().brif(
+                                truthy,
+                                else_blk,
+                                &edge_args(&vstack),
+                                then_blk,
+                                &edge_args(&vstack),
+                            );
                         } else {
                             // No fall-through instruction: both arms exit
                             // through the target.
@@ -1234,7 +1422,13 @@ impl CraneliftBackend {
                                 let ip_w = builder.ins().iconst(int32, cur as i64);
                                 builder.ins().call(backedge_ref, &[vm, ip_w]);
                             }
-                            builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
+                            builder.ins().brif(
+                                truthy,
+                                then_blk,
+                                &edge_args(&vstack),
+                                then_blk,
+                                &edge_args(&vstack),
+                            );
                         }
                         terminated = true;
                     }
@@ -1256,13 +1450,25 @@ impl CraneliftBackend {
                                 let ip_w = builder.ins().iconst(int32, cur as i64);
                                 builder.ins().call(backedge_ref, &[vm, ip_w]);
                             }
-                            builder.ins().brif(truthy, then_blk, &[], else_blk, &[]);
+                            builder.ins().brif(
+                                truthy,
+                                then_blk,
+                                &edge_args(&vstack),
+                                else_blk,
+                                &edge_args(&vstack),
+                            );
                         } else {
                             if target <= cur {
                                 let ip_w = builder.ins().iconst(int32, cur as i64);
                                 builder.ins().call(backedge_ref, &[vm, ip_w]);
                             }
-                            builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
+                            builder.ins().brif(
+                                truthy,
+                                then_blk,
+                                &edge_args(&vstack),
+                                then_blk,
+                                &edge_args(&vstack),
+                            );
                         }
                         terminated = true;
                     }
@@ -1276,7 +1482,7 @@ impl CraneliftBackend {
                             let ip_w = builder.ins().iconst(int32, cur as i64);
                             builder.ins().call(backedge_ref, &[vm, ip_w]);
                         }
-                        builder.ins().jump(blk, &[]);
+                        builder.ins().jump(blk, &edge_args(&vstack));
                         terminated = true;
                     }
                     OP_LOAD_GLOBAL => {
@@ -1442,7 +1648,9 @@ impl CraneliftBackend {
                         // Stack: [..., obj, value, key]; pop key, then
                         // value, then obj (same order the interpreter and
                         // the ORC handler use - an inverted pop order swaps
-                        // key and value silently).
+                        // key and value silently). The interpreter pushes
+                        // the OBJECT back for chaining, not the bridge's
+                        // val echo.
                         let key = vstack
                             .pop()
                             .ok_or_else(|| err("OBJECT_SET with empty stack".into()))?;
@@ -1452,8 +1660,8 @@ impl CraneliftBackend {
                         let obj = vstack
                             .pop()
                             .ok_or_else(|| err("OBJECT_SET with shallow stack".into()))?;
-                        let call = builder.ins().call(object_set_ref, &[vm, obj, key, val]);
-                        vstack.push(builder.inst_results(call)[0]);
+                        builder.ins().call(object_set_ref, &[vm, obj, key, val]);
+                        vstack.push(obj);
                     }
                     OP_ITER_NEW => {
                         let coll = vstack
@@ -1483,6 +1691,9 @@ impl CraneliftBackend {
                     }
                     OP_ARRAY_SET => {
                         // Stack: [..., arr, idx, val]; pop val, idx, arr.
+                        // The interpreter's plain paths push nothing back
+                        // (the emitter re-loads its temp right after), so
+                        // neither does the lowering.
                         let val = vstack
                             .pop()
                             .ok_or_else(|| err("ARRAY_SET with empty stack".into()))?;
@@ -1492,8 +1703,7 @@ impl CraneliftBackend {
                         let arr = vstack
                             .pop()
                             .ok_or_else(|| err("ARRAY_SET with shallow stack".into()))?;
-                        let call = builder.ins().call(array_set_ref, &[vm, arr, idx, val]);
-                        vstack.push(builder.inst_results(call)[0]);
+                        builder.ins().call(array_set_ref, &[vm, arr, idx, val]);
                     }
                     OP_ARRAY_LEN => {
                         let arr = vstack
@@ -1503,6 +1713,7 @@ impl CraneliftBackend {
                         vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_ARRAY_PUSH => {
+                        // The interpreter pushes the CONTAINER back.
                         let val = vstack
                             .pop()
                             .ok_or_else(|| err("ARRAY_PUSH with empty stack".into()))?;
@@ -1510,6 +1721,7 @@ impl CraneliftBackend {
                             .pop()
                             .ok_or_else(|| err("ARRAY_PUSH with shallow stack".into()))?;
                         builder.ins().call(array_push_ref, &[vm, arr, val]);
+                        vstack.push(arr);
                     }
                     OP_JUMP_IF_NULL => {
                         // Inline null check: null is a single canonical
@@ -1527,16 +1739,31 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
-                            builder.ins().brif(is_null, then_blk, &[], else_blk, &[]);
+                            builder.ins().brif(
+                                is_null,
+                                then_blk,
+                                &edge_args(&vstack),
+                                else_blk,
+                                &edge_args(&vstack),
+                            );
                         } else {
-                            builder.ins().brif(is_null, then_blk, &[], then_blk, &[]);
+                            builder.ins().brif(
+                                is_null,
+                                then_blk,
+                                &edge_args(&vstack),
+                                then_blk,
+                                &edge_args(&vstack),
+                            );
                         }
                         terminated = true;
                     }
                     OP_RETURN => {
+                        // Pop failure here is only possible in dead code
+                        // (the pre-pass validated every reachable
+                        // instruction's depth); synthesize null there.
                         let v = vstack
                             .pop()
-                            .ok_or_else(|| err("RETURN with empty stack".into()))?;
+                            .unwrap_or_else(|| builder.ins().iconst(int64, NULL_TAGGED as i64));
                         builder.ins().return_(&[v]);
                         saw_return = true;
                         terminated = true;
@@ -2213,16 +2440,17 @@ mod tests {
 
     #[test]
     fn object_set_stack_protocol_via_echo_shim() {
-        // OBJECT_SET pops key, then value, then obj. The standalone echo
-        // shim returns the VALUE word, so a correct lowering answers with
-        // the stored value; an inverted key/value pop order answers with
-        // the key word.
-        let mut backend = CraneliftBackend::new().unwrap();
-        //   0: LOAD_CONST obj-placeholder
-        //   1: LOAD_CONST 4242      (value)
-        //   2: LOAD_CONST 99        (key)
+        // OBJECT_SET pops key, then value, then obj, and pushes the OBJECT
+        // back (interpreter chaining semantics). The echo shim returns the
+        // VALUE word; a lowering that pushed the bridge result instead of
+        // the object would answer 4242, and an inverted key/value pop
+        // order would answer the key word.
+        //   0: LOAD_CONST 77       (receiver)
+        //   1: LOAD_CONST 4242     (value)
+        //   2: LOAD_CONST 99       (key)
         //   3: OBJECT_SET
         //   4: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
         let code = [
             OP_LOAD_CONST,
             0, //
@@ -2235,15 +2463,15 @@ mod tests {
             OP_RETURN,
             0,
         ];
-        let constants = [NULL_TAGGED, pack_int48(4242), pack_int48(99)];
+        let constants = [pack_int48(77), pack_int48(4242), pack_int48(99)];
         let f = backend
             .compile_function("objset", &code, &constants, 0)
             .expect("lowering");
         let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
         assert_eq!(
             out,
-            pack_int48(4242),
-            "OBJECT_SET must pop key/value/obj in order: {out:#x}"
+            pack_int48(77),
+            "OBJECT_SET must push the object back, popping key/value/obj in order: {out:#x}"
         );
     }
 
@@ -2319,57 +2547,98 @@ mod tests {
 
     #[test]
     fn jump_target_remaps_past_extended_arg() {
-        // The C++ emitter remaps jump operands to EMITTED pair positions
-        // when CALL_METHOD data pairs shift the stream. This test feeds the
-        // REMAPPED stream directly: the jump targets pair 6, the
-        // LOAD_CONST after CALL_METHOD (pair 4) + EXTENDED_ARG (pair 5).
-        //   0: LOAD_CONST (cond)
-        //   3: JUMP_IF_TRUE 6     -> skips the method call entirely
-        //   4: CALL_METHOD 7
-        //      EXTENDED_ARG 2
-        //   6: LOAD_CONST 9      (jump lands here)
-        //   7: RETURN
+        // Loop whose body holds a CALL_METHOD (with its EXTENDED_ARG data
+        // pair) and whose exit jump targets the instruction AFTER the
+        // whole body - the exact shape the C++ emitter's pair_of remap
+        // exists for. A target computed one pair short would jump INTO the
+        // CALL_METHOD's data pair and break the CFG.
+        // fn (n) { r = 5; i = 0; while (i < n) { r.m(1, 2); i = i + 1 } 9 }
+        //   pair  0: LOAD_CONST 5      (receiver placeholder)
+        //   pair  1: STORE_VAR r
+        //   pair  2: LOAD_CONST 0
+        //   pair  3: STORE_VAR i
+        //   pair  4: LOAD_VAR i        (loop head)
+        //   pair  5: LOAD_VAR n
+        //   pair  6: LT
+        //   pair  7: JUMP_IF_FALSE 17 (exit -> pair 17)
+        //   pair  8: LOAD_VAR r        (receiver)
+        //   pair  9: LOAD_CONST 1     (arg0)
+        //   pair 10: LOAD_CONST 1     (arg1)
+        //   pair 11: CALL_METHOD 7
+        //   pair 12: EXTENDED_ARG 2  (data)
+        //   pair 13: POP              (discard shim result)
+        //   pair 14: LOAD_VAR i
+        //   pair 15: LOAD_CONST 1
+        //   pair 16: ADD / STORE via pairs below
+        //   ...
+        //   pair 17: LOAD_CONST 2     (9, exit target)
+        //   pair 18: RETURN
+        // The increment store must come BEFORE the exit target, so the
+        // body ends with the backedge jump; the full stream (pairs 0..20):
+        // exit jump at pair 7 targets pair 19, after CALL_METHOD (11) +
+        // EXTENDED_ARG (12) + POP (13) + i increment (14..17) + JUMP (18).
+        // Recompute with the increment store included: exit -> pair 19.
         let mut backend = CraneliftBackend::new().unwrap();
+        // Recompute with the increment store included: exit -> pair 19.
         let code: Vec<u32> = vec![
             OP_LOAD_CONST,
             0, // pair 0
+            OP_STORE_VAR,
+            0, // pair 1
             OP_LOAD_CONST,
-            1, // pair 1
+            1, // pair 2
+            OP_STORE_VAR,
+            1, // pair 3
+            OP_LOAD_VAR,
+            1, // pair 4
+            OP_LOAD_VAR,
+            2, // pair 5
+            OP_LT,
+            0, // pair 6
+            OP_JUMP_IF_FALSE,
+            19, // pair 7: exit -> pair 19
+            OP_LOAD_VAR,
+            0, // pair 8: r
             OP_LOAD_CONST,
-            2, // pair 2 (receiver)
+            3, // pair 9: 1
             OP_LOAD_CONST,
-            3, // pair 3 (condition true)
-            OP_JUMP_IF_TRUE,
-            8, // pair 4 -> target pair 8 (past the data pair)
+            3, // pair 10: 1
             OP_CALL_METHOD,
-            7, // pair 5
+            7, // pair 11
             OP_EXTENDED_ARG,
-            2, // pair 6 (data)
+            2, // pair 12 (data)
+            OP_POP,
+            0, // pair 13
+            OP_LOAD_VAR,
+            1, // pair 14: i
             OP_LOAD_CONST,
-            4, // pair 7 (arg staging unreachable via the taken jump)
+            3, // pair 15: 1
+            OP_ADD,
+            0, // pair 16
+            OP_STORE_VAR,
+            1, // pair 17: i =
+            OP_JUMP,
+            4, // pair 18: backedge
             OP_LOAD_CONST,
-            4, // pair 8 (jump target)
+            2, // pair 19: 9 (exit target)
             OP_RETURN,
-            0, // pair 9
+            0, // pair 20
         ];
-        let constants = [
-            pack_int48(1),
-            pack_int48(2),
-            pack_int48(3),
-            pack_int48(3),
-            pack_int48(9),
-        ];
+        let constants = [pack_int48(5), pack_int48(0), pack_int48(9), pack_int48(1)];
         let f = backend
-            .compile_function("jumpremap", &code, &constants, 0)
+            .compile_function("jumpremap", &code, &constants, 1)
             .expect("lowering");
-        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        // n = 0: loop never runs; exit jump lands at pair 19 -> 9.
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(0)].as_ptr(), 1) };
         assert_eq!(
             unpack_int48(out),
             9,
-            "jump target must be pair-indexed past the EXTENDED_ARG data pair"
+            "exit jump must land past the CALL_METHOD data pair"
         );
+        // n = 2: two iterations through the method call, then exit; 9.
+        let out2 = unsafe { f(std::ptr::null_mut(), [pack_int48(2)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out2), 9, "looped path must also exit at 9");
     }
-
     #[test]
     fn backward_jump_calls_backedge_bridge() {
         // fn (n) { s = 0; i = 0; while (i < n) { s = s + i; i = i + 1 } s }
@@ -2522,6 +2791,12 @@ pub extern "C" fn hclb_compile(
         Ok(_) => true,
         Err(e) => {
             eprintln!("[hclb] compile {name} failed: {e}");
+            if std::env::var("HCLB_DUMP_STREAM").is_ok() {
+                eprintln!("[hclb] stream for {name} ({} pairs):", code.len() / 2);
+                for i in 0..code.len() / 2 {
+                    eprintln!("  {i}: op={} operand={}", code[2 * i], code[2 * i + 1]);
+                }
+            }
             false
         }
     }

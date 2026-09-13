@@ -204,7 +204,47 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
 });
 
+// `select` is the query-syntax spelling of map (same (receiver, fn)
+// contract) so .where(fn).select(fn) chains used by LINQ-style tests work.
+regProto("select", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (!args[1].isFunctionObjId() && !args[1].isClosureId()) return Value::makeNull();
+    if (args[0].isArrayId()) {
+        auto* arr = vm.getHeap().array(args[0].asArrayId());
+        if (arr) {
+            auto resultRef = vm.getHeap().allocateArray();
+            auto* result = vm.getHeap().array(resultRef.id);
+            for (const auto& v : *arr) {
+                auto val = vm.call(args[1], {v});
+                result->push_back(val);
+            }
+            return Value::makeArrayId(resultRef.id);
+        }
+    }
+    return Value::makeNull();
+});
+
   regProto("filter", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr) {
+        auto resultRef = vm.getHeap().allocateArray();
+        auto* result = vm.getHeap().array(resultRef.id);
+        for (const auto& v : *arr) {
+          auto predResult = vm.call(args[1], {v});
+          if (vm.toBoolPublic(predResult)) result->push_back(v);
+        }
+        return Value::makeArrayId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+// `where` is the query-syntax spelling of filter (test_linq and the
+// from/where/select desugaring use .where(fn); only the pipe stage form
+// resolved before). Same (receiver, predicate) contract as filter.
+regProto("where", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
@@ -559,6 +599,10 @@ if (args.empty()) return Value::makeInt(0);
 if (!args[0].isArrayId()) return Value::makeInt(0);
 auto* arr = vm.getHeap().array(args[0].asArrayId());
 if (!arr) return Value::makeInt(0);
+// Bare arr.count(): length. The old code only counted elements while
+// iterating with a predicate/value argument, so numbers.count() with no
+// argument fell through every branch and returned 0.
+if (args.size() == 1) return Value::makeInt(static_cast<int64_t>(arr->size()));
 int64_t count = 0;
 if (args.size() > 1 && (args[1].isFunctionObjId() || args[1].isClosureId())) {
 for (const auto& v : *arr) {

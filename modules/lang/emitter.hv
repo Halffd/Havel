@@ -3653,6 +3653,15 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
     bc.emit("LOAD_VAR", 0)
     bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
   }
+// Query-syntax desugaring (pratt from/where/select) passes the stage body
+// as a bare ExpressionStatement. emitBlockWithReturn treats that shape as a
+// statement (POP result), so the lambda returned null and every query
+// evaluated to []. Normalize: a bare ExpressionStatement body becomes a
+// one-statement block, which the BlockStatement path compiles with
+// tail-value semantics (last expression is the return value).
+if bodyNode != null && bodyNode.kind == "ExpressionStatement" {
+  bodyNode = BlockStatement([bodyNode], bodyNode.line, bodyNode.col)
+}
 emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     rootCheck = scopeFindFuncRoot(newScope)
@@ -3753,6 +3762,13 @@ di = 0
       // Havel might need special handling (e.g. pre-allocating the closure).
   }
   
+// Query-syntax desugaring (pratt from/where/select) passes the stage
+// body as a bare ExpressionStatement; emitBlockWithReturn would POP the
+// stage result (lambda returns null, query evaluates to []). Normalize to
+// a one-statement block for tail-value semantics.
+if bodyNode != null && bodyNode.kind == "ExpressionStatement" {
+  bodyNode = BlockStatement([bodyNode], bodyNode.line, bodyNode.col)
+}
 emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
   actualLocals = scopeLocalCount(newScope)

@@ -1,0 +1,13 @@
+// smoke: query-syntax-where-select = [6, 8, 10]
+// regression: from/where/select desugaring passed the stage body to
+// compileLambda as a bare ExpressionStatement; emitBlockWithReturn POPped
+// the stage result so every query evaluated to []. A second regression:
+// the pipe stage `src | filter(fn)` resolved filter as a null global
+// instead of the array prototype method.
+numbers = [1, 2, 3, 4, 5]
+val __result = from x in numbers where x > 2 select x * 2
+if !(__result == [6, 8, 10]) {
+ print("FAIL query-syntax-where-select: expected [6, 8, 10], got " + str(__result))
+ process.exit(255)
+}
+return __result

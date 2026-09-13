@@ -9,7 +9,7 @@ NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
 Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
 CallExpression, MemberExpression, IndexExpression,
 AssignmentExpression, CompoundAssignment,
-ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
+ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression, SetLiteral,
 IfStatement, WhileStatement, DoWhileStatement, ForStatement, ForExpression, LoopStatement,
 RepeatStatement, BreakStatement, ContinueStatement,
 FnDeclaration, LambdaExpression, ReturnStatement,
@@ -2166,9 +2166,12 @@ if isObjKeyType {
                     }
                 }
                 expect(TID.CloseBrace)
-                node = ArrayLiteral(elements, l, c)
-                node.isSet = true
-                return node
+                // Set display `{a, b, c}` must produce a SetLiteral node so
+                // the emitter lowers it to SET_NEW/SET_SET ops. Returning an
+                // ArrayLiteral (even with an isSet flag) made the emitter
+                // compile it as ARRAY_NEW, so set literals were silently
+                // arrays and set methods (union/intersection) never matched.
+                return SetLiteral(elements, l, c)
 
             }
 }

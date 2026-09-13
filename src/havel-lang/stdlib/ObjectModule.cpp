@@ -259,6 +259,11 @@ void registerObjectModule(const VMApi &api) {
       if (obj) {
         for (const auto& [name, value] : *obj) {
           if (name.empty() || name[0] == '_') continue;
+          // The objVal namespace carries a "set" field (object.set host fn).
+          // Publishing it as a bare global pollutes the name "set", which is
+          // the math/set namespace AND the set-type name — scripts then
+          // resolve `set` to <fn object.set> and set()/set([..]) break.
+          if (name == "set") continue;
           api.setField(objVal, name, value);
           api.setGlobal(name, value);
         }

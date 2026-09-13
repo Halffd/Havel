@@ -656,6 +656,7 @@ file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StateModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp"
   )
 list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
@@ -2243,7 +2244,9 @@ add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/F
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
-add_havel_module_plugin(math ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+# MathModule is in the static lib (registered eagerly by
+# registerDefaultHostFunctions) — lazy plugin registration hit the
+# math/math circular-dependency guard and lost the sidecar.
 add_havel_module_plugin(math_native ${CMAKE_SOURCE_DIR}/src/modules/math/MathModule.cpp)
 target_include_directories(havel_mod_math_native PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime

@@ -127,13 +127,28 @@ std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSou
     for (char& c : normalized) {
         if (c == '\\') c = '/';
     }
-    if (normalized.find("/modules/lang/") != std::string::npos) {
-        std::string stem = fs::path(normalized).stem().string();
-        return "lang." + stem;
-    }
-    if (normalized.find("/modules/std/") != std::string::npos) {
-        std::string stem = fs::path(normalized).stem().string();
-        return "std." + stem;
+    // Bundled-module cache names keep the namespace prefix and encode the
+    // path RELATIVE to the namespace root so a nested module
+    // (lang/math/math.hv) cannot collide with a top-level one
+    // (lang/math.hv): both used to compress to "lang.math", the flat
+    // cache held one bytecode for two different sources, and importing
+    // the nested one served the wrapper's .hvc — whose own `use
+    // "math/math"` then tripped the circular-dependency guard and
+    // dropped every sidecar export (math.randint returned null).
+    for (const char* ns : {"lang", "std", "app"}) {
+        std::string marker = std::string("/modules/") + ns + "/";
+        auto pos = normalized.find(marker);
+        if (pos != std::string::npos) {
+            // relative path without extension, slashes -> dots:
+            // math/math.hv -> math.math ; math.hv -> math
+            std::string rel = normalized.substr(pos + marker.size());
+            if (rel.size() > 3 && rel.substr(rel.size() - 3) == ".hv")
+                rel = rel.substr(0, rel.size() - 3);
+            for (char& c : rel) {
+                if (c == '/') c = '.';
+            }
+            return std::string(ns) + "." + rel;
+        }
     }
 
     // User module: stem + short hash of the canonical path so two files with
@@ -321,11 +336,33 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
         stem = hashKey;
       }
     }
+    // Nested bundled-module cache names carry the subpath with slashes
+    // encoded as dots (lang.math.math <- lang/math/math.hv). Resolve from
+    // the deepest candidate: try the full dotted form as a nested path
+    // first, then fall back to treating the last segment as the stem.
+    // Otherwise "lang.math.math" looked up stem "math" and matched the
+    // top-level lang/math.hv wrapper instead of lang/math/math.hv.
+    std::vector<fs::path> candidates;
+    {
+      std::string nested = stem;
+      size_t lastDot = nested.rfind('.');
+      if (lastDot != std::string::npos) {
+        std::string dir = nested.substr(0, lastDot);
+        std::string leaf = nested.substr(lastDot + 1);
+        for (char& c : dir) {
+          if (c == '.') c = '/';
+        }
+        candidates.push_back(fs::path(dir) / (leaf + ".hv"));
+      }
+    }
+    candidates.push_back(fs::path(stem + ".hv"));
     for (const auto& sp : searchPaths) {
-      fs::path cand = fs::path(sp) / (stem + ".hv");
-      if (fs::exists(cand)) {
-        try { return fs::canonical(cand).string(); }
-        catch (...) { return cand.string(); }
+      for (const auto& rel : candidates) {
+        fs::path cand = fs::path(sp) / rel;
+        if (fs::exists(cand)) {
+          try { return fs::canonical(cand).string(); }
+          catch (...) { return cand.string(); }
+        }
       }
     }
     return "";

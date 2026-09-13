@@ -16,6 +16,7 @@
 #include "VMInternals.hpp"
 #include "stdlib/FsModule.hpp"
 #include "stdlib/HotkeyModule.hpp"
+#include "stdlib/MathModule.hpp"
 #include "stdlib/StateModule.hpp"
 #include "stdlib/StringModule.hpp"
 #include "stdlib/TokenTypeNames.hpp"
@@ -51,6 +52,12 @@ void VM::registerDefaultHostFunctions() {
     VMApi api(*this);
     havel::stdlib::registerHotkeyModule(api);
   }
+  // NOTE: math is NOT registered here. registerDefaultHostFunctions runs
+  // before module search paths are configured, and MathModule's sidecar
+  // loadModule("math/math") needs modules/lang on the search path. Havel.cpp
+  // registers math right after addSearchPath calls. Registering math lazily
+  // instead (plugin fallback) hit the math/math circular-dependency guard
+  // and silently dropped randint/clamp/lerp from the math namespace.
   // Native tokenizer: wraps the C++ BootstrapLexer for fast self-hosted lexing
   {
     VMApi api(*this);

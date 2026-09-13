@@ -7,6 +7,7 @@
  */
 #include "MathModule.hpp"
 #include "../compiler/vm/VM.hpp"
+#include "utils/Logger.hpp"
 #include <cstdio>
 #include <limits>
 
@@ -135,8 +136,10 @@ void registerMathModule(const VMApi &api) {
   Value mathExports;
   try {
     mathExports = vm.loadModule("math/math");
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
+    ::havel::debug("math", "math/math sidecar load failed: {}", e.what());
   } catch (...) {
+    ::havel::debug("math", "math/math sidecar load failed: unknown error");
   }
   mergeExports(api, mathObj, mathExports);
 

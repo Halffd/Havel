@@ -6578,28 +6578,18 @@ current_script_dir_ = prev_script_dir;
       moduleLoader_.updateHashIndex(moduleName, hash);
     }
   }
-  
-// Serialize and append globals to .hvc file for fast warm loading.
-// Serialized strings become real heap strings and imported closures become
-// ClosureImportRefs re-bound against the exporting module's exports at
-// restore time, so no chunk-relative IDs cross the round-trip.
-  try {
-    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
-    std::filesystem::path hvcPath = resolved->canonicalPath;
-    hvcPath.replace_extension(".hvc");
-    writeGlobalsToHvc(hvcPath.string(), globalsData);
-    // Also write to canonicalKey path if different (e.g. out/ build directory)
-    if (canonicalKey != resolved->canonicalPath) {
-      std::filesystem::path hvcPath2 = canonicalKey;
-      hvcPath2.replace_extension(".hvc");
-      if (hvcPath2 != hvcPath) {
-        writeGlobalsToHvc(hvcPath2.string(), globalsData);
-      }
-    }
-  } catch (...) {
-    // Ignore serialization errors; warm loads fall back to running __main__
-  }
-  
+
+// The GLBS globals-append write used to live here. Removed: the warm
+// restore path is disabled (hasCachedGlobals pinned false above after
+// stale closure re-binding produced "non-callable value" failures), so
+// nothing ever read these sections. The write itself was pure cost AND
+// actively harmful on corrupt targets: chunkDataEnd's first-marker
+// arithmetic cannot parse a globals-only blob (no HVC chunk header), so
+// it fell back to "whole file is chunk data" and re-appended a fresh
+// [globals][GLBS] section on every cold load - scripts/tests/
+// cross_chunk_helper.hvc grew 109KB -> 440KB+ in stacked sections,
+// rewriting a tracked fixture on every test run.
+
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
   globals[path] = exports;

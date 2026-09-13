@@ -102,6 +102,41 @@ pub const OP_NEQ: u32 = 11;
 pub const OP_LTE: u32 = 12;
 pub const OP_GT: u32 = 13;
 pub const OP_GTE: u32 = 14;
+// Extension set: bridge-lowered ops (semantics stay in the runtime).
+pub const OP_NOT: u32 = 21;
+pub const OP_IS_NULL: u32 = 22;
+pub const OP_LENGTH: u32 = 23;
+pub const OP_STRING_LEN: u32 = 24;
+pub const OP_STRING_UPPER: u32 = 25;
+pub const OP_STRING_LOWER: u32 = 26;
+pub const OP_STRING_TRIM: u32 = 27;
+pub const OP_STRING_CONCAT: u32 = 28;
+pub const OP_BIT_AND: u32 = 29;
+pub const OP_BIT_OR: u32 = 30;
+pub const OP_BIT_XOR: u32 = 31;
+pub const OP_BIT_NOT: u32 = 32;
+pub const OP_BIT_LSH: u32 = 33;
+pub const OP_BIT_RSH: u32 = 34;
+pub const OP_SWAP: u32 = 35;
+pub const OP_JUMP_IF_TRUE: u32 = 36;
+pub const OP_LOAD_UPVALUE: u32 = 37;
+pub const OP_STORE_UPVALUE: u32 = 38;
+pub const OP_STRING_PROMOTE: u32 = 39;
+pub const OP_OBJECT_GET: u32 = 40;
+pub const OP_OBJECT_SET: u32 = 41;
+pub const OP_ITER_NEW: u32 = 42;
+pub const OP_ITER_NEXT: u32 = 43;
+pub const OP_ARRAY_GET: u32 = 44;
+pub const OP_ARRAY_SET: u32 = 45;
+pub const OP_ARRAY_LEN: u32 = 46;
+pub const OP_ARRAY_PUSH: u32 = 47;
+pub const OP_JUMP_IF_NULL: u32 = 48;
+pub const OP_CALL_METHOD: u32 = 49;
+// Pseudo-instruction carrying a second operand for the preceding
+// CALL_METHOD (the flat stream is (op, operand) pairs, one operand per
+// instruction; CALL_METHOD needs both the method-name id and the arg
+// count). Never a jump target; always immediately follows its op.
+pub const OP_EXTENDED_ARG: u32 = 50;
 
 #[derive(Debug)]
 pub struct LoweringError(pub String);
@@ -244,6 +279,133 @@ mod fallback_shims {
         pack_int48(900123)
     }
 
+    unsafe extern "C" fn shim_not(v: u64) -> u64 {
+        // Mirrors the C bridge: !valueIsTruthy(v) for the scalar shapes.
+        pack_bool(!match (v & TAG_MASK) >> TAG_SHIFT {
+            TAG_NULL => false,
+            TAG_BOOL => (v & PAYLOAD_MASK) != 0,
+            TAG_INT48 => unpack_int48(v) != 0,
+            _ => {
+                if v & TAG_MASK == 0 && (v as f64) == 0.0 {
+                    false
+                } else {
+                    true
+                }
+            }
+        })
+    }
+
+    unsafe extern "C" fn shim_bit_and(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) & unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_or(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) | unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_xor(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) ^ unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_not(v: u64) -> u64 {
+        if is_int48(v) {
+            pack_int48(!unpack_int48(v))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_lsh(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) << unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_bit_rsh(l: u64, r: u64) -> u64 {
+        if is_int48(l) && is_int48(r) {
+            pack_int48(unpack_int48(l) >> unpack_int48(r))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    unsafe extern "C" fn shim_backedge(_vm: *mut c_void, _ip: u32) {}
+
+    // Null-vm upvalue bridges: no closure context exists standalone, so
+    // reads yield null and writes drop (mirrors the C null-vm behavior).
+    unsafe extern "C" fn shim_upvalue_get(_vm: *mut c_void, _slot: u32) -> u64 {
+        NULL_TAGGED
+    }
+
+    unsafe extern "C" fn shim_upvalue_set(_vm: *mut c_void, _slot: u32, _v: u64) {}
+
+    // Null-vm unary bridges mirror the C behavior for a null vm: LENGTH and
+    // STRING_LEN yield int 0, the string transforms yield null.
+    unsafe extern "C" fn shim_length_zero(_vm: *mut c_void, _v: u64) -> u64 {
+        pack_int48(0)
+    }
+
+    unsafe extern "C" fn shim_string_null(_vm: *mut c_void, _v: u64) -> u64 {
+        NULL_TAGGED
+    }
+
+    unsafe extern "C" fn shim_string_concat(_vm: *mut c_void, _l: u64, _r: u64) -> u64 {
+        NULL_TAGGED
+    }
+
+    // Null-vm object/iter bridges: member access and iteration have no heap
+    // standalone, so gets and iterator results yield null; set echoes the
+    // written value word (the C bridge returns val_bits on a null vm).
+    unsafe extern "C" fn shim_object_get_null(_vm: *mut c_void, _o: u64, _k: u64) -> u64 {
+        NULL_TAGGED
+    }
+
+    unsafe extern "C" fn shim_object_set_echo(_vm: *mut c_void, _o: u64, _k: u64, v: u64) -> u64 {
+        v
+    }
+
+    unsafe extern "C" fn shim_array_push(_vm: *mut c_void, _arr: u64, _val: u64) {}
+
+    unsafe extern "C" fn shim_call_method(
+        _vm: *mut c_void,
+        receiver: u64,
+        _name_id: u32,
+        args: *const u64,
+        count: u32,
+    ) -> u64 {
+        // Layout check for the standalone harness: the receiver travels
+        // separately and args hold ONLY the call arguments. Reply with
+        // receiver*100 + sum(args) so an inverted or callee-staged layout
+        // produces a different number.
+        if args.is_null() || count != 2 {
+            return NULL_TAGGED;
+        }
+        let a0 = unsafe { *args };
+        let a1 = unsafe { *args.add(1) };
+        if !(is_int48(receiver) && is_int48(a0) && is_int48(a1)) {
+            return NULL_TAGGED;
+        }
+        let sum = unpack_int48(receiver)
+            .wrapping_mul(100)
+            .wrapping_add(unpack_int48(a0))
+            .wrapping_add(unpack_int48(a1));
+        pack_int48(sum)
+    }
+
     pub fn fallback_symbol(name: &str) -> Option<*const u8> {
         match name {
             "havel_vm_add" => Some(shim_add as *const u8),
@@ -257,6 +419,39 @@ mod fallback_shims {
             "havel_vm_gte" => Some(shim_gte as *const u8),
             "havel_vm_is_truthy" => Some(shim_is_truthy as *const u8),
             "havel_vm_call" => Some(shim_call as *const u8),
+            // VM-aware equality falls back to the pure int shims: the
+            // standalone harness has no heap, so int operands are all it
+            // can answer (mirrors havel_vm_eq_vm's non-string path).
+            "havel_vm_eq_vm" => Some(shim_eq as *const u8),
+            "havel_vm_neq_vm" => Some(shim_neq as *const u8),
+            "havel_vm_not" => Some(shim_not as *const u8),
+            "havel_vm_bit_and" => Some(shim_bit_and as *const u8),
+            "havel_vm_bit_or" => Some(shim_bit_or as *const u8),
+            "havel_vm_bit_xor" => Some(shim_bit_xor as *const u8),
+            "havel_vm_bit_not" => Some(shim_bit_not as *const u8),
+            "havel_vm_bit_lsh" => Some(shim_bit_lsh as *const u8),
+            "havel_vm_bit_rsh" => Some(shim_bit_rsh as *const u8),
+            "havel_vm_backedge" => Some(shim_backedge as *const u8),
+            "havel_vm_upvalue_get" => Some(shim_upvalue_get as *const u8),
+            "havel_vm_upvalue_set" => Some(shim_upvalue_set as *const u8),
+            "havel_vm_object_get_raw_ic" => Some(shim_object_get_null as *const u8),
+            "havel_vm_object_get_raw" => Some(shim_object_get_null as *const u8),
+            "havel_vm_object_set_raw" => Some(shim_object_set_echo as *const u8),
+            "havel_vm_iter_new" => Some(shim_string_null as *const u8),
+            "havel_vm_iter_next" => Some(shim_string_null as *const u8),
+            "havel_vm_collection_get_raw_ic" => Some(shim_object_get_null as *const u8),
+            "havel_vm_collection_get_raw" => Some(shim_object_get_null as *const u8),
+            "havel_vm_array_set" => Some(shim_object_set_echo as *const u8),
+            "havel_vm_array_len" => Some(shim_length_zero as *const u8),
+            "havel_vm_array_push" => Some(shim_array_push as *const u8),
+            "havel_vm_call_method" => Some(shim_call_method as *const u8),
+            "havel_vm_length" => Some(shim_length_zero as *const u8),
+            "havel_vm_string_len" => Some(shim_length_zero as *const u8),
+            "havel_vm_string_upper" => Some(shim_string_null as *const u8),
+            "havel_vm_string_lower" => Some(shim_string_null as *const u8),
+            "havel_vm_string_trim" => Some(shim_string_null as *const u8),
+            "havel_vm_string_promote" => Some(shim_string_null as *const u8),
+            "havel_vm_string_concat" => Some(shim_string_concat as *const u8),
             _ => None,
         }
     }
@@ -334,7 +529,7 @@ impl CraneliftBackend {
         leader[0] = true;
         for i in 0..n {
             match code[2 * i] {
-                OP_JUMP | OP_JUMP_IF_FALSE => {
+                OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE | OP_JUMP_IF_NULL => {
                     let t = code[2 * i + 1] as usize;
                     if t >= n {
                         return Err(err(format!("jump target {t} out of range")));
@@ -408,6 +603,179 @@ impl CraneliftBackend {
                 .map_err(|e| err(format!("declare {sym}: {e}")))?;
             bridge_ids.insert(sym, id);
         }
+        // VM-aware equality bridges: (vm, l, r) -> result. EQ/NEQ may compare
+        // string CONTENT (heap StringId vs chunk-local StringValId) via the
+        // heap, so the pure word bridges are not enough - mirror the ORC
+        // lowering, which routes EQ/NEQ slow paths through these.
+        for sym in ["havel_vm_eq_vm", "havel_vm_neq_vm"] {
+            let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // String concat: (vm, l, r) -> result (bridge_sig shape).
+        {
+            let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function("havel_vm_string_concat", Linkage::Import, &s)
+                .map_err(|e| err(format!("declare havel_vm_string_concat: {e}")))?;
+            bridge_ids.insert("havel_vm_string_concat", id);
+        }
+        // Unary vm bridges: (vm, v) -> result. LENGTH plus the string
+        // intrinsics all take the value word and hand semantics to the
+        // runtime.
+        let mut unary_vm_sig = self.module.make_signature();
+        unary_vm_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int64)];
+        unary_vm_sig.returns = vec![AbiParam::new(int64)];
+        for sym in [
+            "havel_vm_length",
+            "havel_vm_string_len",
+            "havel_vm_string_upper",
+            "havel_vm_string_lower",
+            "havel_vm_string_trim",
+            "havel_vm_string_promote",
+        ] {
+            let s = unary_vm_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Pure unary bridges: (v) -> result, no vm. NOT and BIT_NOT are pure
+        // word semantics per RuntimeABI.hpp.
+        let mut pure_unary_sig = self.module.make_signature();
+        pure_unary_sig.params = vec![AbiParam::new(int64)];
+        pure_unary_sig.returns = vec![AbiParam::new(int64)];
+        for sym in ["havel_vm_not", "havel_vm_bit_not"] {
+            let s = pure_unary_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Pure binary bitwise bridges: (l, r) -> result (cmp_sig shape).
+        for sym in [
+            "havel_vm_bit_and",
+            "havel_vm_bit_or",
+            "havel_vm_bit_xor",
+            "havel_vm_bit_lsh",
+            "havel_vm_bit_rsh",
+        ] {
+            let s = cmp_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Backedge hook: (vm, ip) -> (). Native loops must surface to the
+        // VM (loop hotness, tier-up decisions, coroutine yield requests)
+        // exactly like the interpreter's taken backedges.
+        let mut backedge_sig = self.module.make_signature();
+        backedge_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int32)];
+        backedge_sig.returns = vec![];
+        let backedge_id = self
+            .module
+            .declare_function("havel_vm_backedge", Linkage::Import, &backedge_sig)
+            .map_err(|e| err(format!("declare havel_vm_backedge: {e}")))?;
+        // Upvalue bridges: closures read/write captured locals through the
+        // running closure's upvalue cells. get: (vm, slot) -> Value;
+        // set: (vm, slot, Value) -> ().
+        let mut upvalue_get_sig = self.module.make_signature();
+        upvalue_get_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int32)];
+        upvalue_get_sig.returns = vec![AbiParam::new(int64)];
+        let upvalue_get_id = self
+            .module
+            .declare_function("havel_vm_upvalue_get", Linkage::Import, &upvalue_get_sig)
+            .map_err(|e| err(format!("declare havel_vm_upvalue_get: {e}")))?;
+        let mut upvalue_set_sig = self.module.make_signature();
+        upvalue_set_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+            AbiParam::new(int64),
+        ];
+        upvalue_set_sig.returns = vec![];
+        let upvalue_set_id = self
+            .module
+            .declare_function("havel_vm_upvalue_set", Linkage::Import, &upvalue_set_sig)
+            .map_err(|e| err(format!("declare havel_vm_upvalue_set: {e}")))?;
+        // Object member access: same bridges the ORC lowering uses. GET goes
+        // through the inline-cache variant (GC-epoch guarded, lazy-proxy
+        // safe); SET is raw. Iterators share the unary-vm shape.
+        let object_get_id = self
+            .module
+            .declare_function("havel_vm_object_get_raw_ic", Linkage::Import, &bridge_sig)
+            .map_err(|e| err(format!("declare havel_vm_object_get_raw_ic: {e}")))?;
+        let mut obj_set_sig = self.module.make_signature();
+        obj_set_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int64),
+            AbiParam::new(int64),
+            AbiParam::new(int64),
+        ];
+        obj_set_sig.returns = vec![AbiParam::new(int64)];
+        let object_set_id = self
+            .module
+            .declare_function("havel_vm_object_set_raw", Linkage::Import, &obj_set_sig)
+            .map_err(|e| err(format!("declare havel_vm_object_set_raw: {e}")))?;
+        let iter_new_id = self
+            .module
+            .declare_function("havel_vm_iter_new", Linkage::Import, &unary_vm_sig)
+            .map_err(|e| err(format!("declare havel_vm_iter_new: {e}")))?;
+        let iter_next_id = self
+            .module
+            .declare_function("havel_vm_iter_next", Linkage::Import, &unary_vm_sig)
+            .map_err(|e| err(format!("declare havel_vm_iter_next: {e}")))?;
+        // Array member access, same bridges the ORC lowering uses: GET via
+        // the collection inline-cache variant, SET/LEN/PUSH direct.
+        let array_get_id = self
+            .module
+            .declare_function(
+                "havel_vm_collection_get_raw_ic",
+                Linkage::Import,
+                &bridge_sig,
+            )
+            .map_err(|e| err(format!("declare havel_vm_collection_get_raw_ic: {e}")))?;
+        let array_set_id = self
+            .module
+            .declare_function("havel_vm_array_set", Linkage::Import, &obj_set_sig)
+            .map_err(|e| err(format!("declare havel_vm_array_set: {e}")))?;
+        let array_len_id = self
+            .module
+            .declare_function("havel_vm_array_len", Linkage::Import, &unary_vm_sig)
+            .map_err(|e| err(format!("declare havel_vm_array_len: {e}")))?;
+        let mut void_ternary_sig = self.module.make_signature();
+        void_ternary_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int64),
+            AbiParam::new(int64),
+        ];
+        void_ternary_sig.returns = vec![];
+        let array_push_id = self
+            .module
+            .declare_function("havel_vm_array_push", Linkage::Import, &void_ternary_sig)
+            .map_err(|e| err(format!("declare havel_vm_array_push: {e}")))?;
+        // Method calls: havel_vm_call_method(vm, receiver, name_id, args_ptr,
+        // count) -> result. args holds ONLY the call arguments (receiver
+        // travels separately), matching the ORC lowering.
+        let mut call_method_sig = self.module.make_signature();
+        call_method_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int64),
+            AbiParam::new(int32),
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+        ];
+        call_method_sig.returns = vec![AbiParam::new(int64)];
+        let call_method_id = self
+            .module
+            .declare_function("havel_vm_call_method", Linkage::Import, &call_method_sig)
+            .map_err(|e| err(format!("declare havel_vm_call_method: {e}")))?;
         // havel_vm_is_truthy is (value) -> i32: its own signature
         // (RuntimeABI.hpp; the C side returns int).
         let mut truthy_sig = self.module.make_signature();
@@ -505,6 +873,42 @@ impl CraneliftBackend {
             let global_set_ref = self
                 .module
                 .declare_func_in_func(global_set_id, &mut builder.func);
+            let backedge_ref = self
+                .module
+                .declare_func_in_func(backedge_id, &mut builder.func);
+            let upvalue_get_ref = self
+                .module
+                .declare_func_in_func(upvalue_get_id, &mut builder.func);
+            let upvalue_set_ref = self
+                .module
+                .declare_func_in_func(upvalue_set_id, &mut builder.func);
+            let object_get_ref = self
+                .module
+                .declare_func_in_func(object_get_id, &mut builder.func);
+            let object_set_ref = self
+                .module
+                .declare_func_in_func(object_set_id, &mut builder.func);
+            let iter_new_ref = self
+                .module
+                .declare_func_in_func(iter_new_id, &mut builder.func);
+            let iter_next_ref = self
+                .module
+                .declare_func_in_func(iter_next_id, &mut builder.func);
+            let array_get_ref = self
+                .module
+                .declare_func_in_func(array_get_id, &mut builder.func);
+            let array_set_ref = self
+                .module
+                .declare_func_in_func(array_set_id, &mut builder.func);
+            let array_len_ref = self
+                .module
+                .declare_func_in_func(array_len_id, &mut builder.func);
+            let array_push_ref = self
+                .module
+                .declare_func_in_func(array_push_id, &mut builder.func);
+            let call_method_ref = self
+                .module
+                .declare_func_in_func(call_method_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first
@@ -599,17 +1003,23 @@ impl CraneliftBackend {
                     OP_SUB => "havel_vm_sub",
                     OP_MUL => "havel_vm_mul",
                     OP_LT => "havel_vm_lt",
-                    OP_EQ => "havel_vm_eq",
-                    OP_NEQ => "havel_vm_neq",
+                    // EQ/NEQ may compare string CONTENT across
+                    // representations (heap StringId vs chunk-local
+                    // StringValId) via the heap, so the pure word bridges
+                    // are not enough: route through the vm-aware bridges,
+                    // mirroring the ORC lowering's EQ/NEQ slow path.
+                    OP_EQ => "havel_vm_eq_vm",
+                    OP_NEQ => "havel_vm_neq_vm",
                     OP_LTE => "havel_vm_lte",
                     OP_GT => "havel_vm_gt",
                     _ => "havel_vm_gte",
                 };
-                // Arithmetic bridges take (vm, l, r); comparison bridges
-                // are pure word semantics and take (l, r) per RuntimeABI.
+                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
+                // comparisons are pure word semantics and take (l, r) per
+                // RuntimeABI.
                 let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let is_comparison = matches!(op, OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE);
-                let bridged = if is_comparison {
+                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
+                let bridged = if is_pure_comparison {
                     let call = b.ins().call(func_ref, &[l, r]);
                     b.inst_results(call)[0]
                 } else {
@@ -712,6 +1122,49 @@ impl CraneliftBackend {
                             .ok_or_else(|| err("binop with empty stack".into()))?;
                         vstack.push(lower_binop(&mut builder, op, l, r));
                     }
+                    OP_CALL_METHOD => {
+                        // The flat stream carries the method-name id in this
+                        // instruction's operand and the arg count in the
+                        // immediately-following OP_EXTENDED_ARG pseudo-pair.
+                        // Stack (per the interpreter and ORC): receiver
+                        // pushed first, then the arguments.
+                        if cur + 1 >= n || code[2 * (cur + 1)] != OP_EXTENDED_ARG {
+                            return Err(err(
+                                "CALL_METHOD without EXTENDED_ARG arg-count pair".into()
+                            ));
+                        }
+                        let name_id = operand as u32;
+                        let argc = code[2 * (cur + 1) + 1] as usize;
+                        if vstack.len() < argc + 1 {
+                            return Err(err("CALL_METHOD with too few stack values".into()));
+                        }
+                        let slot = builder.create_sized_stack_slot(
+                            cranelift::codegen::ir::StackSlotData::new(
+                                cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                                (argc.max(1) * 8) as u32,
+                                8,
+                            ),
+                        );
+                        // args arrive receiver-first then arg1..argN on the
+                        // vstack; pop args (reverse), store forward.
+                        let mut args_rev: Vec<Value> = Vec::with_capacity(argc);
+                        for _ in 0..argc {
+                            args_rev.push(vstack.pop().expect("checked depth"));
+                        }
+                        let receiver = vstack.pop().expect("checked depth");
+                        for (k, a) in args_rev.into_iter().rev().enumerate() {
+                            builder.ins().stack_store(a, slot, (k as i32) * 8);
+                        }
+                        let base = builder.ins().stack_addr(pointer_ty, slot, 0);
+                        let name_w = builder.ins().iconst(int32, name_id as i64);
+                        let cnt = builder.ins().iconst(int32, argc as i64);
+                        let call = builder
+                            .ins()
+                            .call(call_method_ref, &[vm, receiver, name_w, base, cnt]);
+                        vstack.push(builder.inst_results(call)[0]);
+                        // Skip the EXTENDED_ARG data pair.
+                        cur += 1;
+                    }
                     OP_CALL => {
                         // Stack in: [..., callee, arg1..argN]. The runtime
                         // bridge wants a contiguous [callee, args...] array;
@@ -765,10 +1218,50 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
+                            // A taken backward edge is an interpreter
+                            // backedge (recordBackedgePublic): surface it to
+                            // the VM so loop hotness, tier-up and coroutine
+                            // yield requests keep working in native loops.
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
                             builder.ins().brif(truthy, else_blk, &[], then_blk, &[]);
                         } else {
                             // No fall-through instruction: both arms exit
                             // through the target.
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
+                            builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
+                        }
+                        terminated = true;
+                    }
+                    OP_JUMP_IF_TRUE => {
+                        // Mirror of JUMP_IF_FALSE: branch to the target when
+                        // the condition is truthy, else fall through.
+                        let target = operand as usize;
+                        let cond_word = vstack
+                            .pop()
+                            .ok_or_else(|| err("JUMP_IF_TRUE with empty stack".into()))?;
+                        let truthy = lower_truthy(&mut builder, cond_word);
+                        let then_blk = block_of[target]
+                            .ok_or_else(|| err("jump target has no block".into()))?;
+                        let else_idx = cur + 1;
+                        if else_idx < n && leader[else_idx] {
+                            let else_blk = block_of[else_idx]
+                                .ok_or_else(|| err("fall-through has no block".into()))?;
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
+                            builder.ins().brif(truthy, then_blk, &[], else_blk, &[]);
+                        } else {
+                            if target <= cur {
+                                let ip_w = builder.ins().iconst(int32, cur as i64);
+                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            }
                             builder.ins().brif(truthy, then_blk, &[], then_blk, &[]);
                         }
                         terminated = true;
@@ -777,6 +1270,12 @@ impl CraneliftBackend {
                         let target = operand as usize;
                         let blk = block_of[target]
                             .ok_or_else(|| err("jump target has no block".into()))?;
+                        // Backward unconditional jump: interpreter
+                        // recordBackedgePublic on every iteration.
+                        if target <= cur {
+                            let ip_w = builder.ins().iconst(int32, cur as i64);
+                            builder.ins().call(backedge_ref, &[vm, ip_w]);
+                        }
                         builder.ins().jump(blk, &[]);
                         terminated = true;
                     }
@@ -807,9 +1306,232 @@ impl CraneliftBackend {
                             .ok_or_else(|| err("DUP with empty stack".into()))?;
                         vstack.push(v);
                     }
+                    OP_SWAP => {
+                        // Top two stack values exchange places.
+                        if vstack.len() < 2 {
+                            return Err(err("SWAP with shallow stack".into()));
+                        }
+                        let len = vstack.len();
+                        vstack.swap(len - 1, len - 2);
+                    }
                     OP_PUSH_NULL => {
                         let null_w = builder.ins().iconst(int64, NULL_TAGGED as i64);
                         vstack.push(null_w);
+                    }
+                    OP_IS_NULL => {
+                        // Inline tag check: null is the NULL tag word.
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("IS_NULL with empty stack".into()))?;
+                        let t = builder.ins().band(v, tag_mask);
+                        let is_null = builder.ins().icmp(IntCC::Equal, t, tag_null_bits);
+                        let on = {
+                            let bit = builder.ins().uextend(int64, is_null);
+                            builder.ins().bor(bit, bool_tagged)
+                        };
+                        vstack.push(on);
+                    }
+                    OP_NOT => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("NOT with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_not")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_LENGTH => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("LENGTH with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_length")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STRING_LEN | OP_STRING_UPPER | OP_STRING_LOWER | OP_STRING_TRIM
+                    | OP_STRING_PROMOTE => {
+                        // Unary string intrinsics: (vm, v) -> Value.
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("string intrinsic with empty stack".into()))?;
+                        let name = match op {
+                            OP_STRING_LEN => "havel_vm_string_len",
+                            OP_STRING_UPPER => "havel_vm_string_upper",
+                            OP_STRING_LOWER => "havel_vm_string_lower",
+                            OP_STRING_TRIM => "havel_vm_string_trim",
+                            _ => "havel_vm_string_promote",
+                        };
+                        let func_ref = *bridge_refs.get(name).expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STRING_CONCAT => {
+                        // (vm, l, r) -> concatenated string Value.
+                        let r = vstack
+                            .pop()
+                            .ok_or_else(|| err("STRING_CONCAT with empty stack".into()))?;
+                        let l = vstack
+                            .pop()
+                            .ok_or_else(|| err("STRING_CONCAT with shallow stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_string_concat")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[vm, l, r]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_LSH | OP_BIT_RSH => {
+                        // Pure word bitwise bridges: (l, r) -> Value.
+                        let r = vstack
+                            .pop()
+                            .ok_or_else(|| err("bitwise op with empty stack".into()))?;
+                        let l = vstack
+                            .pop()
+                            .ok_or_else(|| err("bitwise op with shallow stack".into()))?;
+                        let name = match op {
+                            OP_BIT_AND => "havel_vm_bit_and",
+                            OP_BIT_OR => "havel_vm_bit_or",
+                            OP_BIT_XOR => "havel_vm_bit_xor",
+                            OP_BIT_LSH => "havel_vm_bit_lsh",
+                            _ => "havel_vm_bit_rsh",
+                        };
+                        let func_ref = *bridge_refs.get(name).expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[l, r]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_BIT_NOT => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("BIT_NOT with empty stack".into()))?;
+                        let func_ref = *bridge_refs
+                            .get("havel_vm_bit_not")
+                            .expect("bridge declared above");
+                        let call = builder.ins().call(func_ref, &[v]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_LOAD_UPVALUE => {
+                        // Operand: upvalue slot of the running closure;
+                        // the bridge reads the captured cell (open cell ->
+                        // owner frame local, closed -> cell value).
+                        let slot = builder.ins().iconst(int32, operand as i64);
+                        let call = builder.ins().call(upvalue_get_ref, &[vm, slot]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_STORE_UPVALUE => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("STORE_UPVALUE with empty stack".into()))?;
+                        let slot = builder.ins().iconst(int32, operand as i64);
+                        builder.ins().call(upvalue_set_ref, &[vm, slot, v]);
+                    }
+                    OP_OBJECT_GET => {
+                        // Stack protocol matches the interpreter and the
+                        // ORC lowering: pop key first, then the receiver.
+                        let key = vstack
+                            .pop()
+                            .ok_or_else(|| err("OBJECT_GET with empty stack".into()))?;
+                        let obj = vstack
+                            .pop()
+                            .ok_or_else(|| err("OBJECT_GET with shallow stack".into()))?;
+                        let call = builder.ins().call(object_get_ref, &[vm, obj, key]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_OBJECT_SET => {
+                        // Stack: [..., obj, value, key]; pop key, then
+                        // value, then obj (same order the interpreter and
+                        // the ORC handler use - an inverted pop order swaps
+                        // key and value silently).
+                        let key = vstack
+                            .pop()
+                            .ok_or_else(|| err("OBJECT_SET with empty stack".into()))?;
+                        let val = vstack
+                            .pop()
+                            .ok_or_else(|| err("OBJECT_SET with shallow stack".into()))?;
+                        let obj = vstack
+                            .pop()
+                            .ok_or_else(|| err("OBJECT_SET with shallow stack".into()))?;
+                        let call = builder.ins().call(object_set_ref, &[vm, obj, key, val]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ITER_NEW => {
+                        let coll = vstack
+                            .pop()
+                            .ok_or_else(|| err("ITER_NEW with empty stack".into()))?;
+                        let call = builder.ins().call(iter_new_ref, &[vm, coll]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ITER_NEXT => {
+                        let iter = vstack
+                            .pop()
+                            .ok_or_else(|| err("ITER_NEXT with empty stack".into()))?;
+                        let call = builder.ins().call(iter_next_ref, &[vm, iter]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ARRAY_GET => {
+                        // Pop index first, then the container (interpreter
+                        // and ORC order).
+                        let idx = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_GET with empty stack".into()))?;
+                        let arr = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_GET with shallow stack".into()))?;
+                        let call = builder.ins().call(array_get_ref, &[vm, arr, idx]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ARRAY_SET => {
+                        // Stack: [..., arr, idx, val]; pop val, idx, arr.
+                        let val = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_SET with empty stack".into()))?;
+                        let idx = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_SET with shallow stack".into()))?;
+                        let arr = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_SET with shallow stack".into()))?;
+                        let call = builder.ins().call(array_set_ref, &[vm, arr, idx, val]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ARRAY_LEN => {
+                        let arr = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_LEN with empty stack".into()))?;
+                        let call = builder.ins().call(array_len_ref, &[vm, arr]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_ARRAY_PUSH => {
+                        let val = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_PUSH with empty stack".into()))?;
+                        let arr = vstack
+                            .pop()
+                            .ok_or_else(|| err("ARRAY_PUSH with shallow stack".into()))?;
+                        builder.ins().call(array_push_ref, &[vm, arr, val]);
+                    }
+                    OP_JUMP_IF_NULL => {
+                        // Inline null check: null is a single canonical
+                        // NaN-boxed word, so a raw equality compare matches
+                        // the interpreter's isNull().
+                        let target = operand as usize;
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("JUMP_IF_NULL with empty stack".into()))?;
+                        let null_w = builder.ins().iconst(int64, NULL_TAGGED as i64);
+                        let is_null = builder.ins().icmp(IntCC::Equal, v, null_w);
+                        let then_blk = block_of[target]
+                            .ok_or_else(|| err("jump target has no block".into()))?;
+                        let else_idx = cur + 1;
+                        if else_idx < n && leader[else_idx] {
+                            let else_blk = block_of[else_idx]
+                                .ok_or_else(|| err("fall-through has no block".into()))?;
+                            builder.ins().brif(is_null, then_blk, &[], else_blk, &[]);
+                        } else {
+                            builder.ins().brif(is_null, then_blk, &[], then_blk, &[]);
+                        }
+                        terminated = true;
                     }
                     OP_RETURN => {
                         let v = vstack
@@ -1324,6 +2046,375 @@ mod tests {
         assert_eq!(unpack_int48(out4), 222, "false must be falsy");
         let out5 = unsafe { f(std::ptr::null_mut(), [pack_bool(true)].as_ptr(), 1) };
         assert_eq!(unpack_int48(out5), 111, "true must be truthy");
+    }
+
+    #[test]
+    fn is_null_lowers_and_runs() {
+        // fn (a) = a == null via IS_NULL
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [OP_LOAD_VAR, 0, OP_IS_NULL, 0, OP_RETURN, 0];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("isnull", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [NULL_TAGGED].as_ptr(), 1) };
+        assert_eq!(out, pack_bool(true), "null must be null: {out:#x}");
+        let out2 = unsafe { f(std::ptr::null_mut(), [pack_int48(7)].as_ptr(), 1) };
+        assert_eq!(out2, pack_bool(false), "int must not be null");
+    }
+
+    #[test]
+    fn swap_lowers_and_runs() {
+        // fn (a, b) = (a + b) after SWAP twice -> identical result; use one
+        // SWAP to reverse operand order: (b - a) == (a,b=1,5) -> 4.
+        //   0: LOAD_VAR a
+        //   1: LOAD_VAR b
+        //   2: SWAP          -> [b, a]
+        //   3: SUB           -> b - a
+        //   4: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [
+            OP_LOAD_VAR,
+            0, // a
+            OP_LOAD_VAR,
+            1, // b
+            OP_SWAP,
+            0,
+            OP_SUB,
+            0,
+            OP_RETURN,
+            0,
+        ];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("swapsub", &code, &constants, 2)
+            .expect("lowering");
+        let out = unsafe {
+            f(
+                std::ptr::null_mut(),
+                [pack_int48(1), pack_int48(5)].as_ptr(),
+                2,
+            )
+        };
+        assert_eq!(unpack_int48(out), 4, "SWAP must reverse operands: {out:#x}");
+    }
+
+    #[test]
+    fn not_and_bitnot_lowers_and_runs() {
+        let mut backend = CraneliftBackend::new().unwrap();
+        // NOT with a null vm: the C bridge valueIsTruthy(null) = false, so
+        // !false = true.
+        let code = [OP_PUSH_NULL, 0, OP_NOT, 0, OP_RETURN, 0];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("notnull", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(out, pack_bool(true), "not(null) must be true: {out:#x}");
+    }
+
+    #[test]
+    fn bitwise_ops_lowers_and_runs() {
+        let mut backend = CraneliftBackend::new().unwrap();
+        // fn (a, b) = (a & b) | (a ^ b): 12&10=8, 12^10=6, 8|6=14
+        let code = [
+            OP_LOAD_VAR,
+            0, //
+            OP_LOAD_VAR,
+            1, //
+            OP_BIT_AND,
+            0, //
+            OP_LOAD_VAR,
+            0, //
+            OP_LOAD_VAR,
+            1, //
+            OP_BIT_XOR,
+            0, //
+            OP_BIT_OR,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants: [u64; 0] = [];
+        let f = backend
+            .compile_function("bitmix", &code, &constants, 2)
+            .expect("lowering");
+        let out = unsafe {
+            f(
+                std::ptr::null_mut(),
+                [pack_int48(12), pack_int48(10)].as_ptr(),
+                2,
+            )
+        };
+        assert_eq!(unpack_int48(out), 14, "12&10 | 12^10 must be 14: {out:#x}");
+    }
+
+    #[test]
+    fn jump_if_true_lowers_and_runs() {
+        // fn (a) { if (a) { return 111 } return 222 }
+        //   0: LOAD_VAR a
+        //   1: JUMP_IF_TRUE 4
+        //   2: LOAD_CONST 222
+        //   3: RETURN
+        //   4: LOAD_CONST 111
+        //   5: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_VAR,
+            0, // 0
+            OP_JUMP_IF_TRUE,
+            4, // 1
+            OP_LOAD_CONST,
+            0, // 2
+            OP_RETURN,
+            0, // 3
+            OP_LOAD_CONST,
+            1, // 4
+            OP_RETURN,
+            0, // 5
+        ];
+        let constants = [pack_int48(222), pack_int48(111)];
+        let f = backend
+            .compile_function("iftrue", &code, &constants, 1)
+            .expect("lowering");
+        let out_then = unsafe { f(std::ptr::null_mut(), [pack_int48(1)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_then), 111, "truthy must jump");
+        let out_else = unsafe { f(std::ptr::null_mut(), [pack_int48(0)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_else), 222, "falsy must fall through");
+    }
+
+    #[test]
+    fn upvalue_ops_lower_via_bridge() {
+        // Standalone (null vm) the bridges yield null / no-op, but the
+        // lowering must still emit valid code: LOAD_UPVALUE pushes a word,
+        // STORE_UPVALUE consumes one.
+        let mut backend = CraneliftBackend::new().unwrap();
+        // fn () { u = <upvalue 0>; <upvalue 1> = 7; u }
+        let code = [
+            OP_LOAD_UPVALUE,
+            0, // 0
+            OP_LOAD_CONST,
+            0, // 1: 7
+            OP_STORE_UPVALUE,
+            1, // 2
+            OP_RETURN,
+            0, // 3
+        ];
+        let constants = [pack_int48(7)];
+        let f = backend
+            .compile_function("upv", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            out, NULL_TAGGED,
+            "null-vm upvalue read must be null: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn object_set_stack_protocol_via_echo_shim() {
+        // OBJECT_SET pops key, then value, then obj. The standalone echo
+        // shim returns the VALUE word, so a correct lowering answers with
+        // the stored value; an inverted key/value pop order answers with
+        // the key word.
+        let mut backend = CraneliftBackend::new().unwrap();
+        //   0: LOAD_CONST obj-placeholder
+        //   1: LOAD_CONST 4242      (value)
+        //   2: LOAD_CONST 99        (key)
+        //   3: OBJECT_SET
+        //   4: RETURN
+        let code = [
+            OP_LOAD_CONST,
+            0, //
+            OP_LOAD_CONST,
+            1, //
+            OP_LOAD_CONST,
+            2, //
+            OP_OBJECT_SET,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants = [NULL_TAGGED, pack_int48(4242), pack_int48(99)];
+        let f = backend
+            .compile_function("objset", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            out,
+            pack_int48(4242),
+            "OBJECT_SET must pop key/value/obj in order: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn jump_if_null_lowers_and_runs() {
+        // fn (a) { if (a == null-ish via JUMP_IF_NULL) return 111; return 222 }
+        //   0: LOAD_VAR a
+        //   1: JUMP_IF_NULL 4
+        //   2: LOAD_CONST 222
+        //   3: RETURN
+        //   4: LOAD_CONST 111
+        //   5: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_VAR,
+            0, // 0
+            OP_JUMP_IF_NULL,
+            4, // 1
+            OP_LOAD_CONST,
+            0, // 2
+            OP_RETURN,
+            0, // 3
+            OP_LOAD_CONST,
+            1, // 4
+            OP_RETURN,
+            0, // 5
+        ];
+        let constants = [pack_int48(222), pack_int48(111)];
+        let f = backend
+            .compile_function("ifnull", &code, &constants, 1)
+            .expect("lowering");
+        let out_null = unsafe { f(std::ptr::null_mut(), [NULL_TAGGED].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_null), 111, "null must jump");
+        let out_int = unsafe { f(std::ptr::null_mut(), [pack_int48(5)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out_int), 222, "non-null must fall through");
+    }
+
+    #[test]
+    fn call_method_layout_via_shim() {
+        //   0: LOAD_CONST 5        (receiver)
+        //   1: LOAD_CONST 1        (arg0)
+        //   2: LOAD_CONST 2        (arg1)
+        //   3: CALL_METHOD name=7
+        //      EXTENDED_ARG 2
+        //   4: RETURN
+        // Standalone shim answers receiver*100 + arg0 + arg1 = 503.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0
+            OP_LOAD_CONST,
+            1, // 1
+            OP_LOAD_CONST,
+            2, // 2
+            OP_CALL_METHOD,
+            7, // 3 (pair 3)
+            OP_EXTENDED_ARG,
+            2, // data pair
+            OP_RETURN,
+            0, // 4 (pair 5)
+        ];
+        let constants = [pack_int48(5), pack_int48(1), pack_int48(2)];
+        let f = backend
+            .compile_function("callmeth", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            503,
+            "CALL_METHOD must keep receiver and args in separate slots: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn jump_target_remaps_past_extended_arg() {
+        // The C++ emitter remaps jump operands to EMITTED pair positions
+        // when CALL_METHOD data pairs shift the stream. This test feeds the
+        // REMAPPED stream directly: source JUMP targets pair 5 (the
+        // LOAD_CONST after CALL_METHOD + EXTENDED_ARG at pairs 3/4), which
+        // the C++ side computes as pair_of[4] = 5.
+        //   0: LOAD_CONST 1
+        //   1: LOAD_CONST 2
+        //   2: JUMP_IF_TRUE 5     -> skips the method call entirely
+        //   3: CALL_METHOD 7
+        //      EXTENDED_ARG 2
+        //   5: LOAD_CONST 9      (jump lands here)
+        //   6: RETURN
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // pair 0
+            OP_LOAD_CONST,
+            1, // pair 1
+            OP_LOAD_CONST,
+            2, // pair 2 (condition true)
+            OP_JUMP_IF_TRUE,
+            5, // pair 3 -> target pair 5
+            OP_CALL_METHOD,
+            7, // pair 4
+            OP_EXTENDED_ARG,
+            2, // pair 5 (data)
+            OP_LOAD_CONST,
+            3, // pair 6 (jump target in SOURCE index 5 -> remapped)
+            OP_RETURN,
+            0, // pair 7
+        ];
+        let constants = [pack_int48(1), pack_int48(2), pack_int48(3), pack_int48(9)];
+        let f = backend
+            .compile_function("jumpremap", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            9,
+            "jump target must be pair-indexed past the EXTENDED_ARG data pair"
+        );
+    }
+
+    #[test]
+    fn backward_jump_calls_backedge_bridge() {
+        // fn (n) { s = 0; i = 0; while (i < n) { s = s + i; i = i + 1 } s }
+        // A backward JUMP lowers a havel_vm_backedge(vm, ip) call. With a
+        // NULL vm the bridge is a no-op, so the loop must still compute the
+        // same sum as before the backedge hook existed.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0: 0
+            OP_STORE_VAR,
+            1, // 1: s = 0
+            OP_LOAD_CONST,
+            0, // 2: 0
+            OP_STORE_VAR,
+            2, // 3: i = 0
+            OP_LOAD_VAR,
+            2, // 4: loop head: i
+            OP_LOAD_VAR,
+            0, // 5: n
+            OP_LT,
+            0, // 6: i < n
+            OP_JUMP_IF_FALSE,
+            17, // 7: exit to 17 when false
+            OP_LOAD_VAR,
+            1, // 8: s
+            OP_LOAD_VAR,
+            2, // 9: i
+            OP_ADD,
+            0, // 10: s + i
+            OP_STORE_VAR,
+            1, // 11: s =
+            OP_LOAD_VAR,
+            2, // 12: i
+            OP_LOAD_CONST,
+            1, // 13: 1
+            OP_ADD,
+            0, // 14: i + 1
+            OP_STORE_VAR,
+            2, // 15: i =
+            OP_JUMP,
+            4, // 16: backward jump -> backedge bridge
+            OP_LOAD_VAR,
+            1, // 17: s
+            OP_RETURN,
+            0, // 18
+        ];
+        let constants = [pack_int48(0), pack_int48(1)];
+        let f = backend
+            .compile_function("loopbackedge", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(10)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out), 45, "sum(0..10) must be 45: {out:#x}");
     }
 }
 

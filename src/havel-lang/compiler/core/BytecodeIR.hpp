@@ -342,6 +342,10 @@ WAITGROUP_WAIT, // WaitGroup.wait(): block until counter == 0
     NOP
 };
 
+// Human-readable opcode name (defined in Pipeline.cpp); used by
+// diagnostics (backend refusal tracing, bytecode dumps).
+std::string opcodeName(OpCode opcode);
+
 struct ClosureRef {
   uint32_t id = 0;
 };

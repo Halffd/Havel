@@ -4,22 +4,22 @@ print("=== Object VM Intrinsics Tests ===\n")
 
 // Test 1: object.keys
 print("1. Testing object.keys:")
-let obj = {a: 1, b: 2, c: 3}
-let keys = object.keys(obj)
+obj = {a: 1, b: 2, c: 3}
+keys = object.keys(obj)
 print("  keys: ")
 print(keys)
 print("")
 
 // Test 2: object.values
 print("2. Testing object.values:")
-let vals = object.values(obj)
+vals = object.values(obj)
 print("  values: ")
 print(vals)
 print("")
 
 // Test 3: object.entries
 print("3. Testing object.entries:")
-let entries = object.entries(obj)
+entries = object.entries(obj)
 print("  entries: ")
 print(entries)
 print("")

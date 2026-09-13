@@ -99,7 +99,10 @@ fn getRBPTABLE() {
 
 fn getBindingPower(ttype) {
     if ttype == TID.Not {
-        if at(1).tid == TID.In { return 52 }
+        // Infix use is decided by the Pratt loop (isNotIn); standalone
+        // 'not' is a prefix operator with no binding power of its own.
+        // Do NOT probe the token cursor here: this function is
+        // module-level and has no access to the current Parser.
         return BP_NONE
     }
     r = getBPTABLE()[ttype]
@@ -464,7 +467,15 @@ fn parseExpr(rbp) {
  }
   curType = current().tid
   bp = getBindingPower(curType)
-
+  // 'not' is infix ONLY as 'not in'. getBindingPower is module-level and
+  // cannot see this Parser's token cursor, so resolve it here where at()
+  // is live. (Before, its module-level at(1) probe resolved against a
+  // foreign cursor and returned a token that was never TID.In, so
+  // `5 not in xs` broke out of the Pratt loop with bp=BP_NONE and the
+  // parser then reported "Unexpected token in expression: <In>".)
+  if curType == TID.Not {
+    bp = isNotIn() ? 52 : BP_NONE
+  }
   // Special: 'not' only acts as infix when followed by 'in'
   if curType == TID.Not and !isNotIn() {
  break

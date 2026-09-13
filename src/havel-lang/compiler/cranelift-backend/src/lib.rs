@@ -2321,16 +2321,14 @@ mod tests {
     fn jump_target_remaps_past_extended_arg() {
         // The C++ emitter remaps jump operands to EMITTED pair positions
         // when CALL_METHOD data pairs shift the stream. This test feeds the
-        // REMAPPED stream directly: source JUMP targets pair 5 (the
-        // LOAD_CONST after CALL_METHOD + EXTENDED_ARG at pairs 3/4), which
-        // the C++ side computes as pair_of[4] = 5.
-        //   0: LOAD_CONST 1
-        //   1: LOAD_CONST 2
-        //   2: JUMP_IF_TRUE 5     -> skips the method call entirely
-        //   3: CALL_METHOD 7
+        // REMAPPED stream directly: the jump targets pair 6, the
+        // LOAD_CONST after CALL_METHOD (pair 4) + EXTENDED_ARG (pair 5).
+        //   0: LOAD_CONST (cond)
+        //   3: JUMP_IF_TRUE 6     -> skips the method call entirely
+        //   4: CALL_METHOD 7
         //      EXTENDED_ARG 2
-        //   5: LOAD_CONST 9      (jump lands here)
-        //   6: RETURN
+        //   6: LOAD_CONST 9      (jump lands here)
+        //   7: RETURN
         let mut backend = CraneliftBackend::new().unwrap();
         let code: Vec<u32> = vec![
             OP_LOAD_CONST,
@@ -2338,19 +2336,29 @@ mod tests {
             OP_LOAD_CONST,
             1, // pair 1
             OP_LOAD_CONST,
-            2, // pair 2 (condition true)
-            OP_JUMP_IF_TRUE,
-            5, // pair 3 -> target pair 5
-            OP_CALL_METHOD,
-            7, // pair 4
-            OP_EXTENDED_ARG,
-            2, // pair 5 (data)
+            2, // pair 2 (receiver)
             OP_LOAD_CONST,
-            3, // pair 6 (jump target in SOURCE index 5 -> remapped)
+            3, // pair 3 (condition true)
+            OP_JUMP_IF_TRUE,
+            8, // pair 4 -> target pair 8 (past the data pair)
+            OP_CALL_METHOD,
+            7, // pair 5
+            OP_EXTENDED_ARG,
+            2, // pair 6 (data)
+            OP_LOAD_CONST,
+            4, // pair 7 (arg staging unreachable via the taken jump)
+            OP_LOAD_CONST,
+            4, // pair 8 (jump target)
             OP_RETURN,
-            0, // pair 7
+            0, // pair 9
         ];
-        let constants = [pack_int48(1), pack_int48(2), pack_int48(3), pack_int48(9)];
+        let constants = [
+            pack_int48(1),
+            pack_int48(2),
+            pack_int48(3),
+            pack_int48(3),
+            pack_int48(9),
+        ];
         let f = backend
             .compile_function("jumpremap", &code, &constants, 0)
             .expect("lowering");

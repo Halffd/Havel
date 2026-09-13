@@ -1440,6 +1440,12 @@ return
     right = node.right
     if right.kind == "CallExpression" {
       // f(x) with pipe value prepended: f(pipeVal, ...explicit_args)
+      // NOTE: the parser already inserted the pipe value as
+      // right.args[0], so the arg loops below skip that first element
+      // (matched by identity) — the pipe value is pushed once, from the
+      // pipe slot. Emitting both double-counted it (print(x) through a
+      // pipe printed x twice; host methods errored with
+      // "expects 2 arguments, got 3").
       if right.callee.kind == "Identifier" {
         calleeName = right.callee.name
         // nil-pass-through builtins
@@ -1449,10 +1455,13 @@ return
           bc.emit("LOAD_VAR", pipeSlot)
           myArgc = 1
           if right.args != null {
+            ai = 0
             for a in right.args {
+              if ai == 0 && a == node.left { ai = ai + 1; continue }
               emitExpr(emitter, a)
+              myArgc = myArgc + 1
+              ai = ai + 1
             }
-            myArgc = 1 + #right.args
           }
           bc.emit("CALL", myArgc)
           // nil pass-through: if result is null, restore pipe value
@@ -1477,19 +1486,34 @@ return
             bc.emit("LOAD_VAR", pipeSlot)
             myArgc = 1
             if right.args != null {
+              ai = 0
               for a in right.args {
+                if ai == 0 && a == node.left { ai = ai + 1; continue }
                 emitExpr(emitter, a)
+                myArgc = myArgc + 1
+                ai = ai + 1
               }
-              myArgc = 1 + #right.args
             }
             bc.emit("CALL", myArgc)
           }
           else {
-            bc.emit("LOAD_VAR", pipeSlot)
+            // Parser already inserts the pipe value as right.args[0]
+            // (pratt led for Pipe/PipeRight: right.args.insert(0, left)).
+            // For a non-global callee the stage is a method call: push the
+            // pipe value as receiver, then the explicit args (args[1..]),
+            // and CALL_METHOD with the explicit-arg count. Loading the
+            // pipe slot AND counting the prepended arg double-counted the
+            // receiver ("expects 2 arguments, got 3").
             propIdx = bc.add_chunk_string(calleeName)
+            bc.emit("LOAD_VAR", pipeSlot)
             myArgc = 0
             if right.args != null {
               for a in right.args {
+                // args[0] is the pipe value from the parser; skip it —
+                // it was just pushed as the receiver above.
+                if myArgc == 0 && a == node.left {
+                  continue
+                }
                 emitExpr(emitter, a)
                 myArgc = myArgc + 1
               }

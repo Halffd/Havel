@@ -1495,7 +1495,13 @@ return
       }
     }
     else if right.kind == "Identifier" {
-      // x | method → pipeVal.method()
+      // x | name — resolve name at compile time by what it binds to:
+      // a script global (fn/value assigned at top level) is CALLED with the
+      // pipe value; anything else falls back to a zero-arg method call on
+      // the pipe value (string/array methods like upper, map...). Without
+      // the global check, `data | double` with double = fn(x){...} compiled
+      // to CALL_METHOD "double" on the array and died with
+      // "Type mismatch in binary operation"/"Invalid array operation".
       calleeName = right.name
       nilPassSet = {"print": true, "log": true, "debug": true, "tap": true}
       if nilPassSet[calleeName] != null {
@@ -1508,6 +1514,12 @@ return
         bc.emit("POP")
         bc.emit("LOAD_VAR", pipeSlot)
         bc.patch_jump(nullJump, bc.instr_count())
+      }
+      else if emitter.global_names[calleeName] != null {
+        // Script-level binding: call it with the pipe value as argument
+        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+        bc.emit("LOAD_VAR", pipeSlot)
+        bc.emit("CALL", 1)
       }
       else {
         bc.emit("LOAD_VAR", pipeSlot)

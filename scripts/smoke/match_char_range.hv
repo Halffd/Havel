@@ -1,0 +1,23 @@
+// smoke: match-char-range = IDENT
+// regression coverage for literal range patterns in match:
+// 1. parsePatternAtom only recognized identifier-started ranges, so
+//    'a'..='z' / 1..=10 errored with Expected '=>' and the match-case
+//    loop could spin forever (parser hang)
+// 2. CharLiteral read its value AFTER advance(), grabbing the next
+//    token's text ('..=')
+// 3. pattern alternatives did not accept the BitwiseOr token the lexer
+//    emits for a single bar, so 'x' | 'y' cases failed to parse
+fn classify(c) {
+    match c {
+        '0'..='9' => "NUM"
+        'a'..='z' | 'A'..='Z' => "IDENT"
+        '+' | '-' | '*' | '/' => "OP"
+        _ => "OTHER"
+    }
+}
+val __result = classify('h')
+if __result != "IDENT" {
+ print("FAIL match-char-range: expected IDENT, got " + str(__result))
+ process.exit(255)
+}
+return __result

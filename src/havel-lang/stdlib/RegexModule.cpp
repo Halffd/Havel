@@ -127,9 +127,9 @@ void registerRegexModule(const VMApi &api) {
   });
 
   // escape_regex(text) - Escape regex special characters
-  api.registerFunction("escape_regex", [api](const std::vector<Value> &args) {
+  api.registerFunction("regex_escape", [api](const std::vector<Value> &args) {
     if (args.empty())
-      throw std::runtime_error("escape_regex() requires text");
+      throw std::runtime_error("regex_escape() requires text");
 
     std::string text = getString(api, args[0]);
     std::string result;
@@ -152,7 +152,7 @@ void registerRegexModule(const VMApi &api) {
   api.setField(regexObj, "replace", api.makeFunctionRef("regex_replace"));
   api.setField(regexObj, "extract", api.makeFunctionRef("regex_extract"));
   api.setField(regexObj, "split", api.makeFunctionRef("regex_split"));
-  api.setField(regexObj, "escape", api.makeFunctionRef("escape_regex"));
+  api.setField(regexObj, "escape", api.makeFunctionRef("regex_escape"));
   api.setGlobal("Regex", regexObj);
 }
 

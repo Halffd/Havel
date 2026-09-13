@@ -1729,6 +1729,26 @@ fn parsePattern() {
   return OrPattern(alternatives, current().line, current().col)
 }
 
+// After a literal pattern atom, check for `..=literal` to build a
+// RangePattern. Range patterns apply to ANY comparable literal
+// (1..=10, 'a'..='z'), not just identifiers — the old parser only
+// recognized identifier-started ranges, so `match c { 'a'..='z' => ... }`
+// returned the bare literal, parseMatchCase then saw `..=` where it
+// expected `=>`, returned an ErrorNode without consuming anything, and
+// the match-case loop spun forever (parser hang).
+fn maybeRangePattern(startPat, l, c) {
+  if current().tid == TID.DotDotEquals {
+    advance()
+    endPat = parsePatternAtom()
+    if endPat == null {
+      error("Expected pattern after '..='", current().line, current().col)
+      return startPat
+    }
+    return RangePattern(startPat, endPat, l, c)
+  }
+  return startPat
+}
+
 fn parsePatternAtom() {
   l = current().line
   c = current().col
@@ -1747,13 +1767,20 @@ fn parsePatternAtom() {
     return parseObjectPatternForMatch()
   }
   // Boolean/Null/Number/String/Char/Regex literals
-  if current().tid == TID.True { advance(); return BooleanLiteral(true, l, c) }
-  if current().tid == TID.False { advance(); return BooleanLiteral(false, l, c) }
-  if current().tid == TID.Null { advance(); return NullLiteral(l, c) }
-  if current().tid == TID.Number { return NumberLiteral(advance().value, l, c) }
-  if current().tid == TID.String || current().tid == TID.MultilineString { return StringLiteral(advance().value, l, c) }
-  if current().tid == TID.CharLiteral { advance(); return CharLiteral(current().value, l, c) }
-  if current().tid == TID.RegexLiteral { return StringLiteral(advance().value, l, c) }
+  if current().tid == TID.True { advance(); return maybeRangePattern(BooleanLiteral(true, l, c), l, c) }
+  if current().tid == TID.False { advance(); return maybeRangePattern(BooleanLiteral(false, l, c), l, c) }
+  if current().tid == TID.Null { advance(); return maybeRangePattern(NullLiteral(l, c), l, c) }
+  if current().tid == TID.Number { return maybeRangePattern(NumberLiteral(advance().value, l, c), l, c) }
+  if current().tid == TID.String || current().tid == TID.MultilineString { return maybeRangePattern(StringLiteral(advance().value, l, c), l, c) }
+  if current().tid == TID.CharLiteral {
+    // NOTE: advance() BEFORE reading: the old code did `advance(); return
+    // CharLiteral(current().value, ...)` — reading AFTER advancing grabbed
+    // the NEXT token's value ('..='), corrupting the literal.
+    ch = current().value
+    advance()
+    return maybeRangePattern(CharLiteral(ch, l, c), l, c)
+  }
+  if current().tid == TID.RegexLiteral { return maybeRangePattern(StringLiteral(advance().value, l, c), l, c) }
   // Identifier — could be variable binding or Constructor pattern Name(args)
   if current().tid == TID.Identifier {
     name = current().value
@@ -1774,17 +1801,8 @@ fn parsePatternAtom() {
       return ConstructorPattern(name, args, l, c)
     }
     pat = Identifier(name, l, c)
-    // Range pattern: literal..=literal
-    if current().tid == TID.DotDotEquals {
-      advance()
-      endPat = parsePatternAtom()
-      if endPat == null {
-        error("Expected pattern after '..='", current().line, current().col)
-        return pat
-      }
-      return RangePattern(pat, endPat, l, c)
-    }
-    return pat
+    // Range pattern: literal..=literal (via shared helper)
+    return maybeRangePattern(pat, l, c)
   }
   error("Expected pattern", l, c)
   return null
@@ -1956,11 +1974,22 @@ fn parseMatchExpr() {
 
   cases = []
   defaultCase = null
+  errorCount = 0
   skipNewlines()
   while current().tid != TID.CloseBrace and notEOF() and current().tid != TID.EOF {
     skipNewlines()
     if current().tid == TID.CloseBrace: break
     mc = parseMatchCase()
+    if mc != null && mc.kind == "ErrorNode" {
+      // A malformed case must not spin the loop forever: parseMatchCase
+      // errors do not advance the cursor, so the same broken case would
+      // re-parse infinitely (parser hang on any bad pattern). Skip to the
+      // next line/case boundary.
+      errorCount = errorCount + 1
+      if errorCount > 100 { break }
+      synchronize()
+      continue
+    }
     if mc != null {
       if mc.isDefault {
         defaultCase = mc.body

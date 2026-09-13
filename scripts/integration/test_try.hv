@@ -1,34 +1,73 @@
-print("Testing function call...")
-let i = ["i"]
-iImplicit = [1,2,3,4,5]
-try {
-    let result = sleep
-    throw "Error"
-    print("Result: " + result)
-} catch {
-    print("Error!")
-} finally {
-    let v = "top"
-    vImplicit = "top2"
-    fn test() {
-        assert(v == "top", "v should be 'top'")
-        assert(vImplicit == "top2", "vImplicit should be 'top2'")
-        v = 1
-        vImplicit = 2
-        let v = "below"
-        let vImplicit = "below2"
-        print("v in test: ", v)
-    }
-    print("v before test: ", v)
-    print("vImplicit before test: ", vImplicit)
-    print("i before test: ", i)
-    i = ["i", 0]
-    iImplicit = [0]
-    test()
-    print("end v: ", v)
-    print("end vImplicit: ", vImplicit) // should be "below2"
-    assert(vImplicit == "below2", "vImplicit should be 'below2'")
-    print("end i: ", i)
-    print("end iImplicit: ", iImplicit) // should be ["i", 0]
-    assert(iImplicit == ["i", 0], "iImplicit should be ['i', 0]")
+// try/catch/finally semantics test
+// Covers: throw + catch message propagation, finally running on both
+// paths, nested try, rethrow behavior, error value binding.
+
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
 }
+
+print("1. Testing throw/catch:")
+
+caught = ""
+try {
+    throw "boom"
+} catch e {
+    caught = e
+}
+check("catch message", caught, "boom")
+
+print("2. Testing finally on success path:")
+
+trace = []
+try {
+    trace.push("try")
+} catch e {
+    trace.push("catch")
+} finally {
+    trace.push("finally")
+}
+check("success path order", trace, ["try", "finally"])
+
+print("3. Testing finally on error path:")
+
+trace2 = []
+try {
+    try {
+        trace2.push("try")
+        throw "inner"
+    } catch e {
+        trace2.push("catch:" + e)
+    } finally {
+        trace2.push("finally")
+    }
+} catch e {
+    trace2.push("outer:" + e)
+}
+check("error path order", trace2, ["try", "catch:inner", "finally"])
+
+print("4. Testing error value binding:")
+
+try {
+    throw 42
+} catch e {
+    check("numeric throw", e, 42)
+}
+
+print("5. Testing nested rethrow:")
+
+rethrown = ""
+try {
+    try {
+        throw "original"
+    } catch e {
+        throw "rewrapped:" + e
+    }
+} catch e {
+    rethrown = e
+}
+check("rethrow", rethrown, "rewrapped:original")
+
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

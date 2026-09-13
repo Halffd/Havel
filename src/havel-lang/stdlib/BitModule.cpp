@@ -100,6 +100,13 @@ void registerBitModule(const VMApi &api) {
     api.setField(bitObj, "_or", api.makeFunctionRef("bit._or"));
     api.setField(bitObj, "_xor", api.makeFunctionRef("bit._xor"));
     api.setField(bitObj, "_not", api.makeFunctionRef("bit._not"));
+    // Public aliases: and/or/not are reserved lexer keywords, so the
+    // sidecar cannot export fn defs for them (module parse fails), and
+    // namespace mutations (bit["and"]=...) don't survive module loading.
+    // Expose them here as plain callable fields on the bit namespace.
+    api.setField(bitObj, "and", api.makeFunctionRef("bit._and"));
+    api.setField(bitObj, "or", api.makeFunctionRef("bit._or"));
+    api.setField(bitObj, "not", api.makeFunctionRef("bit._not"));
     api.setGlobal("bit", bitObj);
 
     auto &vm = api.vm();

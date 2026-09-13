@@ -158,6 +158,9 @@ void registerMathModule(const VMApi &api) {
       for (const auto& [name, value] : *pobj) {
         if (name.empty() || name[0] == '_') continue;
         api.setField(physicsObj, name, value);
+        // Expose on the math namespace too: `use math` contract
+        // (math/math sidecar merges the same way via mergeExports).
+        api.setField(mathObj, name, value);
         api.setGlobal(name, value);
       }
     }

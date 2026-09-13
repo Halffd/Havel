@@ -402,6 +402,37 @@ static bool programHasHotkeys(const havel::ast::Program &program) {
   return false;
 }
 
+// Does the script actually use a UI backend? Only ui-module imports (or a
+// tray call through it) need QApplication + fontconfig. Hotkey-only scripts
+// were historically routed through executeWithUIBackend too, which forced
+// Qt instantiation for scripts that never touched ui - fontconfig loaded,
+// its leak fired, startup paid the toolkit init. Hotkeys themselves run on
+// the evdev/X11 input path and need no UI backend.
+static bool programUsesUIBackend(const havel::ast::Program &program) {
+  for (const auto &stmt : program.body) {
+    if (!stmt)
+      continue;
+    if (stmt->kind == havel::ast::NodeType::UseStatement) {
+      const auto &use = static_cast<const havel::ast::UseStatement &>(*stmt);
+      for (const auto &name : use.moduleNames) {
+        if (name == "ui" || name == "qt")
+          return true;
+      }
+      // use "ui" / use "ui/..." as alias
+      if (use.filePath == "ui" ||
+          use.filePath.rfind("ui/", 0) == 0 ||
+          use.filePath == "qt")
+        return true;
+    }
+    if (stmt->kind == havel::ast::NodeType::ImportStatement) {
+      const auto &imp = static_cast<const havel::ast::ImportStatement &>(*stmt);
+      if (imp.modulePath == "ui" || imp.modulePath.rfind("ui/", 0) == 0)
+        return true;
+    }
+  }
+  return false;
+}
+
 static void installMinimalSignalHandlers() {
   struct sigaction sa;
   sa.sa_flags = 0;
@@ -640,14 +671,15 @@ public:
     auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
 
-    // Parse once to check for hotkey bindings
+    // Parse once to check for hotkey bindings and ui usage
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
+    bool needsUI = program && programUsesUIBackend(*program);
 
-    if (hasHotkeys) {
+    if (needsUI) {
       // Full mode with UI backend
       if (debugging::debug_io)
-        debug("Hotkeys detected — using full execution mode");
+        debug("UI usage detected — using full execution mode");
 
       auto *backend = host::UIManager::instance().backend();
       if (!backend) {
@@ -738,19 +770,40 @@ public:
       return backend->runEventLoop();
     }
 
-    // Headless mode
-    if (debugging::debug_io) debug("ScriptStrategy: going headless (no hotkeys in AST)");
+    // Headless mode / hotkey-only (no UI usage)
+    if (debugging::debug_io)
+      debug(hasHotkeys ? "ScriptStrategy: hotkeys without ui usage — "
+                         "engine loop, no UI backend"
+                       : "ScriptStrategy: going headless (no hotkeys in AST)");
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
       auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
-      bool wantedExit = engine.vm()->exitRequested();
-      int exitCode = engine.vm()->exitCode();
-      engine.shutdown();
-      if (wantedExit)
+
+      if (engine.vm()->exitRequested()) {
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
         return exitCode;
+      }
+
+      // Hotkey-only: keep the process alive without any UI backend. Input
+      // and timers run on the EventListener thread; this loop drives
+      // goroutines and exit, replacing the QApplication event loop that
+      // hotkey scripts were previously (and unnecessarily) routed through.
+      if (hasHotkeys) {
+        info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+        while (!engine.vm()->exitRequested()) {
+          engine.tickGoroutines();
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
+      engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
@@ -1128,7 +1181,6 @@ public:
 
     // Parse user scripts to check for hotkeys
     auto program = parseScript(combinedCode, cfg);
-    bool hasHotkeys = program && programHasHotkeys(*program);
 
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
@@ -1195,10 +1247,15 @@ public:
 
     installMinimalSignalHandlers();
 
-    // If user script has hotkeys and not headless, run with UI event loop
-    if (hasHotkeys && !cfg.headlessMode) {
+    // UI backend (QApplication + fontconfig) only when the script really
+    // uses ui/qt. Hotkey-only scripts run on the plain engine with a
+    // keep-alive loop: the EventListener thread drives input and timers,
+    // the loop drives goroutines and exit.
+    bool needsUI = program && programUsesUIBackend(*program);
+    if (needsUI && !cfg.headlessMode) {
       return executeWithUIBackend(cfg, argc, argv, launcherCode, launcherPath, appArgList, combinedNames);
     }
+    bool hasHotkeys = program && programHasHotkeys(*program);
 
     // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
     try {
@@ -1229,11 +1286,30 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(launcherCode, "__main__", launcherPath);
       havel::startup_timing_report("engine.execute", exec_t0);
-      bool wantedExit = engine.vm()->exitRequested();
-      int exitCode = engine.vm()->exitCode();
-      engine.shutdown();
-      if (wantedExit)
+
+      if (engine.vm()->exitRequested()) {
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
         return exitCode;
+      }
+
+      // Hotkey-only scripts: the launcher returned with hotkeys registered
+      // but the process must stay alive until exit()/Ctrl+C. No UI backend
+      // is involved; the EventListener thread drives input + timers, this
+      // loop drives goroutines and exit (same contract the Qt path's idle
+      // callback provided, minus QApplication + fontconfig).
+      if (hasHotkeys) {
+        info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+        while (!engine.vm()->exitRequested()) {
+          engine.tickGoroutines();
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
+      engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
       error("Self-hosted error: {}", e.what());

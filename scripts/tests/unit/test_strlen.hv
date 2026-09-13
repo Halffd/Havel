@@ -1,2 +1,0 @@
-let s = "abc"
-print(len(s))

@@ -1,3 +1,0 @@
-log.log("stdout", "Hello from Havel!")
-log.info("Info log works")
-1 + 1

@@ -1,8 +1,0 @@
-fn add(a, b) {
-  a + b
-
-}
-obj = {myAdd: add}
-
-r = obj.myAdd(3, 4)
-print(r)

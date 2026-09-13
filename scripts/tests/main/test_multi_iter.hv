@@ -4,7 +4,7 @@ print("=== Multi-Variable Iteration Tests ===\n")
 
 // Test 1: Object iteration with key, value (requires parentheses)
 print("1. Object iteration (key, value):")
-let obj = {"a": 1, "b": 2, "c": 3}
+obj = {"a": 1, "b": 2, "c": 3}
 for (key, val) in obj {
   print("  ")
   print(key)

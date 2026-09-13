@@ -14,4 +14,4 @@ fn _n(x: num) -> num {
     num(x)
 }
 
-let _private_state = 0
+_private_state = 0

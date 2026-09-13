@@ -10,7 +10,7 @@ fn fizzbuzz(n) {
 
 // Test single value (backward compatibility)
 fn test_single() {
-    let x = 5
+x = 5
     match x {
         1 => print("one")
         5 => print("five")

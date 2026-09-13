@@ -16,7 +16,7 @@ assert(_G.testVar == 42, "Property creation via _G")
 print("✓ Global creation")
 
 // Test 4: Iteration
-let count = 0
+count = 0
 for name, value in _G {
     count = count + 1
 }
@@ -24,7 +24,7 @@ assert(count > 0, "_G has entries")
 print("✓ _G iteration works")
 
 // Test 5: Sandbox via _G isolation
-let sandbox = _G
+sandbox = _G
 _G.sandboxVar = 99
 assert(_G.sandboxVar == 99, "Sandbox variable isolated")
 print("✓ Sandbox isolation")

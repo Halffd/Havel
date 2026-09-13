@@ -261,7 +261,9 @@ public:
   }
 
   const char* name() const override {
-    return fast_ ? "tiered(cranelift+llvm)" : "tiered(llvm)";
+    if (fast_ && optimizing_) return "tiered(cranelift+llvm)";
+    if (fast_) return "tiered(cranelift)";
+    return "tiered(llvm)";
   }
 
   CompilerBackend* fast() const { return fast_.get(); }

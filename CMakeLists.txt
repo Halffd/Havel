@@ -664,13 +664,20 @@ endif()
 # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
     if(NOT ENABLE_LLVM)
         # LLVM-dependent TUs: the ORC JIT monolith plus its decomposed
-        # slices (runtime bridges, IR lowering) - all require LLVM headers
-        # and libraries.
+        # IR-lowering slice - they require LLVM headers and libraries.
+        # JitRuntimeBridges.cpp is LLVM-free (RuntimeABI bridges over the
+        # VM) and must stay in the build when Cranelift is enabled: the
+        # CraneliftBackend adapter registers exactly those havel_vm_*
+        # symbols with the Rust staticlib.
         list(REMOVE_ITEM HAVEL_LANG_SOURCES
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
-            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp
         )
+        if(NOT ENABLE_CRANELIFT)
+            list(REMOVE_ITEM HAVEL_LANG_SOURCES
+                ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
+            )
+        endif()
     endif()
 
     # Exclude WaylandModule (Wayland support removed, not used)

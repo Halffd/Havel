@@ -120,15 +120,19 @@ VM::VM(const VMConfig &cfg) {
   }
   registerDefaultHostFunctions();
 
-#ifdef HAVEL_ENABLE_LLVM
+#if defined(HAVEL_ENABLE_LLVM) || defined(HAVEL_ENABLE_CRANELIFT)
   if (tiering_enabled_) {
     // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
     // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
     // optimizing ORC JIT. Without a fast backend the composite degrades to
-    // ORC for both tiers.
-    std::unique_ptr<CompilerBackend> optimizing =
+    // ORC for both tiers; without LLVM the ORC tier is absent and both
+    // tiers run through the fast backend.
+    std::unique_ptr<CompilerBackend> optimizing;
+#ifdef HAVEL_ENABLE_LLVM
+    optimizing =
         std::make_unique<JITCompilerBackend>(
             std::make_unique<BytecodeOrcJIT>());
+#endif
     std::unique_ptr<CompilerBackend> fast;
 #if defined(HAVEL_ENABLE_CRANELIFT)
     {
@@ -175,15 +179,19 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   }
   registerDefaultHostFunctions();
 
-#ifdef HAVEL_ENABLE_LLVM
+#if defined(HAVEL_ENABLE_LLVM) || defined(HAVEL_ENABLE_CRANELIFT)
   if (tiering_enabled_) {
     // Tiered execution (TODO #25): tier 1 goes to the fast backend when one
     // is compiled in (Cranelift prototype, ENABLE_CRANELIFT), tier 2 to the
     // optimizing ORC JIT. Without a fast backend the composite degrades to
-    // ORC for both tiers.
-    std::unique_ptr<CompilerBackend> optimizing =
+    // ORC for both tiers; without LLVM the ORC tier is absent and both
+    // tiers run through the fast backend.
+    std::unique_ptr<CompilerBackend> optimizing;
+#ifdef HAVEL_ENABLE_LLVM
+    optimizing =
         std::make_unique<JITCompilerBackend>(
             std::make_unique<BytecodeOrcJIT>());
+#endif
     std::unique_ptr<CompilerBackend> fast;
 #if defined(HAVEL_ENABLE_CRANELIFT)
     {

@@ -1,0 +1,19 @@
+// Regression test: race imported from async_mod picks the first completer.
+// Bug history (fixed): (1) shared `done` flag had a TOCTOU race — two
+// competitors suspended at f() could both pass !done and both send.
+// (2) loop variables share one upvalue cell, so every competitor captured
+// the SAME f — all goroutines ran funcs[0]. Fixed: IIFE per-iteration
+// capture + first-send-wins (channel.send queues, receive once).
+// Expected: winner is the competitor whose source fires first ("fast").
+
+use { race } from "async_mod"
+
+ch1 = channel.new()
+ch2 = channel.new()
+go fn() { sleep(50); ch1.send("slow") }
+go fn() { sleep(10); ch2.send("fast") }
+winner = race([fn() { ch1.receive() }, fn() { ch2.receive() }])
+print("winner: " + str(winner))
+assert(winner.ok, "race failed: " + str(winner))
+assert(winner.value == "fast", "race picked wrong winner: " + str(winner))
+print("PASS")

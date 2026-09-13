@@ -6609,16 +6609,17 @@ current_script_dir_ = prev_script_dir;
     }
   }
 
-// The GLBS globals-append write used to live here. Removed: the warm
-// restore path is disabled (hasCachedGlobals pinned false above after
-// stale closure re-binding produced "non-callable value" failures), so
-// nothing ever read these sections. The write itself was pure cost AND
-// actively harmful on corrupt targets: chunkDataEnd's first-marker
-// arithmetic cannot parse a globals-only blob (no HVC chunk header), so
-// it fell back to "whole file is chunk data" and re-appended a fresh
-// [globals][GLBS] section on every cold load - scripts/tests/
-// cross_chunk_helper.hvc grew 109KB -> 440KB+ in stacked sections,
-// rewriting a tracked fixture on every test run.
+// The GLBS globals-append write used to live here. Removed (db9ee982):
+// the warm restore path is disabled (hasCachedGlobals pinned false above
+// after stale closure re-binding produced "non-callable value" failures),
+// so nothing ever read these sections. Worse, on files whose header
+// chunkDataEnd cannot parse (globals-only blobs, no HVC magic), the
+// rewrite treated the whole file as chunk data and stacked one more
+// [globals][GLBS] section per cold load: modules/lang/math/math.hvc grew
+// to 221MB, and every launch re-serialized + rewrote that whole file
+// under an exclusive flock, serializing all concurrent havel processes
+// behind a ~30s lock queue. This re-add was a working-tree regression
+// on top of the merged deletion; do not reintroduce it.
 
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)

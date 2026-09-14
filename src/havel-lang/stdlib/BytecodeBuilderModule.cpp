@@ -627,6 +627,23 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     return Value::makeBool(true);
 });
 
+    // Empty-array default (`= []`): store the dedicated sentinel. A plain
+    // set_default_value(di, true) would collide with a genuine `= true`
+    // bool default.
+    api.registerFunction("bc.set_default_array", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.set_default_array: no current function");
+    if (args.size() < 1 || !args[0].isInt()) {
+        throw std::runtime_error("bc.set_default_array: requires (param_index)");
+    }
+    uint32_t paramIdx = static_cast<uint32_t>(args[0].asInt());
+    while (fn->default_values.size() <= paramIdx) {
+        fn->default_values.push_back(std::nullopt);
+    }
+    fn->default_values[paramIdx] = Value::makeDefaultArraySentinel();
+    return Value::makeBool(true);
+});
+
     api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
         if (g_builder.chunk->getFunctionCount() == 0) {
             throw std::runtime_error("bc.execute: no functions in chunk");
@@ -1282,6 +1299,7 @@ api.setField(bcObj, "disasm_all", api.makeFunctionRef("bc.disasm_all"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));
     api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
     api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
+    api.setField(bcObj, "set_default_array", api.makeFunctionRef("bc.set_default_array"));
     api.setField(bcObj, "trace_execution", api.makeFunctionRef("bc.trace_execution"));
 	api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
     api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));

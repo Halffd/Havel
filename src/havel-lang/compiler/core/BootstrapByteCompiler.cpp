@@ -1041,10 +1041,10 @@ if (param->defaultValue.has_value()) {
         const auto &arr =
             static_cast<const ast::ArrayLiteral &>(*defaultExpr);
         if (arr.elements.empty()) {
-          // Empty array default: use boolean true as sentinel.
-          // The VM recognizes makeBool(true) as "allocate fresh empty array".
+          // Empty array default: dedicated sentinel value. A genuine
+          // `= true` bool default must not collide with it.
           current_function->default_values.push_back(
-              Value::makeBool(true));
+              Value::makeDefaultArraySentinel());
         } else {
           // Non-empty array defaults not yet supported as defaults
           current_function->default_values.push_back(std::nullopt);

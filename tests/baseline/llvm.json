@@ -2,6 +2,7 @@
   "baseline": "llvm",
   "version": "0.3.4",
   "timestamp": "2026-09-04T04:25:46Z",
+  "revalidated": "2026-09-14T03:55:00Z",
   "build": {
     "mode": 5,
     "type": "Release",
@@ -74,5 +75,27 @@
     },
     "gc": 17718,
     "test_simple": 896
+  },
+  "revalidation_2026_09_14": {
+    "context": "post 05f45c2e (batched dispatch ticks) + e9315493 (pipeline-fingerprint cache); machine load avg ~6/16 (not idle, shared) so CPU-time was the primary metric; wall-clock arithmetic measured as secondary since load had headroom",
+    "arithmetic_ms": {
+      "baseline_2026_09_04": 27479,
+      "current": 3900,
+      "note": "27.7M instructions, profiler instruction count unchanged (27,721,728) - same bytecode, ~7x wall-clock from batched goroutine dispatch ticks (05f45c2e). Wall-clock validation that commit deferred due to load 24-32"
+    },
+    "idle_cpu_goroutine": {
+      "scenario": "goroutine loop { counter++; sleep(50) } + main sleeping - hotkey-script shape",
+      "cpu_ticks_over_10s": "utime 17->20, stime 21->22 (100/s ticks) = 0.04s CPU / 10s wall",
+      "cpu_percent": 0.4,
+      "goroutine_progress": "61 iterations in 3s (expected ~60) - scheduler alive while idle",
+      "verdict": "no high-CPU-with-goroutines regression observable on current build"
+    },
+    "startup_ms": 290,
+    "startup_rss_kb": 90300,
+    "benchmarks_fixed": {
+      "closures": "PASS (rc=0): closure_creation=100000 closure_calls=1000000 closure_capture=99990000",
+      "objects": "PASS (rc=0): object_creation=50000 object_access=60000000 object_modification=500000 nested_objects=100000",
+      "note": "both were FAIL in 2026-09-04 baseline (stale syntax); prerequisite for trustworthy benchmark trending now satisfied"
+    }
   }
 }

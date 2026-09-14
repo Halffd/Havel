@@ -976,6 +976,20 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
   InfoFn info_fn = reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
   if (info_fn) {
     const HavelModuleABI *abi = info_fn();
+    // Build identity: reject plugins compiled against different ABI
+    // headers - their inlined host-VM code corrupts memory at runtime
+    // (SIGFPE in hash modulo observed from a stale plugin).
+    static const char *host_id =
+        HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID);
+    const char *plugin_id = abi ? abi->build_id : nullptr;
+    if (abi && (!plugin_id || strcmp(plugin_id, host_id) != 0)) {
+      std::cerr << "ModuleLoader: build id mismatch for " << path
+                << " (plugin " << (plugin_id ? plugin_id : "(none)")
+                << ", host " << host_id
+                << ") - stale plugin, rebuild it" << std::endl;
+      dlclose(handle);
+      return std::nullopt;
+    }
     if (abi && abi->abi_version >= 1 &&
         abi->abi_version <= HAVEL_MODULE_ABI_VERSION && abi->register_fn) {
       // register_fn must be called with VMApi* from the VM

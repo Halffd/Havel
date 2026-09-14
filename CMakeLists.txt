@@ -2185,6 +2185,32 @@ if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
 set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
 file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 
+# -- module plugin build identity --------------------------------------------
+# Module plugins (.so) inline host VM code (VMApi -> VM::setGlobal etc.), so
+# a plugin compiled against a different VM layout crashes the host (observed:
+# stale havel_mod_math.so SIGFPE in _Mod_range_hashing after VM.hpp gained
+# new fields). Hash the ABI-critical headers at configure time and stamp the
+# value into both the host binary and every plugin; the loader rejects
+# plugins whose build id does not match the host's.
+set(HAVEL_ABI_HEADERS
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VM.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMApi.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMInternals.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/CallFrame.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/core/Value.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/RuntimeSupport.hpp
+  ${CMAKE_SOURCE_DIR}/src/c/ModulePlugin.h
+)
+set(HAVEL_MODULE_BUILD_ID_SRC "")
+foreach(_hdr ${HAVEL_ABI_HEADERS})
+  file(READ ${_hdr} _hdr_content)
+  string(APPEND HAVEL_MODULE_BUILD_ID_SRC "${_hdr_content}")
+endforeach()
+string(MD5 HAVEL_MODULE_BUILD_ID_MD5 "${HAVEL_MODULE_BUILD_ID_SRC}")
+string(SUBSTRING "${HAVEL_MODULE_BUILD_ID_MD5}" 0 8 HAVEL_MODULE_BUILD_ID)
+add_compile_definitions(HAVEL_MODULE_BUILD_ID=0x${HAVEL_MODULE_BUILD_ID})
+message(STATUS "Module plugin build id: 0x${HAVEL_MODULE_BUILD_ID}")
+
 # Helper function to define a module plugin .so target
 # Usage: add_havel_module_plugin(name source [EXTRA_DEFS def1 def2 ...])
 function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)

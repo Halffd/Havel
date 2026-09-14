@@ -1,6 +1,7 @@
 #include "BytecodeBuilderModule.hpp"
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "utils/Logger.hpp"
 
@@ -878,7 +879,10 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
 	        srcPath = api.resolveString(g_builder.current_source_file);
 	    }
 	    havel::compiler::ValueSerializer serializer;
-	    auto data = serializer.serializeChunk(chunk, srcPath);
+	    auto data = serializer.serializeChunk(
+	        chunk, srcPath,
+	        havel::compiler::computePipelineFingerprint(
+	            havel::ModuleLoader::getDefaultCacheDir()));
 	    std::ofstream out(path, std::ios::binary);
 	    if (!out.is_open()) {
 	        throw std::runtime_error("bc.serialize: cannot open " + path);

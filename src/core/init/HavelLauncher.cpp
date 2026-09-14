@@ -2301,7 +2301,21 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                 if (!primaryHashHex.empty() && !sizeEc &&
                     primarySize == srcInfo.size &&
                     primaryHashHex == embeddedHex) {
-                  reusable = true;
+                  // Source identity holds; check pipeline identity for
+                  // stamped (v5) entries the same way checkBcCache does.
+                  if (!srcInfo.pipelineFingerprint.empty()) {
+                    const std::string currentFp =
+                        havel::compiler::computePipelineFingerprint(
+                            havel::ModuleLoader::getDefaultCacheDir());
+                    if (!currentFp.empty() &&
+                        currentFp != srcInfo.pipelineFingerprint) {
+                      reusable = false;
+                      info("Bytecode cache pipeline mismatch (cache built with {} vs current {}), recompiling: {}",
+                           srcInfo.pipelineFingerprint.substr(0, 12),
+                           currentFp.substr(0, 12),
+                           cachePath);
+                    }
+                  }
                 } else {
                   reusable = false;
                   info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built from {} bytes/hash {}), recompiling: {}",
@@ -3119,7 +3133,10 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
     // and bump its mtime without recompiling).
     havel::compiler::ValueSerializer serializer;
-    auto data = serializer.serializeChunk(*chunk, primaryFile);
+    auto data = serializer.serializeChunk(
+        *chunk, primaryFile,
+        havel::compiler::computePipelineFingerprint(
+            havel::ModuleLoader::getDefaultCacheDir()));
 
     info("Serialization complete, {} bytes", data.size());
 

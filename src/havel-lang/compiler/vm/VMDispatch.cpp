@@ -1134,6 +1134,14 @@ op_CALL: {
   // Falls through to the full executeInstruction path for anything else
   // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
   if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+    // Fiber-suspending host call on the inline fast path: the callee left a
+    // Pending marker on the stack. Park the goroutine on the pending token
+    // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
+    // resume it with the lifted value.
+    if (!stack.empty() && stack.back().isPending()) {
+      if (parkIfPendingCallResult())
+        return;
+    }
     counter++;
     if ((counter & 8191) == 0) {
       if (fast_tick_budget_ != 0) {

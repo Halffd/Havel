@@ -2090,6 +2090,19 @@ case OpCode::LENGTH: {
         break;
     }
     case OpCode::ARRAY_SET: {
+        // Matches interpreter stack protocol (VMCollections.cpp
+        // ARRAY_SET): pops value, index, container and pushes NOTHING.
+        // indexAssignPublic returns the container word so op_index_set /
+        // callers can chain, but the interpreter's ARRAY_SET discards it
+        // (only the op_index_set object path pushes the container, which
+        // the bridge handles internally). Previously this pushed the
+        // bridge result, leaving one extra vstack entry per ARRAY_SET —
+        // vstack depth diverged between arms of a join, so a branch
+        // containing arr[i] = v corrupted the merged stack (an if-arm
+        // assign turned the if-expression's result into the leftover
+        // container array). The emitted bytecode always re-loads the
+        // RHS from its temp local right after ARRAY_SET, so nothing
+        // consumes the bridge return here.
         llvm::Value* val = vstack.back(); vstack.pop_back();
         llvm::Value* idx = vstack.back(); vstack.pop_back();
         llvm::Value* arr = vstack.back(); vstack.pop_back();
@@ -2099,7 +2112,7 @@ case OpCode::LENGTH: {
                 llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_array_set", &module);
         }
-        vstack.push_back(B.CreateCall(fnSet, {vmArg, arr, idx, val}));
+        B.CreateCall(fnSet, {vmArg, arr, idx, val});
         break;
     }
     case OpCode::ARRAY_LEN: {

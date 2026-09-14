@@ -166,8 +166,10 @@ fn emitStoreVar(emitter, name) {
 
 fn emitStoreDecl(emitter, name, isConst) {
   funcRoot = scopeFindFuncRoot(emitter.scope)
-  // Only treat as global if in main function scope (not nested function)
-  if funcRoot.parent != null && funcRoot.funcId == emitter.mainFuncId {
+  // Only treat as global if the declaration sits at the true module level:
+  // current scope IS the main function root. `val` in a nested block/loop
+  // shadowing a global must declare a block-local instead.
+  if emitter.scope == funcRoot && funcRoot.parent != null && funcRoot.funcId == emitter.mainFuncId {
     if emitter.global_names[name] == true {
       bc.emit(isConst ? "STORE_IMMUT_GLOBAL" : "STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
       return
@@ -1027,9 +1029,18 @@ if target.kind == "IndexExpression" {
 			}
 		}
 	else if target.kind == "MemberExpression" {
-		// obj.prop += val → try in-place op_iadd, fallback to load+op+store
+		// obj.prop += val → evaluate the receiver ONCE into a temp local.
+		// Re-emitting target.obj in the in-place, fallback and reload paths
+		// evaluated side-effecting receivers (getObj().a += 2 called
+		// getObj() twice) and double-counted hits.
+		tempObj = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		emitExpr(emitter, target.obj)
+		bc.emit("STORE_VAR", tempObj)
 		if inplaceMethod != null {
-			emitExpr(emitter, target.obj)
+			// Try in-place op_iadd first; fall back to load+op+store when
+			// the receiver type has no in-place method (returns null).
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
@@ -1040,16 +1051,17 @@ if target.kind == "IndexExpression" {
 			// Check if in-place returned null
 			bc.emit("DUP")
 			fallbackJump = bc.emit("JUMP_IF_NULL", 0)
-			// In-place succeeded — POP result, reload original obj+prop value
+			// In-place succeeded — POP result, reload obj.prop (object was
+			// mutated in place)
 			bc.emit("POP")
-			emitExpr(emitter, target.obj)
+			bc.emit("LOAD_VAR", tempObj)
 			keyIdx2 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
 			bc.emit("OBJECT_GET")
 			endJump = bc.emit("JUMP", 0)
 			// Fallback: desugared form
 			bc.patch_jump(fallbackJump, bc.instr_count())
-			emitExpr(emitter, target.obj)
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx3 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx3)
@@ -1064,7 +1076,7 @@ if target.kind == "IndexExpression" {
 		}
 		else {
 			// No in-place — desugared form
-			emitExpr(emitter, target.obj)
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
@@ -1412,7 +1424,17 @@ return
                 bc.emit("STRING_CONCAT")
             }
             else {
+                // Interpolation segments are never tail positions: the
+                // string still has to be assembled after they evaluate.
+                // Without this clear, a return-expr interpolation like
+                // return o["a${str(k)}"] inherits inTailPosition from the
+                // enclosing return; the str(k) segment emits TAIL_CALL and
+                // the function aborts with the raw segment value instead
+                // of running the subscript (same fix as the C++ emitter).
+                savedTail = emitter.inTailPosition
+                emitter.inTailPosition = false
                 emitExpr(emitter, seg)
+                emitter.inTailPosition = savedTail
                 bc.emit("TO_STRING")
                 bc.emit("STRING_CONCAT")
             }
@@ -3641,7 +3663,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
             }
             if !_handled && type(dv) == "object" && dv.kind == "ArrayLiteral" {
                 if dv.elements == null || #dv.elements == 0 {
-                    bc.set_default_value(di, true)
+                    bc.set_default_array(di)
                 }
             }
   }

@@ -241,12 +241,20 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Only pre-existing keys are mirrored (innermost first, matching the
     // LOAD_GLOBAL read order) so module sandbox maps are not polluted
     // with foreign names.
-    for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
-         ++git) {
-      auto pushedIt = git->find(name);
-      if (pushedIt != git->end()) {
-        pushedIt->second = value;
-        break;
+    // closure_id == 0 means the frame is a module's __main__/__init__
+    // running inside its sandbox: its top-level stores define the
+    // module's OWN globals. Without the closure_id gate, any module fn
+    // sharing a name with a caller global (bit.hv's `replace` vs the
+    // string-replace host fn) leaked the module closure into the
+    // caller's globals and shadowed the host function.
+    if (cf_store.closure_id != 0) {
+      for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
+           ++git) {
+        auto pushedIt = git->find(name);
+        if (pushedIt != git->end()) {
+          pushedIt->second = value;
+          break;
+        }
       }
     }
 

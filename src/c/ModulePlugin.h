@@ -20,16 +20,34 @@
 
 #include <stdint.h>
 
+/* Stringized HAVEL_MODULE_BUILD_ID for the ABI struct field. Defined for
+ * host and plugin builds alike (not under HAVEL_MODULE_PLUGIN). */
+#define HAVEL_MODULE_BUILD_ID_STR_(x) #x
+#define HAVEL_MODULE_BUILD_ID_STR(x) HAVEL_MODULE_BUILD_ID_STR_(x)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define HAVEL_MODULE_ABI_VERSION 2
+#define HAVEL_MODULE_ABI_VERSION 3
 
 #define HAVEL_MODULE_MAX_ALIASES 8
 
+/* Build identity: MD5 (truncated) over the ABI-critical host headers,
+ * stamped into the host binary and every plugin by CMake
+ * (HAVEL_MODULE_BUILD_ID). The loader rejects plugins whose build_id
+ * differs from the host's - a mismatch means the plugin inlined VM code
+ * against a different VM layout and would corrupt memory (observed as
+ * SIGFPE in _Mod_range_hashing from a stale plugin's inlined
+ * VM::setGlobal). abi_version alone cannot catch this: layout changes
+ * that do not touch the plugin interface still break inlined code. */
+#ifndef HAVEL_MODULE_BUILD_ID
+#define HAVEL_MODULE_BUILD_ID 0
+#endif
+
 typedef struct HavelModuleABI {
 	int abi_version;
+	const char *build_id;
 	const char *name;
 	const char *version;
 	const char *description;
@@ -53,10 +71,13 @@ typedef void (*HavelModuleRegisterFn)(void *vmapi);
 
 #define HAVEL_MODULE_EXPORT __attribute__((visibility("default")))
 
+#define HAVEL_MODULE_PLUGIN_BUILD_ID HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID)
+
 #define HAVEL_MODULE_PLUGIN_IMPL(name, version_str, description_str, ...) \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
 	HAVEL_MODULE_ABI_VERSION, \
+	HAVEL_MODULE_PLUGIN_BUILD_ID, \
 	#name, \
 	version_str, \
 	description_str, \
@@ -88,6 +109,7 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
 	HAVEL_MODULE_ABI_VERSION, \
+	HAVEL_MODULE_PLUGIN_BUILD_ID, \
 	#name, \
 	version_str, \
 	description_str, \
@@ -110,6 +132,7 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
 	HAVEL_MODULE_ABI_VERSION, \
+	HAVEL_MODULE_PLUGIN_BUILD_ID, \
 	#name, \
 	version_str, \
 	description_str, \
@@ -132,6 +155,7 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
 	HAVEL_MODULE_ABI_VERSION, \
+	HAVEL_MODULE_PLUGIN_BUILD_ID, \
 	#name, \
 	version_str, \
 	description_str, \
@@ -154,6 +178,7 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
     HAVEL_MODULE_ABI_VERSION, \
+    HAVEL_MODULE_PLUGIN_BUILD_ID, \
     #name, \
     version_str, \
     description_str, \
@@ -176,6 +201,7 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
     HAVEL_MODULE_ABI_VERSION, \
+    HAVEL_MODULE_PLUGIN_BUILD_ID, \
     #name, \
     version_str, \
     description_str, \

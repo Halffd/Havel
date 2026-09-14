@@ -147,7 +147,12 @@ void registerMathModule(const VMApi &api) {
   Value physicsExports;
   try {
     physicsExports = vm.loadModule("math/physics");
+  } catch (const std::exception &e) {
+    // A swallowed failure here silently drops force/momentum/G/C from the
+    // math namespace; keep the reason visible in debug logs.
+    ::havel::debug("math/physics sidecar load failed: {}", e.what());
   } catch (...) {
+    ::havel::debug("math/physics sidecar load failed: unknown error");
   }
 
   // Build "physics"/"Physics" namespace object from physics sidecar
@@ -158,6 +163,9 @@ void registerMathModule(const VMApi &api) {
       for (const auto& [name, value] : *pobj) {
         if (name.empty() || name[0] == '_') continue;
         api.setField(physicsObj, name, value);
+        // Expose on the math namespace too: `use math` contract
+        // (math/math sidecar merges the same way via mergeExports).
+        api.setField(mathObj, name, value);
         api.setGlobal(name, value);
       }
     }

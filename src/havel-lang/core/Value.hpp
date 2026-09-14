@@ -86,6 +86,7 @@ enum class ExtendedTag : uint64_t {
 // Bool payload values
 static constexpr uint64_t BOOL_FALSE = 0;
 static constexpr uint64_t BOOL_TRUE = 1;
+static constexpr uint64_t BOOL_DEFAULT_ARRAY = 2; // default-param `= []` sentinel
 
 // Extended tag mask (bits 43-47, 5 bits for values 0-31)
 // Positioned below the primary tag (bits 48-50) to avoid overlap
@@ -235,6 +236,19 @@ public:
   static Value makeInt(int64_t i) { return Value(makeIntRaw(i)); }
 
   static Value makeBool(bool b) { return Value(makeBoolRaw(b)); }
+
+  // Default-parameter sentinel meaning "allocate a fresh empty array at call
+  // time". BOOL payload 2: distinct from BOOL_TRUE(1)/BOOL_FALSE(0), so a
+  // genuine `= true` default is never mistaken for `= []`.
+  static Value makeDefaultArraySentinel() {
+    return Value(makeTaggedRaw(static_cast<uint64_t>(ValueTag::BOOL),
+                               BOOL_DEFAULT_ARRAY));
+  }
+  bool isDefaultArraySentinel() const {
+    return isBoxed(bits_) &&
+           extractTag(bits_) == ValueTag::BOOL &&
+           extractPayload(bits_) == BOOL_DEFAULT_ARRAY;
+  }
 
   static Value makeNull() { return Value(makeNullRaw()); }
 

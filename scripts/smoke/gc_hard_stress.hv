@@ -9,12 +9,16 @@ use sys
 // - Many allocations to trigger GC budget exhaustion
 
 // Test 1: closures with upvalues to arrays that get heavily allocated around
+// NOTE: fn-local loop counter is `k` — the bare-assignment contract writes
+// to a script global when the name matches one (scheduler_goroutine relies
+// on it), so reusing the script-level `i` here made the outer while exit
+// after one iteration when the inner loop bumped the shared global i.
 fn makeArrayClosure():
   data = []
-  i = 0
-  while i < 50:
-    data.push(i)
-    i += 1
+  k = 0
+  while k < 50:
+    data.push(k)
+    k += 1
   fn get(idx):
     return data[idx]
   fn size():

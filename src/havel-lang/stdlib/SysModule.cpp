@@ -137,9 +137,26 @@ void registerSysModule(const VMApi &api) {
                          (void)args;
   auto arr = api.makeArray();
   for (const auto& a : api.vm().getProgramArgs())
-    api.push(arr, api.makeString(a));
+  api.push(arr, api.makeString(a));
   return arr;
                        });
+
+  // Cooperative shutdown: modules/std/{sys,process,os}.hv's exit() route
+  // here instead of libc exit() via FFI (raw exit mid-goroutine deadlocks
+  // in static destructors). The module-namespace ref "sys.exit" resolves
+  // against THIS registration, not the VM-global "sys.exit" that
+  // VMHostFunctions registers, so both must exist and both must set the
+  // same flag + code.
+  api.registerFunction("sys.exit",
+                       [api](const std::vector<Value> &args) {
+                         int exit_code = 0;
+                         if (!args.empty() && args[0].isInt()) {
+                           exit_code = static_cast<int>(args[0].asInt());
+                         }
+                         api.vm().requestExit(exit_code);
+                         return Value::makeNull();
+                       });
+
 
   api.registerFunction("sys.env",
                        [api](const std::vector<Value> &args) {

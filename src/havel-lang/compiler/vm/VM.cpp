@@ -3279,7 +3279,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         co->locals[base + i] = std::move(args[i]);
       } else if (i < callee->default_values.size() &&
                  callee->default_values[i]) {
-        co->locals[base + i] = (*callee->default_values[i]);
+        const auto &dv = *callee->default_values[i];
+        // Same sentinel expansion as the regular CALL paths
+        if (dv.isDefaultArraySentinel()) {
+          co->locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+        } else {
+          co->locals[base + i] = dv;
+        }
       }
     }
 
@@ -3379,15 +3385,15 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   for (uint32_t i = 0; i < callee->param_count; i++) {
     if (i < args.size()) {
       locals[base + i] = std::move(args[i]);
-    } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
+      } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
       auto it = kwargs_obj->find(callee->param_names[i]);
       if (it != kwargs_obj->end()) {
         locals[base + i] = it->second;
       } else if (i < callee->default_values.size() &&
                  callee->default_values[i].has_value()) {
         const auto &dv = callee->default_values[i].value();
-        // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
-        if (dv.isBool() && dv.asBool()) {
+        // Sentinel: dedicated value means "fresh empty array" for arr=[] defaults
+        if (dv.isDefaultArraySentinel()) {
           locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
         } else {
           locals[base + i] = dv;
@@ -3398,8 +3404,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     } else if (i < callee->default_values.size() &&
                callee->default_values[i].has_value()) {
       const auto &dv = callee->default_values[i].value();
-      // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
-      if (dv.isBool() && dv.asBool()) {
+      // Sentinel: dedicated value means "fresh empty array" for arr=[] defaults
+      if (dv.isDefaultArraySentinel()) {
         locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
       } else {
         locals[base + i] = dv;
@@ -3668,7 +3674,7 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
       } else if (i < callee->default_values.size() &&
                  callee->default_values[i].has_value()) {
         const auto &dv = callee->default_values[i].value();
-        if (dv.isBool() && dv.asBool()) {
+        if (dv.isDefaultArraySentinel()) {
           locals[old_base + i] = Value::makeArrayId(heap_.allocateArray().id);
         } else {
           locals[old_base + i] = dv;
@@ -3678,7 +3684,12 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
       }
     } else if (i < callee->default_values.size() &&
                callee->default_values[i].has_value()) {
-      locals[old_base + i] = callee->default_values[i].value();
+      const auto &dv = callee->default_values[i].value();
+      if (dv.isDefaultArraySentinel()) {
+        locals[old_base + i] = Value::makeArrayId(heap_.allocateArray().id);
+      } else {
+        locals[old_base + i] = dv;
+      }
     } else {
       locals[old_base + i] = nullptr;
     }
@@ -6054,6 +6065,27 @@ Value VM::loadModule(const std::string &path) {
     Value exports = Value::makeObjectId(exportsRef.id);
     
     // Cache and return
+    // Merge dotted host functions of the same module name into the exports
+    // before caching/publishing (see the cold-path publish below for
+    // rationale: a Havel module shadowing a host namespace must keep its
+    // host fns).
+    {
+      const std::string mergePrefix = path + ".";
+      const std::string mergeUsPrefix = path + "_";
+      if (obj) {
+        for (const auto &[fnName, fnVal] : host_function_globals_) {
+          std::string localName;
+          if (fnName.rfind(mergePrefix, 0) == 0) {
+            localName = fnName.substr(mergePrefix.size());
+          } else if (fnName.rfind(mergeUsPrefix, 0) == 0) {
+            localName = fnName.substr(mergeUsPrefix.size());
+          }
+          if (!localName.empty() && !obj->get(localName)) {
+            obj->set(localName, fnVal);
+          }
+        }
+      }
+    }
     moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
                                       cacheSrcPath, cacheBcPath);
     moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache,

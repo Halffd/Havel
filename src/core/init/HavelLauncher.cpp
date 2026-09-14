@@ -2041,6 +2041,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "--version" || arg == "-v") {
       std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
+#ifdef HAVEL_BUILD_COMMIT
+      std::cout << "commit " << HAVEL_BUILD_COMMIT << " ("
+                << HAVEL_BUILD_BRANCH << ", " << HAVEL_BUILD_DIRTY << ")\n";
+#endif
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
       cfg.mode = LaunchConfig::Mode::CLI;

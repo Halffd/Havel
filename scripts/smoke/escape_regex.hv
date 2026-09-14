@@ -1,6 +1,6 @@
 // smoke: escape-regex = 4
 use regex
-s = escape_regex("a.b")
+s = regex_escape("a.b")
 // "a.b" -> "a\\.b" (escaped the dot)
 val __result = #s
 if __result != 4 {

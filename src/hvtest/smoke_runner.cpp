@@ -2669,7 +2669,7 @@ return toNumber(false)
 )havel", 0, dump_bytecode, snapshot_dir);
 
 // ================================================================
-// --- RegexModule: regex_match/regex_search/regex_replace/regex_extract/regex_split/escape_regex ---
+// --- RegexModule: regex_match/regex_search/regex_replace/regex_extract/regex_split/regex_escape ---
 // NOTE: regex_search(text, pattern) -- reversed arg order vs regex_match(pattern, text)
 // ================================================================
 
@@ -2714,7 +2714,7 @@ return arr.len
 
     failures += runStdlibCase("escape-regex", R"havel(
 use regex
-s = escape_regex("a.b")
+s = regex_escape("a.b")
 // "a.b" -> "a\\.b" (escaped the dot)
 return #s
 )havel", 4, dump_bytecode, snapshot_dir);

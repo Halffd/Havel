@@ -399,6 +399,23 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
       // the whole file just to validate the source identity.
       auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfoFile(
           hvcPath.string());
+      // Pipeline gate: stamped (v5) entries record the identity of the
+      // self-hosted compiler (emitter/pratt bytecode caches) that produced
+      // them. Source-hash validation alone cannot see pipeline changes:
+      // an emitter fix produces different bytecode from identical source,
+      // and the stale entry kept serving (observed live with smoke-test
+      // entries after emitter/pratt fixes). Reject BEFORE any serve path
+      // below when the current compiler identity differs. Unstamped
+      // entries (v4, or missing fingerprint inputs) keep legacy behavior
+      // and heal to stamped on the next compile.
+      if (srcInfo.hasInfo && !srcInfo.pipelineFingerprint.empty()) {
+        const std::string currentFp =
+            havel::compiler::computePipelineFingerprint(cacheDir);
+        if (!currentFp.empty() &&
+            currentFp != srcInfo.pipelineFingerprint) {
+          return std::nullopt;  // stale pipeline: recompile from source
+        }
+      }
       if (srcInfo.hasInfo) {
         // The flat cache is global but source trees are not: a parallel
         // worktree's binary may have compiled this entry against ITS

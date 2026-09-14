@@ -9,6 +9,8 @@
 #include <fstream>
 #include <array>
 #include <filesystem>
+#include <mutex>
+#include <optional>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -111,6 +113,109 @@ namespace {
   } while (0)
 
 namespace havel::compiler {
+
+std::string computePipelineFingerprint(const std::string& cacheDir) {
+    // Identity of the self-hosted compiler: the bytecode caches of the
+    // modules that ARE the compiler. Order is fixed so the hash is stable.
+    static const char* kFingerprintInputs[] = {
+        "lang.emitter.hvc",
+        "lang.pratt.hvc",
+        "lang.lexer.hvc",
+        "lang.scope.hvc",
+    };
+
+    // Memoize per (dir, mtime, size): this runs on every bare-name module
+    // resolution (checkBcCache) and hashing ~1.5MB of compiler caches each
+    // time would dominate resolution. The inputs only change when the
+    // build re-emits them, which always bumps mtime and usually size.
+    struct MemoKey {
+        std::string dir;
+        long long mtimeNs = 0;
+        uintmax_t totalSize = 0;
+    };
+    struct MemoEntry {
+        MemoKey key;
+        std::string fingerprint;
+    };
+    static std::mutex memoMutex;
+    static std::optional<MemoEntry> memo;
+
+    MemoKey key;
+    key.dir = cacheDir;
+    {
+        std::error_code ec;
+        for (const char* input : kFingerprintInputs) {
+            const std::string path = cacheDir.empty()
+                                         ? std::string(input)
+                                         : cacheDir + "/" + input;
+            if (!std::filesystem::exists(path, ec) || ec) {
+                return std::string();
+            }
+            key.totalSize += std::filesystem::file_size(path, ec);
+            if (ec) return std::string();
+            key.mtimeNs = std::max(
+                key.mtimeNs,
+                static_cast<long long>(std::chrono::duration_cast<
+                    std::chrono::nanoseconds>(
+                    std::filesystem::last_write_time(path, ec)
+                        .time_since_epoch())
+                    .count()));
+            if (ec) return std::string();
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(memoMutex);
+        if (memo && memo->key.dir == key.dir &&
+            memo->key.mtimeNs == key.mtimeNs &&
+            memo->key.totalSize == key.totalSize) {
+            return memo->fingerprint;
+        }
+    }
+
+    // Any missing input makes the fingerprint unusable (half a compiler):
+    // return empty so writers fall back to the legacy header and readers
+    // treat entries as unstamped. (Existence was verified above; the reads
+    // below can still race with re-emits, in which case the entry simply
+    // serializes unstamped this run and gets stamped on the next.)
+    std::string combined;
+    for (const char* input : kFingerprintInputs) {
+        const std::string path = cacheDir.empty()
+                                     ? std::string(input)
+                                     : cacheDir + "/" + input;
+        auto hash = sha256_file(path);
+        // sha256_file returns an all-zero array on open failure; detect
+        // that (a real file hash is all-zero with negligible probability,
+        // and the file existing was already checked above).
+        bool allZero = true;
+        for (uint8_t b : hash) {
+            if (b != 0) { allZero = false; break; }
+        }
+        if (allZero) {
+            return std::string();
+        }
+        static const char hexDigits[] = "0123456789abcdef";
+        for (uint8_t b : hash) {
+            combined += hexDigits[b >> 4];
+            combined += hexDigits[b & 0x0F];
+        }
+        combined += ";";
+    }
+    // Fold the per-input hashes into one printable fingerprint.
+    auto folded = sha256(reinterpret_cast<const uint8_t*>(combined.data()),
+                         combined.size());
+    std::string out;
+    out.reserve(folded.size() * 2);
+    for (uint8_t b : folded) {
+        static const char hexDigits[] = "0123456789abcdef";
+        out += hexDigits[b >> 4];
+        out += hexDigits[b & 0x0F];
+    }
+    {
+        std::lock_guard<std::mutex> lock(memoMutex);
+        memo = MemoEntry{key, out};
+    }
+    return out;
+}
 
 // ============================================================================
 // NativeFunctionBridge Implementation
@@ -726,6 +831,11 @@ std::optional<Value> ValueSerializer::deserializeJSON(const std::string& json) {
 }
 
 std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath) {
+    return serializeChunk(chunk, sourcePath, std::string());
+}
+
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
+                                                      const std::string& pipelineFingerprint) {
     std::vector<uint8_t> data;
     auto append = [&data](const void* ptr, size_t size) {
         if (ptr == nullptr || size == 0) return;
@@ -733,20 +843,23 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
                     static_cast<const uint8_t*>(ptr) + size);
     };
 
-    // Header: "HVC2" magic (version 3 adds per-function flags, version 4 adds variadic_param_index)
+    // Header: "HVC2" magic (version 3 adds per-function flags, version 4
+    // adds variadic_param_index, version 5 adds the pipeline fingerprint)
     append("HVC2", 4);
 
-    // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index)
-    uint32_t version = 4;
+    // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index,
+    // 5 = pipeline fingerprint for self-hosted-compiled entries)
+    uint32_t version = pipelineFingerprint.empty() ? 4 : 5;
     append(&version, sizeof(version));
 
-    // Flags (bit 0 = has compiler build ID)
+    // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint)
     uint32_t flags = 0;
     // Embed compiler build ID so .hvc is invalidated when compiler changes.
     // This prevents stale cache when the compiler generates different function
     // indices for the same source file.
     const std::string compiler_build_id = __DATE__ " " __TIME__;
     flags |= 1;
+    if (!pipelineFingerprint.empty()) flags |= 2;
     append(&flags, sizeof(flags));
 
     // Compiler build ID (when flags bit 0 is set)
@@ -754,6 +867,18 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
         uint32_t idLen = static_cast<uint32_t>(compiler_build_id.size());
         append(&idLen, sizeof(idLen));
         append(compiler_build_id.data(), idLen);
+    }
+
+    // Pipeline fingerprint (when flags bit 1 is set, version 5): identity of
+    // the self-hosted compiler (emitter/pratt bytecode caches) that produced
+    // this chunk. A user module compiled by an older emitter must not be
+    // served after an emitter change even though its SOURCE hash still
+    // matches - observed live: scripts/tests/unit entries kept serving
+    // pre-fix bytecode after emitter/pratt fixes landed.
+    if (flags & 2) {
+        uint32_t fpLen = static_cast<uint32_t>(pipelineFingerprint.size());
+        append(&fpLen, sizeof(fpLen));
+        append(pipelineFingerprint.data(), fpLen);
     }
 
     // Source path
@@ -964,7 +1089,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (is_v2) {
         // HVC2: read version, flags, source path, source size, source hash
         if (!read(&hvc_version, sizeof(hvc_version))) return std::nullopt;
-        if (hvc_version < 2 || hvc_version > 4) return std::nullopt;
+        if (hvc_version < 2 || hvc_version > 5) return std::nullopt;
         ::havel::debug("[RTS-DEBUG] hvc_version = " + std::to_string(hvc_version));
 
     uint32_t flags = 0;
@@ -983,6 +1108,18 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
         // Build ID is diagnostic only; we don't reject on mismatch.
         // The source SHA-256 hash handles source changes, and the format
         // version handles major compiler format changes.
+    }
+
+    // Pipeline fingerprint (version 5, flags bit 1): identity of the
+    // self-hosted compiler that produced this chunk. Skipped here; the
+    // cache validators (checkBcCache, --build reuse gate) read it via
+    // peekSourceInfo and reject stale-pipeline entries before
+    // deserialization.
+    if ((flags & 2) && hvc_version >= 5) {
+        uint32_t fpLen = 0;
+        if (!read(&fpLen, sizeof(fpLen))) return std::nullopt;
+        if (pos + fpLen > data.size()) return std::nullopt;
+        pos += fpLen;
     }
 
     // Source path
@@ -1367,7 +1504,7 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
 
   uint32_t version = 0;
   if (!read(&version, sizeof(version))) return info;
-  if (version < 2 || version > 4) return info;
+  if (version < 2 || version > 5) return info;
 
   uint32_t flags = 0;
   if (!read(&flags, sizeof(flags))) return info;
@@ -1377,6 +1514,16 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
     if (!read(&idLen, sizeof(idLen))) return info;
     if (idLen > data.size() || pos + idLen > data.size()) return info;
     pos += idLen;
+  }
+
+  // Pipeline fingerprint (version 5, flags bit 1)
+  if ((flags & 2) && version >= 5) {
+    uint32_t fpLen = 0;
+    if (!read(&fpLen, sizeof(fpLen))) return info;
+    if (fpLen > data.size() || pos + fpLen > data.size()) return info;
+    info.pipelineFingerprint.assign(reinterpret_cast<const char*>(data.data()) + pos,
+                                    fpLen);
+    pos += fpLen;
   }
 
   uint32_t srcPathLen = 0;

@@ -1,5 +1,44 @@
 cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 0.3.4 LANGUAGES C CXX)
+
+# -- build source identity ---------------------------------------------------
+# Stamps the binary with the exact git commit it was built from so
+# regression reports can name the commit ("havel --version" shows it).
+# Falls back to "unknown" outside a git checkout (e.g. tarball builds).
+execute_process(
+  COMMAND git rev-parse --short=12 HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE HAVEL_BUILD_COMMIT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+  RESULT_VARIABLE _git_commit_rc
+)
+if(NOT _git_commit_rc EQUAL 0)
+  set(HAVEL_BUILD_COMMIT "unknown")
+endif()
+execute_process(
+  COMMAND git rev-parse --abbrev-ref HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE HAVEL_BUILD_BRANCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+  RESULT_VARIABLE _git_branch_rc
+)
+if(NOT _git_branch_rc EQUAL 0)
+  set(HAVEL_BUILD_BRANCH "unknown")
+endif()
+execute_process(
+  COMMAND git status --porcelain
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE _git_status_out
+  ERROR_QUIET
+  RESULT_VARIABLE _git_status_rc
+)
+if(_git_status_rc EQUAL 0 AND NOT _git_status_out STREQUAL "")
+  set(HAVEL_BUILD_DIRTY "dirty")
+else()
+  set(HAVEL_BUILD_DIRTY "clean")
+endif()
 include(FindPkgConfig)
 
 # ==============================================================================
@@ -1509,6 +1548,9 @@ ${PIPEWIRE_INCLUDE_DIRS}
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
     HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
+    HAVEL_BUILD_COMMIT=\"${HAVEL_BUILD_COMMIT}\"
+    HAVEL_BUILD_BRANCH=\"${HAVEL_BUILD_BRANCH}\"
+    HAVEL_BUILD_DIRTY=\"${HAVEL_BUILD_DIRTY}\"
 )
 endforeach()
 

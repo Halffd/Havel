@@ -344,6 +344,13 @@ public:
   // Chunk serialization
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk);
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath);
+  // pipelineFingerprint: identity of the self-hosted compiler that produced
+  // this chunk (hash over the lang emitter/pratt bytecode caches). Embedded
+  // as a version-5 header field so a cached entry compiled by an older
+  // emitter is rejected instead of silently served. Empty string keeps the
+  // legacy version-4 form for in-memory/internal uses.
+  std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
+                                       const std::string& pipelineFingerprint);
   std::vector<uint8_t> serializeChunkWithGlobals(const BytecodeChunk& chunk,
                                                   const std::unordered_map<std::string, Value>& globals,
                                                   const std::string& sourcePath = "");
@@ -369,6 +376,10 @@ public:
       uint64_t size = 0;
       std::array<uint8_t, 32> hash{};
       bool hasInfo = false;
+      // Version-5 field: identity of the self-hosted compiler that
+      // produced the chunk. Empty for version-4 entries (no fingerprint
+      // recorded - serve as before, first recompile stamps one in).
+      std::string pipelineFingerprint;
   };
   static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
 
@@ -396,6 +407,18 @@ private:
 };
 
 // ============================================================================
+// Pipeline fingerprint: identity of the self-hosted compiler that a cached
+// chunk was built with. Hash over the bytecode caches of the modules that
+// ARE the compiler (lang emitter + pratt). An emitter/pratt change re-emits
+// those caches, changing the fingerprint, so user-module entries compiled
+// by the old emitter are rejected instead of served (source-hash validation
+// alone cannot see pipeline changes).
+// Returns the empty string when the inputs are missing (C++-pipeline-only
+// environment): entries then serialize without a fingerprint (legacy v4).
+// ============================================================================
+std::string computePipelineFingerprint(const std::string& cacheDir);
+
+// ============================================================================
 // Auto-cache - write a freshly compiled chunk to the single bytecode cache
 // location ~/.cache/havel/ with namespaced filenames (lang.<name>.hvc,
 // std.<name>.hvc, or <stem>.<path-hash>.hvc for user modules).
@@ -406,15 +429,12 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
                                    const BytecodeChunk& chunk) {
   try {
     ValueSerializer serializer;
-    std::vector<uint8_t> data =
-        serializer.serializeChunk(chunk, compileUnitName);
-
-    std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
+    const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);
+    std::vector<uint8_t> data =
+        serializer.serializeChunk(chunk, compileUnitName,
+                                   computePipelineFingerprint(cacheDir));
 
-    // Derive the flat cache filename from the canonical source path:
-    // lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
-    // <stem>.<8-hex-path-hash>.hvc for user modules (collision-free).
     std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
 
     std::filesystem::path hvcPath =

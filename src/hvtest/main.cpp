@@ -161,6 +161,19 @@ int main(int argc, char **argv) {
 
 	if (!single_files.empty()) {
 		for (const auto &file : single_files) {
+			// A positional arg that is not a regular .hv file is almost
+			// always a typo'd name or a substring the user meant as a
+			// filter (filters only exist for --smoke/--hvmoke). Executing
+			// it produced a misleading '[FAIL] X (exit=1)' that cost real
+			// debugging time; reject it loudly instead.
+			if (!fs::is_regular_file(file)) {
+				std::cerr << "not a script file: " << file
+				          << (fs::exists(file) ? " (is a directory?)"
+				                               : " (no such file; name filters only work with --smoke/--hvmoke)")
+				          << std::endl;
+				failures++;
+				continue;
+			}
 			auto result = hvtest::run_script(havel_bin, file, timeout);
 			if (result.passed) {
 				std::cout << "[PASS] " << file << " (" << result.elapsed_ms << "ms)" << std::endl;

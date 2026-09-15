@@ -1754,7 +1754,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
   # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
-  # havel_deoptimize symbol defined in the runtime sources is missing from
+  # symbol defined in the runtime sources is missing from
   # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
   # The JIT symbol map and backend declarations derive from that X-macro.
   add_test(NAME runtime-abi-drift-guard

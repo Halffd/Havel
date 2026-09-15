@@ -286,18 +286,17 @@ else if (op == OpCode::INT_DIV) {
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(deoptBB);
-    llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
-    if (!fn_deopt) fn_deopt = llvm::Function::Create(
-        llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false),
-        llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-    llvm::Constant *funcNameStr =
-        llvm::ConstantDataArray::getString(module.getContext(), func.name);
-    llvm::GlobalVariable *gv = new llvm::GlobalVariable(
-        module, funcNameStr->getType(), true,
-        llvm::GlobalValue::PrivateLinkage, funcNameStr);
-    llvm::Value *funcNameConst = B.CreatePointerCast(gv, i8p);
-    B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
-    llvm::Value *slowBoxed = makeNull();
+    // Unspecialized operand mix (non int/double/string, or mixed types):
+    // run the VM's execBinaryOp for this opcode via the generic binop
+    // bridge instead of deoptimizing (the previous havel_deoptimize call
+    // was a no-op stub, so any such binop silently produced null).
+    llvm::Function *fn_binop = module.getFunction("havel_vm_binop");
+    if (!fn_binop) fn_binop = llvm::Function::Create(
+        llvm::FunctionType::get(i64, {i8p, i32, i64, i64}, false),
+        llvm::Function::ExternalLinkage, "havel_vm_binop", &module);
+    llvm::Constant *opConst =
+        llvm::ConstantInt::get(i32, static_cast<uint32_t>(op));
+    llvm::Value *slowBoxed = B.CreateCall(fn_binop, {vmArg, opConst, left, right});
     llvm::BasicBlock *slowExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 

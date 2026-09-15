@@ -132,7 +132,6 @@ void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
 extern "C" void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
                               uint64_t* slot_bits, uint32_t count);
 extern "C" void havel_gc_unregister_roots(JITStackFrame* frame);
-extern "C" void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func);
 extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count);
 extern "C" uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count);
 extern "C" uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id);
@@ -394,6 +393,12 @@ extern "C" uint64_t havel_vm_sub(void* vm_ptr, uint64_t l, uint64_t r) {
 }
 extern "C" uint64_t havel_vm_mul(void* vm_ptr, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::MUL, l, r);
+}
+// Generic binop fallback (ORC): runs the VM's execBinaryOp for the given
+// raw OpCode on raw operand words. Replaces the previous deopt-to-null
+// behavior for unspecialized operand mixes (e.g. string + int).
+extern "C" uint64_t havel_vm_binop(void* vm_ptr, uint32_t op, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, static_cast<havel::compiler::OpCode>(op), l, r);
 }
 
 static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
@@ -1642,29 +1647,43 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         return Value::makeNull().rawBits();
     }
 
-    if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
-        if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
-            // Prototype methods are receiver-bound by definition: the
-            // interpreter's OBJECT_GET materializes them as
-            // allocateBoundMethod(hostfn, receiver), so the host function
-            // sees the receiver as its first argument. callArgs already
-            // carries it when passReceiverAsSelf was true (the receiver
-            // was inserted up front - non-object receivers like arrays
-            // take that path); insert it only when it is missing, or
-            // receiver-dependent builtins see a doubled receiver
-            // (array.push reached with [recv, recv, value] and threw
-            // "expects 2 arguments, got 3" from JIT-compiled pusher).
-            std::vector<Value> boundArgs;
-            if (passReceiverAsSelf) {
-                boundArgs = callArgs;
-            } else {
-                boundArgs.reserve(callArgs.size() + 1);
-                boundArgs.push_back(receiver);
-                boundArgs.insert(boundArgs.end(), callArgs.begin(),
-                                 callArgs.end());
+    // Prototype/module method resolution: getPrototypeMethodValue mirrors
+    // the interpreter's prototype table + module monkey-patch steps and
+    // returns closures/functions as Values (getPrototypeMethod collapses
+    // module-patched closures to a host-index 0 sentinel and misses the
+    // capitalized module globals for string/array/int/etc., so tiered
+    // calls either invoked an unrelated host function or returned null).
+    // Prototype methods are receiver-bound by definition: the interpreter's
+    // OBJECT_GET materializes them as allocateBoundMethod(hostfn, receiver),
+    // so the host function sees the receiver as its first argument. callArgs
+    // already carries it when passReceiverAsSelf was true (the receiver
+    // was inserted up front - non-object receivers like arrays take that
+    // path); insert it only when it is missing, or receiver-dependent
+    // builtins see a doubled receiver (array.push reached with
+    // [recv, recv, value] and threw "expects 2 arguments, got 3" from
+    // JIT-compiled pusher). The patched closure takes the same receiver
+    // argument (interpreter step 1.5 passes it via arg prep).
+    Value protoMethod = vm->getPrototypeMethodValue(receiver, method_name);
+    if (!protoMethod.isNull()) {
+        std::vector<Value> boundArgs;
+        if (passReceiverAsSelf) {
+            boundArgs = callArgs;
+        } else {
+            boundArgs.reserve(callArgs.size() + 1);
+            boundArgs.push_back(receiver);
+            boundArgs.insert(boundArgs.end(), callArgs.begin(),
+                             callArgs.end());
+        }
+        if (protoMethod.isHostFuncId()) {
+            if (auto hostName =
+                    vm->getHostFunctionName(protoMethod.asHostFuncId())) {
+                Value result =
+                    vm->invokeHostFunctionDirect(*hostName, boundArgs);
+                if (!result.isNull()) return result.rawBits();
             }
-            Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
-            if (!result.isNull()) return result.rawBits();
+        } else if (protoMethod.isClosureId() ||
+                   protoMethod.isFunctionObjId()) {
+            return vm->callFunction(protoMethod, boundArgs).rawBits();
         }
     }
 

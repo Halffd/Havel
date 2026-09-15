@@ -1826,6 +1826,13 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
                                       const std::string &funcName);
   std::optional<uint32_t>
   getPrototypeMethod(const Value &value, const std::string &methodName);
+  // Method value for a receiver, mirroring the interpreter's prototype +
+  // module monkey-patch steps: checks both the lowercase and capitalized
+  // module globals like VMControlFlow's CALL_METHOD step 1.5, and returns
+  // patched closures/functions as Values (getPrototypeMethod collapses
+  // those to a host-index 0 sentinel). Used by the ORC call_method bridge.
+  Value getPrototypeMethodValue(const Value &value,
+                                const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
 
   // Protocol system

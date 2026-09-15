@@ -2483,10 +2483,12 @@ if tt == TID.At and at(1).tid == TID.Identifier {
         if tt == TID.Const {
             return parseLetDecl("Val", false) // const is alias for val
         }
-        if tt == TID.AtAt {
-            advance()
-            return parseLetDecl("Val", true)
-        }
+        // '@@field' at statement level (inside method bodies) is an
+        // AtAtExpression, not a declaration: fall through to the
+        // expression path below. The old branch here called
+        // parseLetDecl("Val", true), which double-advanced and ate the
+        // field name - '@@x = 1' never parsed. Class-body '@@' members
+        // are handled by _parseClassMembers.
         // Control flow
         if tt == TID.If {
             return parseIfStatement()
@@ -4125,23 +4127,30 @@ fn _parseClassMembers(methods, fields) {
 		skipNewlinesAndSemicolons()
 		if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
 		tt = current().tid
+		// Class-member marker: '@@' prefixes fields AND methods (@@fn).
+		// Consume it up front (mirrors the C++ parser order) so
+		// '@@fn name() {}' parses as a static method, not a field named 'fn'.
+		isClassMember = false
+		if tt == TID.AtAt {
+			isClassMember = true
+			advance() // consume '@@'
+			tt = current().tid
+		}
 		if tt == TID.Fn {
 			m = _parseClassMethod()
+			if isClassMember { m.isClassMethod = true }
 			methods.push(m)
 			continue
 		}
 		if tt == TID.Op {
 			advance() // consume 'op'
 			m = _parseClassOperatorMethod()
+			if isClassMember { m.isClassMethod = true }
 			methods.push(m)
 			continue
 		}
 		// Field definition: name [: Type] [= default] or @@name [: Type] [= default]
-		isClassField = false
-		if tt == TID.AtAt {
-			isClassField = true
-			advance() // consume '@@'
-		}
+		isClassField = isClassMember
 		fname = current().value
 		fline = current().line
 		fcol = current().col

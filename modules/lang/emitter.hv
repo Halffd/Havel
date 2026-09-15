@@ -917,8 +917,14 @@ if target.kind == "IndexExpression" {
 		return
 	}
     if target.kind == "AtAtExpression" {
+      // @@field = value -> store to Class.field (mirrors C++ bootstrap):
+      // LOAD_GLOBAL <ClassName>, stash obj/val/key, OBJECT_SET, result = RHS
       fname = target.field
       if fname.kind == "Identifier" { fname = fname.name }
+      if emitter.currentClassName == null || emitter.currentClassName == "" {
+        emitError("@@ used outside of a class: " + str(fname), node.line, node.col)
+        return
+      }
       tempVal = scopeLocalCount(emitter.scope)
       emitter.scope.count = emitter.scope.count + 1
       tempObj = scopeLocalCount(emitter.scope)
@@ -926,10 +932,10 @@ if target.kind == "IndexExpression" {
       tempKey = scopeLocalCount(emitter.scope)
       emitter.scope.count = emitter.scope.count + 1
       emitExpr(emitter, node.value)
-      sid = globalIdx(emitter, "this")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      bc.emit("STORE_VAR", tempObj)
       bc.emit("STORE_VAR", tempVal)
+      classSid = globalIdx(emitter, emitter.currentClassName)
+      bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
+      bc.emit("STORE_VAR", tempObj)
       keyIdx = bc.add_string(fname)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("STORE_VAR", tempKey)
@@ -1642,9 +1648,16 @@ if k == "AtExpression" {
         if node.field != null {
             fname = node.field
             if type(fname) == "object" && fname.kind == "Identifier" { fname = fname.name }
-            name = "__static__" + fname
-            sid = globalIdx(emitter, name)
-            bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+            if emitter.currentClassName == null || emitter.currentClassName == "" {
+                emitError("@@ used outside of a class (did you mean ClassName." + str(fname) + "?)", node.line, node.col)
+                return
+            }
+            // Load class object (global named after the class), then field
+            classSid = globalIdx(emitter, emitter.currentClassName)
+            bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
+            keyIdx = bc.add_string(fname)
+            bc.emit("LOAD_CONST", keyIdx)
+            bc.emit("OBJECT_GET")
         }
         else {
             emitError("@@ expression field must be identifier", node.line, node.col)
@@ -4061,6 +4074,7 @@ collectTopLevelGlobals(emitter, topStmts)
       emitter.classNames[stmt.name] = true
     }
     else if stmt.kind == "StructDeclaration" {
+      emitter.classNames[stmt.name] = true
       emitter.structNames[stmt.name] = true
     }
   }

@@ -302,6 +302,61 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
                                    nullptr, inst.getBrightnessManagerPtr());
 }
 
+// Lint check: assignment used in condition position (if/while/do-while/
+// ternary). `if clas = '' || ...` parses (assignment is an expression) but
+// the branch then tests the assigned value, not the intended comparison -
+// a silent logic bug found in hotkeys0.3.hv (inGroup title fallback never
+// ran because of it). Only a bare top-level assignment in the condition is
+// flagged; `a = b == c` (assignment of comparison) and comparisons
+// containing nested assignments in sub-expressions are legal patterns this
+// deliberately does not police.
+static int lintAssignmentInCondition(
+    const havel::ast::Expression *cond, const std::string &constructName,
+    const std::string &primaryFile, const std::string &code,
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+  if (!cond)
+    return 0;
+  if (cond->kind == havel::ast::NodeType::AssignmentExpression) {
+    findings.emplace_back(cond, constructName);
+    return 1;
+  }
+  return 0;
+}
+
+// Recursive statement walker collecting condition-position assignments.
+static void lintWalkStatements(
+    const havel::ast::Statement *stmt, const std::string &primaryFile,
+    const std::string &code,
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+  if (!stmt)
+    return;
+  using havel::ast::NodeType;
+  if (stmt->kind == NodeType::IfStatement) {
+    const auto *n = static_cast<const havel::ast::IfStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "if", primaryFile, code,
+                              findings);
+    lintWalkStatements(n->consequence.get(), primaryFile, code, findings);
+    lintWalkStatements(n->alternative.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::WhileStatement) {
+    const auto *n = static_cast<const havel::ast::WhileStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "while", primaryFile, code,
+                              findings);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::DoWhileStatement) {
+    const auto *n = static_cast<const havel::ast::DoWhileStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "do-while", primaryFile,
+                              code, findings);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::ForStatement) {
+    const auto *n = static_cast<const havel::ast::ForStatement *>(stmt);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::BlockStatement) {
+    const auto *n = static_cast<const havel::ast::BlockStatement *>(stmt);
+    for (const auto &s : n->body)
+      lintWalkStatements(s.get(), primaryFile, code, findings);
+  }
+}
+
 static int runLint(const std::string &code, const std::string &primaryFile,
                    const havel::init::LaunchConfig &cfg) {
   havel::parser::Parser parser{{.lexer = cfg.debugLexer,
@@ -338,6 +393,38 @@ static int runLint(const std::string &code, const std::string &primaryFile,
   }
 
   if (program) {
+    // Condition-assignment lint: silent logic-bug class (see
+    // lintAssignmentInCondition comment). Warnings, not errors - existing
+    // scripts with intentional condition assignments keep linting green.
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> findings;
+    for (const auto &stmt : program->body)
+      lintWalkStatements(stmt.get(), primaryFile, code, findings);
+    for (const auto &[node, constructName] : findings) {
+      std::string sourceLine;
+      if (node && node->line > 0) {
+        std::istringstream ss(code);
+        std::string line;
+        for (size_t i = 1; i <= node->line; ++i) {
+          if (!std::getline(ss, line))
+            break;
+          if (i == node->line) {
+            sourceLine = line;
+            break;
+          }
+        }
+      }
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "warning", "assignment '=' used as " + constructName +
+                         " condition - did you mean '=='? the branch tests "
+                         "the assigned value, not a comparison",
+          primaryFile, node->line, node->column, 1, sourceLine);
+      std::cerr << formatted;
+    }
+    if (!findings.empty())
+      warning("lint: {} assignment-in-condition warning(s) (logic bug "
+              "class: hotkeys0.3.hv inGroup)",
+              findings.size());
+
     havel::compiler::ByteCompiler compiler;
     compiler.setCollectErrors(true);
     try {

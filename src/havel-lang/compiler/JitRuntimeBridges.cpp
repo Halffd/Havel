@@ -1717,12 +1717,24 @@ uint64_t havel_vm_array_map(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Mirror interpreter ARRAY_MAP (VMCollections.cpp): the source array and
+  // the result are popped/held only in C++ while the mapped fn runs, which
+  // can allocate and trigger GC; pin both as external roots and re-fetch
+  // the pointers after each call. Without this, a GC mid-loop freed the
+  // unreferenced result (and a temporary source array) out from under the
+  // bridge -> use-after-free.
   auto resultRef = vm->getHeap().allocateArray();
   auto* result = vm->getHeap().array(resultRef.id);
+  uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     Value mapped = vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
+    result = vm->getHeap().array(resultRef.id);
     result->push_back(mapped);
   }
+  vm->unpinExternalRoot(srcRootId);
+  vm->unpinExternalRoot(resultRootId);
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
@@ -1735,14 +1747,22 @@ uint64_t havel_vm_array_filter(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Same GC-safety contract as havel_vm_array_map: pin source + result
+  // across the predicate calls, re-fetch after each one.
   auto resultRef = vm->getHeap().allocateArray();
   auto* result = vm->getHeap().array(resultRef.id);
+  uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     Value predResult = vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
+    result = vm->getHeap().array(resultRef.id);
     if (predResult.isBool() && predResult.asBool()) {
       result->push_back((*a)[i]);
     }
   }
+  vm->unpinExternalRoot(srcRootId);
+  vm->unpinExternalRoot(resultRootId);
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
@@ -1756,10 +1776,16 @@ uint64_t havel_vm_array_reduce(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   if (!arr.isArrayId()) return init_bits;
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return init_bits;
+  // Same GC-safety contract: pin the source across the reducer calls
+  // (initial/acc are Value copies on the C++ stack, but the array is only
+  // reachable through this pointer while the reducer runs).
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   Value acc = initial;
   for (size_t i = 0; i < a->size(); i++) {
     acc = vm->callFunctionSyncPublic(fn, {acc, (*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
   }
+  vm->unpinExternalRoot(srcRootId);
   return acc.rawBits();
 }
 
@@ -1772,9 +1798,14 @@ uint64_t havel_vm_array_foreach(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bit
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Same GC-safety contract: the source array is unreachable from VM
+  // roots while the callback runs (popped by the lowering); pin it.
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
   }
+  vm->unpinExternalRoot(srcRootId);
   return Value::makeNull().rawBits();
 }
 

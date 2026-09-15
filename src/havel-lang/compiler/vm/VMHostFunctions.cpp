@@ -2926,10 +2926,15 @@ void VM::registerDefaultHostFunctions() {
     if (!current_chunk)
       COMPILER_THROW("struct.new requires active chunk");
 
-    // Determine offset for self argument (when called as method)
+    // Determine offset for self argument (when called as method, e.g. struct.new(type, ...))
     size_t offset = 0;
-    if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
-      offset = 1; // Skip self
+    if (args[0].isObjectId()) {
+      auto *obj0 = heap_.object(args[0].asObjectId());
+      if (obj0 && (obj0->get("__fields") || obj0->get("__is_struct"))) {
+        offset = 0;
+      } else if (args.size() > 1 && (args[1].isObjectId() || args[1].isStringValId())) {
+        offset = 1; // Skip self (struct host module object)
+      }
     }
 
     Value protoVal;

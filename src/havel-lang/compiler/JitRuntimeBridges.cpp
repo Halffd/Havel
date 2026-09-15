@@ -1447,6 +1447,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     if (passReceiverAsSelf) {
         callArgs.insert(callArgs.begin(), receiver);
     }
+    const bool receiverPrepended = passReceiverAsSelf;
 
     if (receiver.isObjectId() && !passReceiverAsSelf) {
         Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
@@ -1457,6 +1458,58 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                 }
             }
             return vm->callFunction(methodValue, callArgs).rawBits();
+        }
+    }
+
+    // Class prototype chain walk: interpreter CALL_METHOD
+    // (VMControlFlow.cpp:667-699) resolves instance methods not found as
+    // direct fields by walking the __class/__struct prototype object and
+    // its __parent chain. getPrototypeMethod only inspects the direct
+    // class object, so inherited methods were missed and JIT-compiled
+    // calls returned null (observed: Child.baseMethod() -> null at the
+    // first tiered call, interpreter returned 42). Mirror the interpreter
+    // exactly: host funcs and Havel fns/closures are both callable, and
+    // the receiver is prepended unconditionally for class-prototype
+    // methods (isInstanceFunc=false in interp arg prep).
+    if (receiver.isObjectId()) {
+        auto* instObj = vm->getHeap().object(receiver.asObjectId());
+        auto* classProto = instObj;
+        if (classProto) {
+            auto* classVal = classProto->get("__class");
+            if (!classVal) classVal = classProto->get("__struct");
+            if (classVal && classVal->isObjectId()) {
+                classProto = vm->getHeap().object(classVal->asObjectId());
+            } else {
+                classProto = nullptr;
+            }
+            while (classProto) {
+                auto* methodVal = classProto->get(method_name);
+                if (methodVal) {
+                    if (methodVal->isHostFuncId() ||
+                        methodVal->isFunctionObjId() ||
+                        methodVal->isClosureId()) {
+                        std::vector<Value> boundArgs = callArgs;
+                        if (!receiverPrepended) {
+                            boundArgs.insert(boundArgs.begin(), receiver);
+                        }
+                        if (methodVal->isHostFuncId()) {
+                            if (auto hostName =
+                                    vm->getHostFunctionName(methodVal->asHostFuncId())) {
+                                return vm->invokeHostFunctionDirect(*hostName, boundArgs)
+                                    .rawBits();
+                            }
+                        } else {
+                            return vm->callFunction(*methodVal, boundArgs).rawBits();
+                        }
+                    }
+                }
+                auto* parentVal = classProto->get("__parent");
+                if (parentVal && parentVal->isObjectId()) {
+                    classProto = vm->getHeap().object(parentVal->asObjectId());
+                } else {
+                    break;
+                }
+            }
         }
     }
 

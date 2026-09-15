@@ -1397,12 +1397,66 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     bool passReceiverAsSelf = true;
 
+    // Field dispatch shared by the object-field paths below: a field value
+    // may be a host fn, a havel fn/closure, or a class prototype stored as
+    // a field (interpreter isClassNewCall, VMControlFlow.cpp:646-662) -
+    // the last is invoked through its "new" host method with
+    // (classProto, ...args), never called directly. Calling an ObjectId as
+    // a fn segfaulted from ORC-compiled code (b.shape(3,4) where shape is
+    // a class proto).
+    auto dispatchField = [&](const Value &fieldVal,
+                             const std::vector<Value> &fieldArgs) -> uint64_t {
+        if (fieldVal.isHostFuncId()) {
+            if (auto hostName = vm->getHostFunctionName(fieldVal.asHostFuncId())) {
+                return vm->invokeHostFunctionDirect(*hostName, fieldArgs).rawBits();
+            }
+            return Value::makeNull().rawBits();
+        }
+        if (fieldVal.isFunctionObjId() || fieldVal.isClosureId()) {
+            return vm->callFunction(fieldVal, fieldArgs).rawBits();
+        }
+        if (fieldVal.isObjectId()) {
+            auto *fieldObj = vm->getHeap().object(fieldVal.asObjectId());
+            if (fieldObj) {
+                auto *isClassVal = fieldObj->get("__is_class");
+                if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+                    auto *newMethod = fieldObj->get("new");
+                    if (newMethod && newMethod->isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(newMethod->asHostFuncId())) {
+                            std::vector<Value> newArgs;
+                            newArgs.reserve(fieldArgs.size() + 1);
+                            newArgs.push_back(fieldVal);
+                            newArgs.insert(newArgs.end(), fieldArgs.begin(),
+                                           fieldArgs.end());
+                            return vm->invokeHostFunctionDirect(*hostName, newArgs)
+                                .rawBits();
+                        }
+                    }
+                }
+            }
+        }
+        return Value::makeNull().rawBits();
+    };
+
     if (receiver.isObjectId()) {
         ObjectRef recvRef{receiver.asObjectId(), true};
         auto* obj = vm->getHeap().object(recvRef.id);
         if (obj) {
             bool foundViaModule = false;
             for (const auto& [name, val] : vm->getGlobals()) {
+                // Skip the ambient @ self-binding: class-instance methods
+                // compile to STORE_GLOBAL "this" (BootstrapByteCompiler).
+                // After a compiled @-method ran once, globals["this"] holds
+                // the latest instance, whose id matches the receiver of
+                // EVERY subsequent myObj.method() bridge call - treating it
+                // as a module object rerouted class-chain methods into the
+                // module arm (no receiver prepend), and the compiled callee
+                // crashed dereferencing args[0]. The interpreter never takes
+                // this route: its module scan only runs in the direct-field
+                // dispatch arm (VMControlFlow.cpp:588), never for
+                // chain-resolved or prototype methods.
+                if (name == "this") continue;
                 if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
                     foundViaModule = true;
                     break;
@@ -1412,13 +1466,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                 passReceiverAsSelf = false;
                 Value methodValue = vm->getHostObjectField(recvRef, method_name);
                 if (!methodValue.isNull()) {
-                    if (methodValue.isHostFuncId()) {
-                        if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
-                            return result.rawBits();
-                        }
-                    }
-                    return vm->callFunction(methodValue, callArgs).rawBits();
+                    return dispatchField(methodValue, callArgs);
                 }
             } else {
                 auto* classVal = obj->get("__class");
@@ -1452,12 +1500,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     if (receiver.isObjectId() && !passReceiverAsSelf) {
         Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
         if (!methodValue.isNull()) {
-            if (methodValue.isHostFuncId()) {
-                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
-                }
-            }
-            return vm->callFunction(methodValue, callArgs).rawBits();
+            return dispatchField(methodValue, callArgs);
         }
     }
 
@@ -1628,12 +1671,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     if (receiver.isObjectId()) {
         Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
         if (!methodValue.isNull()) {
-            if (methodValue.isHostFuncId()) {
-                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
-                }
-            }
-            return vm->callFunction(methodValue, callArgs).rawBits();
+            return dispatchField(methodValue, callArgs);
         }
     }
 

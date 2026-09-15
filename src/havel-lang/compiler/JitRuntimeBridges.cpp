@@ -1548,6 +1548,57 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
+    // Host function property call / dotted host name: interpreter CALL_METHOD
+    // resolves host func receivers through hostfunc_properties_ (fn.prop =
+    // v, e.g. wrapped.cancel on a host-wrapped module closure) and dotted
+    // host names ("interval.start" -> receiver "interval" + "." + method)
+    // (VMControlFlow.cpp:439-489). Both resolve module-style: no receiver
+    // arg (strip what passReceiverAsSelf=true prepended). A miss returns
+    // null WITHOUT falling through to prototype/class lookups, mirroring
+    // the interpreter's break.
+    if (receiver.isHostFuncId()) {
+        uint32_t recvIdx = receiver.asHostFuncId();
+        auto propIt = vm->hostfunc_properties_.find(recvIdx);
+        if (propIt != vm->hostfunc_properties_.end()) {
+            auto *props = vm->getHeap().object(propIt->second.id);
+            if (props) {
+                auto it = props->find(method_name);
+                if (it != props->end()) {
+                    std::vector<Value> propArgs = callArgs;
+                    if (receiverPrepended && !propArgs.empty()) {
+                        propArgs.erase(propArgs.begin());
+                    }
+                    if (it->second.isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(it->second.asHostFuncId())) {
+                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
+                                .rawBits();
+                        }
+                    } else if (it->second.isFunctionObjId() ||
+                               it->second.isClosureId()) {
+                        return vm->callFunction(it->second, propArgs).rawBits();
+                    }
+                }
+            }
+        }
+        const auto &hostNames = vm->getHostFunctionNames();
+        std::string receiver_name;
+        if (recvIdx < hostNames.size()) {
+            receiver_name = hostNames[recvIdx];
+        }
+        std::string dotted = receiver_name + "." + method_name;
+        for (size_t i = 0; i < hostNames.size(); ++i) {
+            if (hostNames[i] == dotted) {
+                std::vector<Value> propArgs = callArgs;
+                if (receiverPrepended && !propArgs.empty()) {
+                    propArgs.erase(propArgs.begin());
+                }
+                return vm->invokeHostFunctionDirect(dotted, propArgs).rawBits();
+            }
+        }
+        return Value::makeNull().rawBits();
+    }
+
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
         if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
             // Prototype methods are receiver-bound by definition: the

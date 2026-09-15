@@ -1513,6 +1513,41 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
+    // Closure property call: `closure.prop(args)` — properties attached via
+    // OBJECT_SET live in closure_properties_ (fn.prop = v static state).
+    // The interpreter CALL_METHOD resolves them here (VMControlFlow.cpp:490,
+    // added for debounce's wrapped.cancel()); without this arm the bridge
+    // fell through to the prototype lookup and pushed null from ORC-compiled
+    // callers (observed: wrapped.cancel() -> null at first tiered call).
+    // The interpreter marks these resolved via module (no self arg), so the
+    // receiver must NOT be passed - strip the receiver the default
+    // passReceiverAsSelf=true prepended above.
+    if (receiver.isClosureId()) {
+        auto propIt = vm->closure_properties_.find(receiver.asClosureId());
+        if (propIt != vm->closure_properties_.end()) {
+            auto *props = vm->getHeap().object(propIt->second.id);
+            if (props) {
+                auto it = props->find(method_name);
+                if (it != props->end()) {
+                    std::vector<Value> propArgs = callArgs;
+                    if (receiverPrepended && !propArgs.empty()) {
+                        propArgs.erase(propArgs.begin());
+                    }
+                    if (it->second.isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(it->second.asHostFuncId())) {
+                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
+                                .rawBits();
+                        }
+                    } else if (it->second.isFunctionObjId() ||
+                               it->second.isClosureId()) {
+                        return vm->callFunction(it->second, propArgs).rawBits();
+                    }
+                }
+            }
+        }
+    }
+
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
         if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
             // Prototype methods are receiver-bound by definition: the

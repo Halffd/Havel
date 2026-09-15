@@ -949,16 +949,19 @@ case OpCode::INCLOCAL:
         break;
     }
     case OpCode::OBJECT_DELETE: {
+        // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops
+        // obj/key and pushes the bool "key existed and was removed".
+        // The bridge now returns that bool (it used to be void and the
+        // lowering pushed null, diverging in value from the interpreter).
         llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
         llvm::Function* fnDel = module.getFunction("havel_vm_object_delete_raw");
         if (!fnDel) {
             fnDel = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_object_delete_raw", &module);
         }
-        B.CreateCall(fnDel, {vmArg, obj, key});
-        vstack.push_back(makeNull());
+        vstack.push_back(B.CreateCall(fnDel, {vmArg, obj, key}));
         break;
     }
         case OpCode::OBJECT_GET_RAW: {

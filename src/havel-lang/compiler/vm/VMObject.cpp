@@ -690,6 +690,36 @@ VM::getPrototypeMethod(const Value &value,
         }
       }
     }
+  } else if (value.isSetId()) {
+    typeName = "set";
+    moduleName = "set";
+  } else if (value.isInt()) {
+    typeName = "int";
+    moduleName = "int";
+  } else if (value.isDouble()) {
+    typeName = "float";
+    moduleName = "float";
+  } else if (value.isBool()) {
+    typeName = "bool";
+    moduleName = "bool";
+  } else if (value.isThreadId()) {
+    typeName = "thread";
+    moduleName = "thread";
+  } else if (value.isIntervalId()) {
+    typeName = "interval";
+    moduleName = "interval";
+  } else if (value.isTimeoutId()) {
+    typeName = "timeout";
+    moduleName = "timeout";
+  } else if (value.isWaitGroupId()) {
+    typeName = "waitgroup";
+    moduleName = "waitgroup";
+  } else if (value.isChannelId()) {
+    typeName = "channel";
+    moduleName = "channel";
+  } else if (value.isRangeId()) {
+    typeName = "range";
+    moduleName = "range";
   } else {
     return std::nullopt;
   }

@@ -123,7 +123,7 @@ struct JITStackFrame;  // per-function GC/exception frame (BytecodeOrcJIT.h)
   ENTRY(havel_vm_neq, uint64_t, (uint64_t l, uint64_t r), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_not, uint64_t, (uint64_t v), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_delete, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint32_t key_id), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
-  ENTRY(havel_vm_object_delete_raw, void, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
+  ENTRY(havel_vm_object_delete_raw, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_entries, uint64_t, (void* vm_ptr, uint64_t obj_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_get, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint32_t key_id), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_get_raw, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \

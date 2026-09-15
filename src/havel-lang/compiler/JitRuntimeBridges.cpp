@@ -807,18 +807,23 @@ uint64_t havel_vm_object_has_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     return Value::makeBool(vm->hasHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
 }
 
-void havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    if (!vm_ptr) return;
+uint64_t havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops obj/key
+    // and pushes a bool - true when the key existed and was removed.
+    // Previously this returned void (JIT pushes null), diverging from
+    // the interpreter's bool for any expression-context delete.
+    if (!vm_ptr) return Value::makeBool(false).rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
     Value obj, key_val;
     std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return;
+    if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
 
     auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return;
+    if (!key_str) return Value::makeBool(false).rawBits();
 
-    vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str);
+    return Value::makeBool(
+        vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
 }
 
 void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
@@ -1722,11 +1727,17 @@ uint64_t havel_vm_set_del(void* vm_ptr, uint64_t set_bits, uint64_t key_bits) {
     if (!setVal.isSetId()) return Value::makeBool(false).rawBits();
     auto* s = vm->getHeap().set(setVal.asSetId());
     if (!s) return Value::makeBool(false).rawBits();
-  auto k = vm->resolveKeyPublic(key);
-  if (!k) return Value::makeBool(false).rawBits();
-  s->erase(*k);
-  vm->getHeap().bumpSetVersion(setVal.asSetId());
-  return Value::makeNull().rawBits();
+    auto k = vm->resolveKeyPublic(key);
+    if (!k) return Value::makeBool(false).rawBits();
+    // Interpreter parity (VMCollections.cpp SET_DEL): pushes a bool -
+    // true when the key was present and removed (version bump only on
+    // actual removal). Previously returned null, diverging from the
+    // interpreter for expression-context use.
+    const bool removed = s->erase(*k) > 0;
+    if (removed) {
+        vm->getHeap().bumpSetVersion(setVal.asSetId());
+    }
+    return Value::makeBool(removed).rawBits();
 }
 
 uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits, uint64_t step_bits) {

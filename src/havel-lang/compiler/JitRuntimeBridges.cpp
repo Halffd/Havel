@@ -467,8 +467,13 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   Value container, key_val;
   std::memcpy(&container, &container_bits, sizeof(uint64_t));
   std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  // indexFromValue parity (VMInternals.hpp): int AND double keys both
+  // index (doubles truncate, matching interp ARRAY_GET/STRING_GET).
+  // Previously int-only, so `arr[i]` with i a num read null under
+  // tiering while the interpreter returned the element.
   auto indexFromRaw = [](const Value &v) -> std::optional<int64_t> {
     if (v.isInt()) return v.asInt();
+    if (v.isDouble()) return static_cast<int64_t>(v.asDouble());
     return std::nullopt;
   };
 

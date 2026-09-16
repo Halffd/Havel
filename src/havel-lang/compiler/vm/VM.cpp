@@ -4278,7 +4278,9 @@ uint64_t VM::indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
   // barrier. On bail shapes the caller contract returns the value word.
 
   if (container.isArrayId()) {
-    if (!index_or_key.isInt()) return val_bits;
+    // indexFromValue accepts int AND double (truncating), matching the
+    // interp ARRAY_SET. The previous isInt() gate silently dropped
+    // num-keyed writes (arr[i] = v no-opped under tiering).
     auto index = indexFromValue(index_or_key);
     if (!index) return val_bits;
     auto* array = heap_.array(container.asArrayId());

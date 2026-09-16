@@ -1467,11 +1467,51 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                     break;
                 }
             }
+            // Interpreter parity (VMControlFlow.cpp:575-645): the module
+            // scan only suppresses the receiver when the method does NOT
+            // want self. Host fns want self when registered with a "self"
+            // first param (host_function_wants_self_) or on class
+            // protos; Havel fns/closures want self when their first
+            // param is literally "self" (isClassInstance) or on class
+            // instances. Dropping the receiver here shifted args by one
+            // for self-style methods (observed: {greet: fn(self, name)}
+            // under tiering produced "hi 0" instead of "hi bob" at the
+            // first compiled call). Same rule applies in the non-module
+            // arm below for local plain objects.
+            auto methodWantsSelf = [&](const Value &methodValue) {
+                if (methodValue.isHostFuncId()) {
+                    bool isClassProto = obj->get("__class") != nullptr ||
+                                        obj->get("__struct") != nullptr ||
+                                        obj->get("__is_class") != nullptr;
+                    return isClassProto ||
+                           vm->host_function_wants_self_.count(
+                               methodValue.asHostFuncId()) > 0;
+                }
+                bool isClassInstance = obj->get("__class") != nullptr ||
+                                       obj->get("__struct") != nullptr;
+                const BytecodeFunction *bf = nullptr;
+                if (methodValue.isClosureId()) {
+                    auto *closure =
+                        vm->getHeap().closure(methodValue.asClosureId());
+                    if (closure && closure->chunk)
+                        bf = closure->chunk->getFunction(
+                            closure->function_index);
+                } else if (methodValue.isFunctionObjId()) {
+                    bf = vm->resolveFunctionFromId(
+                        methodValue.asFunctionObjId());
+                }
+                return isClassInstance ||
+                       (bf && !bf->param_names.empty() &&
+                        bf->param_names[0] == "self");
+            };
             if (foundViaModule) {
-                passReceiverAsSelf = false;
                 Value methodValue = vm->getHostObjectField(recvRef, method_name);
                 if (!methodValue.isNull()) {
-                    return dispatchField(methodValue, callArgs);
+                    std::vector<Value> fieldArgs = callArgs;
+                    if (methodWantsSelf(methodValue)) {
+                        fieldArgs.insert(fieldArgs.begin(), receiver);
+                    }
+                    return dispatchField(methodValue, fieldArgs);
                 }
             } else {
                 auto* classVal = obj->get("__class");
@@ -1482,13 +1522,8 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                     passReceiverAsSelf = true;
                 } else {
                     Value methodValue = vm->getHostObjectField(recvRef, method_name);
-                    if (methodValue.isHostFuncId()) {
-                        uint32_t hostIdx = methodValue.asHostFuncId();
-                        if (vm->host_function_wants_self_.count(hostIdx) > 0) {
-                            passReceiverAsSelf = true;
-                        } else {
-                            passReceiverAsSelf = false;
-                        }
+                    if (!methodValue.isNull()) {
+                        passReceiverAsSelf = methodWantsSelf(methodValue);
                     } else {
                         passReceiverAsSelf = false;
                     }

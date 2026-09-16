@@ -1835,6 +1835,12 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
                                 const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
 
+  // Resolve a function object id to its BytecodeFunction across the chunk
+  // set (current, main, persistent, module) - mirrors the interpreter's
+  // CALL_METHOD first-param "self" detection lookup.
+  const BytecodeFunction *
+  resolveFunctionFromId(uint32_t function_index) const;
+
   // Protocol system
   void registerProtocol(const std::string &protocolName,
                         const std::unordered_set<std::string> &methods);

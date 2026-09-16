@@ -2692,6 +2692,21 @@ void VM::packVariadicArgs(std::vector<Value> &args,
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
+const BytecodeFunction *
+VM::resolveFunctionFromId(uint32_t function_index) const {
+  const BytecodeChunk *chunk = current_chunk;
+  if (chunk && chunk->getFunction(function_index)) return chunk->getFunction(function_index);
+  if (main_chunk_ && main_chunk_->getFunction(function_index))
+    return main_chunk_->getFunction(function_index);
+  for (auto &pc : persistent_chunks_) {
+    if (pc && pc->getFunction(function_index)) return pc->getFunction(function_index);
+  }
+  for (auto &[_, mc] : module_chunks_) {
+    if (mc && mc->getFunction(function_index)) return mc->getFunction(function_index);
+  }
+  return nullptr;
+}
+
 void VM::doCall(Value callee_value, std::vector<Value> args) {
   tail_call_depth_ = 0;
   // Consume any stashed return address (set by dispatch sites immediately

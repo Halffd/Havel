@@ -23,26 +23,30 @@ public:
     }
     ~QtScreenshotBackend() override = default;
 
-    std::vector<unsigned char> captureFullDesktop(const ScreenshotStyle& style = {}) override {
+    ScreenshotResult captureFullDesktop(const ScreenshotStyle& style = {}) override {
         if (!ensureQtApplication()) return {};
         QScreen* primary = QGuiApplication::primaryScreen();
         if (!primary) return {};
         QRect geo = primary->virtualGeometry();
         QPixmap px = primary->grabWindow(0, geo.x(), geo.y(), geo.width(), geo.height());
-        return applyStyleAndConvert(px.toImage(), style);
+        QImage img = px.toImage();
+        auto data = applyStyleAndConvert(img, style);
+        return ScreenshotResult(std::move(data), img.width(), img.height());
     }
 
-    std::vector<unsigned char> captureMonitor(int index, const ScreenshotStyle& style = {}) override {
+    ScreenshotResult captureMonitor(int index, const ScreenshotStyle& style = {}) override {
         if (!ensureQtApplication()) return {};
         auto screens = QGuiApplication::screens();
         if (index < 0 || index >= static_cast<int>(screens.size())) return {};
         QScreen* screen = screens[index];
         if (!screen) return {};
         QPixmap px = screen->grabWindow(0);
-        return applyStyleAndConvert(px.toImage(), style);
+        QImage img = px.toImage();
+        auto data = applyStyleAndConvert(img, style);
+        return ScreenshotResult(std::move(data), img.width(), img.height());
     }
 
-    std::vector<unsigned char> captureActiveWindow(const ScreenshotStyle& style = {}) override {
+    ScreenshotResult captureActiveWindow(const ScreenshotStyle& style = {}) override {
         if (!ensureQtApplication()) return {};
         QWindow* window = QGuiApplication::focusWindow();
         if (!window) return {};
@@ -56,15 +60,19 @@ public:
             QRect rect = window->geometry();
             px = screen->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height());
         }
-        return applyStyleAndConvert(px.toImage(), style);
+        QImage img = px.toImage();
+        auto data = applyStyleAndConvert(img, style);
+        return ScreenshotResult(std::move(data), img.width(), img.height());
     }
 
-    std::vector<unsigned char> captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style = {}) override {
+    ScreenshotResult captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style = {}) override {
         if (!ensureQtApplication()) return {};
         QScreen* primary = QGuiApplication::primaryScreen();
         if (!primary) return {};
         QPixmap px = primary->grabWindow(0, x, y, width, height);
-        return applyStyleAndConvert(px.toImage(), style);
+        QImage img = px.toImage();
+        auto data = applyStyleAndConvert(img, style);
+        return ScreenshotResult(std::move(data), img.width(), img.height());
     }
 
     int getMonitorCount() const override {

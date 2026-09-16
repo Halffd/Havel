@@ -3642,8 +3642,8 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
   (void)ctx;
 #ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
-  auto data = service.captureFullDesktop();
-  (void)data;
+  auto result = service.captureFullDesktop();
+  (void)result;
 #endif
   return Value::makeNull();
 }
@@ -3659,8 +3659,8 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
   }
 #ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
-  auto data = service.captureMonitor(monitor);
-  (void)data;
+  auto result = service.captureMonitor(monitor);
+  (void)result;
 #endif
   return Value::makeNull();
 }

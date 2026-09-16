@@ -207,17 +207,9 @@ static auto makeCaptureFunc(const VMApi& api) {
         }
         
         try {
-            auto rgba = svc->captureFullDesktop(style);
-            int pixelCount = static_cast<int>(rgba.size() / 4);
-            int dim = static_cast<int>(std::sqrt(pixelCount));
-            auto result = rgbaToVmArray(api, rgba, dim, dim);
-            if (result.isObjectId()) {
-                auto meta = api.getField(result, "meta");
-                if (meta.isObjectId()) {
-                    api.setField(meta, "captureType", api.makeString("fullDesktop"));
-                }
-            }
-            return result;
+            auto result = svc->captureFullDesktop(style);
+            if (!result) return api.makeNull();
+            return rgbaToVmArray(api, result.data, result.width, result.height);
         } catch (const std::exception& e) { 
             debug("screenshot.capture error: {}", e.what()); 
             return api.makeNull(); 
@@ -238,19 +230,17 @@ static auto makeCaptureMonitorFunc(const VMApi& api) {
         }
         
         try {
-            auto rgba = svc->captureMonitor(monitorIndex, style);
-            auto geometry = svc->getMonitorGeometry(monitorIndex);
-            int width = geometry.size() >= 3 ? geometry[2] : 1920;
-            int height = geometry.size() >= 4 ? geometry[3] : 1080;
-            auto result = rgbaToVmArray(api, rgba, width, height);
-            if (result.isObjectId()) {
-                auto meta = api.getField(result, "meta");
+            auto result = svc->captureMonitor(monitorIndex, style);
+            if (!result) return api.makeNull();
+            auto vmResult = rgbaToVmArray(api, result.data, result.width, result.height);
+            if (vmResult.isObjectId()) {
+                auto meta = api.getField(vmResult, "meta");
                 if (meta.isObjectId()) {
                     api.setField(meta, "captureType", api.makeString("monitor"));
                     api.setField(meta, "monitorIndex", Value::makeInt(monitorIndex));
                 }
             }
-            return result;
+            return vmResult;
         } catch (const std::exception& e) { 
             debug("screenshot.captureMonitor error: {}", e.what()); 
             return api.makeNull(); 
@@ -269,17 +259,16 @@ static auto makeCaptureActiveWindowFunc(const VMApi& api) {
         }
         
         try {
-            auto rgba = svc->captureActiveWindow(style);
-            int pixelCount = static_cast<int>(rgba.size() / 4);
-            int dim = static_cast<int>(std::sqrt(pixelCount));
-            auto result = rgbaToVmArray(api, rgba, dim, dim);
-            if (result.isObjectId()) {
-                auto meta = api.getField(result, "meta");
+            auto result = svc->captureActiveWindow(style);
+            if (!result) return api.makeNull();
+            auto vmResult = rgbaToVmArray(api, result.data, result.width, result.height);
+            if (vmResult.isObjectId()) {
+                auto meta = api.getField(vmResult, "meta");
                 if (meta.isObjectId()) {
                     api.setField(meta, "captureType", api.makeString("activeWindow"));
                 }
             }
-            return result;
+            return vmResult;
         } catch (const std::exception& e) { 
             debug("screenshot.captureActiveWindow error: {}", e.what()); 
             return api.makeNull(); 
@@ -304,10 +293,11 @@ static auto makeCaptureRegionFunc(const VMApi& api) {
         }
         
         try {
-            auto rgba = svc->captureRegion(x, y, width, height, style);
-            auto result = rgbaToVmArray(api, rgba, width, height);
-            if (result.isObjectId()) {
-                auto meta = api.getField(result, "meta");
+            auto result = svc->captureRegion(x, y, width, height, style);
+            if (!result) return api.makeNull();
+            auto vmResult = rgbaToVmArray(api, result.data, result.width, result.height);
+            if (vmResult.isObjectId()) {
+                auto meta = api.getField(vmResult, "meta");
                 if (meta.isObjectId()) {
                     api.setField(meta, "captureType", api.makeString("region"));
                     api.setField(meta, "regionX", Value::makeInt(x));
@@ -316,7 +306,7 @@ static auto makeCaptureRegionFunc(const VMApi& api) {
                     api.setField(meta, "regionHeight", Value::makeInt(height));
                 }
             }
-            return result;
+            return vmResult;
         } catch (const std::exception& e) { 
             debug("screenshot.captureRegion error: {}", e.what()); 
             return api.makeNull(); 

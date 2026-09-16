@@ -146,6 +146,12 @@ pub const OP_SET_NEW: u32 = 54;
 pub const OP_RANGE_NEW: u32 = 55;
 pub const OP_SET_SET: u32 = 56;
 
+// Exception handling opcodes
+pub const OP_TRY_ENTER: u32 = 57;
+pub const OP_TRY_EXIT: u32 = 58;
+pub const OP_THROW: u32 = 59;
+pub const OP_LOAD_EXCEPTION: u32 = 60;
+
 #[derive(Debug)]
 pub struct LoweringError(pub String);
 
@@ -208,6 +214,14 @@ fn stack_effect(op: u32, operand: u32, next_operand: Option<u32>) -> Result<(i64
         // SET_SET pops key, value, set; pushes nothing (interpreter: the
         // caller keeps managing the set on the stack).
         OP_SET_SET => (3, 0),
+        // TRY_ENTER pushes no value, installs handler.
+        OP_TRY_ENTER => (0, 0),
+        // TRY_EXIT pops no value, removes handler.
+        OP_TRY_EXIT => (0, 0),
+        // THROW pops the exception value, never returns.
+        OP_THROW => (1, 0),
+        // LOAD_EXCEPTION pushes the current exception value.
+        OP_LOAD_EXCEPTION => (0, 1),
         OP_RETURN => (1, 0),
         _ => return Err(format!("stack effect: unsupported opcode {op}")),
     })
@@ -534,6 +548,14 @@ mod fallback_shims {
             "havel_gc_register_roots" => Some(shim_gc_register_roots as *const u8),
             "havel_gc_unregister_roots" => Some(shim_gc_unregister_roots as *const u8),
             "havel_gc_write_barrier" => Some(shim_gc_write_barrier as *const u8),
+            // Exception Runtime ABI - stub shims
+            "havel_vm_throw_error" => Some(shim_throw_error as *const u8),
+            "havel_vm_throw_from_jit" => Some(shim_throw_from_jit as *const u8),
+            "havel_vm_throw_value" => Some(shim_throw_value as *const u8),
+            "havel_vm_try_enter" => Some(shim_try_enter as *const u8),
+            "havel_vm_try_exit" => Some(shim_try_exit as *const u8),
+            "havel_vm_try_find_throw_target" => Some(shim_try_find_throw_target as *const u8),
+            "havel_vm_load_exception" => Some(shim_load_exception as *const u8),
             _ => None,
         }
     }
@@ -555,6 +577,46 @@ unsafe extern "C" fn shim_gc_unregister_roots(_frame: *mut c_void) {
 
 unsafe extern "C" fn shim_gc_write_barrier(_vm: *mut c_void, _value: u64) {
     // No-op
+}
+
+// Exception stub shims for standalone tests
+unsafe extern "C" fn shim_throw_error(_vm: *mut c_void, _msg: *const c_char) -> ! {
+    // No-op in standalone: this should never be called in tests
+    std::process::abort();
+}
+
+unsafe extern "C" fn shim_throw_from_jit(_vm: *mut c_void, _value: u64) -> ! {
+    std::process::abort();
+}
+
+unsafe extern "C" fn shim_throw_value(_vm: *mut c_void, _value: u64) -> ! {
+    std::process::abort();
+}
+
+unsafe extern "C" fn shim_try_enter(
+    _frame: *mut c_void,
+    _catch_ip: u32,
+    _finally_ip: u32,
+    _stack_depth: u32,
+) {
+    // No-op: no exception handling in standalone harness
+}
+
+unsafe extern "C" fn shim_try_exit(_frame: *mut c_void) {
+    // No-op
+}
+
+unsafe extern "C" fn shim_try_find_throw_target(
+    _frame: *mut c_void,
+    _catch_ip: *mut u32,
+    _stack_depth_out: *mut u32,
+    _popped_count_out: *mut u32,
+) -> u32 {
+    u32::MAX // No handler
+}
+
+unsafe extern "C" fn shim_load_exception(_vm: *mut c_void) -> u64 {
+    NULL_TAGGED
 }
 
 // ---------------------------------------------------------------------------
@@ -1108,6 +1170,138 @@ impl CraneliftBackend {
             )
             .map_err(|e| err(format!("declare havel_gc_write_barrier: {e}")))?;
 
+        // Exception Runtime ABI
+        let mut throw_error_sig = self.module.make_signature();
+        throw_error_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(pointer_ty), // const char* msg
+        ];
+        throw_error_sig.returns = vec![];
+        let throw_error_id = self
+            .module
+            .declare_function("havel_vm_throw_error", Linkage::Import, &throw_error_sig)
+            .map_err(|e| err(format!("declare havel_vm_throw_error: {e}")))?;
+
+        let mut throw_from_jit_sig = self.module.make_signature();
+        throw_from_jit_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(int64),      // uint64_t value
+        ];
+        throw_from_jit_sig.returns = vec![];
+        let throw_from_jit_id = self
+            .module
+            .declare_function(
+                "havel_vm_throw_from_jit",
+                Linkage::Import,
+                &throw_from_jit_sig,
+            )
+            .map_err(|e| err(format!("declare havel_vm_throw_from_jit: {e}")))?;
+
+        let mut throw_value_sig = self.module.make_signature();
+        throw_value_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(int64),      // uint64_t value
+        ];
+        throw_value_sig.returns = vec![];
+        let throw_value_id = self
+            .module
+            .declare_function("havel_vm_throw_value", Linkage::Import, &throw_value_sig)
+            .map_err(|e| err(format!("declare havel_vm_throw_value: {e}")))?;
+
+        let mut try_enter_sig = self.module.make_signature();
+        try_enter_sig.params = vec![
+            AbiParam::new(pointer_ty), // JITStackFrame*
+            AbiParam::new(int32),      // uint32_t catch_ip
+            AbiParam::new(int32),      // uint32_t finally_ip
+            AbiParam::new(int32),      // uint32_t stack_depth
+        ];
+        try_enter_sig.returns = vec![];
+        let try_enter_id = self
+            .module
+            .declare_function("havel_vm_try_enter", Linkage::Import, &try_enter_sig)
+            .map_err(|e| err(format!("declare havel_vm_try_enter: {e}")))?;
+
+        let mut try_exit_sig = self.module.make_signature();
+        try_exit_sig.params = vec![AbiParam::new(pointer_ty)]; // JITStackFrame*
+        try_exit_sig.returns = vec![];
+        let try_exit_id = self
+            .module
+            .declare_function("havel_vm_try_exit", Linkage::Import, &try_exit_sig)
+            .map_err(|e| err(format!("declare havel_vm_try_exit: {e}")))?;
+
+        let mut try_find_throw_target_sig = self.module.make_signature();
+        try_find_throw_target_sig.params = vec![
+            AbiParam::new(pointer_ty), // JITStackFrame*
+            AbiParam::new(pointer_ty), // uint32_t* catch_ip
+            AbiParam::new(pointer_ty), // uint32_t* stack_depth_out
+            AbiParam::new(pointer_ty), // uint32_t* popped_count_out
+        ];
+        try_find_throw_target_sig.returns = vec![AbiParam::new(int32)];
+        let try_find_throw_target_id = self
+            .module
+            .declare_function(
+                "havel_vm_try_find_throw_target",
+                Linkage::Import,
+                &try_find_throw_target_sig,
+            )
+            .map_err(|e| err(format!("declare havel_vm_try_find_throw_target: {e}")))?;
+
+        let mut load_exception_sig = self.module.make_signature();
+        load_exception_sig.params = vec![AbiParam::new(pointer_ty)]; // vm_ptr
+        load_exception_sig.returns = vec![AbiParam::new(int64)];
+        let load_exception_id = self
+            .module
+            .declare_function(
+                "havel_vm_load_exception",
+                Linkage::Import,
+                &load_exception_sig,
+            )
+            .map_err(|e| err(format!("declare havel_vm_load_exception: {e}")))?;
+
+        let mut ctx = self.module.make_context();
+        gc_register_roots_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(pointer_ty), // JITStackFrame*
+            AbiParam::new(pointer_ty), // uint64_t* roots
+            AbiParam::new(int32),      // uint32_t count
+        ];
+        gc_register_roots_sig.returns = vec![];
+        let gc_register_roots_id = self
+            .module
+            .declare_function(
+                "havel_gc_register_roots",
+                Linkage::Import,
+                &gc_register_roots_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_register_roots: {e}")))?;
+
+        let mut gc_unregister_roots_sig = self.module.make_signature();
+        gc_unregister_roots_sig.params = vec![AbiParam::new(pointer_ty)]; // JITStackFrame*
+        gc_unregister_roots_sig.returns = vec![];
+        let gc_unregister_roots_id = self
+            .module
+            .declare_function(
+                "havel_gc_unregister_roots",
+                Linkage::Import,
+                &gc_unregister_roots_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_unregister_roots: {e}")))?;
+
+        let mut gc_write_barrier_sig = self.module.make_signature();
+        gc_write_barrier_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(int64),      // uint64_t value
+        ];
+        gc_write_barrier_sig.returns = vec![];
+        let gc_write_barrier_id = self
+            .module
+            .declare_function(
+                "havel_gc_write_barrier",
+                Linkage::Import,
+                &gc_write_barrier_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_write_barrier: {e}")))?;
+
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
         ctx.func.name = cranelift::codegen::ir::UserFuncName::user(0, func_id.as_u32());
@@ -1241,6 +1435,29 @@ impl CraneliftBackend {
             let gc_write_barrier_ref = self
                 .module
                 .declare_func_in_func(gc_write_barrier_id, &mut builder.func);
+
+            // Exception Runtime ABI
+            let throw_error_ref = self
+                .module
+                .declare_func_in_func(throw_error_id, &mut builder.func);
+            let throw_from_jit_ref = self
+                .module
+                .declare_func_in_func(throw_from_jit_id, &mut builder.func);
+            let throw_value_ref = self
+                .module
+                .declare_func_in_func(throw_value_id, &mut builder.func);
+            let try_enter_ref = self
+                .module
+                .declare_func_in_func(try_enter_id, &mut builder.func);
+            let try_exit_ref = self
+                .module
+                .declare_func_in_func(try_exit_id, &mut builder.func);
+            let try_find_throw_target_ref = self
+                .module
+                .declare_func_in_func(try_find_throw_target_id, &mut builder.func);
+            let load_exception_ref = self
+                .module
+                .declare_func_in_func(load_exception_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first
@@ -1954,6 +2171,90 @@ impl CraneliftBackend {
                             .get("havel_vm_set_set")
                             .expect("bridge declared above");
                         builder.ins().call(func_ref, &[vm, set, val, key]);
+                    }
+                    OP_TRY_ENTER => {
+                        // Stack: no change. Operand is catch_ip, finally_ip
+                        // is in next OP_EXTENDED_ARG (or 0 if absent).
+                        let catch_ip = operand as u32;
+                        let finally_ip = if cur + 1 < n && code[2 * (cur + 1)] == OP_EXTENDED_ARG {
+                            code[2 * (cur + 1) + 1] as u32
+                        } else {
+                            0
+                        };
+                        let stack_depth = vstack.len() as u32;
+                        let catch_ip_w = builder.ins().iconst(int32, catch_ip as i64);
+                        let finally_ip_w = builder.ins().iconst(int32, finally_ip as i64);
+                        let stack_depth_w = builder.ins().iconst(int32, stack_depth as i64);
+                        builder.ins().call(
+                            try_enter_ref,
+                            &[vm, catch_ip_w, finally_ip_w, stack_depth_w],
+                        );
+                    }
+                    OP_TRY_EXIT => {
+                        // Stack: no change.
+                        builder.ins().call(try_exit_ref, &[vm]);
+                    }
+                    OP_THROW => {
+                        // Stack: [..., exception_value]; pop the value.
+                        let exception_val = vstack
+                            .pop()
+                            .unwrap_or_else(|| builder.ins().iconst(int64, NULL_TAGGED as i64));
+                        // Set the exception in the VM
+                        builder.ins().call(throw_value_ref, &[vm, exception_val]);
+                        // Find the handler
+                        let catch_depth_alloca = builder.create_sized_stack_slot(
+                            cranelift::codegen::ir::StackSlotData::new(
+                                cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                                4,
+                                4,
+                            ),
+                        );
+                        let popped_count_alloca = builder.create_sized_stack_slot(
+                            cranelift::codegen::ir::StackSlotData::new(
+                                cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                                4,
+                                4,
+                            ),
+                        );
+                        let zero32 = builder.ins().iconst(int32, 0);
+                        builder.ins().stack_store(zero32, catch_depth_alloca, 0);
+                        builder.ins().stack_store(zero32, popped_count_alloca, 0);
+                        let catch_depth_ptr =
+                            builder.ins().stack_addr(pointer_ty, catch_depth_alloca, 0);
+                        let popped_count_ptr =
+                            builder.ins().stack_addr(pointer_ty, popped_count_alloca, 0);
+                        let call = builder.ins().call(
+                            try_find_throw_target_ref,
+                            &[vm, catch_depth_ptr, catch_depth_ptr, popped_count_ptr],
+                        );
+                        let catch_ip = builder.inst_results(call)[0];
+                        let max_uint32 = builder.ins().iconst(int32, u32::MAX as i64);
+                        let has_handler = builder.ins().icmp(IntCC::NotEqual, catch_ip, max_uint32);
+                        let throw_dispatch = builder.create_block();
+                        let throw_unwind = builder.create_block();
+                        builder
+                            .ins()
+                            .brif(has_handler, throw_dispatch, throw_unwind);
+                        // Throw dispatch: switch on catch_ip to handler blocks
+                        builder.switch_to_block(throw_dispatch);
+                        // Switch over all leader blocks
+                        let mut sw = builder.ins().switch(catch_ip, throw_unwind);
+                        for (idx, blk_opt) in block_of.iter().enumerate() {
+                            if let Some(blk) = blk_opt {
+                                let case_val = builder.ins().iconst(int32, idx as i64);
+                                sw.add_case(case_val, blk);
+                            }
+                        }
+                        // Unwind: call havel_vm_throw_from_jit and unreachable
+                        builder.switch_to_block(throw_unwind);
+                        builder.ins().call(throw_from_jit_ref, &[vm, exception_val]);
+                        builder.ins().unreachable();
+                        terminated = true;
+                    }
+                    OP_LOAD_EXCEPTION => {
+                        // Stack: push the current exception value
+                        let call = builder.ins().call(load_exception_ref, &[vm]);
+                        vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_JUMP_IF_NULL => {
                         // Inline null check: null is a single canonical

@@ -1833,6 +1833,11 @@ impl CraneliftBackend {
                             .pop()
                             .ok_or_else(|| err("OBJECT_SET with shallow stack".into()))?;
                         builder.ins().call(object_set_ref, &[vm, obj, key, val]);
+                        // GC write barrier for the stored value
+                        let gc_wb_ref = *bridge_refs
+                            .get("havel_gc_write_barrier")
+                            .expect("gc_write_barrier bridge");
+                        builder.ins().call(gc_wb_ref, &[vm, val]);
                         vstack.push(obj);
                     }
                     OP_ITER_NEW => {
@@ -1876,6 +1881,11 @@ impl CraneliftBackend {
                             .pop()
                             .ok_or_else(|| err("ARRAY_SET with shallow stack".into()))?;
                         builder.ins().call(array_set_ref, &[vm, arr, idx, val]);
+                        // GC write barrier for the stored value
+                        let gc_wb_ref = *bridge_refs
+                            .get("havel_gc_write_barrier")
+                            .expect("gc_write_barrier bridge");
+                        builder.ins().call(gc_wb_ref, &[vm, val]);
                     }
                     OP_ARRAY_LEN => {
                         let arr = vstack
@@ -1893,6 +1903,11 @@ impl CraneliftBackend {
                             .pop()
                             .ok_or_else(|| err("ARRAY_PUSH with shallow stack".into()))?;
                         builder.ins().call(array_push_ref, &[vm, arr, val]);
+                        // GC write barrier for the pushed value
+                        let gc_wb_ref = *bridge_refs
+                            .get("havel_gc_write_barrier")
+                            .expect("gc_write_barrier bridge");
+                        builder.ins().call(gc_wb_ref, &[vm, val]);
                         vstack.push(arr);
                     }
                     OP_OBJECT_NEW | OP_OBJECT_NEW_UNSORTED | OP_ARRAY_NEW | OP_SET_NEW => {

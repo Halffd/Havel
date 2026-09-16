@@ -1262,6 +1262,19 @@ impl CraneliftBackend {
             // loads above stay unterminated and dominate the body).
             {
                 let first = block_of[0].ok_or_else(|| err("no entry leader".into()))?;
+                // GC register roots at function entry (placeholder: no frame/roots yet)
+                let gc_reg_ref = *bridge_refs
+                    .get("havel_gc_register_roots")
+                    .expect("gc_register_roots bridge");
+                builder.ins().call(
+                    gc_reg_ref,
+                    &[
+                        vm,
+                        builder.ins().iconst(pointer_ty, 0),
+                        builder.ins().iconst(pointer_ty, 0),
+                        builder.ins().iconst(int32, 0),
+                    ],
+                );
                 builder.ins().jump(first, &[]);
             }
             let declare_local = |operand: u32,
@@ -1968,6 +1981,13 @@ impl CraneliftBackend {
                         let v = vstack
                             .pop()
                             .unwrap_or_else(|| builder.ins().iconst(int64, NULL_TAGGED as i64));
+                        // GC unregister roots at function exit (placeholder)
+                        let gc_unreg_ref = *bridge_refs
+                            .get("havel_gc_unregister_roots")
+                            .expect("gc_unregister_roots bridge");
+                        builder
+                            .ins()
+                            .call(gc_unreg_ref, &[builder.ins().iconst(pointer_ty, 0)]);
                         builder.ins().return_(&[v]);
                         saw_return = true;
                         terminated = true;

@@ -159,6 +159,15 @@ public:
         reinterpret_cast<const void*>(&havel_vm_array_push));
     add("havel_vm_call_method",
         reinterpret_cast<const void*>(&havel_vm_call_method));
+
+    // GC Runtime ABI
+    add("havel_gc_register_roots",
+        reinterpret_cast<const void*>(&havel_gc_register_roots));
+    add("havel_gc_unregister_roots",
+        reinterpret_cast<const void*>(&havel_gc_unregister_roots));
+    add("havel_gc_write_barrier",
+        reinterpret_cast<const void*>(&havel_gc_write_barrier));
+
     handle_ = hclb_create_with_symbols(
         names.data(), addrs.data(), static_cast<uint32_t>(names.size()));
   }

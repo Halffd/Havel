@@ -530,9 +530,31 @@ mod fallback_shims {
             "havel_vm_range_new" => Some(shim_string_concat as *const u8),
             "havel_vm_set_set" => Some(shim_object_set_echo as *const u8),
             "havel_vm_string_concat" => Some(shim_string_concat as *const u8),
+            // GC Runtime ABI - stub shims (no heap in standalone tests)
+            "havel_gc_register_roots" => Some(shim_gc_register_roots as *const u8),
+            "havel_gc_unregister_roots" => Some(shim_gc_unregister_roots as *const u8),
+            "havel_gc_write_barrier" => Some(shim_gc_write_barrier as *const u8),
             _ => None,
         }
     }
+}
+
+// GC stub shims for standalone tests (no heap, no GC)
+unsafe extern "C" fn shim_gc_register_roots(
+    _vm: *mut c_void,
+    _frame: *mut c_void,
+    _roots: *mut u64,
+    _count: u32,
+) {
+    // No-op: no GC in standalone harness
+}
+
+unsafe extern "C" fn shim_gc_unregister_roots(_frame: *mut c_void) {
+    // No-op
+}
+
+unsafe extern "C" fn shim_gc_write_barrier(_vm: *mut c_void, _value: u64) {
+    // No-op
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,6 +1063,51 @@ impl CraneliftBackend {
             .declare_function("havel_vm_global_set", Linkage::Import, &global_set_sig)
             .map_err(|e| err(format!("declare havel_vm_global_set: {e}")))?;
 
+        // GC Runtime ABI
+        let mut gc_register_roots_sig = self.module.make_signature();
+        gc_register_roots_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(pointer_ty), // JITStackFrame*
+            AbiParam::new(pointer_ty), // uint64_t* roots
+            AbiParam::new(int32),      // uint32_t count
+        ];
+        gc_register_roots_sig.returns = vec![];
+        let gc_register_roots_id = self
+            .module
+            .declare_function(
+                "havel_gc_register_roots",
+                Linkage::Import,
+                &gc_register_roots_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_register_roots: {e}")))?;
+
+        let mut gc_unregister_roots_sig = self.module.make_signature();
+        gc_unregister_roots_sig.params = vec![AbiParam::new(pointer_ty)]; // JITStackFrame*
+        gc_unregister_roots_sig.returns = vec![];
+        let gc_unregister_roots_id = self
+            .module
+            .declare_function(
+                "havel_gc_unregister_roots",
+                Linkage::Import,
+                &gc_unregister_roots_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_unregister_roots: {e}")))?;
+
+        let mut gc_write_barrier_sig = self.module.make_signature();
+        gc_write_barrier_sig.params = vec![
+            AbiParam::new(pointer_ty), // vm_ptr
+            AbiParam::new(int64),      // uint64_t value
+        ];
+        gc_write_barrier_sig.returns = vec![];
+        let gc_write_barrier_id = self
+            .module
+            .declare_function(
+                "havel_gc_write_barrier",
+                Linkage::Import,
+                &gc_write_barrier_sig,
+            )
+            .map_err(|e| err(format!("declare havel_gc_write_barrier: {e}")))?;
+
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
         ctx.func.name = cranelift::codegen::ir::UserFuncName::user(0, func_id.as_u32());
@@ -1163,6 +1230,17 @@ impl CraneliftBackend {
             let call_method_ref = self
                 .module
                 .declare_func_in_func(call_method_id, &mut builder.func);
+
+            // GC Runtime ABI
+            let gc_register_roots_ref = self
+                .module
+                .declare_func_in_func(gc_register_roots_id, &mut builder.func);
+            let gc_unregister_roots_ref = self
+                .module
+                .declare_func_in_func(gc_unregister_roots_id, &mut builder.func);
+            let gc_write_barrier_ref = self
+                .module
+                .declare_func_in_func(gc_write_barrier_id, &mut builder.func);
 
             // Locals as SSA variables (declare/def/use), so values flow
             // across blocks and loop backedges; arguments seed the first

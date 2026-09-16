@@ -770,7 +770,48 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         }
     }
 
+    // Interp OBJECT_GET parity (VMCollections.cpp ~1695): a bare read of a
+    // zero-arg fn found on a PROTOTYPE (not a direct field) auto-calls it
+    // with the receiver as sole arg. Direct instance fields holding fns
+    // are returned untouched (callback pattern). The IC must not cache
+    // these: the call is arbitrary Havel code with side effects - caching
+    // the first result served stale values for stateful method reads
+    // (observed: x = c.bump returned the fn value at the first tiered
+    // call where the interpreter called it and produced 1).
+    bool protoFnRead = false;
+    if (auto key = vm->resolveKeyPublic(key_val)) {
+        if (auto* o = vm->getHeap().object(obj_id)) {
+            protoFnRead = o->get(*key) == nullptr;
+        }
+    }
+
     auto result_bits = havel_vm_object_get_raw(vm_ptr, obj_bits, key_bits);
+    if (protoFnRead) {
+        Value result_val;
+        std::memcpy(&result_val, &result_bits, sizeof(uint64_t));
+        if (result_val.isFunctionObjId() || result_val.isClosureId()) {
+            const BytecodeFunction* bf = nullptr;
+            if (result_val.isFunctionObjId()) {
+                bf = vm->resolveFunctionFromId(result_val.asFunctionObjId());
+            } else if (result_val.isClosureId()) {
+                if (auto* closure =
+                        vm->getHeap().closure(result_val.asClosureId())) {
+                    if (closure->chunk) {
+                        bf = closure->chunk->getFunction(
+                            closure->function_index);
+                    }
+                }
+            }
+            if (bf && bf->param_count <= 1 &&
+                (bf->param_count == 0 ||
+                 (!bf->param_names.empty() &&
+                  bf->param_names[0] == "self"))) {
+                Value receiver;
+                std::memcpy(&receiver, &obj_bits, sizeof(uint64_t));
+                return vm->callFunction(result_val, {receiver}).rawBits();
+            }
+        }
+    }
     cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }

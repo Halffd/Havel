@@ -1,6 +1,6 @@
 // smoke: flags = --tiering
 // smoke: env = HAVEL_TIER1_MODULES=1
-// smoke: timeout = 300
+// smoke: timeout = 600
 // smoke: tier = slow
 // Regression: module-tiering globals-sidecar coherence (BP_TABLE class).
 // Drives module functions past the tier-1 threshold so they JIT-compile

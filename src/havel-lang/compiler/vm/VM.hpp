@@ -1743,7 +1743,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   // self-hosted parser's at()/advance() always saw EOF, hanging parses in
   // an infinite loop the moment `at` tiered. True when *out is set.
   bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
-                       Value* out);
+                       Value* out, bool* cacheable = nullptr);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers

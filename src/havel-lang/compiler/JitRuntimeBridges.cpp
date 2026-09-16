@@ -544,12 +544,31 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   }
 
   if (container.isObjectId()) {
+    // Interp ARRAY_GET object arm parity (VMCollections.cpp:516-585):
+    // operator overloading first (op_index via the class-chain-aware
+    // getHostObjectField), then the _G globals mirror, then a DIRECT
+    // field lookup - the interpreter reads object[key] without walking
+    // __proto/__class/__struct. Previously this used
+    // objectGetWithClassChain, which ignored op_index and resolved chain
+    // members where the interpreter saw only direct fields (op_index
+    // overloads invoked by module subscripts returned the raw field value
+    // instead of the computed one under tiering).
+    Value opIndex = vm->getHostObjectField(
+        ObjectRef{container.asObjectId(), true}, "op_index");
+    if (!opIndex.isNull() &&
+        (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
+         opIndex.isHostFuncId())) {
+      return vm->callFunction(opIndex, {container, key_val}).rawBits();
+    }
     auto key = vm->resolveKeyPublic(key_val);
     if (!key) return Value::makeNull().rawBits();
     if (container.asObjectId() == vm->globalsMirrorObjectId()) {
       return vm->lookupGlobalByKey(*key).rawBits();
     }
-    return vm->objectGetWithClassChain(container.asObjectId(), *key).rawBits();
+    auto *object = vm->getHeap().object(container.asObjectId());
+    if (!object) return Value::makeNull().rawBits();
+    auto kv = object->find(*key);
+    return (kv == object->end() ? Value::makeNull() : kv->second).rawBits();
   }
 
   return Value::makeNull().rawBits();
@@ -597,7 +616,26 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
         }
     }
 
+    // Object containers: cache only plain direct-field reads. op_index
+    // overloads run arbitrary code (computed results, side effects) and
+    // the _G globals mirror changes without an object shape bump, so both
+    // must take the un-cached raw path - serving a cached first result
+    // for either is stale by construction.
+    if (container.isObjectId()) {
+      Value opIndex = vm->getHostObjectField(
+          ObjectRef{container.asObjectId(), true}, "op_index");
+      if (!opIndex.isNull() &&
+          (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
+           opIndex.isHostFuncId())) {
+        return havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+      }
+    }
+
     auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+    if (container.isObjectId() &&
+        container.asObjectId() == vm->globalsMirrorObjectId()) {
+      return result_bits;
+    }
     cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }
@@ -770,47 +808,21 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         }
     }
 
-    // Interp OBJECT_GET parity (VMCollections.cpp ~1695): a bare read of a
-    // zero-arg fn found on a PROTOTYPE (not a direct field) auto-calls it
-    // with the receiver as sole arg. Direct instance fields holding fns
-    // are returned untouched (callback pattern). The IC must not cache
-    // these: the call is arbitrary Havel code with side effects - caching
-    // the first result served stale values for stateful method reads
-    // (observed: x = c.bump returned the fn value at the first tiered
-    // call where the interpreter called it and produced 1).
-    bool protoFnRead = false;
-    if (auto key = vm->resolveKeyPublic(key_val)) {
-        if (auto* o = vm->getHeap().object(obj_id)) {
-            protoFnRead = o->get(*key) == nullptr;
-        }
+    // Interp OBJECT_GET parity lives in memberGetPublic (getter
+    // interceptor, numeric index, chain walk with zero-arg prototype
+    // auto-call, len, built-in prototype method binding, __vivify). The
+    // cacheable flag gates the IC: side-effectful reads (auto-call,
+    // getter, bound-object allocation, vivify persistence, globals mirror)
+    // must never be cached - the first result would be served for every
+    // later read of the same (obj, key, shape).
+    Value out;
+    bool cacheable = false;
+    if (!vm->memberGetPublic(obj_bits, key_bits, &out, &cacheable)) {
+        return Value::makeNull().rawBits();
     }
-
-    auto result_bits = havel_vm_object_get_raw(vm_ptr, obj_bits, key_bits);
-    if (protoFnRead) {
-        Value result_val;
-        std::memcpy(&result_val, &result_bits, sizeof(uint64_t));
-        if (result_val.isFunctionObjId() || result_val.isClosureId()) {
-            const BytecodeFunction* bf = nullptr;
-            if (result_val.isFunctionObjId()) {
-                bf = vm->resolveFunctionFromId(result_val.asFunctionObjId());
-            } else if (result_val.isClosureId()) {
-                if (auto* closure =
-                        vm->getHeap().closure(result_val.asClosureId())) {
-                    if (closure->chunk) {
-                        bf = closure->chunk->getFunction(
-                            closure->function_index);
-                    }
-                }
-            }
-            if (bf && bf->param_count <= 1 &&
-                (bf->param_count == 0 ||
-                 (!bf->param_names.empty() &&
-                  bf->param_names[0] == "self"))) {
-                Value receiver;
-                std::memcpy(&receiver, &obj_bits, sizeof(uint64_t));
-                return vm->callFunction(result_val, {receiver}).rawBits();
-            }
-        }
+    const uint64_t result_bits = out.rawBits();
+    if (!cacheable) {
+        return result_bits;
     }
     cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
     return result_bits;

@@ -2554,16 +2554,21 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/compiler/core/CFG.cpp
         src/havel-lang/compiler/core/BytecodePasses.cpp
         src/havel-lang/compiler/core/RuntimeProfiler.cpp
+        src/havel-lang/compiler/incremental/Fingerprint.cpp
+        src/havel-lang/compiler/incremental/DependencyGraph.cpp
+        src/havel-lang/compiler/incremental/CacheLayer.cpp
+        src/havel-lang/compiler/incremental/IncrementalDriver.cpp
     )
     target_include_directories(cfg_pipeline_test PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/incremental
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
-    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main ${OPENSSL_LIBRARIES})
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
 
     # Query-system unit tests (TODO.md Phase 1: Query System Foundation).

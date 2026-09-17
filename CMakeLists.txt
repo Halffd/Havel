@@ -2563,7 +2563,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
-    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main crypto)
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
 
     # Query-system unit tests (TODO.md Phase 1: Query System Foundation).

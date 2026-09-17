@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include "../../runtime/concurrency/Thread.hpp"
@@ -21,7 +22,7 @@ namespace havel::compiler {
 
 class BytecodeChunk;
 
-class __attribute__((visibility("default"))) GCHeap {
+class HAVEL_EXPORT GCHeap {
 public:
   friend class VM;
   struct Stats {

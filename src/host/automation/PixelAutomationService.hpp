@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * PixelAutomationService.hpp
  *
@@ -72,7 +73,7 @@ struct ImageMatch {
  * Uses Qt and OpenCV internally for screen capture and image processing.
  * Returns plain C++ types that HostBridge translates to VM types.
  */
-class __attribute__((visibility("default"))) PixelAutomationService {
+class HAVEL_EXPORT PixelAutomationService {
 public:
     PixelAutomationService();
     ~PixelAutomationService();

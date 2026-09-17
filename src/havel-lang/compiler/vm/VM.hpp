@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <iostream>
@@ -216,7 +217,7 @@ struct VMConfig {
     bool headlessMode = false;
 };
 
-class __attribute__((visibility("default"))) VM : public BytecodeInterpreter {
+class HAVEL_EXPORT VM : public BytecodeInterpreter {
 public:
 // Timer check callback - called periodically during script execution
 using TimerCheckFunction = std::function<void()>;

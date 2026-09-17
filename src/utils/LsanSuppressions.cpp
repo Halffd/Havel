@@ -22,7 +22,9 @@
  * in the binary unused.
  */
 
-extern "C" __attribute__((visibility("default"))) const char *__lsan_default_suppressions() {
+#include "havel-lang/common/Export.hpp"
+
+extern "C" HAVEL_EXPORT const char *__lsan_default_suppressions() {
     // Process-global fontconfig config cache, never freed by design.
     return "leak:libfontconfig.so\n";
 }

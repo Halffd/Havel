@@ -34,7 +34,9 @@ struct ForeignToplevelWindow {
     struct zwlr_foreign_toplevel_handle_v1 *handle = nullptr;
 };
 
-class __attribute__((visibility("default"))) ForeignToplevel {
+#include "havel-lang/common/Export.hpp"
+
+class HAVEL_EXPORT ForeignToplevel {
 public:
     explicit ForeignToplevel(WaylandProtocolClient &client);
     ~ForeignToplevel();

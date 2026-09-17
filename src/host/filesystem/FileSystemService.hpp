@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * FileSystemService.hpp
  *
@@ -36,7 +37,7 @@ struct FileInfo {
  * - file info (size, modified time)
  * - path operations (join, exists, etc.)
  */
-class __attribute__((visibility("default"))) FileSystemService {
+class HAVEL_EXPORT FileSystemService {
 public:
     FileSystemService();
     ~FileSystemService();

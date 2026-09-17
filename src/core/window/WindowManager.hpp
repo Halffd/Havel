@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 #include "../../utils/Logger.hpp"
 #include "WindowBackend.hpp"
@@ -26,7 +27,7 @@ struct WindowStats {
   int x, y, width, height;
 };
 
-class __attribute__((visibility("default"))) WindowManager {
+class HAVEL_EXPORT WindowManager {
 public:
   WindowManager();
   ~WindowManager() = default;

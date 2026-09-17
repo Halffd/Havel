@@ -52,7 +52,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
- {scope: null, func_map: {}, globals: {}, global_names: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, tryDepth: 0, whenConditionFuncIndex: -1}
+ {scope: null, func_map: {}, globals: {}, global_names: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, keepStmtValue: false, tryDepth: 0, whenConditionFuncIndex: -1}
 
 }
 fn emitError(msg, line, col) {
@@ -1009,6 +1009,11 @@ if target.kind == "IndexExpression" {
 				endJump = bc.emit("JUMP", 0)
 				// Fallback: desugared load + op + store
 				bc.patch_jump(fallbackJump, bc.instr_count())
+				// JUMP_IF_NULL popped one copy; pop the leftover result
+				// before the fallback re-loads the variable, otherwise one
+				// slot leaks per iteration in loops (async-task stack
+				// balloons, fiber save/restore becomes quadratic).
+				bc.emit("POP")
 				emitLoadVar(emitter, target.name)
 				emitExpr(emitter, node.value)
 				bc.emit(oc)
@@ -1041,6 +1046,8 @@ if target.kind == "IndexExpression" {
 		// getObj() twice) and double-counted hits.
 		tempObj = scopeLocalCount(emitter.scope)
 		emitter.scope.count = emitter.scope.count + 1
+		tempResult = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
 		emitExpr(emitter, target.obj)
 		bc.emit("STORE_VAR", tempObj)
 		if inplaceMethod != null {
@@ -1054,19 +1061,23 @@ if target.kind == "IndexExpression" {
 			emitExpr(emitter, node.value)
 			methodIdx = bc.add_chunk_string(inplaceMethod)
 			bc.emit("CALL_METHOD", bc.str_id(methodIdx), 1)
-			// Check if in-place returned null
+			// Preserve the op result (mutated value or null) for both the
+			// reload-store and the expression value.
 			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			fallbackJump = bc.emit("JUMP_IF_NULL", 0)
-			// In-place succeeded — POP result, reload obj.prop (object was
-			// mutated in place)
-			bc.emit("POP")
-			bc.emit("LOAD_VAR", tempObj)
+			// In-place succeeded — object mutated in place: write the op
+			// result back under the same key and reload it as the value.
+			bc.emit("LOAD_VAR", tempResult)
 			keyIdx2 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
-			bc.emit("OBJECT_GET")
+			bc.emit("OBJECT_SET")
+			bc.emit("POP")
 			endJump = bc.emit("JUMP", 0)
-			// Fallback: desugared form
+			// Fallback: desugared form. JUMP_IF_NULL popped one copy; pop
+			// the leftover null, then load+op+store (leaves one value).
 			bc.patch_jump(fallbackJump, bc.instr_count())
+			bc.emit("POP")
 			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx3 = bc.add_string(target.property)
@@ -1074,14 +1085,17 @@ if target.kind == "IndexExpression" {
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
-			// Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
+			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			keyIdx4 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx4)
 			bc.emit("OBJECT_SET")
+			bc.emit("POP")
 			bc.patch_jump(endJump, bc.instr_count())
+			bc.emit("LOAD_VAR", tempResult)
 		}
 		else {
-			// No in-place — desugared form
+			// No in-place — desugared form, leaves exactly one value.
 			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx = bc.add_string(target.property)
@@ -1089,9 +1103,13 @@ if target.kind == "IndexExpression" {
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
+			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			keyIdx2 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
 			bc.emit("OBJECT_SET")
+			bc.emit("POP")
+			bc.emit("LOAD_VAR", tempResult)
 		}
 	}
 	else if target.kind == "IndexExpression" {
@@ -1117,6 +1135,10 @@ if target.kind == "IndexExpression" {
 		bc.emit("LOAD_VAR", tempIndex)
 		bc.emit("LOAD_VAR", tempResult)
 		bc.emit("ARRAY_SET")
+		// The DUP'd tempResult copy for the store still sits on the stack;
+		// drop it so exactly the reloaded value remains (one slot leaked per
+		// iteration in loops otherwise - async-task operand stack balloon).
+		bc.emit("POP")
 		bc.emit("LOAD_VAR", tempResult)
 	}
 else if target.kind == "AtExpression" {
@@ -1147,7 +1169,9 @@ else if target.kind == "AtExpression" {
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
-  bc.emit("LOAD_VAR", tempResult)
+  // The mutated value is already on the stack (DUP'd before STORE); the
+  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+  // per loop iteration (async-task operand stack balloon).
 }
 else if target.kind == "AtAtExpression" {
   // @@field += val → load Class.field, load val, op, store Class.field
@@ -1179,7 +1203,9 @@ else if target.kind == "AtAtExpression" {
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
-  bc.emit("LOAD_VAR", tempResult)
+  // The mutated value is already on the stack (DUP'd before STORE); the
+  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+  // per loop iteration (async-task operand stack balloon).
 }
 else {
 emitError("unsupported compound target: " + target.kind, node.line, node.col)
@@ -2188,6 +2214,17 @@ isYield = node.expr.kind == "YieldExpression"
 			if wasTail {
 				emitter.emittedTailCall = false
 			}
+		}
+		// An if leaves exactly one value on the stack (both branches, and the
+		// PUSH_NULL false path above, leave one). In statement position —
+		// loop bodies, non-last statements, inline dsl blocks — nobody
+		// consumes it, so a `while true { if .. }` leaks one slot per
+		// iteration and the async-task operand stack grows unbounded (the
+		// launch freeze: per-tick fiber save/restore becomes quadratic).
+		// Value-keeping positions (emitBlockWithReturn's last statement)
+		// set keepStmtValue, exactly like C++ propagates tail position.
+		if !emitter.keepStmtValue && !wasTail {
+			bc.emit("POP")
 		}
 		emitter.inTailPosition = wasTail
 		return
@@ -3474,7 +3511,13 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
         return
       }
       if last.kind == "IfStatement" {
+        // The block's value is the if's value: tell the if emitter to keep
+        // it on the stack instead of popping at the merge (statement
+        // position pops it).
+        savedKeep = emitter.keepStmtValue
+        emitter.keepStmtValue = true
         emitStmt(emitter, last)
+        emitter.keepStmtValue = savedKeep
         emitter.inTailPosition = savedTail
         return
       }
@@ -3540,7 +3583,11 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
       return
     }
     if last.kind == "IfStatement" {
+      // Block value = if value; keep it (statement position pops it).
+      savedKeep = emitter.keepStmtValue
+      emitter.keepStmtValue = true
       emitStmt(emitter, last)
+      emitter.keepStmtValue = savedKeep
       emitter.inTailPosition = savedTail
       oldScope.count = blockScope.count
       emitter.scope = oldScope

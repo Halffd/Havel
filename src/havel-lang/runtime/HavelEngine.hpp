@@ -1091,6 +1091,44 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       vm_->setCurrentChunkPublic(mainChunk.get());
     }
 
+    // Per-tick dispatch with a bounded instruction budget. The pump must
+    // never run a goroutine unbounded: a body that loops without sleeping
+    // or awaiting (e.g. a busy async-task spawned at startup) would never
+    // return from runDispatchLoopPublic and would wedge the entire
+    // single-threaded pump — hotkeys, timers and input stop being
+    // serviced (the launch freeze seen at
+    // "pickNext Created gid=.. async-task" + startGoroutineCall).
+    // Same discipline as processGoroutinesInline: the budget is
+    // approximate (8192-instruction checkpoints, < 8192 overshoot).
+    auto dispatchTick = [this](compiler::Scheduler::Goroutine* g) {
+      const uint64_t tick_budget = 65536;
+      vm_->beginFastTick(tick_budget);
+      vm_->current_executing_fiber_ = g->fiber;
+      // Same reentrancy guard as processGoroutinesInline: the VM's
+      // periodicYieldCheck invokes yield_callback_ (which IS
+      // processGoroutinesInline) every 8192 instructions. Without the
+      // guard, a long-running goroutine's tick would re-enter the full
+      // inline pump mid-dispatch and recursively re-run the same
+      // goroutine (plus re-copy the main-script fiber state) forever.
+      const bool prev_inline = inline_yield_active_;
+      inline_yield_active_ = true;
+      try {
+        vm_->runDispatchLoopPublic(0);
+      } catch (...) {
+        inline_yield_active_ = prev_inline;
+        // Unarm the budget on error: an in-flight budget makes unrelated
+        // callFunctionSync executions (host fns, module loads) return
+        // early mid-function.
+        vm_->endFastTick();
+        vm_->current_executing_fiber_ = nullptr;
+        throw;
+      }
+      inline_yield_active_ = prev_inline;
+      vm_->current_executing_fiber_ = nullptr;
+      vm_->endFastTick();
+      g->instructions_executed += static_cast<uint64_t>(vm_->fastTickConsumed());
+    };
+
         for (;;) {
             if (vm_->exit_requested_.load()) break;
 
@@ -1150,7 +1188,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+          dispatchTick(g);
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {
@@ -1165,7 +1203,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           auto result = vm_->startGoroutineCall(g->callable, g->locals);
           if (result != compiler::VM::GoroutineCallResult::Failed) {
             g->state = compiler::Scheduler::GoroutineState::Runnable;
-            { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+            dispatchTick(g);
           } else {
             g->state = compiler::Scheduler::GoroutineState::Done;
             if (g->update_callback_id != 0) {
@@ -1200,7 +1238,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                           g->fiber ? g->fiber->ip : UINT32_MAX,
                           (int)g->wait_handle.type, g->update_interval_ms);
           }
-          { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+          dispatchTick(g);
         }
       }
 
@@ -1222,6 +1260,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                   << " fiberState=" << fstate << " waitDueMs=" << dueMs << " updInt=" << g->update_interval_ms << "\n";
       }
       void* lastContext = vm_->getLastSuspensionContext();
+      // true when the goroutine's frames fully drained (its entry returned).
+      // false with lastReason==0 means the dispatch stopped early: tick
+      // budget expired (fast path) or a complex-opcode slow fallback.
+      const bool frames_drained = vm_->frameCountPublic() <= 0;
       if (lastReason != 0) {
         // Goroutine suspended — save fiber state and mark as Suspended
         vm_->clearLastSuspension();
@@ -1276,7 +1318,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         if (sched->current() == g) {
           sched->clearCurrent();
         }
-      } else {
+      } else if (frames_drained) {
         g->state = compiler::Scheduler::GoroutineState::Done;
         if (g->fiber) {
           g->fiber->state = compiler::FiberState::DONE;
@@ -1285,7 +1327,15 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           vm_->releaseCallback(g->update_callback_id);
           g->update_callback_id = 0;
       }
-    }
+    } else {
+        // Tick budget expired (or complex-opcode slow fallback): the
+        // goroutine is still mid-run. Preserve its fiber state and put it
+        // back on the run queue so the pump keeps servicing siblings
+        // (hotkeys, timers, other async tasks) instead of spinning on this
+        // goroutine forever.
+        if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+        sched->yield(g);
+      }
 
     // Drain any var_names queued from inside the goroutine's dispatch
     // loop. By this point current_executing_fiber_ is null (set to nullptr

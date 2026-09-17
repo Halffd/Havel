@@ -2038,6 +2038,14 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     if (frame_count_ > stop_frame_depth && !exit_requested_.load()) {
       // runDispatchFast returned due to other reasons (complex opcode) — fall
       // through to slow path
+      if (fast_tick_budget_ != 0 && fast_tick_consumed_ >= fast_tick_budget_) {
+        // Tick budget expired: the fast loop returned at its periodic
+        // checkpoint. Hand control back to the driver instead of falling
+        // into the unbudgeted slow path (which would run the goroutine to
+        // completion and wedge the pump on long-running bodies).
+        current_executing_fiber_ = saved_fiber_flag;
+        return;
+      }
       goto slow_path;
     }
     current_executing_fiber_ = saved_fiber_flag;
@@ -2047,6 +2055,17 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     while (frame_count_ > stop_frame_depth) {
       counter++;
       if ((counter & 8191) == 0) {
+        // Same scheduler time-slice contract as the fast dispatch loop's
+        // checkpoints: honor an armed tick budget so a long-running
+        // goroutine hands control back to the driver (processGoroutines /
+        // processGoroutinesInline) instead of running to completion.
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            current_executing_fiber_ = saved_fiber_flag;
+            return;
+          }
+        }
         if (exit_requested_.load())
           break;
         maybeCollectGarbage();
@@ -2188,6 +2207,17 @@ slow_path:
   while (frame_count_ > stop_frame_depth) {
     fast_path_counter++;
     if ((fast_path_counter & 4095) == 0) {
+      // Honor an armed tick budget (same contract as the fast loop): a
+      // goroutine that entered this path via the fast-loop redirect must
+      // still be time-sliced, otherwise a long-running body (busy
+      // async-task) spins here forever and the pump never returns.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = fast_path_counter;
+        if (fast_path_counter >= fast_tick_budget_) {
+          current_executing_fiber_ = saved_fiber_flag;
+          return;
+        }
+      }
       if (exit_requested_.load()) {
         break;
       }
@@ -2736,6 +2766,16 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     gc_suspend_counter_++;
     Value result = it->second(args);
     gc_suspend_counter_--;
+    if (budget_unwind_no_result_) {
+      // The host function was a module wrapper that unwound because the tick
+      // budget expired with its wrapped frame still live (see the wrappers in
+      // deepWrapModuleFunctions). Do not push the placeholder: the wrapped
+      // frame is on the saved fiber and will push its real result when it
+      // resumes and returns. Pushing here lands on top of that frame's live
+      // operand stack and the resume consumes it as an operand.
+      budget_unwind_no_result_ = false;
+      return;
+    }
     pushStack(result);
     maybeCollectGarbage();
 
@@ -3443,6 +3483,13 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
 
   if (callee_value.isHostFuncId()) {
     Value result = callHostFunction(callee_value, args);
+    if (budget_unwind_no_result_) {
+      // Module wrapper cut off by the tick budget with its wrapped frame still
+      // live. Leave a normal call-in-flight (no placeholder, no doReturn): the
+      // wrapped frame resumes and pushes the result for this frame.
+      budget_unwind_no_result_ = false;
+      return;
+    }
     pushStack(result);
     this->doReturn();
     return;
@@ -4973,20 +5020,35 @@ Value VM::deepWrapModuleFunctions(
                              std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
                              "). Possible infinite recursion in module function calls.");
             }
-            runDispatchLoop(frame_count_ - 1);
+            // The wrapped frame is the one this wrapper pushed; nested module
+            // calls may push/peek above it. Capture its index before the loop.
+            const size_t wrapped_frame_depth = frame_count_ - 1;
+            runDispatchLoop(wrapped_frame_depth);
             module_wrapper_execution_depth_.fetch_sub(1);
-            if (suspension_requested_ || last_suspension_reason_ != 0) {
+            // The wrapped frame — not the current top frame — owns the
+            // caller-map push so the caller scope is restored when it returns.
+            if (suspension_requested_ || last_suspension_reason_ != 0 ||
+                (tickBudgetExhausted() && frame_count_ > wrapped_frame_depth)) {
               // The dispatch loop suspended (e.g. time.sleep inside the
-              // module function) and returned as if complete. The fiber
-              // machinery saved execution state at the suspension point and
-              // resumes by re-entering the dispatch loop directly, so the
-              // completion path below must NOT run. The caller's map is
-              // ALREADY on globals_stack_ (pushed at entry). Flip the
-              // wrapped frame to owns_globals so its eventual RET pops the
-              // stack and restores the caller's scope. Ambient stays the
+              // module function) or was cut off by the per-tick budget and
+              // returned as if complete. The fiber machinery saved execution
+              // state at that point and resumes by re-entering the dispatch
+              // loop directly, so the completion path below must NOT run. The
+              // caller's map is ALREADY on globals_stack_ (pushed at entry).
+              // Mark the WRAPPED frame as the owner so its eventual RET pops
+              // that push and restores the caller's scope. Ambient stays the
               // module map — exactly what the resumed module function sees.
-              if (frame_count_ > 0) {
-                frame_arena_[frame_count_ - 1].owns_globals = true;
+              if (wrapped_frame_depth < frame_count_) {
+                frame_arena_[wrapped_frame_depth].owns_globals = true;
+              }
+              if (tickBudgetExhausted() && !suspension_requested_ &&
+                  last_suspension_reason_ == 0) {
+                // Budget cutoff, NOT a suspension. The wrapped frame is still
+                // live and will push its real result when it resumes and
+                // returns. Suppress the placeholder push here — the caller's
+                // operand stack must stay exactly as the cut-off frames left
+                // it, or the resume reads the placeholder as their operand.
+                budget_unwind_no_result_ = true;
               }
               return Value::makeNull();
             }
@@ -5162,17 +5224,27 @@ Value VM::deepWrapModuleFunctions(
                              std::to_string(MAX_MODULE_WRAPPER_EXECUTION_DEPTH) +
                              "). Possible infinite recursion in module function calls.");
             }
-            runDispatchLoop(frame_count_ - 1);
+            const size_t wrapped_frame_depth = frame_count_ - 1;
+            runDispatchLoop(wrapped_frame_depth);
             module_wrapper_execution_depth_.fetch_sub(1);
-            if (suspension_requested_ || last_suspension_reason_ != 0) {
+            if (suspension_requested_ || last_suspension_reason_ != 0 ||
+                (tickBudgetExhausted() && frame_count_ > wrapped_frame_depth)) {
               // Same rule as the $module_fn_ wrapper: a suspension (sleep /
-              // yield) inside the closure body must propagate to the CALL
-              // site without restoring globals/current_chunk, or the fiber
-              // resume would run module code against the caller's globals.
-              // The caller's map is already on globals_stack_ (pushed at
-              // entry); just flip the frame so its RET pops it.
-              if (frame_count_ > 0) {
-                frame_arena_[frame_count_ - 1].owns_globals = true;
+              // yield) or a per-tick budget cutoff inside the closure body must
+              // propagate to the CALL site without restoring
+              // globals/current_chunk, or the fiber resume would run module
+              // code against the caller's globals. The caller's map is already
+              // on globals_stack_ (pushed at entry); mark the WRAPPED frame as
+              // its owner so its RET pops it.
+              if (wrapped_frame_depth < frame_count_) {
+                frame_arena_[wrapped_frame_depth].owns_globals = true;
+              }
+              if (tickBudgetExhausted() && !suspension_requested_ &&
+                  last_suspension_reason_ == 0) {
+                // Budget cutoff, not a suspension: suppress the placeholder
+                // push so the live wrapped frame's eventual RET supplies the
+                // caller's result (see budget_unwind_no_result_).
+                budget_unwind_no_result_ = true;
               }
               return Value::makeNull();
             }

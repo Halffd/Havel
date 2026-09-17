@@ -4921,9 +4921,12 @@ auto emitCompound = [&](OpCode math_op) {
             emitLoadIdentifier(*binding);
             uint32_t end_jump = emitJump(OpCode::JUMP);
 
-            // Fallback: JUMP_IF_NULL popped the DUP'd null, stack is empty
+            // Fallback: JUMP_IF_NULL popped the DUP'd null; the other copy
+            // stays on the stack, so pop it before the desugared load —
+            // otherwise one slot leaks per iteration in loops.
             // Do the desugared form: load + op + store
             patchJump(fallback_jump, static_cast<uint32_t>(current_function->instructions.size()));
+            emit(OpCode::POP);
             emitLoadIdentifier(*binding);
             if (rhs_is_missing) {
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -4975,6 +4978,9 @@ auto emitCompound = [&](OpCode math_op) {
         { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::POP);
+        // Drop the leftover pre-DUP copy so exactly the reloaded value
+        // remains (one slot leaked per loop iteration otherwise).
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
     }
@@ -5007,6 +5013,10 @@ auto emitCompound = [&](OpCode math_op) {
         emit(OpCode::LOAD_VAR, temp_index);
         emit(OpCode::LOAD_VAR, temp_result);
         emit(OpCode::ARRAY_SET);
+        // ARRAY_SET pushes nothing; drop the leftover pre-DUP copy so
+        // exactly the reloaded value remains (one slot leaked per loop
+        // iteration otherwise - async-task operand stack balloon).
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
@@ -5043,7 +5053,9 @@ auto emitCompound = [&](OpCode math_op) {
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::POP);
-        emit(OpCode::LOAD_VAR, temp_result);
+        // The mutated value is already on the stack (DUP'd before STORE);
+        // the final LOAD_VAR temp_result used to add a duplicate that
+        // leaked one slot per loop iteration.
         return;
     }
     if (target_atat) {

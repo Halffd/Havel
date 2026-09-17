@@ -887,7 +887,8 @@ __attribute__((hot,
   // --- Hot opcodes (most frequent in self-hosted compilation) ---
 
 op_LOAD_CONST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -954,7 +955,8 @@ op_LOAD_CONST: {
 }
 
 op_LOAD_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1001,7 +1003,8 @@ op_LOAD_VAR: {
 }
 
 op_STORE_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1053,7 +1056,8 @@ op_STORE_VAR: {
 }
 
 op_POP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1095,7 +1099,8 @@ op_POP: {
 }
 
 op_PUSH_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1115,7 +1120,8 @@ op_PUSH_NULL: {
 }
 
 op_CALL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1134,6 +1140,13 @@ op_CALL: {
   // Falls through to the full executeInstruction path for anything else
   // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
   if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+    // A module-wrapper callee can consume the remaining tick budget inside
+    // doCall and unwind with NO result pushed (budget_unwind_no_result_): its
+    // wrapped frame stays live on the fiber and supplies the result on resume.
+    // Return to the driver now; falling through would dispatch the next opcode
+    // with the budget already spent.
+    if (tickBudgetExhausted())
+      return;
     // Fiber-suspending host call on the inline fast path: the callee left a
     // Pending marker on the stack. Park the goroutine on the pending token
     // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
@@ -1232,6 +1245,12 @@ op_CALL: {
   if (parkIfPendingCallResult())
     return;
 
+  // A slow-dispatched module-wrapper callee can consume the remaining tick
+  // budget and unwind with no result pushed. Hand control back to the driver
+  // now instead of running more of this goroutine past its slice.
+  if (tickBudgetExhausted())
+    return;
+
   // exit() may have been called by this CALL (host functions set
   // exit_requested_/exit_code_). Stop executing immediately so the
   // launcher can report the requested code instead of running the
@@ -1266,7 +1285,8 @@ op_CALL: {
         return;
     }
   }
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
@@ -1281,7 +1301,8 @@ op_CALL: {
 }
 
 op_RETURN: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1315,7 +1336,8 @@ op_RETURN: {
 }
 
 op_YIELD: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1396,7 +1418,8 @@ dispatch_next:
   // --- Remaining opcodes: delegate to executeInstruction ---
 
 op_LOAD_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1455,7 +1478,8 @@ op_LOAD_GLOBAL: {
 }
 
 op_STORE_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1509,7 +1533,8 @@ op_STORE_GLOBAL: {
 }
 
 op_STORE_IMMUT_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1562,7 +1587,8 @@ op_STORE_IMMUT_GLOBAL: {
 }
 
 op_STORE_IMMUT_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1609,7 +1635,8 @@ op_STORE_IMMUT_VAR: {
 }
 
 op_LOAD_UPVALUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1655,7 +1682,8 @@ op_LOAD_UPVALUE: {
 }
 
 op_STORE_UPVALUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1701,7 +1729,8 @@ op_STORE_UPVALUE: {
 }
 
 op_DUP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1723,7 +1752,8 @@ op_DUP: {
 }
 
 op_SWAP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -1746,7 +1776,8 @@ op_SWAP: {
 }
 
 op_INCLOCAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1801,7 +1832,8 @@ op_INCLOCAL: {
 }
 
 op_DECLOCAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1856,7 +1888,8 @@ op_DECLOCAL: {
 }
 
 op_INCLOCAL_POST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1908,7 +1941,8 @@ op_INCLOCAL_POST: {
 }
 
 op_DECLOCAL_POST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -1980,7 +2014,8 @@ op_BIT_OR:
 op_BIT_XOR:
 op_BIT_LSH:
 op_BIT_RSH: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2030,7 +2065,8 @@ op_BIT_RSH: {
 // was hand-built, so bail to the generic slow path rather than corrupting
 // the stack.
 op_ADD_INT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2122,7 +2158,8 @@ op_ADD_INT: {
 
 op_AND:
 op_OR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2143,7 +2180,8 @@ op_OR: {
 }
 
 op_NOT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2164,7 +2202,8 @@ op_NOT: {
 }
 
 op_BIT_NOT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2190,7 +2229,8 @@ op_BIT_NOT: {
 }
 
 op_NEGATE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2210,7 +2250,8 @@ op_NEGATE: {
 }
 
 op_STRING_GET_FAST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   {
     auto &frm = frame_arena_[frame_count_ - 1];
@@ -2317,7 +2358,8 @@ op_STRING_GET_FAST: {
   }
 
 op_STRING_SET_FAST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   {
     auto &frm = frame_arena_[frame_count_ - 1];
@@ -2443,7 +2485,8 @@ op_STRING_SET_FAST: {
 }
 
 op_LENGTH: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2463,7 +2506,8 @@ op_LENGTH: {
 }
 
 op_STRING_CURSOR_NEW: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2489,7 +2533,8 @@ op_STRING_CURSOR_NEW: {
 }
 
 op_STRING_CURSOR_CURRENT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2541,7 +2586,8 @@ op_STRING_CURSOR_CURRENT: {
 }
 
 op_STRING_CURSOR_ADVANCE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2594,7 +2640,8 @@ op_STRING_CURSOR_ADVANCE: {
 }
 
 op_STRING_CURSOR_PEEK: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2646,7 +2693,8 @@ op_STRING_CURSOR_PEEK: {
 }
 
 op_STRING_CURSOR_RESET: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2677,7 +2725,8 @@ op_STRING_CURSOR_RESET: {
 }
 
 op_STRING_CURSOR_GET_POS: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2706,7 +2755,8 @@ op_STRING_CURSOR_GET_POS: {
 }
 
 op_STRING_CURSOR_SET_POS: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2769,7 +2819,8 @@ op_STRING_CURSOR_SET_POS: {
 }
 
 op_STRING_CONCAT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2792,7 +2843,8 @@ op_STRING_CONCAT: {
 }
 
 op_JUMP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2816,7 +2868,8 @@ op_JUMP: {
 }
 
 op_JUMP_IF_FALSE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2841,7 +2894,8 @@ op_JUMP_IF_FALSE: {
 }
 
 op_JUMP_IF_TRUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2866,7 +2920,8 @@ op_JUMP_IF_TRUE: {
 }
 
 op_IS_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
@@ -2887,7 +2942,8 @@ op_IS_NULL: {
 }
 
 op_JUMP_IF_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2936,7 +2992,8 @@ slow_dispatch_fallback:
   return;
 
 op_default: {
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   auto &frm = frame_arena_[frame_count_ - 1];
   const auto &inst = frm.function->instructions[frm.ip];
@@ -2960,7 +3017,8 @@ op_default: {
       throw std::runtime_error(e.what());
     }
   }
-  if (suspension_requested_ || last_suspension_reason_ != 0)
+  if (suspension_requested_ || last_suspension_reason_ != 0 ||
+      tickBudgetExhausted())
     goto slow_dispatch_fallback;
   // Fiber-suspending host call via CALL_METHOD or another complex
   // opcode: executeInstruction pushed a Pending marker; park the

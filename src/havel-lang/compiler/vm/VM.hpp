@@ -565,12 +565,27 @@ int32_t pending_call_return_ip_ = -1;
     // execution.
     uint64_t fast_tick_budget_ = 0;
     uint64_t fast_tick_consumed_ = 0;
+    // Set by a module-function wrapper when it unwinds because the tick budget
+    // expired (rather than completing). doCall/doTailCall read it to suppress
+    // the usual result push: the wrapped frame is still live and will push its
+    // real result when it eventually returns, so a placeholder here would land
+    // on top of the still-active frames' operand stack and corrupt its resume.
+    bool budget_unwind_no_result_ = false;
 
     bool fastTickExpired() const { return fast_tick_budget_ != 0; }
+    // True once the armed per-tick instruction budget has been consumed. The
+    // dispatch loops bare-return at that point without any suspension flag, so
+    // nested module wrappers use this to tell a budget cutoff (they must unwind
+    // without popping globals_stack_) from real function completion.
+    bool tickBudgetExhausted() const {
+      return fast_tick_budget_ != 0 &&
+             fast_tick_consumed_ >= fast_tick_budget_;
+    }
     uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
     void beginFastTick(uint64_t budget) {
       fast_tick_budget_ = budget;
       fast_tick_consumed_ = 0;
+      budget_unwind_no_result_ = false;
     }
     void endFastTick() { fast_tick_budget_ = 0; }
 

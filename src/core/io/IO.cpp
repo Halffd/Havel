@@ -798,12 +798,18 @@ bool IO::SetEvdevGrab(bool grab) {
   if (inputBackend) {
     if (grab) {
       auto devices = inputBackend->EnumerateDevices();
+      // Grabbing every device routes all input exclusively to this process;
+      // if forwarding is not active this deadlocks the user's keyboard and
+      // mouse for anything that is not a registered hotkey. Log loudly so a
+      // script that grabs unexpectedly (e.g. io.block()) is visible.
+      info("IO::SetEvdevGrab(true): grabbing ALL {} devices", devices.size());
       for (const auto &dev : devices) {
         inputBackend->GrabDevice(dev.path);
       }
       return true;
     } else {
       inputBackend->UngrabAllDevices();
+      info("IO::SetEvdevGrab(false): all devices ungrabbed");
       return true;
     }
   }

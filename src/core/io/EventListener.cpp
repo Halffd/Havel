@@ -443,6 +443,9 @@ const EventListener::ModifierState &EventListener::GetModifierState() const {
 }
 
 void EventListener::SetBlockInput(bool block) {
+  // blockInput suppresses forwarding of non-hotkey input. Combined with a
+  // grab this is terminal for the desktop, so log state changes loudly.
+  info("EventListener::SetBlockInput: block={}", block);
   blockInput.store(block);
   if (backend_)
     backend_->SetBlockInput(block);

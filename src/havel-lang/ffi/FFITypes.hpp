@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../common/Export.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -47,7 +48,7 @@ struct FFIType {
     }
 };
 
-class __attribute__((visibility("default"))) FFITypeRegistry {
+class HAVEL_EXPORT FFITypeRegistry {
 public:
     static std::shared_ptr<FFIType> void_type();
     static std::shared_ptr<FFIType> bool_type();

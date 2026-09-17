@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * MediaService.hpp - Media control via MPRIS/DBus
  *
@@ -17,7 +18,7 @@ namespace havel::host {
  *
  * Uses MPRIS D-Bus interface to control media players.
  */
-class __attribute__((visibility("default"))) MediaService {
+class HAVEL_EXPORT MediaService {
 public:
   MediaService();
   ~MediaService();

@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include "host/clipboard/IClipboardBackend.hpp"
@@ -24,7 +25,7 @@ struct ClipboardSourceState {
     std::string text;
 };
 
-class __attribute__((visibility("default"))) WaylandClipboardBackend : public host::IClipboardBackend {
+class HAVEL_EXPORT WaylandClipboardBackend : public host::IClipboardBackend {
 public:
     explicit WaylandClipboardBackend(WaylandProtocolClient &client);
     ~WaylandClipboardBackend() override;

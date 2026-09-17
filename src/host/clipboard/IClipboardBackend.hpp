@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <string>
@@ -5,7 +6,7 @@
 
 namespace havel::host {
 
-class __attribute__((visibility("default"))) IClipboardBackend {
+class HAVEL_EXPORT IClipboardBackend {
 public:
     virtual ~IClipboardBackend() = default;
 

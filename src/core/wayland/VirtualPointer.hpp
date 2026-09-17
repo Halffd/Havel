@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <string>
@@ -12,7 +13,7 @@ namespace havel {
 class WaylandProtocolClient;
 class UinputDevice;
 
-class __attribute__((visibility("default"))) VirtualPointer {
+class HAVEL_EXPORT VirtualPointer {
 public:
     explicit VirtualPointer(WaylandProtocolClient &client);
     ~VirtualPointer();

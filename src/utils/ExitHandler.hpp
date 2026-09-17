@@ -1,5 +1,6 @@
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
 #include <csignal>
 #include <functional>
 
@@ -19,7 +20,7 @@ enum class ExitReason {
 // Exported: plugins (havel_mod_*.so) call havel::exit() to terminate the
 // program; release builds hide symbols by default, so without the explicit
 // visibility the plugin dlopen fails with an undefined symbol error.
-[[noreturn]] __attribute__((visibility("default"))) void exit(ExitReason reason, int code = 0);
+[[noreturn]] HAVEL_EXPORT void exit(ExitReason reason, int code = 0);
 
 void registerExitCleanup(std::function<void()> fn);
 

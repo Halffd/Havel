@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * ImageService.hpp - Image processing service backed by OpenCV
  *
@@ -21,7 +22,7 @@ struct ImageInfo {
     std::string format;
 };
 
-class __attribute__((visibility("default"))) ImageService {
+class HAVEL_EXPORT ImageService {
 public:
     ImageService();
     ~ImageService();

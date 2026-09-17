@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include "../../core/Value.hpp"
@@ -910,7 +911,7 @@ public:
 };
 
 // Bytecode interpreter interface
-class __attribute__((visibility("default"))) BytecodeInterpreter {
+class HAVEL_EXPORT BytecodeInterpreter {
 public:
   virtual ~BytecodeInterpreter() = default;
   virtual Value execute(const BytecodeChunk &chunk, const std::string &function_name,

@@ -1,10 +1,11 @@
 #pragma once
 #include "x11.h"
 #include "types.hpp"
+#include "havel-lang/common/Export.hpp"
 
 namespace havel {
 // In DisplayManager.hpp - Add monitor geometry methods:
-class __attribute__((visibility("default"))) DisplayManager {
+class HAVEL_EXPORT DisplayManager {
     public:
         struct MonitorInfo {
             std::string name;

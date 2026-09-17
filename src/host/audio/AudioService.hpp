@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * AudioService.hpp
  *
@@ -15,7 +16,7 @@ namespace havel {
 
 namespace havel::host {
 
-class __attribute__((visibility("default"))) AudioService {
+class HAVEL_EXPORT AudioService {
 public:
     explicit AudioService(havel::AudioManager* manager);
     ~AudioService() = default;

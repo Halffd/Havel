@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * AutomationService.hpp
  *
@@ -29,7 +30,7 @@ namespace havel::host {
  * - Auto-key-presser: Repeatedly press key
  * - Chained tasks: Sequence of actions with delays
  */
-class __attribute__((visibility("default"))) AutomationService {
+class HAVEL_EXPORT AutomationService {
 public:
     AutomationService(std::shared_ptr<IO> io);
     ~AutomationService();

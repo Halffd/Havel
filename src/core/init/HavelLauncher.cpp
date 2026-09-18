@@ -2815,7 +2815,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         module->setTargetTriple(targetTriple);
 
         std::string err;
-        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+        auto target = llvm::TargetRegistry::lookupTarget(targetTriple, err);
         if (!target) {
           error("Cannot find target: {}", err);
           return 1;
@@ -3091,10 +3091,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               }
               stub << "    };\n";
               
-              std::string escapedBuildDir = buildDir;
-              for (char& c : escapedBuildDir) {
-                  if (c == '"') escapedBuildDir += '\\';
-                  else if (c == '\\') escapedBuildDir += '\\\\';
+              std::string escapedBuildDir;
+              escapedBuildDir.reserve(buildDir.size() * 2);
+              for (char c : buildDir) {
+                  if (c == '"' || c == '\\') escapedBuildDir += '\\';
+                  escapedBuildDir += c;
               }
               
               stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
@@ -3178,7 +3179,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         module->setTargetTriple(targetTriple);
 
         std::string err;
-        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+        auto target = llvm::TargetRegistry::lookupTarget(targetTriple, err);
         if (!target) {
           error("Cannot find WebAssembly target: {}", err);
           return 1;

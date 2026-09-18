@@ -61,6 +61,8 @@ std::string bindingKindName(ResolvedBindingKind kind) {
     return "Function";
   case ResolvedBindingKind::HostFunction:
     return "HostFunction";
+  case ResolvedBindingKind::ClassMember:
+    return "ClassMember";
   }
   return "Unknown";
 }

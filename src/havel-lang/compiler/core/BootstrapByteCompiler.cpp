@@ -182,8 +182,14 @@ std::optional<Value> tryEvaluateConstantImpl(const ast::Expression &expr, const 
         double rv = rightVal->isInt() ? static_cast<double>(rightVal->asInt()) : rightVal->asDouble();
         
         auto makeNumResult = [](double v) -> Value {
-          // Preserve integer if both were ints and result is integer
-          if (std::floor(v) == v && v >= INT64_MIN && v <= INT64_MAX) {
+          // Preserve integer if both were ints and result is integer.
+          // double can't represent INT64_MAX (2^63 - 1) exactly: it rounds up
+          // to 2^63, so `v <= INT64_MAX` would accept 2^63 itself and the
+          // int64_t cast below would be UB. Compare `<` against 2^63 instead.
+          // INT64_MIN is exactly representable, so its side stays `>=`.
+          constexpr double kInt64MaxExclusive = 9223372036854775808.0; // 2^63
+          if (std::floor(v) == v && v >= -9223372036854775808.0 /* INT64_MIN */ &&
+              v < kInt64MaxExclusive) {
             return Value::makeInt(static_cast<int64_t>(v));
           }
           return Value::makeDouble(v);

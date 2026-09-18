@@ -472,6 +472,9 @@ void EvdevAdapter::UngrabAllDevices() {
     }
     grabbedFds_.clear();
     signalSafeGrabbedCount_.store(0, std::memory_order_release);
+    // A full ungrab ends the grab session: devices that (re)appear later
+    // must not be auto-grabbed until a new GrabDevice/SetGrabDevices(true).
+    grabEnabled_ = false;
 }
 
 void EvdevAdapter::rebuildSignalSafeFds() {
@@ -622,6 +625,17 @@ void EvdevAdapter::RecheckDevices() {
             }
             if (havel::debugging::debug_io) havel::debug("EvdevAdapter: New device appeared ({}), adopting ({})", info.name, info.path);
             if (OpenDevice(info.path)) {
+                // Only intercept keyboard/mouse-class devices. Audio jacks,
+                // power buttons, video buses and similar report no
+                // keyboard/mouse capabilities, but they do carry keys
+                // (volume/power/brightness); grabbing them while an input
+                // grab is active steals those keys from the desktop for no
+                // benefit and makes "non-hotkey" input go dead later in the
+                // session when hotplug adopts them.
+                if (!(devices_.back().capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
+                    CloseDevice(info.path);
+                    continue;
+                }
                 // Match the treatment of reconnected devices: re-grab when
                 // grabs are enabled so hotkeys keep intercepting it.
                 if (grabEnabled_) {

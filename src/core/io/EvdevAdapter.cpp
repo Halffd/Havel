@@ -25,6 +25,19 @@ namespace havel {
 
 namespace {
 std::atomic<EvdevAdapter *> g_active_adapter{nullptr};
+
+// Havel's own uinput devices (UinputDevice::Setup / CreateVirtualMouse)
+// always carry this vendor/product fingerprint. Reading or EVIOCGRAB'ing
+// them feeds havel's forwarded events back into its own input path,
+// creating a self-sustaining feedback loop (constant REL_X/REL_Y storm
+// that starves the real keyboard and mouse). Name/bus filters alone are
+// not sufficient: the name can be mangled while the device is still being
+// created, and the bustype is BUS_USB, not BUS_VIRTUAL. Reject by
+// identity on every adoption path.
+bool IsHavelSynthesizedDevice(const input_id &id) {
+    return id.vendor == 0x1234 &&
+           (id.product == 0x5678 || id.product == 0x5679);
+}
 }
 
 class EvdevAdapter : public InputBackend {
@@ -422,18 +435,32 @@ bool EvdevAdapter::AttachDevice(const std::string &path) {
     for (const auto &dev : devices_) {
         if (dev.path == path) return false; // already tracked
     }
+
+    // Cheap pre-filter by name (requiring enumeration): skipped devices in
+    // ignoredNames_ or with no keyboard/mouse caps are never opened.
+    DeviceInfo devInfo;
+    {
+        int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0) return false;
+        input_id vid{};
+        if (ioctl(fd, EVIOCGID, &vid) == 0 &&
+            (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
+            close(fd);
+            return false;
+        }
+        char name[256] = "Unknown";
+        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        close(fd);
+        devInfo.path = path;
+        devInfo.name = name;
+        if (!devInfo.name.empty() && ignoredNames_.count(devInfo.name)) return false;
+    }
+
     const size_t before = devices_.size();
     if (!OpenDevice(path)) return false;
     if (devices_.size() == before) return false; // defensive: nothing appended
 
     Device &dev = devices_.back();
-    if (!dev.name.empty() &&
-        ignoredNames_.find(dev.name) != ignoredNames_.end()) {
-        debug("EvdevAdapter: Rejecting {} at {} — this device name was previously classified as non-input",
-              dev.name, path);
-        CloseDevice(path);
-        return false;
-    }
     // Only intercept keyboard/mouse-class devices. Audio jacks, power
     // buttons, video buses and similar report no keyboard/mouse
     // capabilities, but they do carry keys (volume/power/brightness);
@@ -488,7 +515,8 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
         // and must never become tracked/grabbed input. Filtering here
         // covers both initial enumeration and hotplug re-enumeration.
         input_id vid{};
-        if (ioctl(fd, EVIOCGID, &vid) == 0 && vid.bustype == BUS_VIRTUAL) {
+        if (ioctl(fd, EVIOCGID, &vid) == 0 &&
+            (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
             close(fd);
             continue;
         }
@@ -515,14 +543,14 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
         return false;
     }
 
-    // Reject virtual (uinput) input devices by bus type, regardless of
-    // name or capabilities. Their events are synthesized by processes
-    // (including havel itself), so reading them would loop own-
-    // generated input back into the hotkey matcher. Physical
-    // keyboards/mice always have a real bus type (USB, HOST, I2C,...);
-    // BUS_VIRTUAL is only used by uinput-based synthesizers.
+    // Reject virtual (uinput) input devices: their events are synthesized
+    // by processes (including havel itself), so reading them would loop
+    // own-generated input back into the hotkey matcher. This covers both
+    // generic BUS_VIRTUAL uinput devices and havel's own devices (which
+    // use BUS_USB + a fixed vendor/product fingerprint).
     input_id id{};
-    if (ioctl(fd, EVIOCGID, &id) == 0 && id.bustype == BUS_VIRTUAL) {
+    if (ioctl(fd, EVIOCGID, &id) == 0 &&
+        (id.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(id))) {
         close(fd);
         if (havel::debugging::debug_io)
             debug("EvdevAdapter: Skipping virtual device {}", path);
@@ -576,6 +604,17 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
     auto it = std::find_if(devices_.begin(), devices_.end(),
         [&](const Device &d) { return d.path == path; });
     if (it == devices_.end() || it->fd < 0) return false;
+
+    // Refuse to grab havel's own uinput device even if it somehow got
+    // adopted: reading it would feed forwarded events back into the input
+    // path (infinite REL feedback loop). Detach it entirely.
+    input_id id{};
+    if (ioctl(it->fd, EVIOCGID, &id) == 0 && IsHavelSynthesizedDevice(id)) {
+        error("EvdevAdapter: refusing to grab own uinput device {}", path);
+        it->grab.reset();
+        DetachDevice(path);
+        return false;
+    }
 
     it->grab = std::make_unique<EvdevGrab>(it->fd);
     if (!it->grab->isGrabbed()) {

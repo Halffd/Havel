@@ -1,0 +1,53 @@
+// smoke: flags = --tiering --optimizeBytecode
+// smoke: timeout = 60
+// smoke: tier = slow
+// Differential test: object/string/array access parity
+
+fn main() {
+    int errors = 0
+    
+    // Test 1: object literal and property access
+    let obj = { a: 1, b: 2 }
+    if obj.a != 1 { errors += 1 }
+    if obj.b != 2 { errors += 1 }
+
+    // Test 2: string operations  
+    let s = "hello"
+    if s.len != 5 { errors += 1 }
+    let c = s[0]
+    if c != "h"[0] { errors += 1 }
+
+    // Test 3: array subscription
+    let arr = [10, 20]
+    if arr[0] != 10 { errors += 1 }
+    if arr.len != 2 { errors += 1 }
+
+    // Test 4: deep object nested
+    let deep = { a: { b: { c: 42 } } }
+    if deep.a.b.c != 42 { errors += 1 }
+
+    // Test 5: multi-step construction
+    let g = { x: 10 }
+    g.y = 20
+    if g.x != 10 { errors += 1 }
+    if g.y != 20 { errors += 1 }
+
+    // Test 6: closure capture
+    capture = 0
+    inc = fn() {
+        capture = capture + 1
+    }
+    inc()
+    inc()
+    if capture != 1 { errors += 1 }
+    if capture != capture { errors += 1 }
+    if capture != 2 { errors += 1 }
+
+    // Havel uses str(), and string.len might be syntax that depends on interpreter
+    // But result from either should always run consistently.
+    if errors == 0 {
+        print("PASS diff_interp")
+    } else {
+        print("FAIL diff_interp errors=" + str(errors))
+    }
+}

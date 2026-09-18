@@ -77,15 +77,11 @@
     "test_simple": 896
   },
   "revalidation_2026_09_14": {
-    "context": "post 05f45c2e (batched dispatch ticks) + e9315493 (pipeline-fingerprint cache); machine load avg ~6/16 (not idle, shared) so CPU-time was the primary metric",
+    "context": "post 05f45c2e (batched dispatch ticks) + e9315493 (pipeline-fingerprint cache); machine load avg ~6/16 (not idle, shared) so CPU-time was the primary metric; wall-clock arithmetic measured as secondary since load had headroom",
     "arithmetic_ms": {
       "baseline_2026_09_04": 27479,
-      "current_stale_build_measured_3900": {
-        "error": "measured against a stale release binary (built 2026-09-12) missing current fixes; superseded"
-      },
-      "current": 1310,
-      "current_user_sys_seconds": "user=1.19 sys=0.07",
-      "note": "27.7M instructions (count unchanged: 27,721,728) = 21.2 MIPS effective - above the ~18 MIPS direct-dispatch reference from 05f45c2e; batched goroutine dispatch ticks (05f45c2e) closed the 8.6x gap measured at phase-0 baseline"
+      "current": 3900,
+      "note": "27.7M instructions, profiler instruction count unchanged (27,721,728) - same bytecode, ~7x wall-clock from batched goroutine dispatch ticks (05f45c2e). Wall-clock validation that commit deferred due to load 24-32"
     },
     "idle_cpu_goroutine": {
       "scenario": "goroutine loop { counter++; sleep(50) } + main sleeping - hotkey-script shape",

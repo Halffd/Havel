@@ -1,24 +1,33 @@
-// Test various LINQ patterns
-numbers := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+// LINQ pattern variations (current query + method syntax)
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
+}
 
-// Multiple where clauses
-result1 := from x in numbers where x > 3 where x < 8 select x * 10
-print("Range filter: " + result1)
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// Multiple where conditions combined
+result1 = from x in numbers where x > 3 && x < 8 select x * 10
+check("compound where", result1, [40, 50, 60, 70])
 
 // Just filter
-result2 := from x in numbers where x % 2 == 0
-print("Evens: " + result2)
+result2 = from x in numbers where x % 2 == 0
+check("evens", result2, [2, 4, 6, 8, 10])
 
 // Just select (map)
-result3 := from x in numbers select x * x
-print("Squares: " + result3)
+result3 = from x in numbers select x * x
+check("squares", result3, [1, 4, 9, 16, 25, 36, 49, 64, 81, 100])
 
-// Real world: query windows (simulated with array of objects)
-windows := [
+// Real world: query simulated window objects
+windows = [
   {id: 1, title: "Chrome - Google"},
   {id: 2, title: "VS Code"},
   {id: 3, title: "Chrome - GitHub"}
 ]
 
-chrome_windows := from w in windows where w.title has "Chrome" select w.id
-print("Chrome window IDs: " + chrome_windows)
+chrome_windows = from w in windows where w.title.has("Chrome") select w.id
+check("chrome ids", chrome_windows, [1, 3])
+
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

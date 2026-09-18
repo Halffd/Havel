@@ -147,7 +147,9 @@ using Result =
  * - Real doubles pass through untouched (zero cost)
  * - Other types are encoded in the NaN mantissa space
  */
-struct __attribute__((visibility("default"))) Value {
+#include "../common/Export.hpp"
+
+struct HAVEL_EXPORT Value {
 private:
   uint64_t bits_;
 

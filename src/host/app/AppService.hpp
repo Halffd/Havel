@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * AppService.hpp - Application lifecycle and system info
  *
@@ -30,7 +31,7 @@ struct SystemInfo {
 /**
  * AppService - Application and system information
  */
-class __attribute__((visibility("default"))) AppService {
+class HAVEL_EXPORT AppService {
 public:
   AppService();
   ~AppService();

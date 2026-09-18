@@ -65,7 +65,9 @@ struct ProcessResult {
     std::string stderr = "";
 };
 
-class __attribute__((visibility("default"))) Launcher {
+#include "havel-lang/common/Export.hpp"
+
+class HAVEL_EXPORT Launcher {
 public:
     // Core launching
     static ProcessResult run(const std::string& executable, 

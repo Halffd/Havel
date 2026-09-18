@@ -1,0 +1,47 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD class prototype __parent chain walk
+// (JitRuntimeBridges havel_vm_call_method).
+// What: hot fn calling an INHERITED method (Child.baseMethod(), defined on
+// the Base prototype) on a class instance. The interpreter CALL_METHOD
+// (VMControlFlow.cpp:667-699) walks the instance's __class/__struct proto
+// object up its __parent chain; the JIT bridge only consulted
+// VM::getPrototypeMethod, which inspects the direct class object only, so
+// inherited methods resolved to nothing and the bridge pushed null.
+// Why: hot() gets ORC-compiled in LLVM-only builds after ~1000 calls
+// (tier-1 falls through to ORC without cranelift); interpreted calls
+// returned 42 throughout.
+// Expected: every baseMethod() call returns 42, all 3000 iterations, rc 0.
+
+class Base {
+    fn baseMethod() { 42 }
+}
+
+class Child : Base {
+    fn childMethod() { 7 }
+}
+
+fn hot(c) {
+    c.baseMethod()
+}
+
+c = Child.new()
+k = 0
+all_42 = true
+while k < 3000 {
+    r = hot(c)
+    if r != 42 {
+        all_42 = false
+        print("FAIL class_inherit k=${k} r=${r}")
+        process.exit(255)
+    }
+    k = k + 1
+}
+
+if all_42 {
+    print("PASS orc_class_inherit_method all 42")
+} else {
+    print("FAIL orc_class_inherit_method")
+    process.exit(255)
+}

@@ -34,7 +34,6 @@ struct JITStackFrame;  // per-function GC/exception frame (BytecodeOrcJIT.h)
 
 // ENTRY(symbol, return-type, (params), "contract")
 #define HAVEL_RUNTIME_ABI(ENTRY) \
-  ENTRY(havel_deoptimize, void, (void *, uint64_t, uint64_t, const char *), "Bail from JIT execution back to the interpreter at the current ip. Never returns to the caller.") \
   ENTRY(havel_gc_register_roots, void, (void *, havel::compiler::JITStackFrame*, uint64_t *, uint32_t), "Register `count` raw Value slots (JIT frame locals/stack) as GC roots.") \
   ENTRY(havel_gc_unregister_roots, void, (havel::compiler::JITStackFrame*), "Drop a previously registered root set.") \
   ENTRY(havel_gc_write_barrier, void, (void* vm_ptr, uint64_t new_value_bits), "Pin `new_value_bits` as an external GC root so a stored heap reference survives collection while a JIT frame holds it raw.") \
@@ -57,6 +56,7 @@ struct JITStackFrame;  // per-function GC/exception frame (BytecodeOrcJIT.h)
   ENTRY(havel_vm_add, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic ADD semantics for backends with speculative int fast paths: runs the VM's execBinaryOp on raw operand words and returns the result word; failures yield null.") \
   ENTRY(havel_vm_sub, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic SUB semantics: same contract as havel_vm_add.") \
   ENTRY(havel_vm_mul, uint64_t, (void *vm_ptr, uint64_t l, uint64_t r), "Generic MUL semantics: same contract as havel_vm_add.") \
+  ENTRY(havel_vm_binop, uint64_t, (void *vm_ptr, uint32_t op, uint64_t l, uint64_t r), "Generic binary-op semantics for any OpCode value: runs the VM's execBinaryOp on raw operand words and returns the result word; failures yield null. Used by the ORC binop fallback instead of the no-op deoptimize stub.") \
   ENTRY(havel_vm_backedge, void, (void* vm_ptr, uint32_t ip), "Loop-backedge hook: suspension bookkeeping and tiering counters.") \
   ENTRY(havel_vm_begin_module, uint64_t, (void* vm_ptr), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_bit_and, uint64_t, (uint64_t a_bits, uint64_t b_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
@@ -123,7 +123,7 @@ struct JITStackFrame;  // per-function GC/exception frame (BytecodeOrcJIT.h)
   ENTRY(havel_vm_neq, uint64_t, (uint64_t l, uint64_t r), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_not, uint64_t, (uint64_t v), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_delete, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint32_t key_id), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
-  ENTRY(havel_vm_object_delete_raw, void, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
+  ENTRY(havel_vm_object_delete_raw, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_entries, uint64_t, (void* vm_ptr, uint64_t obj_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_get, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint32_t key_id), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \
   ENTRY(havel_vm_object_get_raw, uint64_t, (void* vm_ptr, uint64_t obj_bits, uint64_t key_bits), "Runtime bridge for the corresponding bytecode operation; see the runtime implementation for the exact behavioral contract.") \

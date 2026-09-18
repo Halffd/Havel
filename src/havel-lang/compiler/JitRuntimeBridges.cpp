@@ -132,7 +132,6 @@ void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
 extern "C" void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
                               uint64_t* slot_bits, uint32_t count);
 extern "C" void havel_gc_unregister_roots(JITStackFrame* frame);
-extern "C" void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func);
 extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count);
 extern "C" uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count);
 extern "C" uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id);
@@ -395,6 +394,12 @@ extern "C" uint64_t havel_vm_sub(void* vm_ptr, uint64_t l, uint64_t r) {
 extern "C" uint64_t havel_vm_mul(void* vm_ptr, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::MUL, l, r);
 }
+// Generic binop fallback (ORC): runs the VM's execBinaryOp for the given
+// raw OpCode on raw operand words. Replaces the previous deopt-to-null
+// behavior for unspecialized operand mixes (e.g. string + int).
+extern "C" uint64_t havel_vm_binop(void* vm_ptr, uint32_t op, uint64_t l, uint64_t r) {
+  return runVmBinaryOp(vm_ptr, static_cast<havel::compiler::OpCode>(op), l, r);
+}
 
 static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
                               uint64_t l, uint64_t r) {
@@ -462,8 +467,13 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   Value container, key_val;
   std::memcpy(&container, &container_bits, sizeof(uint64_t));
   std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  // indexFromValue parity (VMInternals.hpp): int AND double keys both
+  // index (doubles truncate, matching interp ARRAY_GET/STRING_GET).
+  // Previously int-only, so `arr[i]` with i a num read null under
+  // tiering while the interpreter returned the element.
   auto indexFromRaw = [](const Value &v) -> std::optional<int64_t> {
     if (v.isInt()) return v.asInt();
+    if (v.isDouble()) return static_cast<int64_t>(v.asDouble());
     return std::nullopt;
   };
 
@@ -539,12 +549,31 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   }
 
   if (container.isObjectId()) {
+    // Interp ARRAY_GET object arm parity (VMCollections.cpp:516-585):
+    // operator overloading first (op_index via the class-chain-aware
+    // getHostObjectField), then the _G globals mirror, then a DIRECT
+    // field lookup - the interpreter reads object[key] without walking
+    // __proto/__class/__struct. Previously this used
+    // objectGetWithClassChain, which ignored op_index and resolved chain
+    // members where the interpreter saw only direct fields (op_index
+    // overloads invoked by module subscripts returned the raw field value
+    // instead of the computed one under tiering).
+    Value opIndex = vm->getHostObjectField(
+        ObjectRef{container.asObjectId(), true}, "op_index");
+    if (!opIndex.isNull() &&
+        (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
+         opIndex.isHostFuncId())) {
+      return vm->callFunction(opIndex, {container, key_val}).rawBits();
+    }
     auto key = vm->resolveKeyPublic(key_val);
     if (!key) return Value::makeNull().rawBits();
     if (container.asObjectId() == vm->globalsMirrorObjectId()) {
       return vm->lookupGlobalByKey(*key).rawBits();
     }
-    return vm->objectGetWithClassChain(container.asObjectId(), *key).rawBits();
+    auto *object = vm->getHeap().object(container.asObjectId());
+    if (!object) return Value::makeNull().rawBits();
+    auto kv = object->find(*key);
+    return (kv == object->end() ? Value::makeNull() : kv->second).rawBits();
   }
 
   return Value::makeNull().rawBits();
@@ -592,7 +621,26 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
         }
     }
 
+    // Object containers: cache only plain direct-field reads. op_index
+    // overloads run arbitrary code (computed results, side effects) and
+    // the _G globals mirror changes without an object shape bump, so both
+    // must take the un-cached raw path - serving a cached first result
+    // for either is stale by construction.
+    if (container.isObjectId()) {
+      Value opIndex = vm->getHostObjectField(
+          ObjectRef{container.asObjectId(), true}, "op_index");
+      if (!opIndex.isNull() &&
+          (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
+           opIndex.isHostFuncId())) {
+        return havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+      }
+    }
+
     auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+    if (container.isObjectId() &&
+        container.asObjectId() == vm->globalsMirrorObjectId()) {
+      return result_bits;
+    }
     cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }
@@ -765,7 +813,22 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
         }
     }
 
-    auto result_bits = havel_vm_object_get_raw(vm_ptr, obj_bits, key_bits);
+    // Interp OBJECT_GET parity lives in memberGetPublic (getter
+    // interceptor, numeric index, chain walk with zero-arg prototype
+    // auto-call, len, built-in prototype method binding, __vivify). The
+    // cacheable flag gates the IC: side-effectful reads (auto-call,
+    // getter, bound-object allocation, vivify persistence, globals mirror)
+    // must never be cached - the first result would be served for every
+    // later read of the same (obj, key, shape).
+    Value out;
+    bool cacheable = false;
+    if (!vm->memberGetPublic(obj_bits, key_bits, &out, &cacheable)) {
+        return Value::makeNull().rawBits();
+    }
+    const uint64_t result_bits = out.rawBits();
+    if (!cacheable) {
+        return result_bits;
+    }
     cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
     return result_bits;
 }
@@ -807,18 +870,23 @@ uint64_t havel_vm_object_has_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     return Value::makeBool(vm->hasHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
 }
 
-void havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    if (!vm_ptr) return;
+uint64_t havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops obj/key
+    // and pushes a bool - true when the key existed and was removed.
+    // Previously this returned void (JIT pushes null), diverging from
+    // the interpreter's bool for any expression-context delete.
+    if (!vm_ptr) return Value::makeBool(false).rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
     Value obj, key_val;
     std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
     std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return;
+    if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
 
     auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return;
+    if (!key_str) return Value::makeBool(false).rawBits();
 
-    vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str);
+    return Value::makeBool(
+        vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
 }
 
 void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
@@ -1392,28 +1460,116 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     bool passReceiverAsSelf = true;
 
+    // Field dispatch shared by the object-field paths below: a field value
+    // may be a host fn, a havel fn/closure, or a class prototype stored as
+    // a field (interpreter isClassNewCall, VMControlFlow.cpp:646-662) -
+    // the last is invoked through its "new" host method with
+    // (classProto, ...args), never called directly. Calling an ObjectId as
+    // a fn segfaulted from ORC-compiled code (b.shape(3,4) where shape is
+    // a class proto).
+    auto dispatchField = [&](const Value &fieldVal,
+                             const std::vector<Value> &fieldArgs) -> uint64_t {
+        if (fieldVal.isHostFuncId()) {
+            if (auto hostName = vm->getHostFunctionName(fieldVal.asHostFuncId())) {
+                return vm->invokeHostFunctionDirect(*hostName, fieldArgs).rawBits();
+            }
+            return Value::makeNull().rawBits();
+        }
+        if (fieldVal.isFunctionObjId() || fieldVal.isClosureId()) {
+            return vm->callFunction(fieldVal, fieldArgs).rawBits();
+        }
+        if (fieldVal.isObjectId()) {
+            auto *fieldObj = vm->getHeap().object(fieldVal.asObjectId());
+            if (fieldObj) {
+                auto *isClassVal = fieldObj->get("__is_class");
+                if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+                    auto *newMethod = fieldObj->get("new");
+                    if (newMethod && newMethod->isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(newMethod->asHostFuncId())) {
+                            std::vector<Value> newArgs;
+                            newArgs.reserve(fieldArgs.size() + 1);
+                            newArgs.push_back(fieldVal);
+                            newArgs.insert(newArgs.end(), fieldArgs.begin(),
+                                           fieldArgs.end());
+                            return vm->invokeHostFunctionDirect(*hostName, newArgs)
+                                .rawBits();
+                        }
+                    }
+                }
+            }
+        }
+        return Value::makeNull().rawBits();
+    };
+
     if (receiver.isObjectId()) {
         ObjectRef recvRef{receiver.asObjectId(), true};
         auto* obj = vm->getHeap().object(recvRef.id);
         if (obj) {
             bool foundViaModule = false;
             for (const auto& [name, val] : vm->getGlobals()) {
+                // Skip the ambient @ self-binding: class-instance methods
+                // compile to STORE_GLOBAL "this" (BootstrapByteCompiler).
+                // After a compiled @-method ran once, globals["this"] holds
+                // the latest instance, whose id matches the receiver of
+                // EVERY subsequent myObj.method() bridge call - treating it
+                // as a module object rerouted class-chain methods into the
+                // module arm (no receiver prepend), and the compiled callee
+                // crashed dereferencing args[0]. The interpreter never takes
+                // this route: its module scan only runs in the direct-field
+                // dispatch arm (VMControlFlow.cpp:588), never for
+                // chain-resolved or prototype methods.
+                if (name == "this") continue;
                 if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
                     foundViaModule = true;
                     break;
                 }
             }
+            // Interpreter parity (VMControlFlow.cpp:575-645): the module
+            // scan only suppresses the receiver when the method does NOT
+            // want self. Host fns want self when registered with a "self"
+            // first param (host_function_wants_self_) or on class
+            // protos; Havel fns/closures want self when their first
+            // param is literally "self" (isClassInstance) or on class
+            // instances. Dropping the receiver here shifted args by one
+            // for self-style methods (observed: {greet: fn(self, name)}
+            // under tiering produced "hi 0" instead of "hi bob" at the
+            // first compiled call). Same rule applies in the non-module
+            // arm below for local plain objects.
+            auto methodWantsSelf = [&](const Value &methodValue) {
+                if (methodValue.isHostFuncId()) {
+                    bool isClassProto = obj->get("__class") != nullptr ||
+                                        obj->get("__struct") != nullptr ||
+                                        obj->get("__is_class") != nullptr;
+                    return isClassProto ||
+                           vm->host_function_wants_self_.count(
+                               methodValue.asHostFuncId()) > 0;
+                }
+                bool isClassInstance = obj->get("__class") != nullptr ||
+                                       obj->get("__struct") != nullptr;
+                const BytecodeFunction *bf = nullptr;
+                if (methodValue.isClosureId()) {
+                    auto *closure =
+                        vm->getHeap().closure(methodValue.asClosureId());
+                    if (closure && closure->chunk)
+                        bf = closure->chunk->getFunction(
+                            closure->function_index);
+                } else if (methodValue.isFunctionObjId()) {
+                    bf = vm->resolveFunctionFromId(
+                        methodValue.asFunctionObjId());
+                }
+                return isClassInstance ||
+                       (bf && !bf->param_names.empty() &&
+                        bf->param_names[0] == "self");
+            };
             if (foundViaModule) {
-                passReceiverAsSelf = false;
                 Value methodValue = vm->getHostObjectField(recvRef, method_name);
                 if (!methodValue.isNull()) {
-                    if (methodValue.isHostFuncId()) {
-                        if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
-                            return result.rawBits();
-                        }
+                    std::vector<Value> fieldArgs = callArgs;
+                    if (methodWantsSelf(methodValue)) {
+                        fieldArgs.insert(fieldArgs.begin(), receiver);
                     }
-                    return vm->callFunction(methodValue, callArgs).rawBits();
+                    return dispatchField(methodValue, fieldArgs);
                 }
             } else {
                 auto* classVal = obj->get("__class");
@@ -1424,13 +1580,8 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                     passReceiverAsSelf = true;
                 } else {
                     Value methodValue = vm->getHostObjectField(recvRef, method_name);
-                    if (methodValue.isHostFuncId()) {
-                        uint32_t hostIdx = methodValue.asHostFuncId();
-                        if (vm->host_function_wants_self_.count(hostIdx) > 0) {
-                            passReceiverAsSelf = true;
-                        } else {
-                            passReceiverAsSelf = false;
-                        }
+                    if (!methodValue.isNull()) {
+                        passReceiverAsSelf = methodWantsSelf(methodValue);
                     } else {
                         passReceiverAsSelf = false;
                     }
@@ -1442,54 +1593,197 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
     if (passReceiverAsSelf) {
         callArgs.insert(callArgs.begin(), receiver);
     }
+    const bool receiverPrepended = passReceiverAsSelf;
 
     if (receiver.isObjectId() && !passReceiverAsSelf) {
         Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
         if (!methodValue.isNull()) {
-            if (methodValue.isHostFuncId()) {
-                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
-                }
-            }
-            return vm->callFunction(methodValue, callArgs).rawBits();
+            return dispatchField(methodValue, callArgs);
         }
     }
 
-    if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
-        if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
-            // Prototype methods are receiver-bound by definition: the
-            // interpreter's OBJECT_GET materializes them as
-            // allocateBoundMethod(hostfn, receiver), so the host function
-            // sees the receiver as its first argument. callArgs already
-            // carries it when passReceiverAsSelf was true (the receiver
-            // was inserted up front - non-object receivers like arrays
-            // take that path); insert it only when it is missing, or
-            // receiver-dependent builtins see a doubled receiver
-            // (array.push reached with [recv, recv, value] and threw
-            // "expects 2 arguments, got 3" from JIT-compiled pusher).
-            std::vector<Value> boundArgs;
-            if (passReceiverAsSelf) {
-                boundArgs = callArgs;
+    // Class prototype chain walk: interpreter CALL_METHOD
+    // (VMControlFlow.cpp:667-699) resolves instance methods not found as
+    // direct fields by walking the __class/__struct prototype object and
+    // its __parent chain. getPrototypeMethod only inspects the direct
+    // class object, so inherited methods were missed and JIT-compiled
+    // calls returned null (observed: Child.baseMethod() -> null at the
+    // first tiered call, interpreter returned 42). Mirror the interpreter
+    // exactly: host funcs and Havel fns/closures are both callable, and
+    // the receiver is prepended unconditionally for class-prototype
+    // methods (isInstanceFunc=false in interp arg prep).
+    if (receiver.isObjectId()) {
+        auto* instObj = vm->getHeap().object(receiver.asObjectId());
+        auto* classProto = instObj;
+        if (classProto) {
+            auto* classVal = classProto->get("__class");
+            if (!classVal) classVal = classProto->get("__struct");
+            if (classVal && classVal->isObjectId()) {
+                classProto = vm->getHeap().object(classVal->asObjectId());
             } else {
-                boundArgs.reserve(callArgs.size() + 1);
-                boundArgs.push_back(receiver);
-                boundArgs.insert(boundArgs.end(), callArgs.begin(),
-                                 callArgs.end());
+                classProto = nullptr;
             }
-            Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
-            if (!result.isNull()) return result.rawBits();
+            while (classProto) {
+                auto* methodVal = classProto->get(method_name);
+                if (methodVal) {
+                    if (methodVal->isHostFuncId() ||
+                        methodVal->isFunctionObjId() ||
+                        methodVal->isClosureId()) {
+                        std::vector<Value> boundArgs = callArgs;
+                        if (!receiverPrepended) {
+                            boundArgs.insert(boundArgs.begin(), receiver);
+                        }
+                        if (methodVal->isHostFuncId()) {
+                            if (auto hostName =
+                                    vm->getHostFunctionName(methodVal->asHostFuncId())) {
+                                return vm->invokeHostFunctionDirect(*hostName, boundArgs)
+                                    .rawBits();
+                            }
+                        } else {
+                            return vm->callFunction(*methodVal, boundArgs).rawBits();
+                        }
+                    }
+                }
+                auto* parentVal = classProto->get("__parent");
+                if (parentVal && parentVal->isObjectId()) {
+                    classProto = vm->getHeap().object(parentVal->asObjectId());
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Closure property call: `closure.prop(args)` — properties attached via
+    // OBJECT_SET live in closure_properties_ (fn.prop = v static state).
+    // The interpreter CALL_METHOD resolves them here (VMControlFlow.cpp:490,
+    // added for debounce's wrapped.cancel()); without this arm the bridge
+    // fell through to the prototype lookup and pushed null from ORC-compiled
+    // callers (observed: wrapped.cancel() -> null at first tiered call).
+    // The interpreter marks these resolved via module (no self arg), so the
+    // receiver must NOT be passed - strip the receiver the default
+    // passReceiverAsSelf=true prepended above.
+    if (receiver.isClosureId()) {
+        auto propIt = vm->closure_properties_.find(receiver.asClosureId());
+        if (propIt != vm->closure_properties_.end()) {
+            auto *props = vm->getHeap().object(propIt->second.id);
+            if (props) {
+                auto it = props->find(method_name);
+                if (it != props->end()) {
+                    std::vector<Value> propArgs = callArgs;
+                    if (receiverPrepended && !propArgs.empty()) {
+                        propArgs.erase(propArgs.begin());
+                    }
+                    if (it->second.isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(it->second.asHostFuncId())) {
+                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
+                                .rawBits();
+                        }
+                    } else if (it->second.isFunctionObjId() ||
+                               it->second.isClosureId()) {
+                        return vm->callFunction(it->second, propArgs).rawBits();
+                    }
+                }
+            }
+        }
+    }
+
+    // Host function property call / dotted host name: interpreter CALL_METHOD
+    // resolves host func receivers through hostfunc_properties_ (fn.prop =
+    // v, e.g. wrapped.cancel on a host-wrapped module closure) and dotted
+    // host names ("interval.start" -> receiver "interval" + "." + method)
+    // (VMControlFlow.cpp:439-489). Both resolve module-style: no receiver
+    // arg (strip what passReceiverAsSelf=true prepended). A miss returns
+    // null WITHOUT falling through to prototype/class lookups, mirroring
+    // the interpreter's break.
+    if (receiver.isHostFuncId()) {
+        uint32_t recvIdx = receiver.asHostFuncId();
+        auto propIt = vm->hostfunc_properties_.find(recvIdx);
+        if (propIt != vm->hostfunc_properties_.end()) {
+            auto *props = vm->getHeap().object(propIt->second.id);
+            if (props) {
+                auto it = props->find(method_name);
+                if (it != props->end()) {
+                    std::vector<Value> propArgs = callArgs;
+                    if (receiverPrepended && !propArgs.empty()) {
+                        propArgs.erase(propArgs.begin());
+                    }
+                    if (it->second.isHostFuncId()) {
+                        if (auto hostName =
+                                vm->getHostFunctionName(it->second.asHostFuncId())) {
+                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
+                                .rawBits();
+                        }
+                    } else if (it->second.isFunctionObjId() ||
+                               it->second.isClosureId()) {
+                        return vm->callFunction(it->second, propArgs).rawBits();
+                    }
+                }
+            }
+        }
+        const auto &hostNames = vm->getHostFunctionNames();
+        std::string receiver_name;
+        if (recvIdx < hostNames.size()) {
+            receiver_name = hostNames[recvIdx];
+        }
+        std::string dotted = receiver_name + "." + method_name;
+        for (size_t i = 0; i < hostNames.size(); ++i) {
+            if (hostNames[i] == dotted) {
+                std::vector<Value> propArgs = callArgs;
+                if (receiverPrepended && !propArgs.empty()) {
+                    propArgs.erase(propArgs.begin());
+                }
+                return vm->invokeHostFunctionDirect(dotted, propArgs).rawBits();
+            }
+        }
+        return Value::makeNull().rawBits();
+    }
+
+    // Prototype/module method resolution: getPrototypeMethodValue mirrors
+    // the interpreter's prototype table + module monkey-patch steps and
+    // returns closures/functions as Values (getPrototypeMethod collapses
+    // module-patched closures to a host-index 0 sentinel and misses the
+    // capitalized module globals for string/array/int/etc., so tiered
+    // calls either invoked an unrelated host function or returned null).
+    // Prototype methods are receiver-bound by definition: the interpreter's
+    // OBJECT_GET materializes them as allocateBoundMethod(hostfn, receiver),
+    // so the host function sees the receiver as its first argument. callArgs
+    // already carries it when passReceiverAsSelf was true (the receiver
+    // was inserted up front - non-object receivers like arrays take that
+    // path); insert it only when it is missing, or receiver-dependent
+    // builtins see a doubled receiver (array.push reached with
+    // [recv, recv, value] and threw "expects 2 arguments, got 3" from
+    // JIT-compiled pusher). The patched closure takes the same receiver
+    // argument (interpreter step 1.5 passes it via arg prep).
+    Value protoMethod = vm->getPrototypeMethodValue(receiver, method_name);
+    if (!protoMethod.isNull()) {
+        std::vector<Value> boundArgs;
+        if (passReceiverAsSelf) {
+            boundArgs = callArgs;
+        } else {
+            boundArgs.reserve(callArgs.size() + 1);
+            boundArgs.push_back(receiver);
+            boundArgs.insert(boundArgs.end(), callArgs.begin(),
+                             callArgs.end());
+        }
+        if (protoMethod.isHostFuncId()) {
+            if (auto hostName =
+                    vm->getHostFunctionName(protoMethod.asHostFuncId())) {
+                Value result =
+                    vm->invokeHostFunctionDirect(*hostName, boundArgs);
+                if (!result.isNull()) return result.rawBits();
+            }
+        } else if (protoMethod.isClosureId() ||
+                   protoMethod.isFunctionObjId()) {
+            return vm->callFunction(protoMethod, boundArgs).rawBits();
         }
     }
 
     if (receiver.isObjectId()) {
         Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
         if (!methodValue.isNull()) {
-            if (methodValue.isHostFuncId()) {
-                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
-                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
-                }
-            }
-            return vm->callFunction(methodValue, callArgs).rawBits();
+            return dispatchField(methodValue, callArgs);
         }
     }
 
@@ -1624,12 +1918,24 @@ uint64_t havel_vm_array_map(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Mirror interpreter ARRAY_MAP (VMCollections.cpp): the source array and
+  // the result are popped/held only in C++ while the mapped fn runs, which
+  // can allocate and trigger GC; pin both as external roots and re-fetch
+  // the pointers after each call. Without this, a GC mid-loop freed the
+  // unreferenced result (and a temporary source array) out from under the
+  // bridge -> use-after-free.
   auto resultRef = vm->getHeap().allocateArray();
   auto* result = vm->getHeap().array(resultRef.id);
+  uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     Value mapped = vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
+    result = vm->getHeap().array(resultRef.id);
     result->push_back(mapped);
   }
+  vm->unpinExternalRoot(srcRootId);
+  vm->unpinExternalRoot(resultRootId);
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
@@ -1642,14 +1948,22 @@ uint64_t havel_vm_array_filter(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Same GC-safety contract as havel_vm_array_map: pin source + result
+  // across the predicate calls, re-fetch after each one.
   auto resultRef = vm->getHeap().allocateArray();
   auto* result = vm->getHeap().array(resultRef.id);
+  uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     Value predResult = vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
+    result = vm->getHeap().array(resultRef.id);
     if (predResult.isBool() && predResult.asBool()) {
       result->push_back((*a)[i]);
     }
   }
+  vm->unpinExternalRoot(srcRootId);
+  vm->unpinExternalRoot(resultRootId);
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
@@ -1663,10 +1977,16 @@ uint64_t havel_vm_array_reduce(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   if (!arr.isArrayId()) return init_bits;
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return init_bits;
+  // Same GC-safety contract: pin the source across the reducer calls
+  // (initial/acc are Value copies on the C++ stack, but the array is only
+  // reachable through this pointer while the reducer runs).
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   Value acc = initial;
   for (size_t i = 0; i < a->size(); i++) {
     acc = vm->callFunctionSyncPublic(fn, {acc, (*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
   }
+  vm->unpinExternalRoot(srcRootId);
   return acc.rawBits();
 }
 
@@ -1679,9 +1999,14 @@ uint64_t havel_vm_array_foreach(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bit
   if (!arr.isArrayId()) return Value::makeNull().rawBits();
   auto* a = vm->getHeap().array(arr.asArrayId());
   if (!a) return Value::makeNull().rawBits();
+  // Same GC-safety contract: the source array is unreachable from VM
+  // roots while the callback runs (popped by the lowering); pin it.
+  uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
     vm->callFunctionSyncPublic(fn, {(*a)[i]});
+    a = vm->getHeap().array(arr.asArrayId());
   }
+  vm->unpinExternalRoot(srcRootId);
   return Value::makeNull().rawBits();
 }
 
@@ -1722,11 +2047,17 @@ uint64_t havel_vm_set_del(void* vm_ptr, uint64_t set_bits, uint64_t key_bits) {
     if (!setVal.isSetId()) return Value::makeBool(false).rawBits();
     auto* s = vm->getHeap().set(setVal.asSetId());
     if (!s) return Value::makeBool(false).rawBits();
-  auto k = vm->resolveKeyPublic(key);
-  if (!k) return Value::makeBool(false).rawBits();
-  s->erase(*k);
-  vm->getHeap().bumpSetVersion(setVal.asSetId());
-  return Value::makeNull().rawBits();
+    auto k = vm->resolveKeyPublic(key);
+    if (!k) return Value::makeBool(false).rawBits();
+    // Interpreter parity (VMCollections.cpp SET_DEL): pushes a bool -
+    // true when the key was present and removed (version bump only on
+    // actual removal). Previously returned null, diverging from the
+    // interpreter for expression-context use.
+    const bool removed = s->erase(*k) > 0;
+    if (removed) {
+        vm->getHeap().bumpSetVersion(setVal.asSetId());
+    }
+    return Value::makeBool(removed).rawBits();
 }
 
 uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits, uint64_t step_bits) {

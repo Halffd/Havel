@@ -1716,7 +1716,9 @@ fn parsePattern() {
   first = parsePatternAtom()
   if first == null { return null }
   alternatives.push(first)
-  while current().tid == TID.Pipe || current().tid == TID.Or {
+  // The lexer emits BitwiseOr (not Pipe) for a single '|' after an
+  // expression-shaped token, so pattern alternatives must accept both.
+  while current().tid == TID.Pipe || current().tid == TID.Or || current().tid == TID.BitwiseOr {
     advance()
     next = parsePatternAtom()
     if next == null {

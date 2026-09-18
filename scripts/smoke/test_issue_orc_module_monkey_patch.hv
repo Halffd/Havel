@@ -1,0 +1,48 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD missed capitalized module globals for monkey-patched
+// closures and returned null via host-index-0 sentinel.
+// What: getPrototypeMethod (VMObject.cpp) only checked lowercase module
+// names ("string", "array") for monkey-patched methods. Capitalized
+// module objects (String, Array) were skipped. Also closures/functions
+// collapsed to host-index 0 (traceBytecode), so even if found, the
+// bridge invoked the wrong host function.
+// Why: hot monkey-patched closure over array was compiled at 1000 calls;
+// bridge's proto scan missed it, fell through to null.
+// Expected: "patched:" + arr.len() returns "patched:3" in tiered mode.
+
+Array.patched = fn(a) { "patched:" + a.len() }
+Object.patched = fn(o) { "obj:" + o.value }
+String.patched = fn(s) { "str:" + s + "!" }
+
+arr = [1, 2, 3]
+obj = { value: 42 }
+s = "hello"
+
+fn hot_arr() { arr.patched() }
+fn hot_obj() { obj.patched() }
+fn hot_str() { s.patched() }
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r1 = hot_arr()
+    r2 = hot_obj()
+    r3 = hot_str()
+    if r1 != "patched:3" || r2 != "obj:42" || r3 != "str:hello!" {
+        if bad == -1 {
+            bad = k
+            badval = "r1=${r1} r2=${r2} r3=${r3}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_module_monkey_patch")
+} else {
+    print("FAIL orc_module_monkey_patch k=${bad} ${badval}")
+    process.exit(255)
+}

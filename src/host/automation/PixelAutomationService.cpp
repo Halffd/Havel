@@ -176,19 +176,12 @@ std::string PixelAutomationService::readText(const Region& region, const std::st
 
 bool PixelAutomationService::captureScreen(const std::string& filePath) {
     auto& screenshot = ScreenshotService::getInstance();
-    auto rgba = screenshot.captureFullDesktop();
-    if (rgba.empty()) return false;
+    auto result = screenshot.captureFullDesktop();
+    if (!result) return false;
 
-    int w = 1920, h = 1080;
-    auto* app = QApplication::instance();
-    if (app) {
-        auto* screen = QGuiApplication::primaryScreen();
-        if (screen) {
-            QRect geo = screen->geometry();
-            w = geo.width();
-            h = geo.height();
-        }
-    }
+    int w = result.width;
+    int h = result.height;
+    auto& rgba = result.data;
 
     if (rgba.size() < static_cast<size_t>(w * h * 4)) return false;
 
@@ -199,13 +192,17 @@ bool PixelAutomationService::captureScreen(const std::string& filePath) {
 
 bool PixelAutomationService::captureRegion(const Region& region, const std::string& filePath) {
     auto& screenshot = ScreenshotService::getInstance();
-    auto rgba = screenshot.captureRegion(region.x, region.y, region.w, region.h);
-    if (rgba.empty()) return false;
+    auto result = screenshot.captureRegion(region.x, region.y, region.w, region.h);
+    if (!result) return false;
 
-    if (rgba.size() < static_cast<size_t>(region.w * region.h * 4)) return false;
+    int w = result.width;
+    int h = result.height;
+    auto& rgba = result.data;
 
-    QImage img(reinterpret_cast<const uchar*>(rgba.data()), region.w, region.h,
-               region.w * 4, QImage::Format_RGBA8888);
+    if (rgba.size() < static_cast<size_t>(w * h * 4)) return false;
+
+    QImage img(reinterpret_cast<const uchar*>(rgba.data()), w, h, w * 4,
+               QImage::Format_RGBA8888);
     return img.save(QString::fromStdString(filePath), "PNG");
 }
 

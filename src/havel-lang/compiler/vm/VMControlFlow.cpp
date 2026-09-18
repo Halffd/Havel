@@ -744,9 +744,9 @@ if (instanceObj) {
             found_host = true;
         }
         }
-    }
-
-    // 1.5 Try module object for monkey-patched methods
+}
+ 
+     // 1.5 Try module object for monkey-patched methods
     if (!found_host && vm_func.isNull()) {
       // Generate capitalized version (e.g., "string" -> "String")
       std::string capName = type_name;

@@ -1,0 +1,49 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD receiver matched the ambient "this" global.
+// (JitRuntimeBridges havel_vm_call_method foundViaModule scan).
+// What: class proto stored as an object field, invoked as a constructor
+// (interpreter isClassNewCall, VMControlFlow.cpp:646-662), then an instance
+// method with @ reads on the fresh instance. Class-instance methods compile
+// to STORE_GLOBAL "this" (BootstrapByteCompiler.cpp:972); once a compiled
+// @-method ran, globals["this"] held the latest instance, so EVERY
+// instance.method() bridge call matched "this" in the module scan,
+// rerouting class-chain methods into the module arm (no receiver prepend).
+// The compiled callee dereferenced args[0] and SIGSEGV'd.
+// Why: hot() gets ORC-compiled in LLVM-only builds after ~1000 calls
+// (tier-1 falls through to ORC without cranelift); interpreted calls
+// returned 7 throughout.
+// Expected: every sum() returns 7, all 3000 iterations, rc 0.
+
+class Point {
+    x, y
+    fn @(x, y) { @x = x; @y = y }
+    fn sum() { @x + @y }
+}
+
+box = { shape: Point }
+
+fn hot(b) {
+    p = b.shape(3, 4)
+    p.sum()
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r = hot(box)
+    if r != 7 && bad == -1 {
+        bad = k
+        badval = r
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_classnew_field all 7")
+} else {
+    print("FAIL orc_classnew_field k=${bad} r=${badval}")
+    process.exit(255)
+}

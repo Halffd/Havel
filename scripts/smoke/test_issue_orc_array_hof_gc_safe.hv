@@ -1,0 +1,52 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: GC safety of ORC array map/filter/reduce/foreach bridges
+// (JitRuntimeBridges). The interpreter pins the source array and the
+// result as external roots while the callback runs and re-fetches the
+// heap pointers after each call (VMCollections.cpp ARRAY_MAP etc.); the
+// bridges held raw pointers with no pins, so a GC triggered by an
+// allocating callback mid-loop could free the unreferenced result (and a
+// temporary source array) out from under the bridge. Reproduce with a
+// callback that allocates garbage per element and hot fns that get
+// ORC-compiled after ~1000 calls in LLVM-only builds.
+// Expected: map keeps 5 elems (m[0]==2), filter keeps evens, reduce sums
+// to 15, foreach runs, all 1500 iterations, rc 0.
+
+fn churn(v) {
+    junk = []
+    j = 0
+    while j < 20 { junk.push(j); j = j + 1 }
+    v * 2
+}
+
+fn is_even(v) { v % 2 == 0 }
+
+fn sum(acc, v) { acc + v }
+
+data = [1, 2, 3, 4, 5]
+
+fn hot_map() { data.map(churn) }
+fn hot_filter() { data.filter(is_even) }
+fn hot_reduce() { data.reduce(sum, 0) }
+fn hot_foreach() { data.foreach(churn) }
+
+k = 0
+bad = -1
+while k < 1500 {
+    m = hot_map()
+    f = hot_filter()
+    r = hot_reduce()
+    if m.len() != 5 || m[0] != 2 || f.len() != 2 || f[0] != 2 || r != 15 {
+        if bad == -1 { bad = k }
+    }
+    hot_foreach()
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_array_hof_gc_safe all ok")
+} else {
+    print("FAIL orc_array_hof_gc_safe k=${bad}")
+    process.exit(255)
+}

@@ -25,8 +25,6 @@ extern "C" void havel_gc_register_roots(void *, havel::compiler::JITStackFrame *
 
 extern "C" void havel_gc_unregister_roots(havel::compiler::JITStackFrame *) {}
 
-extern "C" void havel_deoptimize(void *, uint64_t, uint64_t, const char *) {}
-
 
 extern "C" uint64_t havel_vm_call(void *vm_ptr, uint64_t *args, uint32_t count) {
   auto *vm = static_cast<VM *>(vm_ptr);

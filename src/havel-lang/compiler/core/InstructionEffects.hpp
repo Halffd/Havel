@@ -226,16 +226,30 @@ inline InstructionEffect instruction_effect(OpCode op) {
       return {Effects::Allocates | Effects::MayThrow, 1, 1};
     case OpCode::ARRAY_GET:
     case OpCode::ARRAY_GET_FAST:
-    case OpCode::ARRAY_LEN:
     case OpCode::ARRAY_HAS:
     case OpCode::ARRAY_FIND:
       return {Effects::ReadOnly | Effects::MayThrow, 2, 1};
+    case OpCode::ARRAY_LEN:
+      // Pops [container], pushes length (interpreter handles
+      // array/string/set/object).
+      return {Effects::ReadOnly | Effects::MayThrow, 1, 1};
     case OpCode::ARRAY_SET:
+    // Stack: [container, index, value] -> nothing (VMCollections.cpp;
+    // the emitter re-loads the RHS temp right after, nothing consumes
+    // a result). Wrong count here breaks DCE window balancing.
+      return {Effects::HasSideEffects | Effects::MayThrow, 3, 0};
     case OpCode::ARRAY_SET_FAST:
+    // Operands carry array_id + ip; stack: [index, value] -> nothing.
+      return {Effects::HasSideEffects | Effects::MayThrow, 2, 0};
     case OpCode::ARRAY_DEL:
-    case OpCode::ARRAY_POP:
+      // Pops [container, key], pushes bool (removed or not).
       return {Effects::HasSideEffects | Effects::MayThrow, 2, 1};
+    case OpCode::ARRAY_POP:
+      // Pops [array], pushes the popped element.
+      return {Effects::HasSideEffects | Effects::MayThrow, 1, 1};
     case OpCode::ARRAY_PUSH:
+      // Pops [container, value], pushes container back for chaining
+      // (VMCollections.cpp keeps the container on the stack).
       return {Effects::HasSideEffects | Effects::MayThrow, 2, 1};
     case OpCode::ARRAY_FREEZE:
       return {Effects::HasSideEffects | Effects::MayThrow, 1, 1};
@@ -250,8 +264,12 @@ inline InstructionEffect instruction_effect(OpCode op) {
 
     // ---- Sets / ranges / enums ----
     case OpCode::SET_SET:
+    // Stack: [set, value, key] -> nothing (VMCollections.cpp; caller
+    // keeps managing the set on the stack).
+      return {Effects::HasSideEffects | Effects::MayThrow, 3, 0};
     case OpCode::SET_DEL:
-      return {Effects::HasSideEffects | Effects::MayThrow, -1, -1};
+      // Pops [set, key], pushes bool (key was present and removed).
+      return {Effects::HasSideEffects | Effects::MayThrow, 2, 1};
     case OpCode::SET_NEW:
       return {Effects::Allocates | Effects::MayThrow, 0, 1};
     case OpCode::RANGE_NEW:
@@ -280,10 +298,18 @@ inline InstructionEffect instruction_effect(OpCode op) {
     case OpCode::OBJECT_IS_SEALED:
       return {Effects::ReadOnly | Effects::MayThrow, 2, 1};
     case OpCode::OBJECT_SET:
+    // Stack: [obj, value, key] -> obj (pushed back for chaining,
+    // VMCollections.cpp OBJECT_SET).
+      return {Effects::HasSideEffects | Effects::MayThrow, 3, 1};
     case OpCode::OBJECT_DELETE:
+      // Pops [obj, key], pushes bool (key existed and was removed).
+      return {Effects::HasSideEffects | Effects::MayThrow, 2, 1};
     case OpCode::OBJECT_FREEZE:
     case OpCode::OBJECT_SEAL:
+      // Pops [obj], pushes obj back.
+      return {Effects::HasSideEffects | Effects::MayThrow, 1, 1};
     case OpCode::OBJECT_ASSIGN:
+      // Pops [dst, src], pushes dst.
       return {Effects::HasSideEffects | Effects::MayThrow, 2, 1};
 
     // ---- Strings ----

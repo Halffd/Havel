@@ -159,6 +159,39 @@ public:
         reinterpret_cast<const void*>(&havel_vm_array_push));
     add("havel_vm_call_method",
         reinterpret_cast<const void*>(&havel_vm_call_method));
+
+    // GC Runtime ABI
+    add("havel_gc_register_roots",
+        reinterpret_cast<const void*>(&havel_gc_register_roots));
+    add("havel_gc_unregister_roots",
+        reinterpret_cast<const void*>(&havel_gc_unregister_roots));
+    add("havel_gc_write_barrier",
+        reinterpret_cast<const void*>(&havel_gc_write_barrier));
+
+    // Exception Runtime ABI
+    add("havel_vm_throw_error",
+        reinterpret_cast<const void*>(&havel_vm_throw_error));
+    add("havel_vm_throw_from_jit",
+        reinterpret_cast<const void*>(&havel_vm_throw_from_jit));
+    add("havel_vm_throw_value",
+        reinterpret_cast<const void*>(&havel_vm_throw_value));
+    add("havel_vm_try_enter",
+        reinterpret_cast<const void*>(&havel_vm_try_enter));
+    add("havel_vm_try_exit",
+        reinterpret_cast<const void*>(&havel_vm_try_exit));
+    add("havel_vm_try_find_throw_target",
+        reinterpret_cast<const void*>(&havel_vm_try_find_throw_target));
+    add("havel_vm_load_exception",
+        reinterpret_cast<const void*>(&havel_vm_load_exception));
+
+    // GC Runtime ABI
+    add("havel_gc_register_roots",
+        reinterpret_cast<const void*>(&havel_gc_register_roots));
+    add("havel_gc_unregister_roots",
+        reinterpret_cast<const void*>(&havel_gc_unregister_roots));
+    add("havel_gc_write_barrier",
+        reinterpret_cast<const void*>(&havel_gc_write_barrier));
+
     handle_ = hclb_create_with_symbols(
         names.data(), addrs.data(), static_cast<uint32_t>(names.size()));
   }

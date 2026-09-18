@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-09-18T02:44:31.279440+00:00",
+  "instrument": "havel_v312",
+  "version": "0.1.0",
+  "config": "release",
+  "backend": "tiered",
+  "benchmarks": {
+    "arithmetic": {
+      "elapsed_ms": 1393.9535479994447,
+      "pass": true,
+      "tiering": {
+        "tier1": 3,
+        "tier2_enqueued": 3,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "arrays": {
+      "elapsed_ms": 1113.5559929998635,
+      "pass": true,
+      "tiering": {
+        "tier1": 4,
+        "tier2_enqueued": 7,
+        "tier2_compiled": 1,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "closures": {
+      "elapsed_ms": 1309.251986000163,
+      "pass": true,
+      "tiering": {
+        "tier1": 5,
+        "tier2_enqueued": 3,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "functions": {
+      "elapsed_ms": 1384.0520920002746,
+      "pass": true,
+      "tiering": {
+        "tier1": 5,
+        "tier2_enqueued": 2,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "gc": {
+      "elapsed_ms": 2236.3378540003396,
+      "pass": true,
+      "tiering": {
+        "tier1": 3,
+        "tier2_enqueued": 3,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "objects": {
+      "elapsed_ms": 3194.968353999684,
+      "pass": true,
+      "tiering": {
+        "tier1": 4,
+        "tier2_enqueued": 4,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "strings": {
+      "elapsed_ms": 774.3364190000648,
+      "pass": true,
+      "tiering": {
+        "tier1": 3,
+        "tier2_enqueued": 3,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    },
+    "test_simple": {
+      "elapsed_ms": 366.65771099978883,
+      "pass": true,
+      "tiering": {
+        "tier1": 0,
+        "tier2_enqueued": 0,
+        "tier2_compiled": 0,
+        "tier2_dup_skipped": 0
+      },
+      "profiler": null
+    }
+  }
+}

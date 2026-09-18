@@ -618,8 +618,136 @@ void VM::registerPrototypeMethodByName(const std::string &typeName,
     prototypes_[typeName][methodName] = 0;
 }
 
-std::optional<uint32_t>
-VM::getPrototypeMethod(const Value &value,
+Value VM::getPrototypeMethodValue(const Value &value,
+                                 const std::string &methodName) {
+  std::string typeName;
+  if (value.isStringValId() || value.isStringId() || value.isRegexValId()) {
+    typeName = "string";
+  } else if (value.isArrayId()) {
+    typeName = "array";
+  } else if (value.isObjectId()) {
+    typeName = "object";
+
+    // Check if the object has a __class with a custom class name
+    auto *obj = heap_.object(value.asObjectId());
+    if (obj) {
+      auto *classVal = obj->get("__class");
+      if (classVal) {
+        if (classVal->isStringValId() || classVal->isStringId()) {
+          uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+          auto *classStr = heap_.string(strIdx);
+          if (classStr) {
+            auto classIt = prototypes_.find(*classStr);
+            if (classIt != prototypes_.end()) {
+              auto methodIt = classIt->second.find(methodName);
+              if (methodIt != classIt->second.end())
+                return Value::makeHostFuncId(methodIt->second);
+            }
+            std::string lower = *classStr;
+            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+            auto lowerIt = prototypes_.find(lower);
+            if (lowerIt != prototypes_.end()) {
+              auto methodIt = lowerIt->second.find(methodName);
+              if (methodIt != lowerIt->second.end())
+                return Value::makeHostFuncId(methodIt->second);
+            }
+            auto globalIt = globals.find(*classStr);
+            if (globalIt != globals.end() && globalIt->second.isObjectId()) {
+              auto *classObj = heap_.object(globalIt->second.asObjectId());
+              if (classObj) {
+                auto *fnVal = classObj->get(methodName);
+                if (fnVal && fnVal->isHostFuncId()) {
+                  uint32_t idx = fnVal->asHostFuncId();
+                  if (classIt == prototypes_.end()) {
+                    prototypes_[*classStr][methodName] = idx;
+                  } else {
+                    classIt->second[methodName] = idx;
+                  }
+                  return Value::makeHostFuncId(idx);
+                }
+              }
+            }
+          }
+        } else if (classVal->isObjectId()) {
+          auto *classObj = heap_.object(classVal->asObjectId());
+          if (classObj) {
+            auto *fnVal = classObj->get(methodName);
+            if (fnVal && fnVal->isHostFuncId()) {
+              return Value::makeHostFuncId(fnVal->asHostFuncId());
+            }
+          }
+        }
+      }
+    }
+  } else if (value.isSetId()) {
+    typeName = "set";
+  } else if (value.isInt()) {
+    typeName = "int";
+  } else if (value.isDouble()) {
+    typeName = "float";
+  } else if (value.isBool()) {
+    typeName = "bool";
+  } else if (value.isThreadId()) {
+    typeName = "thread";
+  } else if (value.isIntervalId()) {
+    typeName = "interval";
+  } else if (value.isTimeoutId()) {
+    typeName = "timeout";
+  } else if (value.isWaitGroupId()) {
+    typeName = "waitgroup";
+  } else if (value.isChannelId()) {
+    typeName = "channel";
+  } else if (value.isRangeId()) {
+    typeName = "range";
+  } else {
+    return Value::makeNull();
+  }
+
+  auto typeIt = prototypes_.find(typeName);
+  if (typeIt != prototypes_.end()) {
+    auto methodIt = typeIt->second.find(methodName);
+    if (methodIt != typeIt->second.end())
+      return Value::makeHostFuncId(methodIt->second);
+  }
+
+  // Module object monkey-patch, mirroring interpreter CALL_METHOD step 1.5
+  // (VMControlFlow.cpp:749-775): both lowercase and capitalized module
+  // globals are checked, and patched closures/functions are returned as-is
+  // (getPrototypeMethod collapses those to a host-index 0 sentinel, which
+  // made JIT-compiled calls either miss the capital module object or invoke
+  // an unrelated host function).
+  std::string capName = typeName;
+  if (!capName.empty() && capName[0] >= 'a' && capName[0] <= 'z')
+    capName[0] = static_cast<char>(capName[0] - 32);
+  for (const auto &modName : {typeName, capName}) {
+      auto modIt = globals.find(modName);
+      if (modIt != globals.end() && modIt->second.isObjectId()) {
+        auto *modObj = heap_.object(modIt->second.asObjectId());
+        if (modObj) {
+          auto *val = modObj->get(methodName);
+          if (val) {
+            if (val->isHostFuncId()) {
+              uint32_t idx = val->asHostFuncId();
+              auto cacheIt = prototypes_.find(typeName);
+              if (cacheIt == prototypes_.end()) {
+                prototypes_[typeName][methodName] = idx;
+              } else {
+                cacheIt->second[methodName] = idx;
+              }
+              return Value::makeHostFuncId(idx);
+            }
+            if (val->isClosureId() || val->isFunctionObjId()) {
+              return *val;
+            }
+          }
+        }
+      }
+  }
+
+  return Value::makeNull();
+}
+
+std::optional<uint32_t> VM::getPrototypeMethod(const Value &value,
                        const std::string &methodName) {
   // Determine type name (try both lowercase and capitalized)
   std::string typeName;
@@ -690,6 +818,36 @@ VM::getPrototypeMethod(const Value &value,
         }
       }
     }
+  } else if (value.isSetId()) {
+    typeName = "set";
+    moduleName = "set";
+  } else if (value.isInt()) {
+    typeName = "int";
+    moduleName = "int";
+  } else if (value.isDouble()) {
+    typeName = "float";
+    moduleName = "float";
+  } else if (value.isBool()) {
+    typeName = "bool";
+    moduleName = "bool";
+  } else if (value.isThreadId()) {
+    typeName = "thread";
+    moduleName = "thread";
+  } else if (value.isIntervalId()) {
+    typeName = "interval";
+    moduleName = "interval";
+  } else if (value.isTimeoutId()) {
+    typeName = "timeout";
+    moduleName = "timeout";
+  } else if (value.isWaitGroupId()) {
+    typeName = "waitgroup";
+    moduleName = "waitgroup";
+  } else if (value.isChannelId()) {
+    typeName = "channel";
+    moduleName = "channel";
+  } else if (value.isRangeId()) {
+    typeName = "range";
+    moduleName = "range";
   } else {
     return std::nullopt;
   }

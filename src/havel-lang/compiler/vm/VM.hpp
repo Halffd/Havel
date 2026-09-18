@@ -1759,7 +1759,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   // self-hosted parser's at()/advance() always saw EOF, hanging parses in
   // an infinite loop the moment `at` tiered. True when *out is set.
   bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
-                       Value* out);
+                       Value* out, bool* cacheable = nullptr);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
@@ -1842,7 +1842,20 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
                                       const std::string &funcName);
   std::optional<uint32_t>
   getPrototypeMethod(const Value &value, const std::string &methodName);
+  // Method value for a receiver, mirroring the interpreter's prototype +
+  // module monkey-patch steps: checks both the lowercase and capitalized
+  // module globals like VMControlFlow's CALL_METHOD step 1.5, and returns
+  // patched closures/functions as Values (getPrototypeMethod collapses
+  // those to a host-index 0 sentinel). Used by the ORC call_method bridge.
+  Value getPrototypeMethodValue(const Value &value,
+                                const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
+
+  // Resolve a function object id to its BytecodeFunction across the chunk
+  // set (current, main, persistent, module) - mirrors the interpreter's
+  // CALL_METHOD first-param "self" detection lookup.
+  const BytecodeFunction *
+  resolveFunctionFromId(uint32_t function_index) const;
 
   // Protocol system
   void registerProtocol(const std::string &protocolName,

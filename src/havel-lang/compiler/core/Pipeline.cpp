@@ -13,6 +13,10 @@
 #include "BootstrapByteCompiler.hpp"
 #include "OptimizerDriver.hpp"
 #include "../runtime/RuntimeSupport.hpp"
+#include "../incremental/Fingerprint.hpp"
+#include "../incremental/CacheLayer.hpp"
+#include "../incremental/DependencyGraph.hpp"
+#include "../incremental/IncrementalDriver.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
 #include "../../runtime/ModuleLoader.hpp"

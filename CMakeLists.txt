@@ -1754,7 +1754,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
   # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
-  # havel_deoptimize symbol defined in the runtime sources is missing from
+  # symbol defined in the runtime sources is missing from
   # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
   # The JIT symbol map and backend declarations derive from that X-macro.
   add_test(NAME runtime-abi-drift-guard
@@ -2554,16 +2554,21 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/compiler/core/CFG.cpp
         src/havel-lang/compiler/core/BytecodePasses.cpp
         src/havel-lang/compiler/core/RuntimeProfiler.cpp
+        src/havel-lang/compiler/incremental/Fingerprint.cpp
+        src/havel-lang/compiler/incremental/DependencyGraph.cpp
+        src/havel-lang/compiler/incremental/CacheLayer.cpp
+        src/havel-lang/compiler/incremental/IncrementalDriver.cpp
     )
     target_include_directories(cfg_pipeline_test PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/incremental
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
-    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main crypto)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main ${OPENSSL_LIBRARIES} crypto)
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
 
     # Query-system unit tests (TODO.md Phase 1: Query System Foundation).

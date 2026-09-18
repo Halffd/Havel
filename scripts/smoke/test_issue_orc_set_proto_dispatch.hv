@@ -1,0 +1,40 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD prototype dispatch for non-object receivers
+// (VMObject.cpp getPrototypeMethod / JitRuntimeBridges havel_vm_call_method).
+// What: set.delete(1) inside a hot fn. The interpreter's CALL_METHOD
+// (VMControlFlow.cpp) resolves set methods via prototypes_["set"] (host fn
+// "set.delete", registered dynamically by a module at runtime), but the ORC
+// bridge resolved methods through VM::getPrototypeMethod, whose receiver
+// if/else chain only knew string/array/object — everything else (sets, int,
+// double, bool, thread, channel, interval, timeout, waitgroup, range)
+// returned nullopt, so the bridge fell through and pushed null.
+// Why: sd() gets ORC-compiled in LLVM-only builds after ~1000 calls (tier-1
+// falls through to ORC without cranelift); interpreted runs were fine.
+// Expected: every s.delete(1) returns true, all 3000 iterations, rc 0.
+
+fn sd(s) {
+    s.delete(1)
+}
+
+s = {1, 2, 3}
+k = 0
+all_true = true
+while k < 3000 {
+    r = sd(s)
+    if r != true {
+        all_true = false
+        print("FAIL sd k=${k} r=${r}")
+        process.exit(255)
+    }
+    s.add(1)
+    k = k + 1
+}
+
+if all_true {
+    print("PASS orc_set_proto_dispatch all true")
+} else {
+    print("FAIL orc_set_proto_dispatch")
+    process.exit(255)
+}

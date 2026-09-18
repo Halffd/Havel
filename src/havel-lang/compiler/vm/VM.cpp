@@ -2722,6 +2722,21 @@ void VM::packVariadicArgs(std::vector<Value> &args,
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
+const BytecodeFunction *
+VM::resolveFunctionFromId(uint32_t function_index) const {
+  const BytecodeChunk *chunk = current_chunk;
+  if (chunk && chunk->getFunction(function_index)) return chunk->getFunction(function_index);
+  if (main_chunk_ && main_chunk_->getFunction(function_index))
+    return main_chunk_->getFunction(function_index);
+  for (auto &pc : persistent_chunks_) {
+    if (pc && pc->getFunction(function_index)) return pc->getFunction(function_index);
+  }
+  for (auto &[_, mc] : module_chunks_) {
+    if (mc && mc->getFunction(function_index)) return mc->getFunction(function_index);
+  }
+  return nullptr;
+}
+
 void VM::doCall(Value callee_value, std::vector<Value> args) {
   tail_call_depth_ = 0;
   // Consume any stashed return address (set by dispatch sites immediately
@@ -4005,7 +4020,7 @@ Value VM::popStack() {
 }
 
 bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
-                         Value* out) {
+                         Value* out, bool* cacheable) {
   Value receiver = Value::fromRawBits(receiver_bits);
   Value key_value = Value::fromRawBits(key_bits);
 
@@ -4087,15 +4102,190 @@ bool VM::memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
       }
     }
     auto key = resolveKey(key_value);
-    if (key) {
-      if (receiver.asObjectId() == globals_mirror_object_id_) {
-        *out = lookupGlobalByKey(*key);
-        return true;
-      }
-      *out = objectGetWithClassChain(receiver.asObjectId(), *key);
+    if (!key) {
+      *out = Value::makeNull();
+      if (cacheable) *cacheable = true;
       return true;
     }
+    auto *obj = heap_.object(receiver.asObjectId());
+    if (receiver.asObjectId() == globals_mirror_object_id_) {
+      *out = lookupGlobalByKey(*key);
+      // Globals change without an object shape bump; an IC entry keyed on
+      // shape_version would serve stale reads forever.
+      if (cacheable) *cacheable = false;
+      return true;
+    }
+    if (!obj) {
+      *out = Value::makeNull();
+      if (cacheable) *cacheable = true;
+      return true;
+    }
+
+    // Numeric index with positional semantics (interp OBJECT_GET
+    // VMCollections.cpp:1616): obj[0] / obj[-1] resolve through key ORDER,
+    // not by stringifying the index.
+    if (key_value.isInt()) {
+      int64_t index = key_value.asInt();
+      auto keys = obj->getKeys();
+      if (index < 0) index = static_cast<int64_t>(keys.size()) + index;
+      if (index >= 0 && static_cast<size_t>(index) < keys.size()) {
+        auto *val = obj->get(keys[static_cast<size_t>(index)]);
+        *out = val ? *val : Value::makeNull();
+      } else {
+        *out = Value::makeNull();
+      }
+      if (cacheable) *cacheable = true;
+      return true;
+    }
+
+    // Property-getter interceptor (interp VMCollections.cpp:1651): a
+    // string __class with a registered __get_<field> prototype method
+    // intercepts the read; the getter runs host code and may mutate
+    // state, so the result is never IC-cached.
+    {
+      auto *classVal = obj->get("__class");
+      if (classVal && (classVal->isStringValId() || classVal->isStringId())) {
+        std::string getterName = "__get_" + *key;
+        auto getter = getPrototypeMethod(receiver, getterName);
+        if (getter) {
+          try {
+            Value r = callHostFunction(Value::makeHostFuncId(*getter),
+                                       {receiver});
+            *out = std::move(r);
+            if (cacheable) *cacheable = false;
+            return true;
+          } catch (...) {
+          }
+        }
+      }
+    }
+
+    // Proto/class chain walk tracking found_on_prototype (interp
+    // VMCollections.cpp:1666-1688).
+    Value found_val = Value::makeNull();
+    bool found_on_prototype = false;
+    GCHeap::ObjectEntry *current_obj = obj;
+    while (current_obj) {
+      auto *val = current_obj->get(*key);
+      if (val) {
+        found_val = *val;
+        found_on_prototype = (current_obj != obj);
+        break;
+      }
+      auto *parent_val = current_obj->get("__proto");
+      if (!parent_val) parent_val = current_obj->get("__class");
+      if (!parent_val) parent_val = current_obj->get("__struct");
+      if (!parent_val) parent_val = current_obj->get("__parent");
+      if (parent_val && parent_val->isObjectId()) {
+        current_obj = heap_.object(parent_val->asObjectId());
+      } else {
+        current_obj = nullptr;
+      }
+    }
+
+    if (!found_val.isNull()) {
+      // Bare read of a zero-arg proto method auto-calls it with the
+      // receiver (interp VMCollections.cpp:1695-1728). Side effects: not
+      // IC-cached (stale stateful reads; observed c.bump returning the
+      // fn value at the first tiered call).
+      if (found_on_prototype &&
+          (found_val.isFunctionObjId() || found_val.isClosureId())) {
+        uint32_t fi = found_val.isFunctionObjId()
+                          ? found_val.asFunctionObjId()
+                          : (heap_.closure(found_val.asClosureId())
+                                 ? heap_.closure(found_val.asClosureId())
+                                       ->function_index
+                                 : UINT32_MAX);
+        const BytecodeFunction *bf = nullptr;
+        const BytecodeChunk *fn_chunk = current_chunk;
+        if (found_val.isClosureId()) {
+          auto *closure = heap_.closure(found_val.asClosureId());
+          if (closure && closure->chunk) fn_chunk = closure->chunk;
+        }
+        auto resolveFn =
+            [&](const BytecodeChunk *ch) -> const BytecodeFunction * {
+          return (ch && fi != UINT32_MAX) ? ch->getFunction(fi) : nullptr;
+        };
+        bf = resolveFn(fn_chunk);
+        if (!bf) bf = resolveFn(main_chunk_.get());
+        if (!bf) {
+          for (auto &pc : persistent_chunks_)
+            if (!bf) bf = resolveFn(pc.get());
+        }
+        if (!bf) {
+          for (auto &[_, mc] : module_chunks_)
+            if (!bf) bf = resolveFn(mc.get());
+        }
+        if (bf && bf->param_count <= 1 &&
+            (bf->param_count == 0 ||
+             (!bf->param_names.empty() && bf->param_names[0] == "self"))) {
+          *out = callFunction(found_val, {receiver});
+          if (cacheable) *cacheable = false;
+          return true;
+        }
+      }
+      *out = found_val;
+      if (cacheable) *cacheable = true;
+      return true;
+    }
+
+    // Built-in .len property (interp VMCollections.cpp:1732): key count
+    // for objects.
+    if (*key == "len") {
+      auto keys = obj->getKeys();
+      *out = Value::makeInt(static_cast<int64_t>(keys.size()));
+      if (cacheable) *cacheable = true;
+      return true;
+    }
+
+    // Built-in prototype method binding (interp VMCollections.cpp:1737):
+    // allocates a fresh bound object {fn, self} per read; identity is
+    // observable, so never IC-cache.
+    {
+      auto method = getPrototypeMethod(receiver, *key);
+      if (method) {
+        auto boundRef = heap_.allocateObject();
+        auto *bObj = heap_.object(boundRef.id);
+        (*bObj)["fn"] = Value::makeHostFuncId(
+            getHostFunctionIndex(host_function_names_[*method]));
+        (*bObj)["self"] = receiver;
+        *out = Value::makeObjectId(boundRef.id);
+        if (cacheable) *cacheable = false;
+        return true;
+      }
+    }
+
+    // Autovivification (interp VMCollections.cpp:1745-1773): missing
+    // reads on __vivify objects create + persist a sub-object. Side
+    // effect: never IC-cache.
+    {
+      auto *vivify = obj->get("__vivify");
+      if (vivify && !vivify->isNull() &&
+          (!vivify->isBool() || vivify->asBool())) {
+        auto subRef = heap_.allocateObject();
+        auto *subObj = heap_.object(subRef.id);
+        (*subObj)["__vivify"] = *vivify;
+        auto *autoSaveRoot = obj->get("__autosave_root");
+        if (autoSaveRoot) (*subObj)["__autosave_root"] = *autoSaveRoot;
+        auto *parentPath = obj->get("__cfg_path");
+        std::string childPath;
+        if (parentPath && parentPath->isStringValId()) {
+          auto *parentStr = heap_.string(parentPath->asStringValId());
+          childPath = parentStr ? (*parentStr + "." + *key) : *key;
+        } else {
+          childPath = *key;
+        }
+        auto pathRef = heap_.allocateString(childPath);
+        (*subObj)["__cfg_path"] = Value::makeStringValId(pathRef.id);
+        obj->set(*key, Value::makeObjectId(subRef.id));
+        *out = Value::makeObjectId(subRef.id);
+        if (cacheable) *cacheable = false;
+        return true;
+      }
+    }
+
     *out = Value::makeNull();
+    if (cacheable) *cacheable = true;
     return true;
   }
 
@@ -4135,7 +4325,9 @@ uint64_t VM::indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
   // barrier. On bail shapes the caller contract returns the value word.
 
   if (container.isArrayId()) {
-    if (!index_or_key.isInt()) return val_bits;
+    // indexFromValue accepts int AND double (truncating), matching the
+    // interp ARRAY_SET. The previous isInt() gate silently dropped
+    // num-keyed writes (arr[i] = v no-opped under tiering).
     auto index = indexFromValue(index_or_key);
     if (!index) return val_bits;
     auto* array = heap_.array(container.asArrayId());

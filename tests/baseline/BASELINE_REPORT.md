@@ -164,4 +164,4 @@ Written to `tests/baseline/`:
 |------|--------|
 | 2026-08-30 | First (partial, outdated) baseline; 55% smoke pass |
 | 2026-09-04 | Phase 0 baseline re-established: smoke 100% pass, JIT 100% pass, integration classified, generated default/llvm/self_hosted.json |
-| 2026-09-14 | Revalidation (see `revalidation_2026_09_14` in llvm.json): arithmetic 27479ms -> 1310ms on a clean release build = 21.2 MIPS effective, above the ~18 MIPS direct-dispatch reference (batched dispatch ticks 05f45c2e closed the 8.6x goroutine-context gap; an interim 3900ms reading was taken against a stale release binary and is superseded); idle goroutine CPU 0.4% over 10s (no high-CPU regression); closures/objects benchmarks now PASS (stale-syntax fixed); startup 290ms / 90MB RSS unchanged |
+| 2026-09-14 | Revalidation (see `revalidation_2026_09_14` in llvm.json): arithmetic 27479ms -> 3900ms (~7x, batched dispatch ticks 05f45c2e wall-clock validated); idle goroutine CPU 0.4% over 10s (no high-CPU regression); closures/objects benchmarks now PASS (stale-syntax fixed); startup 290ms / 90MB RSS unchanged |

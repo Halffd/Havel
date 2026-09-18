@@ -73,6 +73,9 @@ public:
     /// Invalidate cache entries for changed files.
     void invalidate(const std::vector<std::filesystem::path>& changed_files);
 
+    /// Access the underlying cache (for direct cache reads/writes outside compileModule).
+    CacheLayer* cache() const { return cache_.get(); }
+
     /// Get dependency graph for analysis.
     const DependencyGraph& dependencyGraph() const { return dep_graph_; }
 

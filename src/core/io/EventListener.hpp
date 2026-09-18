@@ -64,7 +64,12 @@ public:
   std::map<int, bool> evdevKeyState;
 
   void Stop();
-  void SetGrabDevices(bool grab) { grabDevices = grab; }
+  // Engage/release a whole-input grab on the backend this listener reads and
+  // keep the grabDevices forwarding flag in sync, so non-hotkey input is
+  // re-injected via uinput while grabbed (instead of locking the desktop).
+  // Returns false (and refuses the grab) when synthesis is unavailable.
+  bool SetGrabDevices(bool grab);
+  bool GetGrabDevices() const { return grabDevices; }
   bool IsRunning() const { return running.load(); }
   bool GetKeyState(int evdevCode) const;
 

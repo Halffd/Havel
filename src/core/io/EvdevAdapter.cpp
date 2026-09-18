@@ -365,6 +365,16 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
     int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) continue;
 
+        // Never enumerate virtual (uinput) devices: their events are
+        // synthesized by processes (including havel's own uinput device)
+        // and must never become tracked/grabbed input. Filtering here
+        // covers both initial enumeration and hotplug re-enumeration.
+        input_id vid{};
+        if (ioctl(fd, EVIOCGID, &vid) == 0 && vid.bustype == BUS_VIRTUAL) {
+            close(fd);
+            continue;
+        }
+
         char name[256] = "Unknown";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
         close(fd);
@@ -384,6 +394,20 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
         error("EvdevAdapter: Cannot open {}: {}", path, strerror(errno));
+        return false;
+    }
+
+    // Reject virtual (uinput) input devices by bus type, regardless of
+    // name or capabilities. Their events are synthesized by processes
+    // (including havel itself), so reading them would loop own-
+    // generated input back into the hotkey matcher. Physical
+    // keyboards/mice always have a real bus type (USB, HOST, I2C,...);
+    // BUS_VIRTUAL is only used by uinput-based synthesizers.
+    input_id id{};
+    if (ioctl(fd, EVIOCGID, &id) == 0 && id.bustype == BUS_VIRTUAL) {
+        close(fd);
+        if (havel::debugging::debug_io)
+            debug("EvdevAdapter: Skipping virtual device {}", path);
         return false;
     }
 

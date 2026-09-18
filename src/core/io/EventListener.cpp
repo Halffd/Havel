@@ -451,6 +451,38 @@ void EventListener::SetBlockInput(bool block) {
     backend_->SetBlockInput(block);
 }
 
+bool EventListener::SetGrabDevices(bool grab) {
+  if (grab && backend_ && !backend_->SupportsSynthesis()) {
+    // Grabbing every device routes all input exclusively to this process;
+    // without synthesis (uinput/XTest) there is no way to re-inject
+    // non-hotkey input, so the desktop dies for anything that is not a
+    // registered hotkey. Refuse instead of locking the user out.
+    error("EventListener::SetGrabDevices(true): synthesis unavailable, "
+          "refusing grab to avoid input lockup");
+    grabDevices = false;
+    return false;
+  }
+  grabDevices = grab;
+  if (!backend_) {
+    return false;
+  }
+  if (grab) {
+    auto devices = backend_->EnumerateDevices();
+    info("EventListener::SetGrabDevices(true): grabbing {} devices",
+         devices.size());
+    for (const auto &dev : devices) {
+      if (!backend_->GrabDevice(dev.path)) {
+        error("EventListener::SetGrabDevices: failed to grab device: {}",
+              dev.path);
+      }
+    }
+  } else {
+    backend_->UngrabAllDevices();
+    info("EventListener::SetGrabDevices(false): all devices ungrabbed");
+  }
+  return true;
+}
+
 void EventListener::AddKeyRemap(int fromCode, int toCode) {
   std::lock_guard<std::mutex> lock(remapMutex);
   keyRemaps[fromCode] = toCode;

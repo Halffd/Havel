@@ -614,95 +614,138 @@ void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
 
 void EvdevAdapter::RecheckDevices() {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-    
+
     // Re-enumerate devices and reopen any that have disappeared
     std::vector<DeviceInfo> currentDevices = EnumerateDevices();
     std::unordered_set<std::string> currentPaths;
     for (const auto &info : currentDevices) {
         currentPaths.insert(info.path);
     }
-    
-    // Check for disconnected devices
+
+    // Mark devices whose path vanished from the enumeration as dead.
     for (auto &dev : devices_) {
-        if (dev.fd >= 0 && currentPaths.find(dev.path) == currentPaths.end()) {
-            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect", dev.path, dev.fd);
+        if (dev.fd >= 0 && !currentPaths.count(dev.path)) {
+            if (havel::debugging::debug_io)
+                havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect",
+                             dev.path, dev.fd);
             dev.grab.reset();
             grabbedFds_.erase(dev.fd);
             close(dev.fd);
             dev.fd = -1;
         }
     }
-    
-    // Adopt devices that (re)appeared with a path we are not tracking yet.
-    // A replug can renumber /dev/input/eventN (e.g. event5 -> event7), so
-    // matching by path alone would lose the device forever.
+
+    // Forget rejected paths that vanished: a replug may hand the same
+    // /dev/input/eventN to a different physical device, and that new device
+    // must be probed fresh instead of inheriting the old reject.
+    for (auto it = ignoredDevices_.begin(); it != ignoredDevices_.end();) {
+        if (!currentPaths.count(*it)) {
+            it = ignoredDevices_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto reexecGrab = [this](Device &dev) {
+        if (!grabEnabled_ || dev.fd < 0) return;
+        dev.grab = std::make_unique<EvdevGrab>(dev.fd);
+        if (!dev.grab->isGrabbed()) {
+            error("EvdevAdapter: Failed to re-grab {}: {}", dev.path, strerror(errno));
+            dev.grab.reset();
+            return;
+        }
+        grabbedFds_.insert(dev.fd);
+        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
+            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = dev.fd;
+            signalSafeGrabbedCount_.store(
+                signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1,
+                std::memory_order_release);
+        }
+        ReleasePressedKeys(dev);
+        DrainDeviceEvents(dev);
+        debug("EvdevAdapter: Re-grabbed device {}", dev.path);
+    };
+
+    // Reattach dead entries that came back, matching by NAME: a replug can
+    // renumber /dev/input/eventN (e.g. event5 -> event7), so a live entry
+    // with the new path must not be adopted as a fresh, duplicate device.
     for (const auto &info : currentDevices) {
-        bool tracked = false;
+        bool pathTracked = false;
         for (const auto &dev : devices_) {
-            if (dev.path == info.path) {
-                tracked = true;
+            if (dev.path == info.path && dev.fd >= 0) {
+                pathTracked = true;
                 break;
             }
         }
-        if (!tracked && !ignoredDevices_.count(info.path)) {
-            std::string lowerName = info.name;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-            if (lowerName.find("havel-virtual") != std::string::npos ||
-                lowerName.find("havel uinput") != std::string::npos) {
-                if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Skipping own virtual device {} ({})", info.name, info.path);
-                continue;
+        if (pathTracked) continue; // live and already ours
+
+        // Dead entry at this same path: just reopen it (same slot).
+        Device *deadSamePath = nullptr;
+        for (auto &dev : devices_) {
+            if (dev.path == info.path && dev.fd < 0) {
+                deadSamePath = &dev;
+                break;
             }
-            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: New device appeared ({}), adopting ({})", info.name, info.path);
-            if (OpenDevice(info.path)) {
-                // Only intercept keyboard/mouse-class devices. Audio jacks,
-                // power buttons, video buses and similar report no
-                // keyboard/mouse capabilities, but they do carry keys
-                // (volume/power/brightness); grabbing them while an input
-                // grab is active steals those keys from the desktop for no
-                // benefit and makes "non-hotkey" input go dead later in the
-                // session when hotplug adopts them.
-                if (!(devices_.back().capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
-                    // Skip it on every future poll too — otherwise the hotplug
-                    // loop re-adopts and closes the same devices every ~5s.
-                    ignoredDevices_.insert(info.path);
-                    CloseDevice(info.path);
-                    continue;
-                }
-                // Match the treatment of reconnected devices: re-grab when
-                // grabs are enabled so hotkeys keep intercepting it.
-                if (grabEnabled_) {
-                    GrabDevice(info.path);
-                } else {
-                    DrainDeviceEvents(devices_.back());
+        }
+        if (!deadSamePath && !ignoredDevices_.count(info.path)) {
+            // Replug onto a new number: find a dead entry with this name.
+            // The EVIOCGNAME value identifies the physical device across
+            // path renumbering for real hardware.
+            for (auto &dev : devices_) {
+                if (dev.fd < 0 && dev.name == info.name) {
+                    deadSamePath = &dev;
+                    dev.path = info.path; // adopt the new path
+                    break;
                 }
             }
         }
-    }
-    
-    // Reopen disconnected devices
-    for (auto &dev : devices_) {
-        if (dev.fd < 0 && !dev.path.empty()) {
-            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Attempting to reopen device {}", dev.path);
-            int fd = open(dev.path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (deadSamePath) {
+            int fd = open(deadSamePath->path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
             if (fd >= 0) {
-                dev.fd = fd;
-                // Re-grab if grab was enabled
-                if (grabEnabled_) {
-                    dev.grab = std::make_unique<EvdevGrab>(fd);
-                    if (!dev.grab->isGrabbed()) {
-                        error("EvdevAdapter: Failed to re-grab {}: {}", dev.path, strerror(errno));
-                        dev.grab.reset();
-                    } else {
-                        grabbedFds_.insert(fd);
-                        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
-                            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = fd;
-                            signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
-                        }
-                        ReleasePressedKeys(dev);
-                        DrainDeviceEvents(dev);
-                        debug("EvdevAdapter: Re-grabbed device {}", dev.path);
-                    }
+                deadSamePath->fd = fd;
+                if (havel::debugging::debug_io)
+                    havel::debug("EvdevAdapter: Reconnected device {} ({})",
+                                 deadSamePath->name, deadSamePath->path);
+                reexecGrab(*deadSamePath);
+                if (!grabEnabled_) {
+                    DrainDeviceEvents(*deadSamePath);
                 }
+            }
+            continue;
+        }
+        if (ignoredDevices_.count(info.path)) continue;
+
+        std::string lowerName = info.name;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+        if (lowerName.find("havel-virtual") != std::string::npos ||
+            lowerName.find("havel uinput") != std::string::npos) {
+            if (havel::debugging::debug_io)
+                havel::debug("EvdevAdapter: Skipping own virtual device {} ({})", info.name, info.path);
+            continue;
+        }
+        if (havel::debugging::debug_io)
+            havel::debug("EvdevAdapter: New device appeared ({}), adopting ({})", info.name, info.path);
+        if (OpenDevice(info.path)) {
+            // Only intercept keyboard/mouse-class devices. Audio jacks,
+            // power buttons, video buses and similar report no
+            // keyboard/mouse capabilities, but they do carry keys
+            // (volume/power/brightness); grabbing them while an input
+            // grab is active steals those keys from the desktop for no
+            // benefit and makes "non-hotkey" input go dead later in the
+            // session when hotplug adopts them.
+            if (!(devices_.back().capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
+                // Skip it on every future poll too — otherwise the hotplug
+                // loop re-adopts and closes the same devices every ~5s.
+                ignoredDevices_.insert(info.path);
+                CloseDevice(info.path);
+                continue;
+            }
+            // Match the treatment of reconnected devices: re-grab when
+            // grabs are enabled so hotkeys keep intercepting it.
+            if (grabEnabled_) {
+                GrabDevice(info.path);
+            } else {
+                DrainDeviceEvents(devices_.back());
             }
         }
     }

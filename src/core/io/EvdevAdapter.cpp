@@ -15,6 +15,7 @@
 #include <poll.h>
 #include <shared_mutex>
 #include <sys/eventfd.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <thread>
@@ -50,6 +51,13 @@ public:
     std::vector<int> GetInputFds() const override;
     void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override;
     void RecheckDevices() override;
+
+    // Hotplug handling: inotify watch on /dev/input drives attach/detach.
+    // RecheckDevices() remains as the polling fallback.
+    void InitHotplugMonitor();
+    void DrainHotplugEvents();
+    bool AttachDevice(const std::string &path);
+    void DetachDevice(const std::string &path);
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
@@ -269,10 +277,15 @@ private:
     // Grab enabled state
     bool grabEnabled_ = false;
 
-    // Devices rejected as non-input (no keyboard/mouse capabilities).
-    // Without this set, RecheckDevices would re-adopt + close the same
-    // audio/power/video devices on every ~5s hotplug poll.
-    std::unordered_set<std::string> ignoredDevices_;
+    // Devices rejected as non-input (no keyboard/mouse capabilities),
+    // keyed by device NAME (not path) so the same model stays rejected
+    // across hotplug eventN renumbering.
+    std::unordered_set<std::string> ignoredNames_;
+
+    // inotify hotplug watch on /dev/input (hotplugFd_ < 0 when
+    // unavailable; RecheckDevices still polls as a fallback)
+    int hotplugFd_ = -1;
+    int hotplugWatch_ = -1;
 
     // Emergency shutdown
     uint32_t emergencyShutdownKey_ = 0;
@@ -322,6 +335,8 @@ bool EvdevAdapter::Init() {
         warn("EvdevAdapter: uinput not available, event synthesis disabled");
     }
 
+    InitHotplugMonitor();
+
     running_ = true;
     initialized_ = true;
     debug("EvdevAdapter: Initialized");
@@ -330,6 +345,15 @@ bool EvdevAdapter::Init() {
 
 void EvdevAdapter::Shutdown() {
     running_ = false;
+
+    if (hotplugFd_ >= 0) {
+        if (hotplugWatch_ >= 0) {
+            inotify_rm_watch(hotplugFd_, hotplugWatch_);
+            hotplugWatch_ = -1;
+        }
+        close(hotplugFd_);
+        hotplugFd_ = -1;
+    }
 
     ReleaseAllVirtualKeys();
     UngrabAllDevices();
@@ -347,6 +371,100 @@ void EvdevAdapter::Shutdown() {
 
     DestroyUinput();
     initialized_ = false;
+}
+
+void EvdevAdapter::InitHotplugMonitor() {
+    hotplugFd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (hotplugFd_ < 0) {
+        warn("EvdevAdapter: inotify_init1 failed ({}); hotplug detection falls back to polling",
+             strerror(errno));
+        return;
+    }
+    // IN_MOVED_FROM/TO because udev mks the node name-atomically.
+    // IN_ATTRIB catches udev chmod/chown making a previously-unreadable
+    // node openable.
+    hotplugWatch_ = inotify_add_watch(hotplugFd_, "/dev/input",
+        IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB);
+    if (hotplugWatch_ < 0) {
+        warn("EvdevAdapter: inotify_add_watch /dev/input failed ({}); hotplug detection falls back to polling",
+             strerror(errno));
+        close(hotplugFd_);
+        hotplugFd_ = -1;
+        return;
+    }
+    debug("EvdevAdapter: hotplug inotify watch active on /dev/input");
+}
+
+void EvdevAdapter::DrainHotplugEvents() {
+    if (hotplugFd_ < 0) return;
+    alignas(struct inotify_event) char buf[4096];
+    for (;;) {
+        ssize_t n = read(hotplugFd_, buf, sizeof(buf));
+        if (n <= 0) return; // EAGAIN (non-blocking) or error — nothing pending
+        const char *p = buf;
+        const char *end = buf + n;
+        while (p < end) {
+            const auto *ev = reinterpret_cast<const struct inotify_event *>(p);
+            p += sizeof(struct inotify_event) + ev->len;
+            if (ev->len == 0 || strncmp(ev->name, "event", 5) != 0) continue;
+            std::string path = std::string("/dev/input/") + ev->name;
+            if (ev->mask & (IN_DELETE | IN_MOVED_FROM)) {
+                DetachDevice(path);
+            } else if (ev->mask & (IN_CREATE | IN_MOVED_TO | IN_ATTRIB)) {
+                AttachDevice(path);
+            }
+        }
+    }
+}
+
+bool EvdevAdapter::AttachDevice(const std::string &path) {
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+    for (const auto &dev : devices_) {
+        if (dev.path == path) return false; // already tracked
+    }
+    const size_t before = devices_.size();
+    if (!OpenDevice(path)) return false;
+    if (devices_.size() == before) return false; // defensive: nothing appended
+
+    Device &dev = devices_.back();
+    if (!dev.name.empty() &&
+        ignoredNames_.find(dev.name) != ignoredNames_.end()) {
+        debug("EvdevAdapter: Rejecting {} at {} — this device name was previously classified as non-input",
+              dev.name, path);
+        CloseDevice(path);
+        return false;
+    }
+    // Only intercept keyboard/mouse-class devices. Audio jacks, power
+    // buttons, video buses and similar report no keyboard/mouse
+    // capabilities, but they do carry keys (volume/power/brightness);
+    // grabbing them while an input grab is active steals those keys from
+    // the desktop for no benefit.
+    if (!(dev.capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
+        debug("EvdevAdapter: Rejecting non-input device {} ({})", dev.name, path);
+        ignoredNames_.insert(dev.name);
+        CloseDevice(path);
+        return false;
+    }
+    info("EvdevAdapter: Tracking device {} ({})", dev.name, path);
+    if (grabEnabled_) {
+        GrabDevice(path);
+    } else {
+        DrainDeviceEvents(dev);
+    }
+    return true;
+}
+
+void EvdevAdapter::DetachDevice(const std::string &path) {
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+    auto it = std::find_if(devices_.begin(), devices_.end(),
+                           [&](const Device &d) { return d.path == path; });
+    if (it == devices_.end()) return; // not tracked — nothing to do
+    debug("EvdevAdapter: Detaching device {} ({})", it->name, path);
+    it->grab.reset();
+    grabbedFds_.erase(it->fd);
+    if (it->fd >= 0) close(it->fd);
+    devices_.erase(it);
+    rebuildSignalSafeFds();
 }
 
 std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
@@ -529,7 +647,10 @@ void EvdevAdapter::SignalSafeUngrabAll() {
 std::vector<int> EvdevAdapter::GetInputFds() const {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     std::vector<int> fds;
-    fds.reserve(devices_.size());
+    fds.reserve(devices_.size() + 1);
+    if (hotplugFd_ >= 0) {
+        fds.push_back(hotplugFd_);
+    }
     for (const auto &dev : devices_) {
         if (dev.fd >= 0) {
             fds.push_back(dev.fd);
@@ -539,6 +660,15 @@ std::vector<int> EvdevAdapter::GetInputFds() const {
 }
 
 void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
+    // Hotplug first: an IN_DELETE/IN_CREATE may attach or detach devices
+    // that other entries in `ready` refer to.
+    for (const auto &[fd, revents] : ready) {
+        if (fd == hotplugFd_ && (revents & POLLIN)) {
+            DrainHotplugEvents();
+            break;
+        }
+    }
+
     // Match by fd value, not index: the device list may have changed between
     // the caller's GetInputFds() snapshot and this call.
     auto findDev = [&](int fd) -> int {
@@ -551,23 +681,21 @@ void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
 
     // Handle dead devices first so we never read from a bad fd below.
     for (const auto &[fd, revents] : ready) {
+        if (fd == hotplugFd_) continue;
         if (!(revents & (POLLERR | POLLHUP))) continue;
         int idx = findDev(fd);
-        if (idx < 0) continue;
-        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        size_t i = static_cast<size_t>(idx);
-        if (i < devices_.size() && devices_[i].fd >= 0) {
-            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect", devices_[i].path, devices_[i].fd);
-            // Release grab state first: the kernel drops EVIOCGRAB on fd
-            // close, so the RAII wrapper must not try to ungrab a closed fd.
-            devices_[i].grab.reset();
-            grabbedFds_.erase(fd);
-            close(devices_[i].fd);
-            devices_[i].fd = -1;
-            // Keep path/name: RecheckDevices() reopens this device on the
-            // next cycle. Clearing the path here would make the reconnect
-            // permanently impossible and silently kill all hotkeys.
+        if (idx < 0) continue; // already detached by the hotplug drain above
+        // A hangup means the device is gone. Drop the entry entirely instead
+        // of leaving a dead fd=-1 slot: the inotify watcher (or the periodic
+        // RecheckDevices fallback) re-adopts it when the node comes back.
+        std::string path;
+        {
+            std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+            size_t i = static_cast<size_t>(idx);
+            if (i >= devices_.size() || devices_[i].fd < 0) continue;
+            path = devices_[i].path; // RAII grab releases EVIOCGRAB on close
         }
+        DetachDevice(path);
     }
 
     // Read and dispatch events from readable devices.
@@ -615,139 +743,38 @@ void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
 void EvdevAdapter::RecheckDevices() {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
 
-    // Re-enumerate devices and reopen any that have disappeared
+    // Periodic reconciliation fallback. The inotify watcher on /dev/input
+    // performs attach/detach in real time; this cheap sweep exists only for
+    // events inotify can miss (queue overflow, transient failure, suspend/
+    // resume races that lose a node event).
     std::vector<DeviceInfo> currentDevices = EnumerateDevices();
     std::unordered_set<std::string> currentPaths;
+    currentPaths.reserve(currentDevices.size());
+    for (const auto &info : currentDevices) currentPaths.insert(info.path);
+
+    // Devices whose node vanished get detached; hangup detection
+    // (POLLERR/POLLHUP) may have already done this via OnFdsReady.
+    for (size_t i = 0; i < devices_.size();) {
+        if (!currentPaths.count(devices_[i].path)) {
+            std::string path = devices_[i].path;
+            DetachDevice(path); // acquires the same (recursive) lock
+            continue;            // vector shifted — don't advance index
+        }
+        ++i;
+    }
+
+    // Adopt enumerated nodes not currently tracked. AttachDevice skips
+    // virtual/havel names and rejects devices with no keyboard/mouse
+    // capabilities (ignoredNames_ captures them by name so subsequent
+    // passes do not re-open them).
     for (const auto &info : currentDevices) {
-        currentPaths.insert(info.path);
-    }
-
-    // Mark devices whose path vanished from the enumeration as dead.
-    for (auto &dev : devices_) {
-        if (dev.fd >= 0 && !currentPaths.count(dev.path)) {
-            if (havel::debugging::debug_io)
-                havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect",
-                             dev.path, dev.fd);
-            dev.grab.reset();
-            grabbedFds_.erase(dev.fd);
-            close(dev.fd);
-            dev.fd = -1;
-        }
-    }
-
-    // Forget rejected paths that vanished: a replug may hand the same
-    // /dev/input/eventN to a different physical device, and that new device
-    // must be probed fresh instead of inheriting the old reject.
-    for (auto it = ignoredDevices_.begin(); it != ignoredDevices_.end();) {
-        if (!currentPaths.count(*it)) {
-            it = ignoredDevices_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    auto reexecGrab = [this](Device &dev) {
-        if (!grabEnabled_ || dev.fd < 0) return;
-        dev.grab = std::make_unique<EvdevGrab>(dev.fd);
-        if (!dev.grab->isGrabbed()) {
-            error("EvdevAdapter: Failed to re-grab {}: {}", dev.path, strerror(errno));
-            dev.grab.reset();
-            return;
-        }
-        grabbedFds_.insert(dev.fd);
-        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
-            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = dev.fd;
-            signalSafeGrabbedCount_.store(
-                signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1,
-                std::memory_order_release);
-        }
-        ReleasePressedKeys(dev);
-        DrainDeviceEvents(dev);
-        debug("EvdevAdapter: Re-grabbed device {}", dev.path);
-    };
-
-    // Reattach dead entries that came back, matching by NAME: a replug can
-    // renumber /dev/input/eventN (e.g. event5 -> event7), so a live entry
-    // with the new path must not be adopted as a fresh, duplicate device.
-    for (const auto &info : currentDevices) {
-        bool pathTracked = false;
+        bool tracked = false;
         for (const auto &dev : devices_) {
-            if (dev.path == info.path && dev.fd >= 0) {
-                pathTracked = true;
-                break;
-            }
+            if (dev.path == info.path) { tracked = true; break; }
         }
-        if (pathTracked) continue; // live and already ours
-
-        // Dead entry at this same path: just reopen it (same slot).
-        Device *deadSamePath = nullptr;
-        for (auto &dev : devices_) {
-            if (dev.path == info.path && dev.fd < 0) {
-                deadSamePath = &dev;
-                break;
-            }
-        }
-        if (!deadSamePath && !ignoredDevices_.count(info.path)) {
-            // Replug onto a new number: find a dead entry with this name.
-            // The EVIOCGNAME value identifies the physical device across
-            // path renumbering for real hardware.
-            for (auto &dev : devices_) {
-                if (dev.fd < 0 && dev.name == info.name) {
-                    deadSamePath = &dev;
-                    dev.path = info.path; // adopt the new path
-                    break;
-                }
-            }
-        }
-        if (deadSamePath) {
-            int fd = open(deadSamePath->path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-            if (fd >= 0) {
-                deadSamePath->fd = fd;
-                if (havel::debugging::debug_io)
-                    havel::debug("EvdevAdapter: Reconnected device {} ({})",
-                                 deadSamePath->name, deadSamePath->path);
-                reexecGrab(*deadSamePath);
-                if (!grabEnabled_) {
-                    DrainDeviceEvents(*deadSamePath);
-                }
-            }
-            continue;
-        }
-        if (ignoredDevices_.count(info.path)) continue;
-
-        std::string lowerName = info.name;
-        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-        if (lowerName.find("havel-virtual") != std::string::npos ||
-            lowerName.find("havel uinput") != std::string::npos) {
-            if (havel::debugging::debug_io)
-                havel::debug("EvdevAdapter: Skipping own virtual device {} ({})", info.name, info.path);
-            continue;
-        }
-        if (havel::debugging::debug_io)
-            havel::debug("EvdevAdapter: New device appeared ({}), adopting ({})", info.name, info.path);
-        if (OpenDevice(info.path)) {
-            // Only intercept keyboard/mouse-class devices. Audio jacks,
-            // power buttons, video buses and similar report no
-            // keyboard/mouse capabilities, but they do carry keys
-            // (volume/power/brightness); grabbing them while an input
-            // grab is active steals those keys from the desktop for no
-            // benefit and makes "non-hotkey" input go dead later in the
-            // session when hotplug adopts them.
-            if (!(devices_.back().capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
-                // Skip it on every future poll too — otherwise the hotplug
-                // loop re-adopts and closes the same devices every ~5s.
-                ignoredDevices_.insert(info.path);
-                CloseDevice(info.path);
-                continue;
-            }
-            // Match the treatment of reconnected devices: re-grab when
-            // grabs are enabled so hotkeys keep intercepting it.
-            if (grabEnabled_) {
-                GrabDevice(info.path);
-            } else {
-                DrainDeviceEvents(devices_.back());
-            }
-        }
+        if (tracked) continue;
+        if (!info.name.empty() && ignoredNames_.count(info.name)) continue;
+        AttachDevice(info.path);
     }
 }
 

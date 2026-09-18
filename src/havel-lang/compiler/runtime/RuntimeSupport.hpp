@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #include "havel-lang/errors/ErrorSystem.h"
 #pragma once
 
@@ -322,7 +323,7 @@ private:
 // ============================================================================
 // ValueSerializer - Serialize/deserialize values
 // ============================================================================
-class __attribute__((visibility("default"))) ValueSerializer {
+class HAVEL_EXPORT ValueSerializer {
 public:
   enum class Format {
     Binary,

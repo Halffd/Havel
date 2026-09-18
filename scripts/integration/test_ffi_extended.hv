@@ -1,70 +1,69 @@
+// FFI extended API test (memory, cdef, struct, libc calls)
 use ffi
-use io
+use os
 
-// Test memory management
-let ptr = ffi.allocBytes(8)
-io.print("allocBytes(8) => ", ptr, "\n")
-
-// Test typed accessors
-ffi.set_i32(ptr, 42)
-let v = ffi.get_i32(ptr)
-io.print("set_i32/get_i32 => ", v, "\n")
-
-ffi.set_f64(ptr, 3.14159)
-let f = ffi.get_f64(ptr)
-io.print("set_f64/get_f64 => ", f, "\n")
-
-// Test sizeof / alignof
-let sz = ffi.sizeof("int32")
-io.print("sizeof(int32) => ", sz, "\n")
-let al = ffi.alignof("int64")
-io.print("alignof(int64) => ", al, "\n")
-
-// Test cstring
-let cs = ffi.cstring("hello world")
-io.print("cstring => ", cs, "\n")
-ffi.free(cs)
-
-// Test free
-ffi.free(ptr)
-io.print("free(ptr) ok\n")
-
-// Test libc symbol and call
-let libc = ffi.open("libc.so.6")
-io.print("libc handle => ", libc, "\n")
-
-let getpid = ffi.sym(libc, "getpid")
-io.print("getpid sym => ", getpid, "\n")
-
-let pid = ffi.call(getpid, "int64", [])
-io.print("getpid() => ", pid, "\n")
-
-// Test errno
-ffi.clearError()
-let e0 = ffi.lastError()
-io.print("errno after clear => ", e0, "\n")
-
-// Test cdef
-let decls = ffi.cdef("int getpid(void);")
-io.print("cdecl count => ", decls.length, "\n")
-if decls.length > 0 {
-    io.print("cdef[0].name => ", decls[0].name, "\n")
-    io.print("cdef[0].kind => ", decls[0].kind, "\n")
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
 }
 
-ffi.close(libc)
-io.print("close(libc) ok\n")
+// memory management + typed accessors
+ptr = ffi.allocBytes(8)
+check("ptr is foreign", type(ptr) == "unknown" || ptr != null, true)
 
-// Test struct definition - struct is a reserved keyword, use newStruct
-let fields = []
+ffi.set_i32(ptr, 42)
+check("set/get i32", ffi.get_i32(ptr), 42)
+
+ffi.set_f64(ptr, 3.14159)
+v = ffi.get_f64(ptr)
+check("get f64 approx", v > 3.14 && v < 3.15, true)
+
+// sizeof / alignof
+check("sizeof int32", ffi.sizeof("int32"), 4)
+check("alignof int64", ffi.alignof("int64"), 8)
+
+// cstring
+cs = ffi.cstring("hello world")
+check("cstring non-null", cs != null, true)
+ffi.free(cs)
+
+// free the byte buffer
+ffi.free(ptr)
+
+// libc symbol + call
+libc = ffi.open("libc.so.6")
+if libc == 0 { libc = ffi.open("libc.so") }
+check("libc handle", libc != 0 && libc != null, true)
+
+getpid = ffi.sym(libc, "getpid")
+check("getpid sym", getpid != null, true)
+
+pid = ffi.call(getpid, "int64", [])
+check("getpid() == real pid", pid == os.pid(), true)
+
+// errno
+ffi.clearError()
+e0 = ffi.lastError()
+check("errno cleared", e0, 0)
+
+// cdef
+decls = ffi.cdef("int getpid(void);")
+check("cdef count", #decls, 1)
+check("cdef name", decls[0].name, "getpid")
+
+ffi.close(libc)
+
+// struct definition
+fields = []
 fields.push(["x", "int32"])
 fields.push(["y", "int32"])
-let st = ffi.newStruct("Point", fields)
-io.print("newStruct Point => ", st, "\n")
+st = ffi.newStruct("Point", fields)
+check("newStruct", st != null, true)
 
-// Test alloc for struct
-let point = ffi.alloc("Point")
-io.print("alloc(Point) => ", point, "\n")
-
+point = ffi.alloc("Point")
+check("alloc struct", point != null, true)
 ffi.free(point)
-io.print("all tests passed\n")
+
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

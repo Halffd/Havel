@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <wayland-client.h>
@@ -33,7 +34,7 @@ struct WaylandOutputInfo {
     int32_t y = 0;
 };
 
-class __attribute__((visibility("default"))) WaylandProtocolClient {
+class HAVEL_EXPORT WaylandProtocolClient {
 public:
     static WaylandProtocolClient& instance();
 

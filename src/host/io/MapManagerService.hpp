@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 /*
  * MapManagerService.hpp
  *
@@ -32,7 +33,7 @@ namespace havel::host {
  * - Profiles (multiple mapping sets)
  * - Conditional mappings (based on window/process)
  */
-class __attribute__((visibility("default"))) MapManagerService {
+class HAVEL_EXPORT MapManagerService {
 public:
     MapManagerService(std::shared_ptr<IO> io);
     ~MapManagerService();

@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <memory>
@@ -10,7 +11,7 @@ class IO;
 
 namespace havel::host {
 
-class __attribute__((visibility("default"))) MouseService {
+class HAVEL_EXPORT MouseService {
 public:
   enum class Button { Left = 1, Right = 2, Middle = 3, Back = 4, Forward = 5 };
   enum class Action { Click = 0, Press = 1, Release = 2 };

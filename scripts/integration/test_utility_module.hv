@@ -1,31 +1,29 @@
-// Test UtilityModule VMApi functionality
-print("=== UtilityModule VMApi Test ===");
+// utility builtins test
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
+}
 
-// Test utility functions
-print("UtilityModule Functions:");
+// type()
+check("type int", type(123), "int")
+check("type str", type("hello"), "string")
+check("type array", type([1, 2, 3]), "array")
+check("type object", type({a: 1}), "object")
 
-// Test type function
-print("  type(123):", type(123));
-print("  type('hello'):", type("hello"));
-print("  type([1,2,3]):", type([1,2,3]));
+// len()
+check("len str", len("hello"), 5)
+check("len arr", len([1, 2, 3]), 3)
 
-// Test len function
-print("  len('hello'):", len("hello"));
-print("  len([1,2,3]):", len([1,2,3]));
+// keys()
+o = {a: 1, b: 2}
+ks = keys(o)
+check("keys count", #ks, 2)
+check("keys has a", ks.has("a"), true)
+check("keys has b", ks.has("b"), true)
 
-// Test list function
-print("  list(123):", list(123));
-print("  list('abc'):", list("abc"));
-print("  list([1,2,3]):", list([1,2,3]));
+// str()
+check("str int", str(42), "42")
 
-// Test keys function
-test_obj = {a: 1, b: 2};
-print("  keys({a: 1, b: 2}):", keys(test_obj));
-
-// Test items function
-print("  items({a: 1, b: 2}):", items(test_obj));
-
-// Test Utility object
-print("Utility object exists");
-
-print("=== UtilityModule Test Complete ===");
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

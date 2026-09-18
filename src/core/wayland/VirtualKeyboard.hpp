@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <string>
@@ -18,7 +19,7 @@ namespace havel {
 class WaylandProtocolClient;
 class UinputDevice;
 
-class __attribute__((visibility("default"))) VirtualKeyboard {
+class HAVEL_EXPORT VirtualKeyboard {
 public:
     explicit VirtualKeyboard(WaylandProtocolClient &client);
     ~VirtualKeyboard();

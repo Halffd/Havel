@@ -1607,6 +1607,51 @@ void VM::registerDefaultHostFunctions() {
     return Value(toFloat(args[0]));
   });
 
+  // range([start], stop, [step]) - returns array of integers
+  // range(stop) -> [0, 1, ..., stop-1]
+  // range(start, stop) -> [start, start+1, ..., stop-1]
+  // range(start, stop, step) -> [start, start+step, ...] while < stop (step>0) or > stop (step<0)
+  registerHostFunction("range", [this](const std::vector<Value> &args) {
+    if (args.empty() || args.size() > 3) {
+      COMPILER_THROW("range() requires 1-3 arguments: range(stop) or range(start, stop) or range(start, stop, step)");
+    }
+
+    int64_t start, stop, step;
+
+    if (args.size() == 1) {
+      start = 0;
+      stop = toInt(args[0]);
+      step = 1;
+    } else if (args.size() == 2) {
+      start = toInt(args[0]);
+      stop = toInt(args[1]);
+      step = 1;
+    } else {
+      start = toInt(args[0]);
+      stop = toInt(args[1]);
+      step = toInt(args[2]);
+    }
+
+    if (step == 0) {
+      COMPILER_THROW("range() step must not be zero");
+    }
+
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+
+    if (step > 0) {
+      for (int64_t i = start; i < stop; i += step) {
+        arr->push_back(Value(i));
+      }
+    } else {
+      for (int64_t i = start; i > stop; i += step) {
+        arr->push_back(Value(i));
+      }
+    }
+
+    return Value::makeArrayId(arrRef.id);
+  });
+
   // Instrumentation: assert(condition, message?)
   registerHostFunction("assert", [this](const std::vector<Value> &args) {
     if (args.empty()) {

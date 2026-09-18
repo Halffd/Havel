@@ -1,3 +1,4 @@
+#include "havel-lang/common/Export.hpp"
 #pragma once
 
 #include <atomic>
@@ -60,7 +61,7 @@ enum class HotkeyPolicy : uint8_t {
  * - runnable_queue_: Standard FIFO for normal cooperative tasks
  * - background_queue_: Only runs when higher priority queues empty
  */
-class __attribute__((visibility("default"))) Scheduler {
+class HAVEL_EXPORT Scheduler {
 public:
   enum class GoroutineState {
     Created,         // Just spawned, not yet runnable

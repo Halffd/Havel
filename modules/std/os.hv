@@ -4,6 +4,8 @@
 // isX11, isWayland, isWindows, displayServer, displayInfo, distro
 
 use ffi
+use fs
+use shell as _shellmod
 
 _c = ffi.open("libc.so.6")
 if _c == 0 { _c = ffi.open("libc.so") }
@@ -31,9 +33,9 @@ fn arch() {
 
 fn version() { "0.1.0" }
 
-fn env(name) { shell.getenv(name) }
+fn env(name) { _shellmod.getenv(name) }
 
-fn cwd() { shell.cwd() }
+fn cwd() { _shellmod.cwd() }
 
 fn pid() { ffi.call(_getpid, "int32", []) }
 
@@ -68,12 +70,19 @@ fn shell_path() {
     if _s != null { _s } else { "" }
 }
 
+// os.shell() — the $SHELL path. The os integration test (and the module
+// header comment) call os.shell(); only shell_path existed, so callers
+// got null and TypeError: Attempted to call non-callable.
+fn shell() {
+    shell_path()
+}
+
 fn uptime() {
     _content = fs.read("/proc/uptime")
     if _content == "" { return 0.0 }
     _space = _content.find(" ")
-    if _space == null { return float(_content) }
-    float(_content[0:_space])
+    if _space == null { return num(_content) }
+    num(_content[0:_space])
 }
 
 fn exit(code) {
@@ -111,7 +120,7 @@ fn displayServer() {
 }
 
 fn displayInfo() {
-    _r = shell.exec("xdpyinfo 2>/dev/null")
+    _r = _shellmod.exec("xdpyinfo 2>/dev/null")
     if _r.exitCode != 0 { return {server: displayServer(), available: false} }
 _out = _r.stdout
 ({server: displayServer(), available: true, raw: _out})

@@ -269,6 +269,11 @@ private:
     // Grab enabled state
     bool grabEnabled_ = false;
 
+    // Devices rejected as non-input (no keyboard/mouse capabilities).
+    // Without this set, RecheckDevices would re-adopt + close the same
+    // audio/power/video devices on every ~5s hotplug poll.
+    std::unordered_set<std::string> ignoredDevices_;
+
     // Emergency shutdown
     uint32_t emergencyShutdownKey_ = 0;
 
@@ -615,7 +620,7 @@ void EvdevAdapter::RecheckDevices() {
                 break;
             }
         }
-        if (!tracked) {
+        if (!tracked && !ignoredDevices_.count(info.path)) {
             std::string lowerName = info.name;
             std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
             if (lowerName.find("havel-virtual") != std::string::npos ||
@@ -633,6 +638,9 @@ void EvdevAdapter::RecheckDevices() {
                 // benefit and makes "non-hotkey" input go dead later in the
                 // session when hotplug adopts them.
                 if (!(devices_.back().capabilities & (CAP_KEYBOARD | CAP_MOUSE))) {
+                    // Skip it on every future poll too — otherwise the hotplug
+                    // loop re-adopts and closes the same devices every ~5s.
+                    ignoredDevices_.insert(info.path);
                     CloseDevice(info.path);
                     continue;
                 }

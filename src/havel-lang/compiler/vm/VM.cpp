@@ -805,6 +805,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       }
     }
 vm_in_execute_.store(false, std::memory_order_release);
+  } else {
+    // No scheduler: run the plain dispatch loop directly (same contract
+    // executePersistent uses below). Before this, execute() silently
+    // skipped execution and returned null whenever no scheduler was
+    // installed (C API havel_loadstring, direct VM usage) — the setup ran
+    // but no dispatch loop ever consumed the bytecode.
+    runDispatchLoop(0);
   }
 
   // Clean up

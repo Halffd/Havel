@@ -3848,7 +3848,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                     return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
-                sched->wakeHotkey(g);
+                sched->wakeHotkey(g, {}, "os-callback");
                 ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
             };
             ctx->hotkeyManager->AddHotkey(
@@ -3975,7 +3975,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                 if (sched->isHotkeyPending(persistentGid)) return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
-                sched->wakeHotkey(g);
+                sched->wakeHotkey(g, {}, "conditional-os-callback");
                 ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
             };
             ctx->hotkeyManager->AddHotkey(

@@ -471,6 +471,18 @@ bool EventListener::SetGrabDevices(bool grab) {
     grabDevices = false;
     return false;
   }
+  if (grab && !eventLoopReady_.load()) {
+    // EVIOCGRAB routes every event to this process's fd; if the consuming
+    // loop is not draining yet, input vanishes into a black hole (kernel
+    // side, not queued for X11) until the loop starts. eventLoopReady_ is
+    // only ever set inside EventLoop(), so in non-threaded mode it stays
+    // false forever and grabbing here would lock the terminal until this
+    // process dies.
+    error("EventListener::SetGrabDevices(true): event loop not running, "
+          "refusing grab to avoid input lockup during startup");
+    grabDevices = false;
+    return false;
+  }
   grabDevices = grab;
   if (!backend_) {
     return false;

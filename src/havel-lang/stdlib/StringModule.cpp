@@ -332,14 +332,19 @@ void registerStringModule(VMApi &api) {
         const std::string* strPtr = api.getStringPtr(args[0]);
         std::string tempStr;
         const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
-        // Create cursor using VM native cursor
-        auto cursorRef = api.getHeap().allocateStringCursor(
-            strPtr ? api.getStringId(args[0]) : 0);
-        if (!strPtr) {
-            // Need to allocate string first
+        // The cursor's string id must resolve through heap_.string() in
+        // cursor_current/advance/peek/reset. Heap strings (isStringId)
+        // resolve directly; chunk-pool literals (StringValId) are NOT heap
+        // strings — VM::getStringId returns 0 for them, so the cursor got
+        // string_id=0 and every cursor read threw "string not found".
+        // Heap-intern the resolved text whenever the argument is not
+        // already a heap string.
+        uint32_t sid = args[0].isStringId() ? args[0].asStringId() : 0;
+        if (sid == 0) {
             auto strRef = api.getHeap().allocateString(str);
-            cursorRef = api.getHeap().allocateStringCursor(strRef.id);
+            sid = strRef.id;
         }
+        auto cursorRef = api.getHeap().allocateStringCursor(sid);
         return Value::makeStringCursorId(cursorRef.id);
     });
 

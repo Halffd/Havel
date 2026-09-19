@@ -325,10 +325,6 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     void* func_ptr = reinterpret_cast<void*>((*sym).getValue());
-    if (debug_jit_) {
-      // fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
-      // fflush(stderr);
-    }
     fptrs_[func.name] = func_ptr;
     compile_cache_[func_hash] = CachedFunction{func.name};
     saveCompileCacheIndex();
@@ -417,18 +413,10 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
     uint32_t current_args_count = static_cast<uint32_t>(args.size());
 
     while (true) {
-      if (debug_jit_) {
-        // fprintf(stderr, "[EXECJIT-DEBUG] calling func=%p with %u args\n", (void*)func, current_args_count);
-        // fflush(stderr);
-      }
       vm->setJitTailCall(false); // Reset flag before calling
 
       uint64_t res_bits =
         func(static_cast<void*>(vm), current_args_ptr, current_args_count);
-      if (debug_jit_) {
-        // fprintf(stderr, "[EXECJIT-DEBUG] func returned 0x%llx\n", (unsigned long long)res_bits);
-        // fflush(stderr);
-      }
 
       // Check if a tail call occurred that we can handle in JIT
       if (vm->hasJitTailCall()) {
@@ -517,13 +505,6 @@ uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const
     return seed;
 }
 
-// Get receiver type hash from value - extracts class/prototype type for inline caching
-uint64_t BytecodeOrcJIT::getReceiverTypeHash(const VM* /*vm*/, const Value& /*receiver*/) const {
-    // Stub: PGO/type-hash path requires a per-type-id API on core::Value.
-    // Will be implemented once Value exposes tag/payload accessors.
-    return 0;
-}
-
 void BytecodeOrcJIT::loadCompileCacheIndex() {
     std::ifstream in(cache_index_path_);
     if (!in.is_open()) {
@@ -596,87 +577,6 @@ void BytecodeOrcJIT::runOptimizations(llvm::Module &module) {
     }
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
     mpm.run(module, mam);
-}
-
-void BytecodeOrcJIT::applyProfileGuidedOptimizations(llvm::Module& module) {
-    // Apply profile-guided optimizations using collected profile data
-    llvm::FunctionAnalysisManager fam;
-    llvm::LoopAnalysisManager lam;
-    llvm::CGSCCAnalysisManager cgam;
-    llvm::ModuleAnalysisManager mam;
-    
-    llvm::PassBuilder pb;
-    pb.registerModuleAnalyses(mam);
-    pb.registerCGSCCAnalyses(cgam);
-    pb.registerFunctionAnalyses(fam);
-    pb.registerLoopAnalyses(lam);
-    pb.crossRegisterProxies(lam, fam, cgam, mam);
-    
-    llvm::OptimizationLevel level = llvm::OptimizationLevel::O2;
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
-    mpm.run(module, mam);
-}
-
-void BytecodeOrcJIT::saveProfileData(const std::string& path) const {
-    (void)path;
-}
-
-void BytecodeOrcJIT::loadProfileData(const std::string& path) {
-    (void)path;
-}
-
-// ============================================================================
-// Code Layout Optimization Implementation
-// ============================================================================
-
-void BytecodeOrcJIT::optimizeCodeLayout(llvm::Module& /*module*/) {
-    // Stub: code-layout optimization requires profile data; no-op without active PGO.
-}
-
-void BytecodeOrcJIT::optimizeBlockOrder(llvm::Function* /*function*/) {
-    // Stub: block reordering requires profile data; no-op without active PGO.
-}
-
-void BytecodeOrcJIT::separateColdBlocks(llvm::Function* /*function*/) {
-    // Stub: cold-block separation requires profile data; no-op without active PGO.
-}
-
-double BytecodeOrcJIT::getBlockHotness(uint64_t /*func_hash*/, uint32_t /*block_id*/) const {
-    return 0.0;
-}
-
-// ============================================================================
-// Compilation Queue System Implementation
-// ============================================================================
-
-void BytecodeOrcJIT::enqueueCompileTask(CompileTask task) {
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    compile_queue_.push(std::move(task));
-    queue_cv_.notify_one();
-}
-
-void BytecodeOrcJIT::processCompileQueue() {
-    while (compile_thread_running_) {
-        CompileTask task;
-        {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            queue_cv_.wait(lock, [this] { return !compile_queue_.empty() || !compile_thread_running_; });
-            if (!compile_thread_running_) break;
-            task = std::move(compile_queue_.front());
-            compile_queue_.pop();
-        }
-        
-        if (compile_thread_running_ && task.callback) {
-        }
-    }
-}
-
-void BytecodeOrcJIT::shutdownCompileQueue() {
-    compile_thread_running_ = false;
-    queue_cv_.notify_all();
-    if (compile_thread_.joinable()) {
-        compile_thread_.join();
-    }
 }
 
 } // namespace havel::compiler

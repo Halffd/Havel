@@ -382,9 +382,9 @@ bool EventListener::SupportsSynthesis() const {
   return backend_ && backend_->SupportsSynthesis();
 }
 
-void EventListener::SendUinputEvent(int type, int code, int value) {
+bool EventListener::SendUinputEvent(int type, int code, int value) {
   if (!backend_ || !backend_->SupportsSynthesis())
-    return;
+    return false;
 
   std::lock_guard<std::mutex> lock(sendInputMutex);
 
@@ -393,7 +393,7 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
       backend_->EndBatch();
       pendingRelBatch_ = false;
     }
-    backend_->SendKeyEvent(code, value != 0);
+    bool ok = backend_->SendKeyEvent(code, value != 0);
     if (value == 1)
       pressedVirtualKeys.insert(code);
     else if (value == 0)
@@ -405,17 +405,20 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
       syntheticKeys.push_back(
           {code, std::chrono::steady_clock::now(), value != 0});
     }
+    return ok;
   } else if (type == EV_SYN) {
     if (pendingRelBatch_) {
       backend_->EndBatch();
       pendingRelBatch_ = false;
     }
+    return true;
   } else {
     if (!pendingRelBatch_) {
       backend_->BeginBatch();
       pendingRelBatch_ = true;
     }
     backend_->QueueEvent(type, code, value);
+    return true;
   }
 }
 
@@ -1009,8 +1012,18 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
+      if (debugging::debug_io)
+        debug("[TRACE] mousemove code={} value={} shouldBlock={} grabbed={}",
+              ev.code, scaledInt, shouldBlock, grabDevices);
+
       if (!shouldBlock && !blockInput.load() && grabDevices) {
-        SendUinputEvent(EV_REL, ev.code, scaledInt);
+        if (debugging::debug_io)
+          debug("[TRACE] forward attempt EV_REL code={} value={}", ev.code,
+                scaledInt);
+        bool ok = SendUinputEvent(EV_REL, ev.code, scaledInt);
+        if (debugging::debug_io)
+          debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
+                ev.code);
       }
 
       if (ev.code == REL_X) {
@@ -1039,13 +1052,23 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
+      if (debugging::debug_io)
+        debug("[TRACE] wheel code={} value={} shouldBlock={} grabbed={}",
+              ev.code, ev.value, shouldBlock, grabDevices);
+
       if (!shouldBlock && grabDevices) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(scaledValue);
         if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
-        SendUinputEvent(EV_REL, ev.code, scaledInt);
+        if (debugging::debug_io)
+          debug("[TRACE] forward attempt EV_REL code={} value={}", ev.code,
+                scaledInt);
+        bool ok = SendUinputEvent(EV_REL, ev.code, scaledInt);
+        if (debugging::debug_io)
+          debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
+                ev.code);
         SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       }
       return;
@@ -1073,6 +1096,10 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       shouldBlock = inputBlockCallback(event);
     }
 
+    if (debugging::debug_io)
+      debug("[TRACE] abs code={} value={} shouldBlock={} grabbed={}", ev.code,
+            ev.value, shouldBlock, grabDevices);
+
     if (ev.code == ABS_X) {
       currentMouseX = ev.value;
     } else if (ev.code == ABS_Y) {
@@ -1080,7 +1107,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     }
 
     if (!shouldBlock && !blockInput.load() && grabDevices) {
-      SendUinputEvent(ev.type, ev.code, ev.value);
+      if (debugging::debug_io)
+        debug("[TRACE] forward attempt type={} code={} value={}", ev.type,
+              ev.code, ev.value);
+      bool ok = SendUinputEvent(ev.type, ev.code, ev.value);
+      if (debugging::debug_io)
+        debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
+              ev.code);
     }
     return;
   }
@@ -1167,6 +1200,11 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     shouldBlock = inputBlockCallback(event);
   }
 
+  if (debugging::debug_io)
+    debug("[TRACE] key code={} value={} shouldBlock={} grabbed={} matched={}",
+          originalCode, ev.value, shouldBlock, grabDevices,
+          hotkeyManager ? hotkeyManager->lastEventMatched() : false);
+
   if (shouldBlock) {
     if (!down) {
       SendUinputEvent(EV_KEY, mappedCode, 0);
@@ -1182,7 +1220,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     // virtual device, which can race with a send() that just released that
     // key (e.g. a hotkey releasing Alt then sending Ctrl+Up) and turn
     // Ctrl+Up into Ctrl+Alt+Up. Drop them.
-    SendUinputEvent(EV_KEY, mappedCode, ev.value);
+    if (debugging::debug_io)
+      debug("[TRACE] forward attempt EV_KEY code={} value={}", mappedCode,
+            ev.value);
+    bool ok = SendUinputEvent(EV_KEY, mappedCode, ev.value);
+    if (debugging::debug_io)
+      debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
+            mappedCode);
   }
 }
 

@@ -559,8 +559,11 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     void requeueFront(Goroutine* g);
 
     // Wake a persistent hotkey goroutine according to its policy
-    // Returns true if the goroutine was woken/requeued, false if dropped
-    bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {});
+    // Returns true if the goroutine was woken/requeued, false if dropped.
+    // `caller` tags the wake source in the debug log so input storms can be
+    // attributed (os-callback / conditional-os-callback / cond-dep-change /
+    // wakeHotkeyByAlias).
+    bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {}, const char* caller = nullptr);
 
     // Cheap pending check: true if the goroutine is already queued (Created),
     // about to run (Runnable), or executing (Running). Under bursty input

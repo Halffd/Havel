@@ -1008,6 +1008,9 @@ std::chrono::steady_clock::time_point EvdevAdapter::GetKeyDownTime(uint32_t code
 }
 
 void EvdevAdapter::ProcessEvent(Device &dev, const input_event &ev) {
+    if (havel::debugging::debug_io)
+        debug("[TRACE] evdev recv type={} code={} value={} dev={}", ev.type,
+              ev.code, ev.value, dev.path);
     switch (ev.type) {
         case EV_KEY:
             if (dev.capabilities & CAP_MOUSE && ev.code >= BTN_MOUSE && ev.code < BTN_JOYSTICK) {

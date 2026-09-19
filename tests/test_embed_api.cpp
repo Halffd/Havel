@@ -1,4 +1,6 @@
 #include "Havel.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -355,6 +357,194 @@ static void test_vm_error_handling() {
     }
 }
 
+// ===== Pipeline integration (TODO2.md #27) =====
+//
+// Proves the production compilation path runs the CFG optimization pipeline
+// (reconstruct -> SimplifyCFG/ConstProp/DCE -> validate -> lower) and that
+// the VM executes the resulting optimized bytecode with unchanged semantics.
+
+// Production path end to end: source -> runBytecodePipeline(optimize) -> VM.
+// The script contains foldable constants, a dead store, a loop, and a branch,
+// so a miscompiled optimization is observable in the result.
+static void test_pipeline_optimized_script_executes() {
+    TEST("pipeline: runBytecodePipeline with optimizeBytecode executes correctly");
+    try {
+        havel::compiler::PipelineOptions options;
+        options.optimizeBytecode = true;
+        // Minimal sanity first: plain top-level return.
+        {
+            auto r42 = havel::compiler::runBytecodePipeline("return 42", "__main__", options);
+            if (!r42.return_value.isInt() || r42.return_value.asInt() != 42) {
+                FAIL("sanity: 'return 42' returned non-42 (isNull=" +
+                     std::to_string(r42.return_value.isNull() ? 1 : 0) + ")");
+                return;
+            }
+        }
+        const std::string src = R"havel(
+val dead = 1 + 2
+val x = 10 + 5
+acc = 0
+i = 0
+while i < 5 {
+    acc += x
+    i += 1
+}
+if x == 15 { acc += 100 }
+return acc
+)havel";
+        auto result = havel::compiler::runBytecodePipeline(src, "__main__", options);
+        // x = 15; acc = 5 * 15 = 75; branch taken: 75 + 100 = 175.
+        if (!result.return_value.isInt()) {
+            FAIL("expected int result, got isNull=" +
+                 std::to_string(result.return_value.isNull() ? 1 : 0) +
+                 " isBool=" + std::to_string(result.return_value.isBool() ? 1 : 0) +
+                 " isDouble=" + std::to_string(result.return_value.isDouble() ? 1 : 0) +
+                 "\n--- bytecode ---\n" + result.snapshot.bytecode);
+            return;
+        }
+        if (result.return_value.asInt() != 175) {
+            FAIL("expected 175, got " + std::to_string(result.return_value.asInt()));
+            return;
+        }
+        PASS();
+    } catch (const std::exception& e) {
+        FAIL(e.what());
+    }
+}
+
+// Same script WITHOUT optimization must produce the identical result.
+static void test_pipeline_unoptimized_script_executes() {
+    TEST("pipeline: runBytecodePipeline without optimization executes correctly");
+    try {
+        havel::compiler::PipelineOptions options;
+        const std::string src = R"havel(
+val dead = 1 + 2
+val x = 10 + 5
+acc = 0
+i = 0
+while i < 5 {
+    acc += x
+    i += 1
+}
+if x == 15 { acc += 100 }
+return acc
+)havel";
+        auto result = havel::compiler::runBytecodePipeline(src, "__main__", options);
+        if (!result.return_value.isInt() || result.return_value.asInt() != 175) {
+            FAIL("expected 175");
+            return;
+        }
+        PASS();
+    } catch (const std::exception& e) {
+        FAIL(e.what());
+    }
+}
+
+// Chunk-level transform proof: the optimized chunk keeps the CFG form and
+// strictly removes instructions (dead stores + pure producers), and the VM
+// executes the optimized chunk with the correct result.
+static void test_pipeline_optimized_chunk_transforms() {
+    TEST("pipeline: compileToBytecodeChunk optimizeBytecode keeps CFG + removes dead code");
+    try {
+        const std::string src = R"havel(
+fn f(a) {
+    val unusedLocal = a + 1
+    return a * 2
+}
+val neverUsed = 123
+return f(21)
+)havel";
+
+        havel::compiler::PipelineOptions opts_off;
+        auto chunk_off = havel::compiler::compileToBytecodeChunk(src, "__main__", opts_off);
+        if (!chunk_off) {
+            FAIL("unoptimized compile failed");
+            return;
+        }
+
+        havel::compiler::PipelineOptions opts_on;
+        opts_on.optimizeBytecode = true;
+        auto chunk_on = havel::compiler::compileToBytecodeChunk(src, "__main__", opts_on);
+        if (!chunk_on) {
+            FAIL("optimized compile failed");
+            return;
+        }
+
+        size_t inst_off = 0, inst_on = 0;
+        bool has_cfg = false;
+        for (size_t i = 0; i < chunk_off->getFunctionCount(); ++i) {
+            inst_off += chunk_off->getFunctionMutable(static_cast<uint32_t>(i))->instructions.size();
+        }
+        for (size_t i = 0; i < chunk_on->getFunctionCount(); ++i) {
+            auto* fn = chunk_on->getFunctionMutable(static_cast<uint32_t>(i));
+            inst_on += fn->instructions.size();
+            if (fn->has_cfg()) has_cfg = true;
+        }
+        if (!has_cfg) {
+            FAIL("optimized chunk did not keep CFG form (has_cfg false)");
+            return;
+        }
+        if (inst_on >= inst_off) {
+            FAIL("optimized chunk did not shrink: " + std::to_string(inst_off) + " -> " + std::to_string(inst_on));
+            return;
+        }
+
+        // The optimized chunk still executes correctly on the VM.
+        havel::compiler::VM vm;
+        auto result = vm.execute(*chunk_on, "__main__");
+        if (!result.isInt() || result.asInt() != 42) {
+            FAIL("expected 42 from optimized chunk, got " +
+                 std::to_string(result.isInt() ? result.asInt() : -1));
+            return;
+        }
+        PASS();
+    } catch (const std::exception& e) {
+        FAIL(e.what());
+    }
+}
+
+// Fast integer opcodes and host string cursor functions must keep working
+// under the optimized pipeline (TODO2.md #27 acceptance criteria).
+static void test_pipeline_optimized_fast_ops_and_string_cursor() {
+    TEST("pipeline: fast int ops + string cursor under optimizeBytecode");
+    try {
+        havel::compiler::PipelineOptions options;
+        options.optimizeBytecode = true;
+        const std::string src = R"havel(
+val a = 19
+val b = 23
+val sum = a + b
+val prod = sum * 2
+val q = prod / 4
+val r = prod % 5
+c = string.cursor("héllo")
+string.cursor_advance(c)
+val first = string.cursor_current(c)
+if sum != 42 { return 0 }
+if q != 21 || r != 4 { return 0 }
+if first != "é" { return 0 }
+return sum
+)havel";
+        auto result = havel::compiler::runBytecodePipeline(src, "__main__", options);
+        if (!result.return_value.isInt() || result.return_value.asInt() != 42) {
+            std::string got = result.return_value.isNull()
+                                  ? "null"
+                              : result.return_value.isInt()
+                                  ? std::to_string(result.return_value.asInt())
+                              : result.return_value.isDouble()
+                                  ? std::to_string(result.return_value.asDouble())
+                              : result.return_value.isBool()
+                                  ? std::to_string(result.return_value.asBool() ? 1 : 0)
+                                  : "other";
+            FAIL("expected 42, got " + got + "\n--- bytecode ---\n" + result.snapshot.bytecode);
+            return;
+        }
+        PASS();
+    } catch (const std::exception& e) {
+        FAIL(e.what());
+    }
+}
+
 int main() {
     std::cout << "=== Havel Embeddable API Tests ===" << std::endl;
 
@@ -374,6 +564,10 @@ int main() {
     test_value_truthy();
     test_value_to_string();
     test_vm_error_handling();
+    test_pipeline_optimized_script_executes();
+    test_pipeline_unoptimized_script_executes();
+    test_pipeline_optimized_chunk_transforms();
+    test_pipeline_optimized_fast_ops_and_string_cursor();
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
     return failed > 0 ? 1 : 0;

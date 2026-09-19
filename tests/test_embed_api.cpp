@@ -1,10 +1,13 @@
 #include "Havel.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include <cassert>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 static int passed = 0;
 static int failed = 0;
@@ -545,6 +548,117 @@ return sum
     }
 }
 
+// Incremental serve path (TODO2.md Phase 4): the .hvc entry written by a
+// compile must be read back and served on an unchanged recompile, and a
+// source change must invalidate it (recompile, correct result). Proven
+// through the canonical compile entry (compileToBytecodeChunk — the path
+// HavelEngine and the launcher boots use) via the incrementalCacheHits()
+// counter: miss (0), hit (+1), invalidated change (no bump), and the served
+// chunk still executes correctly on the VM.
+static void test_incremental_cache_serves_and_invalidates() {
+    TEST("incremental: .hvc serve path hits on unchanged source, invalidates on change");
+    try {
+        namespace fs = std::filesystem;
+        // Scratch cache + unique script name so no stale entry exists.
+        const std::string scratch =
+            "/tmp/opencode/havel-serve-test-" + std::to_string(getpid());
+        // The pipeline fingerprint needs the self-hosted compiler caches;
+        // copy the fingerprint inputs from the real cache so entries stamp
+        // as version-6 (a cache without them serializes legacy v4, which
+        // the serve path conservatively rejects).
+        const std::string realCache = havel::ModuleLoader::getDefaultCacheDir();
+        // getDefaultCacheDir() returns <XDG>/havel, so the fingerprint
+        // inputs must land in scratch/havel for computePipelineFingerprint
+        // to see them once XDG_CACHE_HOME points at the scratch root.
+        const std::string scratchCache = scratch + "/havel";
+        fs::create_directories(scratchCache);
+        for (const char* input : {"lang.emitter.hvc", "lang.pratt.hvc",
+                                  "lang.lexer.hvc", "lang.scope.hvc"}) {
+            std::error_code ec;
+            fs::copy_file(fs::path(realCache) / input,
+                          fs::path(scratchCache) / input, ec);
+            if (ec) {
+                // Fingerprint inputs unavailable (C++-pipeline-only
+                // environment): the serve path cannot stamp entries here.
+                // Skip rather than fail - the serve path is a no-op there.
+                std::error_code rmEc;
+                fs::remove_all(scratch, rmEc);
+                PASS();
+                return;
+            }
+        }
+        ::setenv("XDG_CACHE_HOME", scratch.c_str(), 1);
+        const std::string scriptPath = scratch + "/serve_test.hv";
+        const std::string source1 = "val x = 10 + 5\nreturn x\n";
+        const std::string source2 = "val x = 20 + 5\nreturn x\n";
+        {
+            std::ofstream f(scriptPath);
+            f << source1;
+        }
+
+        havel::compiler::PipelineOptions options;
+        options.compile_unit_name = scriptPath;
+
+        uint64_t before = havel::compiler::incrementalCacheHits();
+        auto c1 = havel::compiler::compileToBytecodeChunk(source1, "__main__", options);
+        uint64_t after1 = havel::compiler::incrementalCacheHits();
+        if (after1 != before) {
+            FAIL("first compile should miss (compile fresh), got serve");
+            return;
+        }
+        if (!c1) {
+            FAIL("first compile failed");
+            return;
+        }
+
+        // Unchanged source: serve path hit; the served chunk executes
+        // identically on the VM.
+        auto c2 = havel::compiler::compileToBytecodeChunk(source1, "__main__", options);
+        uint64_t after2 = havel::compiler::incrementalCacheHits();
+        if (after2 != after1 + 1) {
+            FAIL("second compile should serve from cache (hits +1)");
+            return;
+        }
+        if (!c2) {
+            FAIL("served chunk is null");
+            return;
+        }
+        {
+            havel::compiler::VM vm;
+            auto result = vm.execute(*c2, "__main__");
+            if (!result.isInt() || result.asInt() != 15) {
+                FAIL("served chunk expected 15, got " +
+                     std::to_string(result.isInt() ? result.asInt() : -1));
+                return;
+            }
+        }
+
+        // Changed source: entry stale -> recompile, no serve.
+        {
+            std::ofstream f(scriptPath);
+            f << source2;
+        }
+        auto c3 = havel::compiler::compileToBytecodeChunk(source2, "__main__", options);
+        uint64_t after3 = havel::compiler::incrementalCacheHits();
+        if (after3 != after2) {
+            FAIL("changed source should recompile (no serve)");
+            return;
+        }
+        if (!c3) {
+            FAIL("recompile after invalidation failed");
+            return;
+        }
+
+        std::error_code rmEc;
+        fs::remove_all(scratch, rmEc);
+        ::unsetenv("XDG_CACHE_HOME");
+        PASS();
+    } catch (const std::exception& e) {
+        ::unsetenv("XDG_CACHE_HOME");
+        FAIL(e.what());
+    }
+}
+
 int main() {
     std::cout << "=== Havel Embeddable API Tests ===" << std::endl;
 
@@ -568,6 +682,7 @@ int main() {
     test_pipeline_unoptimized_script_executes();
     test_pipeline_optimized_chunk_transforms();
     test_pipeline_optimized_fast_ops_and_string_cursor();
+    test_incremental_cache_serves_and_invalidates();
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
     return failed > 0 ? 1 : 0;

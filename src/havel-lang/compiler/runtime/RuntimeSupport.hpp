@@ -352,6 +352,15 @@ public:
   // legacy version-4 form for in-memory/internal uses.
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                        const std::string& pipelineFingerprint);
+  // Compiled-with flags (version 6): records the compile options the entry
+  // was built with so the incremental serve path (loadCachedScriptChunk)
+  // can require an exact match. Both flags change what a compile produces:
+  // strict lexical resolution turns undeclared reads into compile errors,
+  // and the optimizer rewrites opcodes/removes instructions. Every caller
+  // must state its real compile configuration explicitly.
+  std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
+                                       const std::string& pipelineFingerprint,
+                                       bool compiled_strict, bool compiled_optimized);
   std::vector<uint8_t> serializeChunkWithGlobals(const BytecodeChunk& chunk,
                                                   const std::unordered_map<std::string, Value>& globals,
                                                   const std::string& sourcePath = "");
@@ -381,6 +390,16 @@ public:
       // produced the chunk. Empty for version-4 entries (no fingerprint
       // recorded - serve as before, first recompile stamps one in).
       std::string pipelineFingerprint;
+      // Version-6 fields: the compile options the entry was built with.
+      // Strict lexical resolution and bytecode optimization both change
+      // what a compile produces (strict turns undeclared reads into
+      // compile errors; the optimizer rewrites opcodes), so an
+      // incremental serve must only reuse entries built with the same
+      // options. Absent (v4/v5 entries, or flags unset) -> has_compile_flags
+      // false -> conservative reject, healed to stamped on next compile.
+      bool compiled_strict = false;
+      bool compiled_optimized = false;
+      bool has_compile_flags = false;
   };
   static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
 
@@ -425,16 +444,23 @@ std::string computePipelineFingerprint(const std::string& cacheDir);
 // std.<name>.hvc, or <stem>.<path-hash>.hvc for user modules).
 // Called after compiling a main script or a module from source so the next
 // run can resolve it as BytecodeCache without recompiling.
+// compiled_strict / compiled_optimized record the compile options the entry
+// was built with (version-6 header) so the incremental serve path can
+// require an exact match. Every caller states its real configuration.
 // ============================================================================
 inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
-                                   const BytecodeChunk& chunk) {
+                                   const BytecodeChunk& chunk,
+                                   bool compiled_strict,
+                                   bool compiled_optimized) {
   try {
     ValueSerializer serializer;
     const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);
+
     std::vector<uint8_t> data =
         serializer.serializeChunk(chunk, compileUnitName,
-                                   computePipelineFingerprint(cacheDir));
+                                   computePipelineFingerprint(cacheDir),
+                                   compiled_strict, compiled_optimized);
 
     std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
 
@@ -491,5 +517,27 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
   } catch (...) {
   }
 }
+
+// ============================================================================
+// Incremental serve path (TODO2.md Phase 4): read back the .hvc entry that
+// autoCacheBytecodeChunk wrote for this compile unit. The entry is keyed by
+// the unit name and validated against the LIVE source text (size + sha256),
+// the current pipeline fingerprint, and the compile options (strict /
+// optimized) the request would use. Bytecode is deterministic from
+// (source, compiler identity, compile options), so a validated entry is
+// semantically identical to a fresh compile. Returns nullopt on any
+// mismatch, on legacy entries without embedded identity, or when the entry
+// cannot be parsed - callers then compile fresh (autoCacheBytecodeChunk
+// re-stamps the entry).
+// ============================================================================
+std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUnitName,
+                                                   const std::string& sourceText,
+                                                   bool request_strict,
+                                                   bool request_optimized);
+
+// Cumulative count of incremental cache serves (compile requests satisfied
+// from the .hvc cache instead of a fresh compile). Exposed so integration
+// tests can prove the production compilation path takes the serve branch.
+uint64_t incrementalCacheHits();
 
 } // namespace havel::compiler

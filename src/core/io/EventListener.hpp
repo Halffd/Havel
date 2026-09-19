@@ -108,7 +108,7 @@ public:
 
   bool SetupUinput();
   bool SupportsSynthesis() const;
-  void SendUinputEvent(int type, int code, int value);
+  bool SendUinputEvent(int type, int code, int value);
   void BeginUinputBatch();
   void QueueUinputEvent(int type, int code, int value);
   void EndUinputBatch();

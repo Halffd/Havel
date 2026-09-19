@@ -4,6 +4,7 @@
 #include "core/MouseGestureTypes.hpp"
 #include "core/io/MouseGestureEngine.hpp"
 #include "../havel-lang/compiler/runtime/EventQueue.hpp"
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -111,6 +112,10 @@ bool GrabHotkey(int id);      // Grab hotkey by id
 
   bool HandleInputEvent(const InputEvent &event);
 
+  // Diagnostic: whether the most recent HandleInputEvent matched (fired) any
+  // hotkey. Read by EventListener's [TRACE] block line. Not for logic use.
+  bool lastEventMatched() const { return lastEventMatched_.load(std::memory_order_relaxed); }
+
 static std::unordered_map<int, HotKey> &RegisteredHotkeys();
   static std::mutex &RegisteredHotkeysMutex();
 
@@ -127,6 +132,7 @@ private:
   mutable std::mutex anyKeyCallbacksMutex;
   bool inputCallbacksInitialized = false;
   bool focusTrackingEnabled = false;
+  mutable std::atomic<bool> lastEventMatched_{false};
 
   struct ModifierState {
     bool leftCtrl = false;

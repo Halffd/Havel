@@ -2407,6 +2407,20 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                            cachePath);
                     }
                   }
+                  // Compile-option gate (version-6 entries): strict
+                  // resolution changes what a compile produces (undeclared
+                  // reads become errors), so an entry built with a
+                  // different strict setting must not be reused. Entries
+                  // without recorded flags (v4/v5) keep legacy behavior and
+                  // heal to stamped (v6) on the next compile.
+                  if (reusable && srcInfo.has_compile_flags &&
+                      srcInfo.compiled_strict != cfg.strictSemantics) {
+                    reusable = false;
+                    info("Bytecode cache strict-semantics mismatch (cache built strict={} vs build strict={}), recompiling: {}",
+                         srcInfo.compiled_strict ? 1 : 0,
+                         cfg.strictSemantics ? 1 : 0,
+                         cachePath);
+                  }
                 } else {
                   reusable = false;
                   info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built from {} bytes/hash {}), recompiling: {}",
@@ -3223,12 +3237,15 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     // embeds the source size + sha256: the cache-reuse gate above
     // validates this hash against the live source, making reuse immune
     // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
-    // and bump its mtime without recompiling).
+    // and bump its mtime without recompiling). The build's strict
+    // resolution setting is stamped (version-6 header) so cache readers
+    // can require an exact compile-option match.
     havel::compiler::ValueSerializer serializer;
     auto data = serializer.serializeChunk(
         *chunk, primaryFile,
         havel::compiler::computePipelineFingerprint(
-            havel::ModuleLoader::getDefaultCacheDir()));
+            havel::ModuleLoader::getDefaultCacheDir()),
+        cfg.strictSemantics, false);
 
     info("Serialization complete, {} bytes", data.size());
 

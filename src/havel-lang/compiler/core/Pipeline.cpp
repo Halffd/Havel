@@ -956,8 +956,10 @@ for (const auto &err : parser.getErrors()) {
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
 
-    // Auto-cache compiled chunk to ~/.cache/havel
-    autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
+    // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
+    // compile options this request used (version-6 header).
+    autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
+                           options.strictSemantics, options.optimizeBytecode);
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -1152,6 +1154,19 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     const std::string &source,
     const std::string &entry_function,
     const PipelineOptions &options) {
+  // Incremental serve path (TODO2.md Phase 4): reuse the .hvc entry that
+  // autoCacheBytecodeChunk wrote for this compile unit when it validates
+  // against the live source text, the current pipeline fingerprint, and the
+  // compile options this request would use. Bytecode is deterministic from
+  // (source, compiler identity, options), so the served chunk is
+  // semantically identical to a fresh compile; a mismatch of any dimension
+  // compiles fresh. Runs before the parse so the dominant compile cost
+  // (parseAST) is skipped on a hit.
+  if (auto cached = loadCachedScriptChunk(options.compile_unit_name, source,
+                                          options.strictSemantics,
+                                          options.optimizeBytecode)) {
+    return std::make_unique<BytecodeChunk>(std::move(*cached));
+  }
   parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,
                          .parser = ::havel::debugging::debug_parser,
                          .ast = ::havel::debugging::debug_ast}};
@@ -1300,8 +1315,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     HAVEL_LOG_INFO(cfi::describe_optimize_stats(cfi::optimize_chunk_cfg(*chunk)));
   }
 
-  // Auto-cache compiled chunk to ~/.cache/havel
-  autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
+  // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
+  // compile options this request used (version-6 header).
+  autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
+                         options.strictSemantics, options.optimizeBytecode);
 
   return chunk;
 }

@@ -6444,8 +6444,10 @@ load_from_source:
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
 
-    // Auto-cache compiled chunk to ~/.cache/havel
-    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk);
+    // Auto-cache compiled chunk to ~/.cache/havel. Module compiles run the
+    // ByteCompiler directly (strict_mode_ defaults false, no optimizer in
+    // this path), so the entry is stamped with that exact configuration.
+    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false);
   }
 
   // Execute the module in a sandboxed globals context

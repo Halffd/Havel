@@ -96,7 +96,7 @@ EventListener::~EventListener() {
 
 void EventListener::InitInputBackend(
     const std::vector<std::string> &devicePaths, bool grab) {
-  (void)grab; // grab is now handled in Start() after event loop is ready
+  (void)grab; // grab is now handled in Start() after the event loop drains
 
   // Backend selection: IO.Backend config key, default evdev. The CLI
   // --io flag writes this same key at startup. "auto" or empty opts into
@@ -259,52 +259,16 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   ResetInputState();
 
-  // 2. Grab devices BEFORE event loop starts
-  //    This ensures no events are read on ungrabbed devices, preventing
-  //    races where the EventLoop sees events that also reach the system
-  if (grabDevices && backend_) {
-    if (!backend_->SupportsSynthesis()) {
-      warn("EventListener: uinput not available, disabling grab to avoid input "
-           "lockup");
-      this->grabDevices = false;
-    }
-    if (this->grabDevices) {
-      debug("EventListener: Grabbing devices before event loop");
-      for (const auto &path : devicePaths) {
-        if (!backend_->GrabDevice(path)) {
-          error("EventListener: Failed to grab device: {}", path);
-        } else {
-          debug("EventListener: Grabbed device: {}", path);
-        }
-      }
-
-      // Add grab delay if configured - allows grab to settle before event loop
-      // starts
-      if (grabDelayMs > 0) {
-        if (havel::debugging::debug_event_listener)
-          debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
-        std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
-      }
-    }
-  }
-
-  // 3. Seed key state from kernel BEFORE event loop starts
-  //    Queries all currently-pressed keys via EVIOCGKEY
-  if (backend_) {
-    auto pressed = backend_->GetPressedKeys();
-    if (!pressed.empty()) {
-      debug("[EventListener] Seeding {} pressed keys from kernel state",
-            pressed.size());
-      std::unique_lock<std::shared_mutex> lock(stateMutex);
-      for (uint32_t code : pressed) {
-        evdevKeyState[code] = true;
-        physicalKeyStates[code] = true;
-        UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
-      }
-    }
-  }
-
-  // 4. Start event loop thread (if threaded)
+  // 2. Start event loop thread (if threaded) BEFORE grabbing devices.
+  //    EVIOCGRAB routes every event from the grabbed device exclusively to
+  //    this process's fd; if the consuming loop is not already draining that
+  //    fd, all input vanishes into a black hole (kernel-side, not queued for
+  //    X11 or anyone else) for as long as the loop is delayed. Previously the
+  //    grab happened here, before the thread spawn below, so a slow startup
+  //    (script compile, module loading, find_library spam) froze the whole
+  //    desktop for seconds: grab at 03.534, first pumped event 05.993 in the
+  //    2026-09-18 kb.log. Grabbing only after the loop is proven ready makes
+  //    grab-then-consume atomic from the kernel's perspective.
   running.store(true);
   shutdown.store(false);
   if (startThread) {
@@ -329,6 +293,51 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
         backend_->Shutdown();
       }
       return false;
+    }
+  }
+
+  // 3. Grab devices now that the event loop is draining them.
+  //    No events can be lost: anything the kernel hands to the grabbed fds is
+  //    picked up by the next poll round.
+  if (grabDevices && backend_) {
+    if (!backend_->SupportsSynthesis()) {
+      warn("EventListener: uinput not available, disabling grab to avoid input "
+           "lockup");
+      this->grabDevices = false;
+    }
+    if (this->grabDevices) {
+      debug("EventListener: Grabbing devices after event loop start");
+      for (const auto &path : devicePaths) {
+        if (!backend_->GrabDevice(path)) {
+          error("EventListener: Failed to grab device: {}", path);
+        } else {
+          debug("EventListener: Grabbed device: {}", path);
+        }
+      }
+
+      // Add grab delay if configured - allows grab to settle before
+      // forwarding starts
+      if (grabDelayMs > 0) {
+        if (havel::debugging::debug_event_listener)
+          debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
+        std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
+      }
+    }
+  }
+
+  // 4. Seed key state from kernel after the grab (the grabbed fd is
+  //    authoritative for held keys) but while the loop already drains.
+  if (backend_) {
+    auto pressed = backend_->GetPressedKeys();
+    if (!pressed.empty()) {
+      debug("[EventListener] Seeding {} pressed keys from kernel state",
+            pressed.size());
+      std::unique_lock<std::shared_mutex> lock(stateMutex);
+      for (uint32_t code : pressed) {
+        evdevKeyState[code] = true;
+        physicalKeyStates[code] = true;
+        UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
+      }
     }
   }
 

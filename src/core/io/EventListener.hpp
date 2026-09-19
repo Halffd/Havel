@@ -249,7 +249,6 @@ private:
   void ProcessMouseEvent(const input_event &ev, int32_t hiResVal = 0);
 
   // Hotkey evaluation helpers (legacy; kept for compatibility)
-  bool EvaluateHotkeys(int evdevCode, bool down, bool repeat);
   bool EvaluateCombo(const HotKey &hotkey);
   bool EvaluateWheelCombo(const HotKey &hotkey, int wheelDirection);
   void QueueMouseMovementHotkey(int virtualKey);

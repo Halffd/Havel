@@ -789,9 +789,6 @@ std::string opcodeName(OpCode opcode) {
 BytecodeSmokeResult runBytecodePipeline(const std::string &source,
                                         const std::string &entry_function,
                                         const PipelineOptions &options) {
-  fflush(stderr);
-  fprintf(stderr, "[RUNBYTECODE-DEBUG] options.traceExecution=%d, options.debugBytecode=%d\n", options.traceExecution, options.debugBytecode);
-  fflush(stderr);
   auto writeSnapshotArtifact = [&](const BytecodeSmokeResult &result,
                                    const std::string &error) {
     if (!options.write_snapshot_artifact || options.snapshot_dir.empty()) {
@@ -941,6 +938,15 @@ for (const auto &err : parser.getErrors()) {
     if (!chunk) {
       COMPILER_THROW(
           "Bytecode smoke pipeline failed: compiler returned null chunk");
+    }
+    // Optional CFG optimization pipeline (reconstruct -> passes -> validate ->
+    // lower) over the compiled functions, mirroring compileToBytecodeChunk.
+    // Opt-in via PipelineOptions::optimizeBytecode so the production script
+    // path honors -O/--optimize-bytecode. Functions with opcodes the CFG model
+    // cannot carry are skipped untouched; semantics never change.
+    if (options.optimizeBytecode) {
+      namespace cfi = havel::compiler::cfgintegration;
+      HAVEL_LOG_INFO(cfi::describe_optimize_stats(cfi::optimize_chunk_cfg(*chunk)));
     }
     result.snapshot.resolver =
         formatResolverSnapshot(compiler.lexicalResolution());
@@ -1291,28 +1297,7 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   // changes semantics for unsupported shapes.
   if (options.optimizeBytecode) {
     namespace cfi = havel::compiler::cfgintegration;
-    cfi::OptimizeStats stats;
-    const size_t count = chunk->getFunctionCount();
-    for (size_t i = 0; i < count; ++i) {
-      BytecodeFunction* fn = chunk->getFunctionMutable(
-          static_cast<uint32_t>(i));
-      if (!fn) continue;
-      cfi::optimize_function_cfg(*fn, *chunk, &stats);
-    }
-    std::ostringstream optSummary;
-    optSummary << "optimizeBytecode: " << stats.functions_optimized << "/"
-               << stats.functions_total << " functions optimized ("
-               << stats.functions_skipped_unsafe << " skipped unsafe, "
-               << stats.functions_skipped_error << " errors), "
-               << stats.blocks_removed << " blocks and "
-               << stats.instructions_removed << " instructions removed";
-    if (!stats.last_reconstruct_error.empty()) {
-      optSummary << " | reconstruct: " << stats.last_reconstruct_error;
-    }
-    if (!stats.last_validation_error.empty()) {
-      optSummary << " | validate: " << stats.last_validation_error;
-    }
-    HAVEL_LOG_INFO(optSummary.str());
+    HAVEL_LOG_INFO(cfi::describe_optimize_stats(cfi::optimize_chunk_cfg(*chunk)));
   }
 
   // Auto-cache compiled chunk to ~/.cache/havel

@@ -774,7 +774,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
             auto* g = scheduler_->get(act.gid);
-            if (g && act.grab) scheduler_->wakeHotkey(g);
+            if (g && act.grab) scheduler_->wakeHotkey(g, {}, "cond-dep-change");
         }
     }
 

@@ -681,7 +681,7 @@ notifyWakeup();
 // @param g Persistent goroutine to wake
 // @param newArgs Optional new arguments for the trigger
 // @return true if successfully queued (g->persistent || idle state), false if dropped
-bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
+bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, const char* caller) {
   if (!g) return false;
 
   // Done goroutines must never be re-enqueued. Persistent hotkey goroutines
@@ -698,8 +698,9 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
-  ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-                  g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
+  ::havel::debug("[Scheduler] wakeHotkey: gid={} alias='{}' state={} policy={} isPending={} caller={}",
+                  g->id, g->hotkey_alias, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending,
+                  caller ? caller : "?");
 
   // Drop policy coalesces triggers arriving WHILE the goroutine is queued or
   // running (isPending). A goroutine parked in Suspended+HotkeyWait is idle,
@@ -805,7 +806,7 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
     ::havel::debug("[Scheduler] wakeHotkeyByAlias('{}'): found {} persistent goroutines", alias, toWake.size());
     bool found = false;
     for (auto* g : toWake) {
-        if (wakeHotkey(g)) found = true;
+        if (wakeHotkey(g, {}, "wakeHotkeyByAlias")) found = true;
     }
     return found;
 }

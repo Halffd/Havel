@@ -61,13 +61,21 @@ bool UinputDevice::Setup() {
     ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL_HI_RES);
 #endif
 
-    // Setup device
-    struct uinput_user_dev usetup = {};
-    std::snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "havel-virtual-device");
+    // Setup device. UI_DEV_SETUP takes struct uinput_setup (id first, name
+    // second) — NOT struct uinput_user_dev (the legacy write() layout).
+    // Passing a uinput_user_dev here shifts every field by 8 bytes: the
+    // kernel reads the id from the first 8 name bytes ("havel-vi" ->
+    // Bus=0x6168, Vendor=0x6576, Product=0x2d6c) and the name from offset 8
+    // ("rtual-device"), so the own-device fingerprint and name filters never
+    // match and our own uinput devices get tracked as input and echo
+    // forwarded events back into the hotkey path (infinite feedback loop).
+    struct uinput_setup usetup = {};
     usetup.id.bustype = BUS_USB;
     usetup.id.vendor = 0x1234;
     usetup.id.product = 0x5678;
     usetup.id.version = 1;
+    std::snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "havel-virtual-device");
+    usetup.ff_effects_max = 0;
 
     if (ioctl(uinputFd, UI_DEV_SETUP, &usetup) < 0) {
         error("Failed to setup uinput device: {}", strerror(errno));
@@ -117,24 +125,36 @@ std::string UinputDevice::CreateVirtualMouse(const std::string& name) {
     ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES);
 #endif
 
-    // Setup device as a mouse
-    struct uinput_user_dev usetup = {};
-    std::snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "%s", name.c_str());
+    // Setup device as a mouse. Same struct-layout rule as Setup():
+    // UI_DEV_SETUP takes struct uinput_setup, not struct uinput_user_dev.
+    struct uinput_setup usetup = {};
     usetup.id.bustype = BUS_USB;
     usetup.id.vendor = 0x1234;
     usetup.id.product = 0x5679;  // Different product ID for mouse
     usetup.id.version = 1;
-
-    // Set mouse-like absolute axis ranges (for compatibility)
-    usetup.absmin[ABS_X] = 0;
-    usetup.absmax[ABS_X] = 32767;
-    usetup.absmin[ABS_Y] = 0;
-    usetup.absmax[ABS_Y] = 32767;
+    std::snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "%s", name.c_str());
+    usetup.ff_effects_max = 0;
 
     if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0) {
         error("Failed to setup virtual mouse uinput device: {}", strerror(errno));
         close(fd);
         return "";
+    }
+
+    // Set mouse-like absolute axis ranges. struct uinput_setup carries no
+    // absmin/absmax arrays; axes are set per-axis via UI_ABS_SETUP before
+    // UI_DEV_CREATE.
+    for (int axis : {ABS_X, ABS_Y}) {
+        struct uinput_abs_setup absSetup = {};
+        absSetup.code = static_cast<__u16>(axis);
+        absSetup.absinfo.minimum = 0;
+        absSetup.absinfo.maximum = 32767;
+        if (ioctl(fd, UI_ABS_SETUP, &absSetup) < 0) {
+            error("Failed to setup ABS axis {} on virtual mouse: {}", axis,
+                  strerror(errno));
+            close(fd);
+            return "";
+        }
     }
 
     if (ioctl(fd, UI_DEV_CREATE) < 0) {

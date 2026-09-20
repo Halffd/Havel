@@ -1012,18 +1012,8 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
-      if (debugging::debug_io)
-        debug("[TRACE] mousemove code={} value={} shouldBlock={} grabbed={}",
-              ev.code, scaledInt, shouldBlock, grabDevices);
-
       if (!shouldBlock && !blockInput.load() && grabDevices) {
-        if (debugging::debug_io)
-          debug("[TRACE] forward attempt EV_REL code={} value={}", ev.code,
-                scaledInt);
-        bool ok = SendUinputEvent(EV_REL, ev.code, scaledInt);
-        if (debugging::debug_io)
-          debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
-                ev.code);
+        SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
 
       if (ev.code == REL_X) {
@@ -1052,23 +1042,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
-      if (debugging::debug_io)
-        debug("[TRACE] wheel code={} value={} shouldBlock={} grabbed={}",
-              ev.code, ev.value, shouldBlock, grabDevices);
-
       if (!shouldBlock && grabDevices) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(scaledValue);
         if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
-        if (debugging::debug_io)
-          debug("[TRACE] forward attempt EV_REL code={} value={}", ev.code,
-                scaledInt);
-        bool ok = SendUinputEvent(EV_REL, ev.code, scaledInt);
-        if (debugging::debug_io)
-          debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
-                ev.code);
+        SendUinputEvent(EV_REL, ev.code, scaledInt);
         SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       }
       return;
@@ -1096,10 +1076,6 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       shouldBlock = inputBlockCallback(event);
     }
 
-    if (debugging::debug_io)
-      debug("[TRACE] abs code={} value={} shouldBlock={} grabbed={}", ev.code,
-            ev.value, shouldBlock, grabDevices);
-
     if (ev.code == ABS_X) {
       currentMouseX = ev.value;
     } else if (ev.code == ABS_Y) {
@@ -1107,13 +1083,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     }
 
     if (!shouldBlock && !blockInput.load() && grabDevices) {
-      if (debugging::debug_io)
-        debug("[TRACE] forward attempt type={} code={} value={}", ev.type,
-              ev.code, ev.value);
-      bool ok = SendUinputEvent(ev.type, ev.code, ev.value);
-      if (debugging::debug_io)
-        debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
-              ev.code);
+      SendUinputEvent(ev.type, ev.code, ev.value);
     }
     return;
   }

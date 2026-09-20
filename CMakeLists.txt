@@ -2652,7 +2652,22 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
         target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
         target_link_libraries(cranelift_proto_driver PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            # The shim links havel_lang_core, which drags in the whole
+            # language runtime and havel_core; complete the link with the
+            # definitions those reference (gui managers via HAVE_QT_EXTENSION,
+            # the ORC JIT in havel_lang) or the prototype driver cannot link.
+            # Explicit order matters for the single-pass archive scan:
+            # referents (lang_core, havel_core) must precede the archives
+            # that define what they need (havel_lang, havel_gui). CMake
+            # dedups repeats, so these explicit positions also win over the
+            # shim's transitive expansion.
             havel_aot_core_shim
+            havel_lang_core
+            havel_core
+            havel_lang
+            havel_gui
+            ${COMMON_LIBS}
+            $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
             ${CMAKE_DL_LIBS}
         )
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)

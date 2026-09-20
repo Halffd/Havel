@@ -38,6 +38,25 @@ bool IsHavelSynthesizedDevice(const input_id &id) {
     return id.vendor == 0x1234 &&
            (id.product == 0x5678 || id.product == 0x5679);
 }
+
+// A uinput device always links /sys/class/input/eventN to
+// /devices/virtual/input/..., regardless of the bustype/name/id its creator
+// chose. Physical devices link into /devices/pci*/ or /devices/platform*/.
+// This catches havel's own devices even when created by a binary predating
+// the uinput_setup struct fix (mangled "rtual-device" name, garbage
+// Bus=0x6168/Vendor=0x6576/Product=0x2d6c id), plus any third-party virtual
+// device.
+bool IsVirtualDevicePath(const std::string &path) {
+    auto slash = path.find_last_of('/');
+    std::string node =
+        (slash == std::string::npos) ? path : path.substr(slash + 1);
+    std::string link = "/sys/class/input/" + node;
+    char buf[256];
+    ssize_t n = readlink(link.c_str(), buf, sizeof(buf) - 1);
+    if (n <= 0) return false;
+    buf[n] = '\0';
+    return strstr(buf, "/devices/virtual/") != nullptr;
+}
 }
 
 class EvdevAdapter : public InputBackend {
@@ -442,6 +461,10 @@ bool EvdevAdapter::AttachDevice(const std::string &path) {
     {
         int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) return false;
+        if (IsVirtualDevicePath(path)) {
+            close(fd);
+            return false;
+        }
         input_id vid{};
         if (ioctl(fd, EVIOCGID, &vid) == 0 &&
             (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
@@ -514,6 +537,10 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
         // synthesized by processes (including havel's own uinput device)
         // and must never become tracked/grabbed input. Filtering here
         // covers both initial enumeration and hotplug re-enumeration.
+        if (IsVirtualDevicePath(path)) {
+            close(fd);
+            continue;
+        }
         input_id vid{};
         if (ioctl(fd, EVIOCGID, &vid) == 0 &&
             (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
@@ -548,6 +575,12 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     // own-generated input back into the hotkey matcher. This covers both
     // generic BUS_VIRTUAL uinput devices and havel's own devices (which
     // use BUS_USB + a fixed vendor/product fingerprint).
+    if (IsVirtualDevicePath(path)) {
+        close(fd);
+        if (havel::debugging::debug_io)
+            debug("EvdevAdapter: Skipping virtual device {}", path);
+        return false;
+    }
     input_id id{};
     if (ioctl(fd, EVIOCGID, &id) == 0 &&
         (id.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(id))) {
@@ -609,7 +642,8 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
     // adopted: reading it would feed forwarded events back into the input
     // path (infinite REL feedback loop). Detach it entirely.
     input_id id{};
-    if (ioctl(it->fd, EVIOCGID, &id) == 0 && IsHavelSynthesizedDevice(id)) {
+    if (IsVirtualDevicePath(path) ||
+        (ioctl(it->fd, EVIOCGID, &id) == 0 && IsHavelSynthesizedDevice(id))) {
         error("EvdevAdapter: refusing to grab own uinput device {}", path);
         it->grab.reset();
         DetachDevice(path);

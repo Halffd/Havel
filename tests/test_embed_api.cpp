@@ -2,6 +2,8 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
+#include "havel-lang/capi/havel.h"
+#include "havel-lang/lexer/BootstrapLexer.hpp"
 #include <cassert>
 #include <cmath>
 #include <fstream>
@@ -659,6 +661,156 @@ static void test_incremental_cache_serves_and_invalidates() {
     }
 }
 
+// ===== C API (TODO2.md #15: stable native boundary) =====
+//
+// havel_state.cpp compiles into havel_lang but had no integration test.
+// Proves the Lua-style embedding boundary end to end: lifecycle,
+// loadstring (the pipeline path with a scheduler-less VM — broken before
+// the execute() dispatch fix), stack + type predicates, globals,
+// protected calls, and host-function calls.
+
+static void test_capi_lifecycle_and_loadstring() {
+    TEST("capi: newstate/loadstring/tointeger/close");
+    HavelState* H = havel_newstate();
+    if (!H) { FAIL("havel_newstate returned null"); return; }
+    int rc = havel_loadstring(H, "return 42", "capi_test");
+    if (rc != HAVEL_OK) {
+        std::string err = havel_errmsg(H) ? havel_errmsg(H) : "(none)";
+        std::string msg = "loadstring failed: " + err;
+        havel_close(H);
+        FAIL(msg.c_str());
+        return;
+    }
+    if (havel_gettop(H) < 1) {
+        havel_close(H);
+        FAIL("loadstring pushed no result");
+        return;
+    }
+    int64_t v = havel_tointeger(H, -1);
+    havel_close(H);
+    if (v != 42) {
+        FAIL("expected 42");
+        return;
+    }
+    PASS();
+}
+
+static void test_capi_stack_and_types() {
+    TEST("capi: push + type predicates + conversions");
+    HavelState* H = havel_newstate();
+    if (!H) { FAIL("havel_newstate returned null"); return; }
+    havel_pushnil(H);
+    havel_pushboolean(H, 1);
+    havel_pushinteger(H, 7);
+    havel_pushnumber(H, 2.5);
+    havel_pushstring(H, "hi");
+    if (havel_gettop(H) != 5) {
+        havel_close(H);
+        FAIL("expected stack top 5");
+        return;
+    }
+    // Positive indices are 0-based in this API (i = idx for idx >= 0).
+    if (havel_type(H, 0) != HAVEL_TNIL || !havel_isnil(H, 0)) {
+        havel_close(H);
+        FAIL("index 0 expected nil");
+        return;
+    }
+    if (havel_type(H, 1) != HAVEL_TBOOLEAN || !havel_toboolean(H, 1)) {
+        havel_close(H);
+        FAIL("index 1 expected true");
+        return;
+    }
+    if (havel_type(H, 2) != HAVEL_TINT || havel_tointeger(H, 2) != 7) {
+        havel_close(H);
+        FAIL("index 2 expected int 7");
+        return;
+    }
+    if (havel_type(H, 3) != HAVEL_TFLOAT || havel_tonumber(H, 3) != 2.5) {
+        havel_close(H);
+        FAIL("index 3 expected 2.5");
+        return;
+    }
+    if (havel_type(H, 4) != HAVEL_TSTRING) {
+        havel_close(H);
+        FAIL("index 4 expected string");
+        return;
+    }
+    havel_close(H);
+    PASS();
+}
+
+static void test_capi_globals_and_pcall() {
+    TEST("capi: setglobal read by script + pcall error handling");
+    HavelState* H = havel_newstate();
+    if (!H) { FAIL("havel_newstate returned null"); return; }
+    havel_pushinteger(H, 21);
+    havel_setglobal(H, "capi_answer");
+    if (!havel_hasglobal(H, "capi_answer")) {
+        havel_close(H);
+        FAIL("setglobal did not register the global");
+        return;
+    }
+    int rc = havel_loadstring(H, "return capi_answer * 2", "capi_globals");
+    if (rc != HAVEL_OK || havel_tointeger(H, -1) != 42) {
+        std::string err = havel_errmsg(H) ? havel_errmsg(H) : "(none)";
+        std::string msg = "global round-trip failed: " + err;
+        havel_close(H);
+        FAIL(msg.c_str());
+        return;
+    }
+    havel_pop(H, 1);
+
+    // Protected call on a runtime-erroring function. The function BODY is
+    // compiled eagerly, so a compile-time error would fail loadstring
+    // before pcall runs; true+1 throws "Type mismatch in binary
+    // operation" at runtime (no bool coercion in ADD).
+    rc = havel_loadstring(H, "fn boom() { return true + 1 } return boom", "capi_pcall_src");
+    if (rc != HAVEL_OK) {
+        std::string err = havel_errmsg(H) ? havel_errmsg(H) : "(none)";
+        std::string msg = "pcall source compile failed: " + err;
+        havel_close(H);
+        FAIL(msg.c_str());
+        return;
+    }
+    int perr = havel_pcall(H, 0, 1, 0);
+    havel_close(H);
+    if (perr != HAVEL_ERR) {
+        FAIL("pcall should report HAVEL_ERR for an unresolved identifier");
+        return;
+    }
+    PASS();
+}
+
+static int capi_test_cfunction(HavelState* H) {
+    // The host-function wrapper clears the stack and pushes call arguments
+    // at 0-based indices; the return value is stack.back().
+    havel_pushinteger(H, havel_tointeger(H, 0) * 2);
+    return 1;
+}
+
+static void test_capi_cfunction_call() {
+    TEST("capi: pushcfunction + havel_call from a script");
+    HavelState* H = havel_newstate();
+    if (!H) { FAIL("havel_newstate returned null"); return; }
+    havel_pushcfunction(H, capi_test_cfunction, "capi_double");
+    havel_setglobal(H, "capi_double");
+    int rc = havel_loadstring(H, "return capi_double(21)", "capi_cfn");
+    if (rc != HAVEL_OK) {
+        std::string err = havel_errmsg(H) ? havel_errmsg(H) : "(none)";
+        std::string msg = "cfunction call failed: " + err;
+        havel_close(H);
+        FAIL(msg.c_str());
+        return;
+    }
+    int64_t v = havel_tointeger(H, -1);
+    havel_close(H);
+    if (v != 42) {
+        FAIL("expected 42 from the host cfunction");
+        return;
+    }
+    PASS();
+}
+
 int main() {
     std::cout << "=== Havel Embeddable API Tests ===" << std::endl;
 
@@ -683,6 +835,10 @@ int main() {
     test_pipeline_optimized_chunk_transforms();
     test_pipeline_optimized_fast_ops_and_string_cursor();
     test_incremental_cache_serves_and_invalidates();
+    test_capi_lifecycle_and_loadstring();
+    test_capi_stack_and_types();
+    test_capi_globals_and_pcall();
+    test_capi_cfunction_call();
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
     return failed > 0 ? 1 : 0;

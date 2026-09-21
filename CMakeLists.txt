@@ -808,9 +808,14 @@ set(TEST_SOURCES "")
 if(ENABLE_TESTS)
     file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp" "tests/*_test.cpp" "tests/phase2_integration_test.cpp")
     # The cranelift prototype driver is registered separately (needs the
-    # Rust staticlib; only built when ENABLE_CRANELIFT is on).
+    # Rust staticlib; only built when ENABLE_CRANELIFT is on). hpp_proto_test
+    # is registered separately too: it links the runtime libs (which carry
+    # the HAVEL_VERSION_STRING/UI_BACKEND definitions) instead of compiling
+    # the full app sources, which the test loop cannot provide definitions
+    # for.
     list(REMOVE_ITEM TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp")
+        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp"
+        "${CMAKE_SOURCE_DIR}/tests/hpp_proto_test.cpp")
 endif()
 
 
@@ -1714,6 +1719,53 @@ set_target_properties(hvtest PROPERTIES ENABLE_EXPORTS ON)
 target_link_options(hvtest PRIVATE -Wl,--export-dynamic)
 endif()
 
+# havel-hppc: Havel++ prototype compiler (TODO2.md #16 / #26 item 13).
+# .hvp -> generated C++ (ModulePlugin.h boilerplate + Value<->native
+# wrappers) -> clang++ -shared. Pure string processing + a compiler
+# invocation; no runtime linkage.
+add_executable(havel-hppc src/havel-lang/tools/HppCompiler.cpp)
+set_target_properties(havel-hppc PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(havel-hppc PRIVATE -fno-lto)
+
+# hpp_proto_test: Havel++ prototype integration (TODO2.md #16 / #26 item 13).
+# Proves .hvp -> native .so -> module ABI -> VMApi registration end to end.
+# Registered separately (links the runtime libs, like havel_api_test) so it
+# does not join the test-source loop, which compiles full app sources
+# without the definitions they need.
+add_executable(hpp_proto_test tests/hpp_proto_test.cpp)
+set_target_properties(hpp_proto_test PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(hpp_proto_test PRIVATE -fno-lto)
+target_compile_definitions(hpp_proto_test PRIVATE
+  HAVEL_SRC_DIR="${CMAKE_SOURCE_DIR}"
+  $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+)
+target_include_directories(hpp_proto_test PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/include
+  ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_link_libraries(hpp_proto_test PRIVATE
+  GTest::gtest GTest::gtest_main
+  -Wl,--start-group havel_lang havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  -Wl,--start-group
+  ${COMMON_LIBS}
+  $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+  -Wl,--end-group
+)
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(hpp_proto_test PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(hpp_proto_test PRIVATE -Wl,--export-dynamic)
+endif()
+
 add_executable(havel_api_test tests/test_embed_api.cpp)
 set_target_properties(havel_api_test PROPERTIES
   CXX_STANDARD 23
@@ -2351,7 +2403,7 @@ add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
 add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
 add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
-add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
+  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
@@ -2476,6 +2528,7 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
         target_include_directories(${test_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/include
             ${X11_INCLUDE_DIR}
             ${XI_INCLUDE_DIR}
  ${CURL_INCLUDE_DIRS}
@@ -2502,6 +2555,7 @@ GTest::gtest
 
         target_compile_definitions(${test_name} PRIVATE
             RUN_TESTS
+            HAVEL_SRC_DIR="${CMAKE_SOURCE_DIR}"
             $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
             $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
             $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>

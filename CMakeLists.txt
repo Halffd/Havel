@@ -1650,7 +1650,9 @@ C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(havel-lsp PRIVATE -fno-lto)
-target_link_options(havel-lsp PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 
 target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang/lexer
@@ -1693,7 +1695,11 @@ C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(hvtest PRIVATE -fno-lto)
-target_link_options(hvtest PRIVATE -fno-lto)
+# Link WITHOUT -fno-lto: the release archives contain LTO bitcode members,
+# and a non-LTO link skips them ("plugin needed to handle lto object" —
+# observed: Scheduler symbols unresolved from havel_lang.a). Dropping the
+# flag lets the clang driver load the LTO plugin for the archives; the
+# test's own objects stay non-LTO.
 
 target_include_directories(hvtest PRIVATE
   ${CMAKE_SOURCE_DIR}/src
@@ -1773,7 +1779,9 @@ set_target_properties(havel_api_test PROPERTIES
   CXX_EXTENSIONS OFF
 )
 target_compile_options(havel_api_test PRIVATE -fno-lto)
-target_link_options(havel_api_test PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_compile_definitions(havel_api_test PRIVATE
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
@@ -1850,8 +1858,12 @@ set_target_properties(hvdump PROPERTIES
 )
 target_compile_options(hvdb PRIVATE -fno-lto)
 target_compile_options(hvdump PRIVATE -fno-lto)
-target_link_options(hvdb PRIVATE -fno-lto)
-target_link_options(hvdump PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_include_directories(hvdb PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -1901,7 +1913,9 @@ set_target_properties(havel-dap PROPERTIES
     CXX_EXTENSIONS OFF
 )
 target_compile_options(havel-dap PRIVATE -fno-lto)
-target_link_options(havel-dap PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_include_directories(havel-dap PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include

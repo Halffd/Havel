@@ -21,7 +21,7 @@ namespace havel::host {
 /**
  * Color - RGB(A) color representation
  */
-struct Color {
+struct HAVEL_EXPORT Color {
     int r = 0, g = 0, b = 0, a = 255;
     
     Color() = default;
@@ -40,7 +40,7 @@ struct Color {
 /**
  * Screen region for bounded operations
  */
-struct Region {
+struct HAVEL_EXPORT Region {
     int x = 0, y = 0, w = 0, h = 0;
     
     Region() = default;
@@ -53,7 +53,7 @@ struct Region {
 /**
  * Image match result
  */
-struct ImageMatch {
+struct HAVEL_EXPORT ImageMatch {
     bool found = false;
     int x = 0, y = 0, w = 0, h = 0;
     float confidence = 0.0f;

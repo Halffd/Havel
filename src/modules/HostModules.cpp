@@ -57,6 +57,7 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
 							   const host::ServiceFilter& excludes,
 							   bool headlessMode = false) {
+	::havel::error("DEBUG: initializeServiceRegistry ENTERED hostAPI={}", (void*)hostAPI.get());
 	if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;

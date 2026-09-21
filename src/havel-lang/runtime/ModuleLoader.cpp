@@ -286,7 +286,17 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
       }
     }
 
-    // 6. Check for native plugins (.so files)
+    // 6. Check for native plugins (.so files): the search paths, then the
+    // script's own directory (Havel++ modules build a .so next to the
+    // script that uses them).
+    if (!scriptDir.empty()) {
+      fs::path soPath = fs::path(scriptDir) / (name + ".so");
+      if (fs::exists(soPath)) {
+        try {
+          return fs::canonical(soPath).string();
+        } catch (...) {}
+      }
+    }
     for (const auto& sp : searchPaths_) {
       fs::path spDir(sp);
       fs::path soPath = spDir / (name + ".so");
@@ -623,6 +633,15 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   // 3. Check stdlibPath_ for name.hv
   // But first, check if there's a plugin (native extension) for this module
   // in the search paths, to allow plugins to override stdlib .hv files.
+  // The script's own directory comes first: Havel++ modules build a .so
+  // next to the script that uses them.
+  if (!scriptDir.empty()) {
+    fs::path soPath = fs::path(scriptDir) / (name + ".so");
+    if (fs::exists(soPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+                            fs::canonical(soPath).string(), modulePath, ""};
+    }
+  }
   for (const auto& sp : searchPaths_) {
     fs::path spDir(sp);
     fs::path soPath = spDir / (name + ".so");

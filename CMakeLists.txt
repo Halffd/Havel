@@ -1736,6 +1736,19 @@ set_target_properties(havel-hppc PROPERTIES
   CXX_EXTENSIONS OFF
 )
 target_compile_options(havel-hppc PRIVATE -fno-lto)
+# The release config's global flags break this standalone tool: it builds
+# as PIE, and vtable/iostream references to libstdc++ dynamic symbols
+# (_ZTV*, cout/cerr) emit R_X86_64_PC32 relocations that cannot resolve
+# against a dynamic symbol in a PIE — the link warns "causes overflow" and
+# the relocated loads segfault at runtime (observed under gdb: a huge
+# RIP-relative load in main). Non-PIE lets the linker emit copy
+# relocations for the dynamic data. The tool links no runtime, so the
+# default ABI/visibility is correct for it too.
+target_compile_options(havel-hppc PRIVATE
+  -fPIC
+  -fvisibility=default
+  -fabi-version=0
+  -fgnu-unique)
 
 # hpp_proto_test: Havel++ prototype integration (TODO2.md #16 / #26 item 13).
 # Proves .hvp -> native .so -> module ABI -> VMApi registration end to end.

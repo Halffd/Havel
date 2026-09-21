@@ -1745,10 +1745,14 @@ target_compile_options(havel-hppc PRIVATE -fno-lto)
 # relocations for the dynamic data. The tool links no runtime, so the
 # default ABI/visibility is correct for it too.
 target_compile_options(havel-hppc PRIVATE
+  -fno-lto
   -fPIC
-  -fvisibility=default
-  -fabi-version=0
-  -fgnu-unique)
+  -fvisibility=default)
+# -fabi-version/-fgnu-unique are GCC-only (clang errors on them). They
+# counter the release config's global -fabi-version=14 -fno-gnu-unique.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(havel-hppc PRIVATE -fabi-version=0 -fgnu-unique)
+endif()
 
 # hpp_proto_test: Havel++ prototype integration (TODO2.md #16 / #26 item 13).
 # Proves .hvp -> native .so -> module ABI -> VMApi registration end to end.

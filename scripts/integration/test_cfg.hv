@@ -1,8 +1,47 @@
+// Tests: cfg.load parses [Section] config files and nested config writes
+// work on loaded sections.
+// Regression: cfg.Debug.VerboseKeyLogging = X crashed with
+// "OBJECT_SET expects object container" because the test loaded a
+// non-existent config file (cfg.Debug stayed null and the nested write
+// targeted null). This version is self-contained: it writes its own
+// config file and deletes it after.
+// Expected output: single line "PASS: cfg.load + nested config write",
+// exit 0.
+
 use cfg
-cfg.load("scripts/havel/havel.cfg")
-val DOLOG = false
-print("type of cfg: " + type(cfg))
-print("cfg.Debug: " + cfg.Debug)
-print("type of cfg.Debug: " + type(cfg.Debug))
-cfg.Debug.VerboseKeyLogging = DOLOG
-print("done")
+
+// Must contain '/' or the C-level config resolves it against the config
+// dir (~/.config/havel/) instead of the cwd. cwd lives on the sys module
+// (fs.cwd is not registered). Failures exit via sys.exit (bare exit is
+// not a registered global).
+use cfg
+
+cwd = sys.cwd()
+cfgPath = "${cwd}/havel_test_cfg_tmp.cfg"
+fs.write(cfgPath, "[Debug]\nVerboseKeyLogging = false\n")
+if !fs.exists(cfgPath) {
+    print("FAIL: could not create temp config file")
+    sys.exit(1)
+}
+
+cfg.load(cfgPath)
+if type(cfg.Debug) != "object" {
+    print("FAIL: cfg.Debug should be object after load, got " + type(cfg.Debug))
+    fs.rm(cfgPath)
+    sys.exit(1)
+}
+
+cfg.Debug.VerboseKeyLogging = true
+if cfg.Debug.VerboseKeyLogging != true {
+    print("FAIL: nested config write did not stick")
+    fs.rm(cfgPath)
+    sys.exit(1)
+}
+
+fs.rm(cfgPath)
+if fs.exists(cfgPath) {
+    print("FAIL: cleanup did not remove temp config file")
+    sys.exit(1)
+}
+
+print("PASS: cfg.load + nested config write")

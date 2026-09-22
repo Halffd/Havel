@@ -128,10 +128,21 @@ its vtable references it.
 | LLVM ORC tiering (O0→O2) | 1.20s | — |
 | Cranelift tier1 + ORC tier2 | **0.43s** | **0.39s** |
 
-Verdict: Cranelift as the fast-compilation backend works and delivers ~3x
-end-to-end vs the VM, ~2.8x vs LLVM-only tiering. ABI sharing holds by
-construction: the same `havel_vm_*`/`havel_gc_*`/`havel_vm_throw_*` bridges
-the ORC lowering uses are registered in the CraneliftBackend symbol map.
+**CORRECTION (post -ffast-math fix):** those numbers were measured on
+pre-fix binaries built with `-ffast-math` — the UB's own miscompilation.
+`-ffast-math` eliminates the NaN-checking branches on tagged values, which
+made benchmarks artificially faster AND caused the exit crash. Honest
+post-fix numbers (clang, mode 19):
+
+| Path | arithmetic.hv |
+|---|---|
+| VM only (no tiering) | 2.15s |
+| Cranelift tier1 (tier2 async incomplete at exit) | 1.72-1.92s |
+
+The Cranelift tier-1 win is real but modest (~15-20%) on this benchmark,
+not 4x. The ABI sharing verdict is unchanged (verified by construction).
+Verdict: Cranelift as the fast-compilation backend works; the earlier 4x
+was the UB's speed, not real.
 
 ## 5. §12 — LLVM/AOT cleanup (verified end-to-end)
 
@@ -199,10 +210,10 @@ All measurements on this machine (16 cores, 39Gi RAM, GCC 16 / clang 22):
 | Config | Status | Notes |
 |---|---|---|
 | build-debug (mode 6: no LLVM) | clean, ctest 100% (5/5) | ASAN+UBSAN, ~2-3.3s script boots pre-serve-path |
-| build-release (mode 5: LLVM) | clean, 285/285 smoke | Thin LTO, -march=native, 0.21s boots |
-| build-crane (Debug+LLVM+CRANELIFT) | clean, ctest 100% (6/6) | created this session; no crane mode in build.sh yet |
-| build-crane-release (Release+LLVM+CRANELIFT) | clean | created this session; 0.43s tiered arithmetic |
-| build-nollvm | not built this session | modes 8/9 cover the no-LLVM path |
+| build-release (mode 5: LLVM) | clean, 285/285 smoke | Thin LTO, -march=native, -fno-fast-math, 0.21s boots |
+| build-crane (mode 17: Debug+LLVM+CRANELIFT) | clean, ctest 100% (6/6) | build.sh crane mode added; no manual cmake needed |
+| build-crane-nollvm (mode 18) | clean, trivial run exit 0 | build.sh crane mode added |
+| build-crane-release (mode 19: Release+LLVM+CRANELIFT) | clean, trivial exit 0 | build.sh crane mode; honest tiered arithmetic 1.72s |
 
 Benchmarks: `tests/baseline/benchmarks.json` (user-maintained) — 8/8 pass;
 run-to-run variance on this machine is ±26% for single runs, ±3% for

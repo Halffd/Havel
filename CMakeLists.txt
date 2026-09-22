@@ -789,7 +789,6 @@ endif()
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX ".*clipboardmgr.*")
-list(REMOVE_ITEM HOST_MODULES_SOURCES "${CMAKE_SOURCE_DIR}/src/modules/HostModules.cpp")
 # Remove Qt-dependent modules when in-process Qt UI backend is disabled
 if(NOT ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE _QT_MODULES

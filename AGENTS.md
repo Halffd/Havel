@@ -783,3 +783,273 @@ Why I cannot proceed: [specific reason]
 
 This is a valid, complete response. Do not keep attempting
 variations of the same fix to avoid reporting BLOCKED.
+
+## Verification Is Evidence, Not Narrative
+
+Never claim that something is:
+
+* fixed
+* complete
+* working
+* verified
+* regression-free
+* all tests passing
+* fully integrated
+* production-ready
+* finished
+
+unless the claim is directly supported by evidence obtained during the current task.
+
+### Test Claims
+
+Never write:
+
+> "All tests pass."
+
+unless a test runner has actually completed and produced an unambiguous success result.
+
+The evidence must include:
+
+* the exact test command
+* the final summary
+* the exit code
+
+Prefer evidence such as:
+
+```
+284 passed, 0 failed
+exit code: 0
+```
+
+A partial test run, timeout, manually selected subset, or successful build does NOT justify an "all tests pass" claim.
+
+Never silently upgrade:
+
+```
+"these 5 tests passed"
+```
+
+into:
+
+```
+"integration tests pass"
+```
+
+or:
+
+```
+"all tests pass".
+```
+
+Preserve the exact scope of every verification result.
+
+### Timeouts
+
+A timeout is NOT a pass.
+
+If a test:
+
+* times out
+* is killed
+* is skipped
+* produces no result
+* is terminated because it is taking too long
+
+record it explicitly as unverified/failed according to the test runner's semantics.
+
+Never silently continue and later report the suite as passing.
+
+### Contradictory Evidence
+
+If new evidence contradicts an earlier conclusion:
+
+1. STOP.
+2. Explicitly identify the contradiction.
+3. Downgrade the earlier conclusion to unverified.
+4. Re-run the relevant test or investigation.
+5. Only restore the stronger conclusion after obtaining new evidence.
+
+Never silently ignore contradictory tool output.
+
+### "Pre-existing" Bugs
+
+Never classify a failure as pre-existing merely because:
+
+* it seems unrelated to the current change
+* it occurs in an old subsystem
+* it appears architecturally separate
+* the code existed before the task
+* the model suspects it existed previously
+
+"Pre-existing" requires evidence.
+
+Preferred evidence:
+
+```
+same reproduction
+same relevant code lineage
+known-good baseline
+known-failing current revision
+```
+
+If baseline verification is unavailable, say:
+
+```
+"Pre-existing status is unverified."
+```
+
+Do not present the hypothesis as a fact.
+
+### Integration
+
+Distinguish:
+
+```
+implemented
+tested in isolation
+wired into production path
+exercised through production path
+```
+
+A component existing in the repository does not prove that production code uses it.
+
+If an implementation exists but no production caller uses it, report:
+
+```
+"Implemented but not integrated."
+```
+
+Do not mark the feature complete.
+
+### Build vs Test
+
+A successful build proves compilation/linking.
+
+It does NOT prove:
+
+* runtime correctness
+* integration correctness
+* regression absence
+* performance
+* test-suite success
+
+Never substitute "build succeeded" for "tests pass."
+
+### Completion Gate
+
+Before declaring a task complete, produce an internal completion checklist:
+
+```
+[ ] Requested implementation exists
+[ ] Production integration is confirmed
+[ ] Relevant tests were executed
+[ ] Tests completed rather than timed out
+[ ] Final test summary was observed
+[ ] Exit code was observed
+[ ] Regressions were checked
+[ ] Previously failing behavior was re-tested
+[ ] No contradictory evidence remains
+[ ] Remaining work is explicitly listed
+```
+
+If any required item is unchecked, do NOT claim the task is completely verified.
+
+### Evidence Ledger
+
+Maintain a compact evidence ledger while working:
+
+```
+CLAIM → COMMAND → RESULT → SCOPE
+```
+
+Example:
+
+```
+JI numeric subscript parity
+→ pytest tests/jit_numeric.hv
+→ PASS
+→ 1 test
+
+Integration suite
+→ ./hvtest
+→ NOT COMPLETED
+→ timeout after 180s
+
+IncrementalDriver integration
+→ grep/call-site inspection
+→ NO PRODUCTION CALLER FOUND
+→ NOT INTEGRATED
+```
+
+Do not replace evidence with a narrative summary.
+
+### No Self-Generated Completion Pressure
+
+Do not repeatedly generate statements such as:
+
+```
+"Complete."
+"All work finished."
+"No further action needed."
+"This is the final rebuild."
+"Everything is verified."
+```
+
+These statements are conclusions, not progress.
+
+Only produce a completion conclusion after the completion gate has been satisfied.
+
+If the evidence does not establish completion, continue investigating or report exactly what remains unverified.
+
+<!-- BEGIN opencode-rag -->
+## Code Navigation
+
+ALWAYS use OpenCodeRAG tools before reading or editing:
+- **Search first** — `search_semantic(query)` instead of grep/glob
+- **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
+- **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
+- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
+- **Recall quirks** — `recall_quirks(query)` when you hit a known pitfall
+- **Add quirks** — `add_quirk(content)` when you discover a non-obvious fact
+- **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
+
+If no results, run `opencode-rag index`.
+
+### Decision tree — ALWAYS follow this order
+1. User mentions code behavior/architecture → `search_semantic(query)`
+2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
+3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`
+4. User asks a code question → `search_semantic` to gather context before answering
+5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code
+6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`
+7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions
+8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies
+
+### Proactive triggers — you MUST call these tools when
+- User asks about code behavior, architecture, or implementation details
+- User asks to edit, refactor, or fix code — call `find_usages` first
+- User references files or functions you haven't read yet
+- User says "find", "search", "look up", "where is", "how does"
+- User refers to an image, screenshot, diagram, or visual asset
+- Before answering ANY code-related question, retrieve context first
+- Before reading ANY file, call `get_file_skeleton` to orient first
+
+### Anti-patterns — NEVER do these
+- Reading full files without calling `get_file_skeleton` first (wastes tokens)
+- Editing a function without calling `find_usages` first (breaks call sites)
+- Answering code questions without calling `search_semantic` first (you guess at behavior)
+- Using `grep`/`glob` when `search_semantic` would find the answer faster
+- Treating image files as text — use `describe_image` instead of reading raw bytes
+- Using `npx opencode-rag quirk` shell commands instead of the built-in quirk tools (`add_quirk` / `recall_quirks` / `update_quirk` / `delete_quirk`) (the tools are faster, already loaded in-process, and go through the trust monitor)
+
+### MANDATORY quirk capture rules — you MUST call `add_quirk` when
+- A build, test, or type-check command fails and you resolve it
+- You discover an undocumented library constraint, peer dep, or workaround
+- You learn an environment-specific requirement (OS, tool version, etc.)
+- You make a design decision that future sessions should remember
+- You resolve a gotcha that cost more than one attempt
+
+### MANDATORY quirk hygiene — you MUST call `update_quirk` or `delete_quirk` when
+- A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
+- NEVER finish a coding session without adding quirks for resolved errors.
+<!-- END opencode-rag -->

@@ -87,6 +87,36 @@ pushed the null result and reported HAVEL_OK.
   validated .hvc cache. Implemented but not integrated — recorded per TODO2
   §3, not claimed as integrated.
 
+## 2b. emit_pipeline batch build (added later in session)
+
+The emit_pipeline's real gap was process overhead, not dependency
+invalidation: it booted the havel binary once per module (~103 boots);
+with every module unchanged that was 23s of pure boot cost. `--build-many`
+builds N files in one process — each `.hvc` cache-checked with the same
+validation discipline as `loadCachedScriptChunk` (pipeline fingerprint,
+compile options, live source hash) and compiled only on a miss.
+emit_pipeline batches the lang/std/app sets; bookkeeping stays shell-side.
+
+Verified: all-reused pipeline 23.03s → 1.44-1.69s (~15x); lang-only
+batch 0.1s vs 14s per-module (~100x); a module edit invalidates and
+rebuilds; suites stay green.
+
+## 2c. Whole-program AOT ELF cache (added later in session)
+
+The AOT ELF is the one true whole-program artifact: it embeds the full
+program's bytecode tables and links the runtime's static libs. Wired into
+runBuild's emitElf path through the IncrementalDriver's TieredCache,
+keyed content-addressed: the source fingerprint + a config hash folding
+in the runtime build id, the ELF target, and the core/full profile. A
+rebuilt .hvc or a runtime change changes the key so a stale artifact can
+never serve.
+
+Verified: first build 10.4s (stub + link + store), subsequent builds
+0.20s (served, ~50x), a source change invalidates (7.7s rebuild, new
+cache entry), the ELF runs correctly. The incremental infrastructure now
+has production callers at every level: script (compileToBytecodeChunk
+serve path), module (.hvc validation), and whole-program (the ELF cache).
+
 ## 3. §11 Phase 6 — BytecodeOrcJIT refactor
 
 Survey found four unwired subsystems with zero callers anywhere:

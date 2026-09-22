@@ -393,6 +393,7 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath,
                           const std::string& hashKey) -> std::optional<ResolvedModule> {
     if (!fs::exists(hvcPath)) return std::nullopt;
+    ::havel::debug("[BC-CACHE] check {} (hvc={})", hashKey, hvcPath.string());
 
     // Prefer validating against the LIVE source embedded in the .hvc
     // header (serializeChunk embeds the canonical path + sha256 of the
@@ -418,7 +419,16 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
       // below when the current compiler identity differs. Unstamped
       // entries (v4, or missing fingerprint inputs) keep legacy behavior
       // and heal to stamped on the next compile.
-      if (srcInfo.hasInfo && !srcInfo.pipelineFingerprint.empty()) {
+      //
+      // The gate is skipped for the fingerprint-input modules themselves
+      // (lang.emitter/pratt/lexer/scope): the fingerprint is the hash of
+      // those very .hvc files, so any recompile of one changes the
+      // fingerprint and would mark the others stale, which rewrites their
+      // .hvc files too - an endless rebuild cycle costing a full
+      // recompilation every run. Their staleness is already covered by
+      // the embedded source-hash check below.
+      if (srcInfo.hasInfo && !srcInfo.pipelineFingerprint.empty() &&
+          !havel::compiler::isPipelineFingerprintInput(hashKey)) {
         const std::string currentFp =
             havel::compiler::computePipelineFingerprint(cacheDir);
         if (!currentFp.empty() &&
@@ -456,12 +466,16 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
           if (!liveHash.empty() && liveHash != embeddedHex) {
             // Live source changed since this .hvc was compiled -
             // stale, do not serve it.
+            ::havel::debug("[BC-CACHE] stale: hash mismatch {} (live {} != embedded {})",
+                           hashKey, liveHash.substr(0, 8), embeddedHex.substr(0, 8));
             return std::nullopt;
           }
           // Size differs but hash matches: identity must hold on BOTH
           // fields - treat as stale.
           if (!liveHash.empty() && liveHash == embeddedHex &&
               !sizeEc && liveSize != srcInfo.size) {
+            ::havel::debug("[BC-CACHE] stale: size mismatch {} (live {} != embedded {})",
+                           hashKey, liveSize, srcInfo.size);
             return std::nullopt;
           }
         }

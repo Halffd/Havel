@@ -214,6 +214,7 @@ All measurements on this machine (16 cores, 39Gi RAM, GCC 16 / clang 22):
 | build-crane (mode 17: Debug+LLVM+CRANELIFT) | clean, ctest 100% (6/6) | build.sh crane mode added; no manual cmake needed |
 | build-crane-nollvm (mode 18) | clean, trivial run exit 0 | build.sh crane mode added |
 | build-crane-release (mode 19: Release+LLVM+CRANELIFT) | clean, trivial exit 0 | build.sh crane mode; honest tiered arithmetic 1.72s |
+| build-nollvm (mode 20: Release, no LLVM) | clean, 285/285 smoke | dedicated dir; avoids reconfigure-on-switch churn |
 
 Benchmarks: `tests/baseline/benchmarks.json` (user-maintained) — 8/8 pass;
 run-to-run variance on this machine is ±26% for single runs, ±3% for

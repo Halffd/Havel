@@ -218,6 +218,10 @@ declare -A BUILD_CONFIGS=(
   [17]="Debug,ON,ON,ON,OFF,OFF,OFF,OFF,ON,build-crane"
   [18]="Debug,ON,ON,OFF,OFF,OFF,OFF,OFF,ON,build-crane-nollvm"
   [19]="Release,ON,ON,ON,OFF,OFF,OFF,OFF,ON,build-crane-release"
+  # Dedicated no-LLVM dir (TODO2.md #5 baseline): avoids the
+  # reconfigure-on-switch churn between build-release (LLVM) and no-LLVM
+  # builds. Mode 9 stays for no-LLVM inside build-release.
+  [20]="Release,ON,ON,OFF,OFF,OFF,OFF,OFF,ON,build-nollvm"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then

@@ -10,7 +10,10 @@ Primary build: `./build.sh [mode] [command]`
 | 0 | Debug | ✓ | ✓ | ✓ | build-debug |
 | 5 | Release | ✓ | ✓ | ✓ | build-release |
 | 6 | Debug | ✓ | ✓ | ✗ | build-debug (default) |
+| 8 | Debug | ✗ | ✓ | ✗ | build-debug |
 | 9 | Release | ✓ | ✓ | ✗ | build-release |
+
+Other modes (1-4, 7, 10-13) exist in build.sh BUILD_CONFIGS; the table lists the common ones.
 
 Common commands:
 - `./build.sh 5 build` - Full release with LLVM
@@ -24,7 +27,7 @@ Common commands:
 |--------|---------|
 | `build-debug/havel` | Main application |
 | `build-debug/havel-lsp` | Language Server Protocol |
-| `build-debug/havel-bytecode-smoke` | Bytecode smoke test (Debug only) |
+| `build-debug/hvtest` | Unified .hv test runner (smoke/cfg suites) |
 
 Run Havel scripts: `./build-debug/havel script.hv`
 
@@ -76,7 +79,16 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 
 - **C++ unit tests**: `tests/` directory, gtest-based, built when ENABLE_TESTS=ON
 - **Havel script tests**: `scripts/*.hv` files
-- **Bytecode smoke test**: `havel-bytecode-smoke` (Debug builds only - Release LTO causes relocation overflow)
+- **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
+- **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
+  - `// smoke: timeout = <seconds>` — per-test timeout override
+  - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
+  - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
+  - `// smoke: tier = slow` — marks a GC/tiering stress test as slow-tier
+- **Test tiers**: bare `hvtest --smoke` skips slow-tier tests (dev loop).
+  The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
+  set). `--only-slow` runs just the slow tier. When touching GC internals
+  or the tiering system, run the full set deliberately.
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash
@@ -84,7 +96,7 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   ```
   Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
 
-CI runs: CMake configure → build → bytecode-smoke → ctest
+CI runs: CMake configure → build → hvtest smoke → ctest
 
 ```bash
 # Run a single Havel script
@@ -771,3 +783,221 @@ Why I cannot proceed: [specific reason]
 
 This is a valid, complete response. Do not keep attempting
 variations of the same fix to avoid reporting BLOCKED.
+
+## Verification Is Evidence, Not Narrative
+
+Never claim that something is:
+
+* fixed
+* complete
+* working
+* verified
+* regression-free
+* all tests passing
+* fully integrated
+* production-ready
+* finished
+
+unless the claim is directly supported by evidence obtained during the current task.
+
+### Test Claims
+
+Never write:
+
+> "All tests pass."
+
+unless a test runner has actually completed and produced an unambiguous success result.
+
+The evidence must include:
+
+* the exact test command
+* the final summary
+* the exit code
+
+Prefer evidence such as:
+
+```
+284 passed, 0 failed
+exit code: 0
+```
+
+A partial test run, timeout, manually selected subset, or successful build does NOT justify an "all tests pass" claim.
+
+Never silently upgrade:
+
+```
+"these 5 tests passed"
+```
+
+into:
+
+```
+"integration tests pass"
+```
+
+or:
+
+```
+"all tests pass".
+```
+
+Preserve the exact scope of every verification result.
+
+### Timeouts
+
+A timeout is NOT a pass.
+
+If a test:
+
+* times out
+* is killed
+* is skipped
+* produces no result
+* is terminated because it is taking too long
+
+record it explicitly as unverified/failed according to the test runner's semantics.
+
+Never silently continue and later report the suite as passing.
+
+### Contradictory Evidence
+
+If new evidence contradicts an earlier conclusion:
+
+1. STOP.
+2. Explicitly identify the contradiction.
+3. Downgrade the earlier conclusion to unverified.
+4. Re-run the relevant test or investigation.
+5. Only restore the stronger conclusion after obtaining new evidence.
+
+Never silently ignore contradictory tool output.
+
+### "Pre-existing" Bugs
+
+Never classify a failure as pre-existing merely because:
+
+* it seems unrelated to the current change
+* it occurs in an old subsystem
+* it appears architecturally separate
+* the code existed before the task
+* the model suspects it existed previously
+
+"Pre-existing" requires evidence.
+
+Preferred evidence:
+
+```
+same reproduction
+same relevant code lineage
+known-good baseline
+known-failing current revision
+```
+
+If baseline verification is unavailable, say:
+
+```
+"Pre-existing status is unverified."
+```
+
+Do not present the hypothesis as a fact.
+
+### Integration
+
+Distinguish:
+
+```
+implemented
+tested in isolation
+wired into production path
+exercised through production path
+```
+
+A component existing in the repository does not prove that production code uses it.
+
+If an implementation exists but no production caller uses it, report:
+
+```
+"Implemented but not integrated."
+```
+
+Do not mark the feature complete.
+
+### Build vs Test
+
+A successful build proves compilation/linking.
+
+It does NOT prove:
+
+* runtime correctness
+* integration correctness
+* regression absence
+* performance
+* test-suite success
+
+Never substitute "build succeeded" for "tests pass."
+
+### Completion Gate
+
+Before declaring a task complete, produce an internal completion checklist:
+
+```
+[ ] Requested implementation exists
+[ ] Production integration is confirmed
+[ ] Relevant tests were executed
+[ ] Tests completed rather than timed out
+[ ] Final test summary was observed
+[ ] Exit code was observed
+[ ] Regressions were checked
+[ ] Previously failing behavior was re-tested
+[ ] No contradictory evidence remains
+[ ] Remaining work is explicitly listed
+```
+
+If any required item is unchecked, do NOT claim the task is completely verified.
+
+### Evidence Ledger
+
+Maintain a compact evidence ledger while working:
+
+```
+CLAIM → COMMAND → RESULT → SCOPE
+```
+
+Example:
+
+```
+JI numeric subscript parity
+→ pytest tests/jit_numeric.hv
+→ PASS
+→ 1 test
+
+Integration suite
+→ ./hvtest
+→ NOT COMPLETED
+→ timeout after 180s
+
+IncrementalDriver integration
+→ grep/call-site inspection
+→ NO PRODUCTION CALLER FOUND
+→ NOT INTEGRATED
+```
+
+Do not replace evidence with a narrative summary.
+
+### No Self-Generated Completion Pressure
+
+Do not repeatedly generate statements such as:
+
+```
+"Complete."
+"All work finished."
+"No further action needed."
+"This is the final rebuild."
+"Everything is verified."
+```
+
+These statements are conclusions, not progress.
+
+Only produce a completion conclusion after the completion gate has been satisfied.
+
+If the evidence does not establish completion, continue investigating or report exactly what remains unverified.
+

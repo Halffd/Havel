@@ -393,7 +393,6 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath,
                           const std::string& hashKey) -> std::optional<ResolvedModule> {
     if (!fs::exists(hvcPath)) return std::nullopt;
-    ::havel::debug("[BC-CACHE] check {} (hvc={})", hashKey, hvcPath.string());
 
     // Prefer validating against the LIVE source embedded in the .hvc
     // header (serializeChunk embeds the canonical path + sha256 of the

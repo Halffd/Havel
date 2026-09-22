@@ -419,6 +419,14 @@ private:
 // ============================================================================
 std::string computePipelineFingerprint(const std::string& cacheDir);
 
+// True when cacheName is one of the compiler's own bytecode caches that the
+// pipeline fingerprint is derived from (lang.emitter/pratt/lexer/scope).
+// The pipeline gate must not apply to these modules: any recompile of one
+// rewrites its .hvc, changing the fingerprint, which would mark the others
+// stale and recompile them too - an endless rebuild cycle. Their staleness
+// is already covered by the embedded source-hash check.
+bool isPipelineFingerprintInput(const std::string& cacheName);
+
 // ============================================================================
 // Auto-cache - write a freshly compiled chunk to the single bytecode cache
 // location ~/.cache/havel/ with namespaced filenames (lang.<name>.hvc,

@@ -2047,24 +2047,22 @@ fn parseMatchExpr() {
 
  elseBranch = null
  if current().tid == TID.Else {
-            advance()
-            skipNewlines()
-            if current().tid == TID.If {
-                elseBranch = parseIfExpr()
-            }
-            else if current().tid == TID.OpenBrace {
-                elseBranch = parseBlock()
-            }
- else if current().tid == TID.Colon {
-  elseBranch = parseBlock()
+    advance()
+    skipNewlines()
+    if current().tid == TID.If {
+        elseBranch = parseIfExpr()
+    } else if current().tid == TID.OpenBrace {
+        elseBranch = parseBlock()
+    } else if current().tid == TID.Colon {
+        elseBranch = parseBlock()
+    } else {
+        elseBranch = parseStatement()
+        if elseBranch == null {
+            elseBranch = BlockStatement([], l, c)
+        }
+    }
  }
-            else {
-                elseBranch = parseStatement()
-                if elseBranch == null: elseBranch = BlockStatement([], l, c)
-
-}
-}
-return IfStatement(condition, thenBranch, elseBranch, l, c)
+ return IfStatement(condition, thenBranch, elseBranch, l, c)
 
 }
     // ===================================================================
@@ -2453,6 +2451,23 @@ if tt == TID.At and at(1).tid == TID.Identifier {
 		nextTid = at(1).tid
 		if nextTid == TID.When || nextTid == TID.If || nextTid == TID.Arrow {
 			return parseHotkeyStatement()
+		}
+		// Chord/modifier hotkey: identifier & identifier => action or
+		// identifier:up => action. Mirror of the C++ bootstrap parser: scan
+		// forward for Arrow before any statement terminator (semicolon,
+		// close brace, EOF); newlines are crossed, matching the C++ scan.
+		if nextTid == TID.BitwiseAnd || nextTid == TID.Colon {
+			scanPos = 1
+			foundArrow = false
+			while notEOF() {
+				look = at(scanPos)
+				if look == null || look.tid == TID.EOF || look.tid == TID.Semicolon || look.tid == TID.CloseBrace { break }
+				if look.tid == TID.Arrow { foundArrow = true; break }
+				scanPos = scanPos + 1
+			}
+			if foundArrow {
+				return parseHotkeyStatement()
+			}
 		}
 		// identifier mode="..." or policy="..." followed by => (hotkey with attrs)
 		if nextTid == TID.Identifier && (at(1).value == "mode" || at(1).value == "policy") && isHotkeyIdentifier(current().value) {
@@ -3500,6 +3515,17 @@ fn parseHotkeyStatement() {
         }
 	else if current().tid == TID.Identifier {
 		key = advance().value
+		// Chord/modifier continuation: name & name => or name:up =>.
+		// Mirrors the C++ bootstrap parser, which consumes the whole
+		// pattern (identifiers joined by &/:) into one hotkey string.
+		while current().tid == TID.BitwiseAnd || current().tid == TID.Colon {
+			sep = advance().tid
+			if current().tid == TID.Identifier || current().tid == TID.Hotkey || current().tid == TID.Number {
+				key = key + (sep == TID.BitwiseAnd ? " & " : ":") + advance().value
+			} else {
+				break
+			}
+		}
 	}
 	skipNewlines()
 

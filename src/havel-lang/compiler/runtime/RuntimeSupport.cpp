@@ -114,16 +114,19 @@ namespace {
 
 namespace havel::compiler {
 
+// The compiler's own bytecode caches the pipeline fingerprint is derived
+// from. Single source of truth: computePipelineFingerprint hashes exactly
+// these, and isPipelineFingerprintInput() matches against the same list.
+static const char* kFingerprintInputs[] = {
+    "lang.emitter.hvc",
+    "lang.pratt.hvc",
+    "lang.lexer.hvc",
+    "lang.scope.hvc",
+};
+
 std::string computePipelineFingerprint(const std::string& cacheDir) {
     // Identity of the self-hosted compiler: the bytecode caches of the
     // modules that ARE the compiler. Order is fixed so the hash is stable.
-    static const char* kFingerprintInputs[] = {
-        "lang.emitter.hvc",
-        "lang.pratt.hvc",
-        "lang.lexer.hvc",
-        "lang.scope.hvc",
-    };
-
     // Memoize per (dir, mtime, size): this runs on every bare-name module
     // resolution (checkBcCache) and hashing ~1.5MB of compiler caches each
     // time would dominate resolution. The inputs only change when the
@@ -215,6 +218,13 @@ std::string computePipelineFingerprint(const std::string& cacheDir) {
         memo = MemoEntry{key, out};
     }
     return out;
+}
+
+bool isPipelineFingerprintInput(const std::string& cacheName) {
+    for (const char* input : kFingerprintInputs) {
+        if (cacheName == input) return true;
+    }
+    return false;
 }
 
 // ============================================================================

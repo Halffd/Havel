@@ -5631,6 +5631,7 @@ void VM::moduleLoadDone(const std::string& canonicalKey) {
 }
 
 Value VM::loadModule(const std::string &path) {
+  ::havel::debug("[VM] loadModule: {}", path);
   // Local variables needed by all return paths
   std::unordered_set<std::string> inheritedGlobalNames;
   std::unordered_map<std::string, Value> inheritedGlobalValues;
@@ -6086,6 +6087,8 @@ Value VM::loadModule(const std::string &path) {
       // between versions). Drop the stale cache and recompile from source so
       // a bad cache never hard-fails the import. The source-compile path
       // writes a fresh cache, so the module self-heals on the next run.
+      ::havel::debug("[BC-CACHE] deserialize failed, recompiling from source: {}",
+                     resolved->canonicalPath);
       std::error_code removeEc;
       std::filesystem::remove(resolved->canonicalPath, removeEc);
       auto reResolved = moduleLoader_.resolve(path, prev_script_dir);

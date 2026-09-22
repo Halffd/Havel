@@ -437,6 +437,8 @@ bool isPipelineFingerprintInput(const std::string& cacheName);
 inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
                                    const BytecodeChunk& chunk) {
   try {
+    ::havel::debug("[BC-CACHE] autoCache: {} ({} funcs)", compileUnitName,
+                   chunk.getFunctionCount());
     ValueSerializer serializer;
     const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);

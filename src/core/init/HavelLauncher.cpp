@@ -1628,8 +1628,13 @@ int HavelLauncher::run(int argc, char *argv[]) {
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
+        // SCRIPT mode deliberately NOT switched to SELF_HOSTED: the
+        // self-hosted pratt parser parses ~0.2-0.3s/line on the VM (a
+        // 2200-line user script measured at 600s), making every script run
+        // unusable. User scripts stay on the C++ pipeline (milliseconds);
+        // the self-hosted pipeline remains available via --self-hosted and
+        // for the REPL/TEST modes below.
         if (cfg.mode == LaunchConfig::Mode::REPL ||
-            cfg.mode == LaunchConfig::Mode::SCRIPT ||
             cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
             cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
             cfg.mode == LaunchConfig::Mode::TEST) {
@@ -1654,8 +1659,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
           cfg.vmConfig.self_hosted_modules_path = candidate.string();
           fs::path langDir = candidate / "modules" / "lang";
           if (!fs::is_empty(langDir)) {
+            // Same SCRIPT-mode carve-out as above.
             if (cfg.mode == LaunchConfig::Mode::REPL ||
-                cfg.mode == LaunchConfig::Mode::SCRIPT ||
                 cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
                 cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
                 cfg.mode == LaunchConfig::Mode::TEST) {

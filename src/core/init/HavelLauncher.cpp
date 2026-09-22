@@ -12,6 +12,8 @@
 #include "havel-lang/compiler/core/ModuleGlobals.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
+#include "havel-lang/compiler/incremental/IncrementalDriver.hpp"
+#include "havel-lang/compiler/incremental/CacheLayer.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include "havel-lang/parser/BootstrapParser.h"
 #include "havel-lang/runtime/HavelEngine.hpp"
@@ -2921,15 +2923,82 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
           std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
           std::string stubPath = aotOutput + "_stub.cpp";
-          
-          // Get build directory for module search paths
-          std::string buildDir;
-          std::string exePath = Env::executable();
-          if (!exePath.empty()) {
-              buildDir = std::filesystem::path(exePath).parent_path().string();
+
+          // Whole-program AOT artifact cache (TODO2.md #9, #26 item 13).
+          // The ELF is deterministic from (the serialized chunk's bytecode,
+          // the stub template, the link flags, the runtime's identity).
+          // Key it content-addressed through the IncrementalDriver's
+          // TieredCache: a rebuilt .hvc or a runtime change changes the
+          // key, so a stale artifact can never serve; on a hit the ~1-5s
+          // stub+link step is skipped. This is the whole-program role the
+          // DependencyGraph/TieredCache were built for: the artifact
+          // embeds the full program's bytecode tables. The driver and key
+          // live at this scope so the post-link store can reach them.
+          namespace inc = havel::compiler::incremental;
+          std::error_code aotCacheEc;
+          const std::string aotCacheRoot = havel::Env::cache() + "/havel/aot";
+          std::filesystem::create_directories(aotCacheRoot, aotCacheEc);
+          const std::string pipelineFp =
+              havel::compiler::computePipelineFingerprint(
+                  havel::ModuleLoader::getDefaultCacheDir());
+          // Config hash folds in the runtime build id, the ELF target,
+          // and the core/full profile: the ELF links the runtime's
+          // static libs, so a runtime change must invalidate.
+          const std::string aotConfigHash =
+              inc::fingerprintString(
+                  std::string(HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID)) +
+                  ":" + normalizeTargetOS(cfg.targetOS) + ":" +
+                  (coreProfile ? "core" : "full")).value;
+          inc::IncrementalConfig aotConfig;
+          aotConfig.cache_root = aotCacheRoot;
+          aotConfig.compiler_version = pipelineFp + ":" + aotConfigHash;
+          inc::IncrementalDriver aotDriver(aotConfig);
+          // Source fingerprint: the fresh chunk is deterministic from
+          // (combinedCode, compiler, flags), so hashing the source text
+          // is equivalent to hashing the chunk and always in scope here.
+          const std::string chunkFp = (isBytecode
+              ? *inc::fingerprintFile(primaryFile)
+              : inc::fingerprintString(combinedCode)).value;
+          const std::string aotKey = inc::makeCacheKey(
+              chunkFp, "", aotConfigHash);
+          {
+            if (auto cached = aotDriver.cache()->get(aotKey)) {
+              std::error_code writeEc;
+              std::filesystem::create_directories(
+                  std::filesystem::path(binPath).parent_path(), writeEc);
+              std::ofstream binOut(binPath, std::ios::binary);
+              if (binOut.is_open()) {
+                binOut.write(reinterpret_cast<const char*>(cached->data()),
+                             static_cast<std::streamsize>(cached->size()));
+                binOut.close();
+                std::error_code permEc;
+                std::filesystem::permissions(
+                    binPath,
+                    std::filesystem::perms::owner_all |
+                        std::filesystem::perms::group_exec |
+                        std::filesystem::perms::others_exec,
+                    permEc);
+                if (!permEc) {
+                  info("AOT ELF served from incremental cache ({} bytes, key {})",
+                       cached->size(), aotKey.substr(0, 12));
+                  return 0;
+                }
+                error("Failed to make cached AOT executable executable: {}",
+                      binPath);
+              } else {
+                error("Cannot open output file for cached AOT: {}", binPath);
+              }
+            }
           }
-          
-          info("AOT: generating stub at {}", stubPath);
+
+            // Get build directory for module search paths
+            std::string buildDir;
+            std::string exePath = Env::executable();
+            if (!exePath.empty()) {
+                buildDir = std::filesystem::path(exePath).parent_path().string();
+            }
+
+            info("AOT: generating stub at {}", stubPath);
           {
             std::ofstream stub(stubPath);
             if (!stub) {
@@ -3184,6 +3253,36 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             return 1;
           }
           info("Native AOT executable written to: {}", binPath);
+
+          // Store the ELF in the incremental cache (TODO2.md #9, #26 item
+          // 13): the next build with the same source/config serves it and
+          // skips the stub+link step. The key already folds in the source
+          // fingerprint and the runtime identity, so a rebuilt .hvc or a
+          // runtime change produces a different key and this entry
+          // simply stops being consulted.
+          {
+            std::ifstream elfIn(binPath, std::ios::binary);
+            if (elfIn.is_open()) {
+              std::vector<uint8_t> elfBytes(
+                  (std::istreambuf_iterator<char>(elfIn)), {});
+              elfIn.close();
+              inc::CacheEntryMeta meta;
+              meta.key = aotKey;
+              meta.fingerprint = chunkFp;
+              meta.timestamp_ms =
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+              meta.size_bytes = elfBytes.size();
+              meta.opt_level = 0;
+              meta.target_arch = normalizeTargetOS(cfg.targetOS);
+              meta.ir_version = "1.0";
+              meta.compiler_version = aotConfig.compiler_version;
+              aotDriver.cache()->put(aotKey, elfBytes, meta);
+              info("AOT ELF stored in incremental cache (key {})",
+                   aotKey.substr(0, 12));
+            }
+          }
         }
       }
 

@@ -9,7 +9,7 @@ struct Vec2 {
     y: Num
 }
 
-let v = Vec2 { x: 10, y: 20 }
+v = Vec2 { x: 10, y: 20 }
 print("Vec2 created:", v.x, v.y)
 
 // Test 2: Enum definition
@@ -20,7 +20,7 @@ enum Color {
     Blue
 }
 
-let c = Color.Red
+c = Color.Red
 print("Color enum created:", c)
 
 // Test 3: Type annotations
@@ -37,18 +37,18 @@ fn add(a, b) {
     return a + b
 }
 
-let result = add(5, 3)
+result = add(5, 3)
 print("add(5, 3) =", result)
 
 // Test 5: Array type inference
 print("\nTest 5: Array Type Inference\n")
-let numbers = [1, 2, 3, 4, 5]
+numbers = [1, 2, 3, 4, 5]
 print("Array:", numbers)
 print("Array type inferred, length:", numbers.length)
 
 // Test 6: Object literal
 print("\nTest 6: Object Literal\n")
-let person = {
+person = {
     name: "Alice",
     age: 30,
     active: true
@@ -57,7 +57,7 @@ print("Person:", person.name, person.age, person.active)
 
 // Test 7: Lambda expression
 print("\nTest 7: Lambda Expression\n")
-let multiply = fn(x, y) { return x * y }
+multiply = fn(x, y) { return x * y }
 print("multiply(4, 5) =", multiply(4, 5))
 
 // Test 8: Nested struct
@@ -68,7 +68,7 @@ struct Point3D {
     z: Num
 }
 
-let p = Point3D { x: 1, y: 2, z: 3 }
+p = Point3D { x: 1, y: 2, z: 3 }
 print("Point3D:", p.x, p.y, p.z)
 
 // Test 9: Enum with usage
@@ -80,7 +80,7 @@ enum Status {
     Failed
 }
 
-let status = Status.Running
+status = Status.Running
 print("Current status:", status)
 
 // Test 10: Conditional logic with typed values

@@ -1,0 +1,17 @@
+// smoke: math-sidecar-randint = 1
+// regression: nested module cache-name collision. modules/lang/math/math.hv
+// and modules/lang/math.hv both compressed to flat cache name "lang.math";
+// importing the sidecar served the wrapper's bytecode, whose own
+// use "math/math" then hit the circular-dependency guard — math.randint
+// and every other sidecar export silently resolved to null.
+v = math.randint(1, 10)
+c = math.clamp(11, 1, 10)
+ok = 1
+if v < 1 || v > 10 { ok = 0 }
+if c != 10 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL math-sidecar-randint: expected 1, got " + str(__result))
+ process.exit(255)
+}
+return __result

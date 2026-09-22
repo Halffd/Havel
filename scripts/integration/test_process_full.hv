@@ -9,18 +9,18 @@ print("  My PPID:", process.ppid())
 
 // Test 2: process.list()
 print("\nTest 2: List processes (first 5)\n")
-let allProcs = process.list()
+allProcs = process.list()
 print("Total processes:", allProcs.length)
 for i in [0, 1, 2, 3, 4] {
     if i < allProcs.length {
-        let p = allProcs[i]
+p = allProcs[i]
         print("  ", p.pid, p.name, "CPU:", p.cpu_usage, "Mem:", p.memory_usage)
     }
 }
 
 // Test 3: process.find()
 print("\nTest 3: Find bash processes\n")
-let bashProcs = process.find("bash")
+bashProcs = process.find("bash")
 print("Found", bashProcs.length, "bash process(es)")
 for p in bashProcs {
     print("  PID:", p.pid, "Name:", p.name, "User:", p.user)
@@ -28,7 +28,7 @@ for p in bashProcs {
 
 // Test 4: process.info()
 print("\nTest 4: Get process info for PID 1\n")
-let initInfo = process.info(1)
+initInfo = process.info(1)
 if initInfo {
     print("  PID:", initInfo.pid)
     print("  Name:", initInfo.name)

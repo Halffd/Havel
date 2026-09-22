@@ -35,14 +35,29 @@ struct ScreenshotStyle {
     bool includeCursor = false;
 };
 
+// Result of a screenshot capture including dimensions
+struct ScreenshotResult {
+    std::vector<unsigned char> data;
+    int width = 0;
+    int height = 0;
+    
+    ScreenshotResult() = default;
+    ScreenshotResult(std::vector<unsigned char>&& d, int w, int h) 
+        : data(std::move(d)), width(w), height(h) {}
+    ScreenshotResult(const std::vector<unsigned char>& d, int w, int h) 
+        : data(d), width(w), height(h) {}
+    
+    explicit operator bool() const { return !data.empty() && width > 0 && height > 0; }
+};
+
 class IScreenshotBackend {
 public:
     virtual ~IScreenshotBackend() = default;
 
-    virtual std::vector<unsigned char> captureFullDesktop(const ScreenshotStyle& style = {}) = 0;
-    virtual std::vector<unsigned char> captureMonitor(int index, const ScreenshotStyle& style = {}) = 0;
-    virtual std::vector<unsigned char> captureActiveWindow(const ScreenshotStyle& style = {}) = 0;
-    virtual std::vector<unsigned char> captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style = {}) = 0;
+    virtual ScreenshotResult captureFullDesktop(const ScreenshotStyle& style = {}) = 0;
+    virtual ScreenshotResult captureMonitor(int index, const ScreenshotStyle& style = {}) = 0;
+    virtual ScreenshotResult captureActiveWindow(const ScreenshotStyle& style = {}) = 0;
+    virtual ScreenshotResult captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style = {}) = 0;
     virtual int getMonitorCount() const = 0;
     virtual std::vector<int> getMonitorGeometry(int index) const = 0;
 };

@@ -1,0 +1,175 @@
+// Test: unified mode pattern extracted from hotkeys0.3.hv
+// What: evalModes-driven mode.set with declarative mode blocks, nested
+//       genshin-under-gaming, gate fns matching gameGate/genshinGate, and
+//       a late-declared global (spaceHk) referenced from a mode enter body.
+// Why: hotkeys0.3.hv cannot run headless (binds real input), so the mode
+//       logic it relies on is verified here standalone.
+// Expected: mode transitions follow window classification order
+//       genshin > gaming > typing > vm > coding > terminal > default;
+//       gates flip with mode; autosp is created only in genshin enter.
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+log = []
+
+genshinTitles = "Genshin Impact,Honkai Star"
+gamingTitles = "Genshin Impact,Steam,CS2"
+
+fn inGamingT(c, t) {
+    t in gamingTitles.lower().trim().split(",")
+}
+fn inGenshinT(c, t) {
+    t in genshinTitles.lower().trim().split(",")
+}
+fn setupGameKeys() {
+    log.push("setup-keys")
+}
+fn teardownGameKeys() {
+    log.push("teardown-keys")
+}
+
+// Autosp creation is deferred to genshin enter, referencing a global that is
+// assigned AFTER the mode blocks (matches hotkeys0.3.hv ordering).
+autosp = null
+spaceHk = null
+
+fn genshinCond() {
+    inGenshinT("", "") && mode() == "gaming"
+}
+fn gameGate() {
+    m = mode()
+    m == "gaming" || m == "genshin"
+}
+fn genshinGate() {
+    mode() == "genshin"
+}
+
+fn gamingCond() {
+    inGamingT("", "")
+}
+mode "gaming" {
+    condition = gamingCond
+    enter { setupGameKeys(); log.push("enter-gaming") }
+    exit { teardownGameKeys(); log.push("exit-gaming") }
+}
+mode "genshin" {
+    condition = genshinCond
+    enter {
+        setupGameKeys()
+        log.push("enter-genshin")
+        if autosp == null && spaceHk != null {
+            autosp = spaceHk
+            log.push("autosp-created")
+        }
+    }
+    exit {
+        teardownGameKeys()
+        log.push("exit-genshin")
+        autosp = null
+    }
+}
+mode "typing" {
+    enter { log.push("enter-typing") }
+    exit { log.push("exit-typing") }
+}
+mode "vm" {
+    enter { log.push("enter-vm") }
+}
+mode "coding" {
+    enter { log.push("enter-coding") }
+}
+mode "terminal" {
+    enter { log.push("enter-terminal") }
+}
+
+spaceHk = { id: "space" }
+
+// window mock: {title, class, cmdline} — `class` is a keyword, so the hash
+// literal cannot carry it; dotted assignment works.
+fn win(t, c = "", e = "") {
+    w = { title: t, cmdline: e }
+    w.class = c
+    w
+}
+fn evalModes(w) {
+    c = w.class.lower().trim()
+    t = w.title.lower().trim()
+    e = w.cmdline
+    if type(e) == "string" { e = e.lower().trim() } else { e = "" }
+    m = mode.current()
+    if inGenshinT(c, t) && m == "gaming" {
+        mode.set("genshin")
+    } else if inGamingT(c, t) {
+        mode.set("gaming")
+    } else if t ~ "keybr" || t ~ "typing" || t ~ "monkeytype" {
+        mode.set("typing")
+    } else if c ~ "virtualbox" || c ~ "qemu" {
+        mode.set("vm")
+    } else if e ~ "nvim" || e ~ "windsurf" || e ~ "cursor" || e ~ "code" {
+        mode.set("coding")
+    } else if e ~ "kitty" || e ~ "alacritty" || e ~ "wezterm" || e ~ "gnome-terminal" || e ~ "tilix" || e ~ "xterm" || e ~ "urxvt" || e ~ "yakuake" || e ~ "tmux" {
+        mode.set("terminal")
+    } else {
+        mode.set("default")
+    }
+}
+
+mlist = mode.list()
+found = false
+for m in mlist {
+    if m == "gaming" || m == "genshin" { found = true }
+}
+check(found, "mode.list contains gaming/genshin")
+
+// default -> gaming: enter fires, gates flip
+mode.set("gaming")
+check(mode() == "gaming", "gaming set")
+check(gameGate(), "gameGate true in gaming")
+check(!genshinGate(), "genshinGate false in gaming")
+check(log[0] == "setup-keys" && log[1] == "enter-gaming", "gaming enter runs setup+enter")
+
+// gaming -> genshin via evalModes on a genshin window
+evalModes(win("Genshin Impact"))
+check(mode() == "genshin", "genshin set from evalModes")
+check(gameGate(), "gameGate true in genshin")
+check(genshinGate(), "genshinGate true in genshin")
+check(autosp != null, "autosp created in genshin enter from late global")
+check(log[2] == "teardown-keys" && log[3] == "exit-gaming", "gaming exit tears down first")
+check(log[4] == "setup-keys" && log[5] == "enter-genshin", "genshin enter re-applies keys")
+
+// genshin -> default on a non-classified window; exit cleans automation
+evalModes(win("firefox", "Firefox"))
+check(mode() == "default", "default on non-classified window")
+check(!gameGate(), "gameGate false in default")
+check(autosp == null, "autosp nulled on genshin exit")
+
+// classification order: typing before vm before coding before terminal
+evalModes(win("monkeytype", "Chrome"))
+check(mode() == "typing", "typing classified")
+evalModes(win("VM", "VirtualBox"))
+check(mode() == "vm", "vm classified")
+evalModes(win("project", "", "windsurf"))
+check(mode() == "coding", "coding classified")
+evalModes(win("shell", "", "kitty"))
+check(mode() == "terminal", "terminal classified")
+
+// genshin is nested: genshin-window while not gaming classifies as gaming
+// (same title that would become genshin while in gaming)
+evalModes(win("Genshin Impact"))
+check(mode() == "gaming", "genshin title outside gaming -> gaming (needs gaming first)")
+
+// same-mode set is a no-op
+n = #log
+mode.set("coding")
+check(mode() == "coding", "coding manual set")
+n2 = #log
+mode.set("coding")
+check(#log == n2, "same-mode set no-op")
+
+print("OK")

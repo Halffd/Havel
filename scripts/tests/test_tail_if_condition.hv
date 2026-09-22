@@ -1,0 +1,121 @@
+// Test: compiler tail-position condition bug (TAIL_CALL in conditions)
+// What: bare user-function calls used as if/else-if conditions, match
+//       discriminants, match guards, loop counts, and for iterables —
+//       inside a function whose LAST statement is that construct — must not
+//       compile to TAIL_CALL. A TAIL_CALL in a condition replaces the frame
+//       and returns the whole function while evaluating a branch, skipping
+//       every subsequent branch (the evalModes no-op bug: mode.set("default")
+//       never ran because the else-if condition inGamingT(c,t) was emitted
+//       as TAIL_CALL).
+// Why: regression for the mode unify rewrite; conditions are never values.
+// Expected: conditions evaluate as booleans; flow continues to the matching
+//       branch; loops run to completion.
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+calls = []
+
+fn yes() { calls.push("yes"); true }
+fn no() { calls.push("no"); false }
+
+// -- if/else-if chain as last statement, bare-call conditions (evalModes
+//    shape: first if uses && like always, else-ifs are bare calls)
+fn classify(x) {
+    if yes() && x == 1 {
+        "one"
+    } else if yes() {
+        "two"
+    } else if no() {
+        "three"
+    } else {
+        "default"
+    }
+}
+
+// -- all conditions false -> else branch (the exact "mode.set default" shape)
+fn classify2() {
+    if no() && false {
+        "x"
+    } else if no() {
+        "y"
+    } else {
+        "default"
+    }
+}
+
+// -- bare-call FIRST if condition; true path must run the consequence
+fn pickA() {
+    if yes() {
+        "A"
+    } else {
+        "B"
+    }
+}
+
+// -- ternary condition is a bare call, ternary is the tail expression
+fn pickD() {
+    yes() ? "yes" : "no"
+}
+
+// -- while condition is a bare call; body must run to completion
+wcount = 0
+fn more() {
+    wcount = wcount + 1
+    wcount <= 3
+}
+fn pickF() {
+    n = 0
+    while more() {
+        n = n + 1
+    }
+    n
+}
+
+// -- for iterable is a bare call; body must run once per element
+farr = []
+fn items() { [1, 2, 3] }
+fn pickH() {
+    tot = 0
+    for i in items() {
+        tot = tot + i
+        farr.push(i)
+    }
+    tot
+}
+
+// -- match discriminant is a bare call
+fn disc() { 2 }
+fn pickN() {
+    match disc() {
+        1 => "one"
+        2 => "two"
+        _ => "other"
+    }
+}
+
+// -- match guard is a bare call
+fn pickM(x) {
+    match x {
+        1 => "one"
+        _ if no() => "guarded"
+        _ => "other"
+    }
+}
+
+check(classify(1) == "one", "first if and-cond true path")
+check(classify(2) == "two", "else-if bare-call cond true path")
+check(classify2() == "default", "else-if bare-call cond false -> else")
+check(pickA() == "A", "first-if bare-call cond true path")
+check(pickD() == "yes", "ternary bare-call cond in tail")
+check(pickF() == 3, "while bare-call cond runs body to completion")
+check(pickH() == 6, "for bare-call iterable iterates all elements")
+check(pickN() == "two", "match bare-call discriminant matches case")
+check(pickM(9) == "other", "match bare-call guard false skips to next case")
+
+print("OK")

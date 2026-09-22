@@ -145,6 +145,7 @@ private:
     bool suppressBraceLambda = false; // In control-flow conditions: (x) { is not a lambda
     bool inMatchExpression = false; // Inside match expression (disable arrow functions)
     bool inConfigContext = false; // Inside config block (bare identifiers are strings)
+    std::string modeContext; // Enclosing mode "name" { ... } for hotkeys
   };
 
   ParserContext context;
@@ -242,6 +243,7 @@ private:
   std::unique_ptr<ast::Statement> parseGoStatement();
   std::unique_ptr<ast::Expression> parseGoExpression();
   std::unique_ptr<ast::Expression> parseChannelExpression();
+  std::unique_ptr<ast::Expression> parseAsyncExpression();
   std::unique_ptr<ast::Expression> parseWaitGroupExpression();
   std::unique_ptr<ast::Statement> parseDeferStatement();
   std::unique_ptr<ast::Expression> parseWaitExpression();

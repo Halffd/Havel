@@ -1,0 +1,16 @@
+// Negative regression for hotkeys0.3.hv line 149: `"titles"; "Genshin Impact"`
+// inside an object literal silently produced positional keys 0,1 under the
+// C++ parser (the root bug behind modeStat.mode2.titles == nil).
+// What: this file MUST fail to parse. There is no expected-failure harness in
+//       hvtest, so it is verified by shell: `havel run <this file>` must
+//       exit non-zero with "Object key 'titles' is missing ':' or '='".
+// Expected: parse error, exit code != 0.
+
+modeStat = {
+    "mode2": {
+        "name": "action",
+        "titles"; "Genshin Impact,Honkai Star Rail",
+        "condition": (){ mode == "gaming" },
+        "changed": false
+    }
+}

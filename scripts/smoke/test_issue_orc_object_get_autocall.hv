@@ -1,0 +1,42 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Orc object_get audit: interp OBJECT_GET auto-calls zero-arg methods
+// found on a prototype (found_on_prototype, VMCollections.cpp ~1695),
+// passing the receiver; JIT OBJECT_GET (havel_vm_object_get_raw_ic ->
+// memberGetPublic -> objectGetWithClassChain) returns the raw fn value.
+// Bare `x = c.bump` should auto-call in both paths -> x is the result (1).
+
+class Counter {
+    count
+    fn @() { @count = 0 }
+    fn bump() { @count++ ; return @count }
+}
+
+fn hot() {
+    c = Counter()
+    x = c.bump
+    if x != 1 { return "fnval" }
+    return "called"
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r = hot()
+    if r != "called" {
+        if bad == -1 {
+            bad = k
+            badval = "r=${r}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_object_get_autocall")
+} else {
+    print("FAIL orc_object_get_autocall k=${bad} ${badval}")
+    process.exit(255)
+}

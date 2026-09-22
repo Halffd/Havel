@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include <utility>
 
@@ -14,7 +15,24 @@ EventQueue::EventQueue() {
     if (wakeupFd_ < 0) {
         ::havel::error("[EventQueue] Failed to create wakeup eventfd: {}", strerror(errno));
     }
-    initCallbackWorkers(2); // Start 2 worker threads for callbacks
+    // Worker count override for scripts with many concurrent blocked
+    // host calls. Default 4 covers realistic goroutine IO overlap; X11
+    // serializes server-side anyway.
+    size_t workers = 4;
+    if (const char *env = std::getenv("HAVEL_ASYNC_WORKERS")) {
+        int n = std::atoi(env);
+        if (n > 0 && n <= 64) workers = static_cast<size_t>(n);
+    }
+    initCallbackWorkers(workers);
+}
+
+void EventQueue::postToWorker(Callback cb) {
+    if (!cb || shutdown_workers_.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        callback_queue_.push(std::move(cb));
+    }
+    callback_cv_.notify_one();
 }
 
 EventQueue::~EventQueue() {
@@ -28,7 +46,25 @@ EventQueue::~EventQueue() {
 }
 
 void EventQueue::push(const Event& event) {
-    if (shutdown_workers_.load(std::memory_order_acquire)) return;
+    if (shutdown_workers_.load(std::memory_order_acquire)) {
+        // Teardown: drop the event, but free owned payloads — raw new'd
+        // pointers would otherwise leak on the drop path (TIMER_FIRE was
+        // leaking here before ASYNC_HOST_COMPLETE made the case explicit).
+        if (event.ptr) {
+            switch (event.type) {
+            case EventType::LEGACY_CALLBACK:
+                delete static_cast<Callback*>(event.ptr); break;
+            case EventType::TIMER_FIRE:
+                delete static_cast<std::pair<havel::core::Value, uint32_t>*>(event.ptr); break;
+            case EventType::VAR_CHANGED:
+                delete static_cast<std::string*>(event.ptr); break;
+            case EventType::ASYNC_HOST_COMPLETE:
+                delete static_cast<AsyncCxxResult*>(event.ptr); break;
+            default: break;
+            }
+        }
+        return;
+    }
     events_.push(event);
     signalWakeup();
 }
@@ -134,6 +170,8 @@ void EventQueue::clear() {
       delete static_cast<std::pair<havel::core::Value, uint32_t>*>(ev.ptr);
     } else if (ev.type == EventType::VAR_CHANGED && ev.ptr) {
       delete static_cast<std::string*>(ev.ptr);
+    } else if (ev.type == EventType::ASYNC_HOST_COMPLETE && ev.ptr) {
+      delete static_cast<AsyncCxxResult*>(ev.ptr);
     }
   }
 }

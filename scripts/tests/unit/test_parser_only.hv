@@ -1,3 +1,0 @@
-use parser
-let r = parser.csv("a,b\nc,d")
-print(#r)

@@ -34,7 +34,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                 COMPILER_THROW("Stack underflow during CALL_DYN");
             }
             {
-            std::vector<Value> args(arg_count);
+            std::vector<Value> args = takeCallArgScratch();
+            args.resize(arg_count);
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
             }
@@ -94,7 +95,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                 COMPILER_THROW("Stack underflow during CALL");
             }
 
-            std::vector<Value> args(arg_count);
+            std::vector<Value> args = takeCallArgScratch();
+            args.resize(arg_count);
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
   }
@@ -124,9 +126,25 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
 				}
 			}
         if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
-          // Call __call with self as first arg
+          // Module wrapper functions (registered by deepWrapModuleFunctions
+          // under $module_fn_/$module_closure_ names) take no self: Havel
+          // modules have no implicit receiver (AGENTS: only classes with @
+          // have receiver semantics). Prepending the namespace object would
+          // leak it into variadic exports like print's fn print(...args).
+          bool isModuleWrapper = false;
+          if (callFn.isHostFuncId() &&
+              callFn.asHostFuncId() < host_function_names_.size()) {
+            const std::string &wname =
+                host_function_names_[callFn.asHostFuncId()];
+            isModuleWrapper =
+                wname.rfind("$module_fn_", 0) == 0 ||
+                wname.rfind("$module_closure_", 0) == 0;
+          }
           std::vector<Value> callArgs;
-          callArgs.push_back(callee_value);
+          if (!isModuleWrapper) {
+            // Call __call with self as first arg
+            callArgs.push_back(callee_value);
+          }
           callArgs.insert(callArgs.end(), args.begin(), args.end());
           doCall(callFn, std::move(callArgs));
           break;
@@ -235,7 +253,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
     }
     
     // Pop arg_count arguments
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
         args[arg_count - 1 - i] = popStack();
     }
@@ -268,7 +287,8 @@ case OpCode::TAIL_CALL: {
       COMPILER_THROW("Stack underflow during TAIL_CALL");
     }
 
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }
@@ -333,12 +353,12 @@ Value callee_value = popStack();
     if (stack.empty()) {
       COMPILER_THROW("CALL_IF_FUNCTION: stack underflow");
     }
-    Value callee_value = stack.top();
+    Value callee_value = stack.back();
     if (callee_value.isHostFuncId() ||
         callee_value.isFunctionObjId() ||
         callee_value.isClosureId() ||
         callee_value.isBoundMethodId()) {
-      stack.pop();
+      stack.pop_back();
       doCall(callee_value, {});
     }
     // Not callable: leave value on stack (no-op)
@@ -372,10 +392,10 @@ case OpCode::CALL_METHOD: {
     std::vector<Value> temp_args;
     temp_args.reserve(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      temp_args.push_back(stack.top());
-      stack.pop();
+      temp_args.push_back(stack.back());
+      stack.pop_back();
     }
-    Value receiver = stack.top();
+    Value receiver = stack.back();
     // Push args back in reverse order
     for (auto it = temp_args.rbegin(); it != temp_args.rend(); ++it) {
       pushStack(*it);
@@ -417,6 +437,34 @@ case OpCode::CALL_METHOD: {
   } else if (receiver.isRangeId()) {
         type_name = "range";
     } else if (receiver.isHostFuncId()) {
+        // Property call first: hostfunc.prop(args) — properties attached
+        // via OBJECT_SET (fn.prop = ...) live in hostfunc_properties_.
+        // Module-exported closures are wrapped as host functions and carry
+        // their closure properties over (deepWrapModuleFunctions), e.g.
+        // debounce's wrapped.cancel. Without this lookup those calls fell
+        // through to the dotted-name resolution and silently returned null.
+        {
+            uint32_t recvIdx = receiver.asHostFuncId();
+            auto propIt = hostfunc_properties_.find(recvIdx);
+            if (propIt != hostfunc_properties_.end()) {
+                auto *props = heap_.object(propIt->second.id);
+                if (props) {
+                    auto it = props->find(method_name);
+                    if (it != props->end()) {
+                        if (it->second.isHostFuncId()) {
+                            host_func_idx = it->second.asHostFuncId();
+                            found_host = true;
+                            found_via_module = true; // prop call: no implicit receiver arg
+                        } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+                            vm_func = it->second;
+                            isInstanceFunc = false;
+                            found_via_module = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (!found_host) {
         // Dotted host function call: e.g. interval.start(100, fn)
         // Resolve "interval.start" by concatenating receiver name + "." + method_name
         std::string receiver_name;
@@ -432,12 +480,44 @@ case OpCode::CALL_METHOD: {
                 break;
             }
         }
-        if (!found_host) {
+        }
+        if (!found_host && vm_func.isNull()) {
             for (uint32_t i = 0; i < arg_count; ++i) popStack();
             popStack();
             pushStack(Value::makeNull());
             break;
         }
+    } else if (receiver.isClosureId()) {
+      // Closure field call: `closure.prop(args)` — properties live in
+      // closure_properties_ (OBJECT_SET stores them there for closures).
+      // Without this arm the generic else below silently pushed null, so
+      // `wrapped.cancel()` on debounce's returned closure never ran the
+      // cancel fn and the debouncer kept firing.
+      auto propIt = closure_properties_.find(receiver.asClosureId());
+      if (propIt != closure_properties_.end()) {
+        auto *props = heap_.object(propIt->second.id);
+        if (props) {
+          auto it = props->find(method_name);
+          if (it != props->end()) {
+            if (it->second.isHostFuncId()) {
+              host_func_idx = it->second.asHostFuncId();
+              found_host = true;
+              found_via_module = true; // closure props: don't pass receiver as self
+            } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+              vm_func = it->second;
+              isInstanceFunc = false; // closure props get no implicit self
+              found_via_module = true;
+            }
+          }
+        }
+      }
+      if (!found_host && vm_func.isNull()) {
+        // No such property: return null like other receivers
+        for (uint32_t i = 0; i < arg_count; ++i) popStack();
+        popStack(); // receiver
+        pushStack(Value::makeNull());
+        break;
+      }
     } else {
         for (uint32_t i = 0; i < arg_count; ++i) popStack();
         popStack(); // receiver
@@ -664,9 +744,9 @@ if (instanceObj) {
             found_host = true;
         }
         }
-    }
-
-    // 1.5 Try module object for monkey-patched methods
+}
+ 
+     // 1.5 Try module object for monkey-patched methods
     if (!found_host && vm_func.isNull()) {
       // Generate capitalized version (e.g., "string" -> "String")
       std::string capName = type_name;
@@ -724,44 +804,48 @@ if (instanceObj) {
         all_args.insert(all_args.end(), args2.begin(), args2.end());
     }
 
-    if (found_host) {
+if (found_host) {
         if (host_func_idx < host_function_names_.size()) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
                 Value result = fnIt->second(all_args);
                 pushStack(result);
-    if (hot_func_cb_) {
-      if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
-        currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
-      }
-    }
-        } else {
-          pushStack(Value::makeNull());
-        }
+                if (hot_func_cb_) {
+                  if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
+                    currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
+                  }
+                }
+            } else {
+              pushStack(Value::makeNull());
+            }
+          } else {
+            pushStack(Value::makeNull());
+          }
       } else {
-        pushStack(Value::makeNull());
+          // Call VM function
+          doCall(vm_func, all_args);
       }
-    } else {
-        // Call VM function
-        doCall(vm_func, all_args);
-    }
 
-    // Check for suspension after host function call (e.g., channel.receive suspending).
-    // NOTE: do NOT advance the frame IP here. Every caller of executeInstruction
-    // already advances past the current instruction when the frame IP is still
-    // pointing at it:
-    //   - fast path op_default pre-advances frm.ip before calling executeInstruction,
-    //     so an advance here double-advances (37 -> 38 -> 39) and the suspended
-    //     fiber resumes at the WRONG instruction with a mismatched stack
-    //     (observed: "Stack underflow in function '__main__' at IP 41").
-    //   - slow path runDispatchLoop and executeOneStep advance conditionally
-    //     (frame.ip == saved_ip) in their suspension handling, which covers
-    //     this instruction too.
-    if (suspension_requested_) {
-        break; // Return to caller to process suspension
-    }
-    break;
+      // Check for suspension after host function call (e.g., channel.receive suspending).
+      // NOTE: do NOT advance the frame IP here. Every caller of executeInstruction
+      // already advances past the current instruction when the frame IP is still
+      // pointing at it:
+      //   - fast path op_default pre-advances frm.ip before calling executeInstruction,
+      //     so an advance here double-advances (37 -> 38 -> 39) and the suspended
+      //     fiber resumes at the WRONG instruction with a mismatched stack
+      //     (observed: "Stack underflow in function '__main__' at IP 41").
+      //   - slow path runDispatchLoop and executeOneStep advance conditionally
+      //     (frame.ip == saved_ip) in their suspension handling, which covers
+      //     this instruction too.
+      if (suspension_requested_) {
+          break; // Return to caller to process suspension
+      }
+      // Also check for Pending result from host function (e.g., async module functions)
+      if (parkIfPendingCallResult()) {
+          break;
+      }
+      break;
   }
 
   case OpCode::CALL_METHOD_SPREAD: {
@@ -1070,6 +1154,7 @@ if (instanceObj) {
             std::string resolved_name = host_function_names_[host_func_idx];
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
+                ::havel::debug("[CALL_METHOD] invoking host fn '{}' args={}", resolved_name, all_args.size());
                 Value result = fnIt->second(call_args);
                 pushStack(result);
                 if (hot_func_cb_) {
@@ -1108,7 +1193,8 @@ if (instanceObj) {
     }
 
     // Pop arguments from stack
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }

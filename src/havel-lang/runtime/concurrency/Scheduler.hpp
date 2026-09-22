@@ -80,6 +80,7 @@ enum class SuspensionReason {
     HotkeyWait, // Parked waiting for next hotkey trigger (persistent)
     CoroutineWait, // Suspended on coroutine await
     ChannelSendWait, // Suspended on send() to full channel
+    AWAIT, // Fiber parked on a fiber-suspending host call (async cxx bridge)
     Yield // Suspended on YIELD opcode
 };
 
@@ -226,6 +227,13 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Persistent goroutine: re-suspend instead of Done on completion
     // Used by hotkey system to avoid per-press goroutine allocation
     bool persistent = false;
+    // Channel-iterator suspension marker (ITER_NEXT channel branch in
+    // VMCollections.cpp pushes a Pending placeholder before parking).
+    // deliverResumeValue scans the stack for that placeholder ONLY when
+    // this flag is set — unrelated Pending values (async host calls) on
+    // the stack of an ordinary channel receive must not be mistaken for
+    // the iterator marker.
+    bool channel_iter_pending = false;
   // Hotkey reset fields (stored from registration for reuse)
   std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
@@ -551,8 +559,11 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     void requeueFront(Goroutine* g);
 
     // Wake a persistent hotkey goroutine according to its policy
-    // Returns true if the goroutine was woken/requeued, false if dropped
-    bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {});
+    // Returns true if the goroutine was woken/requeued, false if dropped.
+    // `caller` tags the wake source in the debug log so input storms can be
+    // attributed (os-callback / conditional-os-callback / cond-dep-change /
+    // wakeHotkeyByAlias).
+    bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {}, const char* caller = nullptr);
 
     // Cheap pending check: true if the goroutine is already queued (Created),
     // about to run (Runnable), or executing (Running). Under bursty input
@@ -563,6 +574,19 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Wake persistent hotkey goroutines matching the given alias
     // Used by hotkey.trigger() to reach persistent goroutines without HotkeyManager
     bool wakeHotkeyByAlias(const std::string& alias);
+
+    // Complete a fiber-suspending host call (AwaitableType::EXTERNAL).
+    // Stashes the VM-side-built result in the parked goroutine's
+    // wait_handle and unparks it; unmatched tokens drop harmlessly.
+    // Must run on the VM thread (the deferToVM delivery side).
+    bool resumeExternalWithValue(uint32_t token, Value result);
+
+    // Count suspended goroutines awaiting an event-driven resume that
+    // still matters for script completion (async host calls, channel
+    // waits) — i.e. excluding persistent hotkey/update goroutines,
+    // which park forever by design and must not keep a finished
+    // script's scheduler loop spinning.
+    size_t suspendedAwaitingResume() const;
 
     // Find a persistent goroutine by its hotkey alias
     // Returns nullptr if not found
@@ -658,6 +682,28 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
     // Earliest deadline among all sleeping goroutines. Empty optional if none sleeping.
     std::optional<std::chrono::steady_clock::time_point> nextSleepDeadline() const;
+
+    // Cheap probe: does a scheduler tick have anything to do right now?
+    // - a runnable/created goroutine queued (hasRunnableFibers)
+    // - a deferred action pending (deferred_* queues; also covers the
+    //   deferred_wakeup_fd_ pipe, which only receives bytes alongside
+    //   a deferred post)
+    // - a sleeping goroutine whose deadline has passed (wake pending)
+    // Used by HavelEngine::processGoroutinesInline to skip the expensive
+    // main-fiber save/restore when a single-threaded script (no siblings)
+    // fires the yield callback from its dispatch loop.
+    bool hasPendingWork() const {
+      if (hasRunnableFibers()) return true;
+      {
+        std::lock_guard lock(deferred_mutex_);
+        if (!deferred_hotkey_.empty() || !deferred_normal_.empty() ||
+            !deferred_background_.empty()) {
+          return true;
+        }
+      }
+      auto dl = nextSleepDeadline();
+      return dl && *dl <= std::chrono::steady_clock::now();
+    }
 
   // ===== Deferred VM Callbacks =====
   // Thread-safe queue for callbacks from non-VM threads (e.g. monitoring thread).

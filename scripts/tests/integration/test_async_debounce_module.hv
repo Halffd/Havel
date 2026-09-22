@@ -1,0 +1,28 @@
+// Regression test: debounce imported from async_mod must fire with captured args.
+// Bug history (fixed): (1) C++ ByteCompiler compileClosureBody prepended the
+// timer-id upvalue, shifting resolver-assigned indices by +1 — the timeout
+// closure called a null callee. (2) timer callbacks lost script globals
+// ("Undefined variable: 'counter'") — fixed by LOAD_GLOBAL/STORE_GLOBAL
+// globals_stack_ fallback/mirror + loadFiberState STEP 6a merge.
+// Expected: counter == sum of debounced args, single delayed fire.
+
+use { debounce } from "async_mod"
+
+counter = 0
+increment = fn(x) { counter += x }
+
+d = debounce(increment, 50)
+d(1)
+d(2)
+d(3)
+sleep(100)
+print("counter: " + str(counter))
+assert(counter == 3, "debounce failed, counter=" + str(counter))
+
+// cancel must prevent firing
+before = counter
+d.cancel()
+d(10)
+sleep(100)
+assert(counter == before, "debounce.cancel failed, counter=" + str(counter))
+print("PASS")

@@ -405,6 +405,23 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
   return NULL;
   }
 
+  /* Build identity: a plugin whose inlined host-VM code was compiled
+   * against different ABI headers would corrupt memory at runtime
+   * (SIGFPE in hash modulo from a stale plugin). Reject instead of
+   * crashing. Older plugins (abi_version < 3) carry no build id and
+   * can also not be trusted - reject them too: they predate the
+   * current plugin interface anyway. */
+  {
+    const char *plugin_id = abi->build_id;
+    const char *host_id = HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID);
+    if (!plugin_id || strcmp(plugin_id, host_id) != 0) {
+      HAVEL_LOGF_ERROR("module '%s': build id mismatch (plugin %s, host %s) - stale plugin compiled against different VM headers; rebuild the module",
+                       name, plugin_id ? plugin_id : "(none)", host_id);
+      free(path);
+      return NULL;
+    }
+  }
+
   register_loaded(loader, lib_name, path, handle);
   HAVEL_LOGF_INFO("havel_loader_load_module: %s registered successfully", name);
   free(path);
@@ -908,6 +925,18 @@ const HavelModuleABI *havel_loader_probe_module(HavelLoader *loader, const char 
  dlclose(handle);
  free(path);
  return NULL;
+ }
+
+ {
+ const char *plugin_id = abi->build_id;
+ const char *host_id = HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID);
+ if (!plugin_id || strcmp(plugin_id, host_id) != 0) {
+ HAVEL_LOGF_ERROR("module '%s': build id mismatch (plugin %s, host %s) - stale plugin compiled against different VM headers; rebuild the module",
+                  name, plugin_id ? plugin_id : "(none)", host_id);
+ dlclose(handle);
+ free(path);
+ return NULL;
+ }
  }
 
  register_loaded(loader, lib_name, path, handle);

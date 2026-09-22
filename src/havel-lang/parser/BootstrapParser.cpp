@@ -1518,8 +1518,16 @@ case TokenType::Timeout:
     }
     return parseTimeoutExpression();
 
-    case TokenType::Async:
+    case TokenType::Async: {
+        // async is a contextual keyword: only a keyword when starting an async expression
+        // Valid forms: async { ... }, async fn ..., async (expr)
+        // In all other contexts (e.g., use async, str(async), async.method()), treat as identifier
+        TokenType nextType = at().type;
+        if (nextType == TokenType::OpenBrace || nextType == TokenType::Fn || nextType == TokenType::OpenParen) {
+            return parseAsyncExpression();
+        }
         return makeNodeAt<ast::Identifier>(token, token.value);
+    }
 
     // Coroutines
     case TokenType::Yield:
@@ -2992,7 +3000,7 @@ position = savePos; // restore position
       binding->hotkeys.push_back(
           makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
       binding->action = std::move(action);
-      binding->mode = modeAttr;
+      binding->mode = modeAttr.empty() ? context.modeContext : modeAttr;
       binding->policy = policyAttr;
 
       // Combine conditions if needed
@@ -3097,6 +3105,7 @@ position = savePos; // restore position
         binding->hotkeys.push_back(
             makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
         binding->action = std::move(action);
+        binding->mode = context.modeContext;
 
         if (prefixCondition) {
           binding->conditionExpr = std::move(prefixCondition);
@@ -3184,7 +3193,7 @@ position = savePos; // restore position
         binding->hotkeys.push_back(
             makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
         binding->action = std::move(action);
-        binding->mode = modeAttr;
+        binding->mode = modeAttr.empty() ? context.modeContext : modeAttr;
         binding->policy = policyAttr;
 
         if (prefixCondition || suffixCondition) {
@@ -3351,6 +3360,7 @@ auto binding = makeNode<havel::ast::HotkeyBinding>();
 binding->hotkeys.push_back(
 makeNode<havel::ast::HotkeyLiteral>(hotkeyStr));
 binding->action = std::move(action);
+binding->mode = context.modeContext;
 
 if (suffixCondition) {
 auto finalCondition = combineConditions(nullptr, std::move(suffixCondition));
@@ -3606,6 +3616,10 @@ case havel::TokenType::Struct:
       // Check if this is a simple mode block or full mode definition
       // Full definition: mode name [priority N] { condition/enter/exit/on ... }
       // Simple block: mode name { statements }
+      // String-named modes are always full definitions (modern syntax);
+      // identifier-named modes are simple blocks unless the body starts
+      // with a definition keyword.
+      bool modeNameIsString = (at(1).type == havel::TokenType::String);
       size_t savedPos = position;
       advance();
       advance(); // skip mode, name
@@ -3631,12 +3645,14 @@ case havel::TokenType::Struct:
         while (at().type == havel::TokenType::NewLine)
           advance();
 
-        // Check if this is a full definition (starts with
-        // condition/enter/exit/on)
+// Check if this is a full definition (starts with
+        // condition/enter/exit/on/hotkeys)
         bool isFullDefinition =
+            modeNameIsString ||
             ((at().type == havel::TokenType::Identifier &&
-             (at().value == "condition" || at().value == "enter" ||
-              at().value == "exit" || at().value == "on")) ||
+              (at().value == "condition" || at().value == "enter" ||
+               at().value == "exit" || at().value == "on" ||
+               at().value == "hotkeys")) ||
              at().type == havel::TokenType::On);
         position = savedPos; // restore position
 
@@ -9938,8 +9954,25 @@ t == havel::TokenType::RegexString ||
     } else {
       // Restore position - it's a positional element, not a key
       position = savedPos;
+      // A ';' or newline right after a key-candidate token is almost always
+      // a forgotten ':' or '=' (e.g. `"titles"; "str"` silently produced
+      // positional keys 0,1). Reject it with a clear message. Comma- and
+      // newline-separated positional entries stay legal (set-style
+      // literals like {"a", "b"}).
+      Token firstTok = tokens[savedPos];
+      bool keyCandidateEntry = isKeyToken(firstTok.type);
       // Parse as positional element
       auto value = parseExpression();
+      if (keyCandidateEntry &&
+          (at().type == havel::TokenType::Semicolon ||
+           at().type == havel::TokenType::NewLine)) {
+        std::string sep =
+            at().type == havel::TokenType::Semicolon ? "';'" : "newline";
+        failAt(firstTok,
+               "Object key '" + firstTok.value +
+                   "' is missing ':' or '=' (got '" + sep +
+                   "' separator)");
+      }
       havel::ast::ObjectLiteral::PairEntry entry;
       // key is empty = positional element
       entry.value = std::move(value);
@@ -10710,10 +10743,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   std::unique_ptr<havel::ast::BlockStatement> onMinimizeBlock;
   std::unique_ptr<havel::ast::BlockStatement> onMaximizeBlock;
   std::unique_ptr<havel::ast::BlockStatement> onOpenBlock;
+  std::unique_ptr<havel::ast::BlockStatement> hotkeysBlock;
   std::string onEnterFromMode;
   std::string onExitToMode;
 
-  // Parse condition, enter, exit, and transition hooks
+  // Parse condition, enter, exit, hotkeys, and transition hooks
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Semicolon) {
@@ -10735,10 +10769,77 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       }
       advance(); // consume '=' or ':'
       condition = parseExpression();
+    } else if (keyword == "hotkeys") {
+      // Mode-scoped hotkeys: bind every bare hotkey statement in the block
+      // to this mode via context.modeContext (explicit mode="..." attrs win).
+      bool openBrace = false;
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::OpenBrace) {
+        advance(); // consume '{'
+        openBrace = true;
+      }
+      std::string prevModeCtx = context.modeContext;
+      context.modeContext = modeName;
+      auto block = makeNode<havel::ast::BlockStatement>();
+      if (openBrace) {
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+          if (at().type == havel::TokenType::NewLine ||
+              at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+          }
+          auto stmt = parseStatement();
+          if (stmt) {
+            block->body.push_back(std::move(stmt));
+          }
+        }
+        if (at().type != havel::TokenType::CloseBrace) {
+          context.modeContext = prevModeCtx;
+          failAt(at(), "Expected '}' to close hotkeys block");
+        }
+        advance(); // consume '}'
+      } else {
+        // single statement form: hotkeys F1 => { } (no braces around list)
+        auto stmt = parseStatement();
+        if (stmt) {
+          block->body.push_back(std::move(stmt));
+        }
+      }
+      context.modeContext = prevModeCtx;
+      hotkeysBlock = std::move(block);
     } else if (keyword == "enter") {
-      enterBlock = parseBlockStatement();
+      // enter { ... } or enter from "mode" { ... } / enter from mode { ... }
+      if (at().type == havel::TokenType::From ||
+          (at().type == havel::TokenType::Identifier && at().value == "from")) {
+        advance(); // consume 'from'
+        if (at().type != havel::TokenType::String &&
+            at().type != havel::TokenType::Identifier &&
+            !isKeywordToken(at().type)) {
+          failAt(at(), "Expected mode name after 'enter from'");
+        }
+        onEnterFromMode = at().value;
+        advance();
+        onEnterFromBlock = parseBlockStatement();
+      } else {
+        enterBlock = parseBlockStatement();
+      }
     } else if (keyword == "exit") {
-      exitBlock = parseBlockStatement();
+      // exit { ... } or exit from "mode" { ... } / exit to "mode" { ... }
+      if (at().type == havel::TokenType::From ||
+          (at().type == havel::TokenType::Identifier && at().value == "from") ||
+          (at().type == havel::TokenType::Identifier && at().value == "to")) {
+        advance(); // consume 'from'/'to'
+        if (at().type != havel::TokenType::String &&
+            at().type != havel::TokenType::Identifier &&
+            !isKeywordToken(at().type)) {
+          failAt(at(), "Expected mode name after 'exit from'");
+        }
+        onExitToMode = at().value;
+        advance();
+        onExitToBlock = parseBlockStatement();
+      } else {
+        exitBlock = parseBlockStatement();
+      }
     } else if (keyword == "on") {
       // Parse transition hooks: on enter from "mode" { ... } or on exit to
       // "mode" { ... } Or window events: on close { ... }, on minimize { ... },
@@ -10811,6 +10912,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   modeDef.onMinimizeBlock = std::move(onMinimizeBlock);
   modeDef.onMaximizeBlock = std::move(onMaximizeBlock);
   modeDef.onOpenBlock = std::move(onOpenBlock);
+  modeDef.hotkeysBlock = std::move(hotkeysBlock);
   modes.push_back(std::move(modeDef));
   return makeNode<havel::ast::ModesBlock>(std::move(modes));
 }
@@ -11433,6 +11535,105 @@ std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
   expr->line = channelToken.line;
   expr->column = channelToken.column;
   return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseAsyncExpression() {
+  auto asyncToken = at();
+  // Note: 'async' token was already consumed by the caller
+  
+  // async { ... } - async block
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after async block");
+      return nullptr;
+    }
+    advance(); // consume '}'
+    auto expr = makeNode<ast::AsyncExpression>(std::move(blockStmt));
+    expr->line = asyncToken.line;
+    expr->column = asyncToken.column;
+    return expr;
+  }
+  
+  // async fn ... - async function
+  if (at().type == havel::TokenType::Fn) {
+    advance(); // consume 'fn'
+    
+    // Parse function signature
+    std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      while (at().type != havel::TokenType::CloseParen) {
+        if (at().type == havel::TokenType::NewLine) { advance(); continue; }
+        if (at().type == havel::TokenType::Comma) { advance(); continue; }
+        
+        auto ident = makeNode<ast::Identifier>(at().value);
+        auto param = std::make_unique<ast::FunctionParameter>(std::move(ident));
+        advance(); // consume parameter name
+        
+        // Optional type annotation
+        if (at().type == havel::TokenType::Colon) {
+          advance(); // consume ':'
+          // For now, skip type annotation parsing
+        }
+        
+        params.push_back(std::move(param));
+        
+        if (at().type == havel::TokenType::Comma) {
+          advance(); // consume ','
+        }
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after parameter list");
+        return nullptr;
+      }
+      advance(); // consume ')'
+    }
+    
+    // Parse function body
+    std::unique_ptr<ast::BlockStatement> body;
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance();
+      auto blockStmt = makeNode<ast::BlockStatement>();
+      while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+        if (at().type == havel::TokenType::NewLine) { advance(); continue; }
+        blockStmt->body.push_back(parseStatement());
+      }
+      if (at().type != havel::TokenType::CloseBrace) {
+        failAt(at(), "Expected '}' after function body");
+        return nullptr;
+      }
+      advance(); // consume '}'
+      body = std::move(blockStmt);
+    } else {
+      // fn expression without body (forward declaration)
+      failAt(at(), "Async function must have a body");
+      return nullptr;
+    }
+    
+    auto fnExpr = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(fnExpr));
+    auto expr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
+    expr->line = asyncToken.line;
+    expr->column = asyncToken.column;
+    return expr;
+  }
+  
+  // async (expr) - wrap expression in async
+  auto expr = parseExpression();
+  auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(expr));
+  auto asyncExpr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
+  asyncExpr->line = asyncToken.line;
+  asyncExpr->column = asyncToken.column;
+  return asyncExpr;
 }
 
 void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {

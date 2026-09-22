@@ -1,0 +1,8 @@
+// test_mod_slice.hv - test slicing in module context
+// Companion module for test_mod_slice_main.hv (use test_mod_slice as t).
+// Restored after 8eed953d deleted the stale let/return-syntax original.
+fn test() {
+  s = "hello"
+  i = 0
+  s[i:i+1]
+}

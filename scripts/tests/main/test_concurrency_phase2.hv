@@ -1,10 +1,10 @@
 
-// This tests interval_start, interval_stop, timeout_start, timeout_cancel
+// This tests interval.start, interval.stop, timeout.start, timeout.cancel
 
-print("=== Testing interval_start ===")
+print("=== Testing interval.start ===")
 
-let counter = 0
-let interval_id = interval_start(500, fn() {
+ counter = 0
+ interval_id = interval.start(500, fn() {
   counter = counter + 1
   print("Interval tick: " + str(counter))
 })
@@ -13,12 +13,12 @@ print("Interval started, waiting for ticks...")
 sleep(2000)
 
 print("Stopping interval")
-interval_stop(interval_id)
+interval.stop(interval_id)
 
-print("=== Testing timeout_start ===")
+print("=== Testing timeout.start ===")
 
-let timeout_triggered = false
-let timeout_id = timeout_start(1000, fn() {
+ timeout_triggered = false
+ timeout_id = timeout.start(1000, fn() {
   timeout_triggered = true
   print("Timeout triggered!")
 })
@@ -32,16 +32,16 @@ if timeout_triggered {
   print("Timeout test FAILED")
 }
 
-print("=== Testing timeout_cancel ===")
+print("=== Testing timeout.cancel ===")
 
-let timeout_triggered2 = false
-let timeout_id2 = timeout_start(2000, fn() {
+ timeout_triggered2 = false
+ timeout_id2 = timeout.start(2000, fn() {
   timeout_triggered2 = true
   print("This should not print")
 })
 
 print("Timeout scheduled, cancelling now...")
-timeout_cancel(timeout_id2)
+timeout.cancel(timeout_id2)
 
 sleep(2500)
 

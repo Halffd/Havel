@@ -1,0 +1,103 @@
+// integration: mode system
+// covers: full mode-def syntax (condition / enter / exit / enter from /
+//         exit from, plus the plural `modes` form), runtime transition
+//         order (exit -> exit-to -> enter-from -> enter), mode(), no-op
+//         same-mode set, mode.list, mode.transitions, mode.time.
+// hotkeys block: compiled but never run (live bindings keep the process
+//         alive); the compile path is covered by test_mode_block_hotkeys_lint.hv.
+// runs under both pipelines: default (self-hosted) and --no-self-hosted.
+
+pass = 0
+fail = 0
+fn check(n, a, e) {
+    if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") }
+}
+
+log = []
+
+fn onEnterGaming()        { log.push("enter gaming") }
+fn onExitGaming()         { log.push("exit gaming") }
+fn onExitGamingToWork(m)  { log.push("exit gaming to work:" + m) }
+fn onEnterGamingFromWork(m) { log.push("enter gaming from work:" + m) }
+fn onEnterWork()          { log.push("enter work") }
+fn onEnterSide()          { log.push("enter side") }
+fn condGaming()           { mode() == "gaming" }
+fn condWork()             { mode() == "work" }
+
+// 1. full singular definition with hook spellings
+mode "gaming" {
+    condition = condGaming
+    enter { onEnterGaming() }
+    exit  { onExitGaming() }
+    exit from "work" { onExitGamingToWork("work") }
+    enter from "work" { onEnterGamingFromWork("work") }
+}
+
+mode "work" {
+    condition = condWork
+    enter { onEnterWork() }
+}
+
+// 2. plural definition form
+modes {
+    side {
+        enter { onEnterSide() }
+    }
+}
+
+// 3. initial state
+check("initial-mode-default", mode(), "default")
+
+// 4. first set fires enter only (no exit hooks on first entry)
+mode.set("gaming")
+check("first-set-enter", log[0], "enter gaming")
+check("current-mode-gaming", mode(), "gaming")
+
+// 5. leaving fires exit, then exit-to hook with target name, then enter
+mode.set("work")
+check("exit-on-leave", log[1], "exit gaming")
+check("exit-to-hook", log[2], "exit gaming to work:work")
+check("enter-work", log[3], "enter work")
+check("current-mode-work", mode(), "work")
+
+// 6. re-entering fires enter-from hook (arg = old mode) then enter
+mode.set("gaming")
+check("enter-from-hook", log[4], "enter gaming from work:work")
+check("enter-again", log[5], "enter gaming")
+
+// 7. same-mode set is a no-op (no refire)
+n0 = #log
+mode.set("gaming")
+check("same-mode-noop", #log, n0)
+
+// 8. plural def is registered and enterable (leaving gaming fires exit first)
+mode.set("side")
+check("plural-exit", log[6], "exit gaming")
+check("plural-enter", log[7], "enter side")
+check("current-mode-side", mode(), "side")
+
+// 9. mode.list reflects all registrations
+mlist = mode.list()
+last = #mlist - 1
+foundG = false
+foundW = false
+foundS = false
+for i in 0 .. last {
+    if mlist[i] == "gaming" { foundG = true }
+    if mlist[i] == "work"   { foundW = true }
+    if mlist[i] == "side"   { foundS = true }
+}
+check("list-has-gaming", foundG, true)
+check("list-has-work", foundW, true)
+check("list-has-side", foundS, true)
+
+// 10. transitions: 3 real sets (gaming, work, side); no-op not counted
+t = mode.transitions()
+check("transitions-counted", t >= 3, true)
+
+// 11. mode.time() is a number (seconds since last transition)
+tm = mode.time()
+check("time-is-number", Type.isNumber(tm), true)
+
+print("modes: $pass passed, $fail failed")
+exit(fail)

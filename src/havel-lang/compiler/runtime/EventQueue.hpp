@@ -30,9 +30,16 @@ enum class EventType : uint8_t {
     CHANNEL_SEND = 3,       // Channel message ready
     CHANNEL_RECV = 4,       // Channel receiver ready
     HOTKEY_TRIGGER = 5,     // Hotkey triggered (data1 = hotkey_id)
+    ASYNC_HOST_COMPLETE = 6, // Blocking host call finished on a worker.
+                            // data1 = pending token. ptr = AsyncCxxResult*
     LEGACY_CALLBACK = 255,  // Backward compat: callback in ptr field
     // Future: FILE_READY, NETWORK_RECV, etc.
 };
+
+// Type-erased C++ result cell crossing worker -> VM thread. shared_ptr
+// so ownership is safe wherever the last reference dies (worker drop,
+// queue drop, or the VM-side handler).
+using AsyncCxxResult = std::shared_ptr<void>;
 
 /**
  * Event - Typed event with flexible payload
@@ -108,7 +115,21 @@ public:
      * @param cb Callback to execute
      */
     void push(Callback cb);
-    
+
+    /**
+     * Submit blocking work to the callback worker pool (thread-safe).
+     *
+     * The job runs on a worker thread; it must not touch VM state,
+     * Values, or the GC heap — C++ payload in, C++ result out. It
+     * posts its result back via push(Event(ASYNC_HOST_COMPLETE, ...))
+     * or deferToVM, never by invoking the VM directly.
+     *
+     * Goes directly onto callback_queue_ (not through events_), so
+     * submission is immediate rather than waiting for the next
+     * processAll() drain of LEGACY_CALLBACK events.
+     */
+    void postToWorker(Callback cb);
+
     /**
      * Register a handler for a specific event type
      *
@@ -188,7 +209,7 @@ private:
     std::condition_variable callback_cv_;
     std::atomic<bool> shutdown_workers_{false};
     
-    void initCallbackWorkers(size_t pool_size = 2);
+    void initCallbackWorkers(size_t pool_size = 4);
     void callbackWorkerLoop();
 };
 

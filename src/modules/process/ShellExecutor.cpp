@@ -205,6 +205,21 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
             for (int fd : pipes) close(fd);
             close(outputPipe[0]);
             close(outputPipe[1]);
+
+            // Close remaining inherited fds (grabbed evdev devices, X11
+            // socket, eventfds). Children holding the EVIOCGRAB devices open
+            // caused "Device or resource busy" on restart and stale X11
+            // sessions. stdio (dup2'd above) stays open.
+            {
+                int maxFd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+                for (int fd = 3; fd < (maxFd > 1024 ? 1024 : maxFd); ++fd) {
+                    close(fd);
+                }
+            }
+
+            // Own process group: group-directed kills aimed at the pipeline
+            // (or at havel's group) must not cross over.
+            setpgid(0, 0);
             
             // Parse command and execute directly (NO SHELL)
             auto args = parseCommandArgs(commands[i]);

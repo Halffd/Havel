@@ -1,24 +1,24 @@
 // Lexer test and string tests
 
 // symbols
-let str1="1kjivYYGuygut6E5tD6rD&\0ugyvJHYF\t&\ni,o][':\"{{:<L>?<>?\"}}]"
+ str1="1kjivYYGuygut6E5tD6rD&\0ugyvJHYF\t&\ni,o][':\"{{:<L>?<>?\"}}]"
 
 // multi-line
-let str2 = """
+ str2 = """
 <.<>?'\[pp;'[p0kloojh<>> VBNJKNMKIHNM<\"
-lgo\n\tgp]]\t$TGTHT$<MHGTR$&UHGUJMHO*KUJH
+lgo\n\tgp]]\t@TGTHT@<MHGTR$&UHGUJMHO*KUJH
 """
 // with quotes
-let str3=''';pgk,.l m,kijmyt,k5r6kl5!!@#$%^&*()_+KJUGBNM<>?:|}|"{
+ str3=''';pgk,.l m,kijmyt,k5r6kl5!!@#$%^&*()_+KJUGBNM<>?:|}|"{
 {`^}^`_JKO(YUI*Yá´géŕ´tt´uíáýóúèàgtnmk~ ~ãojkitgjr oikltoirr)}
 } ['[[['_'dsefrt566%^&**~``````れｔｂｈじゃへひほふさせしそすかけきこくぁぇぃぉぅぱｓぺぴぽぷーたっつぁ！＠＃＄％＾＆＊（）＿＋ ｋれ４ｔｒ５ｙ６つり６ｔっｇｆｒｇｙ５おえれてつさめ｛｝”｜１２４６４３７８９０−]]]']'''
 
 // f-strings
-let str4 = "!@#$$%%&()|[]]<>:;'QWERTYUIOPASDFGHJKL:ZXCVB NM<> - $str1 -"
-let str5 = "!@#$$%%&()|[]]<>:;QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - $str2 -"
+ str4 = "!@#$$%%&()|[]]<>:;'QWERTYUIOPASDFGHJKL:ZXCVB NM<> - @str1 -"
+ str5 = "!@#$$%%&()|[]]<>:;QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - @str2 -"
 
 // Many languages
-let str6 = f"""
+ str6 = f"""
 üǘ0opü´äöll,.-QWERTZUOPÜ~ÜÄÖÄʼẞÜ”¸ẞẞ”ẞḩq°§ℓ»U„I“°”ㅈㅂㄱㅎㅇㅀㅇㅀ쇼ㅗㅕㅓㅏ,ㅈ퓨ㅜㅡ,하효ㅗ휴푸ㅏㅣㅐ9ㅛㅕㅑ7ㅇㄹ호ㅛㅕ5숏643ㄷㄳ효호쇼ㅕㅑㅐㅛㅣㅗ후류ㅜㅡㅓ ㅗㅜㅡ,явертыуиопшщасдфгхйкл;'эзьцжбнм,.//1234567890-ч!@ёЁъЪ&*()_Ч
 qwfpgjlQWFPHJKHqwertyuiop[]asdfghj[]iu章啦藕片欧文【❳
 】】、、=-12【‘人生破录取’】صثقفغعهخحبللاالربؤلا ىةؤىلا|ئءؤربللاىاةتضصثقفغعهخحج1234567890-لاتنمحلتقةنومخ/5فلبىرةنولهفغ6فتقن5بخ5عفتنبمخيحستنمق5غغقثخثحجلغاجعحطجدا
@@ -26,10 +26,10 @@ qwfpgjlQWFPHJKHqwertyuiop[]asdfghj[]iu章啦藕片欧文【❳
 $str1 $str2 ${[str1, str2, str3, str4]} ${str4 + str5}
 """
 /* f strings with $ format */
-let str7 = f"$str1 $str2 $str3 $str4 $str5 $str6"
+ str7 = f"$str1 $str2 $str3 $str4 $str5 $str6"
 
 // Math
-let str8 = """📈😎🐧🎸😭
+ str8 = """📈😎🐧🎸😭
 {\displaystyle \sinh x={\frac {e^{x}-e^{-x}}{2}}={\frac {e^{2x}-1}{2e^{x}}}.}
  z=\sqrt{r_s}cosh(u). dz=\sqrt{r_s}sinh(u).
 2\int cosh^2(u) du = \int [1+cosh(2u)]du=u+[sinh(2u)/2]
@@ -47,7 +47,7 @@ d \approx 92.105
 """
 
 // Code
-let str9 = """
+ str9 = """
 import numpy as np
 
 x = np.random.randn(64).astype(np.float32)
@@ -100,7 +100,7 @@ for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9]
 """)
 }
 // Test python code string
-let cmd = """python << 'EOF'
+ cmd = """python << 'EOF'
 $str9
 EOF"""
 

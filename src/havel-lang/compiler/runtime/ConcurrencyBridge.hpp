@@ -78,18 +78,6 @@ private:
   [[maybe_unused]] const ::havel::HostContext *ctx_;
   class compiler::VM *vm_;
 
-  // Thread pool management
-  struct ThreadTask {
-    std::function<void()> task;
-  };
-
-  std::vector<std::thread> thread_pool_;
-  std::queue<ThreadTask> task_queue_;
-  std::mutex queue_mutex_;
-  std::condition_variable queue_cv_;
-  std::atomic<bool> shutdown_{false};
-
-  
   enum class ThreadState : uint8_t {
     CREATED,      // Thread spawned but not started
     RUNNING,      // Thread is executing
@@ -123,20 +111,6 @@ private:
   
   std::unordered_map<uint32_t, ManagedThread> thread_info_;
   
-  // Timer queue for main event loop
-struct Timer {
-uint32_t id;
-std::chrono::steady_clock::time_point next_run;
-int64_t interval_ms;
-Value callback;
-bool active;
-bool paused = false;
-std::chrono::steady_clock::time_point paused_at;
-};
-  std::vector<Timer> timers_;
-  std::mutex timers_mutex_;
-  [[maybe_unused]] uint32_t next_timer_id_ = 1;
-
   // Channels
   struct Channel {
     std::queue<Value> queue;
@@ -150,9 +124,6 @@ std::chrono::steady_clock::time_point paused_at;
 
   // Event queue for non-blocking callback distribution
   std::unique_ptr<EventQueue> event_queue_;
-
-  // Thread pool initialization
-  void initThreadPool(size_t pool_size = 4);
 
   // Host function implementations
   Value threadSpawn(const std::vector<Value> &args);

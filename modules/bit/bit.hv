@@ -150,6 +150,5 @@ fn insert(x, pos, width, val) {
     bit._or(bit._and(x, bit._not(m)), bit._and(lshift(val, pos), m))
 }
 
-bit["and"] = bit._and
-bit["or"] = bit._or
-bit["not"] = bit._not
+// and/or/not are reserved lexer keywords and cannot be fn exports; the
+// public aliases live on the bit namespace in C++ (BitModule).

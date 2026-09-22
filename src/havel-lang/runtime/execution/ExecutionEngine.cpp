@@ -264,10 +264,16 @@ vm_->saveFiberState(g->fiber);
 } else if (g->fiber) {
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
-            // on the stack with the actual resume_value from the WaitHandle
+            // on the stack with the actual resume_value from the WaitHandle.
+            // deliverResumeValue wraps channel-iterator resumes (Pending
+            // marker) into the {first,second,done} object the loop expects.
             if (g->wait_handle.type != Scheduler::AwaitableType::NONE) {
-                vm_->replaceStackTop(g->wait_handle.resume_value);
+                vm_->deliverResumeValue(g->wait_handle.type,
+                                        g->wait_handle.resume_value,
+                                        g->wait_handle.target_id,
+                                        g->channel_iter_pending);
                 g->wait_handle.clear();
+                g->channel_iter_pending = false;
             }
         }
 
@@ -768,7 +774,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
             auto* g = scheduler_->get(act.gid);
-            if (g && act.grab) scheduler_->wakeHotkey(g);
+            if (g && act.grab) scheduler_->wakeHotkey(g, {}, "cond-dep-change");
         }
     }
 

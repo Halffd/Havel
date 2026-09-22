@@ -1,22 +1,35 @@
-// Test RegexModule functionality
-print("Testing RegexModule...");
+// regex module functionality test
+use regex
 
-// Test regex functions
-print("regex_match('hello.*world', 'hello world'):", regex_match("hello.*world", "hello world"));
-print("regex_match('^hello$', 'hello world'):", regex_match("^hello$", "hello world"));
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
+}
 
-print("regex_search('world', 'hello world'):", regex_search("world", "hello world"));
-print("regex_search('xyz', 'hello world'):", regex_search("xyz", "hello world"));
+// match: entire-text anchoring
+check("match hits", regex.match("hello.*world", "hello world"), true)
+check("match anchored misses", regex.match("^hello$", "hello world"), false)
 
-print("regex_replace('world', 'hello world', 'universe'):", regex_replace("world", "hello world", "universe"));
+// search: substring search
+check("search hits", regex.search("world", "hello world"), true)
+check("search misses", regex.search("xyz", "hello world"), false)
 
-print("regex_extract('\\d+', 'abc123def456'):", regex_extract("\\d+", "abc123def456"));
-print("regex_split('\\s+', 'hello world test'):", regex_split("\\s+", "hello world test"));
+// replace
+check("replace", regex.replace("world", "hello world", "universe"), "hello universe")
 
-print("escape_regex('hello.world*'):", escape_regex("hello.world*"));
+// extract
+check("extract", regex.extract("\\d+", "abc123def456"), ["123", "456"])
 
-// Test Regex object
-print("Regex object exists:", Regex != null);
-print("Regex.match exists:", Regex.match != null);
+// split
+check("split", regex.split("\\s+", "hello world test"), ["hello", "world", "test"])
 
-print("RegexModule tests completed!");
+// escape
+check("escape", regex.escape("hello.world*"), "hello\\.world\\*")
+
+// Regex global object (setGlobal)
+check("Regex.match exists", type(Regex.match), "function")
+check("Regex.search exists", type(Regex.search), "function")
+
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

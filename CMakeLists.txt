@@ -1,5 +1,44 @@
 cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 0.3.4 LANGUAGES C CXX)
+
+# -- build source identity ---------------------------------------------------
+# Stamps the binary with the exact git commit it was built from so
+# regression reports can name the commit ("havel --version" shows it).
+# Falls back to "unknown" outside a git checkout (e.g. tarball builds).
+execute_process(
+  COMMAND git rev-parse --short=12 HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE HAVEL_BUILD_COMMIT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+  RESULT_VARIABLE _git_commit_rc
+)
+if(NOT _git_commit_rc EQUAL 0)
+  set(HAVEL_BUILD_COMMIT "unknown")
+endif()
+execute_process(
+  COMMAND git rev-parse --abbrev-ref HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE HAVEL_BUILD_BRANCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+  RESULT_VARIABLE _git_branch_rc
+)
+if(NOT _git_branch_rc EQUAL 0)
+  set(HAVEL_BUILD_BRANCH "unknown")
+endif()
+execute_process(
+  COMMAND git status --porcelain
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE _git_status_out
+  ERROR_QUIET
+  RESULT_VARIABLE _git_status_rc
+)
+if(_git_status_rc EQUAL 0 AND NOT _git_status_out STREQUAL "")
+  set(HAVEL_BUILD_DIRTY "dirty")
+else()
+  set(HAVEL_BUILD_DIRTY "clean")
+endif()
 include(FindPkgConfig)
 
 # ==============================================================================
@@ -656,6 +695,7 @@ file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StateModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp"
   )
 list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
@@ -664,13 +704,20 @@ endif()
 # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
     if(NOT ENABLE_LLVM)
         # LLVM-dependent TUs: the ORC JIT monolith plus its decomposed
-        # slices (runtime bridges, IR lowering) - all require LLVM headers
-        # and libraries.
+        # IR-lowering slice - they require LLVM headers and libraries.
+        # JitRuntimeBridges.cpp is LLVM-free (RuntimeABI bridges over the
+        # VM) and must stay in the build when Cranelift is enabled: the
+        # CraneliftBackend adapter registers exactly those havel_vm_*
+        # symbols with the Rust staticlib.
         list(REMOVE_ITEM HAVEL_LANG_SOURCES
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
-            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJitLowering.cpp
         )
+        if(NOT ENABLE_CRANELIFT)
+            list(REMOVE_ITEM HAVEL_LANG_SOURCES
+                ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JitRuntimeBridges.cpp
+            )
+        endif()
     endif()
 
     # Exclude WaylandModule (Wayland support removed, not used)
@@ -1501,11 +1548,15 @@ ${PIPEWIRE_INCLUDE_DIRS}
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
     HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
+    HAVEL_BUILD_COMMIT=\"${HAVEL_BUILD_COMMIT}\"
+    HAVEL_BUILD_BRANCH=\"${HAVEL_BUILD_BRANCH}\"
+    HAVEL_BUILD_DIRTY=\"${HAVEL_BUILD_DIRTY}\"
 )
 endforeach()
 
 add_executable(havel
     src/main.cpp
+    src/utils/LsanSuppressions.cpp
 )
 
 target_link_libraries(havel PRIVATE
@@ -1694,14 +1745,16 @@ target_link_libraries(havel_api_test PRIVATE
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
-  add_test(NAME hvtest-smoke COMMAND hvtest --smoke)
+  # Pre-merge gate: full tier including slow stress runs. Dev-loop
+  # invocations (bare `hvtest --smoke`) skip the slow tier by default.
+  add_test(NAME hvtest-smoke COMMAND hvtest --smoke --slow-too)
   # Module globals drift guard: fails if a setGlobal() module global is not
   # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
   # for --build/--full-aot depends on.
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
   # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
-  # havel_deoptimize symbol defined in the runtime sources is missing from
+  # symbol defined in the runtime sources is missing from
   # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
   # The JIT symbol map and backend declarations derive from that X-macro.
   add_test(NAME runtime-abi-drift-guard
@@ -2174,6 +2227,32 @@ if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
 set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
 file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 
+# -- module plugin build identity --------------------------------------------
+# Module plugins (.so) inline host VM code (VMApi -> VM::setGlobal etc.), so
+# a plugin compiled against a different VM layout crashes the host (observed:
+# stale havel_mod_math.so SIGFPE in _Mod_range_hashing after VM.hpp gained
+# new fields). Hash the ABI-critical headers at configure time and stamp the
+# value into both the host binary and every plugin; the loader rejects
+# plugins whose build id does not match the host's.
+set(HAVEL_ABI_HEADERS
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VM.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMApi.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMInternals.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/CallFrame.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/core/Value.hpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/RuntimeSupport.hpp
+  ${CMAKE_SOURCE_DIR}/src/c/ModulePlugin.h
+)
+set(HAVEL_MODULE_BUILD_ID_SRC "")
+foreach(_hdr ${HAVEL_ABI_HEADERS})
+  file(READ ${_hdr} _hdr_content)
+  string(APPEND HAVEL_MODULE_BUILD_ID_SRC "${_hdr_content}")
+endforeach()
+string(MD5 HAVEL_MODULE_BUILD_ID_MD5 "${HAVEL_MODULE_BUILD_ID_SRC}")
+string(SUBSTRING "${HAVEL_MODULE_BUILD_ID_MD5}" 0 8 HAVEL_MODULE_BUILD_ID)
+add_compile_definitions(HAVEL_MODULE_BUILD_ID=0x${HAVEL_MODULE_BUILD_ID})
+message(STATUS "Module plugin build id: 0x${HAVEL_MODULE_BUILD_ID}")
+
 # Helper function to define a module plugin .so target
 # Usage: add_havel_module_plugin(name source [EXTRA_DEFS def1 def2 ...])
 function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
@@ -2242,7 +2321,9 @@ add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/F
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
-add_havel_module_plugin(math ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+# MathModule is in the static lib (registered eagerly by
+# registerDefaultHostFunctions) — lazy plugin registration hit the
+# math/math circular-dependency guard and lost the sidecar.
 add_havel_module_plugin(math_native ${CMAKE_SOURCE_DIR}/src/modules/math/MathModule.cpp)
 target_include_directories(havel_mod_math_native PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime
@@ -2306,14 +2387,12 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
-add_havel_module_plugin(text_chunker_gui ${CMAKE_SOURCE_DIR}/src/modules/text_chunker_gui/TextChunkerGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
-add_havel_module_plugin(alt_tab_gui ${CMAKE_SOURCE_DIR}/src/modules/alt_tab_gui/AltTabGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
-add_havel_module_plugin(map_manager_gui ${CMAKE_SOURCE_DIR}/src/modules/map_manager_gui/MapManagerGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
-add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
+add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+target_sources(havel_mod_ui PRIVATE ${CMAKE_SOURCE_DIR}/src/host/ui/GuiThreadManager.cpp)
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
     ${CMAKE_BINARY_DIR}/generated/wayland
@@ -2329,9 +2408,7 @@ if(ENABLE_QT)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
   # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_alt_tab_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_map_manager_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_ui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   
@@ -2340,9 +2417,7 @@ if(ENABLE_QT)
   target_include_directories(havel_mod_screenshot PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_screenshot_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_text_chunker_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_alt_tab_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
-  target_include_directories(havel_mod_map_manager_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  target_include_directories(havel_mod_ui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
 endif()
@@ -2479,17 +2554,37 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/compiler/core/CFG.cpp
         src/havel-lang/compiler/core/BytecodePasses.cpp
         src/havel-lang/compiler/core/RuntimeProfiler.cpp
+        src/havel-lang/compiler/incremental/Fingerprint.cpp
+        src/havel-lang/compiler/incremental/DependencyGraph.cpp
+        src/havel-lang/compiler/incremental/CacheLayer.cpp
+        src/havel-lang/compiler/incremental/IncrementalDriver.cpp
     )
     target_include_directories(cfg_pipeline_test PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/incremental
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(cfg_pipeline_test PRIVATE cxx_std_23)
-    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(cfg_pipeline_test PRIVATE GTest::gtest GTest::gtest_main ${OPENSSL_LIBRARIES} crypto)
     add_test(NAME cfg_pipeline_test COMMAND cfg_pipeline_test)
+
+    # Query-system unit tests (TODO.md Phase 1: Query System Foundation).
+    # QuerySystem.hpp is header-only: the test compiles standalone.
+    add_executable(query_system_test
+        tests/query_system_ut.cpp
+    )
+    target_include_directories(query_system_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(query_system_test PRIVATE cxx_std_23)
+    target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME query_system_test COMMAND query_system_test)
 endif()
 
 # ==============================================================================

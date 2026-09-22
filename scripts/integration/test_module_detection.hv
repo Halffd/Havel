@@ -13,7 +13,7 @@ print("Hello")
 
 // Test 3: Valid module function - should pass
 print("\nTest 3: Valid module function\n")
-let vol = audio.getVolume()
+vol = audio.getVolume()
 print("Volume:", vol)
 
 // Test 4: Undefined module - should fail

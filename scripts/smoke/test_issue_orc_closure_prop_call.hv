@@ -1,0 +1,47 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD closure property call (JitRuntimeBridges
+// havel_vm_call_method).
+// What: hot fn calling a property fn attached to a closure
+// (wrapped.cancel), the debounce pattern (modules/app/async_mod.hv). The
+// interpreter CALL_METHOD resolves closure receivers through
+// closure_properties_ (VMControlFlow.cpp:490-527); the JIT bridge had no
+// closure arm, fell through to the prototype lookup and pushed null.
+// The receiver must actually capture a frame local to be a ClosureId
+// (a top-level `fn { count }` reads a global -> FunctionObjId).
+// Why: hot() gets ORC-compiled in LLVM-only builds after ~1000 calls
+// (tier-1 falls through to ORC without cranelift); interpreted calls
+// returned true throughout.
+// Expected: every w.cancel() returns true, all 3000 iterations, rc 0.
+
+fn mkCancelable() {
+    cancelled = false
+    wrapped = fn { cancelled }
+    wrapped.cancel = fn { cancelled = true }
+    wrapped
+}
+
+fn hot(w) {
+    w.cancel()
+}
+
+wrapped = mkCancelable()
+k = 0
+all_true = true
+while k < 3000 {
+    r = hot(wrapped)
+    if r != true {
+        all_true = false
+        print("FAIL closure_prop k=${k} r=${r}")
+        process.exit(255)
+    }
+    k = k + 1
+}
+
+if all_true {
+    print("PASS orc_closure_prop_call all true")
+} else {
+    print("FAIL orc_closure_prop_call")
+    process.exit(255)
+}

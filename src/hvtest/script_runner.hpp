@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <string>
+#include <sstream>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -79,6 +80,97 @@ inline int read_test_timeout(const std::string &script_path) {
 	return 0; // 0 means use default
 }
 
+// Read per-test extra runner flags from the file header.
+// Format: // smoke: flags = --tiering --foo   (whitespace-separated,
+// appended to the default self-hosted invocation flags).
+inline std::vector<std::string> read_test_flags(const std::string &script_path) {
+	std::vector<std::string> out;
+	std::ifstream ifs(script_path);
+	if (!ifs) return out;
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: flags =", 0) == 0 || line.rfind("// test: flags =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				std::istringstream iss(val);
+				std::string tok;
+				while (iss >> tok) out.push_back(tok);
+			}
+			break;
+		}
+	}
+	return out;
+}
+
+// Read per-test environment overrides from the file header.
+// Format: // smoke: env = VAR=value VAR2=value  (whitespace-separated,
+// added on top of the inherited environment for this test's child).
+inline std::vector<std::pair<std::string, std::string>> read_test_env(const std::string &script_path) {
+	std::vector<std::pair<std::string, std::string>> out;
+	std::ifstream ifs(script_path);
+	if (!ifs) return out;
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: env =", 0) == 0 || line.rfind("// test: env =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				std::istringstream iss(val);
+				std::string tok;
+				while (iss >> tok) {
+					size_t eq2 = tok.find('=');
+					if (eq2 != std::string::npos && eq2 > 0) {
+						out.emplace_back(tok.substr(0, eq2), tok.substr(eq2 + 1));
+					}
+				}
+			}
+			break;
+		}
+	}
+	return out;
+}
+
+// Read per-test tier from the file header.
+// Format: // smoke: tier = slow   (or // test: tier = slow)
+// slow-tier tests are GC/tiering stress runs that dominate suite time
+// (one 208s tiering test + two ~40s GC stress tests = ~17% of the whole
+// suite). Default (no directive) = fast tier. Dev-loop runs pass --fast
+// to skip slow; pre-merge/CI runs the full set (or --only-slow to run
+// just the slow tier after a fast pass).
+inline std::string read_test_tier(const std::string &script_path) {
+	std::ifstream ifs(script_path);
+	if (!ifs) return "default";
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		if (line.rfind("// smoke: tier =", 0) == 0 || line.rfind("// test: tier =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				val.erase(0, val.find_first_not_of(" \t"));
+				val.erase(val.find_last_not_of(" \t") + 1);
+				if (!val.empty()) return val;
+			}
+			break;
+		}
+	}
+	return "default";
+}
+
+enum class TestTier { Default, Slow };
+
+inline TestTier parse_test_tier(const std::string &script_path) {
+	std::string tier = read_test_tier(script_path);
+	if (tier == "slow") return TestTier::Slow;
+	return TestTier::Default; // unknown values stay in the default tier
+}
+
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
                                int timeout_seconds = 60,
                                const std::vector<std::string> &pre_flags = {}) {
@@ -121,6 +213,12 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
             fs::path repo_root = bin_path.parent_path().parent_path();
             fs::path self_hosted_path = repo_root / "out";
             flags = {"--run", "--self-hosted-path", self_hosted_path.string()};
+            // Per-test header flags (e.g. // smoke: flags = --tiering)
+            // extend the default invocation; they only apply to the
+            // default pipeline, never override explicit pre_flags.
+            for (const auto &f : read_test_flags(script_path)) {
+                flags.push_back(f);
+            }
         } else {
             flags = pre_flags;
         }
@@ -132,10 +230,22 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         args.push_back(const_cast<char *>(script_path.c_str()));
         args.push_back(nullptr);
         
-        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR)
+        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR),
+        // then apply per-test header env overrides (// smoke: env = VAR=v).
+        // entry_strings must outlive env (we store c_str pointers into it
+        // up to the execvpe call).
         std::vector<char *> env;
+        std::vector<std::string> entry_strings;
         for (char **e = ::environ; *e; ++e) {
             env.push_back(*e);
+        }
+        for (const auto &kv : read_test_env(script_path)) {
+            entry_strings.push_back(kv.first + "=" + kv.second);
+            // setenv so any pre-exec code in this child sees the override
+            ::setenv(kv.first.c_str(), kv.second.c_str(), 1);
+        }
+        for (const auto &s : entry_strings) {
+            env.push_back(const_cast<char *>(s.c_str()));
         }
         env.push_back(nullptr);
         execvpe(havel_bin.c_str(), args.data(), env.data());
@@ -250,14 +360,67 @@ inline int list_scripts(const std::vector<std::string> &directories) {
     return 0;
 }
 
+// Tier selection for a suite run. Default (no flags) runs everything,
+// matching CI and pre-merge expectations. --fast skips slow-tier tests
+// (the dev loop); --only-slow runs just the slow tier (follow-up pass
+// after a fast iteration, or pre-merge).
+enum class TierMode { All, Fast, OnlySlow };
+
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 60) {
+                           int timeout_seconds = 60,
+                           const std::vector<std::string> &name_filters = {},
+                           TierMode tier_mode = TierMode::All) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
         return 1;
+    }
+    const size_t total_discovered = scripts.size();
+    if (tier_mode != TierMode::All) {
+        std::vector<std::string> filtered;
+        for (const auto &s : scripts) {
+            bool slow = parse_test_tier(s) == TestTier::Slow;
+            bool keep = (tier_mode == TierMode::Fast) ? !slow : slow;
+            if (keep) filtered.push_back(s);
+        }
+        if (filtered.empty()) {
+            std::cerr << (tier_mode == TierMode::Fast
+                              ? "no fast-tier tests found (all slow?) in "
+                              : "no slow-tier tests found in ")
+                      << smoke_dir << std::endl;
+            return 1;
+        }
+        scripts = std::move(filtered);
+    }
+    if (!name_filters.empty()) {
+        // Substring match on the file stem, mirroring how people invoke
+        // a single test: `hvtest --smoke coroutine_call_resume`.
+        std::vector<std::string> filtered;
+        for (const auto &s : scripts) {
+            const std::string stem = fs::path(s).stem().string();
+            for (const auto &f : name_filters) {
+                if (stem.find(f) != std::string::npos) {
+                    filtered.push_back(s);
+                    break;
+                }
+            }
+        }
+        if (filtered.empty()) {
+            std::cerr << "no smoke tests match filter:";
+            for (const auto &f : name_filters) std::cerr << " " << f;
+            std::cerr << " (in " << smoke_dir << ")" << std::endl;
+            return 1;
+        }
+        scripts = std::move(filtered);
+        std::cout << "filter: " << scripts.size() << " of "
+                  << total_discovered << " scripts match" << std::endl;
+    }
+    if (tier_mode != TierMode::All) {
+        std::cout << "tier: " << scripts.size() << " of " << total_discovered
+                  << " scripts in " << (tier_mode == TierMode::Fast ? "fast" : "slow")
+                  << " tier" << std::endl;
     }
 
     // Detect bytecode/self-hosted modules path: derived from havel_bin's location.
@@ -321,14 +484,28 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
                       << std::flush;
           skip++;
         } else if (!pre_flags.empty() && result.exit_code != 255) {
-          // Self-hosted mode: script return value becomes exit code.
-          // exit=255 means process.exit(255) was called (assertion failure).
-          // Any other exit code is the script's return value (success).
-          if (verbose)
-            std::cout << "[PASS] " << name << " (" << result.elapsed_ms
-                      << "ms)" << std::endl
+          // Self-hosted mode: the script's return value becomes the exit
+          // code. The suite's success convention is return 0 ('val
+          // __result = 0; return __result' in 269 of 279 scripts; the
+          // rest fall off the end as 0). exit=255 is process.exit(255)
+          // (explicit assertion failure). Any OTHER nonzero code is a
+          // script error - uncaught assert() throws surface as exit 1 -
+          // and must FAIL, not pass: this branch used to print PASS for
+          // any exit != 255, reporting scheduler_goroutine.hv green
+          // while its goroutines never ran (observed: counter stuck at
+          // 1, exit 1, PASS).
+          if (result.exit_code == 0) {
+            if (verbose)
+              std::cout << "[PASS] " << name << " (" << result.elapsed_ms
+                        << "ms)" << std::endl
+                        << std::flush;
+            pass++;
+          } else {
+            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
+                      << ")" << std::endl
                       << std::flush;
-          pass++;
+            fail++;
+          }
         } else {
           std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
                     << ")" << std::endl

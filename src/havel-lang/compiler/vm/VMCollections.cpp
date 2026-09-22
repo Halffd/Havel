@@ -291,6 +291,70 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     }
 
     uint32_t id = iterator_val.asIteratorId();
+
+    // Channel iterators: `for v in ch` must receive through the channel
+    // (suspending the fiber when empty — same as channel.receive). The
+    // generic GCHeap::iteratorNext cannot do this: channel queues live in
+    // the ConcurrencyBridge, not the heap, and suspension needs VM context.
+    // Iteration ends when the channel is closed AND drained.
+    {
+      auto *iter = heap_.iterator(id);
+      if (iter && iter->iterable.isChannelId()) {
+        Value recv = invokeHostFunctionDirect("channel.receive",
+                                              {iter->iterable});
+        if (suspension_requested_ || last_suspension_reason_ != 0) {
+          // channel.receive parked the fiber on an empty channel. Push a
+          // Pending marker as the placeholder: the CHANNEL_RECV resume path
+          // (processGoroutines / resumeGoroutine) recognizes the marker on
+          // the suspended stack and swaps it for a WRAPPED {first,second,
+          // done:false} iterator-result object carrying the received value
+          // — a plain replaceStackTop would leave the raw value on the
+          // stack and the loop's `result.done` read would see null.
+          // Flag the goroutine so deliverResumeValue scans for the marker
+          // only for this suspension (unrelated Pending values elsewhere
+          // on the stack must not be mistaken for it).
+          pushStack(Value::makePending(0));
+          if (scheduler_ && scheduler_->current()) {
+            std::lock_guard<std::mutex> wm(
+                scheduler_->current()->wait_handle_mutex_);
+            scheduler_->current()->channel_iter_pending = true;
+          }
+          break;
+        }
+        if (recv.isNull()) {
+          // Closed and drained: iteration done.
+          auto resultObj = heap_.allocateObject();
+          auto *obj = heap_.object(resultObj.id);
+          (*obj)["first"] = Value::makeNull();
+          (*obj)["second"] = Value::makeNull();
+          (*obj)["done"] = Value::makeBool(true);
+          pushStack(Value::makeObjectId(resultObj.id));
+          break;
+        }
+        {
+          // Value in BOTH first and second: the self-hosted emitter's
+          // single-var loop reads result.second, but the C++ compiler's
+          // fallback path (non-array/string/range iterables — including
+          // channels) reads result.first. Channels have no keys, so
+          // mirroring the value into first is unambiguous.
+          auto resultObj = heap_.allocateObject();
+          auto *obj = heap_.object(resultObj.id);
+          (*obj)["first"] = recv;
+          (*obj)["second"] = std::move(recv);
+          (*obj)["done"] = Value::makeBool(false);
+          pushStack(Value::makeObjectId(resultObj.id));
+          break;
+        }
+        auto resultObj = heap_.allocateObject();
+        auto *obj = heap_.object(resultObj.id);
+        (*obj)["first"] = Value::makeNull();
+        (*obj)["second"] = recv;
+        (*obj)["done"] = Value::makeBool(false);
+        pushStack(Value::makeObjectId(resultObj.id));
+        break;
+      }
+    }
+
     auto result = heap_.iteratorNext(id);
 
     // result is {value, done} object
@@ -1488,6 +1552,15 @@ if (container.isSetId()) {
         auto *obj = heap_.object(objRef.id);
         if (!obj) {
             auto stats = heap_.stats();
+            ::havel::error(
+                "[GC] OBJECT_GET unknown object id {} (heap: {} objects "
+                "cached, {} old objects, {} closures, {} collections; "
+                "external roots pinned: {}; gc epoch: {}; current fn: {})",
+                objRef.id, heap_.cachedObjectCount(), heap_.oldObjectCount(),
+                heap_.closures().size(), stats.collections,
+                heap_.externalRootCount(), heap_.gcEpoch(),
+                currentFrame().function ? currentFrame().function->name
+                                        : std::string("?"));
             COMPILER_THROW("OBJECT_GET unknown object id");
         }
 
@@ -1506,9 +1579,6 @@ if (container.isSetId()) {
     }
 if (!modName.empty()) {
       ensureModuleLoaded(modName);
-      write(2, "OBJGET_LAZY mod=", 17);
-      write(2, modName.c_str(), modName.size());
-      write(2, "\n", 1);
       auto git = globals.find(modName);
       if (git != globals.end() && git->second.isObjectId()) {
         auto *proxyObj = heap_.object(git->second.asObjectId());

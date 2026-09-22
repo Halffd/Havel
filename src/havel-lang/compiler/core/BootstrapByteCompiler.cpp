@@ -1041,10 +1041,10 @@ if (param->defaultValue.has_value()) {
         const auto &arr =
             static_cast<const ast::ArrayLiteral &>(*defaultExpr);
         if (arr.elements.empty()) {
-          // Empty array default: use boolean true as sentinel.
-          // The VM recognizes makeBool(true) as "allocate fresh empty array".
+          // Empty array default: dedicated sentinel value. A genuine
+          // `= true` bool default must not collide with it.
           current_function->default_values.push_back(
-              Value::makeBool(true));
+              Value::makeDefaultArraySentinel());
         } else {
           // Non-empty array defaults not yet supported as defaults
           current_function->default_values.push_back(std::nullopt);
@@ -2541,7 +2541,11 @@ case ast::NodeType::TryExpression:
 
  // Compile condition expression (or null if not provided)
  if (modeDef.condition) {
+ // Conditions are never in tail position (same rule as compileIfStatement)
+ bool saved_tail_cond = in_tail_position_;
+ in_tail_position_ = false;
  compileExpression(*modeDef.condition);
+ in_tail_position_ = saved_tail_cond;
  } else {
  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
  }
@@ -2629,6 +2633,17 @@ case ast::NodeType::TryExpression:
  // Call mode.register with 9 args
  emit(OpCode::CALL, Value(static_cast<uint32_t>(9)));
  emit(OpCode::POP); // Discard result
+
+ // Compile mode-scoped hotkeys: mode "name" { hotkeys { ... } }.
+ // The parser already stamped binding.mode = name on each hotkey
+ // statement, so the compiled wrapper gates on mode() == name.
+ if (modeDef.hotkeysBlock) {
+   for (const auto &stmt : modeDef.hotkeysBlock->body) {
+     if (stmt) {
+       compileStatement(*stmt);
+     }
+   }
+ }
  }
     break;
   }
@@ -3123,17 +3138,23 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     return;
   }
 
-  if (statement.isFileImport) {
+if (statement.isFileImport) {
     uint32_t path_sid = addStringConstant(statement.filePath);
     emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
     emit(OpCode::IMPORT);
+
+    // Handle wildcard import: use * from "module" or use module.*
+    if (statement.isWildcard) {
+      emit(OpCode::IMPORT_WILDCARD);
+      return;
+    }
 
     if (statement.isNamedImport && !statement.importNames.empty()) {
       for (size_t i = 0; i < statement.importNames.size(); ++i) {
         const auto &name = statement.importNames[i];
         const auto &alias = (i < statement.importAliases.size())
-                                ? statement.importAliases[i]
-                                : name;
+                            ? statement.importAliases[i]
+                            : name;
         if (name == "*" && statement.isWildcard) {
           emit(OpCode::IMPORT_WILDCARD);
           return;
@@ -3531,8 +3552,16 @@ case ast::NodeType::NumberLiteral: {
         { uint32_t _sid = addStringConstant(segment.stringValue); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::STRING_CONCAT);
       } else {
-        // Evaluate pre-parsed expression and convert to string
+        // Interpolation segments are never tail positions: the string
+        // still has to be assembled after they evaluate. Without this
+        // clear, a return-expr interpolation like return o["a${str(k)}"]
+        // inherited in_tail_position_ from the enclosing return; the
+        // str(k) segment emitted TAIL_CALL and the function aborted
+        // with the raw segment value instead of running the subscript.
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*segment.expression);
+        in_tail_position_ = saved_tail;
         emit(OpCode::TO_STRING);
         emit(OpCode::STRING_CONCAT);
       }
@@ -3733,8 +3762,11 @@ break;
     case ast::NodeType::IfExpression: {
       const auto &ifExpr = static_cast<const ast::IfExpression &>(expression);
 
-      // Compile condition
+      // Conditions are never in tail position (same rule as compileIfStatement)
+      bool saved_tail_cond = in_tail_position_;
+      in_tail_position_ = false;
       compileExpression(*ifExpr.condition);
+      in_tail_position_ = saved_tail_cond;
 
       // Jump to else branch if false
       uint32_t elseJump = emitJump(OpCode::JUMP_IF_FALSE);
@@ -3772,7 +3804,11 @@ break;
       if (!discriminant) {
         COMPILER_THROW("Match expression has null discriminant");
       }
+      // Discriminants are never in tail position (same rule as compileIfStatement)
+      bool saved_tail_disc = in_tail_position_;
+      in_tail_position_ = false;
       compileExpression(*discriminant);
+      in_tail_position_ = saved_tail_disc;
       uint32_t slot = next_local_index++;
       reserveLocalSlot(slot);
       emit(OpCode::STORE_VAR, slot);
@@ -3819,7 +3855,11 @@ break;
 
       // If there's a guard condition, evaluate it
       if (arm.guard) {
+        // Guards are never in tail position (same rule as compileIfStatement)
+        bool saved_tail_guard = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*arm.guard);
+        in_tail_position_ = saved_tail_guard;
         // Jump to next case if guard is false
         uint32_t guardFailJump = emitJump(OpCode::JUMP_IF_FALSE);
         
@@ -4037,8 +4077,9 @@ case ast::NodeType::AtExpression: {
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
       }
     } else if (isDirective && current_function->is_timer_closure) {
-      // Inside interval/timeout closure: interval ID is in the first upvalue
-      emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));
+      // Inside interval/timeout closure: the timer ID is the LAST upvalue
+      // (compileClosureBody appends it after the resolver-assigned ones)
+      emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(current_function->upvalues.size() - 1));
     } else {
       // Non-class context: fall back to global (for hotkey directives)
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
@@ -4880,9 +4921,12 @@ auto emitCompound = [&](OpCode math_op) {
             emitLoadIdentifier(*binding);
             uint32_t end_jump = emitJump(OpCode::JUMP);
 
-            // Fallback: JUMP_IF_NULL popped the DUP'd null, stack is empty
+            // Fallback: JUMP_IF_NULL popped the DUP'd null; the other copy
+            // stays on the stack, so pop it before the desugared load —
+            // otherwise one slot leaks per iteration in loops.
             // Do the desugared form: load + op + store
             patchJump(fallback_jump, static_cast<uint32_t>(current_function->instructions.size()));
+            emit(OpCode::POP);
             emitLoadIdentifier(*binding);
             if (rhs_is_missing) {
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -4934,6 +4978,9 @@ auto emitCompound = [&](OpCode math_op) {
         { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::POP);
+        // Drop the leftover pre-DUP copy so exactly the reloaded value
+        // remains (one slot leaked per loop iteration otherwise).
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
     }
@@ -4966,6 +5013,10 @@ auto emitCompound = [&](OpCode math_op) {
         emit(OpCode::LOAD_VAR, temp_index);
         emit(OpCode::LOAD_VAR, temp_result);
         emit(OpCode::ARRAY_SET);
+        // ARRAY_SET pushes nothing; drop the leftover pre-DUP copy so
+        // exactly the reloaded value remains (one slot leaked per loop
+        // iteration otherwise - async-task operand stack balloon).
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
@@ -5002,7 +5053,9 @@ auto emitCompound = [&](OpCode math_op) {
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::POP);
-        emit(OpCode::LOAD_VAR, temp_result);
+        // The mutated value is already on the stack (DUP'd before STORE);
+        // the final LOAD_VAR temp_result used to add a duplicate that
+        // leaked one slot per loop iteration.
         return;
     }
     if (target_atat) {
@@ -5814,6 +5867,30 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
       COMPILER_THROW("Unsupported member call expression");
     }
 
+    // waitgroup.new() → single WAITGROUP_NEW. The parser turns `waitgroup`
+    // into a WaitGroupExpression node; emitting that node followed by the
+    // generic member-call path produced WAITGROUP_NEW + CALL_METHOD "new",
+    // and the bogus method call (waitgroup has no `new` prototype method)
+    // replaced the fresh WaitGroupId with null — every wg.add/done/wait
+    // after that silently no-op'd (parallelMap lost items).
+    if (property->symbol == "new" &&
+        member.object->kind == ast::NodeType::WaitGroupExpression) {
+      emit(OpCode::WAITGROUP_NEW);
+      in_tail_position_ = saved_tail_position;
+      return;
+    }
+
+    // channel.new() → CHANNEL_NEW. Same story: `channel` parses to a
+    // ChannelExpression; the generic member-call path emitted
+    // CHANNEL_NEW + CALL_METHOD "new", and the bogus call nulled the
+    // fresh ChannelId (withTimeout's `result` channel was null).
+    if (property->symbol == "new" &&
+        member.object->kind == ast::NodeType::ChannelExpression) {
+      emit(OpCode::CHANNEL_NEW);
+      in_tail_position_ = saved_tail_position;
+      return;
+    }
+
  // Namespace/module call: window.activeTitle(), system.detect(), etc.
  // Always emit LOAD_GLOBAL + CALL_METHOD — the VM dispatches at runtime.
  // Host namespace objects (window, system, etc.) have HostFuncId fields
@@ -6235,9 +6312,159 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         emit(OpCode::CALL, Value(totalArgs));
         in_tail_position_ = saved_tail_position;
             return;
- }
+}
 
- if (binding->kind == ResolvedBindingKind::HostFunction) {
+    if (binding->kind == ResolvedBindingKind::Upvalue) {
+        // Upvalue (captured variable) - load via LOAD_UPVALUE
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+
+        // Compile args, expanding spread
+        uint32_t totalArgs = 0;
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            totalArgs++;
+            continue;
+          }
+          if (arg->kind == ast::NodeType::SpreadExpression) {
+            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+              for (const auto &elem : arrLit.elements) {
+                if (elem) {
+                  compileExpression(*elem);
+                  totalArgs++;
+                }
+              }
+            } else {
+              // Dynamic spread: compile target without SPREAD opcode
+              compileExpression(*spread.target);
+              hasDynamicSpread = true;
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        }
+        if (hasKwargs) {
+          if (hasDynamicSpread) {
+            COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
+          }
+          emit(OpCode::OBJECT_NEW);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+          { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+          for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+
+        in_tail_position_ = saved_tail_position;
+        if (hasDynamicSpread) {
+          uint32_t lit_before = 0;
+          uint32_t lit_after = 0;
+          bool found_spread = false;
+          for (const auto &arg : expression.args) {
+            if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+              found_spread = true;
+            } else if (!found_spread) {
+              lit_before++;
+            } else {
+              lit_after++;
+            }
+          }
+          emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+          return;
+        }
+        if (in_tail_position_ && try_depth_ == 0) {
+          emit(OpCode::TAIL_CALL, totalArgs);
+          emit(OpCode::RETURN);
+          emitted_tail_call_ = true;
+        } else {
+          emit(OpCode::CALL, totalArgs);
+        }
+        return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::Local) {
+        // Local variable - load via LOAD_VAR
+        emit(OpCode::LOAD_VAR, binding->slot);
+
+        // Compile args, expanding spread
+        uint32_t totalArgs = 0;
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            totalArgs++;
+            continue;
+          }
+          if (arg->kind == ast::NodeType::SpreadExpression) {
+            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+              for (const auto &elem : arrLit.elements) {
+                if (elem) {
+                  compileExpression(*elem);
+                  totalArgs++;
+                }
+              }
+            } else {
+              // Dynamic spread: compile target without SPREAD opcode
+              compileExpression(*spread.target);
+              hasDynamicSpread = true;
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        }
+        if (hasKwargs) {
+          if (hasDynamicSpread) {
+            COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
+          }
+          emit(OpCode::OBJECT_NEW);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+          { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+          for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+
+        in_tail_position_ = saved_tail_position;
+        if (hasDynamicSpread) {
+          uint32_t lit_before = 0;
+          uint32_t lit_after = 0;
+          bool found_spread = false;
+          for (const auto &arg : expression.args) {
+            if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+              found_spread = true;
+            } else if (!found_spread) {
+              lit_before++;
+            } else {
+              lit_after++;
+            }
+          }
+          emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+          return;
+        }
+        if (in_tail_position_ && try_depth_ == 0) {
+          emit(OpCode::TAIL_CALL, totalArgs);
+          emit(OpCode::RETURN);
+          emitted_tail_call_ = true;
+        } else {
+          emit(OpCode::CALL, totalArgs);
+        }
+        return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::HostFunction) {
  // Host function - call via LOAD_GLOBAL + CALL, expanding spread args
  uint32_t strId = addStringConstant(binding->name);
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
@@ -6555,7 +6782,12 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
     COMPILER_THROW("Malformed if statement");
   }
 
-    compileExpression(*statement.condition);
+  // Conditions are never in tail position: a bare function-call condition
+  // inside an else-if of a tail-position if must not compile to TAIL_CALL.
+  bool saved_tail_cond = in_tail_position_;
+  in_tail_position_ = false;
+  compileExpression(*statement.condition);
+  in_tail_position_ = saved_tail_cond;
   uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
   bool was_tail = in_tail_position_;
@@ -6711,8 +6943,13 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     iterSlots.push_back(slot);
   }
 
-  // Compile iterable and store in temp variable: [iterable]
-  compileExpression(*statement.iterable);
+  // Compile iterable and store in temp variable (not in tail position)
+  {
+    bool saved_tail_iter = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*statement.iterable);
+    in_tail_position_ = saved_tail_iter;
+  }
   emit(OpCode::STRING_PROMOTE);
   
   uint32_t iterableSlot = next_local_index++;
@@ -6986,8 +7223,13 @@ void ByteCompiler::compileForExpression(const ast::ForExpression &expression) {
   emit(OpCode::ARRAY_NEW);
   emit(OpCode::STORE_VAR, arraySlot);
 
-  // Compile iterable
-  compileExpression(*expression.iterable);
+  // Compile iterable (not in tail position)
+  {
+    bool saved_tail_iter = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*expression.iterable);
+    in_tail_position_ = saved_tail_iter;
+  }
   emit(OpCode::STRING_PROMOTE);
   emit(OpCode::STORE_VAR, iterableSlot);
 
@@ -7015,9 +7257,14 @@ void ByteCompiler::compileForExpression(const ast::ForExpression &expression) {
   emit(OpCode::OBJECT_GET);
   emit(OpCode::STORE_VAR, bindSlot);
 
-  // Evaluate mapping expression and push to array
+  // Evaluate mapping expression and push to array (not in tail position)
   emit(OpCode::LOAD_VAR, arraySlot);
-  compileExpression(*expression.mapping);
+  {
+    bool saved_tail_map = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*expression.mapping);
+    in_tail_position_ = saved_tail_map;
+  }
   emit(OpCode::ARRAY_PUSH);
 
   // Continue loop
@@ -7036,7 +7283,11 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
 
     // Check if this is a count-based loop: loop 5 { ... }
     if (statement.countExpr) {
+        // Count expression is not in tail position (same rule as compileIfStatement)
+        bool saved_tail_count = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*statement.countExpr);
+        in_tail_position_ = saved_tail_count;
 
         uint32_t countSlot = next_local_index++;
         reserveLocalSlot(countSlot);
@@ -8706,7 +8957,11 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
     // Compiled as a loop that checks condition and sleeps a bit
     uint32_t startLabel =
         static_cast<uint32_t>(current_function->instructions.size());
+    // Conditions are never in tail position (same rule as compileIfStatement)
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
     compileExpression(*statement.condition);
+    in_tail_position_ = saved_tail_cond;
     uint32_t jumpToEnd = emitJump(OpCode::JUMP_IF_TRUE);
 
  // Sleep a bit (10ms) to avoid high CPU usage
@@ -8895,21 +9150,22 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   if (precomputedUpvalues) {
     upvalues = *precomputedUpvalues;
   } else {
-    if (precomputedUpvalues) {
-    upvalues = *precomputedUpvalues;
-  } else {
     collectUpvaluesFromBody(body, upvalues);
-  }
-  }
-
-  if (capturedIntervalIdSlot.has_value()) {
-    // Add the captured interval/timeout ID as an upvalue
-    upvalues.insert(upvalues.begin(), {*capturedIntervalIdSlot, true});
-    current_function->is_timer_closure = true;
   }
 
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf(name, 0, 0);
+  if (capturedIntervalIdSlot.has_value()) {
+    // Add the captured interval/timeout ID as the LAST upvalue. Identifier
+    // upvalue indices in the body come from the LexicalResolver and must not
+    // be shifted: prepending (the old code) moved every resolver-assigned
+    // index by +1, so timeout closures read the ID cell instead of the
+    // captured variable (debounce called a null callee). The flag also
+    // belongs on the closure itself, not the enclosing function.
+    upvalues.push_back({*capturedIntervalIdSlot, true});
+    bf.is_timer_closure = true;
+  }
+
   bf.upvalues = std::move(upvalues);
   bool has_upvalues = !bf.upvalues.empty();
 

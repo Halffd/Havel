@@ -1,0 +1,44 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC ARRAY_SET vstack parity (BytecodeOrcJitLowering.cpp).
+// What: an if-expression arm containing arr[i] = v, inside a hot fn.
+// The ORC ARRAY_SET lowering pushed the havel_vm_array_set bridge
+// result (the container) while the interpreter's ARRAY_SET pushes
+// nothing (VMCollections.cpp). The extra vstack entry made the two
+// arms of the if-expression join at different stack depths, so the
+// merged join value came from the wrong slot and the whole if result
+// was replaced by the leftover container array (pick() returned an
+// array; total accumulated arrays and printed a giant list).
+// Why: tier-1 without cranelift (LLVM-only builds) compiles pick via
+// ORC after ~1000 calls; cranelift builds were unaffected (stack
+// effect table already said 3,0).
+// Expected: pick(1)=11, pick(0)=100; k%2 alternates over 5000 iters →
+// 2500*(11+100) = 277500. rc 0.
+
+fn pick(x) {
+    if x == 1 {
+        t = [0, 0, 0]
+        t[0] = 11
+        t[0]
+    } else {
+        100
+    }
+}
+
+total = 0
+k = 0
+while k < 5000 {
+    total = total + pick(k % 2)
+    k = k + 1
+}
+
+// 2500 odd k (x==1 arm, yields 11) + 2500 even k (else arm, yields 100)
+expected = 2500 * (11 + 100)
+
+if total == expected {
+    print("PASS orc_array_set_ifexpr total=${total}")
+} else {
+    print("FAIL orc_array_set_ifexpr total=${total} expected=${expected}")
+    process.exit(255)
+}

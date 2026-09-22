@@ -293,7 +293,7 @@ fn allSettled(futures) {
 // Resolve after ms milliseconds (requires event loop)
 fn sleep(ms) {
     outer = Promise()
-    setTimeout(fn() { outer.resolve(null) }, ms)
+    timeout.start(ms, fn() { outer.resolve(null) })
     outer.future()
 }
 
@@ -315,12 +315,12 @@ fn withTimeout(fut, ms) {
         }
     })
 
-    setTimeout(fn() {
+    timeout.start(ms, fn() {
         if !done[0] {
             done[0] = true
             outer.reject("timeout after " + ms + "ms")
         }
-    }, ms)
+    })
 
     outer.future()
 }

@@ -1,0 +1,54 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Orc array_get audit: interp ARRAY_GET object arm (VMCollections.cpp
+// ~516) runs the op_index overload (class-chain-aware via
+// getHostObjectField), then DIRECT field find - never a class chain walk
+// for the value. JIT havel_vm_collection_get_raw previously used
+// objectGetWithClassChain and IGNORED op_index: object subscripts on
+// classes with an op_index overload returned the raw field value (null
+// here, since "a"/"b" are only reachable through the overload), observed
+// as r1=null once hot() tiered via invocation count (1000 calls). The
+// r4 case pins OBJECT_GET's len builtin on plain objects through the same
+// tiered bridge. (Interp class-body fields are copied onto instances, so
+// a "class-only key" cannot exist from scripts - that half of the old
+// chain-walk divergence is unobservable.)
+
+class Store {
+    data
+    fn @() { @data = {a: 1, b: 2} }
+    fn op_index(self, k) { return @data[k] + 100 }
+}
+
+fn hot() {
+    s = Store()
+    r1 = s["a"]        // op_index -> 101
+    r2 = s["b"]        // op_index -> 102
+    o = {a: 10, b: 20}
+    r4 = o.len         // OBJECT_GET len builtin -> 2
+    if r1 != 101 { return "r1=${r1}" }
+    if r2 != 102 { return "r2=${r2}" }
+    if r4 != 2 { return "r4=${r4}" }
+    return "ok"
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r = hot()
+    if r != "ok" {
+        if bad == -1 {
+            bad = k
+            badval = "r=${r}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_object_subscript")
+} else {
+    print("FAIL orc_object_subscript k=${bad} ${badval}")
+    process.exit(255)
+}

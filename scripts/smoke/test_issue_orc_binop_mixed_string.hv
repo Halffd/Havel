@@ -1,0 +1,38 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC binop deopt fallback returned null for mixed string/int.
+// What: In emitSpecializedBinop (BytecodeOrcJitLowering.cpp), the deoptBB
+// for unspecialized operand mixes called havel_deoptimize (a no-op ret
+// stub) then hardcoded null. Any compiled binop like "str" + int
+// produced null instead of delegating to VM's execBinaryOp.
+// Why: hot loop with "arr:" + a.len() triggered the deopt path after
+// 1000 invocations (tiering threshold). Interpreter returns "arr:3".
+// Expected: string+int in compiled code returns "arr:3" same as interp.
+
+Array.patched = fn(a) { "arr:" + a.len() }
+
+arr = [1, 2, 3]
+
+fn hot(a) {
+    a.patched()
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r = hot(arr)
+    if r != "arr:3" && bad == -1 {
+        bad = k
+        badval = r
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_binop_mixed_string all arr:3")
+} else {
+    print("FAIL orc_binop_mixed_string k=${bad} r=${badval}")
+    process.exit(255)
+}

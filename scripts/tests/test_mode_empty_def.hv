@@ -1,0 +1,25 @@
+// Test: mode "name" { } with an empty body registers the mode.
+// What: the definition-vs-simple dispatch looked only at the first body
+//       token, so an empty {} fell into the legacy simple-block path:
+//       string names failed to parse in C++ ("Expected mode name") and the
+//       self-hosted path built a ModeBlock that never registered. String-
+//       named modes are always full definitions, so the empty def must show
+//       up in mode.list() and be settable via mode.set().
+// Expected: mode.list() contains "gaming"; mode.set("gaming") makes
+//           mode() == "gaming".
+mode "gaming" {
+}
+mlist = mode.list()
+last = #mlist - 1
+found = false
+for i in 0 .. last {
+    if mlist[i] == "gaming" { found = true }
+}
+if !found:
+    print("FAIL: empty mode not registered")
+    exit(1)
+mode.set("gaming")
+if mode() != "gaming":
+    print("FAIL: empty mode not settable, got '" + mode() + "'")
+    exit(1)
+print("mode-empty-def: OK")

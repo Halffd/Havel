@@ -100,6 +100,13 @@ void registerBitModule(const VMApi &api) {
     api.setField(bitObj, "_or", api.makeFunctionRef("bit._or"));
     api.setField(bitObj, "_xor", api.makeFunctionRef("bit._xor"));
     api.setField(bitObj, "_not", api.makeFunctionRef("bit._not"));
+    // Public aliases: and/or/not are reserved lexer keywords, so the
+    // sidecar cannot export fn defs for them (module parse fails), and
+    // namespace mutations (bit["and"]=...) don't survive module loading.
+    // Expose them here as plain callable fields on the bit namespace.
+    api.setField(bitObj, "and", api.makeFunctionRef("bit._and"));
+    api.setField(bitObj, "or", api.makeFunctionRef("bit._or"));
+    api.setField(bitObj, "not", api.makeFunctionRef("bit._not"));
     api.setGlobal("bit", bitObj);
 
     auto &vm = api.vm();
@@ -124,24 +131,7 @@ void registerBitModule(const VMApi &api) {
 
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
-extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr);
-static const HavelModuleABI havel_mod_abi_bit = {
-    HAVEL_MODULE_ABI_VERSION,
-    "bit",
-    "1.0.0",
-    "Bitwise operations stdlib module",
-    havel_module_register,
-    nullptr,
-    {nullptr},
-    1
-};
-extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) {
-    return &havel_mod_abi_bit;
-}
-extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) {
-    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr);
-    if (api) {
-        havel::stdlib::registerBitModule(*api);
-    }
-}
+HAVEL_MODULE_PLUGIN_EAGER(bit, "1.0.0", "Bitwise operations stdlib module",
+    havel::stdlib::registerBitModule(*api);
+)
 #endif

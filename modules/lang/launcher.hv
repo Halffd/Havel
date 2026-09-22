@@ -237,6 +237,8 @@ fn runScript(cfg) {
         bc.set_current_func(bcChunk)
         print("=== USER SCRIPT BYTECODE (func " + str(bcChunk) + ") ===")
         print(bc.disasm())
+        print("=== ALL FUNCS ===")
+        print(bc.disasm_all())
         print("=== END ===")
     }
 

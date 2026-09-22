@@ -13,7 +13,7 @@ fn isNegative(x) {
 
 // Test 1: any() with array
 print("1. any() with array:")
-let arr = [1, 2, 3, 4, 5]
+arr = [1, 2, 3, 4, 5]
 print("  any(arr, isEven): ")
 print(any(arr, isEven))
 print("  any(arr, isNegative): ")

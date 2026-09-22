@@ -6,8 +6,8 @@
 // 3. Edge-triggered firing (fires once on false→true)
 // 4. Condition re-evaluation
 
-let is_ready = false;
-let counter = 0;
+is_ready = false;
+counter = 0;
 
 fn main() {
   println("Starting reactive watcher test...");

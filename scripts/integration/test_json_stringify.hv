@@ -24,8 +24,8 @@ check("stringify-esc-newline", json.stringify("hi\nthere"), "\"hi\\nthere\"")
 check("stringify-array", json.stringify([1, 2, 3]), "[1,2,3]")
 
 // 3. single-key object (reverse-insertion key order -> single key deterministic)
-check("stringify-obj", json.stringify({x: 1}), "{ \"x\": 1 }")
-check("stringify-obj-str", json.stringify({method: "ZoomIn"}), "{ \"method\": \"ZoomIn\" }")
+check("stringify-obj", json.stringify({x: 1}), "{\"x\": 1}")
+check("stringify-obj-str", json.stringify({method: "ZoomIn"}), "{\"method\": \"ZoomIn\"}")
 
 // 4. round-trip through parse for nested structure (order-independent)
 rt = json.parse(json.stringify({a: [1, 2], b: {c: true, d: null}}))
@@ -45,9 +45,9 @@ fn makeObj(method, params) {
    obj.params = params
    json.stringify(obj)
 }
-check("ffi-obj-1", makeObj("A", [1.1]), "{ \"params\": [1.1], \"method\": \"A\" }")
-check("ffi-obj-2", makeObj("B", [2.2]), "{ \"params\": [2.2], \"method\": \"B\" }")
-check("ffi-obj-digits", makeObj("C", [0, 5]), "{ \"params\": [0,5], \"method\": \"C\" }")
+check("ffi-obj-1", makeObj("A", [1.1]), "{\"params\": [1.1],\"method\": \"A\"}")
+check("ffi-obj-2", makeObj("B", [2.2]), "{\"params\": [2.2],\"method\": \"B\"}")
+check("ffi-obj-digits", makeObj("C", [0, 5]), "{\"params\": [0,5],\"method\": \"C\"}")
 
 print("json-stringify: $pass passed, $fail failed")
 exit(fail)

@@ -286,18 +286,17 @@ else if (op == OpCode::INT_DIV) {
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(deoptBB);
-    llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
-    if (!fn_deopt) fn_deopt = llvm::Function::Create(
-        llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false),
-        llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-    llvm::Constant *funcNameStr =
-        llvm::ConstantDataArray::getString(module.getContext(), func.name);
-    llvm::GlobalVariable *gv = new llvm::GlobalVariable(
-        module, funcNameStr->getType(), true,
-        llvm::GlobalValue::PrivateLinkage, funcNameStr);
-    llvm::Value *funcNameConst = B.CreatePointerCast(gv, i8p);
-    B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
-    llvm::Value *slowBoxed = makeNull();
+    // Unspecialized operand mix (non int/double/string, or mixed types):
+    // run the VM's execBinaryOp for this opcode via the generic binop
+    // bridge instead of deoptimizing (the previous havel_deoptimize call
+    // was a no-op stub, so any such binop silently produced null).
+    llvm::Function *fn_binop = module.getFunction("havel_vm_binop");
+    if (!fn_binop) fn_binop = llvm::Function::Create(
+        llvm::FunctionType::get(i64, {i8p, i32, i64, i64}, false),
+        llvm::Function::ExternalLinkage, "havel_vm_binop", &module);
+    llvm::Constant *opConst =
+        llvm::ConstantInt::get(i32, static_cast<uint32_t>(op));
+    llvm::Value *slowBoxed = B.CreateCall(fn_binop, {vmArg, opConst, left, right});
     llvm::BasicBlock *slowExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
@@ -572,23 +571,35 @@ case OpCode::INCLOCAL:
             
             // Slow path: bridge function
             B.SetInsertPoint(slowBB);
+            // EQ/NEQ may compare string CONTENT (heap StringId vs
+            // chunk-local StringValId), which needs the heap: route them
+            // through the vm-aware bridges. Ordering comparisons stay pure.
             const char* fname = nullptr;
+            bool vm_aware = false;
             switch (instr.opcode) {
-                case OpCode::EQ:  fname = "havel_vm_eq";  break;
-                case OpCode::NEQ: fname = "havel_vm_neq"; break;
+                case OpCode::EQ:  fname = "havel_vm_eq_vm";  vm_aware = true;  break;
+                case OpCode::NEQ: fname = "havel_vm_neq_vm"; vm_aware = true;  break;
                 case OpCode::LT:  fname = "havel_vm_lt";  break;
                 case OpCode::LTE: fname = "havel_vm_lte"; break;
                 case OpCode::GT:  fname = "havel_vm_gt";  break;
                 case OpCode::GTE: fname = "havel_vm_gte"; break;
-                default: fname = "havel_vm_eq"; break;
+                default: fname = "havel_vm_eq_vm"; vm_aware = true;  break;
             }
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
-                fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i64, i64}, false),
-                    llvm::Function::ExternalLinkage, fname, &module);
+                if (vm_aware) {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                } else {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                }
             }
-            llvm::Value* slowResult = B.CreateCall(fnComp, {l, r});
+            llvm::Value* slowResult = vm_aware
+                ? B.CreateCall(fnComp, {vmArg, l, r})
+                : B.CreateCall(fnComp, {l, r});
             auto* slowExitBB = B.GetInsertBlock();
             B.CreateBr(mergeBB);
             
@@ -600,23 +611,34 @@ case OpCode::INCLOCAL:
             vstack.push_back(phi);
         } else {
             // No feedback or polymorphic: use bridge
+            // See the feedback-path comment: EQ/NEQ need the heap for
+            // string-content comparison.
             const char* fname = nullptr;
+            bool vm_aware = false;
             switch (instr.opcode) {
-              case OpCode::EQ:  fname = "havel_vm_eq";  break;
-              case OpCode::NEQ: fname = "havel_vm_neq"; break;
+              case OpCode::EQ:  fname = "havel_vm_eq_vm";  vm_aware = true;  break;
+              case OpCode::NEQ: fname = "havel_vm_neq_vm"; vm_aware = true;  break;
               case OpCode::LT:  fname = "havel_vm_lt";  break;
               case OpCode::LTE: fname = "havel_vm_lte"; break;
               case OpCode::GT:  fname = "havel_vm_gt";  break;
               case OpCode::GTE: fname = "havel_vm_gte"; break;
-              default: fname = "havel_vm_eq"; break;
+              default: fname = "havel_vm_eq_vm"; vm_aware = true;  break;
             }
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
-                fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i64, i64}, false),
-                    llvm::Function::ExternalLinkage, fname, &module);
+                if (vm_aware) {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                } else {
+                    fnComp = llvm::Function::Create(
+                        llvm::FunctionType::get(i64, {i64, i64}, false),
+                        llvm::Function::ExternalLinkage, fname, &module);
+                }
             }
-            vstack.push_back(B.CreateCall(fnComp, {l, r}));
+            vstack.push_back(vm_aware
+                ? B.CreateCall(fnComp, {vmArg, l, r})
+                : B.CreateCall(fnComp, {l, r}));
         }
         break;
       }
@@ -926,16 +948,19 @@ case OpCode::INCLOCAL:
         break;
     }
     case OpCode::OBJECT_DELETE: {
+        // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops
+        // obj/key and pushes the bool "key existed and was removed".
+        // The bridge now returns that bool (it used to be void and the
+        // lowering pushed null, diverging in value from the interpreter).
         llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
         llvm::Function* fnDel = module.getFunction("havel_vm_object_delete_raw");
         if (!fnDel) {
             fnDel = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_object_delete_raw", &module);
         }
-        B.CreateCall(fnDel, {vmArg, obj, key});
-        vstack.push_back(makeNull());
+        vstack.push_back(B.CreateCall(fnDel, {vmArg, obj, key}));
         break;
     }
         case OpCode::OBJECT_GET_RAW: {
@@ -1931,7 +1956,18 @@ case OpCode::LENGTH: {
 
     // Global and upvalue access - critical for closures
     case OpCode::LOAD_GLOBAL: {
-        uint32_t nameId = instr.operands[0].asInt();
+        // The operand is a chunk-local StringValId packing
+        // (chunkId << 31 | stringIndex); the interpreter resolves the low
+        // 31 bits (asStringValId() masks chunkId out) and the Runtime ABI
+        // bridge indexes the owning chunk's string table with it. Reading
+        // the raw asInt() here passed the full 33-bit value for module
+        // chunks, so havel_vm_global_get's bounds check rejected EVERY
+        // global load in module code - compiled module functions saw all
+        // their globals as null (JIT'd getBPTABLE rebuilt the binding
+        // table with null keys every call; getBindingPower then read
+        // BP_NONE for everything and the self-hosted parser broke).
+        const uint32_t nameId =
+            static_cast<uint32_t>(instr.operands[0].asStringValId());
         llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
         if (!fnGet) {
             fnGet = llvm::Function::Create(
@@ -1943,7 +1979,9 @@ case OpCode::LENGTH: {
     }
     case OpCode::STORE_GLOBAL:
     case OpCode::STORE_IMMUT_GLOBAL: {
-        uint32_t nameId = instr.operands[0].asInt();
+        // Same StringValId masking as LOAD_GLOBAL above.
+        const uint32_t nameId =
+            static_cast<uint32_t>(instr.operands[0].asStringValId());
         llvm::Value* v = vstack.back(); vstack.pop_back();
         llvm::Function* fnSet = module.getFunction("havel_vm_global_set");
         if (!fnSet) {
@@ -2054,6 +2092,19 @@ case OpCode::LENGTH: {
         break;
     }
     case OpCode::ARRAY_SET: {
+        // Matches interpreter stack protocol (VMCollections.cpp
+        // ARRAY_SET): pops value, index, container and pushes NOTHING.
+        // indexAssignPublic returns the container word so op_index_set /
+        // callers can chain, but the interpreter's ARRAY_SET discards it
+        // (only the op_index_set object path pushes the container, which
+        // the bridge handles internally). Previously this pushed the
+        // bridge result, leaving one extra vstack entry per ARRAY_SET —
+        // vstack depth diverged between arms of a join, so a branch
+        // containing arr[i] = v corrupted the merged stack (an if-arm
+        // assign turned the if-expression's result into the leftover
+        // container array). The emitted bytecode always re-loads the
+        // RHS from its temp local right after ARRAY_SET, so nothing
+        // consumes the bridge return here.
         llvm::Value* val = vstack.back(); vstack.pop_back();
         llvm::Value* idx = vstack.back(); vstack.pop_back();
         llvm::Value* arr = vstack.back(); vstack.pop_back();
@@ -2063,7 +2114,7 @@ case OpCode::LENGTH: {
                 llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_array_set", &module);
         }
-        vstack.push_back(B.CreateCall(fnSet, {vmArg, arr, idx, val}));
+        B.CreateCall(fnSet, {vmArg, arr, idx, val});
         break;
     }
     case OpCode::ARRAY_LEN: {

@@ -1,3 +1,0 @@
-val obj = {}
-obj["\$ret_print"] = "fn"
-print(obj["\$ret_print"])

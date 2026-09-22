@@ -1,3 +1,0 @@
-use { make_thing } from "testmod"
-t = make_thing()
-print(t.get())

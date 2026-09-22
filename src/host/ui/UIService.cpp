@@ -1522,7 +1522,14 @@ int64_t UIService::inputInt(const std::string &title, const std::string &label, 
 
 ScreenshotManager *UIService::getScreenshotManager() {
     if (!screenshotManager_) {
-        screenshotManager_ = std::make_unique<ScreenshotManager>(nullptr);
+        // Only create ScreenshotManager if QApplication exists AND display is available
+        if (QApplication::instance()) {
+            // Check if we have a display connection
+            QGuiApplication* guiApp = qobject_cast<QGuiApplication*>(QApplication::instance());
+            if (guiApp && !guiApp->screens().isEmpty()) {
+                screenshotManager_ = std::make_unique<ScreenshotManager>(nullptr);
+            }
+        }
     }
     return screenshotManager_.get();
 }

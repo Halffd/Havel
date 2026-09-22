@@ -440,6 +440,33 @@ size_t Scheduler::suspendedCount() const {
 	return count;
 }
 
+size_t Scheduler::suspendedAwaitingResume() const {
+	std::lock_guard lock(goroutines_mutex_);
+	size_t count = 0;
+	for (const auto& [id, g] : goroutines_) {
+		if (!g || g->state != GoroutineState::Suspended) continue;
+		if (g->persistent) continue; // hotkey/update: parked by design
+		AwaitableType t;
+		{
+			std::lock_guard wm(g->wait_handle_mutex_);
+			t = g->wait_handle.type;
+		}
+		switch (t) {
+		case AwaitableType::EXTERNAL:
+		case AwaitableType::CHANNEL_RECV:
+		case AwaitableType::CHANNEL_SEND:
+		case AwaitableType::THREAD_JOIN:
+		case AwaitableType::TIMER_WAIT:
+		case AwaitableType::COROUTINE:
+			++count;
+			break;
+		default:
+			break;
+		}
+	}
+	return count;
+}
+
 bool Scheduler::hasHotkeyWaitSuspended() const {
 	std::lock_guard lock(goroutines_mutex_);
 	for (const auto& [id, g] : goroutines_) {
@@ -654,7 +681,7 @@ notifyWakeup();
 // @param g Persistent goroutine to wake
 // @param newArgs Optional new arguments for the trigger
 // @return true if successfully queued (g->persistent || idle state), false if dropped
-bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
+bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, const char* caller) {
   if (!g) return false;
 
   // Done goroutines must never be re-enqueued. Persistent hotkey goroutines
@@ -671,8 +698,9 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
-  ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-                  g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
+  ::havel::debug("[Scheduler] wakeHotkey: gid={} alias='{}' state={} policy={} isPending={} caller={}",
+                  g->id, g->hotkey_alias, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending,
+                  caller ? caller : "?");
 
   // Drop policy coalesces triggers arriving WHILE the goroutine is queued or
   // running (isPending). A goroutine parked in Suspended+HotkeyWait is idle,
@@ -778,9 +806,45 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
     ::havel::debug("[Scheduler] wakeHotkeyByAlias('{}'): found {} persistent goroutines", alias, toWake.size());
     bool found = false;
     for (auto* g : toWake) {
-        if (wakeHotkey(g)) found = true;
+        if (wakeHotkey(g, {}, "wakeHotkeyByAlias")) found = true;
     }
     return found;
+}
+
+bool Scheduler::resumeExternalWithValue(uint32_t token, Value result) {
+    // Complete a fiber-suspending host call: find the goroutine parked on
+    // AwaitableType::EXTERNAL with this token, stash the result, unpark.
+    // The HavelEngine resume path (loadFiberStatePublic +
+    // replaceStackTop(wait_handle.resume_value)) swaps the Pending
+    // placeholder for the real value, exactly like channel resumes.
+    // No registry: an unmatched token (goroutine gone, script aborted,
+    // teardown) is inert and simply drops.
+    Goroutine* target = nullptr;
+    {
+        std::lock_guard lock(goroutines_mutex_);
+        for (auto& [id, g_uptr] : goroutines_) {
+            Goroutine* g = g_uptr.get();
+            if (!g) continue;
+            // wait_handle is multi-field; use its mutex per the CAUTION note.
+            std::lock_guard wm(g->wait_handle_mutex_);
+            if (g->state == GoroutineState::Suspended &&
+                g->wait_handle.type == AwaitableType::EXTERNAL &&
+                g->wait_handle.target_id == token) {
+                g->wait_handle.set_resume_value(std::move(result));
+                target = g;
+                break;
+            }
+        }
+    }
+    if (!target) {
+        ::havel::debug("[Scheduler] resumeExternalWithValue: token {} "
+                       "unmatched (goroutine gone) - dropped", token);
+        return false;
+    }
+    ::havel::debug("[Scheduler] resumeExternalWithValue: token {} -> gid={}",
+                   token, target->id);
+    unpark(target);
+    return true;
 }
 
 bool Scheduler::removeHotkeyByAlias(const std::string& alias) {

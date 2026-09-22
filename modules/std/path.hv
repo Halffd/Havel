@@ -20,17 +20,92 @@ fn extname(p) {
     return b[dot:]
 }
 
+fn ext(p) {
+    extname(p)
+}
+
+fn filename(p) {
+    basename(p)
+}
+
+fn stem(p) {
+    b = basename(p)
+    dot = b.find(".")
+    if dot == null || dot == 0 { return b }
+    return b[:dot]
+}
+
+fn dirname(p) {
+    if p == "" { return "" }
+    trimmed = p
+    n = trimmed.len()
+    // strip trailing separators, keep a leading root "/"
+    while n > 1 && trimmed[n - 1:] == sep {
+        trimmed = trimmed[:n - 1]
+        n = n - 1
+    }
+    if trimmed == "" { return "" }
+    if trimmed == sep { return sep }
+    i = trimmed.lastIndexOf(sep)
+    if i == null || i < 0 { return "" }
+    if i == 0 { return sep }
+    return trimmed[:i]
+}
+
+fn parent(p) {
+    dirname(p)
+}
+
 fn join(a, b) {
+    if type(a) == "array" {
+        // join(["/home", "user", "file.txt"]) — fold segments
+        result = ""
+        for seg in a {
+            if result == "" {
+                result = seg
+            } else {
+                result = join(result, seg)
+            }
+        }
+        return result
+    }
     if a == sep { return sep + b }
     n = a.len()
-    idx = n - 1
-    last = a[idx:]
+    last = a[n - 1:]
     if last == sep { return a + b }
     return a + sep + b
 }
 
-export sep
-export delimiter
-export basename
-export extname
-export join
+fn isAbs(p) {
+    if p == null { return false }
+    return p[:1] == sep
+}
+
+fn normalize(p) {
+    if p == "" { return "" }
+    absolute = isAbs(p)
+    parts = p.split(sep)
+    stack = []
+    for part in parts {
+        if part == "" || part == "." { continue }
+        if part == ".." {
+            if #stack > 0 && stack[#stack - 1] != ".." {
+                stack.pop()
+            } else if !absolute {
+                stack.push("..")
+            }
+            continue
+        }
+        stack.push(part)
+    }
+    result = ""
+    for seg in stack {
+        result = result + sep + seg
+    }
+    if absolute {
+        if result == "" { return sep }
+        return result
+    }
+    if result[:1] == sep { return result[1:] }
+    return result
+}

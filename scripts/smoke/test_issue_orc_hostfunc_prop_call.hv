@@ -1,0 +1,41 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD host function property call (JitRuntimeBridges
+// havel_vm_call_method).
+// What: hot fn calling a property fn attached to a host function value
+// (x = math.abs; x.mydouble = fn { 5 } -> x.mydouble()). The interpreter
+// CALL_METHOD resolves host func receivers through hostfunc_properties_
+// (VMControlFlow.cpp:439-489, the mechanism behind wrapped.cancel on
+// host-wrapped module closures); the JIT bridge had no hostfunc arm, fell
+// through to the prototype lookup and pushed null.
+// Why: hot() gets ORC-compiled in LLVM-only builds after ~1000 calls
+// (tier-1 falls through to ORC without cranelift); interpreted calls
+// returned 5 throughout.
+// Expected: every a.mydouble() returns 5, all 3000 iterations, rc 0.
+
+x = math.abs
+x.mydouble = fn { 5 }
+
+fn hot(a) {
+    a.mydouble()
+}
+
+k = 0
+all_5 = true
+while k < 3000 {
+    r = hot(x)
+    if r != 5 {
+        all_5 = false
+        print("FAIL hostfunc_prop k=${k} r=${r}")
+        process.exit(255)
+    }
+    k = k + 1
+}
+
+if all_5 {
+    print("PASS orc_hostfunc_prop_call all 5")
+} else {
+    print("FAIL orc_hostfunc_prop_call")
+    process.exit(255)
+}

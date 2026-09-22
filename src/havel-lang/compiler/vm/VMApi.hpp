@@ -280,6 +280,14 @@ struct VMApi {
         break;
       }
       processPendingEvents();
+      // Fire the yield callback (like the VM's own sleep_ms host fn at
+      // VMHostFunctions.cpp:1411) so runnable goroutines actually get
+      // scheduled while the MAIN script blocks in this chunked loop.
+      // Without it, a script whose main branch does sleep(5000) while a
+      // spawned goroutine is still Created never starts the goroutine
+      // (processPendingEvents only WAKES sleepers; it never dispatches
+      // them), and window_goroutine_monitor.hv times out.
+      vm().fireYieldCallbackPublic();
       auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - std::chrono::steady_clock::now());
       auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
@@ -297,6 +305,19 @@ struct VMApi {
       return;
     }
     sched->deferToVM(std::forward<F>(fn));
+  }
+
+  // Fiber-suspending blocking host call seam. Host functions call this
+  // unconditionally with a pure-C++ job (returns a shared_ptr<void>
+  // result cell) and a VM-side lift (builds the result Value). The
+  // context decides: goroutine + live event queue -> worker thread +
+  // Pending + park/resume; otherwise job runs inline on the VM thread
+  // (cost identical to a synchronous host call). See VM.hpp for the
+  // full contract.
+  template<typename JobFn, typename LiftFn>
+  Value runBlocking(JobFn &&job, LiftFn &&lift) const {
+    return vm().runBlockingHostCall(std::forward<JobFn>(job),
+                                    std::forward<LiftFn>(lift));
   }
 
     havel::compiler::VMImage createImage(int width, int height, int stride, havel::compiler::PixelFormat format,

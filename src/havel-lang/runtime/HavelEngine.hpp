@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/Value.hpp"
+#include <cstdio>
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
@@ -574,7 +575,10 @@ vm_->addIntervalResult(timer_id, result);
         // Process all goroutines until they're done
         processGoroutines();
 
-        // Return null for now (result capture would need more infrastructure)
+        // Return the script result from the VM stack (if any)
+        if (vm_->getStackSizePublic() > 0) {
+            return vm_->popStackPublic();
+        }
         return compiler::Value::makeNull();
     }
 
@@ -731,8 +735,22 @@ vm_->addIntervalResult(timer_id, result);
 
     void tickGoroutines() {
         if (!initialized_) return;
-        auto* sched = vm_->getScheduler();
-        if (!sched) return;
+    auto* sched = vm_->getScheduler();
+    if (!sched) return;
+
+    // Cheap idle probe. The dispatch loop's periodicYieldCheck fires this
+    // callback every 8192 instructions; when a script runs with no sibling
+    // goroutines, no deferred callbacks and no due sleepers, the full
+    // main-fiber save below (operand-stack copy, globals map copy,
+    // globals_stack_ vector-of-maps copy) plus the symmetric restore is
+    // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
+    // _M_move_assign). Skip it when a tick has nothing to do.
+    static const bool _idle_trace = std::getenv("HAVEL_TRACE_CYCLE") != nullptr;
+    if (!sched->hasPendingWork()) {
+      if (_idle_trace)
+        ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
+      return;
+    }
         vm_->tickScheduler();
     }
 
@@ -807,7 +825,10 @@ private:
     if (_trace) {
       auto* _s = vm_->getScheduler();
     }
-    if (inline_yield_active_) return;
+    if (inline_yield_active_) {
+      if (_trace) ::havel::info("[INLINE_YIELD] early-return: inline_yield_active_");
+      return;
+    }
     auto* sched = vm_->getScheduler();
     if (!sched) return;
 
@@ -820,6 +841,7 @@ private:
     // the outer engine loop, which runs after the caller suspends and the
     // suspended module frame's state has been saved.
     if (vm_->moduleWrapperDepth() > 0) {
+      if (_trace) ::havel::info("[INLINE_YIELD] early-return: moduleWrapperDepth={}", vm_->moduleWrapperDepth());
       return;
     }
 
@@ -832,7 +854,7 @@ private:
     // the script blocks inside a chunked sleep host function, our
     // yield_callback fires into this method, and startGoroutineCall
     // below then wipes the shared VM stack (`while(!stack.empty())
-    // stack.pop()` in startGoroutineCall). Without saving the
+    // stack.pop_back()` in startGoroutineCall). Without saving the
     // half-consumed operand stack + frame arena into a fiber here
     // and restoring them afterwards, the next CALL opcode in __main__
     // reports "CALL Underflow! Stack size: 0 Expected: 2" (e.g. the
@@ -864,10 +886,17 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
     inline_yield_active_ = true;
 
+    // Set when a goroutine's dispatch throws: the catch below must mark
+    // it Done or it stays Runnable and the loop re-runs the failing
+    // instruction forever (the old per-step executeOneStep mapped
+    // VMExecutionResult::ERROR to Done inside the switch).
+    compiler::Scheduler::Goroutine* failing_g = nullptr;
     try {
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
-    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    // hoisted trace gates: this fires per yield callback (per 8192 instrs)
+    static const bool _sleep_trace_inl = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+    if (_sleep_trace_inl) {
       // fprintf(stderr, "[SLEEPDBG] processGoroutinesInline enter susp_req=%d last_reason=%d inline_active=%d\n", (int)vm_->isSuspensionRequested(), (int)vm_->getLastSuspensionReason(), (int)inline_yield_active_);
     }
 
@@ -880,11 +909,12 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         ::havel::info("[INLINE_YIELD] pickNext returned g={} state={}", g ? g->id : 0, g ? static_cast<int>(g->state.load()) : -1);
       }
       if (!g) break;
+      failing_g = g;
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          // fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
+        if (_sleep_trace_inl) {
+          fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
         }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
@@ -902,69 +932,101 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       g->state = compiler::Scheduler::GoroutineState::Running;
       if (g->fiber) g->fiber->state = compiler::FiberState::RUNNING;
 
-      for (int i = 0; i < 64; ++i) {
-        auto result = vm_->executeOneStep(g->fiber);
-        if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          // fprintf(stderr, "[SLEEPDBG] executeOneStep g=%d result=%d\n", g->id, (int)result.type);
-        }
-        g->instructions_executed++;
+      // Batched dispatch tick: instead of one executeOneStep() per
+      // instruction (each paying try/catch, pending-call checks, debugger
+      // branches and IP fixups; plus a full saveFiberState every 64
+      // steps), run the computed-goto dispatch loop directly with an
+      // approximate instruction budget. The loop returns on: frames
+      // drained (Done), suspension request (sleep/channel/timer/await
+      // - mapped below), tick budget expiry (yield to siblings), or a
+      // complex opcode fallback (slow_dispatch_fallback path: re-enter
+      // the old per-step loop for correctness).
+      {
+        // Keep the budget in units the dispatch counter understands
+        // (8192-instruction checkpoints; a tick overshoots by < 8192).
+        const uint64_t tick_budget = 65536;
+        vm_->beginFastTick(tick_budget);
+        // Stop depth 0: startGoroutineCall/loadFiberState left ONLY this
+        // goroutine's frames on the VM stack (startGoroutineCall clears it;
+        // the main snapshot was saved to main_script_fiber_ above), so
+        // "drained" means every frame popped. Passing the entry depth here
+        // (as an earlier revision did) made the loop run ZERO instructions
+        // and frames_drained trivially true — every goroutine picked
+        // inline was marked Done without executing anything
+        // (window_goroutine_monitor.hv regression).
+        const size_t entry_frames = 0;
+        // parkIfPendingCallResult (fiber-suspending host calls) matches
+        // the current goroutine via current_executing_fiber_, like the
+        // engine processGoroutines loop does. Without it, runBlocking
+        // gate passes (sched->current() is set by pickNext) but the park
+        // mismatches: the Pending marker escapes, is neutralized to
+        // null, and window.active() in a goroutine returns null
+        // (window_goroutine_monitor.hv regression).
+        vm_->current_executing_fiber_ = g->fiber;
+        vm_->runDispatchLoopPublic(entry_frames);
+        vm_->current_executing_fiber_ = nullptr;
+        vm_->endFastTick();
+        g->instructions_executed += static_cast<uint64_t>(vm_->fastTickConsumed());
         executed++;
-        if (result.type != compiler::VMExecutionResult::YIELD) {
-          if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberStatePublic(g->fiber);
-          switch (result.type) {
-            case compiler::VMExecutionResult::RETURNED:
-              g->state = compiler::Scheduler::GoroutineState::Done;
-              if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
-              break;
-            case compiler::VMExecutionResult::SUSPENDED: {
-              auto fiber_reason = g->fiber ? g->fiber->suspended_reason : compiler::SuspensionReason::NONE;
-              void* context = g->fiber ? g->fiber->suspension_context : nullptr;
-              uint8_t reason = static_cast<uint8_t>(fiber_reason);
-              sched->suspend(g, toSchedulerReasonPublic(reason));
-              if (fiber_reason == compiler::SuspensionReason::SLEEP) {
-                int64_t ms = reinterpret_cast<intptr_t>(context);
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-                g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-              }
-              if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
-                uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
-                g->wait_handle.target_id = co_id;
-              }
-              if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
-                uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
-                g->wait_handle.target_id = tid;
-              }
-              if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
-                uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
-                g->wait_handle.target_id = ch_id;
-              }
-              if (fiber_reason == compiler::SuspensionReason::TIMER) {
-                uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
-                g->wait_handle.target_id = timer_id;
-              }
-              break;
-            }
-            case compiler::VMExecutionResult::ERROR:
-              g->state = compiler::Scheduler::GoroutineState::Done;
-              if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
-              break;
-            default:
-              sched->yield(g);
-              break;
-          }
-          break;
-        }
-        if (g->instructions_executed >= g->max_instructions_per_tick) {
-          g->instructions_executed = 0;
+
+        if (vm_->exit_requested_.load()) {
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
-          sched->yield(g);
           break;
         }
-        if (vm_->exit_requested_.load()) break;
+
+        const bool frames_drained =
+            vm_->frameCountPublic() <= entry_frames;
+        const auto last_reason = vm_->getLastSuspensionReason();
+
+        if (frames_drained) {
+          // Goroutine's entry function returned.
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          g->state = compiler::Scheduler::GoroutineState::Done;
+          if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+        } else if (last_reason != 0) {
+          // Suspension: the dispatch loop stashed the reason/context on
+          // last_suspension_* at its periodic checkpoint. Resolve the
+          // wait handle from the fiber the VM suspended.
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          auto fiber_reason = g->fiber->suspended_reason;
+          void* context = g->fiber->suspension_context;
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            fprintf(stderr, "[SLEEPDBG] inline suspend gid=%d fiber_reason=%d last_reason=%d\n", g->id, (int)fiber_reason, (int)last_reason);
+          }
+          sched->suspend(g, toSchedulerReasonPublic(static_cast<uint8_t>(fiber_reason)));
+          if (fiber_reason == compiler::SuspensionReason::SLEEP) {
+            int64_t ms = reinterpret_cast<intptr_t>(context);
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+          }
+          if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
+            uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
+            g->wait_handle.target_id = co_id;
+          }
+          if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
+            uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
+            g->wait_handle.target_id = tid;
+          }
+          if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
+            uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
+            g->wait_handle.target_id = ch_id;
+          }
+          if (fiber_reason == compiler::SuspensionReason::TIMER) {
+            uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
+            g->wait_handle.target_id = timer_id;
+          }
+        } else {
+          // Tick budget expired (or complex-opcode fallback): remain
+          // Runnable and let the scheduler re-queue.
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            fprintf(stderr, "[SLEEPDBG] inline tick-done gid=%d frames=%zu entry=%zu\n", g->id, vm_->frameCountPublic(), entry_frames);
+          }
+        }
       }
 
       if (g->state == compiler::Scheduler::GoroutineState::Running) {
@@ -974,8 +1036,29 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
       if (vm_->exit_requested_.load()) break;
     }
+    } catch (const std::exception &ex) {
+      // A goroutine's dispatch threw (uncaught script error): mark it
+      // Done like the old per-step ERROR mapping so the scheduler does
+      // not re-run the failing instruction forever. Also disarm the tick
+      // budget: an in-flight budget would make unrelated callFunctionSync
+      // executions (host fns, module loads) return early mid-function.
+      vm_->endFastTick();
+      if (failing_g) {
+        ::havel::error("goroutine {} failed: {}", failing_g->id, ex.what());
+        failing_g->state = compiler::Scheduler::GoroutineState::Done;
+        if (failing_g->fiber) {
+          failing_g->fiber->had_error = true;
+          failing_g->fiber->error_message = ex.what();
+          failing_g->fiber->state = compiler::FiberState::DONE;
+        }
+      }
     } catch (...) {
-      // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
+      vm_->endFastTick();
+      if (failing_g) {
+        failing_g->state = compiler::Scheduler::GoroutineState::Done;
+        if (failing_g->fiber) failing_g->fiber->state = compiler::FiberState::DONE;
+      }
+      // Reset inline_yield_active_ so scheduling isn't frozen.
     }
 
     // Restore the main-script snapshot we saved above so the shared VM
@@ -1007,6 +1090,44 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     if (mainChunk) {
       vm_->setCurrentChunkPublic(mainChunk.get());
     }
+
+    // Per-tick dispatch with a bounded instruction budget. The pump must
+    // never run a goroutine unbounded: a body that loops without sleeping
+    // or awaiting (e.g. a busy async-task spawned at startup) would never
+    // return from runDispatchLoopPublic and would wedge the entire
+    // single-threaded pump — hotkeys, timers and input stop being
+    // serviced (the launch freeze seen at
+    // "pickNext Created gid=.. async-task" + startGoroutineCall).
+    // Same discipline as processGoroutinesInline: the budget is
+    // approximate (8192-instruction checkpoints, < 8192 overshoot).
+    auto dispatchTick = [this](compiler::Scheduler::Goroutine* g) {
+      const uint64_t tick_budget = 65536;
+      vm_->beginFastTick(tick_budget);
+      vm_->current_executing_fiber_ = g->fiber;
+      // Same reentrancy guard as processGoroutinesInline: the VM's
+      // periodicYieldCheck invokes yield_callback_ (which IS
+      // processGoroutinesInline) every 8192 instructions. Without the
+      // guard, a long-running goroutine's tick would re-enter the full
+      // inline pump mid-dispatch and recursively re-run the same
+      // goroutine (plus re-copy the main-script fiber state) forever.
+      const bool prev_inline = inline_yield_active_;
+      inline_yield_active_ = true;
+      try {
+        vm_->runDispatchLoopPublic(0);
+      } catch (...) {
+        inline_yield_active_ = prev_inline;
+        // Unarm the budget on error: an in-flight budget makes unrelated
+        // callFunctionSync executions (host fns, module loads) return
+        // early mid-function.
+        vm_->endFastTick();
+        vm_->current_executing_fiber_ = nullptr;
+        throw;
+      }
+      inline_yield_active_ = prev_inline;
+      vm_->current_executing_fiber_ = nullptr;
+      vm_->endFastTick();
+      g->instructions_executed += static_cast<uint64_t>(vm_->fastTickConsumed());
+    };
 
         for (;;) {
             if (vm_->exit_requested_.load()) break;
@@ -1067,7 +1188,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+          dispatchTick(g);
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {
@@ -1082,7 +1203,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           auto result = vm_->startGoroutineCall(g->callable, g->locals);
           if (result != compiler::VM::GoroutineCallResult::Failed) {
             g->state = compiler::Scheduler::GoroutineState::Runnable;
-            { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+            dispatchTick(g);
           } else {
             g->state = compiler::Scheduler::GoroutineState::Done;
             if (g->update_callback_id != 0) {
@@ -1094,11 +1215,17 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           // Resumed goroutine (unparked from await/sleep)
           if (g->fiber) {
             vm_->loadFiberStatePublic(g->fiber);
-            // Replace placeholder null with actual resume_value
+            // Replace placeholder null with actual resume_value.
+            // deliverResumeValue wraps channel-iterator resumes (Pending
+            // marker) into the {first,second,done} object the loop expects.
             if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
                 g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
-              vm_->replaceStackTop(g->wait_handle.resume_value);
+              vm_->deliverResumeValue(g->wait_handle.type,
+                                       g->wait_handle.resume_value,
+                                       g->wait_handle.target_id,
+                                       g->channel_iter_pending);
               g->wait_handle.clear();
+              g->channel_iter_pending = false;
             }
           }
           if (std::getenv("HAVEL_TRACE_RESUME")) {
@@ -1111,7 +1238,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                           g->fiber ? g->fiber->ip : UINT32_MAX,
                           (int)g->wait_handle.type, g->update_interval_ms);
           }
-          { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
+          dispatchTick(g);
         }
       }
 
@@ -1133,6 +1260,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                   << " fiberState=" << fstate << " waitDueMs=" << dueMs << " updInt=" << g->update_interval_ms << "\n";
       }
       void* lastContext = vm_->getLastSuspensionContext();
+      // true when the goroutine's frames fully drained (its entry returned).
+      // false with lastReason==0 means the dispatch stopped early: tick
+      // budget expired (fast path) or a complex-opcode slow fallback.
+      const bool frames_drained = vm_->frameCountPublic() <= 0;
       if (lastReason != 0) {
         // Goroutine suspended — save fiber state and mark as Suspended
         vm_->clearLastSuspension();
@@ -1149,6 +1280,9 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // For SLEEP, set the deadline on the wait_handle
         if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
           auto ms = reinterpret_cast<intptr_t>(lastContext);
+          if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            std::cerr << "[SLEEPDBG] park gid=" << g->id << " ms=" << ms << " lastReason=" << (int)lastReason << "\n";
+          }
           {
             std::lock_guard wlock(g->wait_handle_mutex_);
             g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
@@ -1184,7 +1318,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         if (sched->current() == g) {
           sched->clearCurrent();
         }
-      } else {
+      } else if (frames_drained) {
         g->state = compiler::Scheduler::GoroutineState::Done;
         if (g->fiber) {
           g->fiber->state = compiler::FiberState::DONE;
@@ -1193,7 +1327,15 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           vm_->releaseCallback(g->update_callback_id);
           g->update_callback_id = 0;
       }
-    }
+    } else {
+        // Tick budget expired (or complex-opcode slow fallback): the
+        // goroutine is still mid-run. Preserve its fiber state and put it
+        // back on the run queue so the pump keeps servicing siblings
+        // (hotkeys, timers, other async tasks) instead of spinning on this
+        // goroutine forever.
+        if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+        sched->yield(g);
+      }
 
     // Drain any var_names queued from inside the goroutine's dispatch
     // loop. By this point current_executing_fiber_ is null (set to nullptr

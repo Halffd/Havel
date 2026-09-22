@@ -1,0 +1,18 @@
+// Compile-only companion to test_mode_block_syntax.hv.
+// What: proves parse + bytecode compile of the hotkeys { ... } block inside a
+//       mode definition (binding.mode stamped at parse time, compiler emits
+//       the mode() == "gaming" gate in the generated wrapper).
+// Why not run: a real hotkey binding keeps the process alive (event loop),
+//       so execution is never safe in a test suite.
+// Verified with: havel --lint this_file  (must exit 0)
+
+fn inGaming() { mode() == "gaming" }
+
+mode "gaming" {
+    condition = inGaming
+    enter { print("enter gaming") }
+    exit { print("exit gaming") }
+    hotkeys {
+        F1 => { print("F1 pressed in gaming") }
+    }
+}

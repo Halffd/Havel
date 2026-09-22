@@ -80,11 +80,13 @@ enum class ExtendedTag : uint64_t {
   BOUND_METHOD_ID = 0x12, // Bound method (stores index into GC heap)
   WAITGROUP_ID = 0x13, // WaitGroup object (stores index into GC heap)
   STRING_CURSOR_ID = 0x14, // UTF-8 string cursor with position state
+  PENDING_ID = 0x15,     // Fiber-suspending host call in flight (payload = token)
 };
 
 // Bool payload values
 static constexpr uint64_t BOOL_FALSE = 0;
 static constexpr uint64_t BOOL_TRUE = 1;
+static constexpr uint64_t BOOL_DEFAULT_ARRAY = 2; // default-param `= []` sentinel
 
 // Extended tag mask (bits 43-47, 5 bits for values 0-31)
 // Positioned below the primary tag (bits 48-50) to avoid overlap
@@ -237,6 +239,19 @@ public:
 
   static Value makeBool(bool b) { return Value(makeBoolRaw(b)); }
 
+  // Default-parameter sentinel meaning "allocate a fresh empty array at call
+  // time". BOOL payload 2: distinct from BOOL_TRUE(1)/BOOL_FALSE(0), so a
+  // genuine `= true` default is never mistaken for `= []`.
+  static Value makeDefaultArraySentinel() {
+    return Value(makeTaggedRaw(static_cast<uint64_t>(ValueTag::BOOL),
+                               BOOL_DEFAULT_ARRAY));
+  }
+  bool isDefaultArraySentinel() const {
+    return isBoxed(bits_) &&
+           extractTag(bits_) == ValueTag::BOOL &&
+           extractPayload(bits_) == BOOL_DEFAULT_ARRAY;
+  }
+
   static Value makeNull() { return Value(makeNullRaw()); }
 
   static Value makePtr(void *ptr) { return Value(makePtrRaw(ptr)); }
@@ -323,6 +338,14 @@ public:
 
   static Value makeWaitGroupId(uint32_t id) {
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::WAITGROUP_ID), id));
+  }
+
+  // Fiber-suspending host call marker: the CALL epilogue sees this, parks
+  // the current goroutine on the token, and a later resume (built VM-side
+  // from the worker's C++ result) replaces the stack slot. Never escapes
+  // to Havel code; toString prints <pending:N> defensively.
+  static Value makePending(uint32_t token) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::PENDING_ID), token));
   }
 
   static Value makeCoroutineId(uint32_t id) {
@@ -454,6 +477,15 @@ bool isRangeId() const {
   bool isWaitGroupId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
       extractExtendedTag(bits_) == ExtendedTag::WAITGROUP_ID;
+  }
+
+  bool isPending() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+      extractExtendedTag(bits_) == ExtendedTag::PENDING_ID;
+  }
+
+  uint32_t asPendingToken() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
   }
 
   bool isCoroutineId() const {

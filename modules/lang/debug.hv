@@ -59,6 +59,22 @@ fn setFlag(flagName, value) {
   }
 }
 
+// Runtime verbose-logging toggles. The LogModule C++ plugin owns the
+// process-wide Configs flags; in self-hosted runs the plugin may not be
+// activated, so keep module-local mirrors. Contract (smoke
+// debug_toggle_verbose_*): returns the NEW state as a bool.
+fn toggleVerboseConditionLogging() {
+  cur = flags.verboseCondition == true
+  flags.verboseCondition = !cur
+  !cur
+}
+
+fn toggleVerboseKeyLogging() {
+  cur = flags.verboseKey == true
+  flags.verboseKey = !cur
+  !cur
+}
+
 // ============================================================
 // CLI arg parser for debug flags
 // Returns: updated cfg object with debug flags set
@@ -538,4 +554,4 @@ fn dumpBytecodeSummary() {
  traceBytecode("total: " + str(totalInstrs) + " instrs, " + str(totalConsts) + " consts")
 }
 
-{isOn: isOn, setFlag: setFlag, parseDebugArgs: parseDebugArgs, trace: trace, traceLexer: traceLexer, traceParser: traceParser, traceAst: traceAst, traceBytecode: traceBytecode, traceScope: traceScope, traceEmitter: traceEmitter, traceTypes: traceTypes, traceGc: traceGc, dumpToken: dumpToken, dumpTokenList: dumpTokenList, astKindName: astKindName, dumpAstNode: dumpAstNode, dumpAst: dumpAst, bytecodeStats: bytecodeStats, dumpBytecodeStats: dumpBytecodeStats, dumpBytecode: dumpBytecode, dumpCurrentFunc: dumpCurrentFunc, colorizeBytecodeLine: colorizeBytecodeLine, traceEmit: traceEmit, startTimer: startTimer, endTimer: endTimer, dumpScope: dumpScope, parseBytecodeSummary: parseBytecodeSummary, dumpBytecodeSummary: dumpBytecodeSummary, DebugFlags: DebugFlags}
+{isOn: isOn, setFlag: setFlag, parseDebugArgs: parseDebugArgs, trace: trace, traceLexer: traceLexer, traceParser: traceParser, traceAst: traceAst, traceBytecode: traceBytecode, traceScope: traceScope, traceEmitter: traceEmitter, traceTypes: traceTypes, traceGc: traceGc, dumpToken: dumpToken, dumpTokenList: dumpTokenList, astKindName: astKindName, dumpAstNode: dumpAstNode, dumpAst: dumpAst, bytecodeStats: bytecodeStats, dumpBytecodeStats: dumpBytecodeStats, dumpBytecode: dumpBytecode, dumpCurrentFunc: dumpCurrentFunc, colorizeBytecodeLine: colorizeBytecodeLine, traceEmit: traceEmit, startTimer: startTimer, endTimer: endTimer, dumpScope: dumpScope, parseBytecodeSummary: parseBytecodeSummary, dumpBytecodeSummary: dumpBytecodeSummary, toggleVerboseConditionLogging: toggleVerboseConditionLogging, toggleVerboseKeyLogging: toggleVerboseKeyLogging, DebugFlags: DebugFlags}

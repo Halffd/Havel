@@ -353,7 +353,9 @@ fn BacktickExpression(command, line, col) {
 
 }
 fn ShellCommand(command, capture, line, col) {
-    {kind: "ShellCommand", line: line, col: col, command: command, capture: capture}
+    // command: string form (backtick-derived); commandExpr: expression form
+    // ($ <expr>, e.g. $ [b, nt, url] or $! (cmd)). Mirrors C++ ShellCommandExpression.
+    {kind: "ShellCommand", line: line, col: col, command: command, capture: capture, commandExpr: null}
 
 }
 fn RangeExpression(start, end, inclusive, line, col) {
@@ -488,7 +490,7 @@ fn ModeBlock(modeName, body, line, col) {
 
 }
 fn ModeDefinition(name, condition, enterBlock, exitBlock) {
- {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock, priority: 0, onEnterFrom: "", onExitTo: "", onEnterFromBlock: null, onExitToBlock: null}
+ {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock, priority: 0, onEnterFrom: "", onExitTo: "", onEnterFromBlock: null, onExitToBlock: null, hotkeys: null}
 
 }
 fn ConfigSection(sectionName, args, pairs, line, col) {

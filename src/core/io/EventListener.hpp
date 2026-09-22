@@ -64,7 +64,12 @@ public:
   std::map<int, bool> evdevKeyState;
 
   void Stop();
-  void SetGrabDevices(bool grab) { grabDevices = grab; }
+  // Engage/release a whole-input grab on the backend this listener reads and
+  // keep the grabDevices forwarding flag in sync, so non-hotkey input is
+  // re-injected via uinput while grabbed (instead of locking the desktop).
+  // Returns false (and refuses the grab) when synthesis is unavailable.
+  bool SetGrabDevices(bool grab);
+  bool GetGrabDevices() const { return grabDevices; }
   bool IsRunning() const { return running.load(); }
   bool GetKeyState(int evdevCode) const;
 
@@ -103,7 +108,7 @@ public:
 
   bool SetupUinput();
   bool SupportsSynthesis() const;
-  void SendUinputEvent(int type, int code, int value);
+  bool SendUinputEvent(int type, int code, int value);
   void BeginUinputBatch();
   void QueueUinputEvent(int type, int code, int value);
   void EndUinputBatch();
@@ -244,7 +249,6 @@ private:
   void ProcessMouseEvent(const input_event &ev, int32_t hiResVal = 0);
 
   // Hotkey evaluation helpers (legacy; kept for compatibility)
-  bool EvaluateHotkeys(int evdevCode, bool down, bool repeat);
   bool EvaluateCombo(const HotKey &hotkey);
   bool EvaluateWheelCombo(const HotKey &hotkey, int wheelDirection);
   void QueueMouseMovementHotkey(int virtualKey);

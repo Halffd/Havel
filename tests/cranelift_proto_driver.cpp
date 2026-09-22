@@ -93,8 +93,10 @@ int main() {
     CHECK(out.asInt() == 42);
 
     // Unsupported opcode must be refused (left to the interpreter).
+    // MOD has no bridge lowering in the fast tier (div/mod semantics stay
+    // in the runtime and the ORC backend owns them).
     BytecodeFunction g("cl_bad", 0, 0);
-    g.instructions.push_back(Instruction(OpCode::ARRAY_NEW));
+    g.instructions.push_back(Instruction(OpCode::MOD));
     g.instructions.push_back(Instruction(OpCode::RETURN));
     CHECK(!CraneliftBackend::can_lower(g));
     CHECK(!backend.compile(g));

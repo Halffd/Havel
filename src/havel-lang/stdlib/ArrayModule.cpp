@@ -58,8 +58,14 @@ void registerArrayModule(const VMApi &api) {
     if (obj) {
       for (const auto& [name, value] : *obj) {
         if (name.empty() || name[0] == '_') continue;
+        // Mirror ObjectModule: never publish a namespace field as a bare
+        // global when that name is a builtin type (array/str/set/...).
+        // A future "set"/"type" field on this namespace would otherwise
+        // clobber the type constructor / math/set namespace.
         api.setField(arrObj, name, value);
-        api.setGlobal(name, value);
+        if (!vm.isHostFunctionGlobal(name)) {
+          api.setGlobal(name, value);
+        }
       }
     }
   }

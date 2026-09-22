@@ -1,0 +1,56 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Regression: ORC CALL_METHOD dropped receiver for self-style fn fields on
+// plain objects.
+// What: havel_vm_call_method's module arm set passReceiverAsSelf=false
+// unconditionally when the receiver matched a global module object. For a
+// plain object holding a fn field whose first param is "self" (method-style),
+// the interpreter prepends the receiver (wantsSelf from param name,
+// VMControlFlow.cpp:610-640); the bridge dropped it, shifting args by one.
+// Same gap in the non-module arm for local plain-object receivers.
+// Why: hot() compiled at 1000 calls; first tiered call produced
+// "hi 0" instead of "hi bob".
+// Expected: "hi bob" from both global and local receivers, tiered + interp.
+
+obj = {
+    greet: fn(self, name) { "hi " + name }
+}
+
+fn make() {
+    o = { greet: fn(self, name) { "hi " + name } }
+    return o
+}
+
+fn hot_global() { obj.greet("bob") }
+fn hot_local() { make().greet("bob") }
+
+// Negative control: fn field WITHOUT "self" first param must NOT receive
+// the receiver (interp: module → no self).
+nobj = {
+    greet: fn(name) { "hi " + name }
+}
+fn hot_non_self() { nobj.greet("bob") }
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r1 = hot_global()
+    r2 = hot_local()
+    r3 = hot_non_self()
+    if r1 != "hi bob" || r2 != "hi bob" || r3 != "hi bob" {
+        if bad == -1 {
+            bad = k
+            badval = "g=${r1} l=${r2} n=${r3}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_self_param_field")
+} else {
+    print("FAIL orc_self_param_field k=${bad} ${badval}")
+    process.exit(255)
+}

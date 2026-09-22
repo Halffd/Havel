@@ -1,0 +1,10 @@
+// mode_eval.hv — Mode evaluation helper
+// Provides: modeEval, currentMode, lock
+
+fn modeEval(win) { "ok" }
+val currentMode = "default"
+val currentMode2 = "default"
+val locked = false
+fn getMode() { currentMode }
+fn getMode2() { currentMode2 }
+fn isLocked() { locked }

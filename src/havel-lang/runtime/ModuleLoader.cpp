@@ -1,6 +1,7 @@
 #include "ModuleLoader.hpp"
 #include "c/ModulePlugin.h"
 #include "dl/Loader.h"
+#include "../compiler/runtime/RuntimeSupport.hpp"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <system_error>
 #include <array>
 #include <fstream>
+#include <span>
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -125,13 +127,28 @@ std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSou
     for (char& c : normalized) {
         if (c == '\\') c = '/';
     }
-    if (normalized.find("/modules/lang/") != std::string::npos) {
-        std::string stem = fs::path(normalized).stem().string();
-        return "lang." + stem;
-    }
-    if (normalized.find("/modules/std/") != std::string::npos) {
-        std::string stem = fs::path(normalized).stem().string();
-        return "std." + stem;
+    // Bundled-module cache names keep the namespace prefix and encode the
+    // path RELATIVE to the namespace root so a nested module
+    // (lang/math/math.hv) cannot collide with a top-level one
+    // (lang/math.hv): both used to compress to "lang.math", the flat
+    // cache held one bytecode for two different sources, and importing
+    // the nested one served the wrapper's .hvc — whose own `use
+    // "math/math"` then tripped the circular-dependency guard and
+    // dropped every sidecar export (math.randint returned null).
+    for (const char* ns : {"lang", "std", "app"}) {
+        std::string marker = std::string("/modules/") + ns + "/";
+        auto pos = normalized.find(marker);
+        if (pos != std::string::npos) {
+            // relative path without extension, slashes -> dots:
+            // math/math.hv -> math.math ; math.hv -> math
+            std::string rel = normalized.substr(pos + marker.size());
+            if (rel.size() > 3 && rel.substr(rel.size() - 3) == ".hv")
+                rel = rel.substr(0, rel.size() - 3);
+            for (char& c : rel) {
+                if (c == '/') c = '.';
+            }
+            return std::string(ns) + "." + rel;
+        }
     }
 
     // User module: stem + short hash of the canonical path so two files with
@@ -295,6 +312,62 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     return "";
   }
 
+  // Map a bytecode-cache key ("lang.<stem>", "std.<stem>", "app.<stem>",
+  // or a user flat-cache "stem.<8hex>") back to a live source file with the
+  // same stem on the module search path. Returns "" when no live candidate
+  // exists (installed bundles / AOT-only deployments).
+  static std::string findLiveSourceForCacheName(
+      const std::string& hashKey,
+      const std::vector<std::string>& searchPaths) {
+    namespace fs = std::filesystem;
+    std::string stem;
+    for (const char* prefix : {"lang.", "std.", "app."}) {
+      if (hashKey.starts_with(prefix)) {
+        stem = hashKey.substr(std::strlen(prefix));
+        break;
+      }
+    }
+    if (stem.empty()) {
+      // User flat-cache name: stem.<8 hex chars>
+      auto dot = hashKey.rfind('.');
+      if (dot != std::string::npos && hashKey.size() - dot == 9) {
+        stem = hashKey.substr(0, dot);
+      } else {
+        stem = hashKey;
+      }
+    }
+    // Nested bundled-module cache names carry the subpath with slashes
+    // encoded as dots (lang.math.math <- lang/math/math.hv). Resolve from
+    // the deepest candidate: try the full dotted form as a nested path
+    // first, then fall back to treating the last segment as the stem.
+    // Otherwise "lang.math.math" looked up stem "math" and matched the
+    // top-level lang/math.hv wrapper instead of lang/math/math.hv.
+    std::vector<fs::path> candidates;
+    {
+      std::string nested = stem;
+      size_t lastDot = nested.rfind('.');
+      if (lastDot != std::string::npos) {
+        std::string dir = nested.substr(0, lastDot);
+        std::string leaf = nested.substr(lastDot + 1);
+        for (char& c : dir) {
+          if (c == '.') c = '/';
+        }
+        candidates.push_back(fs::path(dir) / (leaf + ".hv"));
+      }
+    }
+    candidates.push_back(fs::path(stem + ".hv"));
+    for (const auto& sp : searchPaths) {
+      for (const auto& rel : candidates) {
+        fs::path cand = fs::path(sp) / rel;
+        if (fs::exists(cand)) {
+          try { return fs::canonical(cand).string(); }
+          catch (...) { return cand.string(); }
+        }
+      }
+    }
+    return "";
+  }
+
   std::optional<ModuleLoader::ResolvedModule>
   ModuleLoader::resolve(const std::string& modulePath,
                         const std::string& scriptDir) const {
@@ -311,20 +384,142 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
                           const std::string& hashKey) -> std::optional<ResolvedModule> {
     if (!fs::exists(hvcPath)) return std::nullopt;
 
-    // Check persistent hash index first
+    // Prefer validating against the LIVE source embedded in the .hvc
+    // header (serializeChunk embeds the canonical path + sha256 of the
+    // tree it was compiled from). The cache-copy .hv next to the .hvc
+    // is refreshed only when a compile actually happens, so editing
+    // modules/lang/<name>.hv leaves the copy - and the hash index that
+    // hashes it - matching the OLD content forever: bare-name loads
+    // (use scope, use lexer) kept serving pre-edit bytecode with no
+    // signal (observed live: appended probe global invisible after
+    // edit + run). When the embedded path exists, hash it directly.
+    {
+      // Header-prefix read only: this lambda runs on every bare-name
+      // module resolution and .hvc files can be megabytes, so never load
+      // the whole file just to validate the source identity.
+      auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfoFile(
+          hvcPath.string());
+      // Pipeline gate: stamped (v5) entries record the identity of the
+      // self-hosted compiler (emitter/pratt bytecode caches) that produced
+      // them. Source-hash validation alone cannot see pipeline changes:
+      // an emitter fix produces different bytecode from identical source,
+      // and the stale entry kept serving (observed live with smoke-test
+      // entries after emitter/pratt fixes). Reject BEFORE any serve path
+      // below when the current compiler identity differs. Unstamped
+      // entries (v4, or missing fingerprint inputs) keep legacy behavior
+      // and heal to stamped on the next compile.
+      //
+      // The gate is skipped for the fingerprint-input modules themselves
+      // (lang.emitter/pratt/lexer/scope): the fingerprint is the hash of
+      // those very .hvc files, so any recompile of one changes the
+      // fingerprint and would mark the others stale, which rewrites their
+      // .hvc files too - an endless rebuild cycle costing a full
+      // recompilation every run. Their staleness is already covered by
+      // the embedded source-hash check below.
+      if (srcInfo.hasInfo && !srcInfo.pipelineFingerprint.empty() &&
+          !havel::compiler::isPipelineFingerprintInput(hashKey)) {
+        const std::string currentFp =
+            havel::compiler::computePipelineFingerprint(cacheDir);
+        if (!currentFp.empty() &&
+            currentFp != srcInfo.pipelineFingerprint) {
+          return std::nullopt;  // stale pipeline: recompile from source
+        }
+      }
+      if (srcInfo.hasInfo) {
+        // The flat cache is global but source trees are not: a parallel
+        // worktree's binary may have compiled this entry against ITS
+        // copy of the module, and the recorded path says nothing about
+        // THIS tree's sources. Bytecode depends only on source CONTENT,
+        // so validate by hashing the live source this loader would use
+        // (via the search paths) and comparing size+sha256 with the
+        // embedded identity. Identical content across trees reuses;
+        // diverged content falls through to recompile.
+        std::string liveCandidate =
+            findLiveSourceForCacheName(hashKey, searchPaths_);
+        if (!liveCandidate.empty() && fs::exists(liveCandidate)) {
+          std::error_code sizeEc;
+          const auto liveSize =
+              fs::file_size(liveCandidate, sizeEc);
+          std::string liveHash = sha256_file_hex(liveCandidate);
+          static const char hexDigits[] = "0123456789abcdef";
+          std::string embeddedHex;
+          embeddedHex.reserve(srcInfo.hash.size() * 2);
+          for (uint8_t b : srcInfo.hash) {
+            embeddedHex += hexDigits[b >> 4];
+            embeddedHex += hexDigits[b & 0x0F];
+          }
+          if (!liveHash.empty() && liveHash == embeddedHex &&
+              !sizeEc && liveSize == srcInfo.size) {
+            return makeBcCache(hvcPath, hvPath, modulePath);
+          }
+          if (!liveHash.empty() && liveHash != embeddedHex) {
+            // Live source changed since this .hvc was compiled -
+            // stale, do not serve it.
+            ::havel::debug("[BC-CACHE] stale: hash mismatch {} (live {} != embedded {})",
+                           hashKey, liveHash.substr(0, 8), embeddedHex.substr(0, 8));
+            return std::nullopt;
+          }
+          // Size differs but hash matches: identity must hold on BOTH
+          // fields - treat as stale.
+          if (!liveHash.empty() && liveHash == embeddedHex &&
+              !sizeEc && liveSize != srcInfo.size) {
+            ::havel::debug("[BC-CACHE] stale: size mismatch {} (live {} != embedded {})",
+                           hashKey, liveSize, srcInfo.size);
+            return std::nullopt;
+          }
+        }
+        // No live candidate (installed bundles) or unresolved identity:
+        // fall through to the legacy validations below.
+      }
+    }
+
+    // Check persistent hash index first (cache-copy based; legacy path
+    // for hvcs without embedded source info)
     loadHashIndex();
     auto hashIt = bytecode_hash_index_.find(hashKey);
     if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
       // Compute current source hash
       std::string currentHash = sha256_file_hex(hvPath.string());
       if (currentHash == hashIt->second) {
-        // Hash matches - cache is valid
+        // Index matches the cache COPY. The copy only refreshes when a
+        // compile actually happens, so a live source edit is invisible
+        // to it. When the copy mirrors a live source file that exists
+        // on the search path, require that match too; otherwise
+        // (installed bundles with no live source) the copy match is
+        // the best available validation.
+        std::string liveCandidate =
+            findLiveSourceForCacheName(hashKey, searchPaths_);
+        if (!liveCandidate.empty()) {
+          std::string liveHash = sha256_file_hex(liveCandidate);
+          if (!liveHash.empty() && liveHash != currentHash) {
+            // Live source drifted from the copy - stale, fall through.
+            return std::nullopt;
+          }
+        }
         return makeBcCache(hvcPath, hvPath, modulePath);
       }
       // Hash mismatch - cache is stale, fall through to mtime check
     }
 
-    // Fallback to mtime check
+    // Fallback to mtime check. The hvc's mtime is NOT trustworthy for
+    // hash-less caches: GLBS rewrites bump it on every cold load
+    // without recompiling, and emit_pipeline copies the source beside
+    // the cache after the build step, so both mtimes can be newer than
+    // the bytecode inside. When a live source for this cache name
+    // exists on the search path, serve only if the hvc is at least as
+    // new as the LIVE source (dev flow); installed bundles without live
+    // sources keep the cache-copy comparison.
+    std::string liveCandidate =
+        findLiveSourceForCacheName(hashKey, searchPaths_);
+    if (!liveCandidate.empty()) {
+      auto hvcTime = fs::last_write_time(hvcPath);
+      bool liveNewer = false;
+      std::error_code liveEc;
+      auto liveTime = fs::last_write_time(liveCandidate, liveEc);
+      if (!liveEc && liveTime > hvcTime) liveNewer = true;
+      if (liveNewer) return std::nullopt;
+      return makeBcCache(hvcPath, hvPath, modulePath);
+    }
     auto hvcTime = fs::last_write_time(hvcPath);
     bool newerOrEqual = !fs::exists(hvPath) ||
                         hvcTime >= fs::last_write_time(hvPath);
@@ -404,6 +599,14 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
         fs::path(cacheDir) / ("std." + name + ".hvc"),
         fs::path(cacheDir) / ("std." + name + ".hv"),
         "std." + name)) {
+    return *bc;
+  }
+
+  // 3. app.<name>.hvc (app modules)
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / ("app." + name + ".hvc"),
+        fs::path(cacheDir) / ("app." + name + ".hv"),
+        "app." + name)) {
     return *bc;
   }
 
@@ -744,6 +947,16 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
   }
 
   std::string ModuleLoader::getDefaultCacheDir() {
+    // Same XDG_CACHE_HOME semantics as havel::Env::cache(): both writers
+    // (autoCacheBytecodeChunk, HavelLauncher) and readers (module
+    // resolution) must agree on ONE location, and tests need to be able
+    // to point the whole binary at a scratch cache via XDG_CACHE_HOME.
+    // This used to hardcode $HOME/.cache, silently ignoring the override
+    // and forcing test runs onto the shared cache.
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    if (xdg && *xdg) {
+      return (std::filesystem::path(xdg) / "havel").string();
+    }
     const char* home = std::getenv("HOME");
     if (!home) home = "/tmp";
     return (std::filesystem::path(home) / ".cache" / "havel").string();
@@ -776,6 +989,20 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
   InfoFn info_fn = reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
   if (info_fn) {
     const HavelModuleABI *abi = info_fn();
+    // Build identity: reject plugins compiled against different ABI
+    // headers - their inlined host-VM code corrupts memory at runtime
+    // (SIGFPE in hash modulo observed from a stale plugin).
+    static const char *host_id =
+        HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID);
+    const char *plugin_id = abi ? abi->build_id : nullptr;
+    if (abi && (!plugin_id || strcmp(plugin_id, host_id) != 0)) {
+      std::cerr << "ModuleLoader: build id mismatch for " << path
+                << " (plugin " << (plugin_id ? plugin_id : "(none)")
+                << ", host " << host_id
+                << ") - stale plugin, rebuild it" << std::endl;
+      dlclose(handle);
+      return std::nullopt;
+    }
     if (abi && abi->abi_version >= 1 &&
         abi->abi_version <= HAVEL_MODULE_ABI_VERSION && abi->register_fn) {
       // register_fn must be called with VMApi* from the VM

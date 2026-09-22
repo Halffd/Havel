@@ -1,0 +1,92 @@
+// Test: mode "name" { condition, enter, exit, enter from X, exit from Y,
+//       hotkeys { ... } } — the new full-definition mode syntax.
+// What: the block registers a runtime mode def; mode.set fires
+//       exit(old) -> exit-from / enter-from hooks -> enter(new) in order;
+//       hotkeys inside the block are gated to the mode; io.map/io.unmap
+//       public wrappers exist and are callable from enter/exit.
+// Expected: transcript order [enter gaming, leave gaming to work,
+//           enter from work -> gaming, enter gaming] then mode() == gaming,
+//           mode.list contains gaming, mode.transitions == 2.
+// Compile of the hotkeys { ... } block is verified separately with
+// `havel --lint` (real bindings keep the process alive). Here we keep the
+// block out so the test can return. Gating itself is compiler-emitted
+// (mode() == name wrapper in the binding's condition).
+//
+// Note: io.map needs live IO; fails gracefully to false when absent.
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+log = []
+
+fn onEnterGaming() {
+    log.push("enter gaming")
+    r = io.map("e", "click")  // public wrapper; false if no io
+}
+
+fn onExitGaming() {
+    log.push("exit gaming")
+    r = io.unmap("e")
+}
+
+fn onExitGamingToWork(m) {
+    log.push("exit gaming to work")
+}
+
+fn onEnterGamingFromWork(m) {
+    log.push("enter from work: " + m)
+}
+
+fn condGaming() {
+    mode() == "gaming"
+}
+
+mode "gaming" {
+    condition = condGaming
+    enter { onEnterGaming() }
+    exit { onExitGaming() }
+    exit from "work" { onExitGamingToWork("work") }
+    enter from "work" { onEnterGamingFromWork("work") }
+    // hotkeys { ... } block lives in the --lint companion file (real binding
+    // would keep the process alive); compile path exercised there.
+}
+
+// initial mode is "default"; first set fires enter only
+mode.set("gaming")
+check(log[0] == "enter gaming", "enter fires on first set")
+check(mode() == "gaming", "mode() == gaming")
+
+// transition gaming -> work: exit(gaming) then exit-from hook
+mode.set("work")
+check(log[1] == "exit gaming", "exit fires on leaving")
+check(log[2] == "exit gaming to work", "exit from hook fires")
+
+// transition work -> gaming: enter-from hook then enter
+mode.set("gaming")
+check(log[3] == "enter from work: work", "enter from hook fires")
+check(log[4] == "enter gaming", "enter fires again")
+
+// no-op same-mode set must not refire
+n = #log
+mode.set("gaming")
+check(#log == n, "same-mode set is no-op")
+
+// hotkeys }: binding mode already gated by compiler; just ensure no crash
+// and that mode.list reflects registration
+mlist = mode.list()
+found = false
+last = #mlist - 1
+for i in 0 .. last {
+    if mlist[i] == "gaming" { found = true }
+}
+check(found, "mode.list contains gaming")
+
+trans = mode.transitions()
+check(trans >= 2, "transitions counted, got: " + trans)
+
+print("OK")

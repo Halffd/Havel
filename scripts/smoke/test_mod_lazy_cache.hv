@@ -1,0 +1,35 @@
+// Module-global lazy cache + build counter: regression target for the
+// module-tiering BP_TABLE divergence class. A tiered (JIT-compiled)
+// module function must write module globals against the MODULE's
+// globals sidecar (doCall JIT branch swaps closure_globals + pushes a
+// synthetic CallFrame), never the caller's frame. If the write lands
+// in the caller's scope, CACHE stays null for the tiered function and
+// BUILDS increments past 1 - that is the observable failure.
+
+CACHE = null
+BUILDS = 0
+
+fn ensureCache() {
+    if CACHE != null { return CACHE }
+    CACHE = {}
+    i = 0
+    while i < 64 {
+        CACHE["k${str(i)}"] = i * 3
+        i = i + 1
+    }
+    BUILDS = BUILDS + 1
+    CACHE
+}
+
+fn lookup(idx) {
+    c = ensureCache()
+    c["k${str(idx)}"]
+}
+
+fn buildCount() {
+    // Read through a second module fn so the read path is also a module
+    // call (exercise the sidecar read too, not just the writer).
+    BUILDS
+}
+
+{ ensureCache: ensureCache, lookup: lookup, buildCount: buildCount }

@@ -1,0 +1,8 @@
+// async.hv — re-export of app/async_mod utilities.
+// Module system auto-exports every top-level binding, so this single
+// `use` import is the whole module. Do NOT add `fn x(...) { x(...) }`
+// wrappers here: a function body resolving its own name recurses
+// infinitely (stack overflow at call depth 16384), which used to make
+// sleep()/go()/etc. hang or die when reached through `use async`.
+use { sleep, go, debounce, throttle, retry, timeoutWrap as timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker } from "async_mod"
+fn await(x) { x }

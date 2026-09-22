@@ -139,6 +139,12 @@ private:
         t->timedOut.store(true);
       }
 
+      // The in-hotkey-callback flag MUST be exception-safe: if t->fn() or an
+      // errorCallback throws an unexpected exception type, a bare
+      // setInHotkeyCallback(false) after the catch chain would be skipped
+      // and that worker thread would permanently defer every IO::Send into
+      // pendingSends_ (the "input stops working after hours" bug: stuck
+      // tl_inHotkeyCallback silently queues key events forever).
       try {
         setInHotkeyCallback(true);
         t->fn();
@@ -146,7 +152,12 @@ private:
         t->errorMessage = std::string("ScriptError: ") + e.what();
         havel::stdlib::notifyRuntimeError(e.message);
         if (t->errorCallback) {
-          t->errorCallback(t->errorMessage);
+          try {
+            t->errorCallback(t->errorMessage);
+          } catch (...) {
+            havel::error("[HotkeyExecutor] errorCallback threw for: {}",
+                         t->errorMessage);
+          }
         } else {
                 havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
@@ -154,7 +165,12 @@ private:
         t->errorMessage = std::string("Exception: ") + e.what();
         havel::stdlib::notifyRuntimeError(e.what());
         if (t->errorCallback) {
-          t->errorCallback(t->errorMessage);
+          try {
+            t->errorCallback(t->errorMessage);
+          } catch (...) {
+            havel::error("[HotkeyExecutor] errorCallback threw for: {}",
+                         t->errorMessage);
+          }
         } else {
                 havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
@@ -162,12 +178,21 @@ private:
         t->errorMessage = "Unknown exception in hotkey execution";
         havel::stdlib::notifyRuntimeError(t->errorMessage);
         if (t->errorCallback) {
-          t->errorCallback(t->errorMessage);
+          try {
+            t->errorCallback(t->errorMessage);
+          } catch (...) {
+            havel::error("[HotkeyExecutor] errorCallback threw for: {}",
+                         t->errorMessage);
+          }
         } else {
                 havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       }
-      setInHotkeyCallback(false);
+      // Reset in a nested try so even a catastrophic rethrow path clears it
+      try {
+        setInHotkeyCallback(false);
+      } catch (...) {
+      }
 
       try {
         t->prom->set_value();

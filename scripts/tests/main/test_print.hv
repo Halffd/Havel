@@ -1,7 +1,18 @@
+// test std print module: namespace + callable namespace after `use "print"`
+// verifies:
+// 1. use "print" binds the module namespace as `print`
+// 2. print.fmt("{} {}", ...) works via the namespace
+// 3. print(x) still works after the import: the namespace is callable
+//    through __call wired to the module's own fn print export
+// 4. print.puts exists as a namespace member
+
 use "print"
-result = print.fmt("{} {}", "Hello", "World"); print result; print.puts 1;
+result = print.fmt("{} {}", "Hello", "World")
+print(result)
+print.puts 1
 if result == "Hello World" {
     exit(0)
 } else {
+    print("FAIL expected Hello World got ${result}")
     exit(1)
 }

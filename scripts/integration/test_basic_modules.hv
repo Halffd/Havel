@@ -1,47 +1,40 @@
-// Basic test script for new host modules
-// Tests core functionality without complex features
+// Basic host module functionality test
+use time
+use fs
 
-// Test Timer Module
-let start = timer.now();
-timer.sleep(50);
-let end = timer.now();
-let elapsed = end - start;
+pass = 0
+fail = 0
+fn check(name, actual, expected) {
+  if actual == expected { pass += 1 } else { fail += 1; print("FAIL ${name}: got ${actual}, expected ${expected}") }
+}
 
-// Test File System Module
-let testFile = "/tmp/havel_test.txt";
-fs.writeFile(testFile, "Hello from Havel VM!");
-let content = fs.readFile(testFile);
-let exists = fs.exists(testFile);
+// time module
+start = time.now()
+time.sleep(50)
+elapsed = time.now() - start
+check("sleep elapsed >= 40", elapsed >= 40, true)
+check("sleep elapsed sane", elapsed < 2000, true)
 
-// Test Clipboard Module
-clipboard.setText("Test message from Havel VM");
-let clipboardText = clipboard.getText();
-let hasText = clipboard.hasText();
-clipboard.clear();
+// fs module
+testFile = "/tmp/havel_basic_modules_test.txt"
+fs.write(testFile, "Hello from Havel!")
+content = fs.read(testFile)
+check("read back", content, "Hello from Havel!")
+check("exists", fs.exists(testFile), true)
 
-// Test Window Module (placeholder)
-let activeWindow = window.active();
-let allWindows = window.list();
+// cleanup
+fs.delete(testFile)
+check("removed", fs.exists(testFile), false)
 
-// Test Hotkey Module (placeholder) - without function callback
-let hotkeyId = hotkey.register("ctrl+alt+t", "callback_string");
-let isRegistered = hotkey.isRegistered(hotkeyId);
-hotkey.unregister(hotkeyId);
+// clipboard module (headless-safe ops)
+clipboard.setText("Test message")
+clip = clipboard.getText()
+check("clipboard roundtrip", clip, "Test message")
+clipboard.clear()
 
-// Test File System Module - directory listing
-let entries = fs.listDirectory("/tmp");
-let entryCount = entries.length;
+// string module via namespace
+use string
+check("string toUpper", string.upper("abc"), "ABC")
 
-// Write a simple result file
-let result = "Timer elapsed: " + elapsed + "ms\n";
-result += "File content: " + content + "\n";
-result += "File exists: " + exists + "\n";
-result += "Clipboard text: " + clipboardText + "\n";
-result += "Clipboard has text: " + hasText + "\n";
-result += "Active window: " + activeWindow + "\n";
-result += "Window count: " + allWindows.length + "\n";
-result += "Hotkey ID: " + hotkeyId + "\n";
-result += "Hotkey registered: " + isRegistered + "\n";
-result += "Directory entries: " + entryCount + "\n";
-
-fs.writeFile("/tmp/havel_test_results.txt", result);
+print("=== ${pass} passed, ${fail} failed ===")
+if fail > 0 { process.exit(1) }

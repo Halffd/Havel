@@ -4,7 +4,7 @@
 
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
 use { traceEmitter, isOn } from "debug"
-use { LambdaExpression, BlockStatement } from "ast"
+use { LambdaExpression, BlockStatement, ExpressionStatement } from "ast"
 use "bytecodeBuilder"
 use { emitterError } from "error"
 
@@ -52,7 +52,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
- {scope: null, func_map: {}, globals: {}, global_names: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, tryDepth: 0, whenConditionFuncIndex: -1}
+ {scope: null, func_map: {}, globals: {}, global_names: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, keepStmtValue: false, tryDepth: 0, whenConditionFuncIndex: -1}
 
 }
 fn emitError(msg, line, col) {
@@ -166,8 +166,10 @@ fn emitStoreVar(emitter, name) {
 
 fn emitStoreDecl(emitter, name, isConst) {
   funcRoot = scopeFindFuncRoot(emitter.scope)
-  // Only treat as global if in main function scope (not nested function)
-  if funcRoot.parent != null && funcRoot.funcId == emitter.mainFuncId {
+  // Only treat as global if the declaration sits at the true module level:
+  // current scope IS the main function root. `val` in a nested block/loop
+  // shadowing a global must declare a block-local instead.
+  if emitter.scope == funcRoot && funcRoot.parent != null && funcRoot.funcId == emitter.mainFuncId {
     if emitter.global_names[name] == true {
       bc.emit(isConst ? "STORE_IMMUT_GLOBAL" : "STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
       return
@@ -630,6 +632,27 @@ return
 		argc = #node.args
 		savedArgc = argc
 		hasKwargs = node.kwargs != null and #node.kwargs > 0
+		// waitgroup.new() → single WAITGROUP_NEW. The parser special-cases
+		// `waitgroup` into a WaitGroupExpression; the trailing `.new()`
+		// MemberExpression then produced WAITGROUP_NEW + CALL_METHOD "new",
+		// and the bogus method call (waitgroup has no `new` prototype
+		// method) replaced the fresh WaitGroupId with null — every
+		// wg.add/done/wait call after that silently no-op'd.
+		isWgNew = callee.kind == "MemberExpression" && callee.property == "new"
+		if isWgNew && callee.obj != null && callee.obj.kind == "WaitGroupExpression" {
+			bc.emit("WAITGROUP_NEW")
+			return
+		}
+		// channel.new() → single CHANNEL_NEW. Same story: `channel` parses
+		// to a ChannelExpression; the trailing CALL_METHOD "new" had no
+		// prototype method and nulled the fresh ChannelId.
+		isChNew = callee.kind == "MemberExpression" && callee.property == "new"
+		if isChNew && callee.obj != null && callee.obj.kind == "ChannelExpression" {
+			sid = globalIdx(emitter, "channel.new")
+			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+			bc.emit("CALL", 0)
+			return
+		}
 		// When compiling sub-expressions (callee, args), disable tail position
 		savedTail = emitter.inTailPosition
 		// Super call: @->method(args) → load parent class, OBJECT_GET_RAW method, CALL with self + args
@@ -785,24 +808,29 @@ return
         target = node.target
     if target.kind == "Identifier" {
         emitExpr(emitter, node.value)
+        // Leave the assigned value on the stack like the C++ compiler:
+        // chained assignment a = b = value compiles as nested
+        // AssignmentExpressions and each inner store must observe the
+        // RHS. Statement position consumes it with POP in emitStmt.
         bc.emit("DUP")
         emitStoreVar(emitter, target.name)
-        bc.emit("POP")
         return
     }
         if target.kind == "MemberExpression" {
+            tempIdx = scopeLocalCount(emitter.scope)
+            emitter.scope.count = emitter.scope.count + 1
             emitExpr(emitter, target.obj)
             emitExpr(emitter, node.value)
+            bc.emit("STORE_VAR", tempIdx)
+            bc.emit("LOAD_VAR", tempIdx)
             keyIdx = bc.add_string(target.property)
             bc.emit("LOAD_CONST", keyIdx)
             bc.emit("OBJECT_SET")
-            // OBJECT_SET pops [obj, value, key] and pushes the object back
-            // for chaining; statement-position assignments must consume it,
-            // matching the Identifier branch's self-cleaning shape - without
-            // this POP every obj.field = value in a loop leaked one stack
-            // slot per iteration (the objects benchmark overflowed the
-            // expression stack at 500k iterations).
+            // OBJECT_SET pops [obj, value, key] and pushes the object back.
+            // Discard the object and re-push the value so statement position
+            // sees exactly one slot (POP in emitStmt), like the C++ compiler.
             bc.emit("POP")
+            bc.emit("LOAD_VAR", tempIdx)
             return
         }
 if target.kind == "IndexExpression" {
@@ -889,8 +917,14 @@ if target.kind == "IndexExpression" {
 		return
 	}
     if target.kind == "AtAtExpression" {
+      // @@field = value -> store to Class.field (mirrors C++ bootstrap):
+      // LOAD_GLOBAL <ClassName>, stash obj/val/key, OBJECT_SET, result = RHS
       fname = target.field
       if fname.kind == "Identifier" { fname = fname.name }
+      if emitter.currentClassName == null || emitter.currentClassName == "" {
+        emitError("@@ used outside of a class: " + str(fname), node.line, node.col)
+        return
+      }
       tempVal = scopeLocalCount(emitter.scope)
       emitter.scope.count = emitter.scope.count + 1
       tempObj = scopeLocalCount(emitter.scope)
@@ -898,10 +932,10 @@ if target.kind == "IndexExpression" {
       tempKey = scopeLocalCount(emitter.scope)
       emitter.scope.count = emitter.scope.count + 1
       emitExpr(emitter, node.value)
-      sid = globalIdx(emitter, "this")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      bc.emit("STORE_VAR", tempObj)
       bc.emit("STORE_VAR", tempVal)
+      classSid = globalIdx(emitter, emitter.currentClassName)
+      bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
+      bc.emit("STORE_VAR", tempObj)
       keyIdx = bc.add_string(fname)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("STORE_VAR", tempKey)
@@ -975,6 +1009,11 @@ if target.kind == "IndexExpression" {
 				endJump = bc.emit("JUMP", 0)
 				// Fallback: desugared load + op + store
 				bc.patch_jump(fallbackJump, bc.instr_count())
+				// JUMP_IF_NULL popped one copy; pop the leftover result
+				// before the fallback re-loads the variable, otherwise one
+				// slot leaks per iteration in loops (async-task stack
+				// balloons, fiber save/restore becomes quadratic).
+				bc.emit("POP")
 				emitLoadVar(emitter, target.name)
 				emitExpr(emitter, node.value)
 				bc.emit(oc)
@@ -1001,9 +1040,20 @@ if target.kind == "IndexExpression" {
 			}
 		}
 	else if target.kind == "MemberExpression" {
-		// obj.prop += val → try in-place op_iadd, fallback to load+op+store
+		// obj.prop += val → evaluate the receiver ONCE into a temp local.
+		// Re-emitting target.obj in the in-place, fallback and reload paths
+		// evaluated side-effecting receivers (getObj().a += 2 called
+		// getObj() twice) and double-counted hits.
+		tempObj = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		tempResult = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		emitExpr(emitter, target.obj)
+		bc.emit("STORE_VAR", tempObj)
 		if inplaceMethod != null {
-			emitExpr(emitter, target.obj)
+			// Try in-place op_iadd first; fall back to load+op+store when
+			// the receiver type has no in-place method (returns null).
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
@@ -1011,43 +1061,55 @@ if target.kind == "IndexExpression" {
 			emitExpr(emitter, node.value)
 			methodIdx = bc.add_chunk_string(inplaceMethod)
 			bc.emit("CALL_METHOD", bc.str_id(methodIdx), 1)
-			// Check if in-place returned null
+			// Preserve the op result (mutated value or null) for both the
+			// reload-store and the expression value.
 			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			fallbackJump = bc.emit("JUMP_IF_NULL", 0)
-			// In-place succeeded — POP result, reload original obj+prop value
-			bc.emit("POP")
-			emitExpr(emitter, target.obj)
+			// In-place succeeded — object mutated in place: write the op
+			// result back under the same key and reload it as the value.
+			bc.emit("LOAD_VAR", tempResult)
 			keyIdx2 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
-			bc.emit("OBJECT_GET")
+			bc.emit("OBJECT_SET")
+			bc.emit("POP")
 			endJump = bc.emit("JUMP", 0)
-			// Fallback: desugared form
+			// Fallback: desugared form. JUMP_IF_NULL popped one copy; pop
+			// the leftover null, then load+op+store (leaves one value).
 			bc.patch_jump(fallbackJump, bc.instr_count())
-			emitExpr(emitter, target.obj)
+			bc.emit("POP")
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx3 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx3)
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
-			// Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
+			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			keyIdx4 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx4)
 			bc.emit("OBJECT_SET")
+			bc.emit("POP")
 			bc.patch_jump(endJump, bc.instr_count())
+			bc.emit("LOAD_VAR", tempResult)
 		}
 		else {
-			// No in-place — desugared form
-			emitExpr(emitter, target.obj)
+			// No in-place — desugared form, leaves exactly one value.
+			bc.emit("LOAD_VAR", tempObj)
 			bc.emit("DUP")
 			keyIdx = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx)
 			bc.emit("OBJECT_GET")
 			emitExpr(emitter, node.value)
 			bc.emit(oc)
+			bc.emit("DUP")
+			bc.emit("STORE_VAR", tempResult)
 			keyIdx2 = bc.add_string(target.property)
 			bc.emit("LOAD_CONST", keyIdx2)
 			bc.emit("OBJECT_SET")
+			bc.emit("POP")
+			bc.emit("LOAD_VAR", tempResult)
 		}
 	}
 	else if target.kind == "IndexExpression" {
@@ -1073,6 +1135,10 @@ if target.kind == "IndexExpression" {
 		bc.emit("LOAD_VAR", tempIndex)
 		bc.emit("LOAD_VAR", tempResult)
 		bc.emit("ARRAY_SET")
+		// The DUP'd tempResult copy for the store still sits on the stack;
+		// drop it so exactly the reloaded value remains (one slot leaked per
+		// iteration in loops otherwise - async-task operand stack balloon).
+		bc.emit("POP")
 		bc.emit("LOAD_VAR", tempResult)
 	}
 else if target.kind == "AtExpression" {
@@ -1103,7 +1169,9 @@ else if target.kind == "AtExpression" {
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
-  bc.emit("LOAD_VAR", tempResult)
+  // The mutated value is already on the stack (DUP'd before STORE); the
+  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+  // per loop iteration (async-task operand stack balloon).
 }
 else if target.kind == "AtAtExpression" {
   // @@field += val → load Class.field, load val, op, store Class.field
@@ -1135,7 +1203,9 @@ else if target.kind == "AtAtExpression" {
   bc.emit("LOAD_CONST", fidx2)
   bc.emit("OBJECT_SET")
   bc.emit("POP")
-  bc.emit("LOAD_VAR", tempResult)
+  // The mutated value is already on the stack (DUP'd before STORE); the
+  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+  // per loop iteration (async-task operand stack balloon).
 }
 else {
 emitError("unsupported compound target: " + target.kind, node.line, node.col)
@@ -1144,8 +1214,12 @@ return
 
 }
 if k == "TernaryExpression" {
-  emitExpr(emitter, node.condition)
-  elseJump = bc.emit("JUMP_IF_FALSE", 0)
+   // Conditions are never in tail position (a bare call would become TAIL_CALL)
+   savedTailCond = emitter.inTailPosition
+   emitter.inTailPosition = false
+   emitExpr(emitter, node.condition)
+   emitter.inTailPosition = savedTailCond
+   elseJump = bc.emit("JUMP_IF_FALSE", 0)
   emitExpr(emitter, node.true_expr)
   endJump = bc.emit("JUMP", 0)
   bc.patch_jump(elseJump, bc.instr_count())
@@ -1310,8 +1384,11 @@ arrayIdx = scopeDeclare(loopScope, "__for_result__")
 bc.emit("ARRAY_NEW")
 bc.emit("STORE_VAR", arrayIdx)
 iterableIdx = scopeDeclare(loopScope, "__for_iterable__")
-emitExpr(emitter, node.iterable)
-bc.emit("STRING_PROMOTE")
+	savedTailIter = emitter.inTailPosition
+	emitter.inTailPosition = false
+	emitExpr(emitter, node.iterable)
+	emitter.inTailPosition = savedTailIter
+	bc.emit("STRING_PROMOTE")
 bc.emit("STORE_VAR", iterableIdx)
 iterVarIdx = scopeDeclare(loopScope, "__for_iter__")
 bc.emit("LOAD_VAR", iterableIdx)
@@ -1334,11 +1411,14 @@ bc.emit("LOAD_CONST", bc.add_const(secondSid))
 bc.emit("OBJECT_GET")
 bc.emit("STORE_VAR", bindIdx)
 bc.emit("LOAD_VAR", arrayIdx)
-emitExpr(emitter, node.expr)
-bc.emit("ARRAY_PUSH")
-bc.emit("JUMP", loopTop)
-bc.patch_jump(endJump, bc.instr_count())
-bc.emit("LOAD_VAR", arrayIdx)
+	savedTailMap = emitter.inTailPosition
+	emitter.inTailPosition = false
+	emitExpr(emitter, node.expr)
+	emitter.inTailPosition = savedTailMap
+	bc.emit("ARRAY_PUSH")
+	bc.emit("JUMP", loopTop)
+	bc.patch_jump(endJump, bc.instr_count())
+	bc.emit("LOAD_VAR", arrayIdx)
 oldScope.count = loopScope.count
 emitter.scope = oldScope
 return
@@ -1376,7 +1456,17 @@ return
                 bc.emit("STRING_CONCAT")
             }
             else {
+                // Interpolation segments are never tail positions: the
+                // string still has to be assembled after they evaluate.
+                // Without this clear, a return-expr interpolation like
+                // return o["a${str(k)}"] inherits inTailPosition from the
+                // enclosing return; the str(k) segment emits TAIL_CALL and
+                // the function aborts with the raw segment value instead
+                // of running the subscript (same fix as the C++ emitter).
+                savedTail = emitter.inTailPosition
+                emitter.inTailPosition = false
                 emitExpr(emitter, seg)
+                emitter.inTailPosition = savedTail
                 bc.emit("TO_STRING")
                 bc.emit("STRING_CONCAT")
             }
@@ -1404,6 +1494,12 @@ return
     right = node.right
     if right.kind == "CallExpression" {
       // f(x) with pipe value prepended: f(pipeVal, ...explicit_args)
+      // NOTE: the parser already inserted the pipe value as
+      // right.args[0], so the arg loops below skip that first element
+      // (matched by identity) — the pipe value is pushed once, from the
+      // pipe slot. Emitting both double-counted it (print(x) through a
+      // pipe printed x twice; host methods errored with
+      // "expects 2 arguments, got 3").
       if right.callee.kind == "Identifier" {
         calleeName = right.callee.name
         // nil-pass-through builtins
@@ -1413,10 +1509,13 @@ return
           bc.emit("LOAD_VAR", pipeSlot)
           myArgc = 1
           if right.args != null {
+            ai = 0
             for a in right.args {
+              if ai == 0 && a == node.left { ai = ai + 1; continue }
               emitExpr(emitter, a)
+              myArgc = myArgc + 1
+              ai = ai + 1
             }
-            myArgc = 1 + #right.args
           }
           bc.emit("CALL", myArgc)
           // nil pass-through: if result is null, restore pipe value
@@ -1428,16 +1527,53 @@ return
           bc.patch_jump(nullJump, bc.instr_count())
         }
         else {
-          bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
-          bc.emit("LOAD_VAR", pipeSlot)
-          myArgc = 1
-          if right.args != null {
-            for a in right.args {
-              emitExpr(emitter, a)
+          // f(x) with pipe value prepended. If the callee is a script-level
+          // binding, call it as a global function with (pipeVal, ...args).
+          // Otherwise treat it as a method on the pipe value (CALL_METHOD
+          // with the explicit args): query-syntax desugaring produces
+          // `src | filter(fn)` / `src | map(fn)` and arrays/strings carry
+          // those as prototype methods — the previous unconditional
+          // LOAD_GLOBAL resolved filter/map to null and every
+          // from-where-select query silently evaluated to [].
+          if emitter.global_names[calleeName] != null {
+            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+            bc.emit("LOAD_VAR", pipeSlot)
+            myArgc = 1
+            if right.args != null {
+              ai = 0
+              for a in right.args {
+                if ai == 0 && a == node.left { ai = ai + 1; continue }
+                emitExpr(emitter, a)
+                myArgc = myArgc + 1
+                ai = ai + 1
+              }
             }
-            myArgc = 1 + #right.args
+            bc.emit("CALL", myArgc)
           }
-          bc.emit("CALL", myArgc)
+          else {
+            // Parser already inserts the pipe value as right.args[0]
+            // (pratt led for Pipe/PipeRight: right.args.insert(0, left)).
+            // For a non-global callee the stage is a method call: push the
+            // pipe value as receiver, then the explicit args (args[1..]),
+            // and CALL_METHOD with the explicit-arg count. Loading the
+            // pipe slot AND counting the prepended arg double-counted the
+            // receiver ("expects 2 arguments, got 3").
+            propIdx = bc.add_chunk_string(calleeName)
+            bc.emit("LOAD_VAR", pipeSlot)
+            myArgc = 0
+            if right.args != null {
+              for a in right.args {
+                // args[0] is the pipe value from the parser; skip it —
+                // it was just pushed as the receiver above.
+                if myArgc == 0 && a == node.left {
+                  continue
+                }
+                emitExpr(emitter, a)
+                myArgc = myArgc + 1
+              }
+            }
+            bc.emit("CALL_METHOD", bc.str_id(propIdx), myArgc)
+          }
         }
       }
       else if right.callee.kind == "LambdaExpression" {
@@ -1459,7 +1595,13 @@ return
       }
     }
     else if right.kind == "Identifier" {
-      // x | method → pipeVal.method()
+      // x | name — resolve name at compile time by what it binds to:
+      // a script global (fn/value assigned at top level) is CALLED with the
+      // pipe value; anything else falls back to a zero-arg method call on
+      // the pipe value (string/array methods like upper, map...). Without
+      // the global check, `data | double` with double = fn(x){...} compiled
+      // to CALL_METHOD "double" on the array and died with
+      // "Type mismatch in binary operation"/"Invalid array operation".
       calleeName = right.name
       nilPassSet = {"print": true, "log": true, "debug": true, "tap": true}
       if nilPassSet[calleeName] != null {
@@ -1472,6 +1614,12 @@ return
         bc.emit("POP")
         bc.emit("LOAD_VAR", pipeSlot)
         bc.patch_jump(nullJump, bc.instr_count())
+      }
+      else if emitter.global_names[calleeName] != null {
+        // Script-level binding: call it with the pipe value as argument
+        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+        bc.emit("LOAD_VAR", pipeSlot)
+        bc.emit("CALL", 1)
       }
       else {
         bc.emit("LOAD_VAR", pipeSlot)
@@ -1526,9 +1674,16 @@ if k == "AtExpression" {
         if node.field != null {
             fname = node.field
             if type(fname) == "object" && fname.kind == "Identifier" { fname = fname.name }
-            name = "__static__" + fname
-            sid = globalIdx(emitter, name)
-            bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+            if emitter.currentClassName == null || emitter.currentClassName == "" {
+                emitError("@@ used outside of a class (did you mean ClassName." + str(fname) + "?)", node.line, node.col)
+                return
+            }
+            // Load class object (global named after the class), then field
+            classSid = globalIdx(emitter, emitter.currentClassName)
+            bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
+            keyIdx = bc.add_string(fname)
+            bc.emit("LOAD_CONST", keyIdx)
+            bc.emit("OBJECT_GET")
         }
         else {
             emitError("@@ expression field must be identifier", node.line, node.col)
@@ -1543,9 +1698,9 @@ if k == "AtExpression" {
         return
     }
 
-	if k == "ShellCommand" {
-		// Shell command: $cmd or $!cmd
-		// Emit as call to run() or runCapture() host functions
+ 	if k == "ShellCommand" {
+		// Shell command: $cmd, $!cmd (string form) or $ <expr> (expression form).
+		// Emit as call to run() or runCapture() host functions.
 		if node.capture {
 			sid = globalIdx(emitter, "runCapture")
 		}
@@ -1553,8 +1708,15 @@ if k == "AtExpression" {
 			sid = globalIdx(emitter, "run")
 		}
 		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-		cmdIdx = bc.add_string(node.command)
-		bc.emit("LOAD_CONST", cmdIdx)
+		if node.commandExpr != null {
+			// Expression form: $ [b, nt, url] / $ (cmd) / $ ident.
+			// Mirrors C++ compileShellCommandStatement: compile commandExpr, CALL 1.
+			emitExpr(emitter, node.commandExpr)
+		}
+		else {
+			cmdIdx = bc.add_string(node.command)
+			bc.emit("LOAD_CONST", cmdIdx)
+		}
 		bc.emit("CALL", 1)
 		// Handle pipe chain: $! cmd1 | cmd2 | ...
 		next = node.next
@@ -1661,7 +1823,11 @@ if k == "WaitExpression" {
     return
   }
   if k == "IfExpression" {
+    // Conditions are never in tail position (a bare call would become TAIL_CALL)
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, node.condition)
+    emitter.inTailPosition = savedTailCond
     elseJump = bc.emit("JUMP_IF_FALSE", 0)
     if node.then != null {
       emitBlockWithReturn(emitter, node.then)
@@ -1691,7 +1857,15 @@ if k == "WaitExpression" {
   if k == "GoExpression" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.call != null {
+    // Legacy C++ wraps `go fn()` calls in a <go> closure so thread_spawn
+    // receives a function value instead of the call's result (which is
+    // null for a bare statement -> "go requires a closure argument").
+    if node.call != null && type(node.call) == "object" && node.call.kind == "CallExpression" {
+      wrapperStmt = ExpressionStatement(node.call, node.line, node.col)
+      wrapperBlock = BlockStatement([wrapperStmt], node.line, node.col)
+      emitClosureBody(emitter, wrapperBlock, "<go>")
+    }
+    else if node.call != null {
       emitExpr(emitter, node.call)
     }
     else {
@@ -1894,6 +2068,8 @@ if iterNameRaw.kind == "Identifier" {
 iterName = iterNameRaw.name
 }
 iterNode = node.iterator
+	savedTailIter = emitter.inTailPosition
+	emitter.inTailPosition = false
 if iterNode.kind == "RangeExpression" {
 emitExpr(emitter, iterNode.start)
 emitExpr(emitter, iterNode.end)
@@ -1908,6 +2084,7 @@ if iterNode.kind != "RangeExpression" {
 emitExpr(emitter, iterNode)
 }
 bc.emit("STRING_PROMOTE")
+	emitter.inTailPosition = savedTailIter
 	// Push loop scope AFTER evaluating iterable
 	oldScope = emitter.scope
     loopScope = Scope(oldScope, null, null)
@@ -1955,8 +2132,11 @@ bc.emit("OBJECT_GET")
       bc.emit("LOAD_CONST", bc.add_const(secondSid))
       bc.emit("OBJECT_GET")
       bc.emit("STORE_VAR", localIdx)
-	// Body
+	// Body (not in tail position)
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	// Loop back
 	bc.emit("JUMP", loopTop)
 	// Exit
@@ -1988,15 +2168,40 @@ bc.emit("OBJECT_GET")
 			bc.emit("CALL_IF_FUNCTION")
 		}
 isYield = node.expr.kind == "YieldExpression"
-        // AssignmentExpression already emits POP, so skip for assignments
-        if !isYield && node.expr.kind != "AssignmentExpression" {
+        // Assignments leave the RHS value on the stack (matches C++);
+        // statement position pops it once.
+        if !isYield {
             bc.emit("POP")
         }
         return
 
 	}
+	// Bare block statement (e.g. dsl { ... }). Mirrors C++ compileBlockStatement:
+	// inline the nested statements in the CURRENT scope, no new Scope pushed.
+	if k == "BlockStatement" {
+		wasTail = emitter.inTailPosition
+		last = node.body.len - 1
+		i = 0
+		for stmt in node.body {
+			if i < last {
+				emitter.inTailPosition = false
+			}
+			else {
+				emitter.inTailPosition = wasTail
+			}
+			emitStmt(emitter, stmt)
+			i = i + 1
+		}
+		emitter.inTailPosition = wasTail
+		return
+	}
 	if k == "IfStatement" {
+		// Conditions are never in tail position (a bare call condition in an
+		// else-if of a tail-position if must not become TAIL_CALL)
+		savedTailCond = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.condition)
+		emitter.inTailPosition = savedTailCond
 		elseJump = bc.emit("JUMP_IF_FALSE", 0)
 		elseBranch = node["else"]
 		wasTail = emitter.inTailPosition
@@ -2034,6 +2239,17 @@ isYield = node.expr.kind == "YieldExpression"
 				emitter.emittedTailCall = false
 			}
 		}
+		// An if leaves exactly one value on the stack (both branches, and the
+		// PUSH_NULL false path above, leave one). In statement position —
+		// loop bodies, non-last statements, inline dsl blocks — nobody
+		// consumes it, so a `while true { if .. }` leaks one slot per
+		// iteration and the async-task operand stack grows unbounded (the
+		// launch freeze: per-tick fiber save/restore becomes quadratic).
+		// Value-keeping positions (emitBlockWithReturn's last statement)
+		// set keepStmtValue, exactly like C++ propagates tail position.
+		if !emitter.keepStmtValue && !wasTail {
+			bc.emit("POP")
+		}
 		emitter.inTailPosition = wasTail
 		return
 
@@ -2043,13 +2259,20 @@ isYield = node.expr.kind == "YieldExpression"
         loopTop = bc.instr_count()
         emitter.breakStack.push([])
         emitter.continueStack.push(loopTop)
+	// Loop conditions are never in tail position
+	savedTailCond = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitExpr(emitter, node.condition)
+	emitter.inTailPosition = savedTailCond
 	exitJump = bc.emit("JUMP_IF_FALSE", 0)
 	// Push scope for body
 	oldWhileScope = emitter.scope
 	whileScope = Scope(oldWhileScope, null, null)
 	emitter.scope = whileScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldWhileScope.count = whileScope.count
 	emitter.scope = oldWhileScope
 	bc.emit("JUMP", loopTop)
@@ -2073,10 +2296,17 @@ if k == "DoWhileStatement" {
 	oldScope = emitter.scope
 	doScope = Scope(oldScope, null, null)
 	emitter.scope = doScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldScope.count = doScope.count
 	emitter.scope = oldScope
+	// Loop conditions are never in tail position
+	savedTailCond = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitExpr(emitter, node.condition)
+	emitter.inTailPosition = savedTailCond
 	bc.emit("JUMP_IF_TRUE", loopTop)
 	// Patch break jumps
 	breakTarget = bc.instr_count()
@@ -2093,7 +2323,11 @@ if k == "DoWhileStatement" {
 	if k == "LoopStatement" {
 	// Check for count-based loop: loop N { ... }
 	if node.has("count") {
+		// Count expression is not in tail position
+		savedTailCount = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.count)
+		emitter.inTailPosition = savedTailCount
 		countSlot = scopeDeclare(emitter.scope, "__loop_count__")
 		bc.emit("STORE_VAR", countSlot)
 		counterSlot = scopeDeclare(emitter.scope, "__loop_counter__")
@@ -2109,7 +2343,10 @@ if k == "DoWhileStatement" {
 		bc.emit("LOAD_VAR", countSlot)
 		bc.emit("LT")
 		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		savedTailBody = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitBlock(emitter, node.body)
+		emitter.inTailPosition = savedTailBody
 		oldLoopScope.count = loopScope.count
 		emitter.scope = oldLoopScope
 		bc.emit("LOAD_VAR", counterSlot)
@@ -2137,9 +2374,16 @@ if k == "DoWhileStatement" {
 		oldLoopScope = emitter.scope
 		loopScope = Scope(oldLoopScope)
 		emitter.scope = loopScope
+		// Loop conditions are never in tail position
+		savedTailCond = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitExpr(emitter, node.condition)
+		emitter.inTailPosition = savedTailCond
 		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		savedTailBody = emitter.inTailPosition
+		emitter.inTailPosition = false
 		emitBlock(emitter, node.body)
+		emitter.inTailPosition = savedTailBody
 		oldLoopScope.count = loopScope.count
 		emitter.scope = oldLoopScope
 		bc.emit("JUMP", loopTop)
@@ -2162,7 +2406,10 @@ if k == "DoWhileStatement" {
 	oldLoopScope = emitter.scope
 	loopScope = Scope(oldLoopScope)
 	emitter.scope = loopScope
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	oldLoopScope.count = loopScope.count
 	emitter.scope = oldLoopScope
 	bc.emit("JUMP", loopTop)
@@ -2179,8 +2426,12 @@ if k == "DoWhileStatement" {
 }
 if k == "RepeatStatement" {
 	// repeat count { body } → for i in 0..(count-1) { body }
+	// Count expression is not in tail position
+	savedTailCount = emitter.inTailPosition
+	emitter.inTailPosition = false
 	bc.emit("LOAD_CONST", bc.add_const(0))
 	emitExpr(emitter, node.count)
+	emitter.inTailPosition = savedTailCount
 	bc.emit("LOAD_CONST", bc.add_const(1))
 	bc.emit("SUB")
 	bc.emit("RANGE_NEW")
@@ -2210,7 +2461,11 @@ if k == "RepeatStatement" {
 	bc.emit("LOAD_CONST", bc.add_const(secondSid))
 	bc.emit("OBJECT_GET")
 	bc.emit("STORE_VAR", _dummyIdx)
+	// Loop body is never in tail position
+	savedTailBody = emitter.inTailPosition
+	emitter.inTailPosition = false
 	emitBlock(emitter, node.body)
+	emitter.inTailPosition = savedTailBody
 	bc.emit("JUMP", loopTop)
 	bc.patch_jump(exitJump, bc.instr_count())
 	bc.emit("PUSH_NULL")
@@ -2693,7 +2948,11 @@ bc.emit("CALL", 2)
       emitter.scope = condScope
       bc.func_push()
       condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+      // Conditions are never in tail position
+      savedTailCond = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, node.condition)
+      emitter.inTailPosition = savedTailCond
       bc.emit("RETURN")
       bc.set_local_count(scopeLocalCount(condScope))
       bc.func_pop()
@@ -2782,7 +3041,11 @@ if k == "ModesBlock" {
    bc.emit("LOAD_CONST", mNameIdx)
    bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
    if modeDef.condition != null {
+    // Conditions are never in tail position
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, modeDef.condition)
+    emitter.inTailPosition = savedTailCond
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2792,6 +3055,7 @@ if k == "ModesBlock" {
     enterScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = enterScope
+    bc.func_push()
     enterIdx = bc.func_new("mode_enter_" + modeDef.name, 0, 16)
     if modeDef.enter.kind == "BlockStatement" {
      for s in modeDef.enter.body {
@@ -2804,8 +3068,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(enterScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(enterIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(enterIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2815,6 +3080,7 @@ if k == "ModesBlock" {
     exitScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = exitScope
+    bc.func_push()
     exitIdx = bc.func_new("mode_exit_" + modeDef.name, 0, 16)
     if modeDef.exit.kind == "BlockStatement" {
      for s in modeDef.exit.body {
@@ -2827,8 +3093,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(exitScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(exitIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(exitIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2846,6 +3113,7 @@ if k == "ModesBlock" {
     efScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = efScope
+    bc.func_push()
     efIdx = bc.func_new("mode_onEnterFrom_" + modeDef.name, 1, 16)
     scopeDeclare(efScope, "fromMode")
     if modeDef.onEnterFromBlock.kind == "BlockStatement" {
@@ -2859,8 +3127,9 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(efScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(efIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(efIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
@@ -2878,6 +3147,7 @@ if k == "ModesBlock" {
     etScope = Scope(null)
     savedScope = emitter.scope
     emitter.scope = etScope
+    bc.func_push()
     etIdx = bc.func_new("mode_onExitTo_" + modeDef.name, 1, 16)
     scopeDeclare(etScope, "toMode")
     if modeDef.onExitToBlock.kind == "BlockStatement" {
@@ -2891,22 +3161,32 @@ if k == "ModesBlock" {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(etScope))
+    bc.func_pop()
     emitter.scope = savedScope
-    bc.emit("LOAD_CONST", bc.add_const(etIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(etIdx)))
    }
    else {
     bc.emit("PUSH_NULL")
    }
    bc.emit("CALL", 9)
    bc.emit("POP")
+   if modeDef.hotkeys != null && modeDef.hotkeys.body != null {
+    for s in modeDef.hotkeys.body {
+     emitStmt(emitter, s)
+    }
+   }
   }
  }
- return
- }
+}
   if k == "GoStatement" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.call != null {
+    if node.call != null && type(node.call) == "object" && node.call.kind == "CallExpression" {
+      wrapperStmt = ExpressionStatement(node.call, node.line, node.col)
+      wrapperBlock = BlockStatement([wrapperStmt], node.line, node.col)
+      emitClosureBody(emitter, wrapperBlock, "<go>")
+    }
+    else if node.call != null {
       emitExpr(emitter, node.call)
     }
     else {
@@ -3114,7 +3394,11 @@ if k == "SwitchStatement" {
 // ============================================================
 
 fn emitIfExpr(emitter, node) {
+    // Conditions are never in tail position (a bare call would become TAIL_CALL)
+    savedTailCond = emitter.inTailPosition
+    emitter.inTailPosition = false
     emitExpr(emitter, node.condition)
+    emitter.inTailPosition = savedTailCond
     elseJump = bc.emit("JUMP_IF_FALSE", 0)
     elseBranch = node["else"]
     if elseBranch != null {
@@ -3251,7 +3535,13 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
         return
       }
       if last.kind == "IfStatement" {
+        // The block's value is the if's value: tell the if emitter to keep
+        // it on the stack instead of popping at the merge (statement
+        // position pops it).
+        savedKeep = emitter.keepStmtValue
+        emitter.keepStmtValue = true
         emitStmt(emitter, last)
+        emitter.keepStmtValue = savedKeep
         emitter.inTailPosition = savedTail
         return
       }
@@ -3317,7 +3607,11 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
       return
     }
     if last.kind == "IfStatement" {
+      // Block value = if value; keep it (statement position pops it).
+      savedKeep = emitter.keepStmtValue
+      emitter.keepStmtValue = true
       emitStmt(emitter, last)
+      emitter.keepStmtValue = savedKeep
       emitter.inTailPosition = savedTail
       oldScope.count = blockScope.count
       emitter.scope = oldScope
@@ -3338,9 +3632,9 @@ fn emitBlockWithReturn(emitter, node, newScope = true) {
 if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
-      // Discard expression result when used as a statement
-      // AssignmentExpression already emits POP, so skip for assignments
-      if node.expr.kind != "YieldExpression" && node.expr.kind != "AssignmentExpression" {
+      // Discard expression result when used as a statement.
+      // Assignments leave the RHS value on the stack (matches C++).
+      if node.expr.kind != "YieldExpression" {
         bc.emit("POP")
       }
     }
@@ -3453,7 +3747,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
             }
             if !_handled && type(dv) == "object" && dv.kind == "ArrayLiteral" {
                 if dv.elements == null || #dv.elements == 0 {
-                    bc.set_default_value(di, true)
+                    bc.set_default_array(di)
                 }
             }
   }
@@ -3465,6 +3759,15 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
     bc.emit("LOAD_VAR", 0)
     bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
   }
+// Query-syntax desugaring (pratt from/where/select) passes the stage body
+// as a bare ExpressionStatement. emitBlockWithReturn treats that shape as a
+// statement (POP result), so the lambda returned null and every query
+// evaluated to []. Normalize: a bare ExpressionStatement body becomes a
+// one-statement block, which the BlockStatement path compiles with
+// tail-value semantics (last expression is the return value).
+if bodyNode != null && bodyNode.kind == "ExpressionStatement" {
+  bodyNode = BlockStatement([bodyNode], bodyNode.line, bodyNode.col)
+}
 emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     rootCheck = scopeFindFuncRoot(newScope)
@@ -3565,6 +3868,13 @@ di = 0
       // Havel might need special handling (e.g. pre-allocating the closure).
   }
   
+// Query-syntax desugaring (pratt from/where/select) passes the stage
+// body as a bare ExpressionStatement; emitBlockWithReturn would POP the
+// stage result (lambda returns null, query evaluates to []). Normalize to
+// a one-statement block for tail-value semantics.
+if bodyNode != null && bodyNode.kind == "ExpressionStatement" {
+  bodyNode = BlockStatement([bodyNode], bodyNode.line, bodyNode.col)
+}
 emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
   actualLocals = scopeLocalCount(newScope)
@@ -3591,13 +3901,29 @@ fn emitUseStatement(emitter, node) {
         pathIdx = bc.add_const(node.module)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
-        sid = bc.add_const(node.alias)
+        // Store-global name operands index the CHUNK STRING TABLE
+        // (globalIdx/add_chunk_string), not the const table: add_const
+        // returns a const index and wrapping it as a string id makes
+        // STORE_GLOBAL write to a garbage name (named imports then
+        // fail with Undefined variable at first use).
+        sid = globalIdx(emitter, node.alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
         return
       }
       }
       }
     }
+  }
+
+  // Form 2: use * from "module" or use module.* — wildcard (check BEFORE Form 1)
+  if node.isWildcard == true {
+    path = node.filePath
+    if path == null { path = node.module }
+    pathIdx = bc.add_const(path)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    bc.emit("IMPORT_WILDCARD")
+    return
   }
 
   // Form 1: use mod1, mod2 — bare module names, import each as whole object
@@ -3608,22 +3934,11 @@ fn emitUseStatement(emitter, node) {
         pathIdx = bc.add_const(modName)
         bc.emit("LOAD_CONST", pathIdx)
         bc.emit("IMPORT")
-        sid = bc.add_const(modName)
+        sid = globalIdx(emitter, modName)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       return
     }
-  }
-
-  // Form 2: use * from "module" or use module.* — wildcard
-  if node.isWildcard == true {
-    path = node.filePath
-    if path == null { path = node.module }
-    pathIdx = bc.add_const(path)
-    bc.emit("LOAD_CONST", pathIdx)
-    bc.emit("IMPORT")
-    bc.emit("IMPORT_WILDCARD")
-    return
   }
 
   // Form 3: use { a, b as c } from "module" — named imports
@@ -3655,7 +3970,7 @@ fn emitUseStatement(emitter, node) {
         keyIdx = bc.add_const(name)
         bc.emit("LOAD_CONST", keyIdx)
         bc.emit("OBJECT_GET")
-        sid = bc.add_const(alias)
+        sid = globalIdx(emitter, alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
         ii = ii + 1
       }
@@ -3671,7 +3986,7 @@ fn emitUseStatement(emitter, node) {
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
       if node.alias != null && node.alias != "" {
-        sid = bc.add_const(node.alias)
+        sid = globalIdx(emitter, node.alias)
         bc.emit("STORE_GLOBAL", bc.str_id(sid))
       }
       else {
@@ -3736,7 +4051,7 @@ fn emitImportStatement(emitter, node) {
       keyIdx = bc.add_const(name)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("OBJECT_GET")
-      sid = bc.add_const(alias)
+      sid = globalIdx(emitter, alias)
       bc.emit("STORE_GLOBAL", bc.str_id(sid))
       ii2 = ii2 + 1
     }
@@ -3806,6 +4121,7 @@ collectTopLevelGlobals(emitter, topStmts)
       emitter.classNames[stmt.name] = true
     }
     else if stmt.kind == "StructDeclaration" {
+      emitter.classNames[stmt.name] = true
       emitter.structNames[stmt.name] = true
     }
   }
@@ -3946,7 +4262,11 @@ fn emitMatchExpr(emitter, node) {
   if discs != null {
     i = 0
     while i < #discs {
+      // Discriminants are never in tail position
+      savedTailDisc = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, discs[i])
+      emitter.inTailPosition = savedTailDisc
       slot = scopeDeclare(emitter.scope, "_match_disc_" + str(i))
       bc.emit("STORE_VAR", slot)
       discSlots.push(slot)
@@ -3985,7 +4305,11 @@ fn emitMatchExpr(emitter, node) {
     failJump = bc.emit("JUMP_IF_FALSE", 0)
     // Check guard if present
     if c.guard != null {
+      // Guards are never in tail position
+      savedTailGuard = emitter.inTailPosition
+      emitter.inTailPosition = false
       emitExpr(emitter, c.guard)
+      emitter.inTailPosition = savedTailGuard
       guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
       // Emit result
       if c.body != null {
@@ -4781,7 +5105,11 @@ fn compileCondHotkeyCondition(emitter, condition) {
   emitter.scope = newScope
   bc.func_push()
   condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+  // Conditions are never in tail position
+  savedTailCond = emitter.inTailPosition
+  emitter.inTailPosition = false
   emitExpr(emitter, condition)
+  emitter.inTailPosition = savedTailCond
   bc.emit("RETURN")
   bc.set_local_count(scopeLocalCount(newScope))
   bc.func_pop()
@@ -4790,27 +5118,23 @@ fn compileCondHotkeyCondition(emitter, condition) {
 }
 
 fn emitClosureBody(emitter, body, name) {
-   oldScope = emitter.scope
-	newScope = Scope(oldScope)
-	emitter.scope = newScope
-	bc.func_push()
-	funcIdx = bc.func_new(name, 0, 16)
-   if body != null {
-     if body.kind == "BlockStatement" {
-       for s in body.body {
-         emitStmt(emitter, s)
-       }
-     }
-     else {
-       emitStmt(emitter, body)
-     }
+   // Compile the block body as a zero-param lambda so upvalue CAPTURE
+   // analysis runs (scope.hv walks free variables, registers captures,
+   // newScope.upcount > 0 -> CLOSURE with cells). The old hand-rolled
+   // scope+func_push path never ran the capture pass: block closures
+   // like `timeout 50 { use x }` inside a fn compiled `x` as a bare
+   // upvalue/global load with NO capture cell — invoked after the
+   // creating frame returned, they read null (test_async debounce).
+   // Callers expect the closure value left on the stack.
+   result = compileLambda(emitter, name, [], body, null, false)
+   upcount = result[0]
+   chunkIdx = result[1]
+   if upcount > 0 {
+      bc.emit("CLOSURE", chunkIdx)
    }
-   bc.emit("PUSH_NULL")
-   bc.emit("RETURN")
-	bc.set_local_count(scopeLocalCount(newScope))
-	bc.func_pop()
-	emitter.scope = oldScope
-	bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(funcIdx)))
+   else {
+      bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(chunkIdx)))
+   }
 }
 
 fn emitWhenBlock(emitter, node) {
@@ -4819,9 +5143,13 @@ fn emitWhenBlock(emitter, node) {
   emitter.scope = condScope
   bc.func_push()
   condChunkIdx = bc.func_new("when_condition", 0, 16)
+  // Conditions are never in tail position
+  savedTailCond = emitter.inTailPosition
+  emitter.inTailPosition = false
   if node.condition != null {
     emitExpr(emitter, node.condition)
   }
+  emitter.inTailPosition = savedTailCond
   if node.condition == null {
     bc.emit("LOAD_CONST", bc.add_const(true))
   }

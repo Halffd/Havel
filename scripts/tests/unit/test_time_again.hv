@@ -1,3 +1,0 @@
-use time
-let t = time.now()
-print(t)

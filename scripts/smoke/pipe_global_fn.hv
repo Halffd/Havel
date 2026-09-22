@@ -1,0 +1,13 @@
+// smoke: pipe-global-fn = [2, 4, 6]
+// regression: `data |> doubled` where doubled is a script-global fn compiled
+// to CALL_METHOD "doubled" on the array before the global_names check was
+// added to the pipe emitter — array had no such method, so the pipeline
+// errored with "Invalid array operation"/"Type mismatch in binary operation".
+doubled = fn(arr) { arr.map(fn(x) { x * 2 }) }
+data = [1, 2, 3]
+val __result = data |> doubled
+if !(__result == [2, 4, 6]) {
+ print("FAIL pipe-global-fn: expected [2, 4, 6], got " + str(__result))
+ process.exit(255)
+}
+return __result

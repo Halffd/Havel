@@ -1,0 +1,49 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Orc array_get audit: interp indexFromValue (VMInternals.hpp) accepts
+// int AND double keys (double truncates), so `arr[i]` with i a num
+// reads/writes real elements. JIT havel_vm_collection_get_raw used an
+// int-only indexFromRaw (num-keyed reads returned null once hot() tiered
+// via invocation count, observed as r=v=null at k=999) and
+// indexAssignPublic gated isInt() before indexFromValue (num-keyed
+// writes silently no-opped, so the re-read returned the stale element).
+// String subscripting exercises the same codepoint-index arm.
+
+fn hot() {
+    arr = [10, 20, 30]
+    i = 1.0
+    v = arr[i]     // read at truncated index 1 -> 20
+    arr[i] = 99    // write at truncated index 1 -> arr[1] = 99
+    w = arr[1]     // re-read -> 99 (interp: 99; jit pre-fix: 20)
+    n = -1.0
+    last = arr[n]  // negative double -> last element -> 30
+    s = "abc"
+    c = s[1.0]     // string codepoint index 1 -> "b"
+    if v != 20 { return "v=${v}" }
+    if w != 99 { return "w=${w}" }
+    if last != 30 { return "last=${last}" }
+    if c != "b" { return "c=${c}" }
+    return "ok"
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r = hot()
+    if r != "ok" {
+        if bad == -1 {
+            bad = k
+            badval = "r=${r}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_num_index")
+} else {
+    print("FAIL orc_num_index k=${bad} ${badval}")
+    process.exit(255)
+}

@@ -4,7 +4,7 @@ print("=== 'in' and 'not in' Tests ===\n")
 
 // Test 1: Array membership
 print("1. Array membership:")
-let arr = [1, 2, 3]
+arr = [1, 2, 3]
 print("  2 in arr: ")
 print(2 in arr)
 print("  5 in arr: ")
@@ -15,7 +15,7 @@ print("")
 
 // Test 2: String membership
 print("2. String membership:")
-let str = "hello"
+str = "hello"
 print("  'ell' in str: ")
 print("ell" in str)
 print("  'x' in str: ")
@@ -24,7 +24,7 @@ print("")
 
 // Test 3: Object key membership
 print("3. Object key membership:")
-let obj = {"a": 1, "b": 2}
+obj = {"a": 1, "b": 2}
 print("  'a' in obj: ")
 print("a" in obj)
 print("  'c' in obj: ")

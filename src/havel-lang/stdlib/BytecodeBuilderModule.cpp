@@ -1,8 +1,12 @@
 #include "BytecodeBuilderModule.hpp"
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "utils/Logger.hpp"
+
+#include <cstdio>
+#include <cstdlib>
 
 #include <fstream>
 #include <iostream>
@@ -624,6 +628,23 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     return Value::makeBool(true);
 });
 
+    // Empty-array default (`= []`): store the dedicated sentinel. A plain
+    // set_default_value(di, true) would collide with a genuine `= true`
+    // bool default.
+    api.registerFunction("bc.set_default_array", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.set_default_array: no current function");
+    if (args.size() < 1 || !args[0].isInt()) {
+        throw std::runtime_error("bc.set_default_array: requires (param_index)");
+    }
+    uint32_t paramIdx = static_cast<uint32_t>(args[0].asInt());
+    while (fn->default_values.size() <= paramIdx) {
+        fn->default_values.push_back(std::nullopt);
+    }
+    fn->default_values[paramIdx] = Value::makeDefaultArraySentinel();
+    return Value::makeBool(true);
+});
+
     api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
         if (g_builder.chunk->getFunctionCount() == 0) {
             throw std::runtime_error("bc.execute: no functions in chunk");
@@ -644,7 +665,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     auto saved_chunk = vm.current_chunk;
     auto saved_frame_count = vm.frame_count_;
     auto saved_frame_arena = vm.frame_arena_;
-    std::stack<Value> saved_stack = vm.stack;
+    std::vector<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
   auto saved_main_chunk = vm.getMainChunk();
 
@@ -702,7 +723,7 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
     auto saved_chunk = vm.current_chunk;
     auto saved_frame_count = vm.frame_count_;
     auto saved_frame_arena = vm.frame_arena_;
-    std::stack<Value> saved_stack = vm.stack;
+    std::vector<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
     auto saved_immutable_locals = vm.immutable_locals_;
     auto saved_main_chunk = vm.getMainChunk();
@@ -836,17 +857,32 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
         return Value::makeInt(0);
     });
 
-    api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
-        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-            throw std::runtime_error("bc.serialize: requires path (string)");
-        }
-	    auto path = api.resolveString(args[0]);
-	    auto &chunk = *g_builder.chunk;
-	    if (chunk.getFunctionCount() == 0) {
+     api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
+         if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+             throw std::runtime_error("bc.serialize: requires path (string)");
+         }
+ 	    auto path = api.resolveString(args[0]);
+ 	    auto &chunk = *g_builder.chunk;
+ 	    if (chunk.getFunctionCount() == 0) {
 	        throw std::runtime_error("bc.serialize: no functions in chunk");
+ 	    }
+	    // Embed the source identity when the builder knows it
+	    // (bc.set_source_file, as the self-hosted emitter does at its
+	    // start). Hash-less hvcs are the legacy form every cache
+	    // validator must work around - they cannot be freshness-checked
+	    // and force recompiles (see runBuild / ModuleLoader
+	    // checkBcCache). When no source was recorded the chunk stays
+	    // hash-less, matching the old behavior for in-memory-only uses.
+	    std::string srcPath;
+	    if (g_builder.current_source_file.isStringId() ||
+	        g_builder.current_source_file.isStringValId()) {
+	        srcPath = api.resolveString(g_builder.current_source_file);
 	    }
 	    havel::compiler::ValueSerializer serializer;
-	    auto data = serializer.serializeChunk(chunk);
+	    auto data = serializer.serializeChunk(
+	        chunk, srcPath,
+	        havel::compiler::computePipelineFingerprint(
+	            havel::ModuleLoader::getDefaultCacheDir()));
 	    std::ofstream out(path, std::ios::binary);
 	    if (!out.is_open()) {
 	        throw std::runtime_error("bc.serialize: cannot open " + path);
@@ -1138,7 +1174,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
       auto saved_chunk = vm.current_chunk;
       auto saved_frame_count = vm.frame_count_;
       auto saved_frame_arena = vm.frame_arena_;
-      std::stack<Value> saved_stack = vm.stack;
+      std::vector<Value> saved_stack = vm.stack;
       auto saved_locals = vm.locals;
       auto saved_immutable_locals = vm.immutable_locals_;
       auto saved_main_chunk = vm.getMainChunk();
@@ -1213,7 +1249,9 @@ return result;
     // self-hosted REPL to keep hotkey/update goroutines alive while reading
     // stdin.
     api.registerFunction("bc.tick", [api](const std::vector<Value> &) -> Value {
-        api.vm().tickScheduler();
+        // Script-requested tick: wait out the nearest sleep deadline when
+        // nothing else is runnable (see VM::tickScheduler).
+        api.vm().tickScheduler(true);
         return Value::makeNull();
     });
 
@@ -1265,6 +1303,7 @@ api.setField(bcObj, "disasm_all", api.makeFunctionRef("bc.disasm_all"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));
     api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
     api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
+    api.setField(bcObj, "set_default_array", api.makeFunctionRef("bc.set_default_array"));
     api.setField(bcObj, "trace_execution", api.makeFunctionRef("bc.trace_execution"));
 	api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
     api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));

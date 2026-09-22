@@ -15,22 +15,22 @@ IScreenshotBackend* ScreenshotService::backend() const {
     return backend_.get();
 }
 
-std::vector<unsigned char> ScreenshotService::captureFullDesktop(const ScreenshotStyle& style) {
+ScreenshotResult ScreenshotService::captureFullDesktop(const ScreenshotStyle& style) {
     if (!backend_) return {};
     return backend_->captureFullDesktop(style);
 }
 
-std::vector<unsigned char> ScreenshotService::captureMonitor(int index, const ScreenshotStyle& style) {
+ScreenshotResult ScreenshotService::captureMonitor(int index, const ScreenshotStyle& style) {
     if (!backend_) return {};
     return backend_->captureMonitor(index, style);
 }
 
-std::vector<unsigned char> ScreenshotService::captureActiveWindow(const ScreenshotStyle& style) {
+ScreenshotResult ScreenshotService::captureActiveWindow(const ScreenshotStyle& style) {
     if (!backend_) return {};
     return backend_->captureActiveWindow(style);
 }
 
-std::vector<unsigned char> ScreenshotService::captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style) {
+ScreenshotResult ScreenshotService::captureRegion(int x, int y, int width, int height, const ScreenshotStyle& style) {
     if (!backend_) return {};
     return backend_->captureRegion(x, y, width, height, style);
 }

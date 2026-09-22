@@ -795,15 +795,31 @@ std::vector<DeviceInfo> IO::GetDevices() {
 // Evdev grab control
 bool IO::SetEvdevGrab(bool grab) {
   ensureBackend();
+  // Route through the unified EventListener when present. It grabs the
+  // devices it actually reads, sets grabDevices so non-hotkey input keeps
+  // being forwarded via uinput/XTest, and refuses a grab when synthesis is
+  // unavailable (which would lock the desktop). Grabbing a standalone
+  // inputBackend instead (e.g. the X11 adapter's XGrabKeyboard/XGrabPointer)
+  // swallows every event that is not a registered hotkey with no
+  // forwarding.
+  if (eventListener) {
+    return eventListener->SetGrabDevices(grab);
+  }
   if (inputBackend) {
     if (grab) {
       auto devices = inputBackend->EnumerateDevices();
+      // Grabbing every device routes all input exclusively to this process;
+      // if forwarding is not active this deadlocks the user's keyboard and
+      // mouse for anything that is not a registered hotkey. Log loudly so a
+      // script that grabs unexpectedly (e.g. io.block()) is visible.
+      info("IO::SetEvdevGrab(true): grabbing ALL {} devices", devices.size());
       for (const auto &dev : devices) {
         inputBackend->GrabDevice(dev.path);
       }
       return true;
     } else {
       inputBackend->UngrabAllDevices();
+      info("IO::SetEvdevGrab(false): all devices ungrabbed");
       return true;
     }
   }
@@ -812,6 +828,9 @@ bool IO::SetEvdevGrab(bool grab) {
 
 bool IO::GetEvdevGrab() const {
   const_cast<IO *>(this)->ensureBackend();
+  if (eventListener && eventListener->GetGrabDevices()) {
+    return true;
+  }
   if (inputBackend) {
     return inputBackend->GetGrabbedDeviceCount() > 0;
   }

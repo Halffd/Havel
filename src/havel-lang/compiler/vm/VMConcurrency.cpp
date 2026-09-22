@@ -57,7 +57,7 @@ case OpCode::THREAD_JOIN: {
         }
       }
       suspension_requested_ = true;
-      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+      suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
       suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(wg_id));
     }
     pushStack(Value::makeNull());
@@ -89,7 +89,7 @@ case OpCode::THREAD_JOIN: {
   }
 
   suspension_requested_ = true;
-  suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+  suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
   suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
   pushStack(Value::makeNull());
   break;
@@ -223,8 +223,8 @@ if (co) {
                     {
                         std::vector<Value> tmp;
                         while (!stack.empty()) {
-                            tmp.push_back(stack.top());
-                            stack.pop();
+                            tmp.push_back(stack.back());
+                            stack.pop_back();
                         }
                         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
                             co->stack.push_back(*it);
@@ -242,9 +242,9 @@ if (co) {
 
                         currentFrame().ip = caller.ip;
 
-                        stack = std::stack<Value>();
+                        stack.clear();
                         for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-                            stack.push(*it);
+                            stack.push_back(*it);
                         }
 
                         co->caller_stack.pop_back();
@@ -297,8 +297,8 @@ if (co) {
                 {
                     std::vector<Value> tmp;
                     while (!stack.empty()) {
-                        tmp.push_back(stack.top());
-                        stack.pop();
+                        tmp.push_back(stack.back());
+                        stack.pop_back();
                     }
                     for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
                         cf.stack.push_back(*it);
@@ -312,9 +312,9 @@ if (co) {
         current_coroutine_id_ = coroutine_id;
 
         // Restore coroutine's stack (stack[0]=bottom, [N-1]=top)
-        stack = std::stack<Value>();
+        stack.clear();
         for (auto it = co->stack.begin(); it != co->stack.end(); ++it) {
-            stack.push(*it);
+            stack.push_back(*it);
         }
 
         // Restore coroutine's locals
@@ -376,7 +376,7 @@ break;
  }
 
  struct VMState {
- std::stack<Value> stack;
+ std::vector<Value> stack;
  std::vector<Value> locals;
  size_t frame_count;
  std::vector<CallFrame> frame_arena;
@@ -565,7 +565,7 @@ if (awaitable.isThreadId()) {
       g->wait_handle.target_id = tid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume by HavelEngine
     break;
@@ -605,7 +605,7 @@ if (awaitable.isIntervalId()) {
       g->wait_handle.target_id = iid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(iid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume
     break;
@@ -648,7 +648,7 @@ if (awaitable.isTimeoutId()) {
       g->wait_handle.target_id = tid;
     }
     suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
     pushStack(Value::makeNull()); // placeholder — replaced on resume
     break;
@@ -694,8 +694,8 @@ case OpCode::FIBER_SLEEP: {
       {
         std::vector<Value> tmp;
         while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
+          tmp.push_back(stack.back());
+          stack.pop_back();
         }
         for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
           co->stack.push_back(*it);
@@ -872,6 +872,18 @@ case OpCode::CHANNEL_SEND: {
       if (prev <= 1) {
         std::lock_guard<std::mutex> lock(wg->mutex);
         wg->cv.notify_all();
+        // Unpark goroutines suspended on waitgroup.wait (EXTERNAL target):
+        // mirrors the waitgroup.done host function. Without this, a closer
+        // parked via the suspending wait never resumed and the channel
+        // stayed open forever.
+        if (scheduler_) {
+          auto *g = scheduler_->findGoroutineByWaitTarget(
+              Scheduler::AwaitableType::EXTERNAL, wg_val.asWaitGroupId());
+          if (g) {
+            g->wait_handle.resume_value = Value::makeNull();
+            scheduler_->unpark(g);
+          }
+        }
       }
     }
     break;

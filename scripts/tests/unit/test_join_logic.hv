@@ -1,8 +1,0 @@
-let a = "/home/user"
-let b = "docs"
-let n = a.len()
-print("n=" + n)
-let idx = n - 1
-print("idx=" + idx)
-let last = a[idx:]
-print("last=" + last)

@@ -56,6 +56,7 @@ public:
   static std::string sessionName;
 
 private:
+  static WMType DetectOnce() noexcept;
   static bool CheckProcess(const std::string &processName) noexcept;
   static bool CheckEnvironmentVar(const std::string &varName,
                                   const std::string &value) noexcept;

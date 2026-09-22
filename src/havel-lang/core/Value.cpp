@@ -61,6 +61,8 @@ std::string Value::toString() const {
     return "<funcobj:" + std::to_string(asFunctionObjId()) + ">";
   if (isStringValId())
     return "<stringval:" + std::to_string(asStringValId()) + ">";
+  if (isPending())
+    return "<pending:" + std::to_string(asPendingToken()) + ">";
   if (isPtr())
     return "<ptr:" + std::to_string(reinterpret_cast<uint64_t>(asPtr())) + ">";
   return "<unknown>";

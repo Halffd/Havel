@@ -1,3 +1,0 @@
-print("before")
-use { add } from "testmod2"
-print("after")

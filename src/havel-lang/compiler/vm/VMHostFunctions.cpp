@@ -16,6 +16,7 @@
 #include "VMInternals.hpp"
 #include "stdlib/FsModule.hpp"
 #include "stdlib/HotkeyModule.hpp"
+#include "stdlib/MathModule.hpp"
 #include "stdlib/StateModule.hpp"
 #include "stdlib/StringModule.hpp"
 #include "stdlib/TokenTypeNames.hpp"
@@ -51,6 +52,12 @@ void VM::registerDefaultHostFunctions() {
     VMApi api(*this);
     havel::stdlib::registerHotkeyModule(api);
   }
+  // NOTE: math is NOT registered here. registerDefaultHostFunctions runs
+  // before module search paths are configured, and MathModule's sidecar
+  // loadModule("math/math") needs modules/lang on the search path. Havel.cpp
+  // registers math right after addSearchPath calls. Registering math lazily
+  // instead (plugin fallback) hit the math/math circular-dependency guard
+  // and silently dropped randint/clamp/lerp from the math namespace.
   // Native tokenizer: wraps the C++ BootstrapLexer for fast self-hosted lexing
   {
     VMApi api(*this);
@@ -128,6 +135,20 @@ void VM::registerDefaultHostFunctions() {
                            io->Map(toStr(args[0]), toStr(args[1]));
                            return Value::makeBool(true);
                          });
+    // Public aliases (used in mode enter/exit blocks):
+    //   io.map("e", "click")   == io._map
+    //   io.remap("e", "d")     == io._remap
+    //   io.unmap("e")          == io._unmap
+    api.registerFunction("io.map",
+                         [getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 2)
+                             return Value::makeBool(false);
+                           io->Map(toStr(args[0]), toStr(args[1]));
+                           return Value::makeBool(true);
+                         });
     api.registerFunction("io._remap",
                          [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
@@ -139,6 +160,16 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._unmap",
+                         [getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 1)
+                             return Value::makeBool(false);
+                           io->Unmap(toStr(args[0]));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io.unmap",
                          [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
@@ -1480,6 +1511,37 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
+  // __async_probe(ms) — fiber-suspending blocking call validation seam.
+  // Simulates a blocking host op (sleeps on the worker thread) and
+  // returns the wall-clock duration. In a goroutine context it must
+  // suspend the fiber and resume with the value; at top level it runs
+  // synchronously. Used by scripts/tests/lang/test_async_host_call.hv.
+  registerHostFunction("__async_probe", 1,
+      [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isInt()) {
+      COMPILER_THROW("__async_probe requires integer ms");
+    }
+    int64_t ms = args[0].asInt();
+    Value v = runBlockingHostCall(
+        [ms]() -> AsyncCxxResult {
+          auto t0 = std::chrono::steady_clock::now();
+          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+          auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::steady_clock::now() - t0)
+                                .count();
+          // C++ result across the boundary: never a Value
+          return std::static_pointer_cast<void>(
+              std::make_shared<int64_t>(elapsed_us));
+        },
+        [](const AsyncCxxResult &cell) -> Value {
+          auto us = std::static_pointer_cast<int64_t>(cell);
+          return Value::makeInt(us ? *us : -1);
+        });
+    ::havel::debug("[async-probe] ms={} -> {}", ms,
+                   v.isPending() ? std::string("PENDING") : std::string("sync-result"));
+    return v;
+  });
+
   // eval(code_string) - Parse and execute Havel code at runtime
   // Returns the result of the last expression
   registerHostFunction("eval", 1, [this](const std::vector<Value> &args) {
@@ -1545,6 +1607,51 @@ void VM::registerDefaultHostFunctions() {
     return Value(toFloat(args[0]));
   });
 
+  // range([start], stop, [step]) - returns array of integers
+  // range(stop) -> [0, 1, ..., stop-1]
+  // range(start, stop) -> [start, start+1, ..., stop-1]
+  // range(start, stop, step) -> [start, start+step, ...] while < stop (step>0) or > stop (step<0)
+  registerHostFunction("range", [this](const std::vector<Value> &args) {
+    if (args.empty() || args.size() > 3) {
+      COMPILER_THROW("range() requires 1-3 arguments: range(stop) or range(start, stop) or range(start, stop, step)");
+    }
+
+    int64_t start, stop, step;
+
+    if (args.size() == 1) {
+      start = 0;
+      stop = toInt(args[0]);
+      step = 1;
+    } else if (args.size() == 2) {
+      start = toInt(args[0]);
+      stop = toInt(args[1]);
+      step = 1;
+    } else {
+      start = toInt(args[0]);
+      stop = toInt(args[1]);
+      step = toInt(args[2]);
+    }
+
+    if (step == 0) {
+      COMPILER_THROW("range() step must not be zero");
+    }
+
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+
+    if (step > 0) {
+      for (int64_t i = start; i < stop; i += step) {
+        arr->push_back(Value(i));
+      }
+    } else {
+      for (int64_t i = start; i > stop; i += step) {
+        arr->push_back(Value(i));
+      }
+    }
+
+    return Value::makeArrayId(arrRef.id);
+  });
+
   // Instrumentation: assert(condition, message?)
   registerHostFunction("assert", [this](const std::vector<Value> &args) {
     if (args.empty()) {
@@ -1575,7 +1682,7 @@ void VM::registerDefaultHostFunctions() {
   // Instead of calling std::exit() (which crashes during static destruction
   // while Qt widgets are alive), we set a flag on the VM for cooperative
   // shutdown. The EventListener detects this and stops cleanly.
-  registerHostFunction("exit", [this](const std::vector<Value> &args) {
+  auto requestExit = [this](const std::vector<Value> &args) {
     int exit_code = 0;
     if (!args.empty() && args[0].isInt()) {
       exit_code = static_cast<int>(args[0].asInt());
@@ -1583,7 +1690,11 @@ void VM::registerDefaultHostFunctions() {
     exit_requested_ = true;
     exit_code_ = exit_code;
     return Value::makeNull();
-  });
+  };
+  registerHostFunction("exit", requestExit);
+  // sys.exit and process.exit are bound to this same cooperative shutdown
+  // path (SysModule/ModularHostBridges build refs to "sys.exit").
+  registerHostFunction("sys.exit", requestExit);
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
   registerHostFunction("clock_ns", 0, [](const std::vector<Value> &) {
@@ -1688,16 +1799,7 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // type() builtin returns type name
-  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-    const auto &value = args[0];
-    fprintf(stderr, "[TYPEENTRY] rawBits=0x%llx isCoId=%d isInt=%d isStr=%d isStrVal=%d isBoxed=%d isDbl=%d\n",
-      (unsigned long long)value.rawBits(),
-      (int)value.isCoroutineId(),
-      (int)value.isInt(),
-      (int)value.isStringId(),
-      (int)value.isStringValId(),
-      (int)(value.rawBits() & 0x8000000000000000ULL ? 1 : 0),
-      (int)value.isDouble());
+  auto typeNameOf = [this](const Value &value) -> std::string {
     std::string typeName;
     if (value.isNull())
       typeName = "null";
@@ -1734,7 +1836,20 @@ void VM::registerDefaultHostFunctions() {
       typeName = "coroutine";
     else
       typeName = "unknown";
-    auto strRef = heap_.allocateString(typeName);
+    return typeName;
+  };
+
+  registerHostFunction("type", 1, [this, typeNameOf](const std::vector<Value> &args) {
+    const auto &value = args[0];
+    auto strRef = heap_.allocateString(typeNameOf(value));
+    return Value::makeStringId(strRef.id);
+  });
+
+  // type.of(value) - method form of type(), resolvable as a dotted host
+  // function on the bare `type` global (CALL_METHOD dotted-name dispatch)
+  // and as a field on the Type module object.
+  registerHostFunction("type.of", 1, [this, typeNameOf](const std::vector<Value> &args) {
+    auto strRef = heap_.allocateString(typeNameOf(args[0]));
     return Value::makeStringId(strRef.id);
   });
 
@@ -2010,11 +2125,12 @@ void VM::registerDefaultHostFunctions() {
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-  registerHostFunction("async.await", 1, [](const std::vector<Value> &args) {
-    if (args.empty())
-      return Value::makeNull();
-    return args[0];
-  });
+  // NOTE: no "async.await" host function. A dotted registration here is
+  // the ONLY async.* host function in the system, and buildNamespaceGlobals()
+  // would turn it into an `async` namespace object containing just `await`.
+  // The IMPORT opcode short-circuits on that object, so `use async` never
+  // loaded modules/app/async.hv and consumers saw async.sleep == null.
+  // The .hv module (which re-exports async_mod's await) is the real provider.
   registerHostFunction("await", 1, [](const std::vector<Value> &args) {
     if (args.empty())
       return Value::makeNull();
@@ -2247,16 +2363,11 @@ void VM::registerDefaultHostFunctions() {
     auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
     auto callback = [this, callbackId = registerCallback(closure), intervalIdPtr]() {
+      // Timer thread: only ever push events. Never invoke VM callbacks
+      // from here (timer thread != VM thread). If no queue, drop the tick.
       if (event_queue_) {
         auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *intervalIdPtr);
         event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-      } else {
-        try {
-          Value result = invokeCallback(callbackId, {});
-          interval_results_[*intervalIdPtr] = result;
-        } catch (const std::exception &e) {
-          ::havel::error("[interval] Exception: {}", e.what());
-        }
       }
     };
 
@@ -2333,19 +2444,18 @@ void VM::registerDefaultHostFunctions() {
         }
         int ms = toInt(args[0]);
         auto closure = args[1];
+        // Close open upvalue cells now (creating frame still mapped):
+        // the timer fires long after the frame returned; an open cell
+        // would read recycled locals. Same discipline as spawnGoroutine.
+        if (closure.isClosureId()) closeOpenUpvaluesForSpawn(closure.asClosureId());
         auto intervalIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, intervalIdPtr]() {
+          // Timer thread: only ever push events. Never call the closure
+          // from here (timer thread != VM thread). If no queue, drop the tick.
           if (event_queue_) {
             auto *payload =
                 new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
             event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-          } else {
-            try {
-              Value result = this->callFunction(closure, {});
-              interval_results_[*intervalIdPtr] = result;
-            } catch (const std::exception &e) {
-              ::havel::error("[interval] Exception: {}", e.what());
-            }
           }
         };
         auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
@@ -2451,19 +2561,19 @@ void VM::registerDefaultHostFunctions() {
         }
         int ms = toInt(args[0]);
         auto closure = args[1];
+        // Close open upvalue cells now (creating frame still mapped):
+        // the timer fires long after the frame returned; an open cell
+        // would read recycled locals (fn-param captures read as null).
+        // Same discipline as spawnGoroutine.
+        if (closure.isClosureId()) closeOpenUpvaluesForSpawn(closure.asClosureId());
         auto timeoutIdPtr = std::make_shared<uint32_t>(0);
         auto callback = [this, closure, timeoutIdPtr]() {
+          // Timer thread: only ever push events. Never call the closure
+          // from here (timer thread != VM thread). If no queue, drop the fire.
           if (event_queue_) {
             auto *payload =
                 new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
             event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
-          } else {
-            try {
-              Value result = this->callFunction(closure, {});
-              timeout_results_[*timeoutIdPtr] = result;
-            } catch (const std::exception &e) {
-              ::havel::error("[timeout] Exception: {}", e.what());
-            }
           }
         };
         auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
@@ -2523,8 +2633,33 @@ void VM::registerDefaultHostFunctions() {
         }
         auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
         if (wg && wg->counter.load() > 0) {
-          std::unique_lock<std::mutex> lock(wg->mutex);
-          wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+          if (scheduler_ && current_executing_fiber_) {
+            // Suspend instead of blocking: cv.wait would hold the single VM
+            // thread hostage while the workers that must call done() need
+            // that same thread to run (parallelMap's closer goroutine).
+            // waitgroup.done (or WAITGROUP_DONE) unparks via the EXTERNAL
+            // wait target.
+            auto *g = scheduler_->current();
+            if (g) {
+              std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
+              g->wait_handle.type = Scheduler::AwaitableType::EXTERNAL;
+              g->wait_handle.target_id = args[0].asWaitGroupId();
+            }
+            // AWAIT, not THREAD_JOIN: a THREAD_JOIN suspension registers
+            // the fiber in thread_wait_map_ keyed by the wg id, which
+            // collides with channel ids — resumeChannelWait(channel_id)
+            // then woke the waiter spuriously (parallelMap's closer closed
+            // the results channel before the last workers sent). The
+            // EXTERNAL wait_handle + waitgroup.done's unpark is the resume
+            // path; nothing else should wake it.
+            requestSuspension(
+                static_cast<uint8_t>(SuspensionReason::AWAIT),
+                reinterpret_cast<void *>(static_cast<uintptr_t>(
+                    args[0].asWaitGroupId())));
+          } else {
+            std::unique_lock<std::mutex> lock(wg->mutex);
+            wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+          }
         }
         return Value::makeNull();
       });
@@ -2836,10 +2971,15 @@ void VM::registerDefaultHostFunctions() {
     if (!current_chunk)
       COMPILER_THROW("struct.new requires active chunk");
 
-    // Determine offset for self argument (when called as method)
+    // Determine offset for self argument (when called as method, e.g. struct.new(type, ...))
     size_t offset = 0;
-    if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
-      offset = 1; // Skip self
+    if (args[0].isObjectId()) {
+      auto *obj0 = heap_.object(args[0].asObjectId());
+      if (obj0 && (obj0->get("__fields") || obj0->get("__is_struct"))) {
+        offset = 0;
+      } else if (args.size() > 1 && (args[1].isObjectId() || args[1].isStringValId())) {
+        offset = 1; // Skip self (struct host module object)
+      }
     }
 
     Value protoVal;
@@ -4442,6 +4582,15 @@ void VM::buildNamespaceGlobals() {
           if (existing.isHostFuncId() || existing.isNull())
             setHostObjectField(ref, fname, fval);
         }
+        // A bare host function with the same name (e.g. `mode`) must stay
+        // reachable as a callable: expose it as __call on the namespace so
+        // both mode() and mode.set() work.
+        auto bareIt = host_function_globals_.find(prefix);
+        if (bareIt != host_function_globals_.end() &&
+            getHostObjectField(ref, "__call").isNull()) {
+          setHostObjectField(ref, "__call", bareIt->second);
+        }
+        continue;
       }
       // Non-object global with the same name wins; do not overwrite.
       continue;
@@ -4449,6 +4598,12 @@ void VM::buildNamespaceGlobals() {
     auto obj = heap_.allocateObject();
     for (const auto &[fname, fval] : fields)
       setHostObjectField(ObjectRef{obj.id, true}, fname, fval);
+    // Same __call wiring for freshly built namespaces: bare `mode` host
+    // function must remain callable via mode().
+    auto bareIt = host_function_globals_.find(prefix);
+    if (bareIt != host_function_globals_.end()) {
+      setHostObjectField(ObjectRef{obj.id, true}, "__call", bareIt->second);
+    }
     setGlobal(prefix, Value::makeObjectId(obj.id));
   }
 }
@@ -4525,8 +4680,8 @@ Value VM::invokeHostFunction(const std::string &name, uint32_t arg_count) {
     if (stack.empty()) {
       COMPILER_THROW("Stack underflow while reading host arguments");
     }
-    args[arg_count - 1 - i] = stack.top();
-    stack.pop();
+    args[arg_count - 1 - i] = stack.back();
+    stack.pop_back();
   }
 
   Value result = it->second(args);

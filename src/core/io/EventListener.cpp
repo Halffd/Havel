@@ -96,7 +96,7 @@ EventListener::~EventListener() {
 
 void EventListener::InitInputBackend(
     const std::vector<std::string> &devicePaths, bool grab) {
-  (void)grab; // grab is now handled in Start() after event loop is ready
+  (void)grab; // grab is now handled in Start() after the event loop drains
 
   // Backend selection: IO.Backend config key, default evdev. The CLI
   // --io flag writes this same key at startup. "auto" or empty opts into
@@ -259,52 +259,16 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   ResetInputState();
 
-  // 2. Grab devices BEFORE event loop starts
-  //    This ensures no events are read on ungrabbed devices, preventing
-  //    races where the EventLoop sees events that also reach the system
-  if (grabDevices && backend_) {
-    if (!backend_->SupportsSynthesis()) {
-      warn("EventListener: uinput not available, disabling grab to avoid input "
-           "lockup");
-      this->grabDevices = false;
-    }
-    if (this->grabDevices) {
-      debug("EventListener: Grabbing devices before event loop");
-      for (const auto &path : devicePaths) {
-        if (!backend_->GrabDevice(path)) {
-          error("EventListener: Failed to grab device: {}", path);
-        } else {
-          debug("EventListener: Grabbed device: {}", path);
-        }
-      }
-
-      // Add grab delay if configured - allows grab to settle before event loop
-      // starts
-      if (grabDelayMs > 0) {
-        if (havel::debugging::debug_event_listener)
-          debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
-        std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
-      }
-    }
-  }
-
-  // 3. Seed key state from kernel BEFORE event loop starts
-  //    Queries all currently-pressed keys via EVIOCGKEY
-  if (backend_) {
-    auto pressed = backend_->GetPressedKeys();
-    if (!pressed.empty()) {
-      debug("[EventListener] Seeding {} pressed keys from kernel state",
-            pressed.size());
-      std::unique_lock<std::shared_mutex> lock(stateMutex);
-      for (uint32_t code : pressed) {
-        evdevKeyState[code] = true;
-        physicalKeyStates[code] = true;
-        UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
-      }
-    }
-  }
-
-  // 4. Start event loop thread (if threaded)
+  // 2. Start event loop thread (if threaded) BEFORE grabbing devices.
+  //    EVIOCGRAB routes every event from the grabbed device exclusively to
+  //    this process's fd; if the consuming loop is not already draining that
+  //    fd, all input vanishes into a black hole (kernel-side, not queued for
+  //    X11 or anyone else) for as long as the loop is delayed. Previously the
+  //    grab happened here, before the thread spawn below, so a slow startup
+  //    (script compile, module loading, find_library spam) froze the whole
+  //    desktop for seconds: grab at 03.534, first pumped event 05.993 in the
+  //    2026-09-18 kb.log. Grabbing only after the loop is proven ready makes
+  //    grab-then-consume atomic from the kernel's perspective.
   running.store(true);
   shutdown.store(false);
   if (startThread) {
@@ -329,6 +293,51 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
         backend_->Shutdown();
       }
       return false;
+    }
+  }
+
+  // 3. Grab devices now that the event loop is draining them.
+  //    No events can be lost: anything the kernel hands to the grabbed fds is
+  //    picked up by the next poll round.
+  if (grabDevices && backend_) {
+    if (!backend_->SupportsSynthesis()) {
+      warn("EventListener: uinput not available, disabling grab to avoid input "
+           "lockup");
+      this->grabDevices = false;
+    }
+    if (this->grabDevices) {
+      debug("EventListener: Grabbing devices after event loop start");
+      for (const auto &path : devicePaths) {
+        if (!backend_->GrabDevice(path)) {
+          error("EventListener: Failed to grab device: {}", path);
+        } else {
+          debug("EventListener: Grabbed device: {}", path);
+        }
+      }
+
+      // Add grab delay if configured - allows grab to settle before
+      // forwarding starts
+      if (grabDelayMs > 0) {
+        if (havel::debugging::debug_event_listener)
+          debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
+        std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
+      }
+    }
+  }
+
+  // 4. Seed key state from kernel after the grab (the grabbed fd is
+  //    authoritative for held keys) but while the loop already drains.
+  if (backend_) {
+    auto pressed = backend_->GetPressedKeys();
+    if (!pressed.empty()) {
+      debug("[EventListener] Seeding {} pressed keys from kernel state",
+            pressed.size());
+      std::unique_lock<std::shared_mutex> lock(stateMutex);
+      for (uint32_t code : pressed) {
+        evdevKeyState[code] = true;
+        physicalKeyStates[code] = true;
+        UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
+      }
     }
   }
 
@@ -373,9 +382,9 @@ bool EventListener::SupportsSynthesis() const {
   return backend_ && backend_->SupportsSynthesis();
 }
 
-void EventListener::SendUinputEvent(int type, int code, int value) {
+bool EventListener::SendUinputEvent(int type, int code, int value) {
   if (!backend_ || !backend_->SupportsSynthesis())
-    return;
+    return false;
 
   std::lock_guard<std::mutex> lock(sendInputMutex);
 
@@ -384,7 +393,7 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
       backend_->EndBatch();
       pendingRelBatch_ = false;
     }
-    backend_->SendKeyEvent(code, value != 0);
+    bool ok = backend_->SendKeyEvent(code, value != 0);
     if (value == 1)
       pressedVirtualKeys.insert(code);
     else if (value == 0)
@@ -396,17 +405,20 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
       syntheticKeys.push_back(
           {code, std::chrono::steady_clock::now(), value != 0});
     }
+    return ok;
   } else if (type == EV_SYN) {
     if (pendingRelBatch_) {
       backend_->EndBatch();
       pendingRelBatch_ = false;
     }
+    return true;
   } else {
     if (!pendingRelBatch_) {
       backend_->BeginBatch();
       pendingRelBatch_ = true;
     }
     backend_->QueueEvent(type, code, value);
+    return true;
   }
 }
 
@@ -443,9 +455,56 @@ const EventListener::ModifierState &EventListener::GetModifierState() const {
 }
 
 void EventListener::SetBlockInput(bool block) {
+  // blockInput suppresses forwarding of non-hotkey input. Combined with a
+  // grab this is terminal for the desktop, so log state changes loudly.
+  info("EventListener::SetBlockInput: block={}", block);
   blockInput.store(block);
   if (backend_)
     backend_->SetBlockInput(block);
+}
+
+bool EventListener::SetGrabDevices(bool grab) {
+  if (grab && backend_ && !backend_->SupportsSynthesis()) {
+    // Grabbing every device routes all input exclusively to this process;
+    // without synthesis (uinput/XTest) there is no way to re-inject
+    // non-hotkey input, so the desktop dies for anything that is not a
+    // registered hotkey. Refuse instead of locking the user out.
+    error("EventListener::SetGrabDevices(true): synthesis unavailable, "
+          "refusing grab to avoid input lockup");
+    grabDevices = false;
+    return false;
+  }
+  if (grab && !eventLoopReady_.load()) {
+    // EVIOCGRAB routes every event to this process's fd; if the consuming
+    // loop is not draining yet, input vanishes into a black hole (kernel
+    // side, not queued for X11) until the loop starts. eventLoopReady_ is
+    // only ever set inside EventLoop(), so in non-threaded mode it stays
+    // false forever and grabbing here would lock the terminal until this
+    // process dies.
+    error("EventListener::SetGrabDevices(true): event loop not running, "
+          "refusing grab to avoid input lockup during startup");
+    grabDevices = false;
+    return false;
+  }
+  grabDevices = grab;
+  if (!backend_) {
+    return false;
+  }
+  if (grab) {
+    auto devices = backend_->EnumerateDevices();
+    info("EventListener::SetGrabDevices(true): grabbing {} devices",
+         devices.size());
+    for (const auto &dev : devices) {
+      if (!backend_->GrabDevice(dev.path)) {
+        error("EventListener::SetGrabDevices: failed to grab device: {}",
+              dev.path);
+      }
+    }
+  } else {
+    backend_->UngrabAllDevices();
+    info("EventListener::SetGrabDevices(false): all devices ungrabbed");
+  }
+  return true;
 }
 
 void EventListener::AddKeyRemap(int fromCode, int toCode) {
@@ -740,7 +799,7 @@ void EventListener::EventLoop() {
   if (debugging::debug_io)
     debug("EventListener: EventLoop started, running={}", running.load());
   eventLoopReady_.store(false);
-  int loopCount = 0;
+  auto lastDeviceRecheck = std::chrono::steady_clock::now();
   while (running.load() && !shutdown.load()) {
 
     // Poll input events non-blocking
@@ -755,6 +814,25 @@ void EventListener::EventLoop() {
 
     if (shutdown.load())
       break;
+
+    // Stray-signal check: SignalExitHandler (async handler on threads with
+    // a stale unblocked mask) only sets a flag; observe it here on the
+    // event-loop thread and run the orderly signal shutdown.
+    // NOTE: gSignalFlag is also written by SignalCleanupHandler for benign
+    // signals (SIGCHLD, SIGWINCH, ...). Only a fatal signal value here
+    // means shutdown; SIGCHLD==17 must NOT trigger it (that was killing
+    // havel after every spawned child exited).
+    {
+      int sig = SignalHandler::GetSignalFlag();
+      if (sig == SIGTERM || sig == SIGINT || sig == SIGHUP ||
+          sig == SIGQUIT) {
+        SignalHandler::ClearSignalFlag();
+        SignalSafeShutdown(sig, true);
+        break;
+      } else if (sig != 0) {
+        SignalHandler::ClearSignalFlag();
+      }
+    }
 
     if (executionEngine) {
       if (modules_)
@@ -787,6 +865,22 @@ void EventListener::EventLoop() {
       break;
 
 
+    // Periodic device re-check (~5s) to handle hotplug/disconnect. Runs
+    // BEFORE the runnable-fiber fast path so a busy scheduler cannot starve
+    // reconnection: with the old loopCount++ placement, a VM with permanent
+    // runnable work skipped RecheckDevices forever, so a device that
+    // disconnected once (POLLHUP on suspend/resume or replug) stayed dead
+    // and every hotkey silently stopped firing.
+    {
+      auto now = std::chrono::steady_clock::now();
+      if (now - lastDeviceRecheck >= std::chrono::seconds(5)) {
+        lastDeviceRecheck = now;
+        if (backend_) {
+          backend_->RecheckDevices();
+        }
+      }
+    }
+
     // Fast path: when goroutines are runnable, skip the device re-check
     // gap and re-enter executeFrame() immediately so VM work (hotkey
     // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
@@ -796,15 +890,6 @@ void EventListener::EventLoop() {
     if (executionEngine && executionEngine->getScheduler() &&
         executionEngine->getScheduler()->hasRunnableFibers()) {
       continue;
-    }
-
-    // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
-    loopCount++;
-    if (loopCount >= 500) { // 500 * 10ms = 5 seconds
-      loopCount = 0;
-      if (backend_) {
-        backend_->RecheckDevices();
-      }
     }
   }
 
@@ -1085,6 +1170,11 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     shouldBlock = inputBlockCallback(event);
   }
 
+  if (debugging::debug_io)
+    debug("[TRACE] key code={} value={} shouldBlock={} grabbed={} matched={}",
+          originalCode, ev.value, shouldBlock, grabDevices,
+          hotkeyManager ? hotkeyManager->lastEventMatched() : false);
+
   if (shouldBlock) {
     if (!down) {
       SendUinputEvent(EV_KEY, mappedCode, 0);
@@ -1100,7 +1190,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     // virtual device, which can race with a send() that just released that
     // key (e.g. a hotkey releasing Alt then sending Ctrl+Up) and turn
     // Ctrl+Up into Ctrl+Alt+Up. Drop them.
-    SendUinputEvent(EV_KEY, mappedCode, ev.value);
+    if (debugging::debug_io)
+      debug("[TRACE] forward attempt EV_KEY code={} value={}", mappedCode,
+            ev.value);
+    bool ok = SendUinputEvent(EV_KEY, mappedCode, ev.value);
+    if (debugging::debug_io)
+      debug("[TRACE] forward result={} code={}", ok ? "ok" : "FAIL",
+            mappedCode);
   }
 }
 
@@ -1936,202 +2032,6 @@ void EventListener::DispatchHotkeyCallback(std::function<void()> callback) {
   }
 }
 
-bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
-  if (debugging::debug_hotkeys)
-    debug("⌨️ EvaluateHotkeys: code={} down={} repeat={}", evdevCode, down,
-          repeat);
-  std::vector<int> matchedHotkeyIds;
-  bool shouldBlock = false;
-
-  if (down && emergencyShutdownKey != 0 && evdevCode == emergencyShutdownKey) {
-    error("[EMERGENCY] HOTKEY TRIGGERED! Shutting down...");
-    havel::exit(ExitReason::Forced, 0);
-    return true;
-  }
-
-  // Evaluate hotkeys with locks held, but collect matches to execute callbacks
-  // outside locks
-  {
-    std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
-    std::shared_lock<std::shared_mutex> stateLock(stateMutex);
-
-    for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
-      if (!hotkey.enabled || !hotkey.evdev) {
-        continue;
-      }
-
-      // Check if this is a combo hotkey
-      if (hotkey.type == HotkeyType::Combo) {
-        if (debugging::debug_hotkeys)
-          debug("[Search] Evaluating keyboard COMBO '{}' (id={})", hotkey.alias,
-                id);
-        try {
-          if (EvaluateCombo(hotkey)) {
-            if (debugging::debug_hotkeys)
-              debug("[Hotkey] KEYBOARD COMBO MATCHED: '{}' (id={})",
-                    hotkey.alias, id);
-            // Combo matched, collect for execution outside locks
-            std::lock_guard<std::mutex> ioLock(
-                HotkeyManager::RegisteredHotkeysMutex());
-            matchedHotkeyIds.push_back(id);
-            if (hotkey.grab) {
-              shouldBlock = true;
-            }
-          }
-        } catch (const std::system_error &e) {
-          error("System error evaluating hotkey combo '{}': {}", hotkey.alias,
-                e.what());
-          // Continue with other hotkeys instead of crashing
-          continue;
-        } catch (const std::exception &e) {
-          error("Exception evaluating hotkey combo '{}': {}", hotkey.alias,
-                e.what());
-          // Continue with other hotkeys instead of crashing
-          continue;
-        }
-        continue;
-      }
-
-      // Match against key code
-      if (hotkey.key != static_cast<Key>(evdevCode)) {
-        continue;
-      }
-
-      // Guard: Modifiers should not trigger standalone hotkeys (unless in combo
-      // context) This prevents Shift/RShift from triggering zoom when combined
-      // with wheel events However, we need to allow single modifier hotkeys to
-      // work, so we'll check more carefully
-      if (KeyMap::IsModifier(static_cast<int>(hotkey.key)) &&
-          hotkey.type != HotkeyType::Combo) {
-        // Allow single modifier hotkeys to work - if the hotkey is for the
-        // modifier itself and no additional modifiers are required, then it
-        // should be allowed
-        if (static_cast<int>(hotkey.key) != evdevCode ||
-            hotkey.modifiers != 0) {
-          continue;
-        }
-      }
-
-      // Event type check
-      if (!hotkey.repeat && repeat) {
-        continue;
-      }
-
-      if (hotkey.eventType == HotkeyEventType::Down && !down) {
-        continue;
-      }
-      if (hotkey.eventType == HotkeyEventType::Up && down) {
-        continue;
-      }
-      // Modifier matching
-      bool isModifierKey =
-          (evdevCode == KEY_LEFTALT || evdevCode == KEY_RIGHTALT ||
-           evdevCode == KEY_LEFTCTRL || evdevCode == KEY_RIGHTCTRL ||
-           evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
-           evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
-
-      // Check if this key is remapped to a modifier (e.g., CapsLock -> LAlt)
-      // If so, we should treat it like a modifier key for matching purposes
-      bool keyRemappedToModifier = false;
-      int remappedTarget = evdevCode;
-      {
-        std::lock_guard<std::mutex> remapLock(remapMutex);
-        auto it = keyRemaps.find(evdevCode);
-        if (it != keyRemaps.end()) {
-          remappedTarget = it->second;
-          keyRemappedToModifier = (remappedTarget == KEY_LEFTALT ||
-                                   remappedTarget == KEY_RIGHTALT ||
-                                   remappedTarget == KEY_LEFTCTRL ||
-                                   remappedTarget == KEY_RIGHTCTRL ||
-                                   remappedTarget == KEY_LEFTSHIFT ||
-                                   remappedTarget == KEY_RIGHTSHIFT ||
-                                   remappedTarget == KEY_LEFTMETA ||
-                                   remappedTarget == KEY_RIGHTMETA);
-        }
-      }
-
-      bool modifierMatch;
-
-      // If the HOTKEY itself is a modifier key, skip modifier comparisons.
-      // The pressed modifier should ALWAYS trigger its own hotkey.
-      // This also applies if the key is remapped to a modifier.
-      if ((isModifierKey || keyRemappedToModifier) && hotkey.modifiers == 0) {
-        modifierMatch = true;
-      } else {
-        // For keys remapped to modifiers, ignore that modifier in the match
-        // check by using the original modifiers before the remap was applied
-        if (keyRemappedToModifier) {
-          // Check modifiers against the state BEFORE this key's remap was
-          // applied We need to exclude the remapped modifier from the check
-          modifierMatch = CheckModifierMatchExcludingModifier(
-              hotkey.modifiers, hotkey.wildcard, remappedTarget);
-        } else {
-          modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-        }
-      }
-
-      if (!modifierMatch)
-        continue;
-
-      // Context checks
-      if (!hotkey.contexts.empty()) {
-        bool contextMatch =
-            std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                        [](auto &ctx) { return ctx(); });
-        if (!contextMatch) {
-          continue;
-        }
-      }
-
-      // Check repeat interval
-      if (hotkey.repeatInterval > 0 && repeat) {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - hotkey.lastTriggerTime)
-                           .count();
-
-        if (elapsed < hotkey.repeatInterval) {
-          continue;
-        }
-        hotkey.lastTriggerTime = now;
-      } else if (down && !repeat) {
-        hotkey.lastTriggerTime = std::chrono::steady_clock::now();
-      }
-
-      // Hotkey matched! Collect for execution outside locks
-      hotkey.success = true; // Update the actual hotkey's success status
-      if (debugging::debug_hotkeys)
-        debug("[Hotkey] KEYBOARD MATCHED: '{}' (id={}, down={})", hotkey.alias,
-              id, down);
-
-      matchedHotkeyIds.push_back(id);
-
-      if (hotkey.grab) {
-        shouldBlock = true;
-      }
-    }
-  } // Locks released here
-
-  // Execute callbacks outside critical section
-  for (int hotkeyId : matchedHotkeyIds) {
-    if (debugging::debug_hotkeys)
-      info("[Hotkey] EXECUTING id={}", hotkeyId);
-    std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-    auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
-
-    if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
-      if (debugging::debug_hotkeys)
-        info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
-      auto callback = it->second.callback;
-      lock.unlock();
-
-      DispatchHotkeyCallback(std::move(callback));
-    }
-  }
-
-  std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-  return shouldBlock;
-}
 
 /**
  * Evaluate combo hotkey - Checks if all keys in a combo are currently pressed
@@ -2474,11 +2374,28 @@ void EventListener::RegisterGestureHotkey(
 }
 
 void EventListener::SetupSignalHandling() {
+  // Block SIGTERM/SIGHUP on the calling thread AND make signalfd the only
+  // delivery path. sigprocmask only affects this thread, but every thread
+  // spawned by havel inherits the creator's mask at spawn time; threads
+  // created before this point (module loading, executor warmup) keep the
+  // default mask. SignalExitHandler (installed by InstallAsyncHandlers)
+  // hard-exits on SIGTERM from any unblocked thread, which was the source
+  // of "random SIGTERM" deaths: any stray group-directed SIGTERM (from
+  // forked children sharing our process group, `timeout` wrappers, or
+  // shell scripts running `kill 0`) landed on an unblocked worker thread
+  // and killed the whole process instantly.
+  //
+  // Fix strategy:
+  //  1. Block here (main thread) before any input threads spawn.
+  //  2. Reset SignalExitHandler for SIGTERM to a flag-setter that never
+  //     hard-exits; the signalfd event loop owns the shutdown decision.
+  //     Threads with a stale unblocked mask therefore only set a flag
+  //     instead of killing the process.
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGTERM);
   sigaddset(&mask, SIGHUP);
-  sigprocmask(SIG_BLOCK, &mask, nullptr);
+  pthread_sigmask(SIG_BLOCK, &mask, nullptr);
   signalHandler->SetupSignalfd();
 
   // SIGINT must NOT be blocked so it reaches the handler immediately

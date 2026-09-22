@@ -1,0 +1,58 @@
+// test: timeout = 180
+// Test: lint assignment-in-condition warning (hotkeys0.3.hv inGroup bug class).
+// What: runs `havel --lint` on a fixture where if/while/do-while conditions
+//       use '=' instead of '==', and on a clean fixture.
+// Why: 'if title = "" { ... }' parses fine, lints fine, and silently tests
+//      the assigned value - the title fallback in the user's hotkeys0.3.hv
+//      inGroup() was dead code because of it. The lint warning is the only
+//      automated guard against this class.
+// Expected: positive fixture -> 3 warnings (if, while, do-while), rc=0
+//           (warnings never fail lint); negative fixture -> 0 warnings, rc=0.
+
+use fs
+use shell
+
+tmp = shell.tmpdir() + "/havel-lint-cond-test"
+fs.rm(tmp)
+fs.mkdirAll(tmp)
+
+posPath = tmp + "/pos.hv"
+negPath = tmp + "/neg.hv"
+
+fs.write(posPath, "x = 0\ny = \"\"\nif x = 5 {\n    print(\"a\")\n}\nwhile y = \"l\" {\n    x = x + 1\n}\ndo {\n    x = x - 1\n} while (x = 0)\nprint(\"done\")\n")
+
+fs.write(negPath, "x = 0\ny = \"\"\nif x == 5 {\n    print(\"a\")\n}\nwhile y != \"l\" {\n    y = \"l\"\n}\nz = x == 5\nprint(\"clean\")\n")
+
+// resolve the havel binary: repo build first, PATH second
+bin = ""
+lsOut = runCapture("ls ./build-debug/havel ./build-release/havel 2>/dev/null | head -1")
+if lsOut.trim() != "" {
+    bin = lsOut.trim()
+} else {
+    whichOut = runCapture("which havel")
+    bin = whichOut.trim()
+}
+assert(bin != "", "no havel binary found for lint test")
+
+rPos = process.run(bin + " --no-self-hosted --lint " + posPath)
+warnPos = 0
+for line in (rPos.stdout + "\n" + rPos.stderr).split("\n") {
+    if line.indexOf("assignment '=' used as") >= 0 {
+        warnPos = warnPos + 1
+    }
+}
+assert(rPos.exitCode == 0, "lint positive fixture rc=" + str(rPos.exitCode))
+assert(warnPos == 3, "expected 3 warnings (if/while/do-while), got " + str(warnPos))
+
+rNeg = process.run(bin + " --no-self-hosted --lint " + negPath)
+warnNeg = 0
+for line in (rNeg.stdout + "\n" + rNeg.stderr).split("\n") {
+    if line.indexOf("assignment '=' used as") >= 0 {
+        warnNeg = warnNeg + 1
+    }
+}
+assert(rNeg.exitCode == 0, "lint negative fixture rc=" + str(rNeg.exitCode))
+assert(warnNeg == 0, "clean fixture produced " + str(warnNeg) + " warning(s)")
+
+fs.rm(tmp)
+print("PASS lint_assignment_in_condition")

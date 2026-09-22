@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <shared_mutex>
@@ -25,6 +26,8 @@
 #include "../core/Backend.hpp"
 #include "../core/RuntimeProfiler.hpp"
 #include "../gc/GC.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
+#include "../runtime/EventQueue.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../../runtime/ModuleLoader.hpp"
@@ -33,6 +36,7 @@ namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
 #include "../../../utils/Logger.hpp"  // tier-manager debug output
+#include "../runtime/EventQueue.hpp"
 
 namespace havel::compiler {
 
@@ -299,10 +303,40 @@ struct CallFrame {
 };
   public:
 
-  std::stack<Value> stack;
+  // Operand stack. Flat vector instead of std::stack (deque-backed):
+  // deque chunk allocation showed as kernel clear_pages + per-op overhead
+  // in dispatch profiles (push 4%, pop 2.7%). The vector keeps capacity
+  // across calls; save/restore copies are contiguous memcpy-able.
+  // Stack-op mapping: push->push_back, pop->pop_back, top->back.
+  std::vector<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
  size_t frame_count_ = 0;
+ // CALL argument scratch pool, keyed by frame depth. CALL builds its
+ // argument vector in pool[depth] and MOVES it out into doCall's by-value
+ // parameter, so nested calls (which run at a deeper frame_count_) use a
+ // different slot and cannot alias. Slots keep their capacity across calls,
+ // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
+ // (2M-iteration closure benchmark: ~2M mallocs).
+ std::vector<std::vector<Value>> call_arg_pool_;
+ // Memoize the temporary closures doCall allocates for FunctionObjId
+ // callees. The temp closure's identity is (function index, parent
+ // module_globals pointer) - nothing else varies - so a repeated global-fn
+ // call reuses the memoized closure instead of allocating a fresh
+ // RuntimeClosure per call (a 2M-iteration plain-fn loop allocated ~2M
+ // closures: one heap mutex pair, hash insert, ages bookkeeping and a page
+ // of memory each time).
+ std::unordered_map<uint64_t, uint32_t> foid_closure_memo_;
+ static uint64_t foidMemoKey(uint32_t function_index, const void *globals_ptr) {
+   return (static_cast<uint64_t>(function_index) << 32) ^
+          (reinterpret_cast<uintptr_t>(globals_ptr) >> 3);
+ }
+ inline std::vector<Value> takeCallArgScratch() {
+   call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
+   auto &slot = call_arg_pool_[frame_count_];
+   if (!slot.empty()) slot.clear();
+   return std::move(slot);
+ }
  int bc_execute_depth_ = 0;
  GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
@@ -521,6 +555,40 @@ int32_t pending_call_return_ip_ = -1;
     uint64_t executed_instructions_ = 0;
     uint64_t max_instructions_ = 0; // 0 = no limit
 
+    // Scheduler time-slice budget for runDispatchFast: when nonzero, the
+    // fast dispatch loop returns at its next periodic check (the
+    // 8192-instruction backedge hook) once this many instructions ran,
+    // so a goroutine tick can hand control back to the scheduler without
+    // per-instruction stepping. The driver (processGoroutinesInline /
+    // ExecutionEngine) sets it per tick, reads instructions consumed via
+    // fastTickConsumed(), and clears it for unbounded (callFunctionSync)
+    // execution.
+    uint64_t fast_tick_budget_ = 0;
+    uint64_t fast_tick_consumed_ = 0;
+    // Set by a module-function wrapper when it unwinds because the tick budget
+    // expired (rather than completing). doCall/doTailCall read it to suppress
+    // the usual result push: the wrapped frame is still live and will push its
+    // real result when it eventually returns, so a placeholder here would land
+    // on top of the still-active frames' operand stack and corrupt its resume.
+    bool budget_unwind_no_result_ = false;
+
+    bool fastTickExpired() const { return fast_tick_budget_ != 0; }
+    // True once the armed per-tick instruction budget has been consumed. The
+    // dispatch loops bare-return at that point without any suspension flag, so
+    // nested module wrappers use this to tell a budget cutoff (they must unwind
+    // without popping globals_stack_) from real function completion.
+    bool tickBudgetExhausted() const {
+      return fast_tick_budget_ != 0 &&
+             fast_tick_consumed_ >= fast_tick_budget_;
+    }
+    uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
+    void beginFastTick(uint64_t budget) {
+      fast_tick_budget_ = budget;
+      fast_tick_consumed_ = 0;
+      budget_unwind_no_result_ = false;
+    }
+    void endFastTick() { fast_tick_budget_ = 0; }
+
     // System object initializer - called after registerDefaultHostGlobals()
     using SystemObjectInitializer = std::function<void(VM *)>;
     SystemObjectInitializer system_object_initializer_;
@@ -555,7 +623,7 @@ int32_t pending_call_return_ip_ = -1;
 
   // State snapshot for re-entrant calls (HOF callbacks)
   struct ExecutionState {
-    std::stack<Value> stack;
+    std::vector<Value> stack;
     std::vector<Value> locals;
     std::vector<CallFrame> frames;
     size_t frame_count = 0;
@@ -600,6 +668,42 @@ int32_t pending_call_return_ip_ = -1;
 	bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args);
+
+  // Fast path for the computed-goto op_CALL label: handles the common
+  // callee shapes (closure / function object / host function) inline,
+  // skipping the executeInstruction switch re-dispatch. Exotic callee
+  // shapes (callable objects, bound methods, coroutines) return false and
+  // the caller falls back to the full CALL case in executeInstruction.
+  // Shared with the slow-path CALL case: both use takeCallArgScratch, so
+  // arg pooling logic stays in one place.
+  inline bool execSimpleCall(uint32_t arg_count) {
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      return false; // underflow diagnostics live in the slow path
+    }
+    // Stack layout: callee pushed first, then args (callee at the bottom
+    // of the arg window). The slow-path CALL case pops args then callee.
+    const size_t callee_pos = stack.size() - 1 - arg_count;
+    Value callee_value = stack[callee_pos];
+    if (!callee_value.isClosureId() && !callee_value.isFunctionObjId() &&
+        !callee_value.isHostFuncId()) {
+      return false;
+    }
+    // Advance the caller's ip BEFORE doCall: doCall may push frames and
+    // reallocate frame_arena_, so the dispatch label must not touch its
+    // frm reference afterwards. Do it here while we still only hold an
+    // index.
+    if (frame_count_ > 0) {
+      frame_arena_[frame_count_ - 1].ip++;
+    }
+    std::vector<Value> args = takeCallArgScratch();
+    args.resize(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[i] = stack[callee_pos + 1 + i];
+    }
+    stack.resize(callee_pos);
+    doCall(std::move(callee_value), std::move(args));
+    return true;
+  }
   void doTailCall(Value callee_value, std::vector<Value> args);
   void packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee);
   void runDispatchLoop(size_t stop_frame_depth);
@@ -666,7 +770,7 @@ public:
     // itself behind public seams.
     size_t stackDepthPublic() const { return stack.size(); }
     void truncateStackPublic(size_t depth) {
-      while (stack.size() > depth) stack.pop();
+      while (stack.size() > depth) stack.pop_back();
     }
     void execBinaryOpPublic(const Instruction &instr) {
       execBinaryOp(instr);
@@ -674,13 +778,84 @@ public:
     size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
+    // Fire yield_callback_ if set (guarded the same way the dispatch loop's
+    // periodicYieldCheck does NOT guard: the inline-yield reentrancy guard
+    // lives in HavelEngine::processGoroutinesInline, so calling this from a
+    // host fn chunked loop while siblings run inline is safe).
+    void fireYieldCallbackPublic() { if (yield_callback_) yield_callback_(); }
     // Replace top-of-stack with a new value (used when resuming from await)
     void replaceStackTop(Value value) {
         if (!stack.empty()) {
-            stack.top() = std::move(value);
+            stack.back() = std::move(value);
         } else {
             pushStack(std::move(value));
         }
+    }
+    // Deliver a channel/external resume value onto the suspended stack.
+    // A channel ITER_NEXT suspension leaves a Pending marker (see ITER_NEXT
+    // in VMCollections.cpp); the loop body expects the {first, second, done}
+    // iterator-result object, so wrap the delivered value. All resume sites
+    // (processGoroutines, resumeGoroutine, HavelEngine, ExecutionEngine)
+    // must go through this helper or `for v in ch` reads a null first item.
+    // A resume on a closed+drained channel (close unparked the waiter)
+    // wraps as done:true so the iteration terminates instead of yielding
+    // the null placeholder as a data item.
+    //
+    // The marker may sit BELOW the stack top: when ITER_NEXT suspends
+    // inside a module-fn wrapper (async_mod.parallelMap's collection loop),
+    // the wrapper returns null to the outer CALL, whose handler pushes a
+    // null result slot ABOVE the marker before the fiber is saved. Scan
+    // for the marker instead of assuming it is top-of-stack.
+    void deliverResumeValue(Scheduler::AwaitableType type, Value value,
+                            uint32_t target_id = 0,
+                            bool channel_iter_pending = false) {
+        if (type == Scheduler::AwaitableType::CHANNEL_RECV &&
+            channel_iter_pending && !stack.empty()) {
+          // Unwind the stack looking for the marker (topmost wins; only one
+          // channel-iter suspension can be active per fiber). Cap the scan:
+          // the marker sits just below the null slots pushed by the CALL
+          // unwinding (one per module-wrapper level), so it is near the top.
+          std::vector<Value> above;
+          bool found = false;
+          for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
+            if (stack.back().isPending()) {
+              found = true;
+              break;
+            }
+            above.push_back(popStackPublic());
+          }
+          if (found) {
+            bool done = false;
+            if (value.isNull() && target_id != 0) {
+              Value state = invokeHostFunctionDirect(
+                  "channel_state", {Value::makeChannelId(target_id)});
+              done = state.isInt() && state.asInt() == 2;
+            }
+            auto resultObj = heap_.allocateObject();
+            auto *obj = heap_.object(resultObj.id);
+            // Value mirrored into first AND second (channels have no keys):
+            // the C++ loop compiler's fallback reads result.first while
+            // the self-hosted emitter reads result.second.
+            (*obj)["first"] = value;
+            (*obj)["second"] = std::move(value);
+            (*obj)["done"] = Value::makeBool(done);
+            replaceStackTop(Value::makeObjectId(resultObj.id));
+            // DROP the slots above the marker: they are the null result
+            // slots the module-fn wrapper's outer CALL pushed while the
+            // suspension unwound (one per wrapper level). The re-dispatch
+            // resumes INSIDE the suspended fn, whose next instructions
+            // consume the wrapped result at the marker's position; when
+            // the fn eventually returns, its RET re-pushes a result into
+            // the outer slot (doReturn preserves exactly one value).
+            return;
+          }
+          // No marker within reach: restore whatever was scanned off and
+          // fall back to plain replaceStackTop (ordinary receive resume).
+          for (auto it = above.rbegin(); it != above.rend(); ++it) {
+            pushStack(std::move(*it));
+          }
+        }
+        replaceStackTop(std::move(value));
     }
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
@@ -735,7 +910,7 @@ public:
   // Run one scheduler tick: drain events, wake sleeping goroutines, then
   // execute a single runnable goroutine. Shared by the engine REPL pump and
   // the self-hosted launcher REPL (bc.tick).
-  void tickScheduler();
+  void tickScheduler(bool wait_for_sleepers = false);
   size_t frameCountPublic() const { return frame_count_; }
   void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
                       size_t stack_depth) {
@@ -810,9 +985,17 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
+        // Hot path: this runs on EVERY loop backedge (millions in the
+        // benchmarks). Keep the sub-threshold path to a counter bump:
+        // the site-key string hash, the hot-trace mutex, tier-2 site
+        // dedup and maybeTierUp only matter once the site is hot
+        // (>= tier1_threshold_ backedges at this ip).
         auto count = ++backedge_counters_[ip];
         trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
         profiler_.recordBackedgeTotal();
+        if (count < tier1_threshold_) {
+            return;
+        }
         if (!hasActiveFrames()) {
             return;
         }
@@ -826,7 +1009,7 @@ Value lookupGlobalByKey(const std::string& key) {
         const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
         // Trace callback fires once per site past the tier-1 threshold
         // (hot-trace hooks; separate from function tier-up).
-        if (count >= tier1_threshold_) {
+        {
             bool should_fire = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);
@@ -1174,17 +1357,37 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
-    // Module-function gate: the interpreter swaps the ambient globals
-    // snapshot to the callee closure's module_globals map when calling a
-    // module function (VM.cpp doCall), and the JIT execute path does not
-    // perform that swap - compiled module functions would read and write
-    // the CALLER's ambient map while other frames read the module
-    // sidecar, silently corrupting module-level caches (the self-hosted
-    // parser's BP_TABLE broke exactly this way when getBPTABLE tiered
-    // mid-parse). Until the JIT path implements the snapshot swap, only
-    // functions from the main chunk tier up; module functions stay
-    // interpreted.
-    if (frame_count_ > 0) {
+    // Module-function gate: module functions do NOT tier yet. The JIT
+    // execute path pushes no interpreter frame, so a compiled module
+    // function's Runtime-ABI global writes persist against the CALLER's
+    // frame (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverge depending on
+    // which path touched them last (the self-hosted parser's BP_TABLE
+    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
+    // compiled function itself returns correct values). doCall's JIT
+    // branch now performs the module-globals snapshot swap for ClosureId
+    // calls (matching the interpreter), which fixes that half; lifting
+    // this gate additionally requires the JIT path to establish the
+    // callee's frame context (closure_id/module_globals) for the bridges.
+    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
+    // Status 2026-09-12: the doCall JIT branch now establishes callee
+    // frame context (synthetic CallFrame with closure_id/chunk, globals
+    // sidecar swap, current_chunk swap - see VM.cpp doCall jit path), and
+    // module tiering passed a correctness sweep with it: 16 real smoke
+    // tests (an initial 5 "failures" were nonexistent filenames, caught
+    // and rerun), full --lint parse+typecheck+emit, and an 80-fn
+    // parse-verification script (AST stmt count exact) all pass with
+    // tier1=5 parser functions compiled. An earlier note claiming
+    // divergence was a flawed test (missing --lint flag + load-confounded
+    // timings), not a real repro. Gate remains until the remaining risk
+    // is covered by the full suite: tiered module functions still bypass
+    // interpreter frame management (coroutine/suspension opcodes route
+    // through the JitCoroutineSignal fallback) and the old BP_TABLE
+    // divergence class deserves a targeted regression test before
+    // lifting by default.
+    static const bool allow_module_tiering =
+        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
+    if (!allow_module_tiering && frame_count_ > 0) {
       const auto& cf = currentFrame();
       if (cf.chunk && cf.chunk != main_chunk_.get()) {
         return;
@@ -1198,11 +1401,23 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
       return;
     }
     const std::string key = func.name;
-    // Debug isolation: HAVEL_TIER1_ONLY=<name> restricts tier-up to a
-    // single function (miscompile bisects; not a production knob).
-    static const char* only_env = std::getenv("HAVEL_TIER1_ONLY");
-    if (only_env && key != only_env) {
-      return;
+    // Debug isolation: HAVEL_TIER1_ONLY=<name[,name...]> restricts tier-up
+    // to the listed functions (miscompile bisects; not a production knob).
+    static const std::string only_env = std::getenv("HAVEL_TIER1_ONLY")
+                                             ? std::getenv("HAVEL_TIER1_ONLY")
+                                             : std::string();
+    if (!only_env.empty()) {
+      bool listed = false;
+      size_t pos = 0;
+      while (pos <= only_env.size() && !listed) {
+        size_t comma = only_env.find(',', pos);
+        const std::string tok = only_env.substr(
+            pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (tok == key) listed = true;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+      }
+      if (!listed) return;
     }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
@@ -1290,10 +1505,20 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     }
   }
   // Diagnostic accessors for embedders that still report on the legacy
-  // interface (hvdb status output). Null when no JIT is attached.
+  // interface (hvdb status output, launcher JIT flag wiring). Null when no
+  // JIT is attached. Sees through the TieredBackend composite to its
+  // optimizing (ORC) tier.
   JITCompiler* getJITCompiler() const {
-    auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get());
-    return jit_backend ? jit_backend->legacy() : nullptr;
+    if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get())) {
+      return jit_backend->legacy();
+    }
+    if (auto* tiered = dynamic_cast<TieredBackend*>(backend_.get())) {
+      auto* optimizing = tiered->optimizing();
+      if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(optimizing)) {
+        return jit_backend->legacy();
+      }
+    }
+    return nullptr;
   }
 
   // System object initializer - called after registerDefaultHostGlobals()
@@ -1418,8 +1643,17 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
     int exitCode() const { return exit_code_.load(); }
+    // Cooperative exit request, shared by the exit()/sys.exit host fns
+    // (VMHostFunctions) and stdlib modules (SysModule's sys.exit): sets the
+    // flag + code so the engine's loops shut down cleanly instead of
+    // calling std::exit mid-goroutine.
+    void requestExit(int code) {
+        exit_code_.store(code);
+        exit_requested_.store(true);
+    }
   
     void setGlobal(std::string name, Value value) {
+        assertVMThread("setGlobal");
         auto key = name;
         globals[std::move(name)] = std::move(value);
         emitVariableChanged(key);
@@ -1441,6 +1675,23 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // module-level state written by any frame (sidecar) is visible.
     // Returns true with *out set; false = genuinely undefined (caller
     // decides null vs error).
+    // Runtime-ABI seam (JitRuntimeBridges eq/neq): the interpreter's EQ
+    // compares strings by CONTENT across representations (heap StringId,
+    // chunk-local StringValId, RegexValId - see valuesEqualDeep); the
+    // bridges' raw-bit NaN dance cannot, so JIT-compiled code comparing a
+    // heap string against a chunk-local string constant (the self-hosted
+    // emitter's node.kind vs "NumberLiteral") always saw "not equal" and
+    // every dispatch fell through to the null branch. This seam gives the
+    // bridges the interpreter's exact string-equality behavior.
+    bool stringsEqualPublic(uint64_t l_bits, uint64_t r_bits) const {
+        Value l = Value::fromRawBits(l_bits);
+        Value r = Value::fromRawBits(r_bits);
+        auto ls = valueAsString(l);
+        if (!ls) return false;
+        auto rs = valueAsString(r);
+        return rs.has_value() && *ls == *rs;
+    }
+
     bool resolveGlobalPublic(const std::string& name, Value* out) {
         auto it = globals.find(name);
         if (it != globals.end()) {
@@ -1480,9 +1731,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
             }
         }
     }
-  void eraseGlobal(const std::string &name) {
-    globals.erase(name);
-  }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }
@@ -1493,6 +1741,25 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   uint32_t getStringId(const Value &str);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
+  // Runtime-ABI seam (JitRuntimeBridges array_set): the interpreter's
+  // ARRAY_SET falls through to set/object semantics when the container is
+  // not an array (VMCollections.cpp) - including the object GC write
+  // barrier and frozen-object checks - and JIT-compiled code must see the
+  // exact same behavior. Returns the container word the interpreter would
+  // push (the container on success; val on bail to match the old contract).
+  uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
+                             uint64_t val_bits);
+
+  // Runtime-ABI seam (JitRuntimeBridges object_get): the interpreter's
+  // OBJECT_GET handles non-object receivers too - array len/index access,
+  // string member access, interval/timeout objects, function-object
+  // properties. JIT member access lowers to object_get bridges without
+  // proving the receiver is an object, so the bridges must run the full
+  // chain; without this, tokens.len on an ARRAY read as null and the
+  // self-hosted parser's at()/advance() always saw EOF, hanging parses in
+  // an infinite loop the moment `at` tiered. True when *out is set.
+  bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
+                       Value* out, bool* cacheable = nullptr);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
@@ -1575,7 +1842,20 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
                                       const std::string &funcName);
   std::optional<uint32_t>
   getPrototypeMethod(const Value &value, const std::string &methodName);
+  // Method value for a receiver, mirroring the interpreter's prototype +
+  // module monkey-patch steps: checks both the lowercase and capitalized
+  // module globals like VMControlFlow's CALL_METHOD step 1.5, and returns
+  // patched closures/functions as Values (getPrototypeMethod collapses
+  // those to a host-index 0 sentinel). Used by the ORC call_method bridge.
+  Value getPrototypeMethodValue(const Value &value,
+                                const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
+
+  // Resolve a function object id to its BytecodeFunction across the chunk
+  // set (current, main, persistent, module) - mirrors the interpreter's
+  // CALL_METHOD first-param "self" detection lookup.
+  const BytecodeFunction *
+  resolveFunctionFromId(uint32_t function_index) const;
 
   // Protocol system
   void registerProtocol(const std::string &protocolName,
@@ -1604,6 +1884,115 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
+
+  // =====================================================================
+  // Fiber-suspending blocking host calls (A+C threading model).
+  //
+  // Host functions with slow/blocking implementations call
+  // runBlockingHostCall(job, lift) unconditionally — the context decides
+  // the mode, authors never branch:
+  //
+  //   goroutine context + live event queue: job() runs on an EventQueue
+  //     worker thread and returns a shared_ptr<void> (any C++ result;
+  //     never a Value — Values never cross threads). The completion
+  //     event carries the cell; on the VM thread lift(cell) builds the
+  //     result Value and Scheduler::resumeExternalWithValue parks->
+  //     resumes the goroutine. The VM thread never blocks on the I/O.
+  //
+  //   no goroutine / no queue: job runs inline on the VM thread and
+  //     lift(job()) returns directly — cost identical to a plain
+  //     synchronous host call.
+  //
+  // Suspend case returns Value::makePending(token); the CALL epilogue
+  // parks the current goroutine on that token.
+  //
+  // GC note: lift may capture Values (host-object ids etc.). lift runs
+  // on the VM thread but survives across a suspension where GC can
+  // run, so pending records pin those captures via external roots —
+  // the registerCallback discipline.
+  // =====================================================================
+  using AsyncCxxResult = havel::compiler::AsyncCxxResult;
+  struct PendingHostCall {
+    std::function<Value(const AsyncCxxResult &)> vm_lift;
+  };
+  std::unordered_map<uint32_t, PendingHostCall> pending_host_calls_;
+  std::mutex pending_host_calls_mutex_;
+  uint32_t next_pending_token_ = 1;
+
+  template<typename JobFn, typename LiftFn>
+  Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
+    auto *sched = getScheduler();
+    if (sched && sched->current() && event_queue_ &&
+        !event_queue_->isShutdown()) {
+      uint32_t token;
+      {
+        std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);
+        token = next_pending_token_++;
+        pending_host_calls_[token] = PendingHostCall{
+            std::forward<LiftFn>(lift)};
+      }
+      auto *eq = event_queue_;
+      eq->postToWorker([eq, token, job = std::forward<JobFn>(job)]() {
+        // ---- worker thread: C++ in, C++ out, no VM/Value access ----
+        AsyncCxxResult cell;
+        try {
+          cell = job();
+        } catch (const std::exception &e) {
+          ::havel::error("[async host call] job threw: {}", e.what());
+        } catch (...) {
+          ::havel::error("[async host call] job threw unknown exception");
+        }
+        // Deliver. EventQueue drops events post-shutdown; the cell is
+        // a shared_ptr so the memory is freed wherever the last
+        // reference dies (here or in the handler).
+        eq->push(Event(EventType::ASYNC_HOST_COMPLETE, token,
+                       new AsyncCxxResult(std::move(cell))));
+      });
+      return Value::makePending(token);
+    }
+    // Synchronous fallback: identical cost to today's blocking call.
+    return lift(job());
+  }
+
+  // VM thread: handle a completed async host call. Runs the lift to
+  // build the result Value and resumes the parked goroutine.
+  void handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell);
+
+  // CALL epilogue helper for both dispatch paths (fast op_CALL and slow
+  // op_default): if the just-executed CALL left a Pending marker on the
+  // stack, park the current goroutine on the pending token (WaitHandle::
+  // EXTERNAL) and return true so the dispatcher suspends. Returns false
+  // for ordinary results. A Pending with no matching current goroutine
+  // is a broken invariant: log loudly and neutralize to null.
+  bool parkIfPendingCallResult() {
+    if (!scheduler_ || !current_executing_fiber_ || stack.empty()) {
+      if (!stack.empty() && stack.back().isPending()) {
+        ::havel::error("[VM] Pending host-call result outside goroutine "
+                       "context; check runBlockingHostCall preconditions");
+        stack.back() = Value::makeNull();
+      }
+      return false;
+    }
+    Value top = stack.back();
+    if (!top.isPending()) return false;
+    uint32_t token = top.asPendingToken();
+    Scheduler::Goroutine *g = scheduler_->current();
+    if (g && g->fiber == current_executing_fiber_) {
+      {
+        std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
+        g->wait_handle.set_external(token);
+      }
+      last_suspension_reason_ =
+          static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
+      last_suspension_context_ = nullptr;
+      suspension_requested_ = false;
+      return true;
+    }
+    ::havel::error("[VM] Pending value escaped without a matching current "
+                   "goroutine (token {})", token);
+    stack.back() = Value::makeNull();
+    return false;
+  }
   void pinModuleCacheExports(const std::string &key, const Value &exports);
   std::optional<Value> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }
@@ -1666,7 +2055,8 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
   Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                 std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath,
-                                int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
+                                int depth = 0,
+                                std::shared_ptr<std::unordered_set<uint32_t>> visited = nullptr);
 
 Value loadModule(const std::string& path);
     Value loadScript(const std::string& path);
@@ -1949,18 +2339,93 @@ bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire)
     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
      void* getServiceRegistry() const { return serviceRegistry_; }
 
-     // RAII guard for vm_in_execute_. Ensures the flag is cleared on
-     // exception escape, preventing executeFrame() from being permanently
-     // locked out (ExecutionEngine.cpp:108 returns early while true).
-     struct ExecuteGuard {
-       std::atomic<bool>& flag;
-       explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
-         flag.store(true, std::memory_order_release);
-       }
-       ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
-       ExecuteGuard(const ExecuteGuard&) = delete;
-       ExecuteGuard& operator=(const ExecuteGuard&) = delete;
-     };
+      // RAII guard for vm_in_execute_. Ensures the flag is cleared on
+      // exception escape, preventing executeFrame() from being permanently
+      // locked out (ExecutionEngine.cpp:108 returns early while true).
+      struct ExecuteGuard {
+        std::atomic<bool>& flag;
+        explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
+          flag.store(true, std::memory_order_release);
+        }
+        ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
+        ExecuteGuard(const ExecuteGuard&) = delete;
+        ExecuteGuard& operator=(const ExecuteGuard&) = delete;
+      };
+
+      // =====================================================================
+      // VM-thread ownership guard (debug builds).
+      //
+      // The invariant: Havel state (stack, frames, heap, globals) is
+      // touched by at most one thread at a time. Different threads may
+      // LEGITIMATELY take turns driving the VM (main thread runs
+      // vm->execute(); the EventListener event-loop thread runs
+      // executeFrame(); any thread may run callFunctionSync) — but never
+      // concurrently, and foreign threads must never mutate VM state
+      // while the owner thread is inside dispatch.
+      //
+      // runDispatchLoop() latches dispatch_thread_ to whichever thread
+      // enters it and clears the latch on exit. While latched, the
+      // HAVEL_ASSERT_VM_THREAD guard fires if any OTHER thread reaches a
+      // VM-state choke point (invokeCallback, spawnGoroutine,
+      // setGlobal, heap allocation). This makes cross-thread violations
+      // (e.g. a detached timer thread calling invokeCallback while the
+      // event thread is dispatching) crash loudly in debug instead of
+      // corrupting state.
+      // =====================================================================
+#ifndef NDEBUG
+      std::thread::id dispatch_thread_{};
+      std::atomic<bool> dispatch_latched_{false};
+
+      void latchDispatchThread() {
+        // Nested re-entry (callFunctionSync inside dispatch) keeps latch.
+        if (dispatch_latched_.load(std::memory_order_acquire)) {
+          if (dispatch_thread_ != std::this_thread::get_id()) {
+            fprintf(stderr,
+                    "[VM-THREAD-VIOLATION] thread %zu entered dispatch while "
+                    "thread %zu holds it\n",
+                    hash_thread_id(std::this_thread::get_id()),
+                    hash_thread_id(dispatch_thread_));
+            abort();
+          }
+          return;
+        }
+        dispatch_thread_ = std::this_thread::get_id();
+        dispatch_latched_.store(true, std::memory_order_release);
+      }
+
+      void unlatchDispatchThread() {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ == std::this_thread::get_id()) {
+          dispatch_latched_.store(false, std::memory_order_release);
+          dispatch_thread_ = std::thread::id{};
+        }
+      }
+
+      static size_t hash_thread_id(std::thread::id id) {
+        return std::hash<std::thread::id>{}(id);
+      }
+
+      // Fire when a foreign thread touches VM state mid-dispatch: a
+      // detached timer thread calling invokeCallback while the event
+      // thread is dispatching crashes loudly here instead of corrupting
+      // state. No-op in release builds.
+      void assertVMThread(const char* what) {
+        if (dispatch_latched_.load(std::memory_order_acquire) &&
+            dispatch_thread_ != std::this_thread::get_id()) {
+          fprintf(stderr,
+                  "[VM-THREAD-VIOLATION] %s called from foreign thread %zu "
+                  "while thread %zu owns dispatch\n",
+                  what, hash_thread_id(std::this_thread::get_id()),
+                  hash_thread_id(dispatch_thread_));
+          abort();
+        }
+      }
+#else
+      void latchDispatchThread() {}
+      void unlatchDispatchThread() {}
+      void assertVMThread(const char*) {}
+#endif
+
 
 
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }

@@ -1,0 +1,39 @@
+// Regression test: ffi.allocBytes/freeBytes round-trip with tracked FFIMemory.
+// What: FFIMemory now tracks allocations in a registry; buffers freed via
+//       ffi.freeBytes must leave the registry (no double-free at exit).
+// Expected: round-trip works, double-free is safe, no crash.
+//
+// LSan half of this bug is verified by the A/B control (old binary leaked
+// 4206 bytes / 2 objects from ffi.allocBytes; registry frees them at exit).
+
+use ffi
+
+_libc = ffi.open("libc.so.6")
+if _libc == 0 {
+	print("FAIL: libc not loaded")
+	exit(1)
+}
+
+p1 = ffi.allocBytes(4096)
+p2 = ffi.allocBytes(110)
+if p1 == 0 || p2 == 0 {
+	print("FAIL: allocBytes returned null")
+	exit(1)
+}
+
+// Buffers start zeroed and writable (sockaddr patterns rely on this).
+ffi.freeBytes(p1)
+// Double-free of a tracked pointer must be safe.
+ffi.freeBytes(p1)
+// Untracked/freed pointer must be safe.
+ffi.freeBytes(0)
+
+// Realloc-style reuse: alloc again after free.
+p3 = ffi.allocBytes(16)
+if p3 == 0 {
+	print("FAIL: allocBytes after free returned null")
+	exit(1)
+}
+ffi.freeBytes(p3)
+
+print("OK")

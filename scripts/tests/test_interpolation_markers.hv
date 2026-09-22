@@ -1,0 +1,25 @@
+// Regression: self-hosted pipeline parsed $name / ${expr} interpolation as
+// literal control-char text (^A...^B) because pratt.parseInterpolatedString
+// only understood {expr} markers from the pure-Havel scanner, while the
+// native tokenizer encodes interpolations as \x01 expr \x02 inside the token
+// value. Expect: $name and ${expr} expand; exit 0 only if all checks pass.
+x = 42
+name = "world"
+s = "x=$x name=$name sum=${x + 1}"
+if s != "x=42 name=world sum=43":
+    print("FAIL basic: got '" + s + "'")
+    exit(1)
+mid = "before ${x * 2} after"
+if mid != "before 84 after":
+    print("FAIL mid: got '" + mid + "'")
+    exit(1)
+obj = {"k": 7}
+member = "v=${obj.k}!"
+if member != "v=7!":
+    print("FAIL member: got '" + member + "'")
+    exit(1)
+plain = "no $ here"
+if plain != "no $ here":
+    print("FAIL plain: got '" + plain + "'")
+    exit(1)
+print("interpolation: OK")

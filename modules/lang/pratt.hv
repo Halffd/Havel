@@ -9,7 +9,7 @@ NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
 Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
 CallExpression, MemberExpression, IndexExpression,
 AssignmentExpression, CompoundAssignment,
-ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
+ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression, SetLiteral,
 IfStatement, WhileStatement, DoWhileStatement, ForStatement, ForExpression, LoopStatement,
 RepeatStatement, BreakStatement, ContinueStatement,
 FnDeclaration, LambdaExpression, ReturnStatement,
@@ -99,7 +99,10 @@ fn getRBPTABLE() {
 
 fn getBindingPower(ttype) {
     if ttype == TID.Not {
-        if at(1).tid == TID.In { return 52 }
+        // Infix use is decided by the Pratt loop (isNotIn); standalone
+        // 'not' is a prefix operator with no binding power of its own.
+        // Do NOT probe the token cursor here: this function is
+        // module-level and has no access to the current Parser.
         return BP_NONE
     }
     r = getBPTABLE()[ttype]
@@ -294,6 +297,7 @@ fn Parser(tokenList) {
   allowBraceSugar = true
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
+  modeContext = ""
 
   fn current() {
     return _cur
@@ -463,7 +467,15 @@ fn parseExpr(rbp) {
  }
   curType = current().tid
   bp = getBindingPower(curType)
-
+  // 'not' is infix ONLY as 'not in'. getBindingPower is module-level and
+  // cannot see this Parser's token cursor, so resolve it here where at()
+  // is live. (Before, its module-level at(1) probe resolved against a
+  // foreign cursor and returned a token that was never TID.In, so
+  // `5 not in xs` broke out of the Pratt loop with bp=BP_NONE and the
+  // parser then reported "Unexpected token in expression: <In>".)
+  if curType == TID.Not {
+    bp = isNotIn() ? 52 : BP_NONE
+  }
   // Special: 'not' only acts as infix when followed by 'in'
   if curType == TID.Not and !isNotIn() {
  break
@@ -572,11 +584,28 @@ return BacktickExpression(tok.value, l, c)
 else if tt == TID.InterpolatedBacktick {
 return ShellCommand(tok.value, true, l, c)
 }
-else if tt == TID.ShellCommand {
-return ShellCommand(tok.value, false, l, c)
-}
-else if tt == TID.ShellCommandCapture {
-return ShellCommand(tok.value, true, l, c)
+else if tt == TID.ShellCommand or tt == TID.ShellCommandCapture {
+ // $ / $! marker token: parse the command expression that follows.
+ // Mirrors C++ BootstrapParser (parsePrimaryExpression ShellCommand case):
+ // $ [array], $ (expr), $ ident, $ "string" -> ShellCommandExpression.
+ capture = tt == TID.ShellCommandCapture
+ skipNewlines()
+ cur = current().tid
+ if cur == TID.OpenParen or cur == TID.OpenBracket {
+  cmdExpr = parseExpr(0)
+ }
+ else if cur == TID.Identifier or cur == TID.String or cur == TID.MultilineString {
+  cmdExpr = parseExpr(0)
+ }
+ else {
+  return error("Shell command requires expression: $ (cmd), $ [array], $ ident, or $ \"string\"", l, c)
+ }
+ if cmdExpr == null or cmdExpr.kind == "ErrorNode" {
+  return cmdExpr
+ }
+ node = ShellCommand("", capture, l, c)
+ node.commandExpr = cmdExpr
+ return node
 }
 else if tt == TID.Hotkey {
  return HotkeyExpression(tok.value, l, c)
@@ -660,7 +689,7 @@ else if tt == TID.Thread {
   body = parseBlock()
   return ThreadExpression(body, l, c)
 }
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield) {
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield and tt != TID.Go and tt != TID.Channel) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {
@@ -889,7 +918,17 @@ else if tt == TID.Async {
     fnDecl = parseFnDeclaration()
     return AsyncExpression(fnDecl, l, c)
   }
-  return error("Expected '{' or 'fn' after 'async'", l, c)
+  // async (expr) — wrap expression in async
+  if current().tid == TID.OpenParen {
+    advance()
+    expr = parseExpr(0)
+    expect(TID.CloseParen)
+    return AsyncExpression(expr, l, c)
+  }
+  // async.sleep(...) / async(x) / use async / str(async) — the async module global or identifier.
+  // async is a contextual keyword: only a keyword when starting an async expression
+  // (async { ... }, async fn ..., async (expr)). In all other contexts, treat as identifier.
+  return Identifier("async", l, c)
 }
 else if tt == TID.LeftArrow {
   // <- as await prefix: <-expr
@@ -1195,27 +1234,29 @@ else if tt == TID.Arrow {
     binding.hotkeys.push(HotkeyLiteral(el.name, l, c))
    }
   }
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
+if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
   }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
- }
- // Check if left is a HotkeyExpression: F1 => { ... }
- if left.kind == "HotkeyExpression" {
-  binding = HotkeyBinding([], null, l, c)
-  binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
-  if current().tid == TID.OpenBrace {
-   binding.action = parseBlock()
-  }
-  else {
-   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-  }
-  return HotkeyExpression(binding, l, c)
+  // Check if left is a HotkeyExpression: F1 => { ... }
+  if left.kind == "HotkeyExpression" {
+   binding = HotkeyBinding([], null, l, c)
+   binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
+   if current().tid == TID.OpenBrace {
+    binding.action = parseBlock()
+   }
+   else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+   }
+   binding.mode = modeContext
+   return HotkeyExpression(binding, l, c)
  }
  // Single-parameter lambda: x => body
  if left == null || left.kind != "Identifier" {
@@ -1371,56 +1412,87 @@ fn parseCallArgs() {
     // ===================================================================
     // HELPER: Parse interpolated string into parts
     // ===================================================================
-    fn parseInterpolatedString(value, l, c) {
-        parts = []
-        i = 0
-        buf = ""
+fn parseInterpolatedString(value, l, c) {
+         parts = []
+         i = 0
+         buf = ""
+        // The native tokenizer (\x01 expr \x02 markers) already resolved
+        // every interpolation boundary; after it, a literal open brace in
+        // the string is plain text, never another interpolation start.
+        // The pure Havel scanner instead encodes interpolations as bare
+        // {expr} with an optional stripped $. Only honor the bare-brace
+        // branch while no native marker has been seen.
+        nativeMarkers = false
 
-        while i < value.len {
-            ch = value.sub(i, 1)
+         while i < value.len {
+             ch = value.sub(i, 1)
 
-            // {...} interpolation (works in all strings, not just f-strings)
-            if ch == "{" {
-                if buf.len > 0 {
-                    // Strip the interpolation marker: ${expr} → the '$' before '{'
-                    if buf.sub(buf.len - 1, 1) == "$" {
-                        buf = buf.slice(0, buf.len - 1)
-                    }
-                }
-                if buf.len > 0 {
-                    parts.push(StringLiteral(buf, l, c))
-                    buf = ""
-                }
-                i = i + 1
-                depth = 1
-                exprStr = ""
-                while i < value.len and depth > 0 {
-                    ch2 = value.sub(i, 1)
-                    if ch2 == "{": depth = depth + 1
-                    else if ch2 == "}": depth = depth - 1
-                    if depth > 0: exprStr = exprStr + ch2
-                    i = i + 1
-                }
-                subTokens = tokenize(exprStr)
-                subParser = Parser(subTokens)
-                subExpr = subParser.parseExpr(0)
-                if subExpr != null: parts.push(subExpr)
-                else: parts.push(Identifier(exprStr, l, c))
+             // Interpolation markers: the native tokenizer encodes $name and
+             // ${expr} as \x01 expr \x02 inside the string value. The pure
+             // Havel scanner (lexer.hv _scan) instead emits {expr}; both
+             // encodings are accepted here.
+             if ch == "\x01" {
+                 nativeMarkers = true
+                 if buf.len > 0 {
+                     parts.push(StringLiteral(buf, l, c))
+                     buf = ""
+                 }
+                 i = i + 1
+                 exprStr = ""
+                 while i < value.len && value.sub(i, 1) != "\x02" {
+                     exprStr = exprStr + value.sub(i, 1)
+                     i = i + 1
+                 }
+                 i = i + 1 // skip \x02
+                 subTokens = tokenize(exprStr)
+                 subParser = Parser(subTokens)
+                 subExpr = subParser.parseExpr(0)
+                 if subExpr != null: parts.push(subExpr)
+                 else: parts.push(Identifier(exprStr, l, c))
 
-            }
-            else {
-                buf = buf + ch
-                i = i + 1
+             }
+             // {...} interpolation (works in all strings, not just f-strings)
+             else if ch == "{" and !nativeMarkers {
+                 if buf.len > 0 {
+                     // Strip the interpolation marker: ${expr} → the '$' before '{'
+                     if buf.sub(buf.len - 1, 1) == "$" {
+                         buf = buf.slice(0, buf.len - 1)
+                     }
+                 }
+                 if buf.len > 0 {
+                     parts.push(StringLiteral(buf, l, c))
+                     buf = ""
+                 }
+                 i = i + 1
+                 depth = 1
+                 exprStr = ""
+                 while i < value.len and depth > 0 {
+                     ch2 = value.sub(i, 1)
+                     if ch2 == "{": depth = depth + 1
+                     else if ch2 == "}": depth = depth - 1
+                     if depth > 0: exprStr = exprStr + ch2
+                     i = i + 1
+                 }
+                 subTokens = tokenize(exprStr)
+                 subParser = Parser(subTokens)
+                 subExpr = subParser.parseExpr(0)
+                 if subExpr != null: parts.push(subExpr)
+                 else: parts.push(Identifier(exprStr, l, c))
 
-            }
-        }
-        if buf.len > 0 {
-            parts.push(StringLiteral(buf, l, c))
+             }
+             else {
+                 buf = buf + ch
+                 i = i + 1
 
-  }
-  return InterpolatedString(parts, l, c)
+             }
+         }
+         if buf.len > 0 {
+             parts.push(StringLiteral(buf, l, c))
 
-  }
+   }
+   return InterpolatedString(parts, l, c)
+
+   }
     // ===================================================================
     // HELPER: Parenthesized expression or lambda
     // ===================================================================
@@ -1644,7 +1716,9 @@ fn parsePattern() {
   first = parsePatternAtom()
   if first == null { return null }
   alternatives.push(first)
-  while current().tid == TID.Pipe || current().tid == TID.Or {
+  // The lexer emits BitwiseOr (not Pipe) for a single '|' after an
+  // expression-shaped token, so pattern alternatives must accept both.
+  while current().tid == TID.Pipe || current().tid == TID.Or || current().tid == TID.BitwiseOr {
     advance()
     next = parsePatternAtom()
     if next == null {
@@ -1655,6 +1729,26 @@ fn parsePattern() {
   }
   if alternatives.length() == 1 { return alternatives[0] }
   return OrPattern(alternatives, current().line, current().col)
+}
+
+// After a literal pattern atom, check for `..=literal` to build a
+// RangePattern. Range patterns apply to ANY comparable literal
+// (1..=10, 'a'..='z'), not just identifiers — the old parser only
+// recognized identifier-started ranges, so `match c { 'a'..='z' => ... }`
+// returned the bare literal, parseMatchCase then saw `..=` where it
+// expected `=>`, returned an ErrorNode without consuming anything, and
+// the match-case loop spun forever (parser hang).
+fn maybeRangePattern(startPat, l, c) {
+  if current().tid == TID.DotDotEquals {
+    advance()
+    endPat = parsePatternAtom()
+    if endPat == null {
+      error("Expected pattern after '..='", current().line, current().col)
+      return startPat
+    }
+    return RangePattern(startPat, endPat, l, c)
+  }
+  return startPat
 }
 
 fn parsePatternAtom() {
@@ -1675,13 +1769,20 @@ fn parsePatternAtom() {
     return parseObjectPatternForMatch()
   }
   // Boolean/Null/Number/String/Char/Regex literals
-  if current().tid == TID.True { advance(); return BooleanLiteral(true, l, c) }
-  if current().tid == TID.False { advance(); return BooleanLiteral(false, l, c) }
-  if current().tid == TID.Null { advance(); return NullLiteral(l, c) }
-  if current().tid == TID.Number { return NumberLiteral(advance().value, l, c) }
-  if current().tid == TID.String || current().tid == TID.MultilineString { return StringLiteral(advance().value, l, c) }
-  if current().tid == TID.CharLiteral { advance(); return CharLiteral(current().value, l, c) }
-  if current().tid == TID.RegexLiteral { return StringLiteral(advance().value, l, c) }
+  if current().tid == TID.True { advance(); return maybeRangePattern(BooleanLiteral(true, l, c), l, c) }
+  if current().tid == TID.False { advance(); return maybeRangePattern(BooleanLiteral(false, l, c), l, c) }
+  if current().tid == TID.Null { advance(); return maybeRangePattern(NullLiteral(l, c), l, c) }
+  if current().tid == TID.Number { return maybeRangePattern(NumberLiteral(advance().value, l, c), l, c) }
+  if current().tid == TID.String || current().tid == TID.MultilineString { return maybeRangePattern(StringLiteral(advance().value, l, c), l, c) }
+  if current().tid == TID.CharLiteral {
+    // NOTE: advance() BEFORE reading: the old code did `advance(); return
+    // CharLiteral(current().value, ...)` — reading AFTER advancing grabbed
+    // the NEXT token's value ('..='), corrupting the literal.
+    ch = current().value
+    advance()
+    return maybeRangePattern(CharLiteral(ch, l, c), l, c)
+  }
+  if current().tid == TID.RegexLiteral { return maybeRangePattern(StringLiteral(advance().value, l, c), l, c) }
   // Identifier — could be variable binding or Constructor pattern Name(args)
   if current().tid == TID.Identifier {
     name = current().value
@@ -1702,17 +1803,8 @@ fn parsePatternAtom() {
       return ConstructorPattern(name, args, l, c)
     }
     pat = Identifier(name, l, c)
-    // Range pattern: literal..=literal
-    if current().tid == TID.DotDotEquals {
-      advance()
-      endPat = parsePatternAtom()
-      if endPat == null {
-        error("Expected pattern after '..='", current().line, current().col)
-        return pat
-      }
-      return RangePattern(pat, endPat, l, c)
-    }
-    return pat
+    // Range pattern: literal..=literal (via shared helper)
+    return maybeRangePattern(pat, l, c)
   }
   error("Expected pattern", l, c)
   return null
@@ -1884,11 +1976,22 @@ fn parseMatchExpr() {
 
   cases = []
   defaultCase = null
+  errorCount = 0
   skipNewlines()
   while current().tid != TID.CloseBrace and notEOF() and current().tid != TID.EOF {
     skipNewlines()
     if current().tid == TID.CloseBrace: break
     mc = parseMatchCase()
+    if mc != null && mc.kind == "ErrorNode" {
+      // A malformed case must not spin the loop forever: parseMatchCase
+      // errors do not advance the cursor, so the same broken case would
+      // re-parse infinitely (parser hang on any bad pattern). Skip to the
+      // next line/case boundary.
+      errorCount = errorCount + 1
+      if errorCount > 100 { break }
+      synchronize()
+      continue
+    }
     if mc != null {
       if mc.isDefault {
         defaultCase = mc.body
@@ -1944,24 +2047,22 @@ fn parseMatchExpr() {
 
  elseBranch = null
  if current().tid == TID.Else {
-            advance()
-            skipNewlines()
-            if current().tid == TID.If {
-                elseBranch = parseIfExpr()
-            }
-            else if current().tid == TID.OpenBrace {
-                elseBranch = parseBlock()
-            }
- else if current().tid == TID.Colon {
-  elseBranch = parseBlock()
+    advance()
+    skipNewlines()
+    if current().tid == TID.If {
+        elseBranch = parseIfExpr()
+    } else if current().tid == TID.OpenBrace {
+        elseBranch = parseBlock()
+    } else if current().tid == TID.Colon {
+        elseBranch = parseBlock()
+    } else {
+        elseBranch = parseStatement()
+        if elseBranch == null {
+            elseBranch = BlockStatement([], l, c)
+        }
+    }
  }
-            else {
-                elseBranch = parseStatement()
-                if elseBranch == null: elseBranch = BlockStatement([], l, c)
-
-}
-}
-return IfStatement(condition, thenBranch, elseBranch, l, c)
+ return IfStatement(condition, thenBranch, elseBranch, l, c)
 
 }
     // ===================================================================
@@ -2065,9 +2166,12 @@ if isObjKeyType {
                     }
                 }
                 expect(TID.CloseBrace)
-                node = ArrayLiteral(elements, l, c)
-                node.isSet = true
-                return node
+                // Set display `{a, b, c}` must produce a SetLiteral node so
+                // the emitter lowers it to SET_NEW/SET_SET ops. Returning an
+                // ArrayLiteral (even with an isSet flag) made the emitter
+                // compile it as ARRAY_NEW, so set literals were silently
+                // arrays and set methods (union/intersection) never matched.
+                return SetLiteral(elements, l, c)
 
             }
 }
@@ -2178,6 +2282,29 @@ fn parseBlock() {
   c = current().col
   prevSugar = allowBraceSugar
 
+  // Helper: check if expression is a line continuation (unary operator that's actually binary continuation)
+  fn isContinuationExpr(expr) {
+    if expr == null: return false
+    if expr.kind != "UnaryExpression": return false
+    opName = expr.operator
+    // Single-line condition: the C++ bootstrap parser does not support
+    // multi-line boolean chains (line-END 'and' / operator-start continuation).
+    if opName == "+" or opName == "-" or opName == "*" or opName == "/" or opName == "%" or opName == "||" or opName == "&&" or opName == "==" or opName == "!=" or opName == "<" or opName == ">" or opName == "<=" or opName == ">=" or opName == "|" or opName == "&" or opName == "^" or opName == "<<" or opName == ">>" or opName == ".." {
+      // Heuristic: operand is a call, member access, index, or identifier (not a simple literal)
+      operand = expr.operand
+      if operand == null: return false
+      return operand.kind == "CallExpression" or operand.kind == "MemberExpression" or operand.kind == "IndexExpression" or operand.kind == "Identifier"
+    }
+    return false
+  }
+
+  // Helper: combine previous expression with continuation
+  fn combineContinuation(prevExpr, contExpr) {
+    opName = contExpr.operator
+    right = contExpr.operand
+    return BinaryExpression(prevExpr, opName, right)
+  }
+
   if current().tid == TID.OpenBrace {
     advance()
     skipNewlines()
@@ -2187,7 +2314,18 @@ fn parseBlock() {
       if current().tid == TID.CloseBrace: break
       s = parseStatement()
       if s != null and s.kind != "ErrorNode" {
-        stmts.push(s)
+        // Handle line continuations: combine with previous expression statement
+        if s.kind == "ExpressionStatement" and isContinuationExpr(s.expr) and #stmts > 0 {
+          prev = stmts[#stmts - 1]
+          if prev.kind == "ExpressionStatement" {
+            combined = combineContinuation(prev.expr, s.expr)
+            stmts[#stmts - 1] = ExpressionStatement(combined, prev.line, prev.column)
+          } else {
+            stmts.push(s)
+          }
+        } else {
+          stmts.push(s)
+        }
       }
       if s != null and s.kind == "ErrorNode" {
         synchronize()
@@ -2314,6 +2452,23 @@ if tt == TID.At and at(1).tid == TID.Identifier {
 		if nextTid == TID.When || nextTid == TID.If || nextTid == TID.Arrow {
 			return parseHotkeyStatement()
 		}
+		// Chord/modifier hotkey: identifier & identifier => action or
+		// identifier:up => action. Mirror of the C++ bootstrap parser: scan
+		// forward for Arrow before any statement terminator (semicolon,
+		// close brace, EOF); newlines are crossed, matching the C++ scan.
+		if nextTid == TID.BitwiseAnd || nextTid == TID.Colon {
+			scanPos = 1
+			foundArrow = false
+			while notEOF() {
+				look = at(scanPos)
+				if look == null || look.tid == TID.EOF || look.tid == TID.Semicolon || look.tid == TID.CloseBrace { break }
+				if look.tid == TID.Arrow { foundArrow = true; break }
+				scanPos = scanPos + 1
+			}
+			if foundArrow {
+				return parseHotkeyStatement()
+			}
+		}
 		// identifier mode="..." or policy="..." followed by => (hotkey with attrs)
 		if nextTid == TID.Identifier && (at(1).value == "mode" || at(1).value == "policy") && isHotkeyIdentifier(current().value) {
 			lookPos = 2
@@ -2343,10 +2498,12 @@ if tt == TID.At and at(1).tid == TID.Identifier {
         if tt == TID.Const {
             return parseLetDecl("Val", false) // const is alias for val
         }
-        if tt == TID.AtAt {
-            advance()
-            return parseLetDecl("Val", true)
-        }
+        // '@@field' at statement level (inside method bodies) is an
+        // AtAtExpression, not a declaration: fall through to the
+        // expression path below. The old branch here called
+        // parseLetDecl("Val", true), which double-advanced and ate the
+        // field name - '@@x = 1' never parsed. Class-body '@@' members
+        // are handled by _parseClassMembers.
         // Control flow
         if tt == TID.If {
             return parseIfStatement()
@@ -2433,11 +2590,11 @@ if tt == TID.Defer {
 		stmts = []
 		skipNewlines()
 		while current().tid != TID.CloseBrace and notEOF() {
-			if current().tid == TID.NewLine { advance(); continue }
+			if current().tid == TID.NewLine || current().tid == TID.Semicolon { advance(); continue }
 			stmts.push(parseStatement())
 			skipNewlines()
 		}
-expect(TID.CloseBrace)
+	expect(TID.CloseBrace)
         block = BlockStatement(stmts, l, c)
         expr = LambdaExpression([], block)
         return DeferStatement(expr, l, c)
@@ -2450,7 +2607,7 @@ expect(TID.CloseBrace)
         // DSL statements
         if tt == TID.On { return parseOnStatement() }
         if tt == TID.Mode {
-          if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
+          if at(1).tid == TID.Identifier || at(1).tid == TID.String { return parseModeBlockStatement() }
           return ExpressionStatement(parseExpr(0), l, c)
         }
         if tt == TID.Modes { return parseModesBlockStatement() }
@@ -2528,7 +2685,7 @@ if tt == TID.Dsl {
   if current().tid != TID.OpenBrace {
     error("Expected '{' after 'dsl'", current().line, current().col)
   }
-  return parseBlockStatement()
+  return parseBlock()
 }
 // Expression statement
     expr = parseExpr(0)
@@ -3358,6 +3515,17 @@ fn parseHotkeyStatement() {
         }
 	else if current().tid == TID.Identifier {
 		key = advance().value
+		// Chord/modifier continuation: name & name => or name:up =>.
+		// Mirrors the C++ bootstrap parser, which consumes the whole
+		// pattern (identifiers joined by &/:) into one hotkey string.
+		while current().tid == TID.BitwiseAnd || current().tid == TID.Colon {
+			sep = advance().tid
+			if current().tid == TID.Identifier || current().tid == TID.Hotkey || current().tid == TID.Number {
+				key = key + (sep == TID.BitwiseAnd ? " & " : ":") + advance().value
+			} else {
+				break
+			}
+		}
 	}
 	skipNewlines()
 
@@ -3397,7 +3565,11 @@ fn parseHotkeyStatement() {
         }
 	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
-	if modeAttr != "": node.mode = modeAttr
+	if modeAttr != "" {
+		node.mode = modeAttr
+	} else if modeContext != "" {
+		node.mode = modeContext
+	}
 	if policyAttr != "": node.policy = policyAttr
 	node
 
@@ -3438,7 +3610,11 @@ fn parseHotkeyAssignmentStatement() {
         }
 	binding = HotkeyBinding([key], body, l, c)
 	if condition != null: binding.condition = condition
-	if modeAttr != "": binding.mode = modeAttr
+	if modeAttr != "" {
+		binding.mode = modeAttr
+	} else if modeContext != "" {
+		binding.mode = modeContext
+	}
 	if policyAttr != "": binding.policy = policyAttr
 	hkExpr = HotkeyExpression(binding, l, c)
         assign = AssignmentExpression(target, hkExpr, "=", false, l, c)
@@ -3591,6 +3767,10 @@ fn parseOnKeyDownOrKeyUpStatement() {
  c = current().col
  advance() // consume 'mode'
  skipNewlines()
+ // String-named modes are always full definitions (modern syntax);
+ // identifier-named modes are simple blocks unless the body starts
+ // with a definition keyword. Mirrors BootstrapParser.cpp dispatch.
+ nameIsString = current().tid == TID.String
  name = advance().value
  skipNewlines()
  // Parse optional priority
@@ -3609,7 +3789,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   firstTok = current()
   pos = savedPos
   syncCur()
-  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
+  isFullDefinition = nameIsString || (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on" || firstTok.value == "hotkeys")) || firstTok.tid == TID.On
   if isFullDefinition {
    return parseModeFullDefinition(name, priority, l, c)
   }
@@ -3622,13 +3802,14 @@ fn parseOnKeyDownOrKeyUpStatement() {
  fn parseModeFullDefinition(name, priority, l, c) {
  advance() // consume '{'
  skipNewlines()
- condition = null
- enterBlock = null
- exitBlock = null
- onEnterFrom = ""
- onExitTo = ""
- onEnterFromBlock = null
- onExitToBlock = null
+condition = null
+  enterBlock = null
+  exitBlock = null
+  onEnterFrom = ""
+  onExitTo = ""
+  onEnterFromBlock = null
+  onExitToBlock = null
+  hotkeysBlock = null
  while current().tid != TID.CloseBrace && current().tid != TID.EOF {
   if current().tid == TID.Newline || current().tid == TID.Semicolon {
    advance()
@@ -3648,10 +3829,45 @@ if keyword == "condition" {
       condition = parseExpr(0)
   }
   else if keyword == "enter" {
-   enterBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && current().value == "from") {
+    advance()
+    onEnterFrom = current().value
+    advance()
+    onEnterFromBlock = parseBlock()
+   }
+   else {
+    enterBlock = parseBlock()
+   }
   }
   else if keyword == "exit" {
-   exitBlock = parseBlock()
+   if current().tid == TID.From || (current().tid == TID.Identifier && (current().value == "from" || current().value == "to")) {
+    advance()
+    onExitTo = current().value
+    advance()
+    onExitToBlock = parseBlock()
+   }
+   else {
+    exitBlock = parseBlock()
+   }
+  }
+  else if keyword == "hotkeys" {
+   if current().tid != TID.OpenBrace {
+    error("Expected '{' after 'hotkeys'", current().line, current().col)
+   }
+   advance()
+   savedModeContext = modeContext
+   modeContext = name
+   hkStmts = []
+   while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+    if current().tid == TID.Newline || current().tid == TID.Semicolon {
+     advance()
+     continue
+    }
+    hkStmts.push(parseStatement())
+   }
+   modeContext = savedModeContext
+   if current().tid == TID.CloseBrace { advance() }
+   hotkeysBlock = BlockStatement(hkStmts, l, c)
   }
   else if keyword == "on" {
    if current().tid != TID.Identifier { break }
@@ -3688,12 +3904,13 @@ if keyword == "condition" {
  }
  if current().tid == TID.CloseBrace { advance() }
  modeDef = ModeDefinition(name, condition, enterBlock, exitBlock)
- modeDef.priority = priority
- modeDef.onEnterFrom = onEnterFrom
- modeDef.onExitTo = onExitTo
- modeDef.onEnterFromBlock = onEnterFromBlock
- modeDef.onExitToBlock = onExitToBlock
- return ModesBlock([modeDef])
+modeDef.priority = priority
+  modeDef.onEnterFrom = onEnterFrom
+  modeDef.onExitTo = onExitTo
+  modeDef.onEnterFromBlock = onEnterFromBlock
+  modeDef.onExitToBlock = onExitToBlock
+  modeDef.hotkeys = hotkeysBlock
+  return ModesBlock([modeDef])
 
  }
  fn parseModesBlockStatement() {
@@ -3936,23 +4153,30 @@ fn _parseClassMembers(methods, fields) {
 		skipNewlinesAndSemicolons()
 		if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
 		tt = current().tid
+		// Class-member marker: '@@' prefixes fields AND methods (@@fn).
+		// Consume it up front (mirrors the C++ parser order) so
+		// '@@fn name() {}' parses as a static method, not a field named 'fn'.
+		isClassMember = false
+		if tt == TID.AtAt {
+			isClassMember = true
+			advance() // consume '@@'
+			tt = current().tid
+		}
 		if tt == TID.Fn {
 			m = _parseClassMethod()
+			if isClassMember { m.isClassMethod = true }
 			methods.push(m)
 			continue
 		}
 		if tt == TID.Op {
 			advance() // consume 'op'
 			m = _parseClassOperatorMethod()
+			if isClassMember { m.isClassMethod = true }
 			methods.push(m)
 			continue
 		}
 		// Field definition: name [: Type] [= default] or @@name [: Type] [= default]
-		isClassField = false
-		if tt == TID.AtAt {
-			isClassField = true
-			advance() // consume '@@'
-		}
+		isClassField = isClassMember
 		fname = current().value
 		fline = current().line
 		fcol = current().col

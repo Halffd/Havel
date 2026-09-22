@@ -232,10 +232,10 @@ class Window {
 	}
 
 fn pos() {
-	_g = @geometry()
-	if _g != null { return {x: _g.x, y: _g.y} }
 	_sp = @screenPos()
 	if _sp != null { return _sp }
+	_g = @geometry()
+	if _g != null { return {x: _g.x, y: _g.y} }
 	null
 }
 

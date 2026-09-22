@@ -30,7 +30,12 @@ namespace {
 
 using havel::compiler::Value;
 
-std::string opcodeName(havel::compiler::OpCode opcode) {
+// Local opcode names for smoke bytecode dumps. Distinct name from
+// havel::compiler::opcodeName (BytecodeIR.hpp declares the global one
+// now): unqualified lookup at the call site found both and the build
+// broke on ambiguity. This local set covers more opcodes than the
+// Pipeline.cpp one (46 vs 35 cases).
+std::string smokeOpcodeName(havel::compiler::OpCode opcode) {
   using havel::compiler::OpCode;
   switch (opcode) {
   case OpCode::LOAD_CONST:
@@ -212,7 +217,7 @@ void dumpBytecode(const std::string &name, const std::string &source) {
 
  for (size_t i = 0; i < function.instructions.size(); ++i) {
       const auto &instruction = function.instructions[i];
-      std::cout << "  " << i << ": " << opcodeName(instruction.opcode);
+      std::cout << "  " << i << ": " << smokeOpcodeName(instruction.opcode);
       if (!instruction.operands.empty()) {
         std::cout << " ";
         for (size_t j = 0; j < instruction.operands.size(); ++j) {
@@ -2664,7 +2669,7 @@ return toNumber(false)
 )havel", 0, dump_bytecode, snapshot_dir);
 
 // ================================================================
-// --- RegexModule: regex_match/regex_search/regex_replace/regex_extract/regex_split/escape_regex ---
+// --- RegexModule: regex_match/regex_search/regex_replace/regex_extract/regex_split/regex_escape ---
 // NOTE: regex_search(text, pattern) -- reversed arg order vs regex_match(pattern, text)
 // ================================================================
 
@@ -2709,7 +2714,7 @@ return arr.len
 
     failures += runStdlibCase("escape-regex", R"havel(
 use regex
-s = escape_regex("a.b")
+s = regex_escape("a.b")
 // "a.b" -> "a\\.b" (escaped the dot)
 return #s
 )havel", 4, dump_bytecode, snapshot_dir);

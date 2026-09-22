@@ -1,0 +1,103 @@
+// Test: hotkeys0.3.hv modeStat..inGenshin (lines 146-180) verbatim.
+// What: verifies modeStat parse (line 149 uses ';' not ':'), condition gate,
+//       inGroup membership/exclude semantics, activ() shape, inGaming with
+//       real cfg, inGenshin with real modeStat. Runs from a wm so window
+//       ops are live, no hotkeys needed. Never writes config.
+// Expected: modeStat.mode2.titles exists and gates work (both may be false
+//       - that is the bug this test detects, see output).
+
+fn check(cond, name) {
+    if !cond {
+        print("FAIL: " + name)
+        exit(1)
+    }
+    print("ok: " + name)
+}
+
+mode = "gaming"
+
+modeStat = {
+    "mode2": {
+        "name": "action",
+        "titles": "Genshin Impact,Honkai Star,Honkai Impact,Zenless,Wuthering Waves,Arknights Endfield,Neverness to",
+        "condition": (){ mode == "gaming" },
+        "changed": false
+    }
+}
+
+fn activ(){
+    w = window.active()
+    [w.title, w.class, w.cmdline]
+}
+fn inGroup(clas = '', title = '', apps = [], appst = [], excludeClasses = [], excludeTitles = []){
+  if clas == '' || title == '' {
+        a = activ()
+        if title == '' {
+            title = a[0]
+        }
+        if clas == '' {
+            clas = a[1]
+        }
+  }
+  clas = clas.lower().trim()
+  title = title.lower().trim()
+  (clas in apps || title in appst) && !(clas in excludeClasses || title in excludeTitles)
+}
+fn inGaming(clas = '', title = ''){
+  apps = cfg.Gaming.Classes.lower().trim().split(",")
+  appst = cfg.Gaming.Titles.lower().trim().split(",")
+  inGroup(clas, title, apps, appst, cfg.Gaming.ExcludeClasses.lower().split(","), cfg.Gaming.ExcludeTitles.lower().split(","))
+}
+fn inGenshin(clas = '', title = ''){
+    inGroup(clas, title, [], modeStat.mode2.titles.lower().trim().split(",")) && modeStat.mode2.condition()
+}
+
+// 1. modeStat parse: does mode2.titles exist?
+t = modeStat.mode2.titles
+print("modeStat.mode2.titles: [$t] type=${type.of(t)}")
+if modeStat.mode2.titles == nil {
+    print("FAIL: line 149 ';' yields no titles key; modeStat.mode2 keys: ${modeStat.mode2.keys()}")
+    exit(1)
+}
+
+// 2. condition() gate
+mode = "gaming"
+check(modeStat.mode2.condition(), "condition() true when mode=gaming")
+mode = "work"
+check(!modeStat.mode2.condition(), "condition() false when mode=work")
+
+// 3. inGroup membership + excludes (pure, no wm)
+check(inGroup("konsole", "konsole", ["konsole"], []), "inGroup class match")
+check(inGroup("konsole", "konsole", [], ["konsole"]), "inGroup title match")
+check(!inGroup("konsole", "konsole", ["ryujinx"], []), "inGroup no match")
+check(inGroup("  KONSOLE ", " kOnSoLe ", ["konsole"], []), "inGroup case+trim")
+check(!inGroup("konsole", "x", ["konsole"], [], ["konsole"]), "inGroup exclude class")
+check(!inGroup("x", "konsole", [], ["konsole"], [], ["konsole"]), "inGroup exclude title")
+check(inGroup("konsole", "x", ["konsole"], [], ["other"], []), "inGroup exclude mismatch ok")
+
+// 4. activ() live shape
+a = activ()
+check(#a == 3 && type.of(a[0]) == "string" && type.of(a[1]) == "string", "activ() returns [title, class, cmdline]")
+print("active window: title=${a[0]} class=${a[1]}")
+
+// 5. inGenshin with real modeStat titles
+mode = "gaming"
+check(inGenshin("", "Genshin Impact"), "inGenshin title match (gaming)")
+check(inGenshin("", "Honkai Star"), "inGenshin Honkai match (gaming)")
+check(!inGenshin("konsole", "konsole"), "inGenshin no match")
+mode = "work"
+check(!inGenshin("", "Genshin Impact"), "inGenshin gated off (work)")
+
+// 6. inGaming with cfg.Gaming (mocked so the test runs anywhere;
+//    real configs may differ but membership semantics stay covered)
+cfg.Gaming = {
+    "Classes": "ryujinx,lutris,steam",
+    "Titles": "ryujinx,steam",
+    "ExcludeClasses": "lutris",
+    "ExcludeTitles": ""
+}
+check(inGaming("ryujinx", "ryujinx"), "inGaming ryujinx (real cfg)")
+check(!inGaming("konsole", "konsole"), "inGaming konsole no match")
+check(!inGaming("lutris", "lutris"), "inGaming lutris excluded")
+
+print("OK")

@@ -1,0 +1,53 @@
+// smoke: flags = --tiering
+// smoke: timeout = 120
+// smoke: tier = slow
+// Auto-call parity controls: direct instance-field fns are returned raw
+// (callback pattern), proto fns with 2+ params are returned raw, proto
+// fns with a "self" param auto-call with the receiver, and __proto
+// (single, setproto) -linked zero-arg/self fns auto-call too.
+
+fn hot_cb() {
+    o2 = { cb: fn(x) { return x * 2 } }
+    f = o2.cb
+    return f(21)
+}
+
+fn hot_2p() {
+    base2 = { two: fn(a, b) { return a + b } }
+    o4 = {}
+    setproto(o4, base2)
+    f = o4.two
+    return f(20, 22)
+}
+
+fn hot_self() {
+    base = { m: fn(self) { return self.v } }
+    o3 = {}
+    setproto(o3, base)
+    o3.v = 7
+    r = o3.m
+    return r
+}
+
+k = 0
+bad = -1
+badval = "none"
+while k < 3000 {
+    r1 = hot_cb()
+    r2 = hot_2p()
+    r3 = hot_self()
+    if r1 != 42 || r2 != 42 || r3 != 7 {
+        if bad == -1 {
+            bad = k
+            badval = "cb=${r1} two=${r2} self=${r3}"
+        }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS orc_object_get_autocall_controls")
+} else {
+    print("FAIL orc_object_get_autocall_controls k=${bad} ${badval}")
+    process.exit(255)
+}

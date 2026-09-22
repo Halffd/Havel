@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <array>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,9 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 // Macro for throwing errors with source location info
 #undef COMPILER_THROW
@@ -341,6 +345,13 @@ public:
   // Chunk serialization
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk);
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath);
+  // pipelineFingerprint: identity of the self-hosted compiler that produced
+  // this chunk (hash over the lang emitter/pratt bytecode caches). Embedded
+  // as a version-5 header field so a cached entry compiled by an older
+  // emitter is rejected instead of silently served. Empty string keeps the
+  // legacy version-4 form for in-memory/internal uses.
+  std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
+                                       const std::string& pipelineFingerprint);
   std::vector<uint8_t> serializeChunkWithGlobals(const BytecodeChunk& chunk,
                                                   const std::unordered_map<std::string, Value>& globals,
                                                   const std::string& sourcePath = "");
@@ -353,10 +364,68 @@ public:
   std::optional<BytecodeChunk> deserializeChunkMmap(const std::string& filePath);
   std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536);
 
+  // Source identity embedded by serializeChunk(chunk, sourcePath):
+  // {path, byte size, sha256}. size/hash are zero when the chunk was
+  // serialized without a source path (older writers), in which case
+  // hasInfo is false and callers must fall back to their own freshness
+  // checks (mtime). Used by the --build cache-reuse gate so an hvc whose
+  // mtime was bumped without recompiling (GLBS trailer appends, touch)
+  // is not served as fresh: the embedded hash is checked against the
+  // live source before reuse.
+  struct SourceInfo {
+      std::string path;
+      uint64_t size = 0;
+      std::array<uint8_t, 32> hash{};
+      bool hasInfo = false;
+      // Version-5 field: identity of the self-hosted compiler that
+      // produced the chunk. Empty for version-4 entries (no fingerprint
+      // recorded - serve as before, first recompile stamps one in).
+      std::string pipelineFingerprint;
+  };
+  static SourceInfo peekSourceInfo(std::span<const uint8_t> data);
+
+  // File variant for validation-only call sites: reads just the header
+  // prefix (4 KB) instead of the whole file - checkBcCache runs on every
+  // bare-name module resolution, and .hvc files can be megabytes. A
+  // source path longer than the prefix is treated as absent info and
+  // the caller falls back to its other freshness checks.
+  static SourceInfo peekSourceInfoFile(const std::string& filePath);
+
+  // Byte length of the serialized-chunk section of an .hvc (everything
+  // before the FIRST [globals][GLBS][size] trailer section). The first
+  // appended section's marker sits exactly at chunk_end + globals_size,
+  // so chunk_end = firstMarker - size@firstMarker - this crosses the
+  // marker-less partial sections that interrupted writes leave behind,
+  // which a backward walk from EOF can never get past (observed: a
+  // lang.*.hvc stuck at 37MB of unreachable history because every
+  // truncated process left a gap). Returns 0 when the boundary cannot
+  // be established; callers fall back to their own heuristics.
+  static size_t chunkDataEnd(std::span<const uint8_t> data);
+
 private:
   std::string valueToJson(const Value& value);
   Value jsonToValue(const std::string& json);
 };
+
+// ============================================================================
+// Pipeline fingerprint: identity of the self-hosted compiler that a cached
+// chunk was built with. Hash over the bytecode caches of the modules that
+// ARE the compiler (lang emitter + pratt). An emitter/pratt change re-emits
+// those caches, changing the fingerprint, so user-module entries compiled
+// by the old emitter are rejected instead of served (source-hash validation
+// alone cannot see pipeline changes).
+// Returns the empty string when the inputs are missing (C++-pipeline-only
+// environment): entries then serialize without a fingerprint (legacy v4).
+// ============================================================================
+std::string computePipelineFingerprint(const std::string& cacheDir);
+
+// True when cacheName is one of the compiler's own bytecode caches that the
+// pipeline fingerprint is derived from (lang.emitter/pratt/lexer/scope).
+// The pipeline gate must not apply to these modules: any recompile of one
+// rewrites its .hvc, changing the fingerprint, which would mark the others
+// stale and recompile them too - an endless rebuild cycle. Their staleness
+// is already covered by the embedded source-hash check.
+bool isPipelineFingerprintInput(const std::string& cacheName);
 
 // ============================================================================
 // Auto-cache - write a freshly compiled chunk to the single bytecode cache
@@ -368,32 +437,66 @@ private:
 inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
                                    const BytecodeChunk& chunk) {
   try {
+    ::havel::debug("[BC-CACHE] autoCache: {} ({} funcs)", compileUnitName,
+                   chunk.getFunctionCount());
     ValueSerializer serializer;
-    std::vector<uint8_t> data =
-        serializer.serializeChunk(chunk, compileUnitName);
-
-    std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
+    const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);
+    std::vector<uint8_t> data =
+        serializer.serializeChunk(chunk, compileUnitName,
+                                   computePipelineFingerprint(cacheDir));
 
-    // Derive the flat cache filename from the canonical source path:
-    // lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
-    // <stem>.<8-hex-path-hash>.hvc for user modules (collision-free).
     std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
 
     std::filesystem::path hvcPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hvc");
     std::filesystem::path hvPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hv");
-    std::ofstream file(hvcPath, std::ios::binary);
-    if (file.is_open()) {
-      file.write(reinterpret_cast<const char*>(data.data()), data.size());
-      file.close();
+
+    // Write via tmp + atomic rename under an advisory lock, mirroring
+    // VM::writeGlobalsToHvc. History: this used a bare ofstream on the
+    // target, truncating the .hvc in place while concurrent readers
+    // (test-suite workers and any other havel process sharing the cache)
+    // had it mmap'd; a truncate past the mapped range raised SIGBUS and
+    // killed the reader mid-deserialize. rename swaps the inode, so
+    // readers keep the old mapping until they unmap.
+    const std::string lockPath = hvcPath.string() + ".lock";
+    int lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0) {
+      flock(lockFd, LOCK_EX);
     }
-    // Also copy source .hv next to .hvc for hash/mtime validation
-    std::error_code ec;
-    if (std::filesystem::exists(compileUnitName, ec) && !ec) {
-      std::filesystem::copy_file(compileUnitName, hvPath,
-                                 std::filesystem::copy_options::overwrite_existing, ec);
+    std::error_code writeEc;
+    {
+      const std::string tmpPath = hvcPath.string() + ".tmp." +
+          std::to_string(static_cast<uint64_t>(::getpid()));
+      std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
+      if (file.is_open()) {
+        file.write(reinterpret_cast<const char *>(data.data()), data.size());
+        file.flush();
+        file.close();
+        std::filesystem::rename(tmpPath, hvcPath, writeEc);
+        if (writeEc) {
+          std::filesystem::remove(tmpPath, writeEc);
+        }
+      }
+    }
+    // Also copy source .hv next to .hvc for hash/mtime validation.
+    // Same tmp + rename discipline (copy_file with overwrite truncates
+    // in place; a reader hashing the .hv mid-copy sees a torn file).
+    if (std::filesystem::exists(compileUnitName, writeEc) && !writeEc) {
+      const std::string hvTmp = hvPath.string() + ".tmp." +
+          std::to_string(static_cast<uint64_t>(::getpid()));
+      std::filesystem::copy_file(compileUnitName, hvTmp, writeEc);
+      if (!writeEc) {
+        std::filesystem::rename(hvTmp, hvPath, writeEc);
+        if (writeEc) {
+          std::filesystem::remove(hvTmp, writeEc);
+        }
+      }
+    }
+    if (lockFd >= 0) {
+      flock(lockFd, LOCK_UN);
+      ::close(lockFd);
     }
   } catch (...) {
   }

@@ -302,6 +302,61 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
                                    nullptr, inst.getBrightnessManagerPtr());
 }
 
+// Lint check: assignment used in condition position (if/while/do-while/
+// ternary). `if clas = '' || ...` parses (assignment is an expression) but
+// the branch then tests the assigned value, not the intended comparison -
+// a silent logic bug found in hotkeys0.3.hv (inGroup title fallback never
+// ran because of it). Only a bare top-level assignment in the condition is
+// flagged; `a = b == c` (assignment of comparison) and comparisons
+// containing nested assignments in sub-expressions are legal patterns this
+// deliberately does not police.
+static int lintAssignmentInCondition(
+    const havel::ast::Expression *cond, const std::string &constructName,
+    const std::string &primaryFile, const std::string &code,
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+  if (!cond)
+    return 0;
+  if (cond->kind == havel::ast::NodeType::AssignmentExpression) {
+    findings.emplace_back(cond, constructName);
+    return 1;
+  }
+  return 0;
+}
+
+// Recursive statement walker collecting condition-position assignments.
+static void lintWalkStatements(
+    const havel::ast::Statement *stmt, const std::string &primaryFile,
+    const std::string &code,
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+  if (!stmt)
+    return;
+  using havel::ast::NodeType;
+  if (stmt->kind == NodeType::IfStatement) {
+    const auto *n = static_cast<const havel::ast::IfStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "if", primaryFile, code,
+                              findings);
+    lintWalkStatements(n->consequence.get(), primaryFile, code, findings);
+    lintWalkStatements(n->alternative.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::WhileStatement) {
+    const auto *n = static_cast<const havel::ast::WhileStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "while", primaryFile, code,
+                              findings);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::DoWhileStatement) {
+    const auto *n = static_cast<const havel::ast::DoWhileStatement *>(stmt);
+    lintAssignmentInCondition(n->condition.get(), "do-while", primaryFile,
+                              code, findings);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::ForStatement) {
+    const auto *n = static_cast<const havel::ast::ForStatement *>(stmt);
+    lintWalkStatements(n->body.get(), primaryFile, code, findings);
+  } else if (stmt->kind == NodeType::BlockStatement) {
+    const auto *n = static_cast<const havel::ast::BlockStatement *>(stmt);
+    for (const auto &s : n->body)
+      lintWalkStatements(s.get(), primaryFile, code, findings);
+  }
+}
+
 static int runLint(const std::string &code, const std::string &primaryFile,
                    const havel::init::LaunchConfig &cfg) {
   havel::parser::Parser parser{{.lexer = cfg.debugLexer,
@@ -338,6 +393,38 @@ static int runLint(const std::string &code, const std::string &primaryFile,
   }
 
   if (program) {
+    // Condition-assignment lint: silent logic-bug class (see
+    // lintAssignmentInCondition comment). Warnings, not errors - existing
+    // scripts with intentional condition assignments keep linting green.
+    std::vector<std::pair<const havel::ast::Expression*, std::string>> findings;
+    for (const auto &stmt : program->body)
+      lintWalkStatements(stmt.get(), primaryFile, code, findings);
+    for (const auto &[node, constructName] : findings) {
+      std::string sourceLine;
+      if (node && node->line > 0) {
+        std::istringstream ss(code);
+        std::string line;
+        for (size_t i = 1; i <= node->line; ++i) {
+          if (!std::getline(ss, line))
+            break;
+          if (i == node->line) {
+            sourceLine = line;
+            break;
+          }
+        }
+      }
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "warning", "assignment '=' used as " + constructName +
+                         " condition - did you mean '=='? the branch tests "
+                         "the assigned value, not a comparison",
+          primaryFile, node->line, node->column, 1, sourceLine);
+      std::cerr << formatted;
+    }
+    if (!findings.empty())
+      warning("lint: {} assignment-in-condition warning(s) (logic bug "
+              "class: hotkeys0.3.hv inGroup)",
+              findings.size());
+
     havel::compiler::ByteCompiler compiler;
     compiler.setCollectErrors(true);
     try {
@@ -397,6 +484,37 @@ static bool programHasHotkeys(const havel::ast::Program &program) {
         if (inner && inner->kind == havel::ast::NodeType::HotkeyBinding)
           return true;
       }
+    }
+  }
+  return false;
+}
+
+// Does the script actually use a UI backend? Only ui-module imports (or a
+// tray call through it) need QApplication + fontconfig. Hotkey-only scripts
+// were historically routed through executeWithUIBackend too, which forced
+// Qt instantiation for scripts that never touched ui - fontconfig loaded,
+// its leak fired, startup paid the toolkit init. Hotkeys themselves run on
+// the evdev/X11 input path and need no UI backend.
+static bool programUsesUIBackend(const havel::ast::Program &program) {
+  for (const auto &stmt : program.body) {
+    if (!stmt)
+      continue;
+    if (stmt->kind == havel::ast::NodeType::UseStatement) {
+      const auto &use = static_cast<const havel::ast::UseStatement &>(*stmt);
+      for (const auto &name : use.moduleNames) {
+        if (name == "ui" || name == "qt")
+          return true;
+      }
+      // use "ui" / use "ui/..." as alias
+      if (use.filePath == "ui" ||
+          use.filePath.rfind("ui/", 0) == 0 ||
+          use.filePath == "qt")
+        return true;
+    }
+    if (stmt->kind == havel::ast::NodeType::ImportStatement) {
+      const auto &imp = static_cast<const havel::ast::ImportStatement &>(*stmt);
+      if (imp.modulePath == "ui" || imp.modulePath.rfind("ui/", 0) == 0)
+        return true;
     }
   }
   return false;
@@ -640,14 +758,15 @@ public:
     auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
 
-    // Parse once to check for hotkey bindings
+    // Parse once to check for hotkey bindings and ui usage
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
+    bool needsUI = program && programUsesUIBackend(*program);
 
-    if (hasHotkeys) {
+    if (needsUI) {
       // Full mode with UI backend
       if (debugging::debug_io)
-        debug("Hotkeys detected — using full execution mode");
+        debug("UI usage detected — using full execution mode");
 
       auto *backend = host::UIManager::instance().backend();
       if (!backend) {
@@ -738,14 +857,39 @@ public:
       return backend->runEventLoop();
     }
 
-    // Headless mode
-    if (debugging::debug_io) debug("ScriptStrategy: going headless (no hotkeys in AST)");
+    // Headless mode / hotkey-only (no UI usage)
+    if (debugging::debug_io)
+      debug(hasHotkeys ? "ScriptStrategy: hotkeys without ui usage — "
+                         "engine loop, no UI backend"
+                       : "ScriptStrategy: going headless (no hotkeys in AST)");
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
       auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
+
+      if (engine.vm()->exitRequested()) {
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
+      // Hotkey-only: keep the process alive without any UI backend. Input
+      // and timers run on the EventListener thread; this loop drives
+      // goroutines and exit, replacing the QApplication event loop that
+      // hotkey scripts were previously (and unnecessarily) routed through.
+      if (hasHotkeys) {
+        info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+        while (!engine.vm()->exitRequested()) {
+          engine.tickGoroutines();
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
       engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
@@ -850,6 +994,8 @@ public:
       engine.execute(combinedCode, "__main__", combinedNames);
       havel::startup_timing_report("engine.execute", exec_t0);
       auto t2 = std::chrono::high_resolution_clock::now();
+      bool wantedExit = engine.vm()->exitRequested();
+      int exitCode = engine.vm()->exitCode();
       engine.shutdown();
       auto t3 = std::chrono::high_resolution_clock::now();
 
@@ -866,6 +1012,8 @@ public:
              "total={:.1f}ms",
              init_ms, exec_ms, shut_ms, total_ms);
       }
+      if (wantedExit)
+        return exitCode;
       return 0;
     } catch (const std::exception &e) {
       error("Bytecode error: {}", e.what());
@@ -1120,7 +1268,6 @@ public:
 
     // Parse user scripts to check for hotkeys
     auto program = parseScript(combinedCode, cfg);
-    bool hasHotkeys = program && programHasHotkeys(*program);
 
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
@@ -1187,10 +1334,15 @@ public:
 
     installMinimalSignalHandlers();
 
-    // If user script has hotkeys and not headless, run with UI event loop
-    if (hasHotkeys && !cfg.headlessMode) {
+    // UI backend (QApplication + fontconfig) only when the script really
+    // uses ui/qt. Hotkey-only scripts run on the plain engine with a
+    // keep-alive loop: the EventListener thread drives input and timers,
+    // the loop drives goroutines and exit.
+    bool needsUI = program && programUsesUIBackend(*program);
+    if (needsUI && !cfg.headlessMode) {
       return executeWithUIBackend(cfg, argc, argv, launcherCode, launcherPath, appArgList, combinedNames);
     }
+    bool hasHotkeys = program && programHasHotkeys(*program);
 
     // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
     try {
@@ -1198,6 +1350,18 @@ public:
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
+#ifdef HAVEL_ENABLE_LLVM
+      // The precompiled-bytecode path (runBytecodeFiles) configures the ORC
+      // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
+      // effect on tiering compiles done through the TieredBackend. Apply
+      // the same flags here, through the backend boundary.
+      if (auto* jit = vm.getJITCompiler()) {
+        jit->setDebugMode(cfg.debugJIT);
+        jit->setDumpIR(cfg.dumpIR);
+        jit->setDumpAsmToFile(cfg.outputAsmToFile);
+        jit->setShowWarnings(cfg.aotWarnings);
+      }
+#endif
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);
@@ -1209,6 +1373,29 @@ public:
       auto exec_t0 = havel::startup_now();
       engine.execute(launcherCode, "__main__", launcherPath);
       havel::startup_timing_report("engine.execute", exec_t0);
+
+      if (engine.vm()->exitRequested()) {
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
+      // Hotkey-only scripts: the launcher returned with hotkeys registered
+      // but the process must stay alive until exit()/Ctrl+C. No UI backend
+      // is involved; the EventListener thread drives input + timers, this
+      // loop drives goroutines and exit (same contract the Qt path's idle
+      // callback provided, minus QApplication + fontconfig).
+      if (hasHotkeys) {
+        info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+        while (!engine.vm()->exitRequested()) {
+          engine.tickGoroutines();
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        int exitCode = engine.vm()->exitCode();
+        engine.shutdown();
+        return exitCode;
+      }
+
       engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
@@ -1245,6 +1432,18 @@ private:
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
+#ifdef HAVEL_ENABLE_LLVM
+      // The precompiled-bytecode path (runBytecodeFiles) configures the ORC
+      // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
+      // effect on tiering compiles done through the TieredBackend. Apply
+      // the same flags here, through the backend boundary.
+      if (auto* jit = vm.getJITCompiler()) {
+        jit->setDebugMode(cfg.debugJIT);
+        jit->setDumpIR(cfg.dumpIR);
+        jit->setDumpAsmToFile(cfg.outputAsmToFile);
+        jit->setShowWarnings(cfg.aotWarnings);
+      }
+#endif
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);
@@ -1429,8 +1628,13 @@ int HavelLauncher::run(int argc, char *argv[]) {
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
+        // SCRIPT mode deliberately NOT switched to SELF_HOSTED: the
+        // self-hosted pratt parser parses ~0.2-0.3s/line on the VM (a
+        // 2200-line user script measured at 600s), making every script run
+        // unusable. User scripts stay on the C++ pipeline (milliseconds);
+        // the self-hosted pipeline remains available via --self-hosted and
+        // for the REPL/TEST modes below.
         if (cfg.mode == LaunchConfig::Mode::REPL ||
-            cfg.mode == LaunchConfig::Mode::SCRIPT ||
             cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
             cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
             cfg.mode == LaunchConfig::Mode::TEST) {
@@ -1455,8 +1659,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
           cfg.vmConfig.self_hosted_modules_path = candidate.string();
           fs::path langDir = candidate / "modules" / "lang";
           if (!fs::is_empty(langDir)) {
+            // Same SCRIPT-mode carve-out as above.
             if (cfg.mode == LaunchConfig::Mode::REPL ||
-                cfg.mode == LaunchConfig::Mode::SCRIPT ||
                 cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
                 cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
                 cfg.mode == LaunchConfig::Mode::TEST) {
@@ -1929,6 +2133,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "--version" || arg == "-v") {
       std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
+#ifdef HAVEL_BUILD_COMMIT
+      std::cout << "commit " << HAVEL_BUILD_COMMIT << " ("
+                << HAVEL_BUILD_BRANCH << ", " << HAVEL_BUILD_DIRTY << ")\n";
+#endif
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
       cfg.mode = LaunchConfig::Mode::CLI;
@@ -2147,27 +2355,133 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-            // Only write if output path differs from cache path.
-            // If outputPath == cachePath, the cache file already contains
-            // the correct data - don't rewrite it (avoids mtime update).
-            if (outputPath != cachePath) {
-              std::ofstream outFile(outputPath, std::ios::binary);
-              if (outFile.is_open()) {
-                outFile.write(reinterpret_cast<const char *>(buffer.data()),
-                              buffer.size());
-                if (!outFile.good()) {
-                  error("Failed to write output file: {}", outputPath);
-                  return 1;
+             // mtime alone lies: GLBS trailer rewrites and other runtime
+             // writers rewrite the .hvc (bumping its mtime) without
+             // recompiling, so a source edit can end up older than a
+             // cache that still holds pre-edit bytecode. When the cache
+             // embeds a source hash (serializeChunk with a source
+             // path), verify it against the live source before reusing.
+             // Hash-less legacy caches compare the cache-copy .hv's
+             // content hash against the live source instead - plain
+             // mtime reuse is NOT safe for them (observed: a legacy
+             // cache served pre-edit bytecode after a GLBS rewrite
+             // bumped its mtime past the edit).
+              auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                  std::span<const uint8_t>(buffer));
+              bool reusable = true;
+              if (srcInfo.hasInfo) {
+                // The cache is global (~/.cache/havel) but source trees
+                // are not: a parallel worktree's havel binary may have
+                // compiled this entry against ITS copy of the module
+                // (observed: lang.scope.hvc embedding a /havel-3/ path
+                // while this tree's build happily reused it). The
+                // recorded path says nothing about THIS tree's source,
+                // so validate against the file being built: bytecode
+                // depends only on source CONTENT, so compare the
+                // embedded size+sha256 with primaryFile directly.
+                // Identical content across trees reuses without a
+                // ping-pong of recompiles; diverged content recompiles
+                // and re-stamps the entry with this tree's identity.
+                static const char hexDigits[] = "0123456789abcdef";
+                std::string embeddedHex;
+                embeddedHex.reserve(srcInfo.hash.size() * 2);
+                for (uint8_t b : srcInfo.hash) {
+                  embeddedHex += hexDigits[b >> 4];
+                  embeddedHex += hexDigits[b & 0x0F];
                 }
-                outFile.close();
+                const std::string primaryHashHex =
+                    havel::ModuleLoader::sha256FileHex(primaryFile);
+                std::error_code sizeEc;
+                const uintmax_t primarySize =
+                    std::filesystem::file_size(primaryFile, sizeEc);
+                if (!primaryHashHex.empty() && !sizeEc &&
+                    primarySize == srcInfo.size &&
+                    primaryHashHex == embeddedHex) {
+                  // Source identity holds; check pipeline identity for
+                  // stamped (v5) entries the same way checkBcCache does.
+                  if (!srcInfo.pipelineFingerprint.empty()) {
+                    const std::string currentFp =
+                        havel::compiler::computePipelineFingerprint(
+                            havel::ModuleLoader::getDefaultCacheDir());
+                    if (!currentFp.empty() &&
+                        currentFp != srcInfo.pipelineFingerprint) {
+                      reusable = false;
+                      info("Bytecode cache pipeline mismatch (cache built with {} vs current {}), recompiling: {}",
+                           srcInfo.pipelineFingerprint.substr(0, 12),
+                           currentFp.substr(0, 12),
+                           cachePath);
+                    }
+                  }
+                } else {
+                  reusable = false;
+                  info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built from {} bytes/hash {}), recompiling: {}",
+                       sizeEc ? std::string("?")
+                              : std::to_string(primarySize),
+                       primaryHashHex.empty() ? "?" : primaryHashHex.substr(0, 12),
+                       srcInfo.hasInfo ? std::to_string(srcInfo.size) : "?",
+                       embeddedHex.empty() ? "?" : embeddedHex.substr(0, 12),
+                       cachePath);
+                }
               } else {
-                error("Cannot open output file: {}", outputPath);
-                return 1;
+              // Legacy hash-less cache: the file predates source-hash
+              // embedding and could have been written by any older
+              // binary. The cache-copy .hv beside it is NOT evidence of
+              // the hvc's content - emit_pipeline.sh copies the source
+              // next to the cache unconditionally AFTER the build step,
+              // so the copy can hold a newer source than the bytecode
+              // beside it (observed live). mtime also lies: GLBS
+              // rewrites bump it without recompiling. When a live
+              // source exists, the only safe move is recompiling (and
+              // the fresh compile embeds a hash, healing the cache for
+              // future runs). Bundles with no live source (AOT
+              // distribution) keep the mtime decision.
+              std::error_code liveEc;
+              if (std::filesystem::exists(primaryFile, liveEc) &&
+                  !liveEc) {
+                reusable = false;
+                info("Legacy bytecode cache without source hash, recompiling: {}",
+                     cachePath);
               }
             }
-            info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
-            info("Build successful: {} ({} bytes)", outputPath, buffer.size());
-            return 0;
+            if (reusable) {
+              // Strip the GLBS globals trailer: cold module loads append a
+              // [globals][GLBS][size] section per load via
+              // writeGlobalsToHvc, and interrupted writes can leave
+              // partial sections no backward walk can cross. The first
+              // marker's position gives the true chunk boundary
+              // (chunk_end = firstMarker - size@firstMarker), so derive
+              // it arithmetically - the warm-restore consumer is
+              // disabled anyway (VM hasCachedGlobals=false).
+              {
+                const size_t chunkEnd =
+                    havel::compiler::ValueSerializer::chunkDataEnd(
+                        std::span<const uint8_t>(buffer));
+                if (chunkEnd > 0 && chunkEnd < buffer.size()) {
+                  buffer.resize(chunkEnd);
+                }
+              }
+              // Only write if output path differs from cache path.
+              // If outputPath == cachePath, the cache file already contains
+              // the correct data - don't rewrite it (avoids mtime update).
+              if (outputPath != cachePath) {
+                std::ofstream outFile(outputPath, std::ios::binary);
+                if (outFile.is_open()) {
+                  outFile.write(reinterpret_cast<const char *>(buffer.data()),
+                                buffer.size());
+                  if (!outFile.good()) {
+                    error("Failed to write output file: {}", outputPath);
+                    return 1;
+                  }
+                  outFile.close();
+                } else {
+                  error("Cannot open output file: {}", outputPath);
+                  return 1;
+                }
+              }
+              info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
+              info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+              return 0;
+            }
           }
         }
       }
@@ -2909,9 +3223,16 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
 #endif
 
-    // Serialize and write bytecode
+    // Serialize and write bytecode. Pass the source path so the .hvc
+    // embeds the source size + sha256: the cache-reuse gate above
+    // validates this hash against the live source, making reuse immune
+    // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
+    // and bump its mtime without recompiling).
     havel::compiler::ValueSerializer serializer;
-    auto data = serializer.serializeChunk(*chunk);
+    auto data = serializer.serializeChunk(
+        *chunk, primaryFile,
+        havel::compiler::computePipelineFingerprint(
+            havel::ModuleLoader::getDefaultCacheDir()));
 
     info("Serialization complete, {} bytes", data.size());
 
@@ -2932,7 +3253,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         outFile.close();
         
         std::error_code ec;
-        std::filesystem::rename(tempPath, outputPath, ec);
+        std::filesystem::rename(tempPath, targetPath, ec);
         if (ec) {
             // Cross-device rename failed, fall back to copy + remove
             if (ec == std::errc::cross_device_link) {

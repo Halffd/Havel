@@ -2787,6 +2787,9 @@ struct ModeDefinition {
   std::unique_ptr<BlockStatement> onMaximizeBlock;
   std::unique_ptr<BlockStatement> onOpenBlock;
 
+  // Mode-scoped hotkeys (mode "name" { hotkeys { F1 => {} } })
+  std::unique_ptr<BlockStatement> hotkeysBlock;
+
   ModeDefinition() = default;
   ModeDefinition(const std::string &n, std::unique_ptr<Expression> cond,
                  std::unique_ptr<BlockStatement> enter,

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 #ifdef __linux__
 #include "x11.h"
@@ -17,6 +18,15 @@ std::string WindowManagerDetector::wmName;
 std::string WindowManagerDetector::sessionType;
 std::string WindowManagerDetector::sessionName;
 WindowManagerDetector::WMType WindowManagerDetector::Detect() noexcept {
+  // Memoized: Detect() runs a ~30-probe cascade and multiple subsystems
+  // call it independently during startup (WindowManager ctor, both
+  // backends, factory, Havel init). The WM cannot change mid-process,
+  // so compute once. Magic static = thread-safe init.
+  static const WMType detected = DetectOnce();
+  return detected;
+}
+
+WindowManagerDetector::WMType WindowManagerDetector::DetectOnce() noexcept {
   try {
     wmName = std::string(std::getenv("XDG_CURRENT_DESKTOP"));
     sessionType = std::string(std::getenv("XDG_SESSION_TYPE"));
@@ -239,64 +249,79 @@ bool WindowManagerDetector::IsX11() noexcept {
 bool WindowManagerDetector::CheckProcess(
     const std::string &processName) noexcept {
 #ifdef __linux__
-  try {
-    DIR *dir = opendir("/proc");
-    if (!dir)
-      return false;
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != nullptr) {
-      if (entry->d_type == DT_DIR) {
-        // Check if directory name is a number (PID)
-        std::string pid = entry->d_name;
-        if (pid.find_first_not_of("0123456789") != std::string::npos)
+  // One /proc cmdline snapshot per process, shared by every CheckProcess
+  // call. Detect() cascades through up to ~30 CheckProcess probes and the
+  // callers (WindowManager ctor, both backends, factory, Havel init)
+  // re-run Detect() several times per launch; the old per-call /proc walk
+  // did 13k+ openat/read/close triplets per havel start (measured with
+  // strace: 14,490 cmdline reads, 18 opendir("/proc") scans). The WM
+  // cannot change during our lifetime, so a snapshot is equivalent.
+  // Guarded C++11 magic static: thread-safe one-time build.
+  static const auto processBasenames = []() noexcept {
+    std::unordered_set<std::string> names;
+    try {
+      DIR *dir = opendir("/proc");
+      if (!dir)
+        return names;
+      struct dirent *entry;
+      while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type != DT_DIR)
           continue;
-
-        std::string cmdlinePath = "/proc/" + pid + "/cmdline";
-        FILE *cmdline = fopen(cmdlinePath.c_str(), "r");
-        if (cmdline) {
-          std::array<char, 1024> buffer;
-          size_t bytes = fread(buffer.data(), 1, buffer.size() - 1, cmdline);
-          fclose(cmdline);
-
-          if (bytes > 0) {
-            buffer[bytes] = '\0';
-            // Parse null-separated cmdline arguments
-            std::string cmd(buffer.data(), bytes);
-            std::vector<std::string> args;
-            size_t pos = 0;
-            while (pos < cmd.size()) {
-              size_t nextNull = cmd.find('\0', pos);
-              if (nextNull == std::string::npos) {
-                args.push_back(cmd.substr(pos));
-                break;
-              }
-              args.push_back(cmd.substr(pos, nextNull - pos));
-              pos = nextNull + 1;
-            }
-            
-            // Check if processName matches the executable name (first arg) exactly
-            if (!args.empty()) {
-              std::string executable = args[0];
-              // Get just the executable name (basename)
-              size_t lastSlash = executable.find_last_of('/');
-              std::string exeName = (lastSlash == std::string::npos) ? executable : executable.substr(lastSlash + 1);
-              
-              if (exeName == processName) {
-                closedir(dir);
-                return true;
-              }
-            }
+        // Directory name must be a PID (all digits, non-empty)
+        const char *pid = entry->d_name;
+        if (!*pid)
+          continue;
+        for (const char *p = pid; *p; ++p) {
+          if (*p < '0' || *p > '9') {
+            pid = nullptr;
+            break;
           }
         }
+        if (!pid)
+          continue;
+
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%s/cmdline", entry->d_name);
+        FILE *cmdline = fopen(path, "r");
+        if (!cmdline)
+          continue;
+        std::array<char, 1024> buffer;
+        size_t bytes = fread(buffer.data(), 1, buffer.size() - 1, cmdline);
+        fclose(cmdline);
+        if (bytes == 0)
+          continue;
+
+        // First null-separated token = executable path; store its
+        // basename so probes match "cinnamon" for "/usr/bin/cinnamon".
+        const char *exe = buffer.data();
+        const char *end = static_cast<const char *>(
+            memchr(exe, '\0', bytes));
+        size_t exeLen = end ? static_cast<size_t>(end - exe) : bytes;
+        if (exeLen == 0)
+          continue;
+        const char *slash = static_cast<const char *>(
+            memrchr(exe, '/', exeLen));
+        const char *base = slash ? slash + 1 : exe;
+        size_t baseLen = slash ? exeLen - static_cast<size_t>(base - exe) : exeLen;
+        if (baseLen > 0) {
+          names.emplace(base, baseLen);
+        }
       }
+      closedir(dir);
+    } catch (...) {
     }
-    closedir(dir);
+    return names;
+  }();
+
+  try {
+    return processBasenames.find(processName) != processBasenames.end();
   } catch (...) {
     return false;
   }
-#endif
+#else
+  (void)processName;
   return false;
+#endif
 }
 
 bool WindowManagerDetector::CheckEnvironmentVar(

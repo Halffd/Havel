@@ -788,6 +788,8 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
       return;
     }
 
+    lastEventMatched_.store(true, std::memory_order_relaxed);
+
     auto callback = hotkey.callback;
     auto alias = hotkey.alias;
     ExecutorMode mode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
@@ -885,6 +887,7 @@ void HotkeyManager::handleHotkeyTrigger(int hotkeyId)
   bool HotkeyManager::HandleInputEvent(const InputEvent &event)
   {
     bool shouldBlock = false;
+    lastEventMatched_.store(false, std::memory_order_relaxed);
     auto now = std::chrono::steady_clock::now();
 
     if (event.kind == InputEventKind::Key)

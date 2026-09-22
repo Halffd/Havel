@@ -42,14 +42,17 @@ emit_one() {
         sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
         VERSION_HASHES="${VERSION_HASHES}${prefix}${name}:${sz}\n"
         PASS=$((PASS + 1))
+        # Copy source .hv next to the .hvc cache for hash/mtime validation
+        cp "$hv" "$CACHE_DIR/${cache_name}.hv"
+        # Keep the source mirror in out/ (self-hosted launcher gate marker)
+        cp "$hv" "$4/$name.hv"
     else
         echo "emit_pipeline: FAILED ${prefix}${name}" >&2
         FAIL=$((FAIL + 1))
+        # Clean up stale cache entries from previous successful builds
+        rm -f "$CACHE_DIR/${cache_name}.hvc" "$CACHE_DIR/${cache_name}.hv"
+        rm -f "$4/$name.hv"
     fi
-    # Copy source .hv next to the .hvc cache for hash/mtime validation
-    cp "$hv" "$CACHE_DIR/${cache_name}.hv"
-    # Keep the source mirror in out/ (self-hosted launcher gate marker)
-    cp "$hv" "$4/$name.hv"
 }
 
 echo "emit_pipeline: building lang modules -> $CACHE_DIR (lang.*)"
@@ -65,12 +68,14 @@ if "$HAVEL" --build "$LAUNCHER_HV" -o "$LAUNCHER_CACHE" --no-strict-semantics 2>
     sz=$(stat -c%s "$LAUNCHER_CACHE" 2>/dev/null || echo 0)
     VERSION_HASHES="${VERSION_HASHES}launcher:${sz}\n"
     PASS=$((PASS + 1))
+    cp "$LAUNCHER_HV" "$CACHE_DIR/launcher.hv"
+    cp "$LAUNCHER_HV" "$OUT_DIR/launcher.hv"
 else
     echo "emit_pipeline: FAILED launcher" >&2
     FAIL=$((FAIL + 1))
+    rm -f "$CACHE_DIR/launcher.hvc" "$CACHE_DIR/launcher.hv"
+    rm -f "$OUT_DIR/launcher.hv"
 fi
-cp "$LAUNCHER_HV" "$CACHE_DIR/launcher.hv"
-cp "$LAUNCHER_HV" "$OUT_DIR/launcher.hv"
 
 echo "emit_pipeline: building std modules -> $CACHE_DIR (std.*)"
 for hv in "$STD_SRC_DIR"/*.hv; do

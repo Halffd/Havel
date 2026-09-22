@@ -55,10 +55,33 @@ emit_one() {
     fi
 }
 
+# Batch lang modules: ONE process (the ~0.2s boot amortized over the
+# whole set; observed 0.1s for all-reused vs 14s per-module). Each .hvc
+# is cache-checked in-process and compiled only on a miss. The script
+# keeps the bookkeeping: source copies, out/ mirrors, VERSION sizes.
 echo "emit_pipeline: building lang modules -> $CACHE_DIR (lang.*)"
-for hv in "$SRC_DIR"/*.hv; do
-    emit_one "$hv" "lang." "lang.$(basename "$hv" .hv)" "$OUT_DIR"
-done
+if "$HAVEL" --build-many "$SRC_DIR"/*.hv --no-strict-semantics >/dev/null 2>&1; then
+    for hv in "$SRC_DIR"/*.hv; do
+        name="$(basename "$hv" .hv)"
+        out="$CACHE_DIR/lang.$name.hvc"
+        if [ -f "$out" ]; then
+            sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            VERSION_HASHES="${VERSION_HASHES}lang.${name}:${sz}\n"
+            cp "$hv" "$CACHE_DIR/lang.$name.hv"
+            cp "$hv" "$OUT_DIR/$name.hv"
+            PASS=$((PASS + 1))
+        else
+            echo "emit_pipeline: FAILED lang.$name (no cache entry)" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    done
+else
+    echo "emit_pipeline: FAILED lang module batch" >&2
+    for hv in "$SRC_DIR"/*.hv; do
+        FAIL=$((FAIL + 1))
+        rm -f "$CACHE_DIR/lang.$(basename "$hv" .hv).hvc" "$CACHE_DIR/lang.$(basename "$hv" .hv).hv"
+    done
+fi
 
 # Also build the launcher itself (self-hosted compiler driver)
 echo "emit_pipeline: building launcher -> $CACHE_DIR (launcher)"
@@ -78,14 +101,52 @@ else
 fi
 
 echo "emit_pipeline: building std modules -> $CACHE_DIR (std.*)"
-for hv in "$STD_SRC_DIR"/*.hv; do
-    emit_one "$hv" "std." "std.$(basename "$hv" .hv)" "$STD_OUT_DIR"
-done
+if "$HAVEL" --build-many "$STD_SRC_DIR"/*.hv --no-strict-semantics >/dev/null 2>&1; then
+    for hv in "$STD_SRC_DIR"/*.hv; do
+        name="$(basename "$hv" .hv)"
+        out="$CACHE_DIR/std.$name.hvc"
+        if [ -f "$out" ]; then
+            sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            VERSION_HASHES="${VERSION_HASHES}std.${name}:${sz}\n"
+            cp "$hv" "$CACHE_DIR/std.$name.hv"
+            cp "$hv" "$STD_OUT_DIR/$name.hv"
+            PASS=$((PASS + 1))
+        else
+            echo "emit_pipeline: FAILED std.$name (no cache entry)" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    done
+else
+    echo "emit_pipeline: FAILED std module batch" >&2
+    for hv in "$STD_SRC_DIR"/*.hv; do
+        FAIL=$((FAIL + 1))
+        rm -f "$CACHE_DIR/std.$(basename "$hv" .hv).hvc" "$CACHE_DIR/std.$(basename "$hv" .hv).hv"
+    done
+fi
 
 echo "emit_pipeline: building app modules -> $CACHE_DIR (app.*)"
-for hv in "$APP_SRC_DIR"/*.hv; do
-    emit_one "$hv" "app." "app.$(basename "$hv" .hv)" "$APP_OUT_DIR"
-done
+if "$HAVEL" --build-many "$APP_SRC_DIR"/*.hv --no-strict-semantics >/dev/null 2>&1; then
+    for hv in "$APP_SRC_DIR"/*.hv; do
+        name="$(basename "$hv" .hv)"
+        out="$CACHE_DIR/app.$name.hvc"
+        if [ -f "$out" ]; then
+            sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            VERSION_HASHES="${VERSION_HASHES}app.${name}:${sz}\n"
+            cp "$hv" "$CACHE_DIR/app.$name.hv"
+            cp "$hv" "$APP_OUT_DIR/$name.hv"
+            PASS=$((PASS + 1))
+        else
+            echo "emit_pipeline: FAILED app.$name (no cache entry)" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    done
+else
+    echo "emit_pipeline: FAILED app module batch" >&2
+    for hv in "$APP_SRC_DIR"/*.hv; do
+        FAIL=$((FAIL + 1))
+        rm -f "$CACHE_DIR/app.$(basename "$hv" .hv).hvc" "$CACHE_DIR/app.$(basename "$hv" .hv).hv"
+    done
+fi
 
 # Write VERSION file with module sizes
 VERSION_FILE="$SCRIPT_DIR/out/VERSION"

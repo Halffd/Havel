@@ -2015,6 +2015,15 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
+    } else if (arg == "--build-many") {
+      // Batch build: consumes every following non-flag argument as a file
+      // to build in ONE process (each cache-checked, compiled only on a
+      // miss). emit_pipeline passes all module paths in one invocation.
+      cfg.buildOnly = true;
+      cfg.buildMany = true;
+      while (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
     } else if (arg == "--output" || arg == "-o") {
       if (i + 1 < argc) {
         cfg.outputPath = argv[++i];
@@ -2306,7 +2315,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
   // Compute cache path for a module. Uses the same flat-namespace naming as
   // ModuleLoader::cacheFileNameForSource (lang.<stem>.hvc / std.<stem>.hvc /
   // <stem>.<path-hash>.hvc) derived from the canonical SOURCE path, so the
-  // resolver finds exactly what was written here.
+  // resolver finds exactly what was written here. Declared before the batch
+  // path so --build-many can derive per-file cache paths.
   const auto companionCachePath = [](const std::string &path) {
     if (path.empty()) {
       return std::string{};
@@ -2322,6 +2332,132 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     std::filesystem::create_directories(cacheDir, ec);
     return cacheDir + "/" + cacheName + ".hvc";
   };
+
+  // Batch build: one process, N modules (TODO2.md #5 emit_pipeline wiring).
+  // Each file's .hvc is cache-checked with the same validation discipline
+  // as loadCachedScriptChunk (pipeline fingerprint, compile options, live
+  // source hash) and compiled only on a miss. Amortizes the ~0.2s process
+  // boot that dominates emit_pipeline when every module is unchanged
+  // (observed: 23s for 103 unchanged modules = pure boot overhead).
+  if (cfg.buildMany) {
+    int pass = 0, fail = 0;
+    for (const auto &f : cfg.scriptFiles) {
+      const std::string fileCachePath = companionCachePath(f);
+      if (fileCachePath.empty()) {
+        error("Cannot derive cache path for {}", f);
+        fail++;
+        continue;
+      }
+      bool reusable = false;
+      {
+        std::error_code cacheEc, sourceEc;
+        const bool cacheExists =
+            std::filesystem::exists(fileCachePath, cacheEc) && !cacheEc;
+        const bool sourceExists =
+            std::filesystem::exists(f, sourceEc) && !sourceEc;
+        if (cacheExists && sourceExists) {
+          std::ifstream cacheIn(fileCachePath, std::ios::binary | std::ios::ate);
+          if (cacheIn.is_open()) {
+            std::streamsize size = cacheIn.tellg();
+            cacheIn.seekg(0, std::ios::beg);
+            std::vector<uint8_t> buffer(static_cast<size_t>(size));
+            if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
+              auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
+                  std::span<const uint8_t>(buffer));
+              // Same gates as the single-file path and loadCachedScriptChunk:
+              // embedded identity, pipeline fingerprint, compile options,
+              // then the live source hash (mtime alone lies).
+              if (srcInfo.hasInfo && srcInfo.has_compile_flags &&
+                  srcInfo.compiled_strict == cfg.strictSemantics &&
+                  !srcInfo.pipelineFingerprint.empty()) {
+                const std::string currentFp =
+                    havel::compiler::computePipelineFingerprint(
+                        havel::ModuleLoader::getDefaultCacheDir());
+                if (currentFp.empty() ||
+                    currentFp == srcInfo.pipelineFingerprint) {
+                  std::error_code hashEc;
+                  const std::string liveHash =
+                      havel::ModuleLoader::sha256FileHex(f);
+                  std::array<char, 65> embeddedHex{};
+                  if (!hashEc && !liveHash.empty()) {
+                    for (size_t i = 0; i < 32; ++i) {
+                      static const char hexDigits[] = "0123456789abcdef";
+                      embeddedHex[i * 2] = hexDigits[srcInfo.hash[i] >> 4];
+                      embeddedHex[i * 2 + 1] = hexDigits[srcInfo.hash[i] & 0x0F];
+                    }
+                    embeddedHex[64] = '\0';
+                    std::error_code sizeEc;
+                    const uint64_t liveSize =
+                        std::filesystem::file_size(f, sizeEc);
+                    if (!sizeEc && liveSize == srcInfo.size &&
+                        liveHash == embeddedHex.data()) {
+                      reusable = true;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      if (reusable) {
+        pass++;
+        continue;
+      }
+      // Miss: compile in-process, write version-6 stamped .hvc to the
+      // same cache path the resolver looks up.
+      std::string content = readScriptFile(f);
+      if (content.empty()) {
+        error("Cannot open script file: {}", f);
+        fail++;
+        continue;
+      }
+      try {
+        havel::compiler::PipelineOptions options;
+        options.compile_unit_name = f;
+        options.strictSemantics = cfg.strictSemantics;
+        auto chunk = havel::compiler::compileToBytecodeChunk(
+            content, "__main__", options);
+        if (!chunk) {
+          error("Batch build failed for {}: null chunk", f);
+          fail++;
+          continue;
+        }
+        // The compile's serve path may have served this file's .hvc from
+        // the cache (same key); nothing to write in that case.
+        havel::compiler::ValueSerializer serializer;
+        auto data = serializer.serializeChunk(
+            *chunk, f,
+            havel::compiler::computePipelineFingerprint(
+                havel::ModuleLoader::getDefaultCacheDir()),
+            cfg.strictSemantics, false);
+        std::error_code writeDirEc;
+        std::filesystem::create_directories(
+            std::filesystem::path(fileCachePath).parent_path(), writeDirEc);
+        std::ofstream outFile(fileCachePath, std::ios::binary);
+        if (!outFile.is_open()) {
+          error("Cannot open cache file for writing: {}", fileCachePath);
+          fail++;
+          continue;
+        }
+        outFile.write(reinterpret_cast<const char *>(data.data()),
+                      static_cast<std::streamsize>(data.size()));
+        outFile.close();
+        pass++;
+      } catch (const std::exception &e) {
+        error("Batch build failed for {}: {}", f, e.what());
+        fail++;
+      }
+    }
+    info("Build-many: {} compiled/reused, {} failed ({} files)", pass, fail,
+         cfg.scriptFiles.size());
+    return fail > 0 ? 1 : 0;
+  }
+
+  // Compute cache path for a module. Uses the same flat-namespace naming as
+  // ModuleLoader::cacheFileNameForSource (lang.<stem>.hvc / std.<stem>.hvc /
+  // <stem>.<path-hash>.hvc) derived from the canonical SOURCE path, so the
+  // resolver finds exactly what was written here.
 
   // Determine output path. Bytecode caches live only in ~/.cache/havel; the
   // default output for `--build FILE` is the flat cache path derived from the

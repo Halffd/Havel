@@ -1782,6 +1782,21 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
   options.host_functions["window._pos"] = [ctx = ctx_](const auto &args) {
     return handleWindowPosObj(args, ctx);
   };
+  options.host_functions["window._size"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSizeObj(args, ctx);
+  };
+  options.host_functions["window._setSize"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSetSizeObj(args, ctx);
+  };
+  options.host_functions["window._isMaximized"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsMaximized(args, ctx);
+  };
+  options.host_functions["window._isMinimized"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsMinimized(args, ctx);
+  };
+  options.host_functions["window._isFullscreen"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsFullscreen(args, ctx);
+  };
   options.host_functions["window._title"] = [ctx = ctx_](const auto &args) {
     return handleWindowTitleObj(args, ctx);
   };
@@ -1888,6 +1903,11 @@ static Value createWindowObject(
   api.setField(obj, "moveResize", api.makeFunctionRef("window._moveResize"));
   api.setField(obj, "setAlwaysOnTop", api.makeFunctionRef("window._setAlwaysOnTop"));
   api.setField(obj, "pos", api.makeFunctionRef("window._pos"));
+  api.setField(obj, "size", api.makeFunctionRef("window._size"));
+  api.setField(obj, "setSize", api.makeFunctionRef("window._setSize"));
+  api.setField(obj, "isMaximized", api.makeFunctionRef("window._isMaximized"));
+  api.setField(obj, "isMinimized", api.makeFunctionRef("window._isMinimized"));
+  api.setField(obj, "isFullscreen", api.makeFunctionRef("window._isFullscreen"));
 
   return Value::makeObjectId(obj.asObjectId());
 }
@@ -3283,6 +3303,97 @@ UIBridge::handleWindowSetAlwaysOnTopObj(const std::vector<Value> &args,
 Value UIBridge::handleWindowPosObj(const std::vector<Value> &args,
                                    const HostContext *ctx) {
   return handleWindowPos(args, ctx);
+}
+
+Value UIBridge::handleWindowSizeObj(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeNull();
+    wid = info.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "width", Value::makeInt(info.width));
+  vm->setHostObjectField(obj, "height", Value::makeInt(info.height));
+  vm->setHostObjectField(obj, "clientWidth", Value::makeInt(info.width));
+  vm->setHostObjectField(obj, "clientHeight", Value::makeInt(info.height));
+  return Value::makeObjectId(obj.id);
+}
+
+Value UIBridge::handleWindowSetSizeObj(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  // obj.setSize(w, h) — forward to module-level resize (w, h)
+  return handleWindowResize(args, ctx);
+}
+
+Value UIBridge::handleWindowIsMaximized(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeNull();
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  bool maxxed = info.maximized;
+  vm->setHostObjectField(obj, "horizontal", Value::makeBool(maxxed));
+  vm->setHostObjectField(obj, "vertical", Value::makeBool(maxxed));
+  vm->setHostObjectField(obj, "any", Value::makeBool(maxxed));
+  return Value::makeObjectId(obj.id);
+}
+
+Value UIBridge::handleWindowIsMinimized(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  return Value::makeBool(info.valid && info.minimized);
+}
+
+Value UIBridge::handleWindowIsFullscreen(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  return Value::makeBool(info.valid && info.fullscreen);
 }
 
 Value

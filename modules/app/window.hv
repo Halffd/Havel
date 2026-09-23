@@ -239,31 +239,47 @@ class Window {
 	// relative = true: position relative to parent window
 	// windowId: override window id (defaults to this window's own id)
 	fn pos(relative = false, windowId = 0) {
-		let _id = windowId != 0 ? windowId : @id
+		_id = windowId != 0 ? windowId : @id
 		if (_id == 0) { return null }
 
-		let _d = _dpy()
+		_d = _dpy()
 		if (_d == 0) { return null }
 
 		// Try screen position first (root translation) for absolute coords
 		if (!relative) {
-			let _root = _root()
+			_root = _root()
 			if (_root != 0) {
-				let _r = x11.translateCoordinates(_d, _id, _root, 0, 0)
+				_r = x11.translateCoordinates(_d, _id, _root, 0, 0)
 				// rcode: 1 = success, 0 = failure (xcb status)
 				if (_r.rcode != 0) { return {x: _r.x, y: _r.y} }
 			}
 		}
 
 		// For relative, or as fallback when root translation fails
-		let _g = @geometry(_id)
+		_g = @geometry(_id)
 		if (_g == null) { return null }
 		{x: _g.x, y: _g.y}
 	}
 
 	fn size() {
+		// Client-area geometry plus frame extents; width/height include frame.
 		_g = @geometry()
-		if _g == null { null } else { {width: _g.width, height: _g.height} }
+		if _g == null { return null }
+		_ext = @frameExtents()
+		{
+			width: _g.width + _ext.left + _ext.right,
+			height: _g.height + _ext.top + _ext.bottom,
+			clientWidth: _g.width,
+			clientHeight: _g.height,
+			frame: _ext
+		}
+	}
+
+	fn setSize(w, h) {
+		// Resize via _NET_MOVERESIZE_WINDOW (EWMH) so the WM handles
+		// decorations/constraints; falls back to XResizeWindow when no root.
+		@resize(w, h)
+		@
 	}
 
 	fn screenPos() {
@@ -318,11 +334,12 @@ class Window {
 	}
 
 	fn isMaximized() {
+		// Returns {horizontal, vertical, any} per EWMH _NET_WM_STATE.
 		_d = _dpy()
-		if _d == 0 { return false }
-		_v = protocols.hasState(_d, @id, protocols.netWmStateMaximizedVert())
+		if _d == 0 { return {horizontal: false, vertical: false, any: false} }
 		_h = protocols.hasState(_d, @id, protocols.netWmStateMaximizedHorz())
-		_v && _h
+		_v = protocols.hasState(_d, @id, protocols.netWmStateMaximizedVert())
+		{horizontal: _h, vertical: _v, any: _h || _v}
 	}
 
 	fn isFullscreen() {
@@ -474,13 +491,13 @@ class Window {
 	// relative = false: move to absolute (x, y)
 	// relative = true: move by delta (dx, dy) from current position
 	fn move(x, y, speed = 0.0, winId = 0, relative = false) {
-		let _target = winId != 0 ? winId : @id
-		let _d = _dpy()
+		_target = winId != 0 ? winId : @id
+		_d = _dpy()
 		if (_d == 0 || _target == 0) { return @ }
 
 		if (relative) {
 			// Get current position and add to deltas
-			let _cur = @pos(false, _target)
+			_cur = @pos(false, _target)
 			if (_cur == null) { return @ }
 			x += _cur.x
 			y += _cur.y
@@ -499,12 +516,12 @@ class Window {
 	// relative = false: resize to absolute (w, h)
 	// relative = true: resize by delta (dw, dh) from current size
 	fn resize(w, h, winId = 0, relative = false) {
-		let _target = winId != 0 ? winId : @id
-		let _d = _dpy()
+		_target = winId != 0 ? winId : @id
+		_d = _dpy()
 		if (_d == 0 || _target == 0) { return @ }
 
 		if (relative) {
-			let _g = @geometry(_target)
+			_g = @geometry(_target)
 			if (_g == null) { return @ }
 			w += _g.width
 			h += _g.height
@@ -570,6 +587,41 @@ class Window {
 		@moveResize(_cx, _cy, _g.width, _g.height)
 	}
 
+	// EWMH-style monitor movement aliases per spec
+	fn moveMonitor(i = 0, follow = true) {
+		@moveToMonitor(i)
+		if follow { @activate() }
+		@
+	}
+	fn moveMonitorNext(follow = true) {
+		_mons = display.monitors()
+		if #_mons < 2 { return @ }
+		_cur = @getCurrentMonitor()
+		_next = (_cur + 1) % #_mons
+		@moveMonitor(_next, follow)
+	}
+	fn moveMonitorPrev(follow = true) {
+		_mons = display.monitors()
+		if #_mons < 2 { return @ }
+		_cur = @getCurrentMonitor()
+		_prev = (_cur - 1 + #_mons) % #_mons
+		@moveMonitor(_prev, follow)
+	}
+	fn getCurrentMonitor() {
+		_pos = @pos()
+		if _pos == null { return 0 }
+		_mons = display.monitors()
+		_i = 0
+		while _i < #_mons {
+			_m = _mons[_i]
+			if _pos.x >= _m.x && _pos.x < _m.x + _m.width && _pos.y >= _m.y && _pos.y < _m.y + _m.height {
+				return _i
+			}
+			_i = _i + 1
+		}
+		0
+	}
+
 	fn snap(position) {
 		_d = _dpy()
 		if _d == 0 { return @ }
@@ -614,11 +666,16 @@ class Window {
 		true
 	}
 
-	fn fullscreen() {
+	fn fullscreen(enable = true) {
 		_d = _dpy()
 		if _d == 0 { return false }
-		if !@isFullscreen() {
+		_cur = @isFullscreen()
+		if enable && !_cur {
 			protocols.sendStateMessage(_d, @id, protocols.STATE_ADD,
+				protocols.netWmStateFullscreen(), 0)
+		}
+		if !enable && _cur {
+			protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE,
 				protocols.netWmStateFullscreen(), 0)
 		}
 		true
@@ -710,6 +767,29 @@ class Window {
 		true
 	}
 
+	// Borderless via _MOTIF_WM_HINTS (set decorations = 0).
+	fn borderless(enable = true) {
+		@setDecorated(!enable)
+		@
+	}
+	fn isBorderless() {
+		_d = _dpy()
+		if _d == 0 { return false }
+		_atom = x11.internAtom(_d, "_MOTIF_WM_HINTS", 1)
+		if _atom == 0 { return false }
+		_r = x11.getWindowProperty(_d, @id, _atom, 0, 5, 0, _atom)
+		if _r.ret == 0 && _r.nitems >= 3 && _r.prop != 0 {
+			_decorations = ffi.get_i32(ffi.ptr_add(_r.prop, 8))
+			x11.free(_r.prop)
+			return _decorations == 0
+		}
+		false
+	}
+	fn toggleBorderless() {
+		@borderless(!@isBorderless())
+		@
+	}
+
 	// ---- Raw property / event access ----
 
 	fn setProperty(prop, type, format, data) {
@@ -759,7 +839,36 @@ class Window {
 
 	fn focus() { @activate() }
 	fn min() { @minimize() }
-	fn max() { @maximize() }
+	fn unmin() {
+		// Restore from minimized: map + activate
+		_d = _dpy()
+		if _d == 0 { return @ }
+		x11.mapWindow(_d, @id)
+		x11.flush(_d)
+		@activate()
+		@
+	}
+	fn max(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_ADD, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_ADD, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
+	fn unmax(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
+	fn toggleMax(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
 	fn setAlwaysOnTop(b) {
 		if b == null || b { @alwaysOnTop() }
 		else { @floating() }
@@ -883,16 +992,33 @@ fn _snapshot(_w) {
 		show: fn() { _w.show() },
 		focus: fn() { _w.activate() },
 		min: fn() { _w.minimize() },
-		max: fn() { _w.maximize() },
+		max: fn(_h = true, _v = true) { _w.max(_h, _v) },
+		unmax: fn(_h = true, _v = true) { _w.unmax(_h, _v) },
+		toggleMax: fn(_h = true, _v = true) { _w.toggleMax(_h, _v) },
+		unmin: fn() { _w.unmin() },
 		restore: fn() { _w.restore() },
 		snap: fn(pos) { _w.snap(pos) },
 		center: fn() { _w.center() },
-		fullscreen: fn() { _w.fullscreen() },
+		fullscreen: fn(_on = true) { _w.fullscreen(_on) },
+		toggleFullscreen: fn() { _w.toggleFullscreen() },
+		borderless: fn(_on = true) { _w.borderless(_on) },
+		isBorderless: fn() { _w.isBorderless() },
+		toggleBorderless: fn() { _w.toggleBorderless() },
+		setDecorated: fn(_on) { _w.setDecorated(_on) },
+		size: fn() { _w.size() },
+		setSize: fn(_w2, _h2) { _w.setSize(_w2, _h2) },
+		isMaximized: fn() { _w.isMaximized() },
+		isMinimized: fn() { _w.isMinimized() },
+		isFullscreen: fn() { _w.isFullscreen() },
+		moveMonitor: fn(_i = 0, _follow = true) { _w.moveMonitor(_i, _follow) },
+		moveMonitorNext: fn(_follow = true) { _w.moveMonitorNext(_follow) },
+		moveMonitorPrev: fn(_follow = true) { _w.moveMonitorPrev(_follow) },
+		getCurrentMonitor: fn() { _w.getCurrentMonitor() },
 		move: fn(x, y) { _w.move(x, y) },
 		moveResize: fn(x, y, w, h) { _w.moveResize(x, y, w, h) },
 		resize: fn(w, h) { _w.resize(w, h) },
 		setAlwaysOnTop: fn(b) { _w.setAlwaysOnTop(b) },
-		pos: fn() { _w.pos() },
+		pos: fn(_rel = false) { _w.pos(_rel) },
 	}
 }
 

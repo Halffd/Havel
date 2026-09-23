@@ -238,6 +238,16 @@ public:
                                                 const HostContext *ctx);
     static Value handleWindowPosObj(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowSizeObj(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleWindowSetSizeObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIsMaximized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsMinimized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsFullscreen(const std::vector<Value> &args,
+                                           const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,
@@ -620,6 +630,16 @@ public:
                                                 const HostContext *ctx);
     static Value handleWindowPosObj(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowSizeObj(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleWindowSetSizeObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIsMaximized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsMinimized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsFullscreen(const std::vector<Value> &args,
+                                           const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,

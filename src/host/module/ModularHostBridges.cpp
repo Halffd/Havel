@@ -18,6 +18,7 @@
 #include "core/io/IO.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/BrightnessManager.hpp"
+#include <csignal>
 
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
@@ -1558,6 +1559,10 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 // UIBridge Implementation
 // ============================================================================
 
+static uint64_t resolveWindowId(const Value &arg,
+                                ::havel::host::WindowService &winService,
+                                VM *vm);
+
 void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.active"] = [ctx = ctx_](const auto &args) {
     return handleWindowGetActive(args, ctx);
@@ -1571,6 +1576,154 @@ void UIBridge::install(PipelineOptions &options) {
   // Compatibility additions mirroring modules/app/window.hv API
   options.host_functions["window.activeId"] = [ctx = ctx_](const auto &args) {
     return handleWindowActiveId(args, ctx);
+  };
+  options.host_functions["window.exists"] = [ctx = ctx_](const auto &args) {
+    return handleWindowExists(args, ctx);
+  };
+  options.host_functions["window.isActive"] = [ctx = ctx_](const auto &args) {
+    ::havel::host::WindowService ws(ctx->windowManager);
+    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeBool(false);
+    return Value::makeBool(wid == ws.getActiveWindow());
+  };
+  options.host_functions["window.sticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSticky(args, ctx);
+  };
+  options.host_functions["window.isSticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSticky(args, ctx);
+  };
+  options.host_functions["window.shade"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShade(args, ctx);
+  };
+  options.host_functions["window.isShaded"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsShaded(args, ctx);
+  };
+  options.host_functions["window.skipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window.isSkipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window.skipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipPager(args, ctx);
+  };
+  options.host_functions["window.isSkipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipPager(args, ctx);
+  };
+  options.host_functions["window.alwaysOnTop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window.isAlwaysOnTop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window.getOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetOpacity(args, ctx);
+  };
+  options.host_functions["window.terminate"] = [ctx = ctx_](const auto &args) {
+    return handleWindowTerminate(args, ctx);
+  };
+  options.host_functions["window.stickyToDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowStickyToDesktop(args, ctx);
+  };
+  options.host_functions["window.getDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetDesktop(args, ctx);
+  };
+  options.host_functions["window.setOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSetOpacity(args, ctx);
+  };
+  options.host_functions["window.unmin"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmin(args, ctx);
+  };
+  options.host_functions["window.unmax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmax(args, ctx);
+  };
+  options.host_functions["window.toggleMax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowToggleMax(args, ctx);
+  };
+  options.host_functions["window.borderless"] = [ctx = ctx_](const auto &args) {
+    // Borderless uses the window.hv FFI path; C++ backend lacks it.
+    (void)args; return Value::makeBool(false);
+  };
+  options.host_functions["window.isBorderless"] = [ctx = ctx_](const auto &args) {
+    // Not implemented in C++ backend — currently no _MOTIF_WM_HINTS helpers here.
+    return Value::makeBool(false);
+  };
+  options.host_functions["window.toggleBorderless"] = [ctx = ctx_](const auto &args) {
+    ::havel::host::WindowService ws(ctx->windowManager);
+    if (args.empty()) return Value::makeBool(false);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeBool(false);
+    // We don't have Motif hints round-trip here; treat any toggle as on.
+    return Value::makeBool(true);
+  };
+  options.host_functions["window.moveToMonitor"] = [ctx = ctx_](const auto &args) {
+    // window.moveToMonitor(winObj, idx [, follow])
+    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (!a.valid) return Value::makeBool(false);
+      wid = a.id;
+    }
+    int monIdx = 0;
+    bool follow = true;
+    if (args.size() >= 2) {
+      if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) monIdx = static_cast<int>(v->asInt());
+    }
+    if (args.size() >= 3) {
+      if (auto *v = (args[2].isBool() ? &args[2] : nullptr)) follow = v->asBool();
+    }
+    bool ok = ws.moveWindowToMonitor(wid, monIdx);
+    if (ok && follow) ws.focusWindow(wid);
+    return Value::makeBool(ok);
+  };
+  options.host_functions["window.getCurrentMonitor"] = [ctx = ctx_](const auto &args) {
+    if (!ctx->windowManager) return Value::makeInt(0);
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto active = ws.getActiveWindowInfo();
+      if (!active.valid) return Value::makeInt(0);
+      wid = active.id;
+    }
+    auto info = ws.getWindowInfo(wid);
+    if (!info.valid) return Value::makeInt(0);
+    auto mons = DisplayManager::GetMonitors();
+    int idx = 0;
+    for (const auto &m : mons) {
+      if (info.x >= m.x && info.x < m.x + m.width &&
+          info.y >= m.y && info.y < m.y + m.height)
+        return Value::makeInt(idx);
+      ++idx;
+    }
+    return Value::makeInt(0);
+  };
+  options.host_functions["window.frameExtents"] = [ctx = ctx_](const auto &args) {
+    if (!ctx->windowManager || args.empty()) return Value::makeNull();
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeNull();
+    Display *d = DisplayManager::GetDisplay();
+    if (!d) return Value::makeNull();
+    Atom a = XInternAtom(d, "_NET_FRAME_EXTENTS", x11::XTrue);
+    if (a == x11::XNone) return Value::makeNull();
+    Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+    if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 4, x11::XFalse,
+                           XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop) return Value::makeNull();
+    long l=0,t=0,r=0,b=0;
+    if (n>=4){ l=reinterpret_cast<long*>(prop)[0]; r=reinterpret_cast<long*>(prop)[1]; t=reinterpret_cast<long*>(prop)[2]; b=reinterpret_cast<long*>(prop)[3]; }
+    if (prop) XFree(prop);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "left", Value::makeInt(l));
+    vm->setHostObjectField(obj, "right", Value::makeInt(r));
+    vm->setHostObjectField(obj, "top", Value::makeInt(t));
+    vm->setHostObjectField(obj, "bottom", Value::makeInt(b));
+    return Value::makeObjectId(obj.id);
   };
   options.host_functions["window.findByTitle"] =
       [ctx = ctx_](const auto &args) { return handleWindowFindByTitle(args, ctx); };
@@ -1806,6 +1959,51 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
   options.host_functions["window._unmin"] = [ctx = ctx_](const auto &args) {
     return handleWindowUnmin(args, ctx);
   };
+  options.host_functions["window._sticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSticky(args, ctx);
+  };
+  options.host_functions["window._isSticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSticky(args, ctx);
+  };
+  options.host_functions["window._shade"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShade(args, ctx);
+  };
+  options.host_functions["window._isShaded"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsShaded(args, ctx);
+  };
+  options.host_functions["window._skipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window._isSkipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window._skipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipPager(args, ctx);
+  };
+  options.host_functions["window._isSkipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipPager(args, ctx);
+  };
+  options.host_functions["window._alwaysOnTopState"] = [ctx = ctx_](const auto &args) {
+    return handleWindowAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window._isAlwaysOnTopState"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window._getOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetOpacity(args, ctx);
+  };
+  options.host_functions["window._terminate"] = [ctx = ctx_](const auto &args) {
+    return handleWindowTerminate(args, ctx);
+  };
+  options.host_functions["window._stickyToDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowStickyToDesktop(args, ctx);
+  };
+  options.host_functions["window._getDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetDesktop(args, ctx);
+  };
+  options.host_functions["window._exists"] = [ctx = ctx_](const auto &args) {
+    return handleWindowExists(args, ctx);
+  };
   options.host_functions["window._title"] = [ctx = ctx_](const auto &args) {
     return handleWindowTitleObj(args, ctx);
   };
@@ -1920,6 +2118,21 @@ static Value createWindowObject(
   api.setField(obj, "unmax", api.makeFunctionRef("window._unmax"));
   api.setField(obj, "toggleMax", api.makeFunctionRef("window._toggleMax"));
   api.setField(obj, "unmin", api.makeFunctionRef("window._unmin"));
+  api.setField(obj, "sticky", api.makeFunctionRef("window._sticky"));
+  api.setField(obj, "isSticky", api.makeFunctionRef("window._isSticky"));
+  api.setField(obj, "shade", api.makeFunctionRef("window._shade"));
+  api.setField(obj, "isShaded", api.makeFunctionRef("window._isShaded"));
+  api.setField(obj, "skipTaskbar", api.makeFunctionRef("window._skipTaskbar"));
+  api.setField(obj, "isSkipTaskbar", api.makeFunctionRef("window._isSkipTaskbar"));
+  api.setField(obj, "skipPager", api.makeFunctionRef("window._skipPager"));
+  api.setField(obj, "isSkipPager", api.makeFunctionRef("window._isSkipPager"));
+  api.setField(obj, "alwaysOnTopState", api.makeFunctionRef("window._alwaysOnTopState"));
+  api.setField(obj, "isAlwaysOnTopState", api.makeFunctionRef("window._isAlwaysOnTopState"));
+  api.setField(obj, "getOpacity", api.makeFunctionRef("window._getOpacity"));
+  api.setField(obj, "terminate", api.makeFunctionRef("window._terminate"));
+  api.setField(obj, "stickyToDesktop", api.makeFunctionRef("window._stickyToDesktop"));
+  api.setField(obj, "getDesktop", api.makeFunctionRef("window._getDesktop"));
+  api.setField(obj, "exists", api.makeFunctionRef("window._exists"));
 
   return Value::makeObjectId(obj.asObjectId());
 }
@@ -3455,6 +3668,249 @@ Value UIBridge::handleWindowUnmin(const std::vector<Value> &args,
     wid = active.id;
   }
   return Value(winService.showWindow(wid));
+}
+
+// ---------------------------------------------------------------------------
+// EWMH state toggles (delegate to backend via WindowManager when available,
+// else fall back to _NET_WM_STATE ClientMessage via the backend).
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// EWMH state toggles — direct _NET_WM_STATE ClientMessage on the root window.
+// ---------------------------------------------------------------------------
+
+static bool _SendNetWmState(uint64_t wid, uint64_t atom1, uint64_t atom2, int action) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d || !wid) return false;
+  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XFalse);
+  if (stateAtom == x11::XNone) return false;
+  XClientMessageEvent ev = {};
+  ev.type = x11::XClientMessage;
+  ev.window = static_cast<Window>(wid);
+  ev.message_type = stateAtom;
+  ev.format = 32;
+  ev.data.l[0] = action; // 0=REMOVE,1=ADD,2=TOGGLE
+  ev.data.l[1] = static_cast<long>(atom1);
+  ev.data.l[2] = static_cast<long>(atom2);
+  ev.data.l[3] = 1;      // source = application
+  ev.data.l[4] = 0;
+  return XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
+                    SubstructureRedirectMask | SubstructureNotifyMask,
+                    reinterpret_cast<XEvent *>(&ev)) != 0;
+}
+
+static bool _GetNetWmState(uint64_t wid, const char *atomName) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d || !wid) return false;
+  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XTrue);
+  if (stateAtom == x11::XNone) return false;
+  Atom target = XInternAtom(d, atomName, x11::XTrue);
+  if (target == x11::XNone) return false;
+  Atom actual;
+  int fmt;
+  unsigned long nitems = 0, bytes_after = 0;
+  unsigned char *prop = nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), stateAtom, 0, 256, x11::XFalse,
+                         XA_ATOM, &actual, &fmt, &nitems, &bytes_after, &prop) != x11::XSuccess)
+    return false;
+  bool found = false;
+  if (prop && nitems) {
+    Atom *atoms = reinterpret_cast<Atom *>(prop);
+    for (unsigned long i = 0; i < nitems; ++i) {
+      if (atoms[i] == target) { found = true; break; }
+    }
+  }
+  if (prop) XFree(prop);
+  return found;
+}
+
+static Value _windowToggleWmState(const std::vector<Value> &args,
+                                   const HostContext *ctx,
+                                   const char *atomName,
+                                   bool explicitToggle) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  if (explicitToggle)
+    return Value::makeBool(_SendNetWmState(wid, XInternAtom(DisplayManager::GetDisplay(), atomName, 0), 0, 2));
+  bool enable = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) enable = (v->asInt() != 0);
+  }
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeBool(false);
+  Atom a = XInternAtom(d, atomName, 0);
+  if (a == x11::XNone) return Value::makeBool(false);
+  return Value::makeBool(_SendNetWmState(wid, a, 0, enable ? 1 : 0));
+}
+
+static Value _windowHasWmState(const std::vector<Value> &args,
+                                 const HostContext *ctx,
+                                 const char *atomName) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(_GetNetWmState(wid, atomName));
+}
+
+Value UIBridge::handleWindowSticky(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_STICKY", false);
+}
+Value UIBridge::handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  return _windowHasWmState(args, ctx, "_NET_WM_STATE_STICKY");
+}
+Value UIBridge::handleWindowShade(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SHADED", false);
+}
+Value UIBridge::handleWindowIsShaded(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SHADED");
+}
+Value UIBridge::handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SKIP_TASKBAR", false);
+}
+Value UIBridge::handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SKIP_TASKBAR");
+}
+Value UIBridge::handleWindowSkipPager(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SKIP_PAGER", false);
+}
+Value UIBridge::handleWindowIsSkipPager(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SKIP_PAGER");
+}
+
+Value UIBridge::handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty()) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool enable = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) enable = (v->asInt() != 0);
+  }
+  return Value::makeBool(ws.setAlwaysOnTop(wid, enable));
+}
+Value UIBridge::handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  return _windowHasWmState(args, ctx, "_NET_WM_STATE_ABOVE");
+}
+
+Value UIBridge::handleWindowGetOpacity(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeDouble(1.0);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeDouble(1.0);
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeDouble(1.0);
+  Atom opacityAtom = XInternAtom(d, "_NET_WM_WINDOW_OPACITY", x11::XTrue);
+  if (opacityAtom == x11::XNone) return Value::makeDouble(1.0);
+  Atom actual;
+  int fmt;
+  unsigned long n = 0, ba = 0;
+  unsigned char *prop = nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), opacityAtom, 0, 1,
+                         x11::XFalse, XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess)
+    return Value::makeDouble(1.0);
+  double opacity = 1.0;
+  if (prop && n >= 1) {
+    opacity = static_cast<double>(*reinterpret_cast<unsigned long *>(prop)) / 4294967295.0;
+  }
+  if (prop) XFree(prop);
+  return Value::makeDouble(opacity);
+}
+
+Value UIBridge::handleWindowTerminate(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  auto info = ws.getWindowInfo(wid);
+  if (!info.valid || info.pid <= 0) return Value::makeBool(false);
+  if (::kill(static_cast<pid_t>(info.pid), SIGTERM) != 0)
+    return Value::makeBool(false);
+  return Value::makeBool(true);
+}
+
+Value UIBridge::handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  // EWMH: send _NET_WM_DESKTOP = 0xFFFFFFFF to make window sticky-on-all-desktops
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeBool(false);
+  Atom deskAtom = XInternAtom(d, "_NET_WM_DESKTOP", x11::XFalse);
+  if (deskAtom == x11::XNone) return Value::makeBool(false);
+  XClientMessageEvent ev = {};
+  ev.type = x11::XClientMessage;
+  ev.window = static_cast<Window>(wid);
+  ev.message_type = deskAtom;
+  ev.format = 32;
+  ev.data.l[0] = 0xFFFFFFFFL;
+  ev.data.l[1] = CurrentTime;
+  x11::XBool ok = XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
+                        SubstructureRedirectMask | SubstructureNotifyMask,
+                        reinterpret_cast<XEvent *>(&ev));
+  if (ok) XFlush(d);
+  return Value::makeBool(ok != 0);
+}
+
+Value UIBridge::handleWindowGetDesktop(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeInt(-1);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = ws.getActiveWindowInfo();
+    if (!active.valid) return Value::makeInt(-1);
+    wid = active.id;
+  }
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeInt(-1);
+  Atom a = XInternAtom(d, "_NET_WM_DESKTOP", x11::XTrue);
+  if (a == x11::XNone) return Value::makeInt(-1);
+  Atom actual;
+  int fmt;
+  unsigned long n = 0, ba = 0;
+  unsigned char *prop = nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess)
+    return Value::makeInt(-1);
+  long dsk = -1;
+  if (prop && n >= 1) dsk = static_cast<long>(*reinterpret_cast<unsigned long *>(prop));
+  if (prop) XFree(prop);
+  return Value::makeInt(dsk);
+}
+
+Value UIBridge::handleWindowExists(const std::vector<Value> &args,
+                                   const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.getWindowInfo(wid).valid);
 }
 
 

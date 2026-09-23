@@ -254,6 +254,36 @@ public:
                                          const HostContext *ctx);
     static Value handleWindowUnmin(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowSticky(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowShade(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsShaded(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSkipPager(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowIsSkipPager(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowGetOpacity(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowTerminate(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetDesktop(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowExists(const std::vector<Value> &args,
+                                     const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,
@@ -651,6 +681,36 @@ public:
     static Value handleWindowToggleMax(const std::vector<Value> &args,
                                          const HostContext *ctx);
     static Value handleWindowUnmin(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowSticky(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowShade(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsShaded(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSkipPager(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowIsSkipPager(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowGetOpacity(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowTerminate(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetDesktop(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowExists(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);

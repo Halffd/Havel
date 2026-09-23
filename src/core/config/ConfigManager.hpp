@@ -63,11 +63,11 @@ public:
  HavelConfig_ensureConfigFile(handle(), filename.c_str());
  }
 
- template <typename T>
- T Get(const std::string &key, const T &defaultVal) const {
- (void)key;
- return defaultVal;
- }
+  template <typename T>
+  T Get(const std::string &key, const T &defaultVal) const {
+  (void)key;
+  return defaultVal;
+  }
 
  template <typename T>
  void Set(const std::string &key, const T &value, bool save = false);

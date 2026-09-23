@@ -9,6 +9,8 @@
 #include "WindowService.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/window/WindowQuery.hpp"
+#include "core/window/Rect.hpp"
+#include "core/window/WindowBackend.hpp"
 
 namespace havel::host {
 
@@ -24,6 +26,24 @@ WindowInfo WindowService::getWindowInfo(uint64_t id) const {
   if (!wm_)
     return WindowInfo{};
   return wm_->getWindowInfo(id);
+}
+
+WindowInfo WindowService::getWindowAbsolutePosition(uint64_t id) const {
+  WindowInfo info;
+  info.valid = false;
+  if (!wm_ || id == 0)
+    return info;
+  auto &backend = wm_->getBackend();
+  Rect r = backend.getWindowPosition(id);
+  if (r.width <= 0 && r.height <= 0 && r.x == 0 && r.y == 0)
+    return info; // backend failure sentinel
+  info.id = id;
+  info.x = r.x;
+  info.y = r.y;
+  info.width = r.width;
+  info.height = r.height;
+  info.valid = true;
+  return info;
 }
 
 std::vector<WindowInfo> WindowService::getAllWindows() const {

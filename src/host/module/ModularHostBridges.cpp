@@ -2026,43 +2026,17 @@ UIBridge::handleWindowMaxObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowResizeObj(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager)
-    return Value::makeBool(false);
-  ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeBool(false);
-  int w = 0, h = 0;
-  if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
-    w = static_cast<int>(v->asInt());
-  else if (auto *v = (args[1].isDouble() ? &args[1] : nullptr))
-    w = static_cast<int>(v->asInt());
-  if (auto *v = (args[2].isInt() ? &args[2] : nullptr))
-    h = static_cast<int>(v->asInt());
-  else if (auto *v = (args[2].isDouble() ? &args[2] : nullptr))
-    h = static_cast<int>(v->asInt());
-  return Value(winService.resizeWindow(wid, w, h));
+  // Object method form: obj is args[0]; remaining args follow the module-level
+  // resize() signature (w, h [, relative]).
+  return handleWindowResize(args, ctx);
 }
 
 Value
 UIBridge::handleWindowMoveObj(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager)
-    return Value::makeBool(false);
-  ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeBool(false);
-  int x = 0, y = 0;
-  if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
-    x = static_cast<int>(v->asInt());
-  else if (auto *v = (args[1].isDouble() ? &args[1] : nullptr))
-    x = static_cast<int>(v->asInt());
-  if (auto *v = (args[2].isInt() ? &args[2] : nullptr))
-    y = static_cast<int>(v->asInt());
-  else if (auto *v = (args[2].isDouble() ? &args[2] : nullptr))
-    y = static_cast<int>(v->asInt());
-  return Value(winService.moveWindow(wid, x, y));
+  // Object method form: obj is args[0]; remaining args follow the module-level
+  // move() signature (x, y [, speed] [, relative]).
+  return handleWindowMove(args, ctx);
 }
 
 // Spec parsing shared by window.find / window.findAllBySpec. Semantics
@@ -2385,21 +2359,28 @@ UIBridge::handleWindowResize(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
-  int wIdx = 0, hIdx = 1;
-  if (args.size() >= 3 && args[0].isObjectId()) {
+  // Signatures supported:
+  //   window.resize(winObj, w, h [, relative])
+  //   window.resize(w, h [, winId] [, relative])
+  bool sawObject = !args.empty() && args[0].isObjectId();
+  int wIdx = sawObject ? 1 : 0;
+  int hIdx = wIdx + 1;
+  int winIdIdx = hIdx + 1;
+  int relIdx = winIdIdx + 1;
+  if (sawObject) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-    wIdx = 1; hIdx = 2;
-  } else if (args.size() >= 2) {
+    winIdIdx = -1; // already have the target from the object argument
+    relIdx = hIdx + 1; // obj.resize(w, h, relative)
+  }
+  if (wid == 0) {
     auto info = winService.getActiveWindowInfo();
     if (!info.valid) return Value::makeBool(false);
     wid = info.id;
-    wIdx = 0; hIdx = 1;
-  } else {
-    return Value::makeBool(false);
   }
-  if (wid == 0 || args.size() < static_cast<size_t>(hIdx + 1))
+  if (args.size() < static_cast<size_t>(hIdx + 1))
     return Value::makeBool(false);
   int w = 0, h = 0;
+  bool relative = false;
   if (auto *v = (args[wIdx].isInt() ? &args[wIdx] : nullptr))
     w = static_cast<int>(v->asInt());
   else if (auto *v = (args[wIdx].isDouble() ? &args[wIdx] : nullptr))
@@ -2408,6 +2389,20 @@ UIBridge::handleWindowResize(const std::vector<Value> &args,
     h = static_cast<int>(v->asInt());
   else if (auto *v = (args[hIdx].isDouble() ? &args[hIdx] : nullptr))
     h = static_cast<int>(v->asInt());
+  if (winIdIdx >= 0 && args.size() > static_cast<size_t>(winIdIdx)) {
+    uint64_t cand = resolveWindowId(args[winIdIdx], winService, static_cast<VM *>(ctx->vm));
+    if (cand != 0) wid = cand;
+  }
+  if (args.size() > static_cast<size_t>(relIdx)) {
+    if (auto *v = (args[relIdx].isBool() ? &args[relIdx] : nullptr))
+      relative = v->asBool();
+  }
+  if (relative) {
+    auto cur = winService.getWindowInfo(wid);
+    if (!cur.valid) return Value::makeBool(false);
+    w += cur.width;
+    h += cur.height;
+  }
   return Value(winService.resizeWindow(wid, w, h));
 }
 
@@ -2448,35 +2443,61 @@ Value UIBridge::handleWindowMove(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
-  int xIdx = 0, yIdx = 1;
-  // 3 args = window ID + x + y; 2 args = x + y (active window)
-  if (args.size() >= 3 && (args[0].isObjectId())) {
+  // Signatures supported:
+  //   window.move(winObj, x, y [, speed] [, relative]) — object form
+  //   window.move(x, y [, speed] [, winId] [, relative])
+  bool sawObject = !args.empty() && args[0].isObjectId();
+  // Object form prepends the window object; the remaining args follow the
+  // module-level signature (x, y, speed, winId, relative).
+  int xIdx = sawObject ? 1 : 0;
+  int yIdx = xIdx + 1;
+  int speedIdx = yIdx + 1;
+  int winIdIdx = speedIdx + 1;
+  int relIdx = winIdIdx + 1;
+  if (sawObject) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-    xIdx = 1; yIdx = 2;
-  } else if (args.size() >= 3 && args[0].isInt()) {
-    // Could be windowID-as-int OR just coords. Use 0 as invalid window sentinel:
-    // resolveWindowId on int=0 returns 0, so we treat 3-int args specially:
-    // window.move(x, y) on active window is more common than window.move(0, x, y)
-    // since users rarely hardcode window id 0. Use size to decide.
-    auto info = winService.getActiveWindowInfo();
-    if (!info.valid) return Value::makeBool(false);
-    wid = info.id;
-    xIdx = 0; yIdx = 1;
-  } else if (args.size() >= 2) {
-    auto info = winService.getActiveWindowInfo();
-    if (!info.valid) return Value::makeBool(false);
-    wid = info.id;
-    xIdx = 0; yIdx = 1;
-  } else {
-    return Value::makeBool(false);
+    winIdIdx = -1; // already have the target from the object argument
+    relIdx = speedIdx + 1; // obj.move(x, y, speed, relative)
+  } else if (args.size() >= 3 && !args[2].isInt() && !args[2].isDouble()) {
+    // args[2] is not a number => can't be speed => first arg is winId
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+    xIdx = 1; yIdx = 2; speedIdx = 3; winIdIdx = -1; relIdx = 4;
   }
-  if (wid == 0 || args.size() < static_cast<size_t>(yIdx + 1))
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeBool(false);
+    wid = info.id;
+  }
+  if (args.size() < static_cast<size_t>(yIdx + 1))
     return Value::makeBool(false);
   int x = 0, y = 0;
+  double speed = 0.0;
+  bool relative = false;
   if (auto *v = (args[xIdx].isInt() ? &args[xIdx] : nullptr))
     x = static_cast<int>(v->asInt());
   if (auto *v = (args[yIdx].isInt() ? &args[yIdx] : nullptr))
     y = static_cast<int>(v->asInt());
+  if (args.size() > static_cast<size_t>(speedIdx)) {
+    if (auto *v = (args[speedIdx].isDouble() ? &args[speedIdx] : nullptr))
+      speed = v->asDouble();
+    else if (auto *v = (args[speedIdx].isInt() ? &args[speedIdx] : nullptr))
+      speed = static_cast<double>(v->asInt());
+  }
+  if (winIdIdx >= 0 && args.size() > static_cast<size_t>(winIdIdx)) {
+    uint64_t cand = resolveWindowId(args[winIdIdx], winService, static_cast<VM *>(ctx->vm));
+    if (cand != 0) wid = cand;
+  }
+  if (args.size() > static_cast<size_t>(relIdx)) {
+    if (auto *v = (args[relIdx].isBool() ? &args[relIdx] : nullptr))
+      relative = v->asBool();
+  }
+  (void)speed; // animation speed hint — not implemented in X11 backend yet
+  if (relative) {
+    auto cur = winService.getWindowInfo(wid);
+    if (!cur.valid) return Value::makeBool(false);
+    x += cur.x;
+    y += cur.y;
+  }
   return Value(winService.moveWindow(wid, x, y));
 }
 
@@ -2937,19 +2958,42 @@ UIBridge::handleWindowSetAlwaysOnTop(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPos(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  // Signatures:
+  //   window.pos(relative = false, windowId = <active>)   — module-level
+  //   win.pos(relative = false)                           — object method (win
+  //   injected as args[0])
+  bool relative = false;
+  uint64_t wid = 0;
+  if (!args.empty() && args[0].isObjectId()) {
+    wid = resolveWindowId(args[0], winService, vm);
+    if (args.size() >= 2 && args[1].isBool()) relative = args[1].asBool();
+  } else {
+    if (!args.empty() && args[0].isBool()) relative = args[0].asBool();
+    if (args.size() >= 2)
+      wid = resolveWindowId(args[1], winService, vm);
+  }
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeNull();
+    wid = info.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeNull();
-  auto *vm = static_cast<VM *>(ctx->vm);
+  // Relative: geometry-relative-to-parent (info.x/y). Absolute: translate to
+  // root-window coordinates via the backend.
+  int x = info.x, y = info.y;
+  if (!relative) {
+    auto abs = winService.getWindowAbsolutePosition(wid);
+    if (abs.valid) { x = abs.x; y = abs.y; }
+  }
   auto obj = vm->createHostObject();
-  vm->setHostObjectField(obj, "x", Value::makeInt(info.x));
-  vm->setHostObjectField(obj, "y", Value::makeInt(info.y));
+  vm->setHostObjectField(obj, "x", Value::makeInt(x));
+  vm->setHostObjectField(obj, "y", Value::makeInt(y));
   return Value::makeObjectId(obj.id);
 }
 

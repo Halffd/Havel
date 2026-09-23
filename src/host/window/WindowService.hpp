@@ -33,6 +33,8 @@ public:
 
     struct WindowInfo getActiveWindowInfo() const;
     struct WindowInfo getWindowInfo(uint64_t id) const;
+    // Absolute (root-window) coordinates. Returns invalid WindowInfo on failure.
+    struct WindowInfo getWindowAbsolutePosition(uint64_t id) const;
     std::vector<WindowInfo> getAllWindows() const;
     uint64_t getActiveWindow() const;
 

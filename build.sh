@@ -212,6 +212,16 @@ declare -A BUILD_CONFIGS=(
   [14]="Debug,OFF,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
   [15]="Release,ON,ON,OFF,ON,OFF,ON,ON,ON,build-headless"
   [16]="Debug,OFF,ON,OFF,OFF,ON,ON,ON,ON,build-tsan"
+  # Cranelift backend builds (TODO2.md #5 baselines: build-crane,
+  # build-crane-nollvm). ENABLE_CRANELIFT is derived from the build-dir
+  # prefix below.
+  [17]="Debug,ON,ON,ON,OFF,OFF,OFF,OFF,ON,build-crane"
+  [18]="Debug,ON,ON,OFF,OFF,OFF,OFF,OFF,ON,build-crane-nollvm"
+  [19]="Release,ON,ON,ON,OFF,OFF,OFF,OFF,ON,build-crane-release"
+  # Dedicated no-LLVM dir (TODO2.md #5 baseline): avoids the
+  # reconfigure-on-switch churn between build-release (LLVM) and no-LLVM
+  # builds. Mode 9 stays for no-LLVM inside build-release.
+  [20]="Release,ON,ON,OFF,OFF,OFF,OFF,OFF,ON,build-nollvm"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
@@ -223,6 +233,12 @@ if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]
   if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
     log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
     ENABLE_HAVEL_LANG="ON"
+  fi
+  # Cranelift builds are identified by their build-dir prefix; no dedicated
+  # config field, so all crane modes inherit the flag uniformly.
+  ENABLE_CRANELIFT="OFF"
+  if [[ "$BUILD_DIR" == build-crane* ]]; then
+    ENABLE_CRANELIFT="ON"
   fi
 else
   log "ERROR" "Invalid build mode: $BUILD_MODE" "${RED}"
@@ -389,6 +405,11 @@ build() {
   fi
   cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
   cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
+  # Cranelift backend (set when the build dir is a build-crane* dir; the
+  # cargo-built Rust staticlib + JitRuntimeBridges + the proto driver)
+  if [[ "${ENABLE_CRANELIFT:-OFF}" == "ON" ]]; then
+    cmake_cmd+=" -DENABLE_CRANELIFT=ON"
+  fi
   cmake_cmd+=" -DENABLE_HVDB=${ENABLE_HVDB:-ON}"
   cmake_cmd+=" -DENABLE_HAVEL_DAP=${ENABLE_HAVEL_DAP:-ON}"
   cmake_cmd+=" -DENABLE_HVTEST=${ENABLE_HVTEST:-ON}"

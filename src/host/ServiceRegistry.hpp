@@ -1,5 +1,7 @@
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,7 +23,7 @@ struct ServiceInfo {
 
 using ServiceFilter = std::unordered_set<std::string>;
 
-class ServiceRegistry {
+class HAVEL_EXPORT ServiceRegistry {
 public:
 	static ServiceRegistry& instance() {
 		static ServiceRegistry registry;

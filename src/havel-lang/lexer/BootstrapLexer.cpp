@@ -2496,6 +2496,14 @@ continue;
            prevType == TokenType::InterpolatedString ||
            prevType == TokenType::MultilineString ||
            prevType == TokenType::RegexString ||
+           // Literal keywords are expression context too: `nil + 1`,
+           // `true + x` are binary operations, not hotkey modifiers. Null
+           // was missing here, so every operator after a null literal was
+           // scanned as a hotkey token and the statement parser rejected
+           // it ("Expected '=>' after hotkey literal").
+           prevType == TokenType::Null ||
+           prevType == TokenType::True ||
+           prevType == TokenType::False ||
            prevType == TokenType::CloseParen ||
            prevType == TokenType::OpenParen ||
            prevType == TokenType::CloseBracket ||

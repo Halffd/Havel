@@ -55,9 +55,7 @@ static std::shared_ptr<PixelAutomationService> getPixelService() {
     auto& registry = host::ServiceRegistry::instance();
     auto svc = registry.get<PixelAutomationService>();
     if (!svc) {
-        ::havel::debug("PixelModule: PixelAutomationService not available in registry");
-    } else {
-        ::havel::debug("PixelModule: PixelAutomationService available");
+        ::havel::error("PixelModule: PixelAutomationService not available in registry");
     }
     return svc;
 }

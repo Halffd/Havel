@@ -261,7 +261,7 @@ public:
 #endif
             HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
                                       origin.category, origin.subsystem, origin.priority};
-            HavelLogger_infoOrigin(handle(), &cOrigin, msg.c_str());
+            HavelLogger_infoOrigin(handle(), &cOrigin, "%s", msg.c_str());
         } catch (const std::exception& e) {
             HavelLogger_errorf(handle(), "Logger format error in infoOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
@@ -281,7 +281,7 @@ public:
 #endif
             HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
                                       origin.category, origin.subsystem, origin.priority};
-            HavelLogger_warningOrigin(handle(), &cOrigin, msg.c_str());
+            HavelLogger_warningOrigin(handle(), &cOrigin, "%s", msg.c_str());
         } catch (const std::exception& e) {
             HavelLogger_errorf(handle(), "Logger format error in warningOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
@@ -301,7 +301,7 @@ public:
 #endif
             HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
                                       origin.category, origin.subsystem, origin.priority};
-            HavelLogger_errorOrigin(handle(), &cOrigin, msg.c_str());
+            HavelLogger_errorOrigin(handle(), &cOrigin, "%s", msg.c_str());
         } catch (const std::exception& e) {
             HavelLogger_errorf(handle(), "Logger format error in errorOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }
@@ -321,7 +321,7 @@ public:
 #endif
             HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
                                       origin.category, origin.subsystem, origin.priority};
-            HavelLogger_fatalOrigin(handle(), &cOrigin, msg.c_str());
+            HavelLogger_fatalOrigin(handle(), &cOrigin, "%s", msg.c_str());
         } catch (const std::exception& e) {
             HavelLogger_errorf(handle(), "Logger format error in fatalOrigin(): %s | Original format: %s", e.what(), fmt.data());
         }

@@ -19,6 +19,7 @@
 #include "DataflowAnalysis.hpp"
 
 #include <cstdint>
+#include <sstream>
 #include <string>
 
 namespace havel::compiler {
@@ -295,6 +296,39 @@ inline bool optimize_function_cfg(BytecodeFunction& func,
   // has_cfg() stays truthful.
   ++stats->functions_optimized;
   return true;
+}
+
+// Optimize every function in a compiled chunk through the CFG pipeline.
+// Single shared entry point for all production callers (compileToBytecodeChunk,
+// runBytecodePipeline) so the optimization policy lives in exactly one place.
+inline OptimizeStats optimize_chunk_cfg(BytecodeChunk& chunk) {
+  OptimizeStats stats;
+  const size_t count = chunk.getFunctionCount();
+  for (size_t i = 0; i < count; ++i) {
+    BytecodeFunction* fn =
+        chunk.getFunctionMutable(static_cast<uint32_t>(i));
+    if (!fn) continue;
+    optimize_function_cfg(*fn, chunk, &stats);
+  }
+  return stats;
+}
+
+// Human-readable one-line summary of OptimizeStats for compile logs.
+inline std::string describe_optimize_stats(const OptimizeStats& stats) {
+  std::ostringstream out;
+  out << "CFG pipeline: " << stats.functions_optimized << "/"
+      << stats.functions_total << " functions optimized ("
+      << stats.functions_skipped_unsafe << " skipped unsafe, "
+      << stats.functions_skipped_error << " errors), "
+      << stats.blocks_removed << " blocks and "
+      << stats.instructions_removed << " instructions removed";
+  if (!stats.last_reconstruct_error.empty()) {
+    out << " | reconstruct: " << stats.last_reconstruct_error;
+  }
+  if (!stats.last_validation_error.empty()) {
+    out << " | validate: " << stats.last_validation_error;
+  }
+  return out.str();
 }
 
 }  // namespace cfgintegration

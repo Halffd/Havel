@@ -62,6 +62,10 @@ FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
 compiler::VM *HostAPI::GetVM() { return vm_; }
+// The vtable references every virtual; omitting this stub left
+// havel_lang_core.a (the HAVEL_CORE_PROFILE variant) with an undefined
+// reference that only links that archive could see.
+BrightnessManager *HostAPI::GetBrightnessManager() { return brightnessManager; }
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
 void HostAPI::SetVM(compiler::VM *vm) { vm_ = vm; }

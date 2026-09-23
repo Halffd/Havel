@@ -1,0 +1,21 @@
+// smoke: timeout = 60
+// smoke: tier = slow
+// Regression: GC marked a StringCursorId but never the string the cursor
+// references, so SweepStrings collected a live cursor's heap string
+// (no other Value reference - the chunk-literal it was created from)
+// before SweepStringCursors ran; the cursor's id dangled and
+// cursor_current threw "string not found" after enough allocations
+// triggered a cycle (observed: 200k junk-string allocations).
+//
+// Expected: the cursor's string survives GC cycles the cursor does, so
+// cursor_current still returns the first character of "hello".
+c = string.cursor("hello")
+i = 0
+while i < 200000 {
+    val junk = "junk-string-" + i
+    i += 1
+}
+string.cursor_advance(c)
+val first = string.cursor_current(c)
+if first != "e" { return 0 }
+return 1

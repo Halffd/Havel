@@ -230,8 +230,6 @@ private:
 };
 
 /**
-
-/**
  * HotkeyCapture - Widget for capturing hotkey input
  */
 class HotkeyCapture : public QLineEdit {

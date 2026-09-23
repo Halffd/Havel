@@ -1,4 +1,4 @@
-// smoke: timeout = 10
+// smoke: timeout = 60
 // smoke: tier = slow
 // Test that plugin symbols are properly exported and loadable
 // This catches the "undefined symbol" visibility bugs

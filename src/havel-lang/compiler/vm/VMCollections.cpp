@@ -20,6 +20,24 @@
 
 namespace havel::compiler {
 
+/// RAII: pins a Value under the GC root so it survives allocations during a call,
+/// and automatically unpins on scope exit (including exception unwind).
+struct PinnedRootGuard {
+    GCHeap& heap_;
+    uint64_t id_ = 0;
+    PinnedRootGuard(GCHeap& heap, const Value& value) : heap_(heap), id_(0) {
+        id_ = heap_.pinExternalRoot(value);
+    }
+    ~PinnedRootGuard() {
+        if (id_ != 0) heap_.unpinExternalRoot(id_);
+    }
+    PinnedRootGuard(const PinnedRootGuard&) = delete;
+    PinnedRootGuard& operator=(const PinnedRootGuard&) = delete;
+    PinnedRootGuard(PinnedRootGuard&&) = delete;
+    PinnedRootGuard& operator=(PinnedRootGuard&&) = delete;
+};
+
+
 bool VM::execCollectionOp(const Instruction &instruction) {
 	switch (instruction.opcode) {
   case OpCode::ARRAY_NEW: {
@@ -518,10 +536,13 @@ if (container.isSetId()) {
         {
 		Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
 		if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
-			uint64_t opIndexRootId = pinExternalRoot(opIndex);
-			Value result = callFunction(opIndex, {container, index_or_key});
-			unpinExternalRoot(opIndexRootId);
-			pushStack(result);
+			{
+				// Pin the op_index method during callFunction - auto-unpinned on scope exit
+				// even if callFunction throws (COMPILER_THROW, etc.)
+				PinnedRootGuard rootGuard(heap_, opIndex);
+				Value result = callFunction(opIndex, {container, index_or_key});
+				pushStack(result);
+			}  // PinnedRootGuard destructor unpins here even on exception
 			break;
 		}
         }
@@ -2301,10 +2322,10 @@ if (object.isIntervalId()) {
       COMPILER_THROW("ARRAY_MAP expects function/closure");
     }
 
-	auto resultRef = heap_.allocateArray();
+ 	auto resultRef = heap_.allocateArray();
 	auto *result = heap_.array(resultRef.id);
-	uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
-	uint64_t srcRootId = pinExternalRoot(array);
+	PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
+	PinnedRootGuard srcGuard(heap_, array);
 
 	for (size_t i = 0; i < arr->size(); i++) {
 		Value mapped = callFunctionSync(fn, {(*arr)[i]});
@@ -2312,8 +2333,6 @@ if (object.isIntervalId()) {
 		result->push_back(mapped);
 	}
 
-	unpinExternalRoot(srcRootId);
-	unpinExternalRoot(resultRootId);
 	pushStack(Value::makeArrayId(resultRef.id));
 	break;
 	}
@@ -2332,19 +2351,18 @@ if (object.isIntervalId()) {
 
 	auto resultRef = heap_.allocateArray();
 	auto *result = heap_.array(resultRef.id);
-	uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
-	uint64_t srcRootId = pinExternalRoot(array);
+	{
+		PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
+		PinnedRootGuard srcGuard(heap_, array);
 
-	for (size_t i = 0; i < arr->size(); i++) {
-		Value predResult = callFunctionSync(fn, {(*arr)[i]});
-		arr = heap_.array(array.asArrayId());
-		if (predResult.isBool() && predResult.asBool()) {
-			result->push_back((*arr)[i]);
+		for (size_t i = 0; i < arr->size(); i++) {
+			Value predResult = callFunctionSync(fn, {(*arr)[i]});
+			arr = heap_.array(array.asArrayId());
+			if (predResult.isBool() && predResult.asBool()) {
+				result->push_back((*arr)[i]);
+			}
 		}
-	}
-
-	unpinExternalRoot(srcRootId);
-	unpinExternalRoot(resultRootId);
+	}  // guards destruct here, unpinning even after exceptions
     pushStack(Value::makeArrayId(resultRef.id));
     break;
   }
@@ -2362,14 +2380,13 @@ if (object.isIntervalId()) {
       break;
     }
 
-	uint64_t srcRootId = pinExternalRoot(array);
-	Value acc = initial;
-	for (size_t i = 0; i < arr->size(); i++) {
-		acc = callFunctionSync(fn, {acc, (*arr)[i]});
-		arr = heap_.array(array.asArrayId());
-	}
+		PinnedRootGuard srcGuard(heap_, array);
+		Value acc = initial;
+		for (size_t i = 0; i < arr->size(); i++) {
+			acc = callFunctionSync(fn, {acc, (*arr)[i]});
+			arr = heap_.array(array.asArrayId());
+		}
 
-	unpinExternalRoot(srcRootId);
 	pushStack(acc);
 	break;
 	}
@@ -2386,13 +2403,12 @@ if (object.isIntervalId()) {
 		break;
 	}
 
-	uint64_t srcRootId = pinExternalRoot(array);
-	for (size_t i = 0; i < arr->size(); i++) {
-		(void)callFunctionSync(fn, {(*arr)[i]});
-		arr = heap_.array(array.asArrayId());
-	}
+		PinnedRootGuard srcGuard(heap_, array);
+		for (size_t i = 0; i < arr->size(); i++) {
+			(void)callFunctionSync(fn, {(*arr)[i]});
+			arr = heap_.array(array.asArrayId());
+		}
 
-	unpinExternalRoot(srcRootId);
 	pushStack(Value::makeNull());
 	break;
 	}

@@ -320,6 +320,13 @@ void havel_getglobal(HavelState* H, const char* name) {
 void havel_setglobal(HavelState* H, const char* name) {
     if (!H->stack.empty()) {
         H->globals[name] = H->stack.back();
+        // Also set the VM's global: scripts compiled through the pipeline
+        // resolve globals from the VM's globals at runtime (LOAD_GLOBAL),
+        // so a sidecar-only write made C-API-set globals invisible to
+        // scripts — setglobal was a no-op for them.
+        if (H->vm) {
+            H->vm->setGlobal(name, H->stack.back());
+        }
         H->stack.pop_back();
     }
 }

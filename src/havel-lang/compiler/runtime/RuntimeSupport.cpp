@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -102,6 +103,72 @@ namespace {
         return sha256(buf.data(), buf.size());
     }
 
+    // Hash an .hvc's deterministic content: every byte before the first
+    // appended trailer section, EXCLUDING the embedded pipeline-fingerprint
+    // field. Rationale (self-reference fix): recompiling a module whose
+    // .hvc is a fingerprint input rewrites that file, and the only bytes
+    // that change are the fingerprint field itself plus any appended
+    // globals trailer - the compiled chunk body is deterministic. Hashing
+    // the whole file made every stamped fingerprint an intermediate state
+    // that never matched the next boot's recomputed fingerprint, so the
+    // fingerprint-input modules (lang.emitter/pratt/lexer/scope) recompiled
+    // from source on EVERY boot (strace-observed rename during a plain run)
+    // and the cache never stabilized. Hashing the stable region makes every
+    // stamp converge to the same value; an emitter/pratt change still
+    // rewrites the chunk body and invalidates the identity.
+    std::optional<std::array<uint8_t, 32>> sha256_hvc_stable(const std::string& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f) return std::nullopt;
+        std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
+        if (buf.size() < 8 || std::memcmp(buf.data(), "HVC2", 4) != 0) {
+            return std::nullopt;
+        }
+        // Parse the header to locate the fingerprint field's byte range.
+        size_t pos = 4;
+        auto read = [&buf, &pos](void* out, size_t size) -> bool {
+            if (pos + size > buf.size()) return false;
+            std::memcpy(out, buf.data() + pos, size);
+            pos += size;
+            return true;
+        };
+        uint32_t version = 0;
+        if (!read(&version, sizeof(version))) return std::nullopt;
+        uint32_t flags = 0;
+        if (!read(&flags, sizeof(flags))) return std::nullopt;
+        std::optional<std::pair<size_t, size_t>> fp_range;
+        if ((flags & 1) && version >= 3) {
+            uint32_t idLen = 0;
+            if (!read(&idLen, sizeof(idLen))) return std::nullopt;
+            if (pos + idLen > buf.size()) return std::nullopt;
+            pos += idLen;
+        }
+        if ((flags & 2) && version >= 5) {
+            uint32_t fpLen = 0;
+            if (!read(&fpLen, sizeof(fpLen))) return std::nullopt;
+            if (pos + fpLen > buf.size()) return std::nullopt;
+            fp_range = {pos, pos + fpLen};
+            pos += fpLen;
+        }
+        if (version >= 6) {
+            uint8_t optFlags[2] = {0, 0};
+            if (!read(optFlags, sizeof(optFlags))) return std::nullopt;
+        }
+        // Chunk-body end: everything before the FIRST trailer marker, so
+        // runtime-appended globals trailers never enter the hash.
+        const size_t body_end = havel::compiler::ValueSerializer::chunkDataEnd(buf);
+        if (body_end == 0 || body_end > buf.size()) return std::nullopt;
+        if (body_end < pos) return std::nullopt;
+        // Hash [0, body_end) skipping the fingerprint field.
+        std::vector<uint8_t> stable;
+        stable.reserve(body_end);
+        const size_t fp_start = fp_range ? fp_range->first : body_end;
+        const size_t fp_end = fp_range ? fp_range->second : body_end;
+        stable.insert(stable.end(), buf.begin(), buf.begin() + static_cast<ptrdiff_t>(fp_start));
+        stable.insert(stable.end(), buf.begin() + static_cast<ptrdiff_t>(fp_end),
+                      buf.begin() + static_cast<ptrdiff_t>(body_end));
+        return sha256(stable.data(), stable.size());
+    }
+
 }
 
 // Macro for throwing errors with source location info
@@ -185,19 +252,18 @@ std::string computePipelineFingerprint(const std::string& cacheDir) {
         const std::string path = cacheDir.empty()
                                      ? std::string(input)
                                      : cacheDir + "/" + input;
-        auto hash = sha256_file(path);
-        // sha256_file returns an all-zero array on open failure; detect
-        // that (a real file hash is all-zero with negligible probability,
-        // and the file existing was already checked above).
-        bool allZero = true;
-        for (uint8_t b : hash) {
-            if (b != 0) { allZero = false; break; }
-        }
-        if (allZero) {
+        // Hash the STABLE region of each input (chunk body, fingerprint
+        // field excluded) - see sha256_hvc_stable. Hashing the whole file
+        // self-referenced the caches being stamped: every rewrite of a
+        // fingerprint-input .hvc changed the fingerprint, so those modules
+        // recompiled from source on every boot and the cache never
+        // stabilized.
+        auto hash = sha256_hvc_stable(path);
+        if (!hash) {
             return std::string();
         }
         static const char hexDigits[] = "0123456789abcdef";
-        for (uint8_t b : hash) {
+        for (uint8_t b : *hash) {
             combined += hexDigits[b >> 4];
             combined += hexDigits[b & 0x0F];
         }
@@ -225,6 +291,103 @@ bool isPipelineFingerprintInput(const std::string& cacheName) {
         if (cacheName == input) return true;
     }
     return false;
+}
+
+// ============================================================================
+// Incremental serve path (TODO2.md Phase 4)
+// ============================================================================
+
+namespace {
+// Cumulative serve counter. Atomic so parallel compile callers (test-suite
+// workers) can bump it safely.
+std::atomic<uint64_t> g_incremental_cache_hits{0};
+}  // namespace
+
+uint64_t incrementalCacheHits() {
+    return g_incremental_cache_hits.load(std::memory_order_relaxed);
+}
+
+std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUnitName,
+                                                   const std::string& sourceText,
+                                                   bool request_strict,
+                                                   bool request_optimized) {
+    if (compileUnitName.empty() || sourceText.empty()) {
+        return std::nullopt;
+    }
+    const std::string cacheName =
+        havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
+    if (cacheName.empty()) {
+        return std::nullopt;
+    }
+    const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
+    const std::filesystem::path hvcPath =
+        std::filesystem::path(cacheDir) / (cacheName + ".hvc");
+    std::error_code ec;
+    if (!std::filesystem::exists(hvcPath, ec) || ec) {
+        return std::nullopt;
+    }
+
+    // Header-prefix read only (same discipline as ModuleLoader's
+    // checkBcCache): .hvc files can be megabytes; never load the whole file
+    // just to validate identity.
+    const auto srcInfo = ValueSerializer::peekSourceInfoFile(hvcPath.string());
+    if (!srcInfo.hasInfo) {
+        // Legacy entry without embedded identity: cannot validate. Compile
+        // fresh (the fresh compile re-stamps the entry).
+        return std::nullopt;
+    }
+
+    // Pipeline gate (mirrors checkBcCache): reject when BOTH the entry and
+    // the current compiler identity are stamped and differ. An emitter fix
+    // produces different bytecode from identical source; the stale entry
+    // must not serve.
+    if (!srcInfo.pipelineFingerprint.empty()) {
+        const std::string currentFp = computePipelineFingerprint(cacheDir);
+        if (!currentFp.empty() && currentFp != srcInfo.pipelineFingerprint) {
+            return std::nullopt;
+        }
+    }
+
+    // Compile-option gate (version-6 entries): strict lexical resolution
+    // and bytecode optimization both change what a compile produces, so an
+    // entry built with different options must not be served. Entries
+    // without recorded flags (v4/v5) are rejected conservatively and heal
+    // to stamped on the next compile.
+    if (!srcInfo.has_compile_flags ||
+        srcInfo.compiled_strict != request_strict ||
+        srcInfo.compiled_optimized != request_optimized) {
+        return std::nullopt;
+    }
+
+    // Source gate: the embedded identity is the size + sha256 of the source
+    // file at write time; hash the live in-memory text the caller would
+    // compile. Identical content reuses; diverged content recompiles.
+    bool allZero = true;
+    for (uint8_t b : srcInfo.hash) {
+        if (b != 0) { allZero = false; break; }
+    }
+    if (allZero) {
+        // Entry written from a source path that did not exist at write
+        // time (in-memory units): no content identity to validate against.
+        return std::nullopt;
+    }
+    if (srcInfo.size != sourceText.size()) {
+        return std::nullopt;
+    }
+    const auto liveHash = sha256(reinterpret_cast<const uint8_t*>(sourceText.data()),
+                                 sourceText.size());
+    if (liveHash != srcInfo.hash) {
+        return std::nullopt;
+    }
+
+    // Validated: load the chunk (mmap for big files, same as module loads).
+    ValueSerializer serializer;
+    auto chunk = serializer.loadChunk(hvcPath.string());
+    if (!chunk) {
+        return std::nullopt;
+    }
+    g_incremental_cache_hits.fetch_add(1, std::memory_order_relaxed);
+    return chunk;
 }
 
 // ============================================================================
@@ -846,6 +1009,15 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
 
 std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                                       const std::string& pipelineFingerprint) {
+    // Legacy v5 form: no compile-option flags recorded. Callers that
+    // compile through the production pipeline should use the 5-argument
+    // form so the incremental serve path can require an exact match.
+    return serializeChunk(chunk, sourcePath, pipelineFingerprint, false, false);
+}
+
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
+                                                      const std::string& pipelineFingerprint,
+                                                      bool compiled_strict, bool compiled_optimized) {
     std::vector<uint8_t> data;
     auto append = [&data](const void* ptr, size_t size) {
         if (ptr == nullptr || size == 0) return;
@@ -854,15 +1026,19 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
     };
 
     // Header: "HVC2" magic (version 3 adds per-function flags, version 4
-    // adds variadic_param_index, version 5 adds the pipeline fingerprint)
+    // adds variadic_param_index, version 5 adds the pipeline fingerprint,
+    // version 6 adds the compiled-with compile-option flags)
     append("HVC2", 4);
 
     // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index,
-    // 5 = pipeline fingerprint for self-hosted-compiled entries)
-    uint32_t version = pipelineFingerprint.empty() ? 4 : 5;
+    // 5 = pipeline fingerprint for self-hosted-compiled entries,
+    // 6 = compile-option flags for the incremental serve path)
+    uint32_t version = pipelineFingerprint.empty() ? 4 : 6;
     append(&version, sizeof(version));
 
-    // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint)
+    // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint,
+    // bit 2 = compiled with strict lexical resolution, bit 3 = compiled
+    // with bytecode optimization)
     uint32_t flags = 0;
     // Embed compiler build ID so .hvc is invalidated when compiler changes.
     // This prevents stale cache when the compiler generates different function
@@ -870,6 +1046,10 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
     const std::string compiler_build_id = __DATE__ " " __TIME__;
     flags |= 1;
     if (!pipelineFingerprint.empty()) flags |= 2;
+    if (version >= 6) {
+        if (compiled_strict) flags |= 4;
+        if (compiled_optimized) flags |= 8;
+    }
     append(&flags, sizeof(flags));
 
     // Compiler build ID (when flags bit 0 is set)
@@ -889,6 +1069,16 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
         uint32_t fpLen = static_cast<uint32_t>(pipelineFingerprint.size());
         append(&fpLen, sizeof(fpLen));
         append(pipelineFingerprint.data(), fpLen);
+    }
+
+    // Compile-option flags (version 6, bits 2/3): the strict lexical
+    // resolution and optimization settings the entry was built with. Read
+    // back by peekSourceInfo so the incremental serve path can require an
+    // exact match against the request's compile options.
+    if (version >= 6) {
+        uint8_t optFlags[2] = {static_cast<uint8_t>(compiled_strict ? 1 : 0),
+                               static_cast<uint8_t>(compiled_optimized ? 1 : 0)};
+        append(optFlags, sizeof(optFlags));
     }
 
     // Source path
@@ -1099,7 +1289,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (is_v2) {
         // HVC2: read version, flags, source path, source size, source hash
         if (!read(&hvc_version, sizeof(hvc_version))) return std::nullopt;
-        if (hvc_version < 2 || hvc_version > 5) return std::nullopt;
+        if (hvc_version < 2 || hvc_version > 6) return std::nullopt;
         ::havel::debug("[RTS-DEBUG] hvc_version = " + std::to_string(hvc_version));
 
     uint32_t flags = 0;
@@ -1130,6 +1320,16 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
         if (!read(&fpLen, sizeof(fpLen))) return std::nullopt;
         if (pos + fpLen > data.size()) return std::nullopt;
         pos += fpLen;
+    }
+
+    // Compile-option flags (version 6, flags bits 2/3): the strict
+    // resolution + optimization settings the entry was built with, one
+    // byte each. Skipped here; the incremental serve path
+    // (loadCachedScriptChunk) reads them via peekSourceInfo and compares
+    // against the request's compile options before serving.
+    if (hvc_version >= 6) {
+        uint8_t optFlags[2] = {0, 0};
+        if (!read(optFlags, sizeof(optFlags))) return std::nullopt;
     }
 
     // Source path
@@ -1514,7 +1714,7 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
 
   uint32_t version = 0;
   if (!read(&version, sizeof(version))) return info;
-  if (version < 2 || version > 5) return info;
+  if (version < 2 || version > 6) return info;
 
   uint32_t flags = 0;
   if (!read(&flags, sizeof(flags))) return info;
@@ -1534,6 +1734,18 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
     info.pipelineFingerprint.assign(reinterpret_cast<const char*>(data.data()) + pos,
                                     fpLen);
     pos += fpLen;
+  }
+
+  // Compile-option flags (version 6, bits 2/3): strict resolution +
+  // optimization settings the entry was built with. Both change what a
+  // compile produces, so the incremental serve path compares them against
+  // the request's options.
+  if (version >= 6) {
+    uint8_t optFlags[2] = {0, 0};
+    if (!read(optFlags, sizeof(optFlags))) return info;
+    info.compiled_strict = optFlags[0] != 0;
+    info.compiled_optimized = optFlags[1] != 0;
+    info.has_compile_flags = true;
   }
 
   uint32_t srcPathLen = 0;

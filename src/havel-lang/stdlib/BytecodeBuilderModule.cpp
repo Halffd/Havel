@@ -882,7 +882,8 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
 	    auto data = serializer.serializeChunk(
 	        chunk, srcPath,
 	        havel::compiler::computePipelineFingerprint(
-	            havel::ModuleLoader::getDefaultCacheDir()));
+	            havel::ModuleLoader::getDefaultCacheDir()),
+	        false, false);
 	    std::ofstream out(path, std::ios::binary);
 	    if (!out.is_open()) {
 	        throw std::runtime_error("bc.serialize: cannot open " + path);

@@ -25,88 +25,9 @@ IncrementalDriver::IncrementalDriver(const IncrementalConfig& config)
     cache_ = std::make_unique<TieredCache>(std::move(l1), std::move(l2));
 }
 
-template <typename CompileFn>
-std::optional<CompilationResult> IncrementalDriver::compileModule(
-    const std::filesystem::path& source_path,
-    const ImportResolver& import_resolver,
-    CompileFn&& compile_fn) {
+// The compileModule template body lives in the header: CompileFn is a
+// call-site lambda (no linkage), so instantiation must see the definition.
 
-    // 1. Fingerprint module
-    auto mod_fp = fingerprintModule(source_path, import_resolver, config_fp_);
-    if (!mod_fp) {
-        return std::nullopt;
-    }
-
-    // 2. Generate cache key
-    std::string cache_key = makeCacheKey(
-        mod_fp->source.value,
-        mod_fp->deps.value,
-        config_fp_.value);
-
-    // 3. Check cache
-    if (auto cached = cache_->get(cache_key)) {
-        CompilationResult result;
-        result.from_cache = true;
-        result.artifact = *cached;
-        result.cache_key = cache_key;
-        result.fingerprint = mod_fp->combined.value;
-        return result;
-    }
-
-    // 4. Cache miss - compile
-    // Read source
-    std::ifstream ifs(source_path);
-    if (!ifs) return std::nullopt;
-    std::string source((std::istreambuf_iterator<char>(ifs)), {});
-
-    // Call the compile function
-    auto artifact_opt = compile_fn(source);
-    if (!artifact_opt) return std::nullopt;
-
-    // 5. Store in cache
-    CacheEntryMeta meta;
-    meta.key = cache_key;
-    meta.fingerprint = mod_fp->combined.value;
-    meta.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    meta.size_bytes = artifact_opt->size();
-    meta.opt_level = config_.opt_level;
-    meta.target_arch = config_.target_arch;
-    meta.ir_version = config_.ir_version;
-    meta.compiler_version = config_.compiler_version;
-
-    cache_->put(cache_key, *artifact_opt, meta);
-
-    // 6. Update dependency graph
-    dep_graph_.addNode(source_path.string());
-    for (const auto& imp : mod_fp->imports) {
-        dep_graph_.addNode(imp.string());
-        dep_graph_.addEdge(source_path.string(), imp.string());
-    }
-
-    // 7. Update tracker
-    DependencyTracker::CompilationUnit unit;
-    unit.name = source_path.string();
-    unit.fingerprint = mod_fp->combined.value;
-    unit.inputs = {source_path.string()};
-    for (const auto& imp : mod_fp->imports) {
-        unit.inputs.push_back(imp.string());
-    }
-    unit.outputs = {cache_key};
-    unit.timestamp_ms = meta.timestamp_ms;
-    tracker_.recordCompilation(unit);
-
-    // 8. Return result
-    CompilationResult result;
-    result.from_cache = false;
-    result.artifact = *artifact_opt;
-    result.cache_key = cache_key;
-    result.fingerprint = mod_fp->combined.value;
-    result.outputs = {cache_key};
-    return result;
-}
-
-// Template instantiation is handled implicitly since CompileFn is templated.
 
 void IncrementalDriver::invalidate(
     const std::vector<std::filesystem::path>& changed_files) {
@@ -115,13 +36,19 @@ void IncrementalDriver::invalidate(
         changed.insert(f.string());
     }
 
-    // Find affected units
+    // Find affected units: units whose recorded INPUTS intersect the
+    // changed set are stale. unit.outputs holds the exact cache keys
+    // compileModule wrote for them, so the stale artifacts are dropped
+    // from the cache directly (the next compileModule call misses and
+    // recompiles). The compilation record itself stays: it is history,
+    // and needsRecompilation still reports the truth via the fingerprint.
     auto affected = tracker_.getAffectedUnits(changed);
     for (const auto& unit_name : affected) {
-        // Remove from cache
-        // Note: we'd need to know the cache key for each unit
-        // For now, just remove from tracker
-        // In practice, we'd maintain a reverse mapping
+        auto unit = tracker_.getCompilation(unit_name);
+        if (!unit) continue;
+        for (const auto& out_key : unit->outputs) {
+            cache_->remove(out_key);
+        }
     }
 }
 

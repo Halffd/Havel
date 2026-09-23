@@ -805,6 +805,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       }
     }
 vm_in_execute_.store(false, std::memory_order_release);
+  } else {
+    // No scheduler: run the plain dispatch loop directly (same contract
+    // executePersistent uses below). Before this, execute() silently
+    // skipped execution and returned null whenever no scheduler was
+    // installed (C API havel_loadstring, direct VM usage) — the setup ran
+    // but no dispatch loop ever consumed the bytecode.
+    runDispatchLoop(0);
   }
 
   // Clean up
@@ -6440,8 +6447,10 @@ load_from_source:
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
 
-    // Auto-cache compiled chunk to ~/.cache/havel
-    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk);
+    // Auto-cache compiled chunk to ~/.cache/havel. Module compiles run the
+    // ByteCompiler directly (strict_mode_ defaults false, no optimizer in
+    // this path), so the entry is stamped with that exact configuration.
+    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false);
   }
 
   // Execute the module in a sandboxed globals context

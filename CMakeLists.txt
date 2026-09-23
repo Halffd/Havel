@@ -1841,6 +1841,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # The JIT symbol map and backend declarations derive from that X-macro.
   add_test(NAME runtime-abi-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_runtime_abi.sh)
+  # Lowering opcode drift guard (TODO2.md #11): fails when an opcode is
+  # neither translated by BytecodeOrcJitLowering nor listed in
+  # hasUnsupportedOpcodes (such an opcode would be silently dropped from
+  # JIT-compiled code - observed: 39 opcodes, including every compound
+  # assignment, were dropped while only the scheduler set was listed).
+  add_test(NAME lowering-opcode-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_lowering_opcodes.sh)
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)

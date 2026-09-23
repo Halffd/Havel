@@ -213,11 +213,60 @@ void BytecodeOrcJIT::initTargetMachine() {
 bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
     for (const auto& instr : func.instructions) {
         switch (instr.opcode) {
+            // Coroutine/scheduler opcodes: JIT frames cannot be suspended
+            // mid-execution.
             case OpCode::YIELD:
             case OpCode::YIELD_RESUME:
             case OpCode::GO_ASYNC:
             case OpCode::FIBER_SLEEP:
             case OpCode::FIBER_AWAIT:
+                return true;
+            // Opcodes BytecodeOrcJitLowering::translate does not emit code
+            // for (its default case drops them silently). Before this
+            // list covered only the scheduler set, a hot function with
+            // e.g. an ADD_ASSIGN compiled with the assignment dropped -
+            // a silent miscompilation. Drift-guarded by
+            // lowering_opcode_drift_guard (ctest), which greps the
+            // lowering's actual switch cases and diffs against this list.
+            case OpCode::ADD_INT:
+            case OpCode::SUB_INT:
+            case OpCode::MUL_INT:
+            case OpCode::DIV_INT:
+            case OpCode::MOD_INT:
+            case OpCode::ADD_ASSIGN:
+            case OpCode::SUB_ASSIGN:
+            case OpCode::MUL_ASSIGN:
+            case OpCode::DIV_ASSIGN:
+            case OpCode::MOD_ASSIGN:
+            case OpCode::POW_ASSIGN:
+            case OpCode::REMAINDER_ASSIGN:
+            case OpCode::INT_DIV_ASSIGN:
+            case OpCode::BITWISE_AND_ASSIGN:
+            case OpCode::BITWISE_OR_ASSIGN:
+            case OpCode::BITWISE_XOR_ASSIGN:
+            case OpCode::SHIFT_LEFT_ASSIGN:
+            case OpCode::SHIFT_RIGHT_ASSIGN:
+            case OpCode::ARRAY_GET_FAST:
+            case OpCode::ARRAY_SET_FAST:
+            case OpCode::STRING_GET_FAST:
+            case OpCode::STRING_GET_FAST_IP:
+            case OpCode::STRING_SET_FAST:
+            case OpCode::STRING_SET_FAST_IP:
+            case OpCode::STRING_CURSOR_NEW:
+            case OpCode::STRING_CURSOR_ADVANCE:
+            case OpCode::STRING_CURSOR_CURRENT:
+            case OpCode::STRING_CURSOR_PEEK:
+            case OpCode::STRING_CURSOR_RESET:
+            case OpCode::STRING_CURSOR_GET_POS:
+            case OpCode::STRING_CURSOR_SET_POS:
+            case OpCode::BIT_POPCOUNT:
+            case OpCode::FORMAT_BASE64_ENCODE:
+            case OpCode::FORMAT_HEX:
+            case OpCode::OBJECT_FREEZE:
+            case OpCode::OBJECT_SIZE:
+            case OpCode::STRING_INCLUDES:
+            case OpCode::STRING_REVERSE:
+            case OpCode::STRING_TRIM_START:
                 return true;
             default:
                 break;

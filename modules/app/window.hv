@@ -1376,6 +1376,72 @@ fn toggleFullscreenWindow(target) {
 	_w.toggleFullscreen()
 }
 
+fn setSizeWindow(target, width, height) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.setSize(width, height)
+}
+
+fn unmaxWindow(target, horizontal = true, vertical = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.unmax(horizontal, vertical)
+}
+
+fn toggleMaxWindow(target, horizontal = true, vertical = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.toggleMax(horizontal, vertical)
+}
+
+fn unminWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.unmin()
+}
+
+fn borderlessWindow(target, enable = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.borderless(enable)
+}
+
+fn isBorderlessWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.isBorderless()
+}
+
+fn toggleBorderlessWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.toggleBorderless()
+}
+
+fn moveWindowToMonitor(target, monIdx, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitor(monIdx, follow)
+}
+
+fn moveWindowToNextMonitor(target, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitorNext(follow)
+}
+
+fn moveWindowToPrevMonitor(target, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitorPrev(follow)
+}
+
+fn getCurrentMonitorIndex(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return 0 }
+	_w.getCurrentMonitor()
+}
+
 fn alwaysOnTopWindow(target) {
 	_w = _resolveTarget(target)
 	if _w == null { return false }

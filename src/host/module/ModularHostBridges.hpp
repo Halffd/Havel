@@ -248,6 +248,12 @@ public:
                                           const HostContext *ctx);
     static Value handleWindowIsFullscreen(const std::vector<Value> &args,
                                            const HostContext *ctx);
+    static Value handleWindowUnmax(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowToggleMax(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowUnmin(const std::vector<Value> &args,
+                                     const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,
@@ -640,6 +646,12 @@ public:
                                           const HostContext *ctx);
     static Value handleWindowIsFullscreen(const std::vector<Value> &args,
                                            const HostContext *ctx);
+    static Value handleWindowUnmax(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowToggleMax(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowUnmin(const std::vector<Value> &args,
+                                     const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,

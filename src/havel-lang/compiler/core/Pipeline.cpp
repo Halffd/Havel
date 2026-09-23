@@ -13,10 +13,6 @@
 #include "BootstrapByteCompiler.hpp"
 #include "OptimizerDriver.hpp"
 #include "../runtime/RuntimeSupport.hpp"
-#include "../incremental/Fingerprint.hpp"
-#include "../incremental/CacheLayer.hpp"
-#include "../incremental/DependencyGraph.hpp"
-#include "../incremental/IncrementalDriver.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
 #include "../../runtime/ModuleLoader.hpp"
@@ -65,6 +61,8 @@ std::string bindingKindName(ResolvedBindingKind kind) {
     return "Function";
   case ResolvedBindingKind::HostFunction:
     return "HostFunction";
+  case ResolvedBindingKind::ClassMember:
+    return "ClassMember";
   }
   return "Unknown";
 }
@@ -791,9 +789,6 @@ std::string opcodeName(OpCode opcode) {
 BytecodeSmokeResult runBytecodePipeline(const std::string &source,
                                         const std::string &entry_function,
                                         const PipelineOptions &options) {
-  fflush(stderr);
-  fprintf(stderr, "[RUNBYTECODE-DEBUG] options.traceExecution=%d, options.debugBytecode=%d\n", options.traceExecution, options.debugBytecode);
-  fflush(stderr);
   auto writeSnapshotArtifact = [&](const BytecodeSmokeResult &result,
                                    const std::string &error) {
     if (!options.write_snapshot_artifact || options.snapshot_dir.empty()) {
@@ -944,6 +939,15 @@ for (const auto &err : parser.getErrors()) {
       COMPILER_THROW(
           "Bytecode smoke pipeline failed: compiler returned null chunk");
     }
+    // Optional CFG optimization pipeline (reconstruct -> passes -> validate ->
+    // lower) over the compiled functions, mirroring compileToBytecodeChunk.
+    // Opt-in via PipelineOptions::optimizeBytecode so the production script
+    // path honors -O/--optimize-bytecode. Functions with opcodes the CFG model
+    // cannot carry are skipped untouched; semantics never change.
+    if (options.optimizeBytecode) {
+      namespace cfi = havel::compiler::cfgintegration;
+      HAVEL_LOG_INFO(cfi::describe_optimize_stats(cfi::optimize_chunk_cfg(*chunk)));
+    }
     result.snapshot.resolver =
         formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
@@ -952,8 +956,10 @@ for (const auto &err : parser.getErrors()) {
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
 
-    // Auto-cache compiled chunk to ~/.cache/havel
-    autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
+    // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
+    // compile options this request used (version-6 header).
+    autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
+                           options.strictSemantics, options.optimizeBytecode);
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -1148,6 +1154,19 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     const std::string &source,
     const std::string &entry_function,
     const PipelineOptions &options) {
+  // Incremental serve path (TODO2.md Phase 4): reuse the .hvc entry that
+  // autoCacheBytecodeChunk wrote for this compile unit when it validates
+  // against the live source text, the current pipeline fingerprint, and the
+  // compile options this request would use. Bytecode is deterministic from
+  // (source, compiler identity, options), so the served chunk is
+  // semantically identical to a fresh compile; a mismatch of any dimension
+  // compiles fresh. Runs before the parse so the dominant compile cost
+  // (parseAST) is skipped on a hit.
+  if (auto cached = loadCachedScriptChunk(options.compile_unit_name, source,
+                                          options.strictSemantics,
+                                          options.optimizeBytecode)) {
+    return std::make_unique<BytecodeChunk>(std::move(*cached));
+  }
   parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,
                          .parser = ::havel::debugging::debug_parser,
                          .ast = ::havel::debugging::debug_ast}};
@@ -1293,32 +1312,13 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   // changes semantics for unsupported shapes.
   if (options.optimizeBytecode) {
     namespace cfi = havel::compiler::cfgintegration;
-    cfi::OptimizeStats stats;
-    const size_t count = chunk->getFunctionCount();
-    for (size_t i = 0; i < count; ++i) {
-      BytecodeFunction* fn = chunk->getFunctionMutable(
-          static_cast<uint32_t>(i));
-      if (!fn) continue;
-      cfi::optimize_function_cfg(*fn, *chunk, &stats);
-    }
-    std::ostringstream optSummary;
-    optSummary << "optimizeBytecode: " << stats.functions_optimized << "/"
-               << stats.functions_total << " functions optimized ("
-               << stats.functions_skipped_unsafe << " skipped unsafe, "
-               << stats.functions_skipped_error << " errors), "
-               << stats.blocks_removed << " blocks and "
-               << stats.instructions_removed << " instructions removed";
-    if (!stats.last_reconstruct_error.empty()) {
-      optSummary << " | reconstruct: " << stats.last_reconstruct_error;
-    }
-    if (!stats.last_validation_error.empty()) {
-      optSummary << " | validate: " << stats.last_validation_error;
-    }
-    HAVEL_LOG_INFO(optSummary.str());
+    HAVEL_LOG_INFO(cfi::describe_optimize_stats(cfi::optimize_chunk_cfg(*chunk)));
   }
 
-  // Auto-cache compiled chunk to ~/.cache/havel
-  autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
+  // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
+  // compile options this request used (version-6 header).
+  autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
+                         options.strictSemantics, options.optimizeBytecode);
 
   return chunk;
 }

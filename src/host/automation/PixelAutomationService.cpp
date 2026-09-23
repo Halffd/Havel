@@ -18,6 +18,19 @@
 namespace havel::host {
 
 // ============================================================================
+// Lazy Qt app init - mirrors UIService::ensureApp
+// ============================================================================
+
+static void ensureApp() {
+    if (!QApplication::instance()) {
+        static int argc = 1;
+        static char *argv[] = {const_cast<char *>("havel"), nullptr};
+        new QApplication(argc, argv);
+        QApplication::setQuitOnLastWindowClosed(false);
+    }
+}
+
+// ============================================================================
 // Color implementation
 // ============================================================================
 
@@ -67,24 +80,27 @@ PixelAutomationService::~PixelAutomationService() {
 
 Color PixelAutomationService::getPixel(int x, int y) {
     if (!m_automation) return Color();
-    
+    ensureApp();
     auto color = m_automation->getPixel(x, y);
     return Color(color.r, color.g, color.b, color.a);
 }
 
 bool PixelAutomationService::pixelMatch(int x, int y, const Color& expectedColor, int tolerance) {
     if (!m_automation) return false;
-    
+    ensureApp();
     havel::Color c(expectedColor.r, expectedColor.g, expectedColor.b, expectedColor.a);
     return m_automation->pixelMatch(x, y, c, tolerance);
 }
 
 bool PixelAutomationService::pixelMatch(int x, int y, const std::string& hexColor, int tolerance) {
+    if (!m_automation) return false;
+    ensureApp();
     return pixelMatch(x, y, Color::fromHex(hexColor), tolerance);
 }
 
 bool PixelAutomationService::waitPixel(int x, int y, const Color& expectedColor, int tolerance, int timeout) {
     if (!m_automation) return false;
+    ensureApp();
     
     havel::Color c(expectedColor.r, expectedColor.g, expectedColor.b, expectedColor.a);
     return m_automation->waitPixel(x, y, c, tolerance, timeout);
@@ -96,6 +112,7 @@ bool PixelAutomationService::waitPixel(int x, int y, const std::string& hexColor
 
 ImageMatch PixelAutomationService::findImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return ImageMatch();
+    ensureApp();
 
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     auto match = m_automation->findImage(imagePath, screenRegion, threshold);
@@ -112,6 +129,7 @@ ImageMatch PixelAutomationService::findImage(const std::string& imagePath, const
 
 std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return {};
+    ensureApp();
 
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     auto matches = m_automation->findAllImage(imagePath, screenRegion, threshold);
@@ -132,6 +150,7 @@ std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string&
 
 bool PixelAutomationService::existsImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return false;
+    ensureApp();
 
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     return m_automation->existsImage(imagePath, screenRegion, threshold);
@@ -139,6 +158,7 @@ bool PixelAutomationService::existsImage(const std::string& imagePath, const Reg
 
 int PixelAutomationService::countImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return 0;
+    ensureApp();
 
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     return m_automation->countImage(imagePath, screenRegion, threshold);
@@ -146,6 +166,7 @@ int PixelAutomationService::countImage(const std::string& imagePath, const Regio
 
 ImageMatch PixelAutomationService::waitImage(const std::string& imagePath, const Region& region, int timeout, float threshold) {
     if (!m_automation) return ImageMatch();
+    ensureApp();
 
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     auto match = m_automation->waitImage(imagePath, screenRegion, timeout, threshold);
@@ -162,19 +183,22 @@ ImageMatch PixelAutomationService::waitImage(const std::string& imagePath, const
 
 std::string PixelAutomationService::readText(const Region& region) {
     if (!m_automation) return "";
-    
+    ensureApp();
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     return m_automation->readText(screenRegion);
 }
 
 std::string PixelAutomationService::readText(const Region& region, const std::string& ocrEngine) {
   if (!m_automation) return "";
+  ensureApp();
 
   havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
   return m_automation->readText(screenRegion, ocrEngine);
 }
 
 bool PixelAutomationService::captureScreen(const std::string& filePath) {
+    ensureApp();
     auto& screenshot = ScreenshotService::getInstance();
     auto result = screenshot.captureFullDesktop();
     if (!result) return false;
@@ -191,6 +215,7 @@ bool PixelAutomationService::captureScreen(const std::string& filePath) {
 }
 
 bool PixelAutomationService::captureRegion(const Region& region, const std::string& filePath) {
+    ensureApp();
     auto& screenshot = ScreenshotService::getInstance();
     auto result = screenshot.captureRegion(region.x, region.y, region.w, region.h);
     if (!result) return false;

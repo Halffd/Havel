@@ -27,6 +27,7 @@
 // C ABI surface (hclb_*): mirrors the C++ CompilerBackend contract
 // (Backend.hpp); the C driver links this staticlib.
 
+use cranelift::frontend::Switch;
 use cranelift::frontend::Variable;
 use cranelift::prelude::*;
 // Block arguments (block params on edges) are BlockArg, not Value.
@@ -1258,6 +1259,37 @@ impl CraneliftBackend {
             )
             .map_err(|e| err(format!("declare havel_vm_load_exception: {e}")))?;
 
+        // Insert every declared id so the lowering's bridge_refs map is
+        // complete: the GC/exception bridges and the object/iter/array/
+        // call/global set were declared but never inserted, so the first
+        // lowering that reached them panicked ("gc_register_roots bridge").
+        bridge_ids.insert("havel_vm_backedge", backedge_id);
+        bridge_ids.insert("havel_vm_upvalue_get", upvalue_get_id);
+        bridge_ids.insert("havel_vm_upvalue_set", upvalue_set_id);
+        bridge_ids.insert("havel_vm_object_get_raw_ic", object_get_id);
+        bridge_ids.insert("havel_vm_object_set_raw", object_set_id);
+        bridge_ids.insert("havel_vm_iter_new", iter_new_id);
+        bridge_ids.insert("havel_vm_iter_next", iter_next_id);
+        bridge_ids.insert("havel_vm_collection_get_raw_ic", array_get_id);
+        bridge_ids.insert("havel_vm_array_set", array_set_id);
+        bridge_ids.insert("havel_vm_array_len", array_len_id);
+        bridge_ids.insert("havel_vm_array_push", array_push_id);
+        bridge_ids.insert("havel_vm_call_method", call_method_id);
+        bridge_ids.insert("havel_vm_is_truthy", truthy_id);
+        bridge_ids.insert("havel_vm_call", call_id);
+        bridge_ids.insert("havel_vm_global_get", global_get_id);
+        bridge_ids.insert("havel_vm_global_set", global_set_id);
+        bridge_ids.insert("havel_gc_register_roots", gc_register_roots_id);
+        bridge_ids.insert("havel_gc_unregister_roots", gc_unregister_roots_id);
+        bridge_ids.insert("havel_gc_write_barrier", gc_write_barrier_id);
+        bridge_ids.insert("havel_vm_throw_error", throw_error_id);
+        bridge_ids.insert("havel_vm_throw_from_jit", throw_from_jit_id);
+        bridge_ids.insert("havel_vm_throw_value", throw_value_id);
+        bridge_ids.insert("havel_vm_try_enter", try_enter_id);
+        bridge_ids.insert("havel_vm_try_exit", try_exit_id);
+        bridge_ids.insert("havel_vm_try_find_throw_target", try_find_throw_target_id);
+        bridge_ids.insert("havel_vm_load_exception", load_exception_id);
+
         let mut ctx = self.module.make_context();
         gc_register_roots_sig.params = vec![
             AbiParam::new(pointer_ty), // vm_ptr
@@ -1483,15 +1515,14 @@ impl CraneliftBackend {
                 let gc_reg_ref = *bridge_refs
                     .get("havel_gc_register_roots")
                     .expect("gc_register_roots bridge");
-                builder.ins().call(
-                    gc_reg_ref,
-                    &[
-                        vm,
-                        builder.ins().iconst(pointer_ty, 0),
-                        builder.ins().iconst(pointer_ty, 0),
-                        builder.ins().iconst(int32, 0),
-                    ],
-                );
+                // Hoist the iconst calls: builder.ins() borrows builder
+                // mutably, so the argument array cannot nest more ins()
+                // calls inside the call expression itself.
+                let null_ptr = builder.ins().iconst(pointer_ty, 0);
+                let zero_count = builder.ins().iconst(int32, 0);
+                builder
+                    .ins()
+                    .call(gc_reg_ref, &[vm, null_ptr, null_ptr, zero_count]);
                 builder.ins().jump(first, &[]);
             }
             let declare_local = |operand: u32,
@@ -2232,23 +2263,36 @@ impl CraneliftBackend {
                         let has_handler = builder.ins().icmp(IntCC::NotEqual, catch_ip, max_uint32);
                         let throw_dispatch = builder.create_block();
                         let throw_unwind = builder.create_block();
-                        builder
-                            .ins()
-                            .brif(has_handler, throw_dispatch, throw_unwind);
+                        builder.ins().brif(
+                            has_handler,
+                            throw_dispatch,
+                            // No block params on either edge: the
+                            // subset only passes plain Values.
+                            &edge_args(&[]),
+                            throw_unwind,
+                            &edge_args(&[]),
+                        );
                         // Throw dispatch: switch on catch_ip to handler blocks
                         builder.switch_to_block(throw_dispatch);
-                        // Switch over all leader blocks
-                        let mut sw = builder.ins().switch(catch_ip, throw_unwind);
+                        // Switch over all leader blocks. Entry indexes are
+                        // the case values matched against the selector
+                        // (catch_ip), so no separate iconst is needed.
+                        let mut sw = Switch::new();
                         for (idx, blk_opt) in block_of.iter().enumerate() {
                             if let Some(blk) = blk_opt {
-                                let case_val = builder.ins().iconst(int32, idx as i64);
-                                sw.add_case(case_val, blk);
+                                sw.set_entry(idx as u128, *blk);
                             }
                         }
-                        // Unwind: call havel_vm_throw_from_jit and unreachable
+                        sw.emit(&mut builder, catch_ip, throw_unwind);
+                        // Unwind: call havel_vm_throw_from_jit and trap
                         builder.switch_to_block(throw_unwind);
                         builder.ins().call(throw_from_jit_ref, &[vm, exception_val]);
-                        builder.ins().unreachable();
+                        // cranelift 0.121 removed the `unreachable` builder
+                        // method (and TrapCode::UnreachableCodeReached with
+                        // it); throw_from_jit throws through the host
+                        // exception mechanism, so this block is unreachable
+                        // and any explicit trap satisfies the verifier.
+                        builder.ins().trap(TrapCode::unwrap_user(1));
                         terminated = true;
                     }
                     OP_LOAD_EXCEPTION => {
@@ -2301,9 +2345,8 @@ impl CraneliftBackend {
                         let gc_unreg_ref = *bridge_refs
                             .get("havel_gc_unregister_roots")
                             .expect("gc_unregister_roots bridge");
-                        builder
-                            .ins()
-                            .call(gc_unreg_ref, &[builder.ins().iconst(pointer_ty, 0)]);
+                        let null_frame = builder.ins().iconst(pointer_ty, 0);
+                        builder.ins().call(gc_unreg_ref, &[null_frame]);
                         builder.ins().return_(&[v]);
                         saw_return = true;
                         terminated = true;

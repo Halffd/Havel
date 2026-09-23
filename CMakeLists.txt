@@ -146,11 +146,17 @@ endif()
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
+    # No -ffast-math: core::Value is NaN-boxed (QNAN = 0x7ff8... is the
+    # boxing tag). -ffast-math tells the compiler NaN values cannot exist,
+    # making every tagged value undefined behavior. Observed: release
+    # binaries built with it segfault at exit on a wild vtable call
+    # (EventListener::Stop -> backend_->Shutdown); -fno-fast-math is clean,
+    # with and without -g.
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
 
@@ -783,7 +789,6 @@ endif()
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX ".*clipboardmgr.*")
-list(REMOVE_ITEM HOST_MODULES_SOURCES "${CMAKE_SOURCE_DIR}/src/modules/HostModules.cpp")
 # Remove Qt-dependent modules when in-process Qt UI backend is disabled
 if(NOT ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE _QT_MODULES
@@ -808,9 +813,14 @@ set(TEST_SOURCES "")
 if(ENABLE_TESTS)
     file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp" "tests/*_test.cpp" "tests/phase2_integration_test.cpp")
     # The cranelift prototype driver is registered separately (needs the
-    # Rust staticlib; only built when ENABLE_CRANELIFT is on).
+    # Rust staticlib; only built when ENABLE_CRANELIFT is on). hpp_proto_test
+    # is registered separately too: it links the runtime libs (which carry
+    # the HAVEL_VERSION_STRING/UI_BACKEND definitions) instead of compiling
+    # the full app sources, which the test loop cannot provide definitions
+    # for.
     list(REMOVE_ITEM TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp")
+        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp"
+        "${CMAKE_SOURCE_DIR}/tests/hpp_proto_test.cpp")
 endif()
 
 
@@ -1645,7 +1655,9 @@ C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(havel-lsp PRIVATE -fno-lto)
-target_link_options(havel-lsp PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 
 target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang/lexer
@@ -1688,7 +1700,11 @@ C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(hvtest PRIVATE -fno-lto)
-target_link_options(hvtest PRIVATE -fno-lto)
+# Link WITHOUT -fno-lto: the release archives contain LTO bitcode members,
+# and a non-LTO link skips them ("plugin needed to handle lto object" —
+# observed: Scheduler symbols unresolved from havel_lang.a). Dropping the
+# flag lets the clang driver load the LTO plugin for the archives; the
+# test's own objects stay non-LTO.
 
 target_include_directories(hvtest PRIVATE
   ${CMAKE_SOURCE_DIR}/src
@@ -1714,6 +1730,70 @@ set_target_properties(hvtest PROPERTIES ENABLE_EXPORTS ON)
 target_link_options(hvtest PRIVATE -Wl,--export-dynamic)
 endif()
 
+# havel-hppc: Havel++ prototype compiler (TODO2.md #16 / #26 item 13).
+# .hvp -> generated C++ (ModulePlugin.h boilerplate + Value<->native
+# wrappers) -> clang++ -shared. Pure string processing + a compiler
+# invocation; no runtime linkage.
+add_executable(havel-hppc src/havel-lang/tools/HppCompiler.cpp)
+set_target_properties(havel-hppc PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(havel-hppc PRIVATE -fno-lto)
+# The release config's global flags break this standalone tool: it builds
+# as PIE, and vtable/iostream references to libstdc++ dynamic symbols
+# (_ZTV*, cout/cerr) emit R_X86_64_PC32 relocations that cannot resolve
+# against a dynamic symbol in a PIE — the link warns "causes overflow" and
+# the relocated loads segfault at runtime (observed under gdb: a huge
+# RIP-relative load in main). Non-PIE lets the linker emit copy
+# relocations for the dynamic data. The tool links no runtime, so the
+# default ABI/visibility is correct for it too.
+target_compile_options(havel-hppc PRIVATE
+  -fno-lto
+  -fPIC
+  -fvisibility=default)
+# -fabi-version/-fgnu-unique are GCC-only (clang errors on them). They
+# counter the release config's global -fabi-version=14 -fno-gnu-unique.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(havel-hppc PRIVATE -fabi-version=0 -fgnu-unique)
+endif()
+
+# hpp_proto_test: Havel++ prototype integration (TODO2.md #16 / #26 item 13).
+# Proves .hvp -> native .so -> module ABI -> VMApi registration end to end.
+# Registered separately (links the runtime libs, like havel_api_test) so it
+# does not join the test-source loop, which compiles full app sources
+# without the definitions they need.
+add_executable(hpp_proto_test tests/hpp_proto_test.cpp)
+set_target_properties(hpp_proto_test PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(hpp_proto_test PRIVATE -fno-lto)
+target_compile_definitions(hpp_proto_test PRIVATE
+  HAVEL_SRC_DIR="${CMAKE_SOURCE_DIR}"
+  $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+)
+target_include_directories(hpp_proto_test PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/include
+  ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_link_libraries(hpp_proto_test PRIVATE
+  GTest::gtest GTest::gtest_main
+  -Wl,--start-group havel_lang havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  -Wl,--start-group
+  ${COMMON_LIBS}
+  $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+  -Wl,--end-group
+)
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(hpp_proto_test PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(hpp_proto_test PRIVATE -Wl,--export-dynamic)
+endif()
+
 add_executable(havel_api_test tests/test_embed_api.cpp)
 set_target_properties(havel_api_test PROPERTIES
   CXX_STANDARD 23
@@ -1721,7 +1801,9 @@ set_target_properties(havel_api_test PROPERTIES
   CXX_EXTENSIONS OFF
 )
 target_compile_options(havel_api_test PRIVATE -fno-lto)
-target_link_options(havel_api_test PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_compile_definitions(havel_api_test PRIVATE
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
@@ -1759,6 +1841,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # The JIT symbol map and backend declarations derive from that X-macro.
   add_test(NAME runtime-abi-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_runtime_abi.sh)
+  # Lowering opcode drift guard (TODO2.md #11): fails when an opcode is
+  # neither translated by BytecodeOrcJitLowering nor listed in
+  # hasUnsupportedOpcodes (such an opcode would be silently dropped from
+  # JIT-compiled code - observed: 39 opcodes, including every compound
+  # assignment, were dropped while only the scheduler set was listed).
+  add_test(NAME lowering-opcode-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_lowering_opcodes.sh)
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)
@@ -1798,8 +1887,12 @@ set_target_properties(hvdump PROPERTIES
 )
 target_compile_options(hvdb PRIVATE -fno-lto)
 target_compile_options(hvdump PRIVATE -fno-lto)
-target_link_options(hvdb PRIVATE -fno-lto)
-target_link_options(hvdump PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_include_directories(hvdb PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -1849,7 +1942,9 @@ set_target_properties(havel-dap PROPERTIES
     CXX_EXTENSIONS OFF
 )
 target_compile_options(havel-dap PRIVATE -fno-lto)
-target_link_options(havel-dap PRIVATE -fno-lto)
+# link-level -fno-lto removed: the runtime archives contain LTO
+# bitcode members; a non-LTO link skips them ("plugin needed to
+# handle lto object"). The compile-level -fno-lto stays.
 target_include_directories(havel-dap PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -2351,7 +2446,7 @@ add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
 add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
 add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
-add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
+  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
@@ -2476,6 +2571,7 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
         target_include_directories(${test_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/include
             ${X11_INCLUDE_DIR}
             ${XI_INCLUDE_DIR}
  ${CURL_INCLUDE_DIRS}
@@ -2502,6 +2598,7 @@ GTest::gtest
 
         target_compile_definitions(${test_name} PRIVATE
             RUN_TESTS
+            HAVEL_SRC_DIR="${CMAKE_SOURCE_DIR}"
             $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
             $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
             $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
@@ -2652,7 +2749,22 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
         target_compile_features(cranelift_proto_driver PRIVATE cxx_std_23)
         target_link_libraries(cranelift_proto_driver PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
+            # The shim links havel_lang_core, which drags in the whole
+            # language runtime and havel_core; complete the link with the
+            # definitions those reference (gui managers via HAVE_QT_EXTENSION,
+            # the ORC JIT in havel_lang) or the prototype driver cannot link.
+            # Explicit order matters for the single-pass archive scan:
+            # referents (lang_core, havel_core) must precede the archives
+            # that define what they need (havel_lang, havel_gui). CMake
+            # dedups repeats, so these explicit positions also win over the
+            # shim's transitive expansion.
             havel_aot_core_shim
+            havel_lang_core
+            havel_core
+            havel_lang
+            havel_gui
+            ${COMMON_LIBS}
+            $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
             ${CMAKE_DL_LIBS}
         )
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)

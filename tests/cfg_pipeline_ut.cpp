@@ -16,12 +16,18 @@
 #include "OptimizerDriver.hpp"
 #include "RuntimeABI.hpp"
 #include "RuntimeProfiler.hpp"
+#include "IncrementalDriver.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <unistd.h>
 #include <vector>
 
 namespace havel::compiler {
@@ -1500,6 +1506,82 @@ TEST_F(CFGPipelineTest, RuntimeProfilerCountersAndSummary) {
   EXPECT_EQ(profiler.instructions(), 0u);
   EXPECT_TRUE(profiler.summary().find("hottest") == std::string::npos)
       << "after reset no function should be reported hottest";
+}
+
+// ===== IncrementalDriver (TODO2.md Phase 4) =====
+//
+// compileModule: miss -> compile + cache write, hit -> serve, and
+// invalidate(changed input) -> drop the stale artifact so the next
+// compileModule misses again. Exercises the real dependency-tracking
+// outputs mapping (unit.outputs = the cache keys written).
+
+TEST_F(CFGPipelineTest, IncrementalDriverCompilesServesAndInvalidates) {
+  namespace fs = std::filesystem;
+  namespace inc = havel::compiler::incremental;
+
+  const std::string scratch =
+      "/tmp/opencode/havel-incr-ut-" + std::to_string(::getpid());
+  fs::remove_all(scratch);
+  fs::create_directories(scratch);
+
+  inc::IncrementalConfig config;
+  config.cache_root = fs::path(scratch) / "cache";
+  config.enable_disk_cache = true;
+
+  inc::IncrementalDriver driver(config);
+
+  const fs::path mod = fs::path(scratch) / "mod.hv";
+  {
+    std::ofstream f(mod);
+    f << "val x = 1";
+  }
+  // No imports; deterministic artifact bytes per source content.
+  inc::ImportResolver no_imports =
+      [](const std::string&, const std::filesystem::path&)
+      -> std::optional<std::filesystem::path> { return std::nullopt; };
+  auto compile_fn = [](const std::string& source)
+      -> std::optional<std::vector<uint8_t>> {
+    return std::vector<uint8_t>(source.begin(), source.end());
+  };
+
+  // 1. Miss: compile + store.
+  auto r1 = driver.compileModule(mod, no_imports, compile_fn);
+  ASSERT_TRUE(r1.has_value());
+  EXPECT_FALSE(r1->from_cache);
+  EXPECT_EQ(r1->artifact.size(), std::string("val x = 1").size());
+
+  // 2. Hit: serve from cache without compiling.
+  auto r2 = driver.compileModule(mod, no_imports, compile_fn);
+  ASSERT_TRUE(r2.has_value());
+  EXPECT_TRUE(r2->from_cache);
+  EXPECT_EQ(r2->artifact, r1->artifact);
+
+  // 3. invalidate(changed source) drops the artifact -> next call misses.
+  driver.invalidate({mod});
+  auto r3 = driver.compileModule(mod, no_imports, compile_fn);
+  ASSERT_TRUE(r3.has_value());
+  EXPECT_FALSE(r3->from_cache);
+  EXPECT_EQ(r3->artifact, r1->artifact);
+
+  // 4. Unrelated change: nothing invalidated -> still serves.
+  driver.invalidate({fs::path(scratch) / "other.hv"});
+  auto r4 = driver.compileModule(mod, no_imports, compile_fn);
+  ASSERT_TRUE(r4.has_value());
+  EXPECT_TRUE(r4->from_cache);
+
+  // 5. Changed source content: different cache key -> miss + new artifact.
+  {
+    std::ofstream f(mod);
+    f << "val x = 2";
+  }
+  auto r5 = driver.compileModule(mod, no_imports, compile_fn);
+  ASSERT_TRUE(r5.has_value());
+  EXPECT_FALSE(r5->from_cache);
+  EXPECT_EQ(r5->artifact.size(), std::string("val x = 2").size());
+  EXPECT_NE(r5->cache_key, r1->cache_key)
+      << "content change must produce a different cache key";
+
+  fs::remove_all(scratch);
 }
 
 }  // namespace

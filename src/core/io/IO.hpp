@@ -175,8 +175,9 @@ public:
     return "Failed to initialize evdev";
   }
 };
-class IO {
-    // IOBackend adapter for platform-specific output (XTest, keybd_event, etc.)
+#include "havel-lang/common/Export.hpp"
+
+class HAVEL_EXPORT IO {
     std::unique_ptr<IOBackend> ioBackend;
 
     // Unified event listener (input processing, uinput forwarding)

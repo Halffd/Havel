@@ -75,6 +75,12 @@ bool debugEmitter = false;
   bool pureStdlib = false;
   bool lintOnly = false;
   bool buildOnly = false;
+  // --build-many: batch build in ONE process. Each file's .hvc is
+  // cache-checked with the same validation as the single-file path and
+  // compiled only on a miss. Amortizes the ~0.2s process boot that
+  // dominates emit_pipeline when every module is unchanged (observed:
+  // 23s for 103 unchanged modules = pure boot overhead).
+  bool buildMany = false;
   std::string diffPipelinePath; // Baseline path for pipeline diffing
   std::string outputPath;
   std::string outputLogFile;

@@ -30,6 +30,12 @@ namespace {
 
 using havel::compiler::Value;
 
+// --optimize flag: run the CFG optimization pipeline (reconstruct -> passes ->
+// validate -> lower) before executing each smoke case. Default off so the
+// dev-loop corpus always exercises the plain unoptimized VM path; CI/pre-merge
+// runs the optimized pass too, proving optimized bytecode still executes.
+bool smoke_optimize_bytecode = false;
+
 // Local opcode names for smoke bytecode dumps. Distinct name from
 // havel::compiler::opcodeName (BytecodeIR.hpp declares the global one
 // now): unqualified lookup at the call site found both and the build
@@ -260,6 +266,7 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
 
   havel::compiler::VM *vm_ptr = nullptr;
   options.vm_setup = [&](havel::compiler::VM &vm) {
@@ -311,6 +318,7 @@ int runAsyncCase(const std::string &name, const std::string &source,
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
 	options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
 
 	havel::compiler::VM *vm_ptr = nullptr;
     uint64_t next_task_id = 1;
@@ -648,6 +656,7 @@ return outer()
     options.compile_unit_name = "closure";
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, 1)) {
@@ -678,6 +687,7 @@ return missing_value
     options.compile_unit_name = "unresolved-identifier";
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
     std::cerr << "[FAIL] unresolved-identifier: expected resolution error"
               << std::endl;
@@ -715,6 +725,7 @@ return bad()
     options.compile_unit_name = "runtime-line-error";
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
     std::cerr << "[FAIL] runtime-line-error: expected runtime error"
               << std::endl;
@@ -748,6 +759,7 @@ return spin()
     options.compile_unit_name = "stack-overflow";
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
     std::cerr << "[FAIL] stack-overflow: expected stack overflow error"
               << std::endl;
@@ -940,6 +952,7 @@ int runStdlibCase(const std::string &name, const std::string &source,
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     options.vm_override = &vm;
 
     const auto result =
@@ -977,6 +990,8 @@ int run_smoke_tests(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--dump-bytecode") {
       dump_bytecode = true;
+    } else if (std::string(argv[i]) == "--optimize") {
+      smoke_optimize_bytecode = true;
     } else if (std::string(argv[i]) == "--no-snapshots") {
       snapshot_dir.clear();
     } else if (std::string(argv[i]) == "--snapshot-dir") {
@@ -3015,6 +3030,7 @@ int runJitCase(const std::string &name, const std::string &source,
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.optimizeBytecode = smoke_optimize_bytecode;
     options.vm_override = &vm;
 
     const auto result =
@@ -3051,6 +3067,8 @@ int run_jit_smoke_tests(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--dump-bytecode") {
       dump_bytecode = true;
+    } else if (std::string(argv[i]) == "--optimize") {
+      smoke_optimize_bytecode = true;
     } else if (std::string(argv[i]) == "--no-snapshots") {
       snapshot_dir.clear();
     } else if (std::string(argv[i]) == "--snapshot-dir") {

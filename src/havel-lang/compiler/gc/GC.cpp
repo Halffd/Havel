@@ -885,6 +885,16 @@ void GCHeap::markReference(const Value &value) {
     }
     if (value.isStringCursorId()) {
         marked_string_cursors_.insert(value.asStringCursorId());
+        // The cursor keeps a string_id; mark the referenced string through
+        // the cursor. Without this, a live cursor's string (no other Value
+        // reference - e.g. the chunk-literal a cursor was created from)
+        // is swept in SweepStrings while the cursor survives in
+        // SweepStringCursors, leaving the cursor's id dangling (observed:
+        // cursor_current threw "string not found" after enough junk
+        // allocations triggered a cycle).
+        if (auto *cursor = stringCursor(value.asStringCursorId())) {
+            marked_strings_.insert(cursor->string_id);
+        }
         return;
     }
     if (value.isRangeId()) {

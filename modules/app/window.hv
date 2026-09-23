@@ -20,7 +20,7 @@ use x11
 use protocols
 use display
 use ffi
-use time
+ use time
 
 // ============================================================
 // Display helpers (private)
@@ -223,21 +223,43 @@ class Window {
 
 	// ---- Geometry ----
 
-	fn geometry() {
+	fn geometry(id = 0) {
+		_id = id != 0 ? id : @id
 		_d = _dpy()
-		if _d == 0 { return null }
-		_r = x11.getGeometry(_d, @id)
+		print("[dbg.geometry] _id=${_id} _d=${_d}")
+		if _d == 0 || _id == 0 { return null }
+		_r = x11.getGeometry(_d, _id)
+		print("[dbg.geometry] rcode=${_r.rcode}")
 		if _r.rcode == 0 { null }
 		else { {x: _r.x, y: _r.y, width: _r.width, height: _r.height, border: _r.border, depth: _r.depth} }
 	}
 
-fn pos() {
-	_sp = @screenPos()
-	if _sp != null { return _sp }
-	_g = @geometry()
-	if _g != null { return {x: _g.x, y: _g.y} }
-	null
-}
+	// Get current position
+	// relative = false: absolute screen position (root coordinates)
+	// relative = true: position relative to parent window
+	// windowId: override window id (defaults to this window's own id)
+	fn pos(relative = false, windowId = 0) {
+		let _id = windowId != 0 ? windowId : @id
+		if (_id == 0) { return null }
+
+		let _d = _dpy()
+		if (_d == 0) { return null }
+
+		// Try screen position first (root translation) for absolute coords
+		if (!relative) {
+			let _root = _root()
+			if (_root != 0) {
+				let _r = x11.translateCoordinates(_d, _id, _root, 0, 0)
+				// rcode: 1 = success, 0 = failure (xcb status)
+				if (_r.rcode != 0) { return {x: _r.x, y: _r.y} }
+			}
+		}
+
+		// For relative, or as fallback when root translation fails
+		let _g = @geometry(_id)
+		if (_g == null) { return null }
+		{x: _g.x, y: _g.y}
+	}
 
 	fn size() {
 		_g = @geometry()
@@ -446,19 +468,53 @@ fn pos() {
 
 	// ---- Movement / resizing ----
 
-	fn move(x, y) {
-		_d = _dpy()
-		if _d == 0 { return @ }
-		x11.moveWindow(_d, @id, x, y)
-		x11.flush(_d)
+	// Move window
+	// speed: optional animation speed hint (ignored by X11 but kept for API compat)
+	// winId: move this window (defaults to this window)
+	// relative = false: move to absolute (x, y)
+	// relative = true: move by delta (dx, dy) from current position
+	fn move(x, y, speed = 0.0, winId = 0, relative = false) {
+		let _target = winId != 0 ? winId : @id
+		let _d = _dpy()
+		if (_d == 0 || _target == 0) { return @ }
+
+		if (relative) {
+			// Get current position and add to deltas
+			let _cur = @pos(false, _target)
+			if (_cur == null) { return @ }
+			x += _cur.x
+			y += _cur.y
+		}
+		if (_root() != 0) {
+			protocols.sendMoveResizeMessage(_d, _target, x, y, 0, 0, true, true, false, false)
+		} else {
+			x11.moveWindow(_d, _target, x, y)
+			x11.flush(_d)
+		}
 		@
 	}
 
-	fn resize(w, h) {
-		_d = _dpy()
-		if _d == 0 { return @ }
-		x11.resizeWindow(_d, @id, w, h)
-		x11.flush(_d)
+	// Resize window
+	// winId: resize this window (defaults to this window)
+	// relative = false: resize to absolute (w, h)
+	// relative = true: resize by delta (dw, dh) from current size
+	fn resize(w, h, winId = 0, relative = false) {
+		let _target = winId != 0 ? winId : @id
+		let _d = _dpy()
+		if (_d == 0 || _target == 0) { return @ }
+
+		if (relative) {
+			let _g = @geometry(_target)
+			if (_g == null) { return @ }
+			w += _g.width
+			h += _g.height
+		}
+		if (_root() != 0) {
+			protocols.sendMoveResizeMessage(_d, _target, 0, 0, w, h, false, false, true, true)
+		} else {
+			x11.resizeWindow(_d, _target, w, h)
+			x11.flush(_d)
+		}
 		@
 	}
 

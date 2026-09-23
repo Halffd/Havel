@@ -560,7 +560,8 @@ bool X11Backend::moveResizeWindow(wID id, int x, int y, int width, int height) {
     ev.xclient.window = id;
     ev.xclient.message_type = moveresize;
     ev.xclient.format = 32;
-    ev.xclient.data.l[0] = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11);
+    // gravity 10 (StaticGravity) | flags x|y|w|h (0x0F << 8)
+    ev.xclient.data.l[0] = 10 | ((1 | 2 | 4 | 8) << 8);
     ev.xclient.data.l[1] = finalX;
     ev.xclient.data.l[2] = finalY;
     ev.xclient.data.l[3] = finalW;

@@ -254,6 +254,28 @@ public:
                                          const HostContext *ctx);
     static Value handleWindowUnmin(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowBorderlessObj(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowIsBorderless(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowToggleBorderless(const std::vector<Value> &args,
+                                               const HostContext *ctx);
+    static Value handleWindowMoveMonitorObj(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowMoveMonitorNext(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowMoveMonitorPrev(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetCurrentMonitor(const std::vector<Value> &args,
+                                                const HostContext *ctx);
+    static Value handleWindowGetMonitors(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowFrameExtents(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowType(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleWindowStates(const std::vector<Value> &args,
+                                    const HostContext *ctx);
     static Value handleWindowSticky(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowIsSticky(const std::vector<Value> &args,
@@ -682,6 +704,28 @@ public:
                                          const HostContext *ctx);
     static Value handleWindowUnmin(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowBorderlessObj(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowIsBorderless(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowToggleBorderless(const std::vector<Value> &args,
+                                               const HostContext *ctx);
+    static Value handleWindowMoveMonitorObj(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowMoveMonitorNext(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowMoveMonitorPrev(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetCurrentMonitor(const std::vector<Value> &args,
+                                                const HostContext *ctx);
+    static Value handleWindowGetMonitors(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowFrameExtents(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowType(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleWindowStates(const std::vector<Value> &args,
+                                    const HostContext *ctx);
     static Value handleWindowSticky(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowIsSticky(const std::vector<Value> &args,

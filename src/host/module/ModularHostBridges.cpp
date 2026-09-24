@@ -2114,10 +2114,16 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return handleWindowMove(args, ctx);
   };
   options.host_functions["window._geometry"] = [ctx = ctx_](const auto &args) {
-    if (args.empty() || !ctx->windowManager || !ctx->vm) return Value::makeNull();
+    if (!ctx->windowManager || !ctx->vm) return Value::makeNull();
     ::havel::host::WindowService ws(ctx->windowManager);
-    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-    if (wid == 0) return Value::makeNull();
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (!a.valid) return Value::makeNull();
+      wid = a.id;
+    }
     auto info = ws.getWindowInfo(wid);
     if (!info.valid) return Value::makeNull();
     auto *vm = static_cast<VM *>(ctx->vm);

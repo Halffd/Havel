@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <string>
 #include <sstream>
+#include <vector>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -28,8 +29,18 @@ struct ScriptResult {
     int exit_code;
     double elapsed_ms;
     bool timed_out;
+    // Tail of the child's captured stdout+stderr; kept to the last
+    // 16384 bytes so a failing intermittent run leaves its evidence
+    // behind (previously the pipe was read and discarded).
+    std::string output_tail;
     std::string name() const {
         return fs::path(path).stem().string();
+    }
+    void append_output(const char *data, size_t n) {
+        output_tail.append(data, n);
+        constexpr size_t kMaxTail = 16384;
+        if (output_tail.size() > kMaxTail)
+            output_tail.erase(0, output_tail.size() - kMaxTail);
     }
 };
 
@@ -270,6 +281,8 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 				if (n <= 0) {
 					close(pipefd[0]);
 					pipe_done = true;
+				} else {
+					result.append_output(buffer, static_cast<size_t>(n));
 				}
 			} else if (pret == 0) {
 				// timeout waiting for pipe data, check child status
@@ -284,6 +297,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 					if (p > 0) {
 						ssize_t n = read(pipefd[0], buffer, sizeof(buffer));
 						if (n <= 0) break;
+						result.append_output(buffer, static_cast<size_t>(n));
 					} else {
 						break;
 					}
@@ -317,6 +331,26 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
     }
 
 	return result;
+}
+
+// Dump the captured child output tail after a [FAIL] line so an
+// intermittent failure (e.g. smoke-suite arithmetic_pow under load)
+// keeps its evidence; the pipe used to be read and discarded.
+inline void print_result_tail(const ScriptResult &result, size_t max_lines = 40) {
+    if (result.output_tail.empty()) {
+        std::cout << "  (no captured output)" << std::endl;
+        return;
+    }
+    std::istringstream ss(result.output_tail);
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ss, line))
+        lines.push_back(line);
+    size_t start = lines.size() > max_lines ? lines.size() - max_lines : 0;
+    if (start > 0)
+        std::cout << "  ... (" << start << " earlier lines clipped)" << std::endl;
+    for (size_t i = start; i < lines.size(); ++i)
+        std::cout << "  | " << lines[i] << std::endl;
 }
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
@@ -355,6 +389,7 @@ inline int run_script_suite(const std::string &havel_bin, const std::vector<std:
             skip++;
         } else {
             std::cout << "[FAIL] " << script << " (exit=" << result.exit_code << ")" << std::endl << std::flush;
+            print_result_tail(result);
             fail++;
         }
     }
@@ -518,12 +553,14 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
             std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
                       << ")" << std::endl
                       << std::flush;
+            print_result_tail(result);
             fail++;
           }
         } else {
           std::cout << "[FAIL] " << name << " (exit=" << result.exit_code
                     << ")" << std::endl
                     << std::flush;
+          print_result_tail(result);
           fail++;
         }
       }

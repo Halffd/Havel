@@ -41,7 +41,7 @@ fn readScriptFile(path) {
 }
 
 fn parseArgs(args) {
-    cfg = {
+    lcfg = {
         mode: "run",
         scriptFiles: [],
         scriptArgs: [],
@@ -62,21 +62,21 @@ fn parseArgs(args) {
     while i < #args {
         arg = args[i]
         if arg == "--run" || arg == "run" {
-            cfg.mode = "run"
+            lcfg.mode = "run"
         }
         else if arg == "--repl" {
-            cfg.mode = "repl"
+            lcfg.mode = "repl"
         }
         else if arg == "--test" || arg == "-t" {
-            cfg.mode = "test"
+            lcfg.mode = "test"
             i = i + 1
-            if i < #args { cfg.testDir = args[i] }
+            if i < #args { lcfg.testDir = args[i] }
             // Optional timeout
             i = i + 1
             if i < #args {
                 n = int(args[i])
                 if n != null && n > 0 {
-                    cfg.testTimeout = n
+                    lcfg.testTimeout = n
                 }
                 else {
                     i = i - 1
@@ -84,49 +84,49 @@ fn parseArgs(args) {
             }
         }
         else if arg == "--lint" {
-            cfg.lintOnly = true
+            lcfg.lintOnly = true
             i = i + 1
         }
         else if arg == "--format" {
-            cfg.formatOnly = true
+            lcfg.formatOnly = true
             i = i + 1
         }
         else if arg == "--eval" || arg == "-E" {
             i = i + 1
             if i < #args {
-                cfg.evalString = args[i]
-                cfg.mode = "run"
+                lcfg.evalString = args[i]
+                lcfg.mode = "run"
             }
         }
         else if arg == "--debug-bytecode" || arg == "-dbc" {
-            cfg.debugBytecode = true
+            lcfg.debugBytecode = true
         }
         else if arg == "--debug-lexer" || arg == "-dl" {
-            cfg.debugLexer = true
+            lcfg.debugLexer = true
         }
         else if arg == "--debug-parser" || arg == "-dp" {
-            cfg.debugParser = true
+            lcfg.debugParser = true
         }
         else if arg == "--debug-ast" || arg == "-da" {
-            cfg.debugAst = true
+            lcfg.debugAst = true
         }
         else if arg == "--debug-emitter" || arg == "-de" {
-            cfg.debugEmitter = true
+            lcfg.debugEmitter = true
         }
         else if arg == "--error" || arg == "-e" {
-            cfg.stopOnError = true
+            lcfg.stopOnError = true
         }
         else if arg == "--headless" {
             // Headless mode: skip hotkey registration / interactive input.
             // Passed through by the C++ launcher (HavelLauncher) so it must be
             // recognized here rather than treated as a bare script file.
-            cfg.headless = true
+            lcfg.headless = true
         }
         else if arg == "--" {
             // Everything after -- is script arguments
             j = i + 1
             while j < #args {
-                cfg.scriptArgs.push(args[j])
+                lcfg.scriptArgs.push(args[j])
                 j = j + 1
             }
             i = #args
@@ -153,19 +153,19 @@ fn parseArgs(args) {
         }
         else {
             // Bare argument = script file
-            cfg.scriptFiles.push(arg)
+            lcfg.scriptFiles.push(arg)
         }
         i = i + 1
     }
-    cfg
+    lcfg
 }
 
-fn runScript(cfg) {
+fn runScript(lcfg) {
     t_total = now()
     // Combine all script files
     combinedCode = ""
     combinedNames = ""
-    for f in cfg.scriptFiles {
+    for f in lcfg.scriptFiles {
         content = readScriptFile(f)
         if content == null {
             print("Error: Cannot open script file: ${f}")
@@ -175,8 +175,8 @@ fn runScript(cfg) {
         if combinedNames != "" { combinedNames = "${combinedNames} + " }
         combinedNames = "${combinedNames}${f}"
     }
-    if cfg.evalString != null {
-        combinedCode = "${combinedCode}${cfg.evalString}\n"
+    if lcfg.evalString != null {
+        combinedCode = "${combinedCode}${lcfg.evalString}\n"
         if combinedNames != "" { combinedNames = "${combinedNames} + " }
         combinedNames = "${combinedNames}<eval>"
     }
@@ -202,13 +202,13 @@ fn runScript(cfg) {
     }
 
     // Format-only mode: parse and pretty-print AST
-    if cfg.formatOnly {
+    if lcfg.formatOnly {
         print(str(result.ast))
         shell.exit(0)
     }
 
     // Lint-only mode: parse + typecheck, no execution
-    if cfg.lintOnly {
+    if lcfg.lintOnly {
         t = now()
         types = inferProgram(result)
         measure("lint typecheck", t)
@@ -227,7 +227,7 @@ fn runScript(cfg) {
     bc.reset()
     setFlag("emitter", true)
     sourceFile = null
-    if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
+    if #lcfg.scriptFiles > 0 { sourceFile = lcfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
     bcChunk = compileProgram(emitter, result.ast, true, sourceFile)
     measure("emit", t)
@@ -246,8 +246,8 @@ fn runScript(cfg) {
     // module imports (use "name") resolve against scriptDir/name.hv and
     // scriptDir/name/name.hv. Without this the dir stays at the launcher's
     // directory (modules/lang) and colocated modules are never found.
-    if #cfg.scriptFiles > 0 {
-        scriptPath = cfg.scriptFiles[0]
+    if #lcfg.scriptFiles > 0 {
+        scriptPath = lcfg.scriptFiles[0]
         slash = scriptPath.lastIndexOf("/")
         if slash != null && slash >= 0 {
             dir = scriptPath.slice(0, slash)
@@ -271,10 +271,10 @@ fn runScript(cfg) {
 
 // Load script for the REPL via execute_persistent so its globals/functions
 // live in the same namespace the REPL evaluates against.
-fn loadScriptForRepl(cfg) {
+fn loadScriptForRepl(lcfg) {
     combinedCode = ""
     combinedNames = ""
-    for f in cfg.scriptFiles {
+    for f in lcfg.scriptFiles {
         content = readScriptFile(f)
         if content == null {
             print("Error: Cannot open script file: ${f}")
@@ -284,8 +284,8 @@ fn loadScriptForRepl(cfg) {
         if combinedNames != "" { combinedNames = "${combinedNames} + " }
         combinedNames = "${combinedNames}${f}"
     }
-    if cfg.evalString != null {
-        combinedCode = "${combinedCode}${cfg.evalString}\n"
+    if lcfg.evalString != null {
+        combinedCode = "${combinedCode}${lcfg.evalString}\n"
         if combinedNames != "" { combinedNames = "${combinedNames} + " }
         combinedNames = "${combinedNames}<eval>"
     }
@@ -390,7 +390,7 @@ fn extractGlobalsFromLine(line) {
     names
 }
 
-fn replEvaluate(cfg, line) {
+fn replEvaluate(lcfg, line) {
     result = parse(line)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
@@ -459,7 +459,7 @@ fn replBalanced(code) {
     }
     !in_string && brace == 0 && bracket == 0 && paren == 0
 }
-fn replLoop(cfg) {
+fn replLoop(lcfg) {
     interactive = shell.isatty(0)
     if interactive {
         // Try to load readline module for line editing/history
@@ -506,7 +506,7 @@ fn replLoop(cfg) {
             if line == null {
                 if interactive { print("") }
                 if pending != "" {
-                    replEvaluate(cfg, pending)
+                    replEvaluate(lcfg, pending)
                 }
                 if useReadline {
                     readline.write_history()
@@ -576,22 +576,22 @@ fn replLoop(cfg) {
             }
             pending = "${pending}${line}"
             if replBalanced(pending) {
-                replEvaluate(cfg, pending)
+                replEvaluate(lcfg, pending)
                 break
             }
         }
     }
 }
 
-fn runTests(cfg) {
-    if cfg.testDir == null {
+fn runTests(lcfg) {
+    if lcfg.testDir == null {
         print("Error: No test directory specified. Usage: --test <directory>")
         return 1
     }
     // Find all .hv files
-    entries = fs.readDir(cfg.testDir)
+    entries = fs.readDir(lcfg.testDir)
     if entries == null {
-        print("Error: Cannot read test directory: ${cfg.testDir}")
+        print("Error: Cannot read test directory: ${lcfg.testDir}")
         return 1
     }
     testFiles = []
@@ -599,20 +599,20 @@ fn runTests(cfg) {
         name = e.name
         if name == null { name = str(e) }
         if name.endsWith(".hv") {
-            testFiles.push("${cfg.testDir}/${name}")
+            testFiles.push("${lcfg.testDir}/${name}")
         }
     }
     // Sort
     testFiles.sort()
     if #testFiles == 0 {
-        print("Error: No .hv files found in: ${cfg.testDir}")
+        print("Error: No .hv files found in: ${lcfg.testDir}")
         return 1
     }
 
     total = #testFiles
     passed = 0
     failed = 0
-    print("Running ${str(total)} tests from '${cfg.testDir}'")
+    print("Running ${str(total)} tests from '${lcfg.testDir}'")
 
     // Find havel binary
     selfPath = shell.env("HAVEL_BIN")
@@ -635,7 +635,7 @@ fn runTests(cfg) {
         testName = parts[#parts - 1]
 
         // Run test as subprocess with timeout
-        cmd = "timeout ${str(cfg.testTimeout)} ${selfPath} --run ${testFile}"
+        cmd = "timeout ${str(lcfg.testTimeout)} ${selfPath} --run ${testFile}"
         result = shell.exec(cmd)
 
         if result != null && result.exitCode == 0 {
@@ -684,24 +684,24 @@ if args == null || #args == 0 {
     1
 }
 
-cfg = parseArgs(args)
+lcfg = parseArgs(args)
 
 result = 0
-if cfg.mode == "run" {
-    result = runScript(cfg)
+if lcfg.mode == "run" {
+    result = runScript(lcfg)
 }
-else if cfg.mode == "repl" {
-    if #cfg.scriptFiles > 0 {
-        result = loadScriptForRepl(cfg)
+else if lcfg.mode == "repl" {
+    if #lcfg.scriptFiles > 0 {
+        result = loadScriptForRepl(lcfg)
         if result != 0 { shell.exit(result) }
     }
-    replLoop(cfg)
+    replLoop(lcfg)
 }
-else if cfg.mode == "test" {
-    result = runTests(cfg)
+else if lcfg.mode == "test" {
+    result = runTests(lcfg)
 }
 else {
-    print("Unknown mode: ${cfg.mode}")
+    print("Unknown mode: ${lcfg.mode}")
     result = 1
 }
 

@@ -2646,6 +2646,40 @@ if dslContext && tt == TID.Multiply { return parseDslRepeatStatement() }
 if dslContext && tt == TID.Question { return parseDslIfStatement() }
 // -> expr  print sugar (dsl.md); lexer emits '->' as ReturnType
 if dslContext && tt == TID.ReturnType { return parseDslPrintStatement() }
+// bare mouse commands: lmb / rmb / mmb (dsl.md)
+if dslContext && tt == TID.Identifier && (current().value == "lmb" or current().value == "rmb" or current().value == "mmb") {
+  button = current().value == "rmb" ? "right" : (current().value == "mmb" ? "middle" : "left")
+  bl = current().line
+  bc2 = current().col
+  advance()
+  return InputStatement([InputCommand("MouseClick", button, null, null, null, null)], bl, bc2)
+}
+// bare mouse move/scroll: w(x,y) / wr(dx,dy) / ws(dx,dy) (dsl.md)
+if dslContext && tt == TID.Identifier && (current().value == "w" or current().value == "wr" or current().value == "ws") && at(1).tid == TID.OpenParen {
+  wid = current().value
+  wl = current().line
+  wc = current().col
+  advance()
+  advance() // '('
+  xv = null
+  yv = null
+  if current().tid != TID.CloseParen {
+    xv = current().value
+    advance()
+  }
+  if current().tid == TID.Comma {
+    advance()
+    if current().tid != TID.CloseParen {
+      yv = current().value
+      advance()
+    }
+  }
+  if current().tid == TID.CloseParen { advance() }
+  itype = "MouseMove"
+  if wid == "wr" { itype = "MouseRelative" }
+  if wid == "ws" { itype = "MouseWheel" }
+  return InputStatement([InputCommand(itype, null, null, xv, yv, null)], wl, wc)
+}
 // {Key}  single-key send (dsl.md)
 if dslContext && tt == TID.OpenBrace && at(1).tid == TID.Identifier && at(2).tid == TID.CloseBrace {
   kname = at(1).value

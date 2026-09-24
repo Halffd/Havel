@@ -29,17 +29,25 @@ Verified working in **both** pipelines (2026-09-24):
 | `dsl { $ "cmd" }` | shell pipe |
 | `repeat N { body }` (anywhere) | keyword form, e.g. `repeat 3 { ... }` |
 
+Self-hosted pipeline only (C++ bootstrap pipeline does not parse these
+inside `dsl {}`; call the `io` module directly there instead):
+
+| Construct | Notes |
+|---|---|
+| `dsl { {Key} }` | single-key send via `io.sendKey` |
+| `dsl { lmb }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
+| `dsl { w(x, y) }` `dsl { wr(dx, dy) }` `dsl { ws(dx, dy) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` |
+
 Known-broken / documented-but-not-implemented (do not rely on):
 
 | Construct | Status |
 |---|---|
-| `{Enter}` single-key braces | parses + sends in self-hosted; C++ pipeline resolves the identifier as a variable (`Unresolved identifier`) |
 | `^{c}` modifier keys | C++ pipeline: clash with hotkey literal (`Expected '=>' after hotkey literal`); self-hosted parses as an expression, no key sent — use `> "..."` + host key APIs instead |
 | `*? cond { }` / `*: i in a..b { }` | not parsed in either pipeline — use `while`/`repeat`/′for′ |
 | `?; cond { }` (when) | not parsed in either pipeline — use `when` blocks or `?` |
 | `-> "lit"` (string) | self-hosted ok; C++ fails — use plain `print` outside dsl |
 | `!!` repeat-previous-line | silently accepts as an expression; not implemented |
-| bare `lmb`/`w(...)`/`wr(...)`/`ws(...)`/`click()` | parse as implicit input commands in C++; **no host bindings registered** (`Unresolved identifier`) — call the `io` module directly |
+
 | `< mouse` / `< keyboard` | relies on `__get_input_stub__` which is not registered |
 
 ---

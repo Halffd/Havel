@@ -5266,14 +5266,28 @@ fn emitInputStatement(emitter, node) {
       bc.emit("CALL", 1)
       bc.emit("POP")
     }
-    if ct == "MouseClick" || ct == "mouseClick" {
-      sid = globalIdx(emitter, "io.click")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      btnIdx = bc.add_string(cmd.text)
-      bc.emit("LOAD_CONST", btnIdx)
-      bc.emit("CALL", 1)
-      bc.emit("POP")
-    }
+     if ct == "MouseClick" || ct == "mouseClick" {
+       // io.mouseClick(button) — button names map to X11 button numbers
+       sid = globalIdx(emitter, "io.mouseClick")
+       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+       btnNum = 1
+       if cmd.text == "right" { btnNum = 3 }
+       if cmd.text == "middle" { btnNum = 2 }
+       bc.emit("LOAD_CONST", bc.add_const(btnNum))
+       bc.emit("CALL", 1)
+       bc.emit("POP")
+     }
+     if ct == "MouseWheel" || ct == "mouseWheel" {
+       // w(dx, dy) inside input lines scrolls; io.scroll(dy, dx)
+       sid = globalIdx(emitter, "io.scroll")
+       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+       yIdx = bc.add_string(cmd.yExprStr)
+       bc.emit("LOAD_CONST", yIdx)
+       xIdx = bc.add_string(cmd.xExprStr)
+       bc.emit("LOAD_CONST", xIdx)
+       bc.emit("CALL", 2)
+       bc.emit("POP")
+     }
     if ct == "MouseMove" || ct == "mouseMove" {
       sid = globalIdx(emitter, "io.mouseMoveTo")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))

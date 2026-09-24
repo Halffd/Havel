@@ -38,4 +38,33 @@ dsl {
   }
 }
 
+// dsl.md sugar: *? / *: / !! / `< mouse` / bare lmb+{Key}.
+// Control-flow forms carry real assertions; the I/O forms are
+// parse+no-throw checks (host input devices are not required:
+// io.* sends degrade gracefully headless).
+w = 0
+dsl {
+  *? w < 3 {
+    w = w + 1
+  }
+}
+assert(w == 3, "dsl *? repeat-while")
+
+acc = 0
+dsl {
+  *: i in 0..3 {
+    acc = acc + i
+  }
+}
+assert(acc == 6, "dsl *: repeat-for (inclusive range)")
+
+dsl {
+  lmb
+  !!
+  {Home}
+}
+dsl {
+  < mouse
+}
+
 return 0

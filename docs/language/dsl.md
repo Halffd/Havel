@@ -34,21 +34,23 @@ inside `dsl {}`; call the `io` module directly there instead):
 
 | Construct | Notes |
 |---|---|
+| `dsl { *? cond { body } }` | repeat-while (lowers to `while`) |
+| `dsl { *: i in a..b { body } }` | repeat-for over a range (lowers to `for i in ..`) |
+| `dsl { ?; cond { body } }` | when-block sugar |
 | `dsl { {Key} }` | single-key send via `io.sendKey` |
 | `dsl { lmb }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
 | `dsl { w(x, y) }` `dsl { wr(dx, dy) }` `dsl { ws(dx, dy) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` |
+| `dsl { !! }` | repeats the previous dsl input command of the enclosing block |
+| `dsl { < mouse }` | queries mouse state via `io.mouseState()`; `< keyboard` has no host binding |
 
 Known-broken / documented-but-not-implemented (do not rely on):
 
 | Construct | Status |
 |---|---|
-| `^{c}` modifier keys | C++ pipeline: clash with hotkey literal (`Expected '=>' after hotkey literal`); self-hosted parses as an expression, no key sent — use `> "..."` + host key APIs instead |
-| `*? cond { }` / `*: i in a..b { }` | not parsed in either pipeline — use `while`/`repeat`/′for′ |
-| `?; cond { }` (when) | not parsed in either pipeline — use `when` blocks or `?` |
-| `-> "lit"` (string) | self-hosted ok; C++ fails — use plain `print` outside dsl |
-| `!!` repeat-previous-line | silently accepts as an expression; not implemented |
+| `^{c}` modifier keys | reserved hotkey-literal syntax; use `> "..."` + host key APIs or a real `^{c} => { }` hotkey binding instead |
+| `< keyboard` | no host binding exists |
 
-| `< mouse` / `< keyboard` | relies on `__get_input_stub__` which is not registered |
+
 
 ---
 

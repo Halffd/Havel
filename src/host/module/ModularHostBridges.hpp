@@ -276,6 +276,16 @@ public:
                                   const HostContext *ctx);
     static Value handleWindowStates(const std::vector<Value> &args,
                                     const HostContext *ctx);
+    static Value handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowDesktopCount(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowDesktopName(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowViewport(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
     static Value handleWindowSticky(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowIsSticky(const std::vector<Value> &args,
@@ -726,6 +736,16 @@ public:
                                   const HostContext *ctx);
     static Value handleWindowStates(const std::vector<Value> &args,
                                     const HostContext *ctx);
+    static Value handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowDesktopCount(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowDesktopName(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowViewport(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
     static Value handleWindowSticky(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowIsSticky(const std::vector<Value> &args,

@@ -1950,6 +1950,27 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.list"] = [ctx = ctx_](const auto &args) {
     return handleWindowList(args, ctx);
   };
+  options.host_functions["window.all"] = [ctx = ctx_](const auto &args) {
+    return handleWindowList(args, ctx);
+  };
+  options.host_functions["window.pidWindow"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFindByPid(args, ctx);
+  };
+  options.host_functions["window.currentDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowCurrentDesktop(args, ctx);
+  };
+  options.host_functions["window.desktopCount"] = [ctx = ctx_](const auto &args) {
+    return handleWindowDesktopCount(args, ctx);
+  };
+  options.host_functions["window.desktopName"] = [ctx = ctx_](const auto &args) {
+    return handleWindowDesktopName(args, ctx);
+  };
+  options.host_functions["window.viewport"] = [ctx = ctx_](const auto &args) {
+    return handleWindowViewport(args, ctx);
+  };
+  options.host_functions["window.switchDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSwitchDesktop(args, ctx);
+  };
   options.host_functions["window.title"] = [ctx = ctx_](const auto &args) {
     return handleWindowTitle(args, ctx);
   };
@@ -2074,7 +2095,8 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     if (!d) return Value::makeBool(false);
     XRaiseWindow(d, static_cast<Window>(wid));
     XFlush(d);
-    return Value::makeBool(true);
+    // Chainable: return the original object
+    return args[0];
   };
   options.host_functions["window._lower"] = [ctx = ctx_](const auto &args) {
     if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
@@ -2085,7 +2107,7 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     if (!d) return Value::makeBool(false);
     XLowerWindow(d, static_cast<Window>(wid));
     XFlush(d);
-    return Value::makeBool(true);
+    return args[0];
   };
   options.host_functions["window._setPos"] = [ctx = ctx_](const auto &args) {
     // setPos(x, y, speed, winId, relative) — same signature as move
@@ -3276,7 +3298,9 @@ UIBridge::handleWindowFocus(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
+  bool sawObj = false;
   if (!args.empty()) {
+    sawObj = args[0].isObjectId();
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   } else {
     auto info = winService.getActiveWindowInfo();
@@ -3285,7 +3309,9 @@ UIBridge::handleWindowFocus(const std::vector<Value> &args,
   }
   if (wid == 0)
     return Value::makeBool(false);
-  return Value(winService.focusWindow(wid));
+  bool ok = winService.focusWindow(wid);
+  // Return original object for chainability when called as object method
+  return (ok && sawObj) ? args[0] : Value::makeBool(ok);
 }
 
 Value
@@ -4159,6 +4185,66 @@ Value UIBridge::handleWindowUnmin(const std::vector<Value> &args,
 }
 
 // ---------------------------------------------------------------------------
+// Workspace / desktop module-level helpers
+// ---------------------------------------------------------------------------
+
+Value UIBridge::handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) return Value::makeInt(-1);
+  return Value::makeInt(ctx->windowManager->getBackend().getCurrentWorkspace());
+}
+
+Value UIBridge::handleWindowDesktopCount(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) return Value::makeInt(0);
+  auto ws = ctx->windowManager->getBackend().getWorkspaces();
+  return Value::makeInt(static_cast<int64_t>(ws.size()));
+}
+
+Value UIBridge::handleWindowDesktopName(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) return Value::makeNull();
+  int idx = -1;
+  if (!args.empty() && args[0].isInt()) idx = static_cast<int>(args[0].asInt());
+  auto ws = ctx->windowManager->getBackend().getWorkspaces();
+  if (idx < 0 || idx >= static_cast<int>(ws.size())) return Value::makeNull();
+  compiler::VMApi api(*static_cast<VM *>(ctx->vm));
+  return api.makeString(ws[idx].name);
+}
+
+Value UIBridge::handleWindowViewport(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  (void)args;
+  if (!ctx->vm) return Value::makeNull();
+  compiler::VMApi api(*static_cast<VM *>(ctx->vm));
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeNull();
+  Atom a = XInternAtom(d, "_NET_DESKTOP_VIEWPORT", x11::XTrue);
+  if (a == x11::XNone) return Value::makeNull();
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, DefaultRootWindow(d), a, 0, 2, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return Value::makeNull();
+  long vx=0, vy=0;
+  if (n>=2){ vx=reinterpret_cast<long*>(prop)[0]; vy=reinterpret_cast<long*>(prop)[1]; }
+  if (prop) XFree(prop);
+  auto obj = api.makeObject();
+  api.setField(obj, "x", Value::makeInt(vx));
+  api.setField(obj, "y", Value::makeInt(vy));
+  return obj;
+}
+
+Value UIBridge::handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty() || !args[0].isInt())
+    return Value::makeBool(false);
+  return Value::makeBool(
+      ctx->windowManager->getBackend().switchToWorkspace(static_cast<int>(args[0].asInt())));
+}
+
+// ---------------------------------------------------------------------------
 // EWMH state toggles (delegate to backend via WindowManager when available,
 // else fall back to _NET_WM_STATE ClientMessage via the backend).
 // ---------------------------------------------------------------------------
@@ -4220,18 +4306,21 @@ static Value _windowToggleWmState(const std::vector<Value> &args,
   ::havel::host::WindowService ws(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
   if (wid == 0) return Value::makeBool(false);
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeBool(false);
+  Atom a = XInternAtom(d, atomName, 0);
+  if (a == x11::XNone) return Value::makeBool(false);
   if (explicitToggle)
-    return Value::makeBool(_SendNetWmState(wid, XInternAtom(DisplayManager::GetDisplay(), atomName, 0), 0, 2));
+    return _SendNetWmState(wid, a, 0, 2) ? (args[0].isObjectId() ? args[0] : Value::makeBool(true)) : Value::makeBool(false);
   bool enable = true;
   if (args.size() >= 2) {
     if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
     else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) enable = (v->asInt() != 0);
   }
-  Display *d = DisplayManager::GetDisplay();
-  if (!d) return Value::makeBool(false);
-  Atom a = XInternAtom(d, atomName, 0);
-  if (a == x11::XNone) return Value::makeBool(false);
-  return Value::makeBool(_SendNetWmState(wid, a, 0, enable ? 1 : 0));
+  bool ok = _SendNetWmState(wid, a, 0, enable ? 1 : 0);
+  if (!ok) return Value::makeBool(false);
+  // Chainable: return the original object when called as object method
+  return args[0].isObjectId() ? args[0] : Value::makeBool(true);
 }
 
 static Value _windowHasWmState(const std::vector<Value> &args,

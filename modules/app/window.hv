@@ -20,6 +20,7 @@ use x11
 use protocols
 use display
 use ffi
+use process
  use time
 
 // ============================================================
@@ -866,8 +867,55 @@ class Window {
 		_d = _dpy()
 		if _d == 0 { return @ }
 		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedHorz(), 0) }
-		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedVert(), 0) }
+		if vertical   { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedVert(), 0) }
 		@
+	}
+
+	// ---- EWMH state toggles (chainable) ----
+
+	fn _ewmhToggle(atomFn, enableFlag) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		_action = enableFlag ? protocols.STATE_ADD : protocols.STATE_REMOVE
+		protocols.sendStateMessage(_d, @id, _action, atomFn(), 0)
+		@
+	}
+	fn _ewmhState(atomFn) {
+		_d = _dpy()
+		if _d == 0 { return false }
+		_x = protocols.hasState(_d, @id, atomFn())
+		_x
+	}
+
+	fn sticky(enable = true) { @_ewmhToggle(protocols.netWmStateSticky, enable) }
+	fn isSticky() { @_ewmhState(protocols.netWmStateSticky) }
+	fn shade(enable = true) { @_ewmhToggle(protocols.netWmStateShaded, enable) }
+	fn isShaded() { @_ewmhState(protocols.netWmStateShaded) }
+	fn skipTaskbar(enable = true) { @_ewmhToggle(protocols.netWmStateSkipTaskbar, enable) }
+	fn isSkipTaskbar() { @_ewmhState(protocols.netWmStateSkipTaskbar) }
+	fn skipPager(enable = true) { @_ewmhToggle(protocols.netWmStateSkipPager, enable) }
+	fn isSkipPager() { @_ewmhState(protocols.netWmStateSkipPager) }
+	fn alwaysOnTopState(enable = true) { @_ewmhToggle(protocols.netWmStateAbove, enable) }
+	fn isAlwaysOnTopState() { @_ewmhState(protocols.netWmStateAbove) }
+
+	// SIGTERM process termination
+	fn terminate() {
+		_pid = @pid()
+		if _pid == 0 { return @ }
+		process.sendSignal(_pid, 15)
+		@
+	}
+
+	fn getOpacity() {
+		_d = _dpy()
+		if _d == 0 { return 1.0 }
+		_r = x11.getWindowProperty(_d, @id, protocols.netWmWindowOpacity(), 0, 1, 0, x11.XA_CARDINAL)
+		if _r.rcode == 0 && _r.nitems >= 1 && _r.prop != 0 {
+			_v = ffi.get_u32(_r.prop)
+			x11.free(_r.prop)
+			return _v / 4294967295.0
+		}
+		1.0
 	}
 	fn setAlwaysOnTop(b) {
 		if b == null || b { @alwaysOnTop() }
@@ -1018,6 +1066,19 @@ fn _snapshot(_w) {
 		moveResize: fn(x, y, w, h) { _w.moveResize(x, y, w, h) },
 		resize: fn(w, h) { _w.resize(w, h) },
 		setAlwaysOnTop: fn(b) { _w.setAlwaysOnTop(b) },
+		alwaysOnTop: fn(_enable = true) { _w.alwaysOnTopState(_enable) },
+		isAlwaysOnTop: fn() { _w.isAlwaysOnTopState() },
+		sticky: fn(_enable = true) { _w.sticky(_enable) },
+		isSticky: fn() { _w.isSticky() },
+		shade: fn(_enable = true) { _w.shade(_enable) },
+		isShaded: fn() { _w.isShaded() },
+		skipTaskbar: fn(_enable = true) { _w.skipTaskbar(_enable) },
+		isSkipTaskbar: fn() { _w.isSkipTaskbar() },
+		skipPager: fn(_enable = true) { _w.skipPager(_enable) },
+		isSkipPager: fn() { _w.isSkipPager() },
+		setOpacity: fn(_a) { _w.opacity(_a) },
+		getOpacity: fn() { _w.getOpacity() },
+		terminate: fn() { _w.terminate() },
 		pos: fn(_rel = false) { _w.pos(_rel) },
 	}
 }
@@ -1704,3 +1765,418 @@ fn wlActiveClass() { getInterface().activeClass() }
 fn wlList() { getInterface().list() }
 fn wlDesktops() { getInterface().desktops() }
 fn wlCurrentDesktop() { getInterface().currentDesktop() }
+
+// ============================================================
+// Spec-level module API (argument conventions from spec)
+// ============================================================
+// Convention: windowId = 0 means "use the active window" because Havel's
+// default arguments cannot call functions. All state toggles accept
+// windowId last so existing `window.x(target)` calls keep working
+// (windowId defaults to the active window). The functions unwrap
+// Window objects into ids via _resolveId().
+
+fn _resolveId(x) {
+    if x == 0 || x == null { return activeId() }
+    if typeof(x) == "int" { return x }
+    // Window instance / snapshot — both have .id
+    if typeof(x) == "object" && x.id != null { return x.id }
+    0
+}
+
+// -- Position / size ------------------------------------------------
+
+fn _posAt(windowId = 0, relative = false) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).pos(relative, _id)
+}
+
+fn setPos(x, y, speed = 0.0, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).move(x, y, speed, _id, relative)
+}
+
+fn sizeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).size()
+}
+
+fn resizeAt(w, h, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).resize(w, h, _id, relative)
+}
+
+fn centerAt(monitor = -1, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _w = Window(_id)
+    if monitor >= 0 {
+        _mons = display.monitors()
+        if monitor >= #_mons { return _w }
+        _m = _mons[monitor]
+        _g = _w.geometry()
+        _cx = _m.x + ((_m.width - _g.width) / 2)
+        _cy = _m.y + ((_m.height - _g.height) / 2)
+        _w.move(_cx, _cy)
+    } else {
+        _w.center()
+    }
+    _w
+}
+
+fn geometryAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).geometry()
+}
+
+// -- State toggles ---------------------------------------------------
+
+fn _wmStateToggle(windowId, atomFn, action) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _d = _dpy()
+    if _d == 0 { return null }
+    protocols.sendStateMessage(_d, _id, action, atomFn(), 0)
+    _id
+}
+
+fn maxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).max(horizontal, vertical)
+}
+
+fn unmaxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).unmax(horizontal, vertical)
+}
+
+fn toggleMaxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleMax(horizontal, vertical)
+}
+
+fn isMaximizedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return {horizontal: false, vertical: false, any: false} }
+    Window(_id).isMaximized()
+}
+
+fn minAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).min()
+}
+
+fn unminAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).unmin()
+}
+
+fn isMinimizedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isMinimized()
+}
+
+fn fullscreenAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).fullscreen(enable)
+}
+
+fn toggleFullscreenAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleFullscreen()
+}
+
+fn isFullscreenAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isFullscreen()
+}
+
+fn borderlessAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).borderless(enable)
+}
+
+fn isBorderlessAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isBorderless()
+}
+
+fn toggleBorderlessAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleBorderless()
+}
+
+fn alwaysOnTopAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(_id, protocols.netWmStateAbove, _action)
+}
+
+fn isAlwaysOnTopAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateAbove())
+}
+
+fn stickyAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSticky, _action)
+}
+
+fn isStickyAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSticky())
+}
+
+fn shadeAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateShaded, _action)
+}
+
+fn isShadedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateShaded())
+}
+
+fn skipTaskbarAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSkipTaskbar, _action)
+}
+
+fn isSkipTaskbarAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSkipTaskbar())
+}
+
+fn skipPagerAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSkipPager, _action)
+}
+
+fn isSkipPagerAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSkipPager())
+}
+
+// -- Focus / stacking ------------------------------------------------
+
+fn raiseAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).raise()
+}
+
+fn lowerAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).lower()
+}
+
+fn focusAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).activate()
+}
+
+// -- Desktop / workspace ---------------------------------------------
+
+fn moveToDesktopAt(desktop, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).moveToDesktop(desktop)
+}
+
+fn getDesktop(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return -1 }
+    _d = _dpy()
+    if _d == 0 { return -1 }
+    protocols.getCardinalProp(_d, _id, protocols.netWmDesktop())
+}
+
+fn stickyToDesktop(windowId = 0) {
+    // All-desktops via _NET_WM_DESKTOP = 0xFFFFFFFF
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _d = _dpy()
+    if _d == 0 { return null }
+    _ev = x11.makeClientMessage(_id, protocols.netWmDesktop(), 32, 0xFFFFFFFF, x11.CurrentTime, 0, 0, 0)
+    _r = _root()
+    if _r != 0 {
+        x11.sendEvent(_d, _r, 0, x11.SubstructureRedirectMask + x11.SubstructureNotifyMask, _ev)
+        x11.flush(_d)
+    }
+    x11.freeClientMessage(_ev)
+    _id
+}
+
+// -- Opacity ---------------------------------------------------------
+
+fn setOpacityAt(alpha, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).opacity(alpha)
+}
+
+fn getOpacity(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return 1.0 }
+    _d = _dpy()
+    if _d == 0 { return 1.0 }
+    _r = x11.getWindowProperty(_d, _id, protocols.netWmWindowOpacity(), 0, 1, 0, x11.XA_CARDINAL)
+    if _r.rcode == 0 && _r.nitems >= 1 && _r.prop != 0 {
+        _v = ffi.get_u32(_r.prop)
+        x11.free(_r.prop)
+        return _v / 4294967295.0
+    }
+    1.0
+}
+
+// -- Lifecycle ------------------------------------------------------
+
+fn closeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).close()
+}
+
+fn killAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).kill()
+}
+
+fn terminate(windowId = 0) {
+    // SIGTERM to owning process — graceful-ish, lets the app clean up.
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _pid = Window(_id).pid()
+    if _pid == 0 { return null }
+    _sigterm = 15
+    process.sendSignal(_pid, _sigterm)
+    _id
+}
+
+// -- Query ---------------------------------------------------------
+
+fn exists(windowId) {
+    if windowId == null || windowId == 0 { return false }
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    _a = x11.getWindowAttributes(_d, _id)
+    _a != null
+}
+
+fn isActive(windowId) {
+    if windowId == null || windowId == 0 { return false }
+    _id = _resolveId(windowId)
+    _id == activeId()
+}
+
+fn titleAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).title()
+}
+
+fn classAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).className()
+}
+
+fn exeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).exe()
+}
+
+fn pidAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return 0 }
+    Window(_id).pid()
+}
+
+fn statesAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return [] }
+    Window(_id).states()
+}
+
+fn frameExtentsAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return {left: 0, right: 0, top: 0, bottom: 0} }
+    Window(_id).frameExtents()
+}
+
+fn typeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "normal" }
+    Window(_id).type()
+}
+
+// -- Workspace viewport ------------------------------------------------
+
+fn workspaceCount() {
+    _d = _dpy()
+    if _d == 0 { return 0 }
+    _r = _root()
+    if _r == 0 { return 0 }
+    protocols.getCardinalProp(_d, _r, protocols.netNumberOfDesktops())
+}
+
+fn workspaceAt(index) {
+    // Wayland-aware; X11 fallback — uses the Desktop class
+    _desk = Desktop()
+    _desk.workspaces()[index] ?? ""
+}
+
+fn viewport() {
+    _d = _dpy()
+    if _d == 0 { return {x: 0, y: 0} }
+    _r = _root()
+    if _r == 0 { return {x: 0, y: 0} }
+    _atom = x11.internAtom(_d, "_NET_DESKTOP_VIEWPORT", 1)
+    if _atom == 0 { return {x: 0, y: 0} }
+    _rr = x11.getWindowProperty(_d, _r, _atom, 0, 2, 0, x11.XA_CARDINAL)
+    if _rr.rcode == 0 && _rr.nitems >= 2 && _rr.prop != 0 {
+        _vx = ffi.get_u32(_rr.prop)
+        _vy = ffi.get_u32(ffi.ptr_add(_rr.prop, 4))
+        x11.free(_rr.prop)
+        return {x: _vx, y: _vy}
+    }
+    {x: 0, y: 0}
+}

@@ -202,6 +202,7 @@ void optimizeJumps();  // Jump threading optimization
   void compileWaitExpression(const ast::WaitExpression &expression);
   void compileIfStatement(const ast::IfStatement &statement);
   void compileWhileStatement(const ast::WhileStatement &statement);
+  void compileRepeatStatement(const ast::RepeatStatement &statement);
   void compileDoWhileStatement(const ast::DoWhileStatement &statement);
   void compileForStatement(const ast::ForStatement &statement);
   void compileForExpression(const ast::ForExpression &expression);

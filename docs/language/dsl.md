@@ -9,6 +9,43 @@ Inside `dsl { }` blocks (where `inInputContext = true`), a specialized syntax is
 
 ---
 
+## Implementation Status
+
+Most constructs below are only implemented in the **self-hosted pipeline**
+(`modules/lang/pratt.hv` + `emitter.hv`, used by `hvtest --smoke` and by
+`havel --run --self-hosted-path out`). The C++ bootstrap pipeline parses a
+subset; constructs that it cannot compile fail with `Unsupported statement
+in bytecode compiler` instead.
+
+Verified working in **both** pipelines (2026-09-24):
+
+| Construct | Notes |
+|---|---|
+| `dsl { > "text" }` | send text |
+| `dsl { : 100 }` | sleep milliseconds (`:1s` literal form is broken, parses as identifier `s`) |
+| `dsl { ? cond { body } }` | if sugar |
+| `dsl { * N { body } }` | repeat sugar (lowers to a counted loop) |
+| `dsl { -> expr }` | print sugar (`->` lexes as `ReturnType`) |
+| `dsl { $ "cmd" }` | shell pipe |
+| `repeat N { body }` (anywhere) | keyword form, e.g. `repeat 3 { ... }` |
+
+Known-broken / documented-but-not-implemented (do not rely on):
+
+| Construct | Status |
+|---|---|
+| `{Enter}` single-key braces | parses + sends in self-hosted; C++ pipeline resolves the identifier as a variable (`Unresolved identifier`) |
+| `^{c}` modifier keys | C++ pipeline: clash with hotkey literal (`Expected '=>' after hotkey literal`); self-hosted parses as an expression, no key sent — use `> "..."` + host key APIs instead |
+| `*? cond { }` / `*: i in a..b { }` | not parsed in either pipeline — use `while`/`repeat`/′for′ |
+| `?; cond { }` (when) | not parsed in either pipeline — use `when` blocks or `?` |
+| `-> "lit"` (string) | self-hosted ok; C++ fails — use plain `print` outside dsl |
+| `!!` repeat-previous-line | silently accepts as an expression; not implemented |
+| bare `lmb`/`w(...)`/`wr(...)`/`ws(...)`/`click()` | parse as implicit input commands in C++; **no host bindings registered** (`Unresolved identifier`) — call the `io` module directly |
+| `< mouse` / `< keyboard` | relies on `__get_input_stub__` which is not registered |
+
+---
+
+
+
 ## DSL Block
 
 ```hv

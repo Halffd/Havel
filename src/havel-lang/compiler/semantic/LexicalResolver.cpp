@@ -751,6 +751,19 @@ auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     break;
   }
 
+  case ast::NodeType::RepeatStatement: {
+    const auto &repeat_stmt =
+        static_cast<const ast::RepeatStatement &>(statement);
+    if (repeat_stmt.countExpr) {
+      resolveExpression(*repeat_stmt.countExpr);
+    }
+    // Body gets its own scope, same as while/for bodies
+    if (repeat_stmt.body) {
+      resolveStatement(*repeat_stmt.body);
+    }
+    break;
+  }
+
   case ast::NodeType::LoopStatement: {
     const auto &loop_stmt = static_cast<const ast::LoopStatement &>(statement);
     // Resolve count expression if present (loop 5 { ... })

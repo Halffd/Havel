@@ -1,0 +1,41 @@
+// smoke: dsl repeat sugar (`* N { body }`) and dsl if sugar
+//      (`? cond { body }`) inside `dsl {}` blocks.
+//      Previously: self-hosted pratt rejected `*`/`?` in dsl blocks
+//      ("Unexpected token in expression"); C++ pipeline parsed but the
+//      ByteCompiler had no RepeatStatement case ("Unsupported statement").
+//      Expected: counter/flag mutations execute; exit 0.
+n = 0
+dsl {
+  * 3 {
+    n = n + 1
+  }
+}
+assert(n == 3, "dsl * N {} repeat")
+
+hit = false
+dsl {
+  ? n == 3 {
+    hit = true
+  }
+}
+assert(hit, "dsl ? cond {} if")
+
+dsl {
+  ? n == 999 { hit = false }
+}
+assert(hit, "dsl ? false branch must not run")
+
+// keyword form outside dsl blocks
+k = 0
+repeat 2 {
+  k = k + 1
+}
+assert(k == 2, "repeat N {} keyword form")
+
+dsl {
+  ? 1 == 1 {
+    -> 42
+  }
+}
+
+return 0

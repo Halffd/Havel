@@ -295,6 +295,7 @@ fn Parser(tokenList) {
   incomplete = false
   inMatchExpr = false
   allowBraceSugar = true
+  dslContext = false
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
   modeContext = ""
@@ -2638,6 +2639,23 @@ if tt == TID.Go { return parseGoStatement() }
 if tt == TID.Wait { return parseWaitStatement() }
 // Input statement (> prefix)
 if tt == TID.Greater { return parseInputStatement() }
+// dsl-block sugar (matches C++ parser's inInputContext rules):
+// * N { body }   repeat N times
+if dslContext && tt == TID.Multiply { return parseDslRepeatStatement() }
+// ? cond { body }  if-statement
+if dslContext && tt == TID.Question { return parseDslIfStatement() }
+// -> expr  print sugar (dsl.md); lexer emits '->' as ReturnType
+if dslContext && tt == TID.ReturnType { return parseDslPrintStatement() }
+// {Key}  single-key send (dsl.md)
+if dslContext && tt == TID.OpenBrace && at(1).tid == TID.Identifier && at(2).tid == TID.CloseBrace {
+  kname = at(1).value
+  kl = current().line
+  kc = current().col
+  advance()
+  advance()
+  advance()
+  return InputStatement([InputCommand("SendKey", null, kname, null, null, null)], kl, kc)
+}
   // Decorator statement ([decorator]) — disambiguate from array literal
   if tt == TID.OpenBracket {
     // C++ lookahead: [identifier] followed by declaration keyword = decorator
@@ -2685,7 +2703,11 @@ if tt == TID.Dsl {
   if current().tid != TID.OpenBrace {
     error("Expected '{' after 'dsl'", current().line, current().col)
   }
-  return parseBlock()
+  prevDsl = dslContext
+  dslContext = true
+  blk = parseBlock()
+  dslContext = prevDsl
+  return blk
 }
 // Expression statement
     expr = parseExpr(0)
@@ -2933,6 +2955,64 @@ fn parseDoWhileStatement() {
     // ===================================================================
     // STATEMENT: repeat
     // ===================================================================
+    // dsl-block sugar: '* <count_expr> { body }' (mirrors C++ Multiply
+    // case in the input-context statement dispatch)
+    fn parseDslRepeatStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '*'
+
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        count = parseExpr(0)
+        allowBraceSugar = prevSugar
+
+        skipNewlines()
+
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        }
+        else {
+            body = parseStatement()
+            if body == null: body = BlockStatement([], l, c)
+
+        }
+        return RepeatStatement(count, body, l, c)
+    }
+
+    // dsl-block sugar: '-> <expr>' prints the expression (dsl.md);
+    // '->' lexes as ReturnType
+    fn parseDslPrintStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '->' (ReturnType)
+        expr = parseExpr(0)
+        callee = Identifier("print", l, c)
+        call = CallExpression(callee, [expr], null, l, c)
+        return ExpressionStatement(call, l, c)
+    }
+
+    // dsl-block sugar: '? <cond> { body }' (mirrors C++ Question case)
+    fn parseDslIfStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '?'
+
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        condition = parseExpr(0)
+        allowBraceSugar = prevSugar
+
+        skipNewlines()
+
+        thenBranch = null
+        if current().tid == TID.OpenBrace { thenBranch = parseBlock() }
+        if thenBranch == null && current().tid == TID.Colon { thenBranch = parseBlock() }
+        if thenBranch == null { thenBranch = parseStatement() }
+        return IfStatement(condition, thenBranch, null, l, c)
+    }
+
     fn parseRepeatStatement() {
         l = current().line
         c = current().col

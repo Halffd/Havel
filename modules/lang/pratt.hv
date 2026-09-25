@@ -2650,7 +2650,17 @@ if tt == TID.Go { return parseGoStatement() }
 if tt == TID.Wait { return parseWaitStatement() }
 // Input statement (> prefix)
 if tt == TID.Greater { return parseInputStatement() }
-// dsl-block sugar (matches C++ parser's inInputContext rules):
+        // Input contexts (dsl {} and hotkey bodies per docs/specs/Havel.md):
+        // bare string literal = implicit text send
+        if dslContext && (tt == TID.String || tt == TID.MultilineString) {
+            sl = current().line
+            sc = current().col
+            txt = current().value
+            advance()
+            dslLastInputCmds = [InputCommand("SendText", txt, null, null, null, null)]
+            return InputStatement(dslLastInputCmds, sl, sc)
+        }
+        // dsl-block sugar (matches C++ parser's inInputContext rules):
 // *? cond { body }   repeat-while sugar (dsl.md)
 if dslContext && tt == TID.Multiply && at(1).tid == TID.Question { return parseDslRepeatWhile() }
 // *: i in iter { body }  repeat-for sugar (dsl.md)
@@ -3804,7 +3814,10 @@ fn parseHotkeyStatement() {
             return error("Expected '=>' or '{' after hotkey", l, c)
 
         }
-        // Parse body
+        // Parse body (input context: bare input commands are allowed,
+        // per Havel.md "Input Shortcuts" — same sugar set as dsl {} blocks)
+        prevDsl = dslContext
+        dslContext = true
         body = null
         if current().tid == TID.OpenBrace or current().tid == TID.Colon {
             body = parseBlock()
@@ -3814,6 +3827,7 @@ fn parseHotkeyStatement() {
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
         }
+        dslContext = prevDsl
 	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
 	if modeAttr != "" {

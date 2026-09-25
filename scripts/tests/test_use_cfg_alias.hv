@@ -1,0 +1,11 @@
+// Tests: `use cfg` resolves the native config module via its alias.
+// Bug: IMPORT handler deferred the lazy proxy to loadModule("cfg"), whose
+// lazy/native legs are exact-key only -> "Module not found: cfg" even though
+// the plugin registers as "config" with aliases cfg/conf.
+// Expected: prints PASS, exit 0.
+use cfg
+if cfg.load {
+    print("PASS: use cfg resolved, cfg.load present")
+} else {
+    print("FAIL: cfg.load missing after use cfg")
+}

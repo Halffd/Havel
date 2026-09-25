@@ -2081,6 +2081,9 @@ Value loadModule(const std::string& path);
     void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
+  // Returns the real module name if `name` is a registered alias of a lazy
+  // module (e.g. "cfg" -> "config"), empty string otherwise.
+  std::string resolveLazyAliasName(const std::string &name) const;
   void activateLazyModule(const std::string &name);
 bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }

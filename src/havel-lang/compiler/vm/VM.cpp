@@ -5402,6 +5402,15 @@ bool VM::isLazyModuleRegistered(const std::string &name) const {
   return lazy_modules_.find(name) != lazy_modules_.end();
 }
 
+std::string VM::resolveLazyAliasName(const std::string &name) const {
+  for (const auto &[modName, desc] : lazy_modules_) {
+    for (const auto &alias : desc.aliases) {
+      if (alias == name) return modName;
+    }
+  }
+  return {};
+}
+
 void VM::registerLazyModule(const std::string &name,
                             std::function<void(struct VMApi &)> initFn,
                             const std::vector<std::string> &aliases) {
@@ -5545,12 +5554,9 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   auto it = lazy_modules_.find(name);
   if (it == lazy_modules_.end()) {
     // Check if name is an alias of a registered lazy module
-    for (const auto &[modName, desc] : lazy_modules_) {
-      for (const auto &alias : desc.aliases) {
-        if (alias == name) {
-          return ensureModuleLoaded(modName);
-        }
-      }
+    std::string realName = resolveLazyAliasName(name);
+    if (!realName.empty()) {
+      return ensureModuleLoaded(realName);
     }
     // Fallback: try dynamic plugin discovery
     if (pluginLoader_) {
@@ -5723,6 +5729,39 @@ Value VM::loadModule(const std::string &path) {
 
   // Check for lazy module (like bytecodeBuilder) BEFORE native plugin check
   auto lazyIt = lazy_modules_.find(path);
+  if (lazyIt == lazy_modules_.end()) {
+    // `path` may be an alias of a registered lazy module (e.g. `use cfg`
+    // where the plugin registers as "config" with aliases cfg/conf). Without
+    // this check the proxy global exists but loadModule throws
+    // "Module not found" because the native leg searches for
+    // havel_mod_cfg.so, which does not exist (the file is
+    // havel_mod_config.so).
+    // Guard: alias-named plugins must not shadow Havel source modules —
+    // the log plugin's "debug" alias would otherwise hijack `use debug`
+    // (modules/lang/debug.hv) and hand the compiler the wrong exports.
+    bool aliasHasSource = false;
+    if (!native_plugin_in_progress_.count(path)) {
+      auto resolvedPre = moduleLoader_.resolve(path, current_script_dir_);
+      aliasHasSource = resolvedPre &&
+          (resolvedPre->type == ModuleLoader::ResolvedModule::BytecodeCache ||
+           resolvedPre->type == ModuleLoader::ResolvedModule::UserSource ||
+           resolvedPre->type == ModuleLoader::ResolvedModule::StdlibSource);
+    }
+    if (!aliasHasSource) {
+      std::string realName = resolveLazyAliasName(path);
+      if (!realName.empty()) {
+        lazyIt = lazy_modules_.find(realName);
+        if (lazyIt != lazy_modules_.end()) {
+          if (!lazyIt->second.loaded) activateLazyModule(realName);
+          // activateLazyModule caches exports under the real module name
+          Value cachedVal;
+          if (moduleLoader_.getCached(realName, &cachedVal)) {
+            return cachedVal;
+          }
+        }
+      }
+    }
+  }
   if (lazyIt != lazy_modules_.end() && !lazyIt->second.loaded) {
     activateLazyModule(path);
     // After activation, the module should be cached

@@ -70,8 +70,6 @@ dsl {
   m(10, 20)
   r(1, 2)
   w(0, 3)
-  wr(1, 2)
-  ws(0, 3)
   click()
   click("right")
 }

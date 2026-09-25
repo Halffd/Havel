@@ -39,7 +39,7 @@ inside `dsl {}`; call the `io` module directly there instead):
 | `dsl { ?; cond { body } }` | when-block sugar |
 | `dsl { {Key} }` | single-key send via `io.sendKey` |
 | `dsl { lmb }` / `dsl { click() }` / `dsl { click("right") }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
-| `dsl { m(x, y) }` `dsl { r(dx, dy) }` `dsl { w(dy, dx) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` (forms from docs/specs/Havel.md "Input Shortcuts"; `wr`/`ws` are accepted aliases) |
+| `dsl { m(x, y) }` `dsl { r(dx, dy) }` `dsl { w(dy, dx) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` (canonical forms from docs/specs/Havel.md "Input Shortcuts") |
 | `dsl { !! }` | repeats the previous dsl input command of the enclosing block |
 | `dsl { < mouse }` | queries mouse state via `io.mouseState()`; `< keyboard` has no host binding |
 
@@ -139,10 +139,9 @@ double_click()    // double click
 ## Mouse Movement
 
 ```hv
-w(100, 200)       // move mouse to absolute (x, y)
-w(100, 200, 500)  // move to (100, 200) over 500ms (smooth)
+m(100, 200)       // move mouse to absolute (x, y)
 
-wr(10, 20)        // relative move (delta x, delta y)
+r(10, 20)         // relative move (delta x, delta y)
 ```
 
 ---
@@ -150,9 +149,8 @@ wr(10, 20)        // relative move (delta x, delta y)
 ## Mouse Scroll
 
 ```hv
-ws(10, 20)        // scroll at current position (dx, dy)
-ws(0, -3)         // scroll up 3 clicks
-ws(0, 3)          // scroll down 3 clicks
+w(0, -3)          // scroll up 3 (w(dy, dx))
+w(0, 3)           // scroll down 3
 ```
 
 ---
@@ -348,10 +346,9 @@ dsl {
 | `lmb` / `rmb` / `mmb` | Mouse click |
 | `lmb_down` / `lmb_up` | Mouse press/release |
 | `click("right")` | Click with button |
-| `w(x, y)` | Move to absolute |
-| `w(x, y, ms)` | Smooth move |
-| `wr(dx, dy)` | Relative move |
-| `ws(dx, dy)` | Scroll |
+| `m(x, y)` | Move to absolute |
+| `r(dx, dy)` | Relative move |
+| `w(dy, dx)` | Scroll |
 | `* N { }` | Repeat N times |
 | `*? cond { }` | While loop |
 | `*: i in range { }` | For loop |

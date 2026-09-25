@@ -2694,8 +2694,25 @@ if dslContext && tt == TID.Hotkey && current().value == "!!" {
   if dslLastInputCmds == null { error("'!!' has no previous dsl command to repeat", el, ec) }
   return InputStatement(dslLastInputCmds, el, ec)
 }
-// bare mouse move/scroll: w(x,y) / wr(dx,dy) / ws(dx,dy) (dsl.md)
-if dslContext && tt == TID.Identifier && (current().value == "w" or current().value == "wr" or current().value == "ws") && at(1).tid == TID.OpenParen {
+// bare click() / click("right") / click("middle") (dsl.md)
+if dslContext && tt == TID.Identifier && current().value == "click" && at(1).tid == TID.OpenParen {
+  bl = current().line
+  bc2 = current().col
+  advance()
+  advance() // '('
+  btn = "left"
+  if current().tid == TID.String or current().tid == TID.Identifier {
+    btn = current().value
+    advance()
+  }
+  if current().tid == TID.CloseParen { advance() }
+  dslLastInputCmds = [InputCommand("MouseClick", btn, null, null, null, null)]
+  return InputStatement(dslLastInputCmds, bl, bc2)
+}
+// bare mouse move/scroll: m(x,y) / r(dx,dy) / w(dy,dx) per
+// docs/specs/Havel.md "Input Shortcuts"; dsl.md's wr/ws kept as aliases
+// (wr = relative move, ws = scroll)
+if dslContext && tt == TID.Identifier && (current().value == "m" or current().value == "r" or current().value == "w" or current().value == "wr" or current().value == "ws") && at(1).tid == TID.OpenParen {
   wid = current().value
   wl = current().line
   wc = current().col
@@ -2716,8 +2733,8 @@ if dslContext && tt == TID.Identifier && (current().value == "w" or current().va
   }
   if current().tid == TID.CloseParen { advance() }
   itype = "MouseMove"
-  if wid == "wr" { itype = "MouseRelative" }
-  if wid == "ws" { itype = "MouseWheel" }
+  if wid == "r" or wid == "wr" { itype = "MouseRelative" }
+  if wid == "w" or wid == "ws" { itype = "MouseWheel" }
   dslLastInputCmds = [InputCommand(itype, null, null, xv, yv, null)]
   return InputStatement(dslLastInputCmds, wl, wc)
 }

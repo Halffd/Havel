@@ -38,8 +38,8 @@ inside `dsl {}`; call the `io` module directly there instead):
 | `dsl { *: i in a..b { body } }` | repeat-for over a range (lowers to `for i in ..`) |
 | `dsl { ?; cond { body } }` | when-block sugar |
 | `dsl { {Key} }` | single-key send via `io.sendKey` |
-| `dsl { lmb }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
-| `dsl { w(x, y) }` `dsl { wr(dx, dy) }` `dsl { ws(dx, dy) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` |
+| `dsl { lmb }` / `dsl { click() }` / `dsl { click("right") }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
+| `dsl { m(x, y) }` `dsl { r(dx, dy) }` `dsl { w(dy, dx) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` (forms from docs/specs/Havel.md "Input Shortcuts"; `wr`/`ws` are accepted aliases) |
 | `dsl { !! }` | repeats the previous dsl input command of the enclosing block |
 | `dsl { < mouse }` | queries mouse state via `io.mouseState()`; `< keyboard` has no host binding |
 

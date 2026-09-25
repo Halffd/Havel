@@ -979,4 +979,282 @@ std::string X11Backend::getProcessCmdline(pid_t pid) {
   return result;
 }
 
+// ============================================================================
+// EWMH / _NET_WM_STATE helpers (static internal)
+// ============================================================================
+
+static bool X11InternAtomCache(Display *d, const char *name, Atom &out) {
+  if (out) return true;
+  out = XInternAtom(d, name, x11::XFalse);
+  return out != x11::XNone;
+}
+
+static Atom X11NetWmStateAtom() { static Atom a = 0; return a; }
+
+static bool X11SendNetWmState(Display *d, wID win, Atom stateAtom, Atom atom1,
+                              Atom atom2, int action) {
+  if (!d || !win) return false;
+  Atom sa = XInternAtom(d, "_NET_WM_STATE", x11::XFalse);
+  if (sa == x11::XNone) return false;
+  XClientMessageEvent ev = {};
+  ev.type = x11::XClientMessage;
+  ev.window = static_cast<Window>(win);
+  ev.message_type = sa;
+  ev.format = 32;
+  ev.data.l[0] = action;
+  ev.data.l[1] = static_cast<long>(atom1);
+  ev.data.l[2] = static_cast<long>(atom2);
+  ev.data.l[3] = 1; // source: application
+  ev.data.l[4] = 0;
+  return XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
+                    SubstructureRedirectMask | SubstructureNotifyMask,
+                    reinterpret_cast<XEvent *>(&ev)) != 0;
+}
+
+static bool X11HasState(Display *d, wID win, Atom target) {
+  if (!d || !win) return false;
+  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XTrue);
+  if (stateAtom == x11::XNone) return false;
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(win), stateAtom, 0, 256,
+                         x11::XFalse, XA_ATOM, &actual, &fmt, &n, &ba, &prop)
+      != x11::XSuccess || !prop) return false;
+  bool found = false;
+  if (n) {
+    Atom *atoms = reinterpret_cast<Atom *>(prop);
+    for (unsigned long i = 0; i < n; ++i) {
+      if (atoms[i] == target) { found = true; break; }
+    }
+  }
+  if (prop) XFree(prop);
+  return found;
+}
+
+// ============================================================================
+// EWMH _NET_WM_STATE toggles on actual windows
+// ============================================================================
+
+bool X11Backend::setWindowSticky(wID id, bool sticky) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_STICKY", x11::XFalse);
+  return X11SendNetWmState(d, id, atom, 0, 0, sticky ? 1 : 0);
+}
+bool X11Backend::isWindowSticky(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_STICKY", x11::XTrue);
+  if (atom == x11::XNone) return false;
+  return X11HasState(d, id, atom);
+}
+bool X11Backend::setWindowShaded(wID id, bool shaded) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SHADED", x11::XFalse);
+  return X11SendNetWmState(d, id, atom, 0, 0, shaded ? 1 : 0);
+}
+bool X11Backend::isWindowShaded(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SHADED", x11::XTrue);
+  if (atom == x11::XNone) return false;
+  return X11HasState(d, id, atom);
+}
+bool X11Backend::setWindowSkipTaskbar(wID id, bool skip) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SKIP_TASKBAR", x11::XFalse);
+  return X11SendNetWmState(d, id, atom, 0, 0, skip ? 1 : 0);
+}
+bool X11Backend::isWindowSkipTaskbar(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SKIP_TASKBAR", x11::XTrue);
+  if (atom == x11::XNone) return false;
+  return X11HasState(d, id, atom);
+}
+bool X11Backend::setWindowSkipPager(wID id, bool skip) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SKIP_PAGER", x11::XFalse);
+  return X11SendNetWmState(d, id, atom, 0, 0, skip ? 1 : 0);
+}
+bool X11Backend::isWindowSkipPager(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom atom = XInternAtom(d, "_NET_WM_STATE_SKIP_PAGER", x11::XTrue);
+  if (atom == x11::XNone) return false;
+  return X11HasState(d, id, atom);
+}
+
+// ============================================================================
+// Decorations (Motif hints) — borderless
+// ============================================================================
+
+struct MotifHints { unsigned long flags, functions, decorations, input_mode, status; };
+
+bool X11Backend::setWindowDecorated(wID id, bool decorated) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XFalse);
+  if (a == x11::XNone) return false;
+  MotifHints hints = {2UL, 0UL, decorated ? 1UL : 0UL, 0UL, 0UL};
+  int ok = XChangeProperty(d, static_cast<Window>(id), a, a, 32,
+                           PropModeReplace, reinterpret_cast<unsigned char *>(&hints), 5);
+  if (ok) XFlush(d);
+  return ok != 0;
+}
+
+bool X11Backend::isWindowDecorated(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return true; // default: has decorations
+  Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XTrue);
+  if (a == x11::XNone) return true;
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), a, 0, 5, x11::XFalse, a,
+                         &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return true;
+  if (n < 3) { if (prop) XFree(prop); return true; }
+  long deco = reinterpret_cast<long *>(prop)[2];
+  XFree(prop);
+  return deco != 0;
+}
+
+// ============================================================================
+// Window property readers
+// ============================================================================
+
+bool X11Backend::getWindowOpacity(wID id, double &outOpacity) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_NET_WM_WINDOW_OPACITY", x11::XTrue);
+  if (a == x11::XNone) return false;
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), a, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return false;
+  if (n >= 1) {
+    outOpacity = static_cast<double>(*reinterpret_cast<unsigned long *>(prop)) / 4294967295.0;
+    XFree(prop);
+    return true;
+  }
+  if (prop) XFree(prop);
+  return false;
+}
+
+bool X11Backend::getWindowFrameExtents(wID id, int &l, int &r, int &t, int &b) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_NET_FRAME_EXTENTS", x11::XTrue);
+  if (a == x11::XNone) return false;
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), a, 0, 4, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return false;
+  if (n >= 4) {
+    long *v = reinterpret_cast<long *>(prop);
+    l = v[0]; r = v[1]; t = v[2]; b = v[3];
+    XFree(prop);
+    return true;
+  }
+  if (prop) XFree(prop);
+  return false;
+}
+
+std::string X11Backend::getWindowType(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return "normal";
+  Atom a = XInternAtom(d, "_NET_WM_WINDOW_TYPE", x11::XTrue);
+  if (a == x11::XNone) return "normal";
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), a, 0, 1, x11::XFalse,
+                         XA_ATOM, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop || n == 0)
+    return "normal";
+  Atom typeAtom = reinterpret_cast<Atom *>(prop)[0];
+  char *name = XGetAtomName(d, typeAtom);
+  std::string out = name ? name : "normal";
+  if (name) XFree(name);
+  XFree(prop);
+  // Strip "_NET_WM_WINDOW_TYPE_" prefix and lowercase for the spec
+  const std::string prefix = "_NET_WM_WINDOW_TYPE_";
+  if (out.rfind(prefix, 0) == 0) out = out.substr(prefix.size());
+  std::transform(out.begin(), out.end(), out.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return out;
+}
+
+// ============================================================================
+// Workspace / desktop
+// ============================================================================
+
+bool X11Backend::setWindowOnAllDesktops(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_NET_WM_DESKTOP", x11::XFalse);
+  if (a == x11::XNone) return false;
+  XClientMessageEvent ev = {};
+  ev.type = x11::XClientMessage;
+  ev.window = static_cast<Window>(id);
+  ev.message_type = a;
+  ev.format = 32;
+  ev.data.l[0] = 0xFFFFFFFFL; // all desktops
+  ev.data.l[1] = CurrentTime;
+  int ok = XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
+                      SubstructureRedirectMask | SubstructureNotifyMask,
+                      reinterpret_cast<XEvent *>(&ev));
+  if (ok) XFlush(d);
+  return ok != 0;
+}
+
+int X11Backend::getWindowDesktop(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return -1;
+  Atom a = XInternAtom(d, "_NET_WM_DESKTOP", x11::XTrue);
+  if (a == x11::XNone) return -1;
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), a, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return -1;
+  int out = -1;
+  if (n >= 1) out = static_cast<int>(*reinterpret_cast<unsigned long *>(prop));
+  if (prop) XFree(prop);
+  return out;
+}
+
+// ============================================================================
+// Lifecycle helpers
+// ============================================================================
+
+bool X11Backend::terminateWindow(wID id) {
+  auto pid = getWindowPID(id);
+  if (pid <= 0) return false;
+  return ::kill(pid, SIGTERM) == 0;
+}
+bool X11Backend::killWindowClient(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  XKillClient(d, static_cast<Window>(id));
+  XFlush(d);
+  return true;
+}
+
+// ============================================================================
+// Stacking
+// ============================================================================
+
+bool X11Backend::raiseWindow(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d || !id) return false;
+  XRaiseWindow(d, static_cast<Window>(id));
+  XFlush(d);
+  return true;
+}
+bool X11Backend::lowerWindow(wID id) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d || !id) return false;
+  XLowerWindow(d, static_cast<Window>(id));
+  XFlush(d);
+  return true;
+}
+
 } // namespace havel

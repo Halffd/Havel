@@ -11,6 +11,7 @@
 #include "core/window/WindowQuery.hpp"
 #include "core/window/Rect.hpp"
 #include "core/window/WindowBackend.hpp"
+#include "x11.h"
 
 namespace havel::host {
 
@@ -153,6 +154,50 @@ bool WindowService::minimizeWindow(uint64_t id) {
 bool WindowService::restoreWindow(uint64_t id) {
   return wm_ && wm_->restoreWindow(id);
 }
+
+// EWMH toggles delegate straight to the backend
+bool WindowService::setSticky(uint64_t id, bool on) { return wm_ && wm_->getBackend().setWindowSticky(static_cast<wID>(id), on); }
+bool WindowService::isSticky(uint64_t id) { return wm_ && wm_->getBackend().isWindowSticky(static_cast<wID>(id)); }
+bool WindowService::alwaysOnTop(uint64_t id) {
+  // EWMH query: StateAbove = _NET_WM_STATE_ABOVE. There's no simple XQuery;
+  // we approximate via read of _NET_WM_STATE prop and substring match.
+  if (!wm_) return false;
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XTrue);
+  Atom target = XInternAtom(d, "_NET_WM_STATE_ABOVE", x11::XTrue);
+  if (stateAtom == x11::XNone || target == x11::XNone) return false;
+  Atom actual; int fmt; unsigned long n=0, bytes_after=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(id), stateAtom, 0, 256, x11::XFalse,
+                         XA_ATOM, &actual, &fmt, &n, &bytes_after, &prop) != x11::XSuccess || !prop)
+    return false;
+  bool found = false;
+  if (n) {
+    Atom *atoms = reinterpret_cast<Atom *>(prop);
+    for (unsigned long i = 0; i < n; ++i) {
+      if (atoms[i] == target) { found = true; break; }
+    }
+  }
+  if (prop) XFree(prop);
+  return found;
+}
+bool WindowService::setShaded(uint64_t id, bool on) { return wm_ && wm_->getBackend().setWindowShaded(static_cast<wID>(id), on); }
+bool WindowService::isShaded(uint64_t id) { return wm_ && wm_->getBackend().isWindowShaded(static_cast<wID>(id)); }
+bool WindowService::setSkipTaskbar(uint64_t id, bool on) { return wm_ && wm_->getBackend().setWindowSkipTaskbar(static_cast<wID>(id), on); }
+bool WindowService::isSkipTaskbar(uint64_t id) { return wm_ && wm_->getBackend().isWindowSkipTaskbar(static_cast<wID>(id)); }
+bool WindowService::setSkipPager(uint64_t id, bool on) { return wm_ && wm_->getBackend().setWindowSkipPager(static_cast<wID>(id), on); }
+bool WindowService::isSkipPager(uint64_t id) { return wm_ && wm_->getBackend().isWindowSkipPager(static_cast<wID>(id)); }
+bool WindowService::setDecorated(uint64_t id, bool on) { return wm_ && wm_->getBackend().setWindowDecorated(static_cast<wID>(id), on); }
+bool WindowService::isDecorated(uint64_t id) { return wm_ && wm_->getBackend().isWindowDecorated(static_cast<wID>(id)); }
+bool WindowService::getOpacity(uint64_t id, double &out) { return wm_ && wm_->getBackend().getWindowOpacity(static_cast<wID>(id), out); }
+bool WindowService::getFrameExtents(uint64_t id, int &l, int &r, int &t, int &b) { return wm_ && wm_->getBackend().getWindowFrameExtents(static_cast<wID>(id), l, r, t, b); }
+std::string WindowService::getWindowType(uint64_t id) { return wm_ ? wm_->getBackend().getWindowType(static_cast<wID>(id)) : "normal"; }
+bool WindowService::setOnAllDesktops(uint64_t id) { return wm_ && wm_->getBackend().setWindowOnAllDesktops(static_cast<wID>(id)); }
+int WindowService::getWindowDesktop(uint64_t id) { return wm_ ? wm_->getBackend().getWindowDesktop(static_cast<wID>(id)) : -1; }
+bool WindowService::terminate(uint64_t id) { return wm_ && wm_->getBackend().terminateWindow(static_cast<wID>(id)); }
+bool WindowService::killClient(uint64_t id) { return wm_ && wm_->getBackend().killWindowClient(static_cast<wID>(id)); }
+bool WindowService::raise(uint64_t id) { return wm_ && wm_->getBackend().raiseWindow(static_cast<wID>(id)); }
+bool WindowService::lower(uint64_t id) { return wm_ && wm_->getBackend().lowerWindow(static_cast<wID>(id)); }
 
 bool WindowService::hideWindow(uint64_t id) {
   if (!wm_)

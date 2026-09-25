@@ -64,6 +64,28 @@ public:
     bool setAlwaysOnTop(uint64_t id, bool onTop);
     bool moveWindowToMonitor(uint64_t id, int monitor);
 
+    // EWMH state toggles — delegate to backend; return false when unimplemented.
+    bool setSticky(uint64_t id, bool on);
+    bool isSticky(uint64_t id);
+    bool setShaded(uint64_t id, bool on);
+    bool isShaded(uint64_t id);
+    bool setSkipTaskbar(uint64_t id, bool on);
+    bool isSkipTaskbar(uint64_t id);
+    bool setSkipPager(uint64_t id, bool on);
+    bool isSkipPager(uint64_t id);
+    bool alwaysOnTop(uint64_t id);  // query; set via setAlwaysOnTop(id,onTop)
+    bool setDecorated(uint64_t id, bool on);
+    bool isDecorated(uint64_t id);
+    bool getOpacity(uint64_t id, double &out);
+    bool getFrameExtents(uint64_t id, int &l, int &r, int &t, int &b);
+    std::string getWindowType(uint64_t id);
+    bool setOnAllDesktops(uint64_t id);
+    int getWindowDesktop(uint64_t id);
+    bool terminate(uint64_t id);
+    bool killClient(uint64_t id);
+    bool raise(uint64_t id);
+    bool lower(uint64_t id);
+
     std::vector<WorkspaceInfo> getWorkspaces() const;
     bool switchToWorkspace(int workspace);
     int getCurrentWorkspace() const;

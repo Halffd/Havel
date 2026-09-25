@@ -4261,170 +4261,140 @@ Value UIBridge::handleWindowSwitchDesktop(const std::vector<Value> &args,
       ctx->windowManager->getBackend().switchToWorkspace(static_cast<int>(args[0].asInt())));
 }
 
-// ---------------------------------------------------------------------------
-// EWMH state toggles (delegate to backend via WindowManager when available,
-// else fall back to _NET_WM_STATE ClientMessage via the backend).
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// EWMH state toggles — direct _NET_WM_STATE ClientMessage on the root window.
-// ---------------------------------------------------------------------------
-
-static bool _SendNetWmState(uint64_t wid, uint64_t atom1, uint64_t atom2, int action) {
-  Display *d = DisplayManager::GetDisplay();
-  if (!d || !wid) return false;
-  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XFalse);
-  if (stateAtom == x11::XNone) return false;
-  XClientMessageEvent ev = {};
-  ev.type = x11::XClientMessage;
-  ev.window = static_cast<Window>(wid);
-  ev.message_type = stateAtom;
-  ev.format = 32;
-  ev.data.l[0] = action; // 0=REMOVE,1=ADD,2=TOGGLE
-  ev.data.l[1] = static_cast<long>(atom1);
-  ev.data.l[2] = static_cast<long>(atom2);
-  ev.data.l[3] = 1;      // source = application
-  ev.data.l[4] = 0;
-  return XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
-                    SubstructureRedirectMask | SubstructureNotifyMask,
-                    reinterpret_cast<XEvent *>(&ev)) != 0;
-}
-
-static bool _GetNetWmState(uint64_t wid, const char *atomName) {
-  Display *d = DisplayManager::GetDisplay();
-  if (!d || !wid) return false;
-  Atom stateAtom = XInternAtom(d, "_NET_WM_STATE", x11::XTrue);
-  if (stateAtom == x11::XNone) return false;
-  Atom target = XInternAtom(d, atomName, x11::XTrue);
-  if (target == x11::XNone) return false;
-  Atom actual;
-  int fmt;
-  unsigned long nitems = 0, bytes_after = 0;
-  unsigned char *prop = nullptr;
-  if (XGetWindowProperty(d, static_cast<Window>(wid), stateAtom, 0, 256, x11::XFalse,
-                         XA_ATOM, &actual, &fmt, &nitems, &bytes_after, &prop) != x11::XSuccess)
-    return false;
-  bool found = false;
-  if (prop && nitems) {
-    Atom *atoms = reinterpret_cast<Atom *>(prop);
-    for (unsigned long i = 0; i < nitems; ++i) {
-      if (atoms[i] == target) { found = true; break; }
-    }
-  }
-  if (prop) XFree(prop);
-  return found;
-}
-
-static Value _windowToggleWmState(const std::vector<Value> &args,
-                                   const HostContext *ctx,
-                                   const char *atomName,
-                                   bool explicitToggle) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
-  ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
-  Display *d = DisplayManager::GetDisplay();
-  if (!d) return Value::makeBool(false);
-  Atom a = XInternAtom(d, atomName, 0);
-  if (a == x11::XNone) return Value::makeBool(false);
-  if (explicitToggle)
-    return _SendNetWmState(wid, a, 0, 2) ? (args[0].isObjectId() ? args[0] : Value::makeBool(true)) : Value::makeBool(false);
-  bool enable = true;
-  if (args.size() >= 2) {
-    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
-    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) enable = (v->asInt() != 0);
-  }
-  bool ok = _SendNetWmState(wid, a, 0, enable ? 1 : 0);
-  if (!ok) return Value::makeBool(false);
-  // Chainable: return the original object when called as object method
-  return args[0].isObjectId() ? args[0] : Value::makeBool(true);
-}
-
-static Value _windowHasWmState(const std::vector<Value> &args,
-                                 const HostContext *ctx,
-                                 const char *atomName) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
-  ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
-  return Value::makeBool(_GetNetWmState(wid, atomName));
-}
 
 Value UIBridge::handleWindowSticky(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_STICKY", false);
+                                     const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setSticky(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsSticky(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  return _windowHasWmState(args, ctx, "_NET_WM_STATE_STICKY");
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.isSticky(wid));
 }
 Value UIBridge::handleWindowShade(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SHADED", false);
+                                     const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setShaded(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsShaded(const std::vector<Value> &args,
-                                      const HostContext *ctx) {
-  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SHADED");
+                                       const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.isShaded(wid));
 }
 Value UIBridge::handleWindowSkipTaskbar(const std::vector<Value> &args,
-                                          const HostContext *ctx) {
-  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SKIP_TASKBAR", false);
+                                           const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setSkipTaskbar(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsSkipTaskbar(const std::vector<Value> &args,
-                                           const HostContext *ctx) {
-  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SKIP_TASKBAR");
+                                            const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.isSkipTaskbar(wid));
 }
 Value UIBridge::handleWindowSkipPager(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
-  return _windowToggleWmState(args, ctx, "_NET_WM_STATE_SKIP_PAGER", false);
+                                         const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setSkipPager(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsSkipPager(const std::vector<Value> &args,
-                                         const HostContext *ctx) {
-  return _windowHasWmState(args, ctx, "_NET_WM_STATE_SKIP_PAGER");
+                                          const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.isSkipPager(wid));
 }
 
 Value UIBridge::handleWindowAlwaysOnTop(const std::vector<Value> &args,
                                           const HostContext *ctx) {
-  if (!ctx->windowManager || args.empty()) return Value::makeBool(false);
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
   if (wid == 0) return Value::makeBool(false);
-  bool enable = true;
+  bool on = true;
   if (args.size() >= 2) {
-    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
-    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) enable = (v->asInt() != 0);
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
   }
-  return Value::makeBool(ws.setAlwaysOnTop(wid, enable));
+  bool ok = ws.setAlwaysOnTop(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
-                                           const HostContext *ctx) {
-  return _windowHasWmState(args, ctx, "_NET_WM_STATE_ABOVE");
+                                            const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.alwaysOnTop(wid));
 }
 
 Value UIBridge::handleWindowGetOpacity(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  if (!ctx->windowManager || args.empty())
+  if (!ctx->windowManager)
     return Value::makeDouble(1.0);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeDouble(1.0);
-  Display *d = DisplayManager::GetDisplay();
-  if (!d) return Value::makeDouble(1.0);
-  Atom opacityAtom = XInternAtom(d, "_NET_WM_WINDOW_OPACITY", x11::XTrue);
-  if (opacityAtom == x11::XNone) return Value::makeDouble(1.0);
-  Atom actual;
-  int fmt;
-  unsigned long n = 0, ba = 0;
-  unsigned char *prop = nullptr;
-  if (XGetWindowProperty(d, static_cast<Window>(wid), opacityAtom, 0, 1,
-                         x11::XFalse, XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess)
-    return Value::makeDouble(1.0);
-  double opacity = 1.0;
-  if (prop && n >= 1) {
-    opacity = static_cast<double>(*reinterpret_cast<unsigned long *>(prop)) / 4294967295.0;
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeDouble(1.0);
+    wid = a.id;
   }
-  if (prop) XFree(prop);
-  return Value::makeDouble(opacity);
+  double op = 1.0;
+  if (!ws.getOpacity(wid, op)) return Value::makeDouble(1.0);
+  return Value::makeDouble(op);
 }
 
 Value UIBridge::handleWindowTerminate(const std::vector<Value> &args,
@@ -4434,11 +4404,7 @@ Value UIBridge::handleWindowTerminate(const std::vector<Value> &args,
   ::havel::host::WindowService ws(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
   if (wid == 0) return Value::makeBool(false);
-  auto info = ws.getWindowInfo(wid);
-  if (!info.valid || info.pid <= 0) return Value::makeBool(false);
-  if (::kill(static_cast<pid_t>(info.pid), SIGTERM) != 0)
-    return Value::makeBool(false);
-  return Value::makeBool(true);
+  return Value::makeBool(ws.terminate(wid));
 }
 
 Value UIBridge::handleWindowStickyToDesktop(const std::vector<Value> &args,
@@ -4448,23 +4414,7 @@ Value UIBridge::handleWindowStickyToDesktop(const std::vector<Value> &args,
   ::havel::host::WindowService ws(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
   if (wid == 0) return Value::makeBool(false);
-  // EWMH: send _NET_WM_DESKTOP = 0xFFFFFFFF to make window sticky-on-all-desktops
-  Display *d = DisplayManager::GetDisplay();
-  if (!d) return Value::makeBool(false);
-  Atom deskAtom = XInternAtom(d, "_NET_WM_DESKTOP", x11::XFalse);
-  if (deskAtom == x11::XNone) return Value::makeBool(false);
-  XClientMessageEvent ev = {};
-  ev.type = x11::XClientMessage;
-  ev.window = static_cast<Window>(wid);
-  ev.message_type = deskAtom;
-  ev.format = 32;
-  ev.data.l[0] = 0xFFFFFFFFL;
-  ev.data.l[1] = CurrentTime;
-  x11::XBool ok = XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
-                        SubstructureRedirectMask | SubstructureNotifyMask,
-                        reinterpret_cast<XEvent *>(&ev));
-  if (ok) XFlush(d);
-  return Value::makeBool(ok != 0);
+  return Value::makeBool(ws.setOnAllDesktops(wid));
 }
 
 Value UIBridge::handleWindowGetDesktop(const std::vector<Value> &args,

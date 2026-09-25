@@ -48,6 +48,29 @@ public:
                                 int height) = 0;
   virtual bool closeWindow(wID id) = 0;
   virtual bool focusWindow(wID id) = 0;
+  virtual bool raiseWindow(wID) { return false; }
+  virtual bool lowerWindow(wID) { return false; }
+
+  // EWMH _NET_WM_STATE manipulations. Default: unsupported (false / "no").
+  virtual bool setWindowSticky(wID, bool) { return false; }
+  virtual bool isWindowSticky(wID) { return false; }
+  virtual bool setWindowShaded(wID, bool) { return false; }
+  virtual bool isWindowShaded(wID) { return false; }
+  virtual bool setWindowSkipTaskbar(wID, bool) { return false; }
+  virtual bool isWindowSkipTaskbar(wID) { return false; }
+  virtual bool setWindowSkipPager(wID, bool) { return false; }
+  virtual bool isWindowSkipPager(wID) { return false; }
+  virtual bool setWindowDecorated(wID, bool) { return false; }
+  virtual bool isWindowDecorated(wID) { return true; }
+  virtual bool getWindowOpacity(wID, double &outOpacity) { outOpacity = 1.0; return false; }
+  virtual bool getWindowFrameExtents(wID, int &l, int &r, int &t, int &b) {
+    l = r = t = b = 0; return false;
+  }
+  virtual std::string getWindowType(wID) { return "normal"; }
+  virtual bool setWindowOnAllDesktops(wID) { return false; }
+  virtual int getWindowDesktop(wID) { return -1; }
+  virtual bool terminateWindow(wID) { return false; }
+  virtual bool killWindowClient(wID) { return false; }
   virtual bool minimizeWindow(wID id) = 0;
   virtual bool maximizeWindow(wID id) = 0;
   virtual bool restoreWindow(wID id) = 0;
@@ -59,6 +82,8 @@ public:
   virtual bool centerWindow(wID id) = 0;
   virtual bool snapWindow(wID id, int position, int padding = 0) = 0;
   virtual bool setWindowFloating(wID id, bool floating) = 0;
+
+  // ... plus the EWMH / Motif block declared above near the top ...
 
   virtual int getCurrentWorkspace() = 0;
   virtual std::vector<WorkspaceInfo> getWorkspaces() = 0;

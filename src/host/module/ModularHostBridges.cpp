@@ -2030,6 +2030,7 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return handleWindowSetAlwaysOnTopObj(args, ctx);
   };
   options.host_functions["window._pos"] = [ctx = ctx_](const auto &args) {
+    fprintf(stderr, "[dbg] window._pos entered, args=%zu\n", args.size());
     return handleWindowPosObj(args, ctx);
   };
   options.host_functions["window._size"] = [ctx = ctx_](const auto &args) {
@@ -2087,27 +2088,37 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return handleWindowIsAlwaysOnTop(args, ctx);
   };
   options.host_functions["window._raise"] = [ctx = ctx_](const auto &args) {
-    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
     ::havel::host::WindowService ws(ctx->windowManager);
-    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-    if (wid == 0) return Value::makeBool(false);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (a.valid) wid = a.id;
+    }
     Display *d = DisplayManager::GetDisplay();
-    if (!d) return Value::makeBool(false);
+    if (!d || wid == 0) return Value::makeBool(false);
     XRaiseWindow(d, static_cast<Window>(wid));
     XFlush(d);
-    // Chainable: return the original object
-    return args[0];
+    // No receiver injection through makeFunctionRef dispatches; just return bool.
+    // Chainability in Havel comes from class methods on window.hv Window class,
+    // and the C++ side only needs to perform the action.
+    return Value::makeBool(true);
   };
   options.host_functions["window._lower"] = [ctx = ctx_](const auto &args) {
-    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
     ::havel::host::WindowService ws(ctx->windowManager);
-    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-    if (wid == 0) return Value::makeBool(false);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (a.valid) wid = a.id;
+    }
     Display *d = DisplayManager::GetDisplay();
-    if (!d) return Value::makeBool(false);
+    if (!d || wid == 0) return Value::makeBool(false);
     XLowerWindow(d, static_cast<Window>(wid));
     XFlush(d);
-    return args[0];
+    return Value::makeBool(true);
   };
   options.host_functions["window._setPos"] = [ctx = ctx_](const auto &args) {
     // setPos(x, y, speed, winId, relative) — same signature as move

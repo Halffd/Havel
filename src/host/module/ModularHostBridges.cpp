@@ -4264,25 +4264,43 @@ Value UIBridge::handleWindowSwitchDesktop(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowSticky(const std::vector<Value> &args,
                                      const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
   bool on = true;
-  if (args.size() >= 2) {
-    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
-    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  // Calls from obj-method style `_w.sticky(on)` => args[0] = bool trigger
+  // Calls like `_w.sticky()` (no args) => default true
+  if (args.size() >= 1) {
+    if (auto *v = (args[0].isBool() ? &args[0] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[0].isInt() ? &args[0] : nullptr)) on = (v->asInt() != 0);
+  }
+  // Only positional arg = explicit windowId/object; never passed when called as obj method
+  if (args.size() >= 2)
+    wid = resolveWindowId(args[1], ws, static_cast<VM *>(ctx->vm));
+  else if (!args.empty() && !args[0].isBool())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
   }
   bool ok = ws.setSticky(wid, on);
-  if (args[0].isObjectId()) return args[0];
+  // Chainable when called with window object as receiver
+  if (!args.empty() && args[0].isObjectId()) return args[0];
   return Value::makeBool(ok);
 }
 Value UIBridge::handleWindowIsSticky(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
   return Value::makeBool(ws.isSticky(wid));
 }
 Value UIBridge::handleWindowShade(const std::vector<Value> &args,
@@ -4302,10 +4320,16 @@ Value UIBridge::handleWindowShade(const std::vector<Value> &args,
 }
 Value UIBridge::handleWindowIsShaded(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
   return Value::makeBool(ws.isShaded(wid));
 }
 Value UIBridge::handleWindowSkipTaskbar(const std::vector<Value> &args,
@@ -4325,10 +4349,16 @@ Value UIBridge::handleWindowSkipTaskbar(const std::vector<Value> &args,
 }
 Value UIBridge::handleWindowIsSkipTaskbar(const std::vector<Value> &args,
                                             const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
   return Value::makeBool(ws.isSkipTaskbar(wid));
 }
 Value UIBridge::handleWindowSkipPager(const std::vector<Value> &args,
@@ -4348,10 +4378,16 @@ Value UIBridge::handleWindowSkipPager(const std::vector<Value> &args,
 }
 Value UIBridge::handleWindowIsSkipPager(const std::vector<Value> &args,
                                           const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
   return Value::makeBool(ws.isSkipPager(wid));
 }
 
@@ -4372,10 +4408,16 @@ Value UIBridge::handleWindowAlwaysOnTop(const std::vector<Value> &args,
 }
 Value UIBridge::handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
                                             const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService ws(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
-  if (wid == 0) return Value::makeBool(false);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
   return Value::makeBool(ws.alwaysOnTop(wid));
 }
 

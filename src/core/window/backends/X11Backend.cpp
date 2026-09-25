@@ -1006,9 +1006,11 @@ static bool X11SendNetWmState(Display *d, wID win, Atom stateAtom, Atom atom1,
   ev.data.l[2] = static_cast<long>(atom2);
   ev.data.l[3] = 1; // source: application
   ev.data.l[4] = 0;
-  return XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
-                    SubstructureRedirectMask | SubstructureNotifyMask,
-                    reinterpret_cast<XEvent *>(&ev)) != 0;
+  bool ok = XSendEvent(d, DefaultRootWindow(d), x11::XFalse,
+                       SubstructureRedirectMask | SubstructureNotifyMask,
+                       reinterpret_cast<XEvent *>(&ev)) != 0;
+  if (ok) XFlush(d);
+  return ok;
 }
 
 static bool X11HasState(Display *d, wID win, Atom target) {

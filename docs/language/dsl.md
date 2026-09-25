@@ -9,6 +9,53 @@ Inside `dsl { }` blocks (where `inInputContext = true`), a specialized syntax is
 
 ---
 
+## Implementation Status
+
+Most constructs below are only implemented in the **self-hosted pipeline**
+(`modules/lang/pratt.hv` + `emitter.hv`, used by `hvtest --smoke` and by
+`havel --run --self-hosted-path out`). The C++ bootstrap pipeline parses a
+subset; constructs that it cannot compile fail with `Unsupported statement
+in bytecode compiler` instead.
+
+Verified working in **both** pipelines (2026-09-24):
+
+| Construct | Notes |
+|---|---|
+| `dsl { > "text" }` | send text |
+| `dsl { : 100 }` | sleep milliseconds (`:1s` literal form is broken, parses as identifier `s`) |
+| `dsl { ? cond { body } }` | if sugar |
+| `dsl { * N { body } }` | repeat sugar (lowers to a counted loop) |
+| `dsl { -> expr }` | print sugar (`->` lexes as `ReturnType`) |
+| `dsl { $ "cmd" }` | shell pipe |
+| `repeat N { body }` (anywhere) | keyword form, e.g. `repeat 3 { ... }` |
+
+Self-hosted pipeline only (C++ bootstrap pipeline does not parse these
+inside `dsl {}`; call the `io` module directly there instead):
+
+| Construct | Notes |
+|---|---|
+| `dsl { *? cond { body } }` | repeat-while (lowers to `while`) |
+| `dsl { *: i in a..b { body } }` | repeat-for over a range (lowers to `for i in ..`) |
+| `dsl { ?; cond { body } }` | when-block sugar |
+| `dsl { {Key} }` | single-key send via `io.sendKey` |
+| `dsl { lmb }` / `dsl { click() }` / `dsl { click("right") }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
+| `dsl { m(x, y) }` `dsl { r(dx, dy) }` `dsl { w(dy, dx) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` (canonical forms from docs/specs/Havel.md "Input Shortcuts") |
+| `dsl { !! }` | repeats the previous dsl input command of the enclosing block |
+| `dsl { < mouse }` | queries mouse state via `io.mouseState()`; `< keyboard` has no host binding |
+
+Known-broken / documented-but-not-implemented (do not rely on):
+
+| Construct | Status |
+|---|---|
+| `^{c}` modifier keys | reserved hotkey-literal syntax; use `> "..."` + host key APIs or a real `^{c} => { }` hotkey binding instead |
+| `< keyboard` | no host binding exists |
+
+
+
+---
+
+
+
 ## DSL Block
 
 ```hv
@@ -92,10 +139,9 @@ double_click()    // double click
 ## Mouse Movement
 
 ```hv
-w(100, 200)       // move mouse to absolute (x, y)
-w(100, 200, 500)  // move to (100, 200) over 500ms (smooth)
+m(100, 200)       // move mouse to absolute (x, y)
 
-wr(10, 20)        // relative move (delta x, delta y)
+r(10, 20)         // relative move (delta x, delta y)
 ```
 
 ---
@@ -103,9 +149,8 @@ wr(10, 20)        // relative move (delta x, delta y)
 ## Mouse Scroll
 
 ```hv
-ws(10, 20)        // scroll at current position (dx, dy)
-ws(0, -3)         // scroll up 3 clicks
-ws(0, 3)          // scroll down 3 clicks
+w(0, -3)          // scroll up 3 (w(dy, dx))
+w(0, 3)           // scroll down 3
 ```
 
 ---
@@ -301,10 +346,9 @@ dsl {
 | `lmb` / `rmb` / `mmb` | Mouse click |
 | `lmb_down` / `lmb_up` | Mouse press/release |
 | `click("right")` | Click with button |
-| `w(x, y)` | Move to absolute |
-| `w(x, y, ms)` | Smooth move |
-| `wr(dx, dy)` | Relative move |
-| `ws(dx, dy)` | Scroll |
+| `m(x, y)` | Move to absolute |
+| `r(dx, dy)` | Relative move |
+| `w(dy, dx)` | Scroll |
 | `* N { }` | Repeat N times |
 | `*? cond { }` | While loop |
 | `*: i in range { }` | For loop |

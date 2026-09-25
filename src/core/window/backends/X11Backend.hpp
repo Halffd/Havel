@@ -56,6 +56,27 @@ public:
   bool snapWindow(wID id, int position, int padding) override;
   bool setWindowFloating(wID id, bool floating) override;
 
+  // EWMH _NET_WM_STATE ops
+  bool setWindowSticky(wID id, bool sticky) override;
+  bool isWindowSticky(wID id) override;
+  bool setWindowShaded(wID id, bool shaded) override;
+  bool isWindowShaded(wID id) override;
+  bool setWindowSkipTaskbar(wID id, bool skip) override;
+  bool isWindowSkipTaskbar(wID id) override;
+  bool setWindowSkipPager(wID id, bool skip) override;
+  bool isWindowSkipPager(wID id) override;
+  bool setWindowDecorated(wID id, bool decorated) override;
+  bool isWindowDecorated(wID id) override;
+  bool getWindowOpacity(wID id, double &outOpacity) override;
+  bool getWindowFrameExtents(wID id, int &l, int &r, int &t, int &b) override;
+  std::string getWindowType(wID id) override;
+  bool setWindowOnAllDesktops(wID id) override;
+  int getWindowDesktop(wID id) override;
+  bool terminateWindow(wID id) override;
+  bool killWindowClient(wID id) override;
+  bool raiseWindow(wID id) override;
+  bool lowerWindow(wID id) override;
+
   int getCurrentWorkspace() override;
   std::vector<WorkspaceInfo> getWorkspaces() override;
   bool switchToWorkspace(int workspace) override;

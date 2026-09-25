@@ -140,14 +140,17 @@ fn sendCloseMessage(dpy, win) {
 }
 
 // Helper: move/resize via _NET_MOVERESIZE_WINDOW
-fn sendMoveResizeMessage(dpy, win, x, y, w, h) {
-    // flags: x(1<<8) | y(1<<9) | w(1<<10) | h(1<<11)
-    _f1 = 1 << 8
-    _f2 = 1 << 9
-    _f3 = 1 << 10
-    _f4 = 1 << 11
-    _flags = _f1 | _f2 | _f3 | _f4
-    sendRootMessage(dpy, win, netWmMoveResize(), _flags, x, y, w, h)
+// data.l[0] = gravity | (flags << 8); gravity 10 = StaticGravity so the WM
+// does not interpret coordinates relative to decorations.
+// flags: x=1, y=2, w=4, h=8 — set false for dimensions that must stay put.
+fn sendMoveResizeMessage(dpy, win, x, y, w, h, flagX = true, flagY = true, flagW = true, flagH = true) {
+    _flags = 0
+    if flagX { _flags = _flags + 1 }
+    if flagY { _flags = _flags + 2 }
+    if flagW { _flags = _flags + 4 }
+    if flagH { _flags = _flags + 8 }
+    _data0 = 10 + _flags * 256
+    sendRootMessage(dpy, win, netWmMoveResize(), _data0, x, y, w, h)
 }
 
 // Helper: change desktop

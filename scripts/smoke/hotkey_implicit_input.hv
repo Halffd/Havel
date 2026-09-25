@@ -1,0 +1,18 @@
+// smoke: hotkey-body input-context sugar — per docs/specs/Havel.md
+//        "Input Shortcuts (Implicit Input Statements)".
+//        Inside a hotkey block, bare input commands work without `>`:
+//        strings send text, `lmb` clicks, `{Key}` sends a key.
+//        Parse+register only: hotkey callbacks don't fire in this harness,
+//        and input host functions degrade gracefully without /dev/uinput.
+//        Expected: script registers the hotkey and exits 0
+//        (havel --run exits when the script completes).
+x = 0
+F24 => {
+  "Hello"
+  lmb
+  {Home}
+}
+x = 1
+assert(x == 1, "hotkey block with implicit input commands must parse and register")
+// hotkey registration enters the launcher keep-alive loop; exit explicitly
+process.exit(0)

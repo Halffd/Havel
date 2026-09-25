@@ -18,6 +18,7 @@
 #include "core/io/IO.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/BrightnessManager.hpp"
+#include <csignal>
 
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
@@ -1558,6 +1559,10 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 // UIBridge Implementation
 // ============================================================================
 
+static uint64_t resolveWindowId(const Value &arg,
+                                ::havel::host::WindowService &winService,
+                                VM *vm);
+
 void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.active"] = [ctx = ctx_](const auto &args) {
     return handleWindowGetActive(args, ctx);
@@ -1571,6 +1576,230 @@ void UIBridge::install(PipelineOptions &options) {
   // Compatibility additions mirroring modules/app/window.hv API
   options.host_functions["window.activeId"] = [ctx = ctx_](const auto &args) {
     return handleWindowActiveId(args, ctx);
+  };
+  options.host_functions["window.exists"] = [ctx = ctx_](const auto &args) {
+    return handleWindowExists(args, ctx);
+  };
+  options.host_functions["window.isActive"] = [ctx = ctx_](const auto &args) {
+    ::havel::host::WindowService ws(ctx->windowManager);
+    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeBool(false);
+    return Value::makeBool(wid == ws.getActiveWindow());
+  };
+  options.host_functions["window.sticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSticky(args, ctx);
+  };
+  options.host_functions["window.isSticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSticky(args, ctx);
+  };
+  options.host_functions["window.shade"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShade(args, ctx);
+  };
+  options.host_functions["window.isShaded"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsShaded(args, ctx);
+  };
+  options.host_functions["window.skipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window.isSkipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window.skipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipPager(args, ctx);
+  };
+  options.host_functions["window.isSkipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipPager(args, ctx);
+  };
+  options.host_functions["window.alwaysOnTop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window.isAlwaysOnTop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window.getOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetOpacity(args, ctx);
+  };
+  options.host_functions["window.terminate"] = [ctx = ctx_](const auto &args) {
+    return handleWindowTerminate(args, ctx);
+  };
+  options.host_functions["window.stickyToDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowStickyToDesktop(args, ctx);
+  };
+  options.host_functions["window.getDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetDesktop(args, ctx);
+  };
+  options.host_functions["window.setOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSetOpacity(args, ctx);
+  };
+  options.host_functions["window.unmin"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmin(args, ctx);
+  };
+  options.host_functions["window.unmax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmax(args, ctx);
+  };
+  options.host_functions["window.toggleMax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowToggleMax(args, ctx);
+  };
+   options.host_functions["window.borderless"] = [ctx = ctx_](const auto &args) {
+     if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+     ::havel::host::WindowService ws(ctx->windowManager);
+     uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+     if (wid == 0) return Value::makeBool(false);
+     bool enable = true;
+     if (args.size() >= 2) {
+       if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
+     }
+     Display *d = DisplayManager::GetDisplay();
+     if (!d) return Value::makeBool(false);
+     Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XFalse);
+     if (a == x11::XNone) return Value::makeBool(false);
+     unsigned long hints[5] = {2UL, 0UL, enable ? 0UL : 1UL, 0UL, 0UL};
+     int ok = XChangeProperty(d, static_cast<Window>(wid), a, a, 32, PropModeReplace,
+                              reinterpret_cast<unsigned char *>(hints), 5);
+     if (ok) XFlush(d);
+     return Value::makeBool(ok != 0);
+   };
+   options.host_functions["window.isBorderless"] = [ctx = ctx_](const auto &args) {
+     if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+     ::havel::host::WindowService ws(ctx->windowManager);
+     uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+     if (wid == 0) return Value::makeBool(false);
+     Display *d = DisplayManager::GetDisplay();
+     if (!d) return Value::makeBool(false);
+     Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XTrue);
+     if (a == x11::XNone) return Value::makeBool(false);
+     Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+     if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 5, x11::XFalse, a,
+                            &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+       return Value::makeBool(false);
+     long deco = (n >= 3) ? reinterpret_cast<long *>(prop)[2] : 1;
+     if (prop) XFree(prop);
+     return Value::makeBool(deco == 0);
+   };
+   options.host_functions["window.toggleBorderless"] = [ctx = ctx_](const auto &args) {
+     if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+     ::havel::host::WindowService ws(ctx->windowManager);
+     uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+     if (wid == 0) return Value::makeBool(false);
+     Display *d = DisplayManager::GetDisplay();
+     if (!d) return Value::makeBool(false);
+     Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XFalse);
+     if (a == x11::XNone) return Value::makeBool(false);
+     Atom ar = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XTrue);
+     bool curBorderless = false;
+     if (ar != x11::XNone) {
+       Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+       if (XGetWindowProperty(d, static_cast<Window>(wid), ar, 0, 5, x11::XFalse, ar,
+                              &actual, &fmt, &n, &ba, &prop) == x11::XSuccess && prop && n>=3) {
+         curBorderless = (reinterpret_cast<long *>(prop)[2] == 0);
+       }
+       if (prop) XFree(prop);
+     }
+     bool wantOn = !curBorderless;
+     unsigned long hints[5] = {2UL, 0UL, wantOn ? 0UL : 1UL, 0UL, 0UL};
+     int ok = XChangeProperty(d, static_cast<Window>(wid), a, a, 32, PropModeReplace,
+                              reinterpret_cast<unsigned char *>(hints), 5);
+     if (ok) XFlush(d);
+     return Value::makeBool(ok != 0);
+   };
+  options.host_functions["window.moveToMonitor"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveToMonitor(args, ctx);
+  };
+  options.host_functions["window.moveMonitor"] = [ctx = ctx_](const auto &args) {
+    // module-level alias — moveMonitor(obj, i, follow)
+    return handleWindowMoveToMonitor(args, ctx);
+  };
+  options.host_functions["window.moveMonitorNext"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveToNextMonitor(args, ctx);
+  };
+  options.host_functions["window.moveMonitorPrev"] = [ctx = ctx_](const auto &args) {
+    // spec has moveMonitorPrev; backend lacks a "prev" op — reuse next with wrapped index? just call next for now.
+    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (!a.valid) return Value::makeBool(false);
+      wid = a.id;
+    }
+    auto mons = DisplayManager::GetMonitors();
+    if (mons.empty()) return Value::makeBool(false);
+    auto info = ws.getWindowInfo(wid);
+    if (!info.valid) return Value::makeBool(false);
+    int cur = 0;
+    for (int i = 0; i < static_cast<int>(mons.size()); ++i) {
+      if (info.x >= mons[i].x && info.x < mons[i].x + mons[i].width &&
+          info.y >= mons[i].y && info.y < mons[i].y + mons[i].height) { cur = i; break; }
+    }
+    int prev = (cur - 1 + static_cast<int>(mons.size())) % static_cast<int>(mons.size());
+    return Value::makeBool(ws.moveWindowToMonitor(wid, prev));
+  };
+  options.host_functions["window.getCurrentMonitor"] = [ctx = ctx_](const auto &args) {
+    if (!ctx->windowManager) return Value::makeInt(0);
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (!a.valid) return Value::makeInt(0);
+      wid = a.id;
+    }
+    auto info = ws.getWindowInfo(wid);
+    if (!info.valid) return Value::makeInt(0);
+    auto mons = DisplayManager::GetMonitors();
+    int idx = 0;
+    for (const auto &m : mons) {
+      if (info.x >= m.x && info.x < m.x + m.width &&
+          info.y >= m.y && info.y < m.y + m.height) return Value::makeInt(idx);
+      ++idx;
+    }
+    return Value::makeInt(0);
+  };
+   options.host_functions["window.getMonitors"] = [ctx = ctx_](const auto &args) {
+     if (!ctx->vm) return Value::makeNull();
+     auto *vm = static_cast<VM *>(ctx->vm);
+     compiler::VMApi api(*vm);
+     auto mons = DisplayManager::GetMonitors();
+     auto arr = api.makeArray();
+     int idx = 0;
+     for (const auto &m : mons) {
+       auto obj = api.makeObject();
+       api.setField(obj, "index", Value::makeInt(idx));
+       api.setField(obj, "name", api.makeString(m.name));
+       api.setField(obj, "x", Value::makeInt(m.x));
+       api.setField(obj, "y", Value::makeInt(m.y));
+       api.setField(obj, "width", Value::makeInt(m.width));
+       api.setField(obj, "height", Value::makeInt(m.height));
+       api.setField(obj, "primary", Value::makeBool(m.isPrimary));
+       api.push(arr, obj);
+       ++idx;
+     }
+     return arr;
+   };
+  options.host_functions["window.frameExtents"] = [ctx = ctx_](const auto &args) {
+    if (!ctx->windowManager || args.empty()) return Value::makeNull();
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeNull();
+    Display *d = DisplayManager::GetDisplay();
+    if (!d) return Value::makeNull();
+    Atom a = XInternAtom(d, "_NET_FRAME_EXTENTS", x11::XTrue);
+    if (a == x11::XNone) return Value::makeNull();
+    Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+    if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 4, x11::XFalse,
+                           XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop) return Value::makeNull();
+    long l=0,t=0,r=0,b=0;
+    if (n>=4){ l=reinterpret_cast<long*>(prop)[0]; r=reinterpret_cast<long*>(prop)[1]; t=reinterpret_cast<long*>(prop)[2]; b=reinterpret_cast<long*>(prop)[3]; }
+    if (prop) XFree(prop);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "left", Value::makeInt(l));
+    vm->setHostObjectField(obj, "right", Value::makeInt(r));
+    vm->setHostObjectField(obj, "top", Value::makeInt(t));
+    vm->setHostObjectField(obj, "bottom", Value::makeInt(b));
+    return Value::makeObjectId(obj.id);
   };
   options.host_functions["window.findByTitle"] =
       [ctx = ctx_](const auto &args) { return handleWindowFindByTitle(args, ctx); };
@@ -1721,6 +1950,27 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.list"] = [ctx = ctx_](const auto &args) {
     return handleWindowList(args, ctx);
   };
+  options.host_functions["window.all"] = [ctx = ctx_](const auto &args) {
+    return handleWindowList(args, ctx);
+  };
+  options.host_functions["window.pidWindow"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFindByPid(args, ctx);
+  };
+  options.host_functions["window.currentDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowCurrentDesktop(args, ctx);
+  };
+  options.host_functions["window.desktopCount"] = [ctx = ctx_](const auto &args) {
+    return handleWindowDesktopCount(args, ctx);
+  };
+  options.host_functions["window.desktopName"] = [ctx = ctx_](const auto &args) {
+    return handleWindowDesktopName(args, ctx);
+  };
+  options.host_functions["window.viewport"] = [ctx = ctx_](const auto &args) {
+    return handleWindowViewport(args, ctx);
+  };
+  options.host_functions["window.switchDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSwitchDesktop(args, ctx);
+  };
   options.host_functions["window.title"] = [ctx = ctx_](const auto &args) {
     return handleWindowTitle(args, ctx);
   };
@@ -1780,7 +2030,178 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return handleWindowSetAlwaysOnTopObj(args, ctx);
   };
   options.host_functions["window._pos"] = [ctx = ctx_](const auto &args) {
+    fprintf(stderr, "[dbg] window._pos entered, args=%zu\n", args.size());
     return handleWindowPosObj(args, ctx);
+  };
+  options.host_functions["window._size"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSizeObj(args, ctx);
+  };
+  options.host_functions["window._setSize"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSetSizeObj(args, ctx);
+  };
+  options.host_functions["window._isMaximized"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsMaximized(args, ctx);
+  };
+  options.host_functions["window._isMinimized"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsMinimized(args, ctx);
+  };
+  options.host_functions["window._isFullscreen"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsFullscreen(args, ctx);
+  };
+  options.host_functions["window._unmax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmax(args, ctx);
+  };
+  options.host_functions["window._toggleMax"] = [ctx = ctx_](const auto &args) {
+    return handleWindowToggleMax(args, ctx);
+  };
+  options.host_functions["window._unmin"] = [ctx = ctx_](const auto &args) {
+    return handleWindowUnmin(args, ctx);
+  };
+  options.host_functions["window._sticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSticky(args, ctx);
+  };
+  options.host_functions["window._isSticky"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSticky(args, ctx);
+  };
+  options.host_functions["window._shade"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShade(args, ctx);
+  };
+  options.host_functions["window._isShaded"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsShaded(args, ctx);
+  };
+  options.host_functions["window._skipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window._isSkipTaskbar"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipTaskbar(args, ctx);
+  };
+  options.host_functions["window._skipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSkipPager(args, ctx);
+  };
+  options.host_functions["window._isSkipPager"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsSkipPager(args, ctx);
+  };
+  options.host_functions["window._alwaysOnTopState"] = [ctx = ctx_](const auto &args) {
+    return handleWindowAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window._isAlwaysOnTopState"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsAlwaysOnTop(args, ctx);
+  };
+  options.host_functions["window._raise"] = [ctx = ctx_](const auto &args) {
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (a.valid) wid = a.id;
+    }
+    Display *d = DisplayManager::GetDisplay();
+    if (!d || wid == 0) return Value::makeBool(false);
+    XRaiseWindow(d, static_cast<Window>(wid));
+    XFlush(d);
+    // No receiver injection through makeFunctionRef dispatches; just return bool.
+    // Chainability in Havel comes from class methods on window.hv Window class,
+    // and the C++ side only needs to perform the action.
+    return Value::makeBool(true);
+  };
+  options.host_functions["window._lower"] = [ctx = ctx_](const auto &args) {
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (a.valid) wid = a.id;
+    }
+    Display *d = DisplayManager::GetDisplay();
+    if (!d || wid == 0) return Value::makeBool(false);
+    XLowerWindow(d, static_cast<Window>(wid));
+    XFlush(d);
+    return Value::makeBool(true);
+  };
+  options.host_functions["window._setPos"] = [ctx = ctx_](const auto &args) {
+    // setPos(x, y, speed, winId, relative) — same signature as move
+    return handleWindowMove(args, ctx);
+  };
+  options.host_functions["window._geometry"] = [ctx = ctx_](const auto &args) {
+    if (!ctx->windowManager || !ctx->vm) return Value::makeNull();
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = 0;
+    if (!args.empty())
+      wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) {
+      auto a = ws.getActiveWindowInfo();
+      if (!a.valid) return Value::makeNull();
+      wid = a.id;
+    }
+    auto info = ws.getWindowInfo(wid);
+    if (!info.valid) return Value::makeNull();
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "x", Value::makeInt(info.x));
+    vm->setHostObjectField(obj, "y", Value::makeInt(info.y));
+    vm->setHostObjectField(obj, "width", Value::makeInt(info.width));
+    vm->setHostObjectField(obj, "height", Value::makeInt(info.height));
+    return Value::makeObjectId(obj.id);
+  };
+  options.host_functions["window._toggleFullscreen"] = [ctx = ctx_](const auto &args) {
+    if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+    ::havel::host::WindowService ws(ctx->windowManager);
+    uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (wid == 0) return Value::makeBool(false);
+    return Value::makeBool(ws.toggleFullscreen(wid));
+  };
+  options.host_functions["window._setOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowSetOpacity(args, ctx);
+  };
+  options.host_functions["window._borderless"] = [ctx = ctx_](const auto &args) {
+    return handleWindowBorderlessObj(args, ctx);
+  };
+  options.host_functions["window._isBorderless"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIsBorderless(args, ctx);
+  };
+  options.host_functions["window._toggleBorderless"] = [ctx = ctx_](const auto &args) {
+    return handleWindowToggleBorderless(args, ctx);
+  };
+  options.host_functions["window._moveMonitor"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveMonitorObj(args, ctx);
+  };
+  options.host_functions["window._moveMonitorNext"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveMonitorNext(args, ctx);
+  };
+  options.host_functions["window._moveMonitorPrev"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveMonitorPrev(args, ctx);
+  };
+  options.host_functions["window._getCurrentMonitor"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetCurrentMonitor(args, ctx);
+  };
+  options.host_functions["window._getMonitors"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetMonitors(args, ctx);
+  };
+  options.host_functions["window._frameExtents"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFrameExtents(args, ctx);
+  };
+  options.host_functions["window._type"] = [ctx = ctx_](const auto &args) {
+    return handleWindowType(args, ctx);
+  };
+  options.host_functions["window._states"] = [ctx = ctx_](const auto &args) {
+    return handleWindowStates(args, ctx);
+  };
+  options.host_functions["window._getOpacity"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetOpacity(args, ctx);
+  };
+  options.host_functions["window._terminate"] = [ctx = ctx_](const auto &args) {
+    return handleWindowTerminate(args, ctx);
+  };
+  options.host_functions["window._stickyToDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowStickyToDesktop(args, ctx);
+  };
+  options.host_functions["window._getDesktop"] = [ctx = ctx_](const auto &args) {
+    return handleWindowGetDesktop(args, ctx);
+  };
+  options.host_functions["window._exists"] = [ctx = ctx_](const auto &args) {
+    return handleWindowExists(args, ctx);
   };
   options.host_functions["window._title"] = [ctx = ctx_](const auto &args) {
     return handleWindowTitleObj(args, ctx);
@@ -1888,6 +2309,46 @@ static Value createWindowObject(
   api.setField(obj, "moveResize", api.makeFunctionRef("window._moveResize"));
   api.setField(obj, "setAlwaysOnTop", api.makeFunctionRef("window._setAlwaysOnTop"));
   api.setField(obj, "pos", api.makeFunctionRef("window._pos"));
+  api.setField(obj, "size", api.makeFunctionRef("window._size"));
+  api.setField(obj, "setSize", api.makeFunctionRef("window._setSize"));
+  api.setField(obj, "isMaximized", api.makeFunctionRef("window._isMaximized"));
+  api.setField(obj, "isMinimized", api.makeFunctionRef("window._isMinimized"));
+  api.setField(obj, "isFullscreen", api.makeFunctionRef("window._isFullscreen"));
+  api.setField(obj, "unmax", api.makeFunctionRef("window._unmax"));
+  api.setField(obj, "toggleMax", api.makeFunctionRef("window._toggleMax"));
+  api.setField(obj, "unmin", api.makeFunctionRef("window._unmin"));
+  api.setField(obj, "sticky", api.makeFunctionRef("window._sticky"));
+  api.setField(obj, "isSticky", api.makeFunctionRef("window._isSticky"));
+  api.setField(obj, "shade", api.makeFunctionRef("window._shade"));
+  api.setField(obj, "isShaded", api.makeFunctionRef("window._isShaded"));
+  api.setField(obj, "skipTaskbar", api.makeFunctionRef("window._skipTaskbar"));
+  api.setField(obj, "isSkipTaskbar", api.makeFunctionRef("window._isSkipTaskbar"));
+  api.setField(obj, "skipPager", api.makeFunctionRef("window._skipPager"));
+  api.setField(obj, "isSkipPager", api.makeFunctionRef("window._isSkipPager"));
+  api.setField(obj, "alwaysOnTopState", api.makeFunctionRef("window._alwaysOnTopState"));
+  api.setField(obj, "isAlwaysOnTopState", api.makeFunctionRef("window._isAlwaysOnTopState"));
+  api.setField(obj, "raise", api.makeFunctionRef("window._raise"));
+  api.setField(obj, "lower", api.makeFunctionRef("window._lower"));
+  api.setField(obj, "setPos", api.makeFunctionRef("window._setPos"));
+  api.setField(obj, "geometry", api.makeFunctionRef("window._geometry"));
+  api.setField(obj, "toggleFullscreen", api.makeFunctionRef("window._toggleFullscreen"));
+  api.setField(obj, "setOpacity", api.makeFunctionRef("window._setOpacity"));
+  api.setField(obj, "borderless", api.makeFunctionRef("window._borderless"));
+  api.setField(obj, "isBorderless", api.makeFunctionRef("window._isBorderless"));
+  api.setField(obj, "toggleBorderless", api.makeFunctionRef("window._toggleBorderless"));
+  api.setField(obj, "moveMonitor", api.makeFunctionRef("window._moveMonitor"));
+  api.setField(obj, "moveMonitorNext", api.makeFunctionRef("window._moveMonitorNext"));
+  api.setField(obj, "moveMonitorPrev", api.makeFunctionRef("window._moveMonitorPrev"));
+  api.setField(obj, "getCurrentMonitor", api.makeFunctionRef("window._getCurrentMonitor"));
+  api.setField(obj, "getMonitors", api.makeFunctionRef("window._getMonitors"));
+  api.setField(obj, "frameExtents", api.makeFunctionRef("window._frameExtents"));
+  api.setField(obj, "type", api.makeFunctionRef("window._type"));
+  api.setField(obj, "states", api.makeFunctionRef("window._states"));
+  api.setField(obj, "getOpacity", api.makeFunctionRef("window._getOpacity"));
+  api.setField(obj, "terminate", api.makeFunctionRef("window._terminate"));
+  api.setField(obj, "stickyToDesktop", api.makeFunctionRef("window._stickyToDesktop"));
+  api.setField(obj, "getDesktop", api.makeFunctionRef("window._getDesktop"));
+  api.setField(obj, "exists", api.makeFunctionRef("window._exists"));
 
   return Value::makeObjectId(obj.asObjectId());
 }
@@ -2026,43 +2487,17 @@ UIBridge::handleWindowMaxObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowResizeObj(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager)
-    return Value::makeBool(false);
-  ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeBool(false);
-  int w = 0, h = 0;
-  if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
-    w = static_cast<int>(v->asInt());
-  else if (auto *v = (args[1].isDouble() ? &args[1] : nullptr))
-    w = static_cast<int>(v->asInt());
-  if (auto *v = (args[2].isInt() ? &args[2] : nullptr))
-    h = static_cast<int>(v->asInt());
-  else if (auto *v = (args[2].isDouble() ? &args[2] : nullptr))
-    h = static_cast<int>(v->asInt());
-  return Value(winService.resizeWindow(wid, w, h));
+  // Object method form: obj is args[0]; remaining args follow the module-level
+  // resize() signature (w, h [, relative]).
+  return handleWindowResize(args, ctx);
 }
 
 Value
 UIBridge::handleWindowMoveObj(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager)
-    return Value::makeBool(false);
-  ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeBool(false);
-  int x = 0, y = 0;
-  if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
-    x = static_cast<int>(v->asInt());
-  else if (auto *v = (args[1].isDouble() ? &args[1] : nullptr))
-    x = static_cast<int>(v->asInt());
-  if (auto *v = (args[2].isInt() ? &args[2] : nullptr))
-    y = static_cast<int>(v->asInt());
-  else if (auto *v = (args[2].isDouble() ? &args[2] : nullptr))
-    y = static_cast<int>(v->asInt());
-  return Value(winService.moveWindow(wid, x, y));
+  // Object method form: obj is args[0]; remaining args follow the module-level
+  // move() signature (x, y [, speed] [, relative]).
+  return handleWindowMove(args, ctx);
 }
 
 // Spec parsing shared by window.find / window.findAllBySpec. Semantics
@@ -2385,21 +2820,28 @@ UIBridge::handleWindowResize(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
-  int wIdx = 0, hIdx = 1;
-  if (args.size() >= 3 && args[0].isObjectId()) {
+  // Signatures supported:
+  //   window.resize(winObj, w, h [, relative])
+  //   window.resize(w, h [, winId] [, relative])
+  bool sawObject = !args.empty() && args[0].isObjectId();
+  int wIdx = sawObject ? 1 : 0;
+  int hIdx = wIdx + 1;
+  int winIdIdx = hIdx + 1;
+  int relIdx = winIdIdx + 1;
+  if (sawObject) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-    wIdx = 1; hIdx = 2;
-  } else if (args.size() >= 2) {
+    winIdIdx = -1; // already have the target from the object argument
+    relIdx = hIdx + 1; // obj.resize(w, h, relative)
+  }
+  if (wid == 0) {
     auto info = winService.getActiveWindowInfo();
     if (!info.valid) return Value::makeBool(false);
     wid = info.id;
-    wIdx = 0; hIdx = 1;
-  } else {
-    return Value::makeBool(false);
   }
-  if (wid == 0 || args.size() < static_cast<size_t>(hIdx + 1))
+  if (args.size() < static_cast<size_t>(hIdx + 1))
     return Value::makeBool(false);
   int w = 0, h = 0;
+  bool relative = false;
   if (auto *v = (args[wIdx].isInt() ? &args[wIdx] : nullptr))
     w = static_cast<int>(v->asInt());
   else if (auto *v = (args[wIdx].isDouble() ? &args[wIdx] : nullptr))
@@ -2408,6 +2850,20 @@ UIBridge::handleWindowResize(const std::vector<Value> &args,
     h = static_cast<int>(v->asInt());
   else if (auto *v = (args[hIdx].isDouble() ? &args[hIdx] : nullptr))
     h = static_cast<int>(v->asInt());
+  if (winIdIdx >= 0 && args.size() > static_cast<size_t>(winIdIdx)) {
+    uint64_t cand = resolveWindowId(args[winIdIdx], winService, static_cast<VM *>(ctx->vm));
+    if (cand != 0) wid = cand;
+  }
+  if (args.size() > static_cast<size_t>(relIdx)) {
+    if (auto *v = (args[relIdx].isBool() ? &args[relIdx] : nullptr))
+      relative = v->asBool();
+  }
+  if (relative) {
+    auto cur = winService.getWindowInfo(wid);
+    if (!cur.valid) return Value::makeBool(false);
+    w += cur.width;
+    h += cur.height;
+  }
   return Value(winService.resizeWindow(wid, w, h));
 }
 
@@ -2432,13 +2888,324 @@ UIBridge::handleWindowMoveToMonitor(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMoveToNextMonitor(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  (void)args;
-  if (!ctx->windowManager) {
-    return Value::makeBool(false);
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  bool follow = true;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (args.size() >= 2) {
+      if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) follow = v->asBool();
+    }
   }
-  // TODO: Implement move to next monitor
-  ::havel::host::WindowService winService(ctx->windowManager);
-  return Value(winService.moveWindowToMonitor(0, 0));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  auto info = ws.getWindowInfo(wid);
+  if (!info.valid) return Value::makeBool(false);
+  auto mons = DisplayManager::GetMonitors();
+  const int n = static_cast<int>(mons.size());
+  if (n == 0) return Value::makeBool(false);
+  int cur = 0;
+  for (int i = 0; i < n; ++i) {
+    auto &m = mons[i];
+    if (info.x >= m.x && info.x < m.x + m.width &&
+        info.y >= m.y && info.y < m.y + m.height) { cur = i; break; }
+  }
+  int next = (cur + 1) % n;
+  bool ok = ws.moveWindowToMonitor(wid, next);
+  if (ok && follow) ws.focusWindow(wid);
+  return Value::makeBool(ok);
+}
+
+// -- EWMH spec helpers (module-level aliases used by snapshot object methods) --
+
+Value UIBridge::handleWindowMoveMonitorNext(const std::vector<Value> &args,
+                                             const HostContext *ctx) {
+  // object method: winObj.moveMonitorNext(follow = true)
+  return handleWindowMoveToNextMonitor(args, ctx);
+}
+
+// -- _MOTIF_WM_HINTS helpers for *Borderless handlers --
+
+static bool motifGetBorderless(wID windowId, bool &borderless) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XTrue);
+  if (a == x11::XNone) return false;
+  Atom actual; int fmt; unsigned long n = 0, ba = 0; unsigned char *prop = nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(windowId), a, 0, 5, x11::XFalse,
+                         a, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return false;
+  long deco = (n >= 3) ? reinterpret_cast<long *>(prop)[2] : 1;
+  XFree(prop);
+  borderless = (deco == 0);
+  return true;
+}
+
+static bool motifSetBorderless(wID windowId, bool enable) {
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return false;
+  Atom a = XInternAtom(d, "_MOTIF_WM_HINTS", x11::XFalse);
+  if (a == x11::XNone) return false;
+  unsigned long hints[5] = {2UL, 0UL, enable ? 0UL : 1UL, 0UL, 0UL};
+  int ok = XChangeProperty(d, static_cast<Window>(windowId), a, a, 32,
+                           PropModeReplace,
+                           reinterpret_cast<unsigned char *>(hints), 5);
+  if (ok) XFlush(d);
+  return ok != 0;
+}
+
+Value UIBridge::handleWindowBorderlessObj(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  // object method: winObj.borderless(enable = true)
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool enable = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) enable = v->asBool();
+  }
+  return Value::makeBool(motifSetBorderless(wid, enable));
+}
+
+Value UIBridge::handleWindowIsBorderless(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  // object method: winObj.isBorderless()
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool borderless = false;
+  if (!motifGetBorderless(wid, borderless)) return Value::makeBool(false);
+  return Value::makeBool(borderless);
+}
+
+Value UIBridge::handleWindowToggleBorderless(const std::vector<Value> &args,
+                                             const HostContext *ctx) {
+  // object method: winObj.toggleBorderless()
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool borderless = false;
+  motifGetBorderless(wid, borderless);
+  return Value::makeBool(motifSetBorderless(wid, !borderless));
+}
+
+Value UIBridge::handleWindowMoveMonitorObj(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  // object method: winObj.moveMonitor(i, follow = true)
+  if (args.size() < 2 || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  int monitor = 0;
+  bool follow = true;
+  if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
+    monitor = static_cast<int>(v->asInt());
+  else if (auto *v2 = (args[1].isDouble() ? &args[1] : nullptr))
+    monitor = static_cast<int>(v2->asDouble());
+  if (args.size() >= 3) {
+    if (auto *v = (args[2].isBool() ? &args[2] : nullptr)) follow = v->asBool();
+  }
+  bool ok = ws.moveWindowToMonitor(wid, monitor);
+  if (ok && follow) ws.focusWindow(wid);
+  return Value::makeBool(ok);
+}
+
+Value UIBridge::handleWindowMoveMonitorPrev(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  // object method: winObj.moveMonitorPrev(follow = true)
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  bool follow = true;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+    if (args.size() >= 2) {
+      if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) follow = v->asBool();
+    }
+  }
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  auto info = ws.getWindowInfo(wid);
+  if (!info.valid) return Value::makeBool(false);
+  auto mons = DisplayManager::GetMonitors();
+  const int n = static_cast<int>(mons.size());
+  if (n == 0) return Value::makeBool(false);
+  int cur = 0;
+  for (int i = 0; i < n; ++i) {
+    auto &m = mons[i];
+    if (info.x >= m.x && info.x < m.x + m.width &&
+        info.y >= m.y && info.y < m.y + m.height) { cur = i; break; }
+  }
+  int prev = (cur - 1 + n) % n;
+  bool ok = ws.moveWindowToMonitor(wid, prev);
+  if (ok && follow) ws.focusWindow(wid);
+  return Value::makeBool(ok);
+}
+
+Value UIBridge::handleWindowGetCurrentMonitor(const std::vector<Value> &args,
+                                              const HostContext *ctx) {
+  // object method: winObj.getCurrentMonitor() -> monitor index
+  if (!ctx->windowManager) return Value::makeInt(0);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeInt(0);
+    wid = a.id;
+  }
+  auto info = ws.getWindowInfo(wid);
+  if (!info.valid) return Value::makeInt(0);
+  auto mons = DisplayManager::GetMonitors();
+  int idx = 0;
+  for (const auto &m : mons) {
+    if (info.x >= m.x && info.x < m.x + m.width &&
+        info.y >= m.y && info.y < m.y + m.height) return Value::makeInt(idx);
+    ++idx;
+  }
+  return Value::makeInt(0);
+}
+
+Value UIBridge::handleWindowGetMonitors(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx->vm) return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto mons = DisplayManager::GetMonitors();
+  auto arr = vm->createHostArray();
+  auto arrG = vm->makeRoot(Value::makeArrayId(arr.id));
+  int idx = 0;
+  for (const auto &m : mons) {
+    compiler::VMApi api(*vm);
+    auto obj = api.makeObject();
+    api.setField(obj, "index", Value::makeInt(idx));
+    api.setField(obj, "name", api.makeString(m.name));
+    api.setField(obj, "x", Value::makeInt(m.x));
+    api.setField(obj, "y", Value::makeInt(m.y));
+    api.setField(obj, "width", Value::makeInt(m.width));
+    api.setField(obj, "height", Value::makeInt(m.height));
+    api.setField(obj, "primary", Value::makeBool(m.isPrimary));
+    vm->pushHostArrayValue(arr, obj);
+    ++idx;
+  }
+  return Value::makeArrayId(arr.id);
+}
+
+static Value _mkOrObject(VM *vm, const char *k, long v, const char *k1, long v1,
+                         const char *k2, long v2, const char *k3, long v3) {
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, k,  Value::makeInt(v));
+  vm->setHostObjectField(obj, k1, Value::makeInt(v1));
+  vm->setHostObjectField(obj, k2, Value::makeInt(v2));
+  vm->setHostObjectField(obj, k3, Value::makeInt(v3));
+  return Value::makeObjectId(obj.id);
+}
+
+Value UIBridge::handleWindowFrameExtents(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeNull();
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeNull();
+    wid = a.id;
+  }
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeNull();
+  Atom a = XInternAtom(d, "_NET_FRAME_EXTENTS", x11::XTrue);
+  if (a == x11::XNone) return Value::makeNull();
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 4, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return Value::makeNull();
+  long l=0,r=0,t=0,b=0;
+  if (n>=4){ l=reinterpret_cast<long*>(prop)[0]; r=reinterpret_cast<long*>(prop)[1];
+             t=reinterpret_cast<long*>(prop)[2]; b=reinterpret_cast<long*>(prop)[3]; }
+  if (prop) XFree(prop);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  return _mkOrObject(vm, "left", l, "right", r, "top", t, "bottom", b);
+}
+
+Value UIBridge::handleWindowType(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeNull();
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeNull();
+    wid = a.id;
+  }
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeNull();
+  Atom a = XInternAtom(d, "_NET_WM_WINDOW_TYPE", x11::XTrue);
+  if (a == x11::XNone) return Value::makeNull();
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 8, x11::XFalse,
+                         XA_ATOM, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop || n == 0)
+    return Value::makeNull();
+  // first atom is the primary type
+  Atom typeAtom = reinterpret_cast<Atom *>(prop)[0];
+  char *name = XGetAtomName(d, typeAtom);
+  std::string result = name ? name : "";
+  if (name) XFree(name);
+  XFree(prop);
+  if (result.rfind("_NET_WM_WINDOW_TYPE_", 0) == 0)
+    result = result.substr(20); // strip prefix for spec cleanliness
+  std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  compiler::VMApi api(*vm);
+  return api.makeString(result);
+}
+
+Value UIBridge::handleWindowStates(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) return Value::makeNull();
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeNull();
+    wid = a.id;
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeNull();
+  Atom a = XInternAtom(d, "_NET_WM_STATE", x11::XTrue);
+  if (a == x11::XNone) return Value::makeNull();
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 64, x11::XFalse,
+                         XA_ATOM, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return Value::makeNull();
+  auto arr = vm->createHostArray();
+  auto arrG = vm->makeRoot(Value::makeArrayId(arr.id));
+  for (unsigned long i = 0; i < n; ++i) {
+    Atom at = reinterpret_cast<Atom *>(prop)[i];
+    char *nm = XGetAtomName(d, at);
+    compiler::VMApi api(*vm); vm->pushHostArrayValue(arr, nm ? api.makeString(nm) : api.makeString(""));
+    if (nm) XFree(nm);
+  }
+  XFree(prop);
+  return Value::makeArrayId(arr.id);
 }
 
 Value UIBridge::handleWindowMove(const std::vector<Value> &args,
@@ -2448,35 +3215,61 @@ Value UIBridge::handleWindowMove(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
-  int xIdx = 0, yIdx = 1;
-  // 3 args = window ID + x + y; 2 args = x + y (active window)
-  if (args.size() >= 3 && (args[0].isObjectId())) {
+  // Signatures supported:
+  //   window.move(winObj, x, y [, speed] [, relative]) — object form
+  //   window.move(x, y [, speed] [, winId] [, relative])
+  bool sawObject = !args.empty() && args[0].isObjectId();
+  // Object form prepends the window object; the remaining args follow the
+  // module-level signature (x, y, speed, winId, relative).
+  int xIdx = sawObject ? 1 : 0;
+  int yIdx = xIdx + 1;
+  int speedIdx = yIdx + 1;
+  int winIdIdx = speedIdx + 1;
+  int relIdx = winIdIdx + 1;
+  if (sawObject) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-    xIdx = 1; yIdx = 2;
-  } else if (args.size() >= 3 && args[0].isInt()) {
-    // Could be windowID-as-int OR just coords. Use 0 as invalid window sentinel:
-    // resolveWindowId on int=0 returns 0, so we treat 3-int args specially:
-    // window.move(x, y) on active window is more common than window.move(0, x, y)
-    // since users rarely hardcode window id 0. Use size to decide.
-    auto info = winService.getActiveWindowInfo();
-    if (!info.valid) return Value::makeBool(false);
-    wid = info.id;
-    xIdx = 0; yIdx = 1;
-  } else if (args.size() >= 2) {
-    auto info = winService.getActiveWindowInfo();
-    if (!info.valid) return Value::makeBool(false);
-    wid = info.id;
-    xIdx = 0; yIdx = 1;
-  } else {
-    return Value::makeBool(false);
+    winIdIdx = -1; // already have the target from the object argument
+    relIdx = speedIdx + 1; // obj.move(x, y, speed, relative)
+  } else if (args.size() >= 3 && !args[2].isInt() && !args[2].isDouble()) {
+    // args[2] is not a number => can't be speed => first arg is winId
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+    xIdx = 1; yIdx = 2; speedIdx = 3; winIdIdx = -1; relIdx = 4;
   }
-  if (wid == 0 || args.size() < static_cast<size_t>(yIdx + 1))
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeBool(false);
+    wid = info.id;
+  }
+  if (args.size() < static_cast<size_t>(yIdx + 1))
     return Value::makeBool(false);
   int x = 0, y = 0;
+  double speed = 0.0;
+  bool relative = false;
   if (auto *v = (args[xIdx].isInt() ? &args[xIdx] : nullptr))
     x = static_cast<int>(v->asInt());
   if (auto *v = (args[yIdx].isInt() ? &args[yIdx] : nullptr))
     y = static_cast<int>(v->asInt());
+  if (args.size() > static_cast<size_t>(speedIdx)) {
+    if (auto *v = (args[speedIdx].isDouble() ? &args[speedIdx] : nullptr))
+      speed = v->asDouble();
+    else if (auto *v = (args[speedIdx].isInt() ? &args[speedIdx] : nullptr))
+      speed = static_cast<double>(v->asInt());
+  }
+  if (winIdIdx >= 0 && args.size() > static_cast<size_t>(winIdIdx)) {
+    uint64_t cand = resolveWindowId(args[winIdIdx], winService, static_cast<VM *>(ctx->vm));
+    if (cand != 0) wid = cand;
+  }
+  if (args.size() > static_cast<size_t>(relIdx)) {
+    if (auto *v = (args[relIdx].isBool() ? &args[relIdx] : nullptr))
+      relative = v->asBool();
+  }
+  (void)speed; // animation speed hint — not implemented in X11 backend yet
+  if (relative) {
+    auto cur = winService.getWindowInfo(wid);
+    if (!cur.valid) return Value::makeBool(false);
+    x += cur.x;
+    y += cur.y;
+  }
   return Value(winService.moveWindow(wid, x, y));
 }
 
@@ -2522,7 +3315,9 @@ UIBridge::handleWindowFocus(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
+  bool sawObj = false;
   if (!args.empty()) {
+    sawObj = args[0].isObjectId();
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   } else {
     auto info = winService.getActiveWindowInfo();
@@ -2531,7 +3326,9 @@ UIBridge::handleWindowFocus(const std::vector<Value> &args,
   }
   if (wid == 0)
     return Value::makeBool(false);
-  return Value(winService.focusWindow(wid));
+  bool ok = winService.focusWindow(wid);
+  // Return original object for chainability when called as object method
+  return (ok && sawObj) ? args[0] : Value::makeBool(ok);
 }
 
 Value
@@ -2937,19 +3734,42 @@ UIBridge::handleWindowSetAlwaysOnTop(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPos(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  // Signatures:
+  //   window.pos(relative = false, windowId = <active>)   — module-level
+  //   win.pos(relative = false)                           — object method (win
+  //   injected as args[0])
+  bool relative = false;
+  uint64_t wid = 0;
+  if (!args.empty() && args[0].isObjectId()) {
+    wid = resolveWindowId(args[0], winService, vm);
+    if (args.size() >= 2 && args[1].isBool()) relative = args[1].asBool();
+  } else {
+    if (!args.empty() && args[0].isBool()) relative = args[0].asBool();
+    if (args.size() >= 2)
+      wid = resolveWindowId(args[1], winService, vm);
+  }
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeNull();
+    wid = info.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeNull();
-  auto *vm = static_cast<VM *>(ctx->vm);
+  // Relative: geometry-relative-to-parent (info.x/y). Absolute: translate to
+  // root-window coordinates via the backend.
+  int x = info.x, y = info.y;
+  if (!relative) {
+    auto abs = winService.getWindowAbsolutePosition(wid);
+    if (abs.valid) { x = abs.x; y = abs.y; }
+  }
   auto obj = vm->createHostObject();
-  vm->setHostObjectField(obj, "x", Value::makeInt(info.x));
-  vm->setHostObjectField(obj, "y", Value::makeInt(info.y));
+  vm->setHostObjectField(obj, "x", Value::makeInt(x));
+  vm->setHostObjectField(obj, "y", Value::makeInt(y));
   return Value::makeObjectId(obj.id);
 }
 
@@ -3240,6 +4060,447 @@ Value UIBridge::handleWindowPosObj(const std::vector<Value> &args,
                                    const HostContext *ctx) {
   return handleWindowPos(args, ctx);
 }
+
+Value UIBridge::handleWindowSizeObj(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto info = winService.getActiveWindowInfo();
+    if (!info.valid) return Value::makeNull();
+    wid = info.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "width", Value::makeInt(info.width));
+  vm->setHostObjectField(obj, "height", Value::makeInt(info.height));
+  vm->setHostObjectField(obj, "clientWidth", Value::makeInt(info.width));
+  vm->setHostObjectField(obj, "clientHeight", Value::makeInt(info.height));
+  return Value::makeObjectId(obj.id);
+}
+
+Value UIBridge::handleWindowSetSizeObj(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  // obj.setSize(w, h) — forward to module-level resize (w, h)
+  return handleWindowResize(args, ctx);
+}
+
+Value UIBridge::handleWindowIsMaximized(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeNull();
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  bool maxxed = info.maximized;
+  vm->setHostObjectField(obj, "horizontal", Value::makeBool(maxxed));
+  vm->setHostObjectField(obj, "vertical", Value::makeBool(maxxed));
+  vm->setHostObjectField(obj, "any", Value::makeBool(maxxed));
+  return Value::makeObjectId(obj.id);
+}
+
+Value UIBridge::handleWindowIsMinimized(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  return Value::makeBool(info.valid && info.minimized);
+}
+
+Value UIBridge::handleWindowIsFullscreen(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  return Value::makeBool(info.valid && info.fullscreen);
+}
+
+Value UIBridge::handleWindowUnmax(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  return Value(winService.restoreWindow(wid));
+}
+
+Value UIBridge::handleWindowToggleMax(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid) return Value::makeBool(false);
+  if (info.maximized)
+    return Value(winService.restoreWindow(wid));
+  return Value(winService.maximizeWindow(wid));
+}
+
+Value UIBridge::handleWindowUnmin(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = winService.getActiveWindowInfo();
+    if (!active.valid) return Value::makeBool(false);
+    wid = active.id;
+  }
+  return Value(winService.showWindow(wid));
+}
+
+// ---------------------------------------------------------------------------
+// Workspace / desktop module-level helpers
+// ---------------------------------------------------------------------------
+
+Value UIBridge::handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) return Value::makeInt(-1);
+  return Value::makeInt(ctx->windowManager->getBackend().getCurrentWorkspace());
+}
+
+Value UIBridge::handleWindowDesktopCount(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) return Value::makeInt(0);
+  auto ws = ctx->windowManager->getBackend().getWorkspaces();
+  return Value::makeInt(static_cast<int64_t>(ws.size()));
+}
+
+Value UIBridge::handleWindowDesktopName(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) return Value::makeNull();
+  int idx = -1;
+  if (!args.empty() && args[0].isInt()) idx = static_cast<int>(args[0].asInt());
+  auto ws = ctx->windowManager->getBackend().getWorkspaces();
+  if (idx < 0 || idx >= static_cast<int>(ws.size())) return Value::makeNull();
+  compiler::VMApi api(*static_cast<VM *>(ctx->vm));
+  return api.makeString(ws[idx].name);
+}
+
+Value UIBridge::handleWindowViewport(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  (void)args;
+  if (!ctx->vm) return Value::makeNull();
+  compiler::VMApi api(*static_cast<VM *>(ctx->vm));
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeNull();
+  Atom a = XInternAtom(d, "_NET_DESKTOP_VIEWPORT", x11::XTrue);
+  if (a == x11::XNone) return Value::makeNull();
+  Atom actual; int fmt; unsigned long n=0, ba=0; unsigned char *prop=nullptr;
+  if (XGetWindowProperty(d, DefaultRootWindow(d), a, 0, 2, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess || !prop)
+    return Value::makeNull();
+  long vx=0, vy=0;
+  if (n>=2){ vx=reinterpret_cast<long*>(prop)[0]; vy=reinterpret_cast<long*>(prop)[1]; }
+  if (prop) XFree(prop);
+  auto obj = api.makeObject();
+  api.setField(obj, "x", Value::makeInt(vx));
+  api.setField(obj, "y", Value::makeInt(vy));
+  return obj;
+}
+
+Value UIBridge::handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty() || !args[0].isInt())
+    return Value::makeBool(false);
+  return Value::makeBool(
+      ctx->windowManager->getBackend().switchToWorkspace(static_cast<int>(args[0].asInt())));
+}
+
+
+Value UIBridge::handleWindowSticky(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  bool on = true;
+  // Calls from obj-method style `_w.sticky(on)` => args[0] = bool trigger
+  // Calls like `_w.sticky()` (no args) => default true
+  if (args.size() >= 1) {
+    if (auto *v = (args[0].isBool() ? &args[0] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[0].isInt() ? &args[0] : nullptr)) on = (v->asInt() != 0);
+  }
+  // Only positional arg = explicit windowId/object; never passed when called as obj method
+  if (args.size() >= 2)
+    wid = resolveWindowId(args[1], ws, static_cast<VM *>(ctx->vm));
+  else if (!args.empty() && !args[0].isBool())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  bool ok = ws.setSticky(wid, on);
+  // Chainable when called with window object as receiver
+  if (!args.empty() && args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
+}
+Value UIBridge::handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  return Value::makeBool(ws.isSticky(wid));
+}
+Value UIBridge::handleWindowShade(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setShaded(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
+}
+Value UIBridge::handleWindowIsShaded(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  return Value::makeBool(ws.isShaded(wid));
+}
+Value UIBridge::handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setSkipTaskbar(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
+}
+Value UIBridge::handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  return Value::makeBool(ws.isSkipTaskbar(wid));
+}
+Value UIBridge::handleWindowSkipPager(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setSkipPager(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
+}
+Value UIBridge::handleWindowIsSkipPager(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  return Value::makeBool(ws.isSkipPager(wid));
+}
+
+Value UIBridge::handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  bool on = true;
+  if (args.size() >= 2) {
+    if (auto *v = (args[1].isBool() ? &args[1] : nullptr)) on = v->asBool();
+    else if (auto *v = (args[1].isInt() ? &args[1] : nullptr)) on = (v->asInt() != 0);
+  }
+  bool ok = ws.setAlwaysOnTop(wid, on);
+  if (args[0].isObjectId()) return args[0];
+  return Value::makeBool(ok);
+}
+Value UIBridge::handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeBool(false);
+    wid = a.id;
+  }
+  return Value::makeBool(ws.alwaysOnTop(wid));
+}
+
+Value UIBridge::handleWindowGetOpacity(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeDouble(1.0);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto a = ws.getActiveWindowInfo();
+    if (!a.valid) return Value::makeDouble(1.0);
+    wid = a.id;
+  }
+  double op = 1.0;
+  if (!ws.getOpacity(wid, op)) return Value::makeDouble(1.0);
+  return Value::makeDouble(op);
+}
+
+Value UIBridge::handleWindowTerminate(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.terminate(wid));
+}
+
+Value UIBridge::handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.setOnAllDesktops(wid));
+}
+
+Value UIBridge::handleWindowGetDesktop(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager)
+    return Value::makeInt(-1);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty())
+    wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) {
+    auto active = ws.getActiveWindowInfo();
+    if (!active.valid) return Value::makeInt(-1);
+    wid = active.id;
+  }
+  Display *d = DisplayManager::GetDisplay();
+  if (!d) return Value::makeInt(-1);
+  Atom a = XInternAtom(d, "_NET_WM_DESKTOP", x11::XTrue);
+  if (a == x11::XNone) return Value::makeInt(-1);
+  Atom actual;
+  int fmt;
+  unsigned long n = 0, ba = 0;
+  unsigned char *prop = nullptr;
+  if (XGetWindowProperty(d, static_cast<Window>(wid), a, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actual, &fmt, &n, &ba, &prop) != x11::XSuccess)
+    return Value::makeInt(-1);
+  long dsk = -1;
+  if (prop && n >= 1) dsk = static_cast<long>(*reinterpret_cast<unsigned long *>(prop));
+  if (prop) XFree(prop);
+  return Value::makeInt(dsk);
+}
+
+Value UIBridge::handleWindowExists(const std::vector<Value> &args,
+                                   const HostContext *ctx) {
+  if (!ctx->windowManager || args.empty())
+    return Value::makeBool(false);
+  ::havel::host::WindowService ws(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
+  if (wid == 0) return Value::makeBool(false);
+  return Value::makeBool(ws.getWindowInfo(wid).valid);
+}
+
+
+
 
 Value
 UIBridge::handleWindowTitleObj(const std::vector<Value> &args,

@@ -53,6 +53,16 @@
 #define MAX_CACHE_ENTRIES 256
 #define MAX_HOST_MODULES 128
 #define MAX_LOADED_FLAGS 128
+#define MAX_ALIAS_ENTRIES 256
+
+/* Requested-name -> canonical plugin stem mapping (e.g. "cfg" -> "config").
+ * Populated from plugin metadata only (havel_module_info); register_fn is
+ * never invoked during discovery. Built lazily on the first exact-filename
+ * miss, cached for the loader's lifetime. */
+typedef struct {
+ char requested[96];
+ char canonical[96];
+} AliasEntry;
 
 struct HavelLoader {
  char *search_paths[MAX_SEARCH_PATHS];
@@ -68,7 +78,14 @@ struct HavelLoader {
  int host_module_count;
  char loaded_flags[MAX_LOADED_FLAGS][256];
  int loaded_flag_count;
+ AliasEntry alias_map[MAX_ALIAS_ENTRIES];
+ int alias_map_count;
+ int alias_map_built;
 };
+
+static const HavelModuleABI *loaded_module_abi(HavelLoader *loader, const char *lib_name);
+static const char *alias_map_lookup(HavelLoader *loader, const char *name);
+static void alias_map_build(HavelLoader *loader);
 
 static const char *platform_suffix(void) {
 #if defined(_WIN32)
@@ -325,12 +342,60 @@ int havel_loader_is_loaded(HavelLoader *loader, const char *name) {
 }
 
 void *havel_loader_get_handle(HavelLoader *loader, const char *name) {
- if (!loader || !name) return NULL;
- for (int i = 0; i < loader->loaded_count; i++) {
-  if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded)
-   return loader->loaded[i].handle;
- }
- return NULL;
+  if (!loader || !name) return NULL;
+  for (int i = 0; i < loader->loaded_count; i++) {
+   if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded)
+    return loader->loaded[i].handle;
+  }
+  /* Module plugins may be registered under their canonical stem while the
+   * caller asks via an alias (loadModulePlugin resolves the alias inside
+   * havel_loader_load_module, then queries the handle by the requested
+   * name). Read-only over the existing alias map — never triggers a scan. */
+  if (strncmp(name, "havel_mod_", 10) == 0 && loader->alias_map_built) {
+    const char *canonical = alias_map_lookup(loader, name + 10);
+    if (canonical) {
+      char canon_name[300];
+      snprintf(canon_name, sizeof(canon_name), "havel_mod_%s", canonical);
+      for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, canon_name) == 0 && loader->loaded[i].is_loaded)
+          return loader->loaded[i].handle;
+      }
+    }
+  }
+  return NULL;
+}
+
+/* ABI of an already-registered module plugin, or NULL if not loaded. */
+static const HavelModuleABI *loaded_module_abi(HavelLoader *loader, const char *lib_name) {
+  for (int i = 0; i < loader->loaded_count; i++) {
+    if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+      HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+      return info_fn ? info_fn() : NULL;
+    }
+  }
+  return NULL;
+}
+
+static void alias_map_add(HavelLoader *loader, const char *requested, const char *canonical) {
+  if (!loader || !requested || !canonical) return;
+  if (!requested[0] || !canonical[0]) return;
+  if (strcmp(requested, canonical) == 0) return; /* identity mapping not needed */
+  if (loader->alias_map_count >= MAX_ALIAS_ENTRIES) return;
+  for (int i = 0; i < loader->alias_map_count; i++) {
+    if (strcmp(loader->alias_map[i].requested, requested) == 0) return; /* first wins */
+  }
+  AliasEntry *e = &loader->alias_map[loader->alias_map_count++];
+  snprintf(e->requested, sizeof(e->requested), "%s", requested);
+  snprintf(e->canonical, sizeof(e->canonical), "%s", canonical);
+}
+
+static const char *alias_map_lookup(HavelLoader *loader, const char *name) {
+  if (!loader || !name) return NULL;
+  for (int i = 0; i < loader->alias_map_count; i++) {
+    if (strcmp(loader->alias_map[i].requested, name) == 0)
+      return loader->alias_map[i].canonical;
+  }
+  return NULL;
 }
 
 char **havel_loader_list_loaded(HavelLoader *loader, int *count) {
@@ -361,18 +426,38 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
   char lib_name[300];
   snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
 
-  for (int i = 0; i < loader->loaded_count; i++) {
-   if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
-    HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+  const HavelModuleABI *loaded = loaded_module_abi(loader, lib_name);
+  if (loaded) {
     HAVEL_LOGF_INFO("havel_loader_load_module: %s already loaded, returning existing ABI", name);
-    return info_fn ? info_fn() : NULL;
-   }
+    return loaded;
   }
 
   char *path = find_library(loader, lib_name);
   if (!path) {
-    HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
-    return NULL;
+    /* Alias fallback: "cfg" may be an alias of plugin "config" whose .so
+     * is havel_mod_config.so. Build the alias index once (cached) from
+     * plugin metadata, then retry the loaded-list check and filename
+     * lookup under the canonical stem. */
+    if (!loader->alias_map_built) {
+      loader->alias_map_built = 1;
+      alias_map_build(loader);
+    }
+    const char *canonical = alias_map_lookup(loader, name);
+    if (!canonical) {
+      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      return NULL;
+    }
+    snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", canonical);
+    loaded = loaded_module_abi(loader, lib_name);
+    if (loaded) {
+      HAVEL_LOGF_INFO("havel_loader_load_module: %s already loaded (alias of %s), returning existing ABI", name, canonical);
+      return loaded;
+    }
+    path = find_library(loader, lib_name);
+    if (!path) {
+      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      return NULL;
+    }
   }
 
   HAVEL_LOGF_INFO("havel_loader_load_module: dlopen %s for %s", path, name);
@@ -955,15 +1040,66 @@ const HavelModuleABI *havel_loader_probe_module(HavelLoader *loader, const char 
  return abi;
 }
 
+/* Build the alias map from plugin metadata. Discovery order:
+ * 1. Plugins already registered in the loaded list — probe is metadata-only
+ *    (no dlopen, no register_fn).
+ * 2. havel_mod_*.so files in the search paths not yet loaded — probed via
+ *    havel_loader_probe_module, which dlopens (running the plugin's ELF
+ *    constructors, which for havel plugins are trivial static ABI structs)
+ *    and keeps it registered; register_fn is never invoked. */
+static void alias_map_build(HavelLoader *loader) {
+  for (int i = 0; i < loader->loaded_count; i++) {
+    if (!loader->loaded[i].is_loaded) continue;
+    if (strncmp(loader->loaded[i].name, "havel_mod_", 10) != 0) continue;
+    const char *stem = loader->loaded[i].name + 10;
+    HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+    if (!info_fn) continue;
+    const HavelModuleABI *abi = info_fn();
+    if (!abi || !abi->name) continue;
+    alias_map_add(loader, abi->name, stem);
+    for (int j = 0; j < HAVEL_MODULE_MAX_ALIASES && abi->aliases[j]; j++) {
+      alias_map_add(loader, abi->aliases[j], stem);
+    }
+  }
+
+  const char *suffix = platform_suffix();
+  for (int si = 0; si < loader->search_path_count; si++) {
+    DIR *d = opendir(loader->search_paths[si]);
+    if (!d) continue;
+    struct dirent *entry;
+    while ((entry = readdir(d)) != NULL) {
+      char *stem = extract_module_name(entry->d_name, "havel_mod_", suffix);
+      if (!stem) continue;
+      int known = 0;
+      for (int k = 0; k < loader->alias_map_count && !known; k++) {
+        if (strcmp(loader->alias_map[k].canonical, stem) == 0) known = 1;
+      }
+      for (int k = 0; k < loader->loaded_count && !known; k++) {
+        char ln[300];
+        snprintf(ln, sizeof(ln), "havel_mod_%s", stem);
+        if (strcmp(loader->loaded[k].name, ln) == 0 && loader->loaded[k].is_loaded) known = 1;
+      }
+      if (known) { free(stem); continue; }
+      HavelModuleInfo info;
+      const HavelModuleABI *abi = havel_loader_probe_module(loader, stem, &info);
+      if (abi && abi->name) {
+        alias_map_add(loader, abi->name, stem);
+        for (int j = 0; j < HAVEL_MODULE_MAX_ALIASES && abi->aliases[j]; j++) {
+          alias_map_add(loader, abi->aliases[j], stem);
+        }
+      }
+      free(stem);
+    }
+    closedir(d);
+  }
+}
+
 int havel_loader_scan_modules(HavelLoader *loader, HavelModuleInfo *out, int max_out) {
   if (!loader || !out || max_out <= 0) return 0;
 
   const char *suffix = platform_suffix();
   const char *prefix = "havel_mod_";
   int count = 0;
-
-  for (int si = 0; si < loader->search_path_count; si++) {
-  }
 
   for (int si = 0; si < loader->search_path_count && count < max_out; si++) {
   const char *dir = loader->search_paths[si];

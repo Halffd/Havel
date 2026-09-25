@@ -2030,7 +2030,6 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return handleWindowSetAlwaysOnTopObj(args, ctx);
   };
   options.host_functions["window._pos"] = [ctx = ctx_](const auto &args) {
-    fprintf(stderr, "[dbg] window._pos entered, args=%zu\n", args.size());
     return handleWindowPosObj(args, ctx);
   };
   options.host_functions["window._size"] = [ctx = ctx_](const auto &args) {

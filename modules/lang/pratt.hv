@@ -295,6 +295,8 @@ fn Parser(tokenList) {
   incomplete = false
   inMatchExpr = false
   allowBraceSugar = true
+  dslContext = false
+  dslLastInputCmds = null
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
   modeContext = ""
@@ -2419,6 +2421,16 @@ fn parseStatement() {
  }
 
         // Hotkey binding: Hotkey token or @token => block
+        // Inside dsl{} blocks, '!!' (repeat previous dsl command) lexes as
+        // a Hotkey token ("!" is treated as a modifier char by the lexer);
+        // intercept it before the real hotkey binding parsing.
+        if dslContext && tt == TID.Hotkey && current().value == "!!" {
+            el = current().line
+            ec = current().col
+            advance()
+            if dslLastInputCmds == null { error("'!!' has no previous dsl command to repeat", el, ec) }
+            return InputStatement(dslLastInputCmds, el, ec)
+        }
         if tt == TID.Hotkey {
             return parseHotkeyStatement()
 
@@ -2638,6 +2650,104 @@ if tt == TID.Go { return parseGoStatement() }
 if tt == TID.Wait { return parseWaitStatement() }
 // Input statement (> prefix)
 if tt == TID.Greater { return parseInputStatement() }
+        // Input contexts (dsl {} and hotkey bodies per docs/specs/Havel.md):
+        // bare string literal = implicit text send
+        if dslContext && (tt == TID.String || tt == TID.MultilineString) {
+            sl = current().line
+            sc = current().col
+            txt = current().value
+            advance()
+            dslLastInputCmds = [InputCommand("SendText", txt, null, null, null, null)]
+            return InputStatement(dslLastInputCmds, sl, sc)
+        }
+        // dsl-block sugar (matches C++ parser's inInputContext rules):
+// *? cond { body }   repeat-while sugar (dsl.md)
+if dslContext && tt == TID.Multiply && at(1).tid == TID.Question { return parseDslRepeatWhile() }
+// *: i in iter { body }  repeat-for sugar (dsl.md)
+if dslContext && tt == TID.Multiply && at(1).tid == TID.Colon { return parseDslRepeatFor() }
+// * N { body }   repeat N times
+if dslContext && tt == TID.Multiply { return parseDslRepeatStatement() }
+// ?; cond { body }  when-block sugar (dsl.md)
+if dslContext && tt == TID.Question && at(1).tid == TID.Semicolon { return parseDslWhenStatement() }
+// ? cond { body }  if-statement
+if dslContext && tt == TID.Question { return parseDslIfStatement() }
+// -> expr  print sugar (dsl.md); lexer emits '->' as ReturnType
+if dslContext && tt == TID.ReturnType { return parseDslPrintStatement() }
+// bare mouse commands: lmb / rmb / mmb (dsl.md)
+if dslContext && tt == TID.Identifier && (current().value == "lmb" or current().value == "rmb" or current().value == "mmb") {
+  button = current().value == "rmb" ? "right" : (current().value == "mmb" ? "middle" : "left")
+  bl = current().line
+  bc2 = current().col
+  advance()
+  dslLastInputCmds = [InputCommand("MouseClick", button, null, null, null, null)]
+  return InputStatement(dslLastInputCmds, bl, bc2)
+}
+// < mouse  read input state via io.mouseState() (dsl.md)
+if dslContext && tt == TID.Less { return parseDslGetStatement() }
+// !!  repeat the previous dsl input command (dsl.md); lexer merges
+// any "modifier-looking" token into TID.Hotkey, so '!!' arrives as
+// a Hotkey token with value "!!"
+if dslContext && tt == TID.Hotkey && current().value == "!!" {
+  el = current().line
+  ec = current().col
+  advance()
+  if dslLastInputCmds == null { error("'!!' has no previous dsl command to repeat", el, ec) }
+  return InputStatement(dslLastInputCmds, el, ec)
+}
+// bare click() / click("right") / click("middle") (dsl.md)
+if dslContext && tt == TID.Identifier && current().value == "click" && at(1).tid == TID.OpenParen {
+  bl = current().line
+  bc2 = current().col
+  advance()
+  advance() // '('
+  btn = "left"
+  if current().tid == TID.String or current().tid == TID.Identifier {
+    btn = current().value
+    advance()
+  }
+  if current().tid == TID.CloseParen { advance() }
+  dslLastInputCmds = [InputCommand("MouseClick", btn, null, null, null, null)]
+  return InputStatement(dslLastInputCmds, bl, bc2)
+}
+// bare mouse move/scroll: m(x,y) / r(dx,dy) / w(dy,dx) per
+// docs/specs/Havel.md "Input Shortcuts"
+if dslContext && tt == TID.Identifier && (current().value == "m" or current().value == "r" or current().value == "w") && at(1).tid == TID.OpenParen {
+  wid = current().value
+  wl = current().line
+  wc = current().col
+  advance()
+  advance() // '('
+  xv = null
+  yv = null
+  if current().tid != TID.CloseParen {
+    xv = current().value
+    advance()
+  }
+  if current().tid == TID.Comma {
+    advance()
+    if current().tid != TID.CloseParen {
+      yv = current().value
+      advance()
+    }
+  }
+  if current().tid == TID.CloseParen { advance() }
+  itype = "MouseMove"
+  if wid == "r" { itype = "MouseRelative" }
+  if wid == "w" { itype = "MouseWheel" }
+  dslLastInputCmds = [InputCommand(itype, null, null, xv, yv, null)]
+  return InputStatement(dslLastInputCmds, wl, wc)
+}
+// {Key}  single-key send (dsl.md)
+if dslContext && tt == TID.OpenBrace && at(1).tid == TID.Identifier && at(2).tid == TID.CloseBrace {
+  kname = at(1).value
+  kl = current().line
+  kc = current().col
+  advance()
+  advance()
+  advance()
+  dslLastInputCmds = [InputCommand("SendKey", null, kname, null, null, null)]
+  return InputStatement(dslLastInputCmds, kl, kc)
+}
   // Decorator statement ([decorator]) — disambiguate from array literal
   if tt == TID.OpenBracket {
     // C++ lookahead: [identifier] followed by declaration keyword = decorator
@@ -2685,7 +2795,11 @@ if tt == TID.Dsl {
   if current().tid != TID.OpenBrace {
     error("Expected '{' after 'dsl'", current().line, current().col)
   }
-  return parseBlock()
+  prevDsl = dslContext
+  dslContext = true
+  blk = parseBlock()
+  dslContext = prevDsl
+  return blk
 }
 // Expression statement
     expr = parseExpr(0)
@@ -2933,6 +3047,169 @@ fn parseDoWhileStatement() {
     // ===================================================================
     // STATEMENT: repeat
     // ===================================================================
+    // dsl-block sugar: '* <count_expr> { body }' (mirrors C++ Multiply
+    // case in the input-context statement dispatch)
+    fn parseDslRepeatStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '*'
+
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        count = parseExpr(0)
+        allowBraceSugar = prevSugar
+
+        skipNewlines()
+
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        }
+        else {
+            body = parseStatement()
+            if body == null: body = BlockStatement([], l, c)
+
+        }
+        return RepeatStatement(count, body, l, c)
+    }
+
+    // dsl-block sugar: '*? <cond> { body }' -> while loop
+    fn parseDslRepeatWhile() {
+        l = current().line
+        c = current().col
+        advance() // '*'
+        advance() // '?'
+        skipNewlines()
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        condition = parseExpr(0)
+        allowBraceSugar = prevSugar
+        skipNewlines()
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        } else {
+            body = parseStatement()
+            if body == null: body = BlockStatement([], l, c)
+        }
+        return WhileStatement(condition, body, l, c)
+    }
+
+    // dsl-block sugar: '*: i in <iter> { body }' -> for loop
+    fn parseDslRepeatFor() {
+        l = current().line
+        c = current().col
+        advance() // '*'
+        advance() // ':'
+        skipNewlines()
+        if current().tid != TID.Identifier {
+            error("Expected loop variable after '*:'", current().line, current().col)
+        }
+        name = current().value
+        advance()
+        skipNewlines()
+        if current().tid != TID.In {
+            error("Expected 'in' after '*:' loop variable", current().line, current().col)
+        }
+        advance()
+        skipNewlines()
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        iterExpr = parseExpr(0)
+        allowBraceSugar = prevSugar
+        skipNewlines()
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        } else {
+            body = parseStatement()
+            if body == null: body = BlockStatement([], l, c)
+        }
+        return ForStatement(name, iterExpr, body, l, c)
+    }
+
+    // dsl-block sugar: '?; <cond> { body }' -> when block
+    fn parseDslWhenStatement() {
+        l = current().line
+        c = current().col
+        advance() // '?'
+        advance() // ';'
+        skipNewlines()
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        condition = parseExpr(0)
+        allowBraceSugar = prevSugar
+        skipNewlines()
+        if current().tid != TID.OpenBrace {
+            error("Expected '{' after '?;' condition", current().line, current().col)
+        }
+        advance() // consume '{'
+        stmts = []
+        skipNewlines()
+        while current().tid != TID.CloseBrace && notEOF() {
+            if current().tid == TID.NewLine || current().tid == TID.Semicolon {
+                advance()
+                continue
+            }
+            s = parseStatement()
+            if s != null: stmts.push(s)
+            skipNewlines()
+        }
+        if current().tid == TID.CloseBrace { advance() }
+        body = BlockStatement(stmts, l, c)
+        return WhenBlock(condition, body, l, c)
+    }
+
+    // dsl-block sugar: '< mouse' / '< keyboard' — read input state.
+    // Only the mouse path has a host binding (io.mouseState()); keyboard
+    // has no backend, so it errors loudly instead of mis-sending.
+    fn parseDslGetStatement() {
+        l = current().line
+        c = current().col
+        advance() // '<'
+        skipNewlines()
+        target = current().value
+        advance()
+        if target != "mouse" {
+            error("'<' currently only supports 'mouse' (keyboard state has no host binding)", l, c)
+        }
+        callee = MemberExpression(Identifier("io", l, c), "mouseState", l, c)
+        call = CallExpression(callee, [], null, l, c)
+        return ExpressionStatement(call, l, c)
+    }
+
+    // dsl-block sugar: '-> <expr>' prints the expression (dsl.md);
+    // '->' lexes as ReturnType
+    fn parseDslPrintStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '->' (ReturnType)
+        expr = parseExpr(0)
+        callee = Identifier("print", l, c)
+        call = CallExpression(callee, [expr], null, l, c)
+        return ExpressionStatement(call, l, c)
+    }
+
+    // dsl-block sugar: '? <cond> { body }' (mirrors C++ Question case)
+    fn parseDslIfStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume '?'
+
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
+        condition = parseExpr(0)
+        allowBraceSugar = prevSugar
+
+        skipNewlines()
+
+        thenBranch = null
+        if current().tid == TID.OpenBrace { thenBranch = parseBlock() }
+        if thenBranch == null && current().tid == TID.Colon { thenBranch = parseBlock() }
+        if thenBranch == null { thenBranch = parseStatement() }
+        return IfStatement(condition, thenBranch, null, l, c)
+    }
+
     fn parseRepeatStatement() {
         l = current().line
         c = current().col
@@ -3553,7 +3830,10 @@ fn parseHotkeyStatement() {
             return error("Expected '=>' or '{' after hotkey", l, c)
 
         }
-        // Parse body
+        // Parse body (input context: bare input commands are allowed,
+        // per Havel.md "Input Shortcuts" — same sugar set as dsl {} blocks)
+        prevDsl = dslContext
+        dslContext = true
         body = null
         if current().tid == TID.OpenBrace or current().tid == TID.Colon {
             body = parseBlock()
@@ -3563,6 +3843,7 @@ fn parseHotkeyStatement() {
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
         }
+        dslContext = prevDsl
 	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
 	if modeAttr != "" {
@@ -4814,6 +5095,7 @@ fn parseInputStatement() {
     // Unknown token, skip
     advance()
   }
+  if dslContext { dslLastInputCmds = cmds }
   return InputStatement(cmds, l, c)
 }
 

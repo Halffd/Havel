@@ -189,6 +189,7 @@ int main(int argc, char **argv) {
 				failures++;
 			} else {
 				std::cout << "[FAIL] " << file << " (exit=" << result.exit_code << ")" << std::endl;
+				hvtest::print_result_tail(result);
 				failures++;
 			}
 		}

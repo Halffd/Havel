@@ -238,6 +238,84 @@ public:
                                                 const HostContext *ctx);
     static Value handleWindowPosObj(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    static Value handleWindowSizeObj(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleWindowSetSizeObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIsMaximized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsMinimized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsFullscreen(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowUnmax(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowToggleMax(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowUnmin(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowBorderlessObj(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowIsBorderless(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowToggleBorderless(const std::vector<Value> &args,
+                                               const HostContext *ctx);
+    static Value handleWindowMoveMonitorObj(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowMoveMonitorNext(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowMoveMonitorPrev(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetCurrentMonitor(const std::vector<Value> &args,
+                                                const HostContext *ctx);
+    static Value handleWindowGetMonitors(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowFrameExtents(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowType(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleWindowStates(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+    static Value handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowDesktopCount(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowDesktopName(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowViewport(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSticky(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowShade(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsShaded(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSkipPager(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowIsSkipPager(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowGetOpacity(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowTerminate(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetDesktop(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowExists(const std::vector<Value> &args,
+                                     const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleWindowClassObj(const std::vector<Value> &args,
@@ -619,6 +697,84 @@ public:
     static Value handleWindowSetAlwaysOnTopObj(const std::vector<Value> &args,
                                                 const HostContext *ctx);
     static Value handleWindowPosObj(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowSizeObj(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleWindowSetSizeObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIsMaximized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsMinimized(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsFullscreen(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowUnmax(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowToggleMax(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowUnmin(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowBorderlessObj(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowIsBorderless(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowToggleBorderless(const std::vector<Value> &args,
+                                               const HostContext *ctx);
+    static Value handleWindowMoveMonitorObj(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowMoveMonitorNext(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowMoveMonitorPrev(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetCurrentMonitor(const std::vector<Value> &args,
+                                                const HostContext *ctx);
+    static Value handleWindowGetMonitors(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowFrameExtents(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowType(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleWindowStates(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+    static Value handleWindowCurrentDesktop(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+    static Value handleWindowDesktopCount(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowDesktopName(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowViewport(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSwitchDesktop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSticky(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsSticky(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowShade(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowIsShaded(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowSkipTaskbar(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsSkipTaskbar(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowSkipPager(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowIsSkipPager(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowAlwaysOnTop(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+    static Value handleWindowIsAlwaysOnTop(const std::vector<Value> &args,
+                                            const HostContext *ctx);
+    static Value handleWindowGetOpacity(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowTerminate(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowStickyToDesktop(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+    static Value handleWindowGetDesktop(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowExists(const std::vector<Value> &args,
                                      const HostContext *ctx);
     static Value handleWindowTitleObj(const std::vector<Value> &args,
                                        const HostContext *ctx);

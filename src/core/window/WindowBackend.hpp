@@ -48,6 +48,25 @@ public:
                                 int height) = 0;
   virtual bool closeWindow(wID id) = 0;
   virtual bool focusWindow(wID id) = 0;
+  virtual bool raiseWindow(wID) { return false; }
+  virtual bool lowerWindow(wID) { return false; }
+  virtual bool setWindowSticky(wID, bool) { return false; }
+  virtual bool isWindowSticky(wID) { return false; }
+  virtual bool setWindowShaded(wID, bool) { return false; }
+  virtual bool isWindowShaded(wID) { return false; }
+  virtual bool setWindowSkipTaskbar(wID, bool) { return false; }
+  virtual bool isWindowSkipTaskbar(wID) { return false; }
+  virtual bool setWindowSkipPager(wID, bool) { return false; }
+  virtual bool isWindowSkipPager(wID) { return false; }
+  virtual bool setWindowDecorated(wID, bool) { return false; }
+  virtual bool isWindowDecorated(wID) { return true; }
+  virtual bool getWindowOpacity(wID, double &out) { out = 1.0; return false; }
+  virtual bool getWindowFrameExtents(wID, int&, int&, int&, int&) { return false; }
+  virtual std::string getWindowType(wID) { return "normal"; }
+  virtual bool setWindowOnAllDesktops(wID) { return false; }
+  virtual int getWindowDesktop(wID) { return -1; }
+  virtual bool terminateWindow(wID) { return false; }
+  virtual bool killWindowClient(wID) { return false; }
   virtual bool minimizeWindow(wID id) = 0;
   virtual bool maximizeWindow(wID id) = 0;
   virtual bool restoreWindow(wID id) = 0;

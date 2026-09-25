@@ -20,7 +20,8 @@ use x11
 use protocols
 use display
 use ffi
-use time
+use process
+ use time
 
 // ============================================================
 // Display helpers (private)
@@ -223,25 +224,63 @@ class Window {
 
 	// ---- Geometry ----
 
-	fn geometry() {
+	fn geometry(id = 0) {
+		_id = id != 0 ? id : @id
 		_d = _dpy()
-		if _d == 0 { return null }
-		_r = x11.getGeometry(_d, @id)
+		print("[dbg.geometry] _id=${_id} _d=${_d}")
+		if _d == 0 || _id == 0 { return null }
+		_r = x11.getGeometry(_d, _id)
+		print("[dbg.geometry] rcode=${_r.rcode}")
 		if _r.rcode == 0 { null }
 		else { {x: _r.x, y: _r.y, width: _r.width, height: _r.height, border: _r.border, depth: _r.depth} }
 	}
 
-fn pos() {
-	_sp = @screenPos()
-	if _sp != null { return _sp }
-	_g = @geometry()
-	if _g != null { return {x: _g.x, y: _g.y} }
-	null
-}
+	// Get current position
+	// relative = false: absolute screen position (root coordinates)
+	// relative = true: position relative to parent window
+	// windowId: override window id (defaults to this window's own id)
+	fn pos(relative = false, windowId = 0) {
+		_id = windowId != 0 ? windowId : @id
+		if (_id == 0) { return null }
+
+		_d = _dpy()
+		if (_d == 0) { return null }
+
+		// Try screen position first (root translation) for absolute coords
+		if (!relative) {
+			_root = _root()
+			if (_root != 0) {
+				_r = x11.translateCoordinates(_d, _id, _root, 0, 0)
+				// rcode: 1 = success, 0 = failure (xcb status)
+				if (_r.rcode != 0) { return {x: _r.x, y: _r.y} }
+			}
+		}
+
+		// For relative, or as fallback when root translation fails
+		_g = @geometry(_id)
+		if (_g == null) { return null }
+		{x: _g.x, y: _g.y}
+	}
 
 	fn size() {
+		// Client-area geometry plus frame extents; width/height include frame.
 		_g = @geometry()
-		if _g == null { null } else { {width: _g.width, height: _g.height} }
+		if _g == null { return null }
+		_ext = @frameExtents()
+		{
+			width: _g.width + _ext.left + _ext.right,
+			height: _g.height + _ext.top + _ext.bottom,
+			clientWidth: _g.width,
+			clientHeight: _g.height,
+			frame: _ext
+		}
+	}
+
+	fn setSize(w, h) {
+		// Resize via _NET_MOVERESIZE_WINDOW (EWMH) so the WM handles
+		// decorations/constraints; falls back to XResizeWindow when no root.
+		@resize(w, h)
+		@
 	}
 
 	fn screenPos() {
@@ -296,11 +335,12 @@ fn pos() {
 	}
 
 	fn isMaximized() {
+		// Returns {horizontal, vertical, any} per EWMH _NET_WM_STATE.
 		_d = _dpy()
-		if _d == 0 { return false }
-		_v = protocols.hasState(_d, @id, protocols.netWmStateMaximizedVert())
+		if _d == 0 { return {horizontal: false, vertical: false, any: false} }
 		_h = protocols.hasState(_d, @id, protocols.netWmStateMaximizedHorz())
-		_v && _h
+		_v = protocols.hasState(_d, @id, protocols.netWmStateMaximizedVert())
+		{horizontal: _h, vertical: _v, any: _h || _v}
 	}
 
 	fn isFullscreen() {
@@ -446,19 +486,53 @@ fn pos() {
 
 	// ---- Movement / resizing ----
 
-	fn move(x, y) {
+	// Move window
+	// speed: optional animation speed hint (ignored by X11 but kept for API compat)
+	// winId: move this window (defaults to this window)
+	// relative = false: move to absolute (x, y)
+	// relative = true: move by delta (dx, dy) from current position
+	fn move(x, y, speed = 0.0, winId = 0, relative = false) {
+		_target = winId != 0 ? winId : @id
 		_d = _dpy()
-		if _d == 0 { return @ }
-		x11.moveWindow(_d, @id, x, y)
-		x11.flush(_d)
+		if (_d == 0 || _target == 0) { return @ }
+
+		if (relative) {
+			// Get current position and add to deltas
+			_cur = @pos(false, _target)
+			if (_cur == null) { return @ }
+			x += _cur.x
+			y += _cur.y
+		}
+		if (_root() != 0) {
+			protocols.sendMoveResizeMessage(_d, _target, x, y, 0, 0, true, true, false, false)
+		} else {
+			x11.moveWindow(_d, _target, x, y)
+			x11.flush(_d)
+		}
 		@
 	}
 
-	fn resize(w, h) {
+	// Resize window
+	// winId: resize this window (defaults to this window)
+	// relative = false: resize to absolute (w, h)
+	// relative = true: resize by delta (dw, dh) from current size
+	fn resize(w, h, winId = 0, relative = false) {
+		_target = winId != 0 ? winId : @id
 		_d = _dpy()
-		if _d == 0 { return @ }
-		x11.resizeWindow(_d, @id, w, h)
-		x11.flush(_d)
+		if (_d == 0 || _target == 0) { return @ }
+
+		if (relative) {
+			_g = @geometry(_target)
+			if (_g == null) { return @ }
+			w += _g.width
+			h += _g.height
+		}
+		if (_root() != 0) {
+			protocols.sendMoveResizeMessage(_d, _target, 0, 0, w, h, false, false, true, true)
+		} else {
+			x11.resizeWindow(_d, _target, w, h)
+			x11.flush(_d)
+		}
 		@
 	}
 
@@ -514,6 +588,41 @@ fn pos() {
 		@moveResize(_cx, _cy, _g.width, _g.height)
 	}
 
+	// EWMH-style monitor movement aliases per spec
+	fn moveMonitor(i = 0, follow = true) {
+		@moveToMonitor(i)
+		if follow { @activate() }
+		@
+	}
+	fn moveMonitorNext(follow = true) {
+		_mons = display.monitors()
+		if #_mons < 2 { return @ }
+		_cur = @getCurrentMonitor()
+		_next = (_cur + 1) % #_mons
+		@moveMonitor(_next, follow)
+	}
+	fn moveMonitorPrev(follow = true) {
+		_mons = display.monitors()
+		if #_mons < 2 { return @ }
+		_cur = @getCurrentMonitor()
+		_prev = (_cur - 1 + #_mons) % #_mons
+		@moveMonitor(_prev, follow)
+	}
+	fn getCurrentMonitor() {
+		_pos = @pos()
+		if _pos == null { return 0 }
+		_mons = display.monitors()
+		_i = 0
+		while _i < #_mons {
+			_m = _mons[_i]
+			if _pos.x >= _m.x && _pos.x < _m.x + _m.width && _pos.y >= _m.y && _pos.y < _m.y + _m.height {
+				return _i
+			}
+			_i = _i + 1
+		}
+		0
+	}
+
 	fn snap(position) {
 		_d = _dpy()
 		if _d == 0 { return @ }
@@ -558,11 +667,16 @@ fn pos() {
 		true
 	}
 
-	fn fullscreen() {
+	fn fullscreen(enable = true) {
 		_d = _dpy()
 		if _d == 0 { return false }
-		if !@isFullscreen() {
+		_cur = @isFullscreen()
+		if enable && !_cur {
 			protocols.sendStateMessage(_d, @id, protocols.STATE_ADD,
+				protocols.netWmStateFullscreen(), 0)
+		}
+		if !enable && _cur {
+			protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE,
 				protocols.netWmStateFullscreen(), 0)
 		}
 		true
@@ -654,6 +768,29 @@ fn pos() {
 		true
 	}
 
+	// Borderless via _MOTIF_WM_HINTS (set decorations = 0).
+	fn borderless(enable = true) {
+		@setDecorated(!enable)
+		@
+	}
+	fn isBorderless() {
+		_d = _dpy()
+		if _d == 0 { return false }
+		_atom = x11.internAtom(_d, "_MOTIF_WM_HINTS", 1)
+		if _atom == 0 { return false }
+		_r = x11.getWindowProperty(_d, @id, _atom, 0, 5, 0, _atom)
+		if _r.ret == 0 && _r.nitems >= 3 && _r.prop != 0 {
+			_decorations = ffi.get_i32(ffi.ptr_add(_r.prop, 8))
+			x11.free(_r.prop)
+			return _decorations == 0
+		}
+		false
+	}
+	fn toggleBorderless() {
+		@borderless(!@isBorderless())
+		@
+	}
+
 	// ---- Raw property / event access ----
 
 	fn setProperty(prop, type, format, data) {
@@ -703,7 +840,83 @@ fn pos() {
 
 	fn focus() { @activate() }
 	fn min() { @minimize() }
-	fn max() { @maximize() }
+	fn unmin() {
+		// Restore from minimized: map + activate
+		_d = _dpy()
+		if _d == 0 { return @ }
+		x11.mapWindow(_d, @id)
+		x11.flush(_d)
+		@activate()
+		@
+	}
+	fn max(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_ADD, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_ADD, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
+	fn unmax(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical { protocols.sendStateMessage(_d, @id, protocols.STATE_REMOVE, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
+	fn toggleMax(horizontal = true, vertical = true) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		if horizontal { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedHorz(), 0) }
+		if vertical   { protocols.sendStateMessage(_d, @id, protocols.STATE_TOGGLE, protocols.netWmStateMaximizedVert(), 0) }
+		@
+	}
+
+	// ---- EWMH state toggles (chainable) ----
+
+	fn _ewmhToggle(atomFn, enableFlag) {
+		_d = _dpy()
+		if _d == 0 { return @ }
+		_action = enableFlag ? protocols.STATE_ADD : protocols.STATE_REMOVE
+		protocols.sendStateMessage(_d, @id, _action, atomFn(), 0)
+		@
+	}
+	fn _ewmhState(atomFn) {
+		_d = _dpy()
+		if _d == 0 { return false }
+		_x = protocols.hasState(_d, @id, atomFn())
+		_x
+	}
+
+	fn sticky(enable = true) { @_ewmhToggle(protocols.netWmStateSticky, enable) }
+	fn isSticky() { @_ewmhState(protocols.netWmStateSticky) }
+	fn shade(enable = true) { @_ewmhToggle(protocols.netWmStateShaded, enable) }
+	fn isShaded() { @_ewmhState(protocols.netWmStateShaded) }
+	fn skipTaskbar(enable = true) { @_ewmhToggle(protocols.netWmStateSkipTaskbar, enable) }
+	fn isSkipTaskbar() { @_ewmhState(protocols.netWmStateSkipTaskbar) }
+	fn skipPager(enable = true) { @_ewmhToggle(protocols.netWmStateSkipPager, enable) }
+	fn isSkipPager() { @_ewmhState(protocols.netWmStateSkipPager) }
+	fn alwaysOnTopState(enable = true) { @_ewmhToggle(protocols.netWmStateAbove, enable) }
+	fn isAlwaysOnTopState() { @_ewmhState(protocols.netWmStateAbove) }
+
+	// SIGTERM process termination
+	fn terminate() {
+		_pid = @pid()
+		if _pid == 0 { return @ }
+		process.sendSignal(_pid, 15)
+		@
+	}
+
+	fn getOpacity() {
+		_d = _dpy()
+		if _d == 0 { return 1.0 }
+		_r = x11.getWindowProperty(_d, @id, protocols.netWmWindowOpacity(), 0, 1, 0, x11.XA_CARDINAL)
+		if _r.rcode == 0 && _r.nitems >= 1 && _r.prop != 0 {
+			_v = ffi.get_u32(_r.prop)
+			x11.free(_r.prop)
+			return _v / 4294967295.0
+		}
+		1.0
+	}
 	fn setAlwaysOnTop(b) {
 		if b == null || b { @alwaysOnTop() }
 		else { @floating() }
@@ -827,16 +1040,46 @@ fn _snapshot(_w) {
 		show: fn() { _w.show() },
 		focus: fn() { _w.activate() },
 		min: fn() { _w.minimize() },
-		max: fn() { _w.maximize() },
+		max: fn(_h = true, _v = true) { _w.max(_h, _v) },
+		unmax: fn(_h = true, _v = true) { _w.unmax(_h, _v) },
+		toggleMax: fn(_h = true, _v = true) { _w.toggleMax(_h, _v) },
+		unmin: fn() { _w.unmin() },
 		restore: fn() { _w.restore() },
 		snap: fn(pos) { _w.snap(pos) },
 		center: fn() { _w.center() },
-		fullscreen: fn() { _w.fullscreen() },
+		fullscreen: fn(_on = true) { _w.fullscreen(_on) },
+		toggleFullscreen: fn() { _w.toggleFullscreen() },
+		borderless: fn(_on = true) { _w.borderless(_on) },
+		isBorderless: fn() { _w.isBorderless() },
+		toggleBorderless: fn() { _w.toggleBorderless() },
+		setDecorated: fn(_on) { _w.setDecorated(_on) },
+		size: fn() { _w.size() },
+		setSize: fn(_w2, _h2) { _w.setSize(_w2, _h2) },
+		isMaximized: fn() { _w.isMaximized() },
+		isMinimized: fn() { _w.isMinimized() },
+		isFullscreen: fn() { _w.isFullscreen() },
+		moveMonitor: fn(_i = 0, _follow = true) { _w.moveMonitor(_i, _follow) },
+		moveMonitorNext: fn(_follow = true) { _w.moveMonitorNext(_follow) },
+		moveMonitorPrev: fn(_follow = true) { _w.moveMonitorPrev(_follow) },
+		getCurrentMonitor: fn() { _w.getCurrentMonitor() },
 		move: fn(x, y) { _w.move(x, y) },
 		moveResize: fn(x, y, w, h) { _w.moveResize(x, y, w, h) },
 		resize: fn(w, h) { _w.resize(w, h) },
 		setAlwaysOnTop: fn(b) { _w.setAlwaysOnTop(b) },
-		pos: fn() { _w.pos() },
+		alwaysOnTop: fn(_enable = true) { _w.alwaysOnTopState(_enable) },
+		isAlwaysOnTop: fn() { _w.isAlwaysOnTopState() },
+		sticky: fn(_enable = true) { _w.sticky(_enable) },
+		isSticky: fn() { _w.isSticky() },
+		shade: fn(_enable = true) { _w.shade(_enable) },
+		isShaded: fn() { _w.isShaded() },
+		skipTaskbar: fn(_enable = true) { _w.skipTaskbar(_enable) },
+		isSkipTaskbar: fn() { _w.isSkipTaskbar() },
+		skipPager: fn(_enable = true) { _w.skipPager(_enable) },
+		isSkipPager: fn() { _w.isSkipPager() },
+		setOpacity: fn(_a) { _w.opacity(_a) },
+		getOpacity: fn() { _w.getOpacity() },
+		terminate: fn() { _w.terminate() },
+		pos: fn(_rel = false) { _w.pos(_rel) },
 	}
 }
 
@@ -1194,6 +1437,72 @@ fn toggleFullscreenWindow(target) {
 	_w.toggleFullscreen()
 }
 
+fn setSizeWindow(target, width, height) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.setSize(width, height)
+}
+
+fn unmaxWindow(target, horizontal = true, vertical = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.unmax(horizontal, vertical)
+}
+
+fn toggleMaxWindow(target, horizontal = true, vertical = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.toggleMax(horizontal, vertical)
+}
+
+fn unminWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.unmin()
+}
+
+fn borderlessWindow(target, enable = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.borderless(enable)
+}
+
+fn isBorderlessWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.isBorderless()
+}
+
+fn toggleBorderlessWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.toggleBorderless()
+}
+
+fn moveWindowToMonitor(target, monIdx, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitor(monIdx, follow)
+}
+
+fn moveWindowToNextMonitor(target, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitorNext(follow)
+}
+
+fn moveWindowToPrevMonitor(target, follow = true) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveMonitorPrev(follow)
+}
+
+fn getCurrentMonitorIndex(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return 0 }
+	_w.getCurrentMonitor()
+}
+
 fn alwaysOnTopWindow(target) {
 	_w = _resolveTarget(target)
 	if _w == null { return false }
@@ -1456,3 +1765,418 @@ fn wlActiveClass() { getInterface().activeClass() }
 fn wlList() { getInterface().list() }
 fn wlDesktops() { getInterface().desktops() }
 fn wlCurrentDesktop() { getInterface().currentDesktop() }
+
+// ============================================================
+// Spec-level module API (argument conventions from spec)
+// ============================================================
+// Convention: windowId = 0 means "use the active window" because Havel's
+// default arguments cannot call functions. All state toggles accept
+// windowId last so existing `window.x(target)` calls keep working
+// (windowId defaults to the active window). The functions unwrap
+// Window objects into ids via _resolveId().
+
+fn _resolveId(x) {
+    if x == 0 || x == null { return activeId() }
+    if typeof(x) == "int" { return x }
+    // Window instance / snapshot — both have .id
+    if typeof(x) == "object" && x.id != null { return x.id }
+    0
+}
+
+// -- Position / size ------------------------------------------------
+
+fn _posAt(windowId = 0, relative = false) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).pos(relative, _id)
+}
+
+fn setPos(x, y, speed = 0.0, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).move(x, y, speed, _id, relative)
+}
+
+fn sizeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).size()
+}
+
+fn resizeAt(w, h, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).resize(w, h, _id, relative)
+}
+
+fn centerAt(monitor = -1, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _w = Window(_id)
+    if monitor >= 0 {
+        _mons = display.monitors()
+        if monitor >= #_mons { return _w }
+        _m = _mons[monitor]
+        _g = _w.geometry()
+        _cx = _m.x + ((_m.width - _g.width) / 2)
+        _cy = _m.y + ((_m.height - _g.height) / 2)
+        _w.move(_cx, _cy)
+    } else {
+        _w.center()
+    }
+    _w
+}
+
+fn geometryAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).geometry()
+}
+
+// -- State toggles ---------------------------------------------------
+
+fn _wmStateToggle(windowId, atomFn, action) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _d = _dpy()
+    if _d == 0 { return null }
+    protocols.sendStateMessage(_d, _id, action, atomFn(), 0)
+    _id
+}
+
+fn maxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).max(horizontal, vertical)
+}
+
+fn unmaxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).unmax(horizontal, vertical)
+}
+
+fn toggleMaxAt(horizontal = true, vertical = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleMax(horizontal, vertical)
+}
+
+fn isMaximizedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return {horizontal: false, vertical: false, any: false} }
+    Window(_id).isMaximized()
+}
+
+fn minAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).min()
+}
+
+fn unminAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).unmin()
+}
+
+fn isMinimizedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isMinimized()
+}
+
+fn fullscreenAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).fullscreen(enable)
+}
+
+fn toggleFullscreenAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleFullscreen()
+}
+
+fn isFullscreenAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isFullscreen()
+}
+
+fn borderlessAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).borderless(enable)
+}
+
+fn isBorderlessAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    Window(_id).isBorderless()
+}
+
+fn toggleBorderlessAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).toggleBorderless()
+}
+
+fn alwaysOnTopAt(enable = true, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(_id, protocols.netWmStateAbove, _action)
+}
+
+fn isAlwaysOnTopAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateAbove())
+}
+
+fn stickyAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSticky, _action)
+}
+
+fn isStickyAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSticky())
+}
+
+fn shadeAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateShaded, _action)
+}
+
+fn isShadedAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateShaded())
+}
+
+fn skipTaskbarAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSkipTaskbar, _action)
+}
+
+fn isSkipTaskbarAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSkipTaskbar())
+}
+
+fn skipPagerAt(enable = true, windowId = 0) {
+    _action = enable ? protocols.STATE_ADD : protocols.STATE_REMOVE
+    _wmStateToggle(windowId, protocols.netWmStateSkipPager, _action)
+}
+
+fn isSkipPagerAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, _id, protocols.netWmStateSkipPager())
+}
+
+// -- Focus / stacking ------------------------------------------------
+
+fn raiseAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).raise()
+}
+
+fn lowerAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).lower()
+}
+
+fn focusAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).activate()
+}
+
+// -- Desktop / workspace ---------------------------------------------
+
+fn moveToDesktopAt(desktop, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).moveToDesktop(desktop)
+}
+
+fn getDesktop(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return -1 }
+    _d = _dpy()
+    if _d == 0 { return -1 }
+    protocols.getCardinalProp(_d, _id, protocols.netWmDesktop())
+}
+
+fn stickyToDesktop(windowId = 0) {
+    // All-desktops via _NET_WM_DESKTOP = 0xFFFFFFFF
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _d = _dpy()
+    if _d == 0 { return null }
+    _ev = x11.makeClientMessage(_id, protocols.netWmDesktop(), 32, 0xFFFFFFFF, x11.CurrentTime, 0, 0, 0)
+    _r = _root()
+    if _r != 0 {
+        x11.sendEvent(_d, _r, 0, x11.SubstructureRedirectMask + x11.SubstructureNotifyMask, _ev)
+        x11.flush(_d)
+    }
+    x11.freeClientMessage(_ev)
+    _id
+}
+
+// -- Opacity ---------------------------------------------------------
+
+fn setOpacityAt(alpha, windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).opacity(alpha)
+}
+
+fn getOpacity(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return 1.0 }
+    _d = _dpy()
+    if _d == 0 { return 1.0 }
+    _r = x11.getWindowProperty(_d, _id, protocols.netWmWindowOpacity(), 0, 1, 0, x11.XA_CARDINAL)
+    if _r.rcode == 0 && _r.nitems >= 1 && _r.prop != 0 {
+        _v = ffi.get_u32(_r.prop)
+        x11.free(_r.prop)
+        return _v / 4294967295.0
+    }
+    1.0
+}
+
+// -- Lifecycle ------------------------------------------------------
+
+fn closeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).close()
+}
+
+fn killAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    Window(_id).kill()
+}
+
+fn terminate(windowId = 0) {
+    // SIGTERM to owning process — graceful-ish, lets the app clean up.
+    _id = _resolveId(windowId)
+    if _id == 0 { return null }
+    _pid = Window(_id).pid()
+    if _pid == 0 { return null }
+    _sigterm = 15
+    process.sendSignal(_pid, _sigterm)
+    _id
+}
+
+// -- Query ---------------------------------------------------------
+
+fn exists(windowId) {
+    if windowId == null || windowId == 0 { return false }
+    _id = _resolveId(windowId)
+    if _id == 0 { return false }
+    _d = _dpy()
+    if _d == 0 { return false }
+    _a = x11.getWindowAttributes(_d, _id)
+    _a != null
+}
+
+fn isActive(windowId) {
+    if windowId == null || windowId == 0 { return false }
+    _id = _resolveId(windowId)
+    _id == activeId()
+}
+
+fn titleAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).title()
+}
+
+fn classAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).className()
+}
+
+fn exeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "" }
+    Window(_id).exe()
+}
+
+fn pidAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return 0 }
+    Window(_id).pid()
+}
+
+fn statesAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return [] }
+    Window(_id).states()
+}
+
+fn frameExtentsAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return {left: 0, right: 0, top: 0, bottom: 0} }
+    Window(_id).frameExtents()
+}
+
+fn typeAt(windowId = 0) {
+    _id = _resolveId(windowId)
+    if _id == 0 { return "normal" }
+    Window(_id).type()
+}
+
+// -- Workspace viewport ------------------------------------------------
+
+fn workspaceCount() {
+    _d = _dpy()
+    if _d == 0 { return 0 }
+    _r = _root()
+    if _r == 0 { return 0 }
+    protocols.getCardinalProp(_d, _r, protocols.netNumberOfDesktops())
+}
+
+fn workspaceAt(index) {
+    // Wayland-aware; X11 fallback — uses the Desktop class
+    _desk = Desktop()
+    _desk.workspaces()[index] ?? ""
+}
+
+fn viewport() {
+    _d = _dpy()
+    if _d == 0 { return {x: 0, y: 0} }
+    _r = _root()
+    if _r == 0 { return {x: 0, y: 0} }
+    _atom = x11.internAtom(_d, "_NET_DESKTOP_VIEWPORT", 1)
+    if _atom == 0 { return {x: 0, y: 0} }
+    _rr = x11.getWindowProperty(_d, _r, _atom, 0, 2, 0, x11.XA_CARDINAL)
+    if _rr.rcode == 0 && _rr.nitems >= 2 && _rr.prop != 0 {
+        _vx = ffi.get_u32(_rr.prop)
+        _vy = ffi.get_u32(ffi.ptr_add(_rr.prop, 4))
+        x11.free(_rr.prop)
+        return {x: _vx, y: _vy}
+    }
+    {x: 0, y: 0}
+}

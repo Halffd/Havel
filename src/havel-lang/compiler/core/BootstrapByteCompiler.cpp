@@ -2249,6 +2249,10 @@ reserveLocalSlot(slot);
     compileWhileStatement(static_cast<const ast::WhileStatement &>(statement));
     break;
 
+  case ast::NodeType::RepeatStatement:
+    compileRepeatStatement(static_cast<const ast::RepeatStatement &>(statement));
+    break;
+
   case ast::NodeType::DoWhileStatement:
     compileDoWhileStatement(
         static_cast<const ast::DoWhileStatement &>(statement));
@@ -6932,6 +6936,65 @@ void ByteCompiler::compileDoWhileStatement(
     for (uint32_t cj : info.continue_jumps) {
         patchJump(cj, continue_target);
     }
+}
+
+// repeat <count_expr> { body } -> while-style loop over a hidden
+// counter: i = 0; while i < count { body; i = i + 1 }
+void ByteCompiler::compileRepeatStatement(const ast::RepeatStatement &statement) {
+  if (!statement.countExpr || !statement.body) {
+    COMPILER_THROW("Malformed repeat statement");
+  }
+
+  {
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*statement.countExpr);
+    in_tail_position_ = saved_tail;
+  }
+  uint32_t countSlot = next_local_index++;
+  reserveLocalSlot(countSlot);
+  emit(OpCode::STORE_VAR, countSlot);
+
+  uint32_t iSlot = next_local_index++;
+  reserveLocalSlot(iSlot);
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
+  emit(OpCode::STORE_VAR, iSlot);
+
+  uint32_t loop_start =
+      static_cast<uint32_t>(current_function->instructions.size());
+
+  loop_stack_.push_back({loop_start, {}, {}});
+
+  emit(OpCode::LOAD_VAR, iSlot);
+  emit(OpCode::LOAD_VAR, countSlot);
+  emit(OpCode::LT);
+  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+  {
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
+  }
+
+  emit(OpCode::LOAD_VAR, iSlot);
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(1)));
+  emit(OpCode::ADD);
+  emit(OpCode::STORE_VAR, iSlot);
+  emit(OpCode::JUMP, loop_start);
+
+  uint32_t loop_end =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(end_jump, loop_end);
+
+  auto info = std::move(loop_stack_.back());
+  loop_stack_.pop_back();
+  for (uint32_t bj : info.break_jumps) {
+    patchJump(bj, loop_end);
+  }
+  for (uint32_t cj : info.continue_jumps) {
+    patchJump(cj, loop_start);
+  }
 }
 
 void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {

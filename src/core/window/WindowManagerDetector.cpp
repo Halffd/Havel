@@ -28,9 +28,17 @@ WindowManagerDetector::WMType WindowManagerDetector::Detect() noexcept {
 
 WindowManagerDetector::WMType WindowManagerDetector::DetectOnce() noexcept {
   try {
-    wmName = std::string(std::getenv("XDG_CURRENT_DESKTOP"));
-    sessionType = std::string(std::getenv("XDG_SESSION_TYPE"));
-    sessionName = std::string(std::getenv("DESKTOP_SESSION"));
+    // getenv returns null when the variable is unset; std::string(null)
+    // is UB. The try/catch below handled it, but the throw broke the
+    // magic-static memo: the exception propagates out of DetectOnce and
+    // the static initializer retries on the next call, re-running the
+    // whole ~30-probe cascade per caller. Guard instead.
+    const char *desktopEnv = std::getenv("XDG_CURRENT_DESKTOP");
+    const char *sessionTypeEnv = std::getenv("XDG_SESSION_TYPE");
+    const char *sessionNameEnv = std::getenv("DESKTOP_SESSION");
+    if (desktopEnv) wmName = std::string(desktopEnv);
+    if (sessionTypeEnv) sessionType = std::string(sessionTypeEnv);
+    if (sessionNameEnv) sessionName = std::string(sessionNameEnv);
 
     // Check Desktop Environments first
     if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "GNOME") ||

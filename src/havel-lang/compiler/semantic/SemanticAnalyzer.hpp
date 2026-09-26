@@ -2,7 +2,7 @@
 
 #include "LexicalResolver.hpp"
 #include "TypeChecker.hpp"
-#include "../../ast/BootstrapAST.h"
+#include "../../ast/AST.h"
 #include <string>
 #include <vector>
 #include <unordered_set>

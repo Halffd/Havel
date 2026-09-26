@@ -1509,7 +1509,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
             bool foundViaModule = false;
             for (const auto& [name, val] : vm->getGlobals()) {
                 // Skip the ambient @ self-binding: class-instance methods
-                // compile to STORE_GLOBAL "this" (BootstrapByteCompiler).
+                // compile to STORE_GLOBAL "this" (ByteCompiler).
                 // After a compiled @-method ran once, globals["this"] holds
                 // the latest instance, whose id matches the receiver of
                 // EVERY subsequent myObj.method() bridge call - treating it

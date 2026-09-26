@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "../ast/BootstrapAST.h"
+#include "../ast/AST.h"
 #include "../common/Debug.hpp"
 #include <string>
 #include <vector>

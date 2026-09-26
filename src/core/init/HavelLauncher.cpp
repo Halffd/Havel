@@ -8,14 +8,14 @@
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
-#include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
+#include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/core/ModuleGlobals.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/incremental/IncrementalDriver.hpp"
 #include "havel-lang/compiler/incremental/CacheLayer.hpp"
-#include "lexer/BootstrapLexer.hpp"
-#include "havel-lang/parser/BootstrapParser.h"
+#include "lexer/Lexer.hpp"
+#include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/HavelEngine.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/runtime/Modules.hpp"
@@ -1626,55 +1626,16 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runBuild(cfg);
 
     if (!cfg.noSelfHosted && !cfg.vmConfig.self_hosted_modules_path.empty()) {
+      // User/overridden path: keep SELF_HOSTED available only when explicitly
+      // requested (--self-hosted). Auto-promotion into SELF_HOSTED is off.
       namespace fs = std::filesystem;
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
-      if (fs::exists(langDir) && !fs::is_empty(langDir)) {
-        // SCRIPT mode deliberately NOT switched to SELF_HOSTED: the
-        // self-hosted pratt parser parses ~0.2-0.3s/line on the VM (a
-        // 2200-line user script measured at 600s), making every script run
-        // unusable. User scripts stay on the C++ pipeline (milliseconds);
-        // the self-hosted pipeline remains available via --self-hosted and
-        // for the REPL/TEST modes below.
-        if (cfg.mode == LaunchConfig::Mode::REPL ||
-            cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
-            cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
-            cfg.mode == LaunchConfig::Mode::TEST) {
-          cfg.launchMode = cfg.mode;
-          cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
-          cfg.minimalMode = true;
-          cfg.pureStdlib = true;
-        }
-      } else {
-        // The self-hosted tree (<exe>/../out/modules/lang) only exists in a
-        // source checkout. System-installed binaries (/usr/bin/havel) never
-        // have it - fall back to the C++ pipeline instead of failing.
+      if (!fs::exists(langDir)) {
         cfg.vmConfig.self_hosted_modules_path.clear();
       }
     } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
-      // Try to derive self-hosted path from binary location: binary/../out
-      namespace fs = std::filesystem;
-      auto exePath = Env::executable();
-      if (!exePath.empty()) {
-        fs::path candidate = fs::path(exePath).parent_path().parent_path() / "out";
-        if (fs::exists(candidate / "modules" / "lang")) {
-          cfg.vmConfig.self_hosted_modules_path = candidate.string();
-          fs::path langDir = candidate / "modules" / "lang";
-          if (!fs::is_empty(langDir)) {
-            // Same SCRIPT-mode carve-out as above.
-            if (cfg.mode == LaunchConfig::Mode::REPL ||
-                cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
-                cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
-                cfg.mode == LaunchConfig::Mode::TEST) {
-              cfg.launchMode = cfg.mode;
-              cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
-              cfg.minimalMode = true;
-              cfg.pureStdlib = true;
-            }
-          }
-        }
-        // If not found, fall through to --no-self-hosted behaviour silently
-      }
+      // Default: C++ pipeline. Self-hosting is opt-in via --self-hosted.
     }
 
     if (!cfg.diffPipelinePath.empty()) {

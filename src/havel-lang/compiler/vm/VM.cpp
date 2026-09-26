@@ -13,7 +13,7 @@
 #define HAVE_COMPUTED_GOTO 0
 #endif
 #include "../../../utils/Logger.hpp"
-#include "../../parser/BootstrapParser.h"
+#include "../../parser/Parser.h"
 #include "../../runtime/Modules.hpp"
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
@@ -24,9 +24,9 @@
 #include "../runtime/EventQueue.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "c/ModulePlugin.h"
-#include "compiler/core/BootstrapByteCompiler.hpp"
+#include "compiler/core/ByteCompiler.hpp"
 #include "dl/Loader.hpp"
-#include "lexer/BootstrapLexer.hpp"
+#include "lexer/Lexer.hpp"
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>

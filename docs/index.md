@@ -23,7 +23,7 @@ description: "Havel — a systems scripting language for desktop automation, win
 ```hv
 // hello.hv
 fn greet(name) {
-    "Hello, {name}!"
+    "Hello, ${name}!"
 }
 
 print(greet("world"))
@@ -45,7 +45,7 @@ print(greet("world"))
 | **LLVM JIT/AOT** | Optional tiered compilation: interpret → JIT → native (modes 0, 5) |
 | **Hotkey system** | Global X11 hotkeys with modifiers (`^`, `+`, `!`, `#`), conditional grabbing, policies |
 | **Window management** | Focus, move, resize, enumerate, match by title/class/pid |
-| **Concurrency** | `go` blocks, `channel`, `await`, `<-`, `select`, OS threads with actor messaging |
+| **Concurrency** | `go` blocks, channels, prefix `<-` await, OS threads with actor messaging |
 | **FFI** | `ffi.open`, `ffi.sym`, `ffi.call`, `ffi.cdef` for C library binding |
 | **LSP/DAP** | Language Server Protocol and Debug Adapter Protocol support |
 | **Cross-platform** | Linux X11 (primary), headless mode for servers |
@@ -60,7 +60,7 @@ print(greet("world"))
 | [Compiler Internals](/compiler/bytecode) | Bytecode format, JIT, GC, embedding |
 | [Guides](/guides/first-hotkey) | Practical tutorials and how-tos |
 | [API Reference](/reference/host-functions) | Host functions, FFI, error handling |
-| [Contributing](/contributing/build-system) | Build, test, code style, extending |
+| [Contributing](/contributing/directory-structure) | Layout, tests, code style, extending |
 
 ---
 

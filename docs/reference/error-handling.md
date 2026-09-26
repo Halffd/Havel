@@ -65,7 +65,7 @@ Any value can be thrown. In catch blocks, `it` refers to the thrown value:
 try {
     risky()
 } catch {
-    print("caught: {it}")  // 'it' is the thrown value
+    print("caught: ${it}")  // 'it' is the thrown value
 }
 ```
 
@@ -76,7 +76,7 @@ try {
     mightFail()
 } catch err {
     // 'err' or 'it' both work
-    print("Error: {err}")
+    print("Error: ${err}")
 }
 ```
 

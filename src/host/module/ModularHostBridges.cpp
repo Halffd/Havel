@@ -4846,36 +4846,46 @@ UIBridge::handleClipboardGet(const std::vector<Value> &args,
                              const HostContext *ctx) {
 #ifdef HAVE_QT_EXTENSION
   (void)args;
-  if (!ctx->clipboardManager) {
+  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
+  if (!vm || !ctx->clipboardManager) {
     return Value::makeNull();
   }
   auto *clipboard = ctx->clipboardManager->getClipboard();
   if (!clipboard) {
     return Value::makeNull();
   }
-  // TODO: string pool integration - for now return null
-  (void)clipboard;
-#endif
+  const QString text = clipboard->text();
+  // Clipboard read returns a heap-allocated string so callers keep a stable
+  // reference across collection cycles.
+  auto ref = vm->getHeap().allocateString(text.toStdString());
+  return Value::makeStringId(ref.id);
+#else
+  (void)args;
+  (void)ctx;
   return Value::makeNull();
+#endif
 }
 
 Value
 UIBridge::handleClipboardSet(const std::vector<Value> &args,
                              const HostContext *ctx) {
 #ifdef HAVE_QT_EXTENSION
-  if (args.empty() || !ctx->clipboardManager) {
+  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
+  if (!vm || args.empty() || !ctx->clipboardManager) {
     return Value::makeBool(false);
   }
   auto *clipboard = ctx->clipboardManager->getClipboard();
   if (!clipboard) {
     return Value::makeBool(false);
   }
-  if (false) { // TODO: string support
-    // clipboard->setText(QString::fromStdString(...));
-    return Value::makeBool(true);
-  }
-#endif
+  const std::string text = vm->resolveStringKey(args[0]);
+  clipboard->setText(QString::fromStdString(text));
+  return Value::makeBool(true);
+#else
+  (void)args;
+  (void)ctx;
   return Value::makeBool(false);
+#endif
 }
 
 Value

@@ -1,0 +1,24 @@
+// clipboard API — text round-trip via the ModularHostBridges clipboard.* fns
+// (have_qt_extension build with an X11 display).
+// Manually run: ./build-debug/havel run scripts/tests/test_clipboard_api.hv
+
+failCount = 0
+fn check(cond, label) {
+    if !cond {
+        print("FAIL: ${label}")
+        failCount = failCount + 1
+    }
+}
+
+_orig = clipboard.get()
+check(true, "initial read doesn't crash")
+check(clipboard.set("havel-clipboard-test") == true, "set returns true")
+check(clipboard.get() == "havel-clipboard-test", "get round-trip")
+check(clipboard.clear() == true, "clear returns true")
+check(clipboard.get() == "", "post-clear empty")
+if _orig != null {
+    clipboard.set(_orig)
+}
+
+if failCount > 0 { print("${failCount} FAILED") }
+else { print("PASS: 5 checks") }

@@ -887,8 +887,21 @@ case ast::NodeType::BlockStatement: {
     if (try_stmt.catchBody) {
       beginScope();
       if (try_stmt.catchVariable) {
-        declareLocal(try_stmt.catchVariable->symbol,
-                     try_stmt.catchVariable.get(), false);
+        const std::string &catchName = try_stmt.catchVariable->symbol;
+        // At program root, resolveIdentifierInFunction() checks
+        // global_variables_ before local scopes, so reads of the catch
+        // variable inside the body bind to Global whenever a global by the
+        // same name exists. Keep the declaration node's binding in lockstep
+        // with those reads — otherwise the ByteCompiler writes the caught
+        // value to a local slot that nobody reads.
+        if (function_stack_.size() == 1 &&
+            global_variables_.count(catchName) > 0) {
+          noteIdentifierBinding(*try_stmt.catchVariable,
+                                ResolvedBinding{ResolvedBindingKind::Global, 0,
+                                                0, catchName, false});
+        } else {
+          declareLocal(catchName, try_stmt.catchVariable.get(), false);
+        }
       }
       resolveStatement(*try_stmt.catchBody);
       endScope();

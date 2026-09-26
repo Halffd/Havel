@@ -3112,10 +3112,21 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
 
   if (statement.catchBody) {
     if (statement.catchVariable) {
-      const uint32_t catch_slot = declarationSlot(*statement.catchVariable);
-      reserveLocalSlot(catch_slot);
-      emit(OpCode::LOAD_EXCEPTION);
-      emit(OpCode::STORE_VAR, catch_slot);
+      const auto *catchBinding = bindingFor(*statement.catchVariable);
+      if (catchBinding &&
+          catchBinding->kind == ResolvedBindingKind::Global) {
+        // Top-level catch variables resolve as globals (dynamic language);
+        // a slot-based STORE_VAR would never be seen by the LOAD_GLOBAL
+        // reads the resolver produced for the body.
+        uint32_t nameId = addStringConstant(statement.catchVariable->symbol);
+        emit(OpCode::LOAD_EXCEPTION);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(nameId));
+      } else {
+        const uint32_t catch_slot = declarationSlot(*statement.catchVariable);
+        reserveLocalSlot(catch_slot);
+        emit(OpCode::LOAD_EXCEPTION);
+        emit(OpCode::STORE_VAR, catch_slot);
+      }
     }
     compileStatement(*statement.catchBody);
     // After catch, execute finally if it exists and wasn't already executed

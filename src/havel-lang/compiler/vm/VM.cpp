@@ -5411,6 +5411,17 @@ std::string VM::resolveLazyAliasName(const std::string &name) const {
   return {};
 }
 
+bool VM::isHostFnNamespaceObject(Value value) const {
+  if (!value.isObjectId()) return false;
+  auto *obj = heap_.object(value.asObjectId());
+  if (!obj || obj->size() == 0) return false;
+  for (const auto &[k, v] : *obj) {
+    (void)k;
+    if (!v.isHostFuncId()) return false;
+  }
+  return true;
+}
+
 void VM::registerLazyModule(const std::string &name,
                             std::function<void(struct VMApi &)> initFn,
                             const std::vector<std::string> &aliases) {
@@ -5986,6 +5997,15 @@ Value VM::loadModule(const std::string &path) {
     if (modules_loading_.count(canonicalKey)) {
       shouldUseCache = moduleLoader_.isCached(canonicalKey);
       if (!shouldUseCache) {
+        // Same-name cycle through a host-fn namespace (protocols <->
+        // display): the outer load shadow-merges its module exports INTO
+        // that very object, so handing it out here is safe — the importer
+        // binds a namespace that gets the .hv fns once the outer load
+        // completes (callers only invoke them at runtime, not in __init__).
+        auto git = globals.find(path);
+        if (git != globals.end() && isHostFnNamespaceObject(git->second)) {
+          return git->second;
+        }
         COMPILER_THROW("Circular dependency detected: " + path);
       }
     } else {
@@ -6776,6 +6796,16 @@ load_from_source:
           shadowingHostModule = true;
           break;
         }
+      }
+    }
+    // Plain host-fn namespace object (buildNamespaceGlobals) with the same
+    // name as the module being loaded: merge the module's exports INTO it
+    // instead of producing a fresh object nobody else can see.
+    if (!shadowingHostModule) {
+      auto git = globals.find(pathBasename);
+      if (git != globals.end() && isHostFnNamespaceObject(git->second)) {
+        hostModuleObj = git->second;
+        shadowingHostModule = true;
       }
     }
   }

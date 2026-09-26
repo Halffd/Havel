@@ -2084,6 +2084,11 @@ Value loadModule(const std::string& path);
   // Returns the real module name if `name` is a registered alias of a lazy
   // module (e.g. "cfg" -> "config"), empty string otherwise.
   std::string resolveLazyAliasName(const std::string &name) const;
+  // True when `value` is a namespace object synthesized by
+  // buildNamespaceGlobals() from dotted host functions (every field is a
+  // host fn). `use window` must NOT short-circuit on such a namespace when
+  // a same-named .hv module source exists — the module would never load.
+  bool isHostFnNamespaceObject(Value value) const;
   void activateLazyModule(const std::string &name);
 bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }

@@ -2192,8 +2192,8 @@ Options:
   -r, --repl          Start interactive REPL
   -i, --interactive   Same as --repl
   --run               Run script in minimal mode
-  --self-hosted       Run via pure Havel pipeline
-  --no-self-hosted    Use C++ parser (legacy)
+  --self-hosted       Run via pure Havel pipeline (opt-in; slower on interpreted parse)
+  --no-self-hosted    Use the C++ parser (default)
   -t, --test DIR      Run all .hv files in a directory
   --lint FILE         Check syntax and compilation errors
   --build FILE        Compile to bytecode (.hvc)

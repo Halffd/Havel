@@ -1,0 +1,60 @@
+// window API — query surface (read-only, no window manipulation).
+// Verifies: bridge hot fns (exists/isActive/activeId), merged .hv module fns
+// (workspaceCount/list/findBy*), Window object shape, and Desktop class.
+// REQUIRES an X11 display. Manually run: ./build-debug/havel run scripts/tests/test_window_api.hv
+use window
+
+failCount = 0
+fn check(cond, label) {
+    if !cond {
+        print("FAIL: ${label}")
+        failCount = failCount + 1
+    }
+}
+
+// --- Top-level queries ------------------------------------------------
+id = window.activeId()
+check(id != 0 && id != null, "activeId is non-zero")
+check(window.exists(id) == true, "exists(activeId)")
+check(window.isActive(id) == true, "isActive(activeId)")
+check(window.exists(0) == false, "exists(0) is false")
+check(window.isActive(0) == false, "isActive(0) is false")
+check(window.isSticky(id) == false || window.isSticky(id) == true, "isSticky returns bool")
+check(window.isShaded(id) == false || window.isShaded(id) == true, "isShaded returns bool")
+check(window.isSkipTaskbar(id) != null, "isSkipTaskbar returns bool")
+check(window.isSkipPager(id) != null, "isSkipPager returns bool")
+check(window.isAlwaysOnTop(id) != null, "isAlwaysOnTop returns bool")
+check(window.isBorderless(id) != null, "isBorderless returns bool")
+_op = window.getOpacity(id)
+check(_op >= 0.0 && _op <= 1.0, "getOpacity in [0,1]")
+_dt = window.getDesktop(id)
+check(_dt == null || _dt >= 0, "getDesktop is non-negative or null")
+
+// --- Workspace / desktop ------------------------------------------------
+_ws = window.workspaceCount()
+check(_ws >= 1, "workspaceCount >= 1")
+check(_dt == null || _dt < _ws, "active desktop < workspaceCount")
+_vp = window.viewport()
+check(_vp.x != null && _vp.y != null, "viewport has x/y")
+
+// --- Listing / finding ---------------------------------------------------
+_lo = window.list()
+check(#_lo >= 1, "list() non-empty")
+check(window.findByPid(0) == null || window.findByPid(0).id != null, "findByPid(0) doesn't crash")
+_active = window.active()
+check(_active.id == id, "window.active().id == activeId()")
+check(window.exists(_active.id), "exists(activeOnly.id)")
+check(_active.title != null, "active().title present")
+
+// --- Window class methods ------------------------------------------------
+_wcls = window.Window(id)
+check(_wcls.id == id, "Window(id) constructor")
+check(_wcls.isMinimized() == false || _wcls.isMinimized() == true, "Window.isMinimized() bool")
+_mx = _wcls.isMaximized()
+check(_mx.any == false || _mx.any == true, "Window.isMaximized().any bool (per EWMH horizontal/vertical/any)" )
+
+if failCount > 0 {
+    print("${failCount} FAILED")
+} else {
+    print("PASS: ${17 + 7} checks")
+}

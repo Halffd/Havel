@@ -441,8 +441,13 @@ void LexicalResolver::resolveFunctionDeclaration(
     if (param && param->pattern) {
       collectPatternIdentifiers(*param->pattern);
     }
+    // Non-literal default arguments reference globals/upvalues and are
+    // evaluated at call time by the prolog the ByteCompiler emits; the
+    // identifier nodes inside the default expression still need bindings.
+    if (param && param->defaultValue) {
+      resolveExpression(**param->defaultValue);
+    }
   }
-
   // Hoisting pre-pass: scan the function body for FunctionDeclaration
   // nodes and declare their names as locals before resolving any
   // statements.  This lets sibling inner functions reference each other
@@ -509,6 +514,11 @@ void LexicalResolver::resolveLambdaExpression(
         // Then allocate slots for extracted values
         collectPatternIdentifiers(*param->pattern);
       }
+    }
+    // Same treatment as fn declarations: resolve default expressions so
+    // their identifiers get bindings looked up by the prolog.
+    if (param && param->defaultValue) {
+      resolveExpression(**param->defaultValue);
     }
   }
 

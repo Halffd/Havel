@@ -1,0 +1,139 @@
+// clipboard chunking helpers
+// Splits a string into fixed-size chunks and navigates through them.
+//
+// navigator panel: `pos` is exposed as a method (`nav.pos()`) because it
+// lives in a closure the hotkeys advance — a plain field would be a
+// snapshot that never moves.
+
+CHUNK_SIZE = 20000
+
+l = ""
+l2 = ""
+li = 1
+
+// -- chunk by index ---------------------------------------------------
+// chunkAt(s, index, size) -> string
+//   index 0 = first chunk, 1 = second, etc.
+//   Returns "" if index is out of range.
+fn chunkAt(s, index, size = CHUNK_SIZE) {
+    start = index * size
+    if start >= #s { return "" }
+    s.sub(start, size)
+}
+
+// -- navigation --------------------------------------------------------
+// chunkLeft(s, offset, size)  -> chunk starting at offset from left
+// chunkRight(s, offset, size) -> chunk ending at offset from right
+// chunkMiddle(s, span)        -> chunk centered in the string
+fn chunkLeft(s, offset = 0, size = CHUNK_SIZE) {
+    if offset >= #s { return "" }
+    s.sub(offset, size)
+}
+
+fn chunkRight(s, offset = 0, size = CHUNK_SIZE) {
+    start = #s - size - offset
+    if start < 0 { start = 0 }
+    s.sub(start, size)
+}
+
+fn chunkMiddle(s, span = CHUNK_SIZE) {
+    mid = #s \ 2
+    start = mid - span \ 2
+    if start < 0 { start = 0 }
+    s.sub(start, span)
+}
+
+// -- stateful navigator (used by hotkeys) ------------------------------
+// Maintains a position cursor and returns the current chunk.
+// usage:
+//   nav = chunkNav()
+//   nav.next(clipboard.get())
+//   nav.prev(clipboard.get())
+//   nav.center(clipboard.get())
+//   nav.pos()    // live cursor (a method, not a field — see header)
+
+fn chunkNav(size = CHUNK_SIZE) {
+    pos = 0
+    last = ""
+    {
+        size: size,
+        pos: fn() { pos },
+        total: fn(s) { (#s + size - 1) \ size },
+        current: fn(s) {
+            if pos >= #s { return "" }
+            s.sub(pos, size)
+        },
+        next: fn(s) {
+            if pos + size < #s { pos = pos + size }
+            s.sub(pos, size)
+        },
+        prev: fn(s) {
+            pos = pos - size
+            if pos < 0 { pos = 0 }
+            s.sub(pos, size)
+        },
+        jump: fn(s, index) {
+            pos = index * size
+            if pos >= #s { pos = 0 }
+            s.sub(pos, size)
+        },
+        center: fn(s) {
+            pos = #s \ 2 - size \ 2
+            if pos < 0 { pos = 0 }
+            s.sub(pos, size)
+        },
+        reset: fn() { pos = 0 }
+    }
+}
+
+// -- single-shot wrappers ----------------------------------------------
+
+fn chunkFirst(s, size = CHUNK_SIZE) { chunkAt(s, 0, size) }
+fn chunkLast(s, size = CHUNK_SIZE)  { chunkAt(s, (#s - 1) \ size, size) }
+
+// ============================================================
+// HOTKEYS
+// ============================================================
+
+nav = chunkNav()
+
+// !3 — next chunk (or wrap to first if at end)
+!3 => {
+    t = clipboard.get()
+    if nav.pos() + nav.size >= #t {
+        nav.reset()
+        chunk = chunkFirst(t)
+    } else {
+        chunk = nav.next(t)
+    }
+    clipboard.set(chunk)
+}
+
+// !4 — previous chunk (or wrap to last)
+!4 => {
+    t = clipboard.get()
+    if nav.pos() <= 0 {
+        chunk = nav.jump(t, (#t - 1) \ nav.size)
+    } else {
+        chunk = nav.prev(t)
+    }
+    clipboard.set(chunk)
+}
+
+// !+5 — middle chunk
+!+5 => {
+    t = clipboard.get()
+    clipboard.set(chunkMiddle(t))
+}
+
+// !+3 — first chunk
+!+3 => {
+    nav.reset()
+    clipboard.set(chunkFirst(clipboard.get()))
+}
+
+// !+4 — last chunk
+!+4 => {
+    t = clipboard.get()
+    clipboard.set(chunkLast(t))
+}

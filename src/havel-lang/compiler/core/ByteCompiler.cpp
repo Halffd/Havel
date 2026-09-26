@@ -989,7 +989,11 @@ current_class_name_ = type_it->second;
 }
 }
 
-// Collect default parameter values and variadic info
+// Collect default parameter values and variadic info.
+// Defaults that are not simple literals (e.g. `size = CHUNK_SIZE`) can't
+// be materialized by the compiler — they are evaluated at call time by a
+// prologue emitted after this loop.
+std::vector<std::pair<uint32_t, const ast::Expression *>> pending_default_evals;
 for (size_t i = 0; i < function.parameters.size(); i++) {
 const auto &param = function.parameters[i];
 if (!param || !param->pattern) {
@@ -1057,11 +1061,32 @@ if (param->defaultValue.has_value()) {
         }
       } else {
         current_function->default_values.push_back(std::nullopt);
+        // Non-literal default: defer to the call-time prologue below.
+        if (param->pattern->kind == ast::NodeType::Identifier) {
+          pending_default_evals.emplace_back(param_slot, defaultExpr.get());
+        }
       }
     } else {
       current_function->default_values.push_back(std::nullopt);
     }
   }
+
+// Emit the call-time default prologue: for each argument the caller left
+// out (slot is null), evaluate the non-literal default expression in the
+// callee's scope and store it into the parameter slot.
+for (const auto &pending : pending_default_evals) {
+  const ast::Expression *defaultExpr = pending.second;
+  if (!defaultExpr) continue;
+  emit(OpCode::LOAD_VAR, pending.first);
+  emit(OpCode::DUP);
+  uint32_t toDefault = emitJump(OpCode::JUMP_IF_NULL);
+  uint32_t done = emitJump(OpCode::JUMP);
+  patchJump(toDefault, static_cast<uint32_t>(current_function->instructions.size()));
+  emit(OpCode::POP);
+  compileExpression(*defaultExpr);
+  emit(OpCode::STORE_VAR, pending.first);
+  patchJump(done, static_cast<uint32_t>(current_function->instructions.size()));
+}
 
  if (function.body) {
     const auto &stmts = function.body->body;

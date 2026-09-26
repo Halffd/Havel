@@ -1,0 +1,145 @@
+// chunk_navigator.hv — smoke test for the clipboard chunk helpers and
+// the stateful chunkNav navigator.
+//
+// What: chunkAt/chunkLeft/chunkRight/chunkMiddle/chunkFirst/chunkLast
+//       over fixed sizes, plus the chunkNav position arithmetic and the
+//       hotkey wrap logic (!3 cycle-back, !4 wrap-to-last).
+// Why:  regression for two bugs found while testing:
+//       1. Non-literal default args such as `size = CHUNK_SIZE` silently
+//          bound to null (ByteCompiler only handled literal defaults;
+//          they are now evaluated at call time by a function prologue).
+//       2. The navigator exposed pos as a plain object field, a snapshot
+//          that never saw the closures' updates — the hotkeys' wrap logic
+//          read the stale field. Navigator now exposes pos as a method.
+// Expected: all assertions pass. Before fix #1, `chunkAt(s, 0)=="abcd"`
+//      failed (sub got null size); before fix #2, "press3 #3 must WRAP"
+//      failed (last chunk repeated forever).
+
+CHUNK_SIZE = 4
+
+fn chunkAt(s, index, size = CHUNK_SIZE) {
+    start = index * size
+    if start >= #s { return "" }
+    s.sub(start, size)
+}
+
+fn chunkLeft(s, offset = 0, size = CHUNK_SIZE) {
+    if offset >= #s { return "" }
+    s.sub(offset, size)
+}
+
+fn chunkRight(s, offset = 0, size = CHUNK_SIZE) {
+    start = #s - size - offset
+    if start < 0 { start = 0 }
+    s.sub(start, size)
+}
+
+fn chunkMiddle(s, span = CHUNK_SIZE) {
+    mid = #s \ 2
+    start = mid - span \ 2
+    if start < 0 { start = 0 }
+    s.sub(start, span)
+}
+
+fn chunkNav(size = CHUNK_SIZE) {
+    pos = 0
+    last = ""
+    {
+        size: size,
+        pos: fn() { pos },
+        total: fn(s) { (#s + size - 1) \ size },
+        current: fn(s) {
+            if pos >= #s { return "" }
+            s.sub(pos, size)
+        },
+        next: fn(s) {
+            if pos + size < #s { pos = pos + size }
+            s.sub(pos, size)
+        },
+        prev: fn(s) {
+            pos = pos - size
+            if pos < 0 { pos = 0 }
+            s.sub(pos, size)
+        },
+        jump: fn(s, index) {
+            pos = index * size
+            if pos >= #s { pos = 0 }
+            s.sub(pos, size)
+        },
+        center: fn(s) {
+            pos = #s \ 2 - size \ 2
+            if pos < 0 { pos = 0 }
+            s.sub(pos, size)
+        },
+        reset: fn() { pos = 0 }
+    }
+}
+
+fn chunkFirst(s, size = CHUNK_SIZE) { chunkAt(s, 0, size) }
+fn chunkLast(s, size = CHUNK_SIZE)  { chunkAt(s, (#s - 1) \ size, size) }
+
+s = "abcdefghij"   // 10 chars, size 4 -> chunks abcd/efgh/ij
+
+// chunkAt basics
+assert(chunkAt(s, 0) == "abcd", "chunkAt 0")
+assert(chunkAt(s, 1) == "efgh", "chunkAt 1")
+assert(chunkAt(s, 2) == "ij", "chunkAt last partial")
+assert(chunkAt(s, 3) == "", "chunkAt out-of-range")
+
+// chunkLeft / chunkRight / chunkMiddle
+assert(chunkLeft(s, 0) == "abcd", "chunkLeft 0")
+assert(chunkLeft(s, 4) == "efgh", "chunkLeft 4")
+assert(chunkLeft(s, 10) == "", "chunkLeft out-of-range")
+assert(chunkRight(s) == "ghij", "chunkRight 0 (last full)")
+assert(chunkRight(s, 2) == "efgh", "chunkRight 2")
+assert(chunkMiddle(s) == "defg", "chunkMiddle centered")
+
+// first / last helpers
+assert(chunkFirst(s) == "abcd", "chunkFirst")
+assert(chunkLast(s) == "ij", "chunkLast partial")
+
+// navigator state transitions
+nav = chunkNav()
+assert(nav.size == 4, "nav size field")
+assert(nav.total(s) == 3, "nav.total 10 chars @4")
+assert(nav.current(s) == "abcd", "nav current at 0")
+assert(nav.next(s) == "efgh", "nav next 1")
+assert(nav.next(s) == "ij", "nav next 2 (end)")
+assert(nav.next(s) == "ij", "nav next 3 stays at end")
+assert(nav.prev(s) == "efgh", "nav prev")
+assert(nav.prev(s) == "abcd", "nav prev to first")
+assert(nav.prev(s) == "abcd", "nav prev clamps at 0")
+assert(nav.jump(s, 2) == "ij", "nav jump 2")
+nav.reset()
+assert(nav.current(s) == "abcd", "nav reset+current")
+assert(nav.center(s) == "defg", "nav center")
+
+// !3 wrap simulation (the hotkey logic as written):
+fn press3(nav, t) {
+    if nav.pos() + nav.size >= #t {
+        nav.reset()
+        chunkFirst(t)
+    } else {
+        nav.next(t)
+    }
+}
+nav3 = chunkNav()
+assert(press3(nav3, s) == "efgh", "press3 #1")
+assert(press3(nav3, s) == "ij", "press3 #2 (last)")
+assert(press3(nav3, s) == "abcd", "press3 #3 must WRAP to first")
+
+// !4 wrap simulation:
+fn press4(nav, t) {
+    if nav.pos() <= 0 {
+        nav.jump(t, (#t - 1) \ nav.size)
+    } else {
+        nav.prev(t)
+    }
+}
+nav4 = chunkNav()
+assert(press4(nav4, s) == "ij", "press4 #1 wraps to last (field write reads stale but result happens to match)")
+nav4b = chunkNav()
+nav4b.jump(s, 2)
+assert(press4(nav4b, s) == "efgh", "press4 from middle steps back one")
+
+print("chunk navigator: all assertions passed")

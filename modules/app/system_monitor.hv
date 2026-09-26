@@ -1,0 +1,23 @@
+// modules/app/system_monitor.hv
+
+fn hardware() { system.hardware() }
+
+fn memory() {
+    h = system.hardware()
+    { total: h.ramTotal, used: h.ramUsed, free_: h.ramFree,
+      swapTotal: h.swapTotal, swapUsed: h.swapUsed }
+}
+
+fn cpuUsage() {
+    h = system.hardware()
+    h.cpuUsage
+}
+
+fn uptime() {
+    u = sys.uptime()
+    u
+}
+
+fn hostname() { sys.hostname() }
+
+fn detect() { system.detect() }

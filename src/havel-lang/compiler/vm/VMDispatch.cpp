@@ -142,8 +142,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     // swap. Read (never write) through them so module sandboxes stay intact.
     for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
          ++git) {
-      auto pushedIt = git->find(name);
-      if (pushedIt != git->end()) {
+      auto pushedIt = git->first.find(name);
+      if (pushedIt != git->first.end()) {
         trackGlobalAccess(name);
         pushStack(pushedIt->second);
         break;
@@ -250,8 +250,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (cf_store.closure_id != 0) {
       for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
            ++git) {
-        auto pushedIt = git->find(name);
-        if (pushedIt != git->end()) {
+        auto pushedIt = git->first.find(name);
+        if (pushedIt != git->first.end()) {
           pushedIt->second = value;
           break;
         }

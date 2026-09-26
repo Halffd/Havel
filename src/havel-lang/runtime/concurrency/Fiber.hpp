@@ -224,7 +224,12 @@ public:
     // (and globals_stack_ depth marker) are saved here. When it resumes, they
     // are restored. has_saved_globals=false on first run (use VM's current).
     std::unordered_map<std::string, Value> saved_globals;
-    std::vector<std::unordered_map<std::string, Value>> saved_globals_stack;
+    // Saved entries pair the swapped-out map with the module-globals
+    // identity that was active when it was installed (see VM::GlobalsFrame).
+    using SavedGlobalsFrame =
+        std::pair<std::unordered_map<std::string, Value>,
+                  std::shared_ptr<std::unordered_map<std::string, Value>>>;
+    std::vector<SavedGlobalsFrame> saved_globals_stack;
     uint32_t saved_globals_mirror_id = UINT32_MAX;
     bool has_saved_globals = false;
     

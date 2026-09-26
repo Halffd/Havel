@@ -158,8 +158,27 @@ case OpCode::IMPORT: {
             if (preLazy && preLazy->isBool() && preLazy->asBool()) {
                 // Lazy proxy — fall through to loadModule to activate it
             } else {
-                pushStack(git->second);
-                break;
+                // A namespace object synthesized from dotted host functions
+                // (buildNamespaceGlobals) must NOT short-circuit when a
+                // same-named .hv module exists: window.hv would never load,
+                // leaving its extras (classes, workspaceCount...) missing.
+                bool loadThrough = false;
+                if (isHostFnNamespaceObject(git->second)) {
+                    Value cachedVal;
+                    if (!moduleLoader_.getCached(path, &cachedVal)) {
+                        auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+                        loadThrough = resolved &&
+                            (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache ||
+                             resolved->type == ModuleLoader::ResolvedModule::UserSource ||
+                             resolved->type == ModuleLoader::ResolvedModule::StdlibSource);
+                    }
+                }
+                if (!loadThrough) {
+                    pushStack(git->second);
+                    break;
+                }
+                // else fall through to loadModule — it merges the .hv
+                // module exports into the existing namespace object.
             }
         } else {
             pushStack(git->second);

@@ -239,22 +239,22 @@ void VM::executeInstruction(const Instruction &instruction) {
     // script globals) writes into the swapped ambient copy — the caller's
     // real map sits on globals_stack_ and would never see the update.
     // Only pre-existing keys are mirrored (innermost first, matching the
-    // LOAD_GLOBAL read order) so module sandbox maps are not polluted
-    // with foreign names.
-    // closure_id == 0 means the frame is a module's __main__/__init__
-    // running inside its sandbox: its top-level stores define the
-    // module's OWN globals. Without the closure_id gate, any module fn
-    // sharing a name with a caller global (bit.hv's `replace` vs the
-    // string-replace host fn) leaked the module closure into the
-    // caller's globals and shadowed the host function.
+    // LOAD_GLOBAL read order) so module sandboxes stay untouched, AND only
+    // when the writer's closure has NO module_globals of its own: a module
+    // closure's writes already persist via the dual-write above, and
+    // mirroring them by name would stomp same-named functions in other
+    // modules (display.open's `_root = int` overwrote window.hv's fn _root).
     if (cf_store.closure_id != 0) {
-      for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
-           ++git) {
-        auto pushedIt = git->first.find(name);
+      auto *closure = heap_.closure(cf_store.closure_id);
+      if (closure && !closure->module_globals) {
+        for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
+             ++git) {
+          auto pushedIt = git->first.find(name);
         if (pushedIt != git->first.end()) {
           pushedIt->second = value;
           break;
         }
+      }
       }
     }
 

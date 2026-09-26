@@ -88,26 +88,33 @@ print(info.modified)
 
 ---
 
-## Path Utilities
+## Path utilities (`path` module)
+
+Path helpers are NOT on the `fs` module — they live in the pure-Havel
+`path` module (`modules/std/path.hv`), loaded with `use path`.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fs.join(...parts)` | `(...str) -> str` | Join path parts |
-| `fs.resolve(path)` | `(str) -> str` | Resolve to absolute path |
-| `fs.relative(from, to)` | `(str, str) -> str` | Relative path from `from` to `to` |
-| `fs.dirname(path)` | `(str) -> str` | Directory name |
-| `fs.basename(path)` | `(str) -> str` | File name |
-| `fs.extname(path)` | `(str) -> str` | Extension (with dot) |
-| `fs.cwd()` | `() -> str` | Current working directory |
-| `fs.chdir(path)` | `(str) -> bool` | Change working directory |
+| `path.basename(path)` | `(str) -> str` | File name |
+| `path.dirname(path)` | `(str) -> str` | Directory name |
+| `path.extname(path)` | `(str) -> str` | Extension (with dot) |
+| `path.ext(path)` | `(str) -> str` | Extension |
+| `path.filename(path)` | `(str) -> str` | File name |
+| `path.stem(path)` | `(str) -> str` | Name without extension |
+| `path.parent(path)` | `(str) -> str` | Parent directory |
+| `path.join(a, b)` | `(str, str) -> str` | Join two path parts |
+| `path.isAbs(path)` | `(str) -> bool` | Is absolute |
+| `path.normalize(path)` | `(str) -> str` | Normalize path |
 
 ```hv
-fs.join("a", "b", "c")       // "a/b/c"
-fs.resolve("file.txt")       // "/home/user/file.txt"
-fs.dirname("/a/b/file.txt")  // "/a/b"
-fs.basename("/a/b/file.txt") // "file.txt"
-fs.extname("file.txt")       // ".txt"
+use path
+path.basename("/a/b/file.txt") // "file.txt"
+path.dirname("/a/b/file.txt")  // "/a/b"
+path.join("/a", "b")           // "/a/b"
 ```
+
+For the current working directory use `sys.cwd()`. `fs.resolve` and
+`fs.relative` were previously documented here but do not exist.
 
 ---
 

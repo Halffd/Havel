@@ -347,6 +347,11 @@ comparisons instead, e.g. `type(x) == "int"`.
 | `process.ppid` | `() -> int` | Parent PID |
 | `process.exit` | `(code: int) -> nil` | Exit process |
 
+`runDetached` also exists as a bare global alias: `runDetached(cmd)`
+≡ `process.runDetached(cmd)`, and takes the same forms (`"cmd"` or
+`["cmd", "arg1", ...]`). The bare alias is a delegation to the same
+handler, not a second implementation.
+
 ---
 
 ## Sys (`sys`)

@@ -422,7 +422,32 @@ std::unordered_map<std::string, std::string> module_resolution_cache_;
 // init functions are called on first use (import/access)
 std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
-    std::vector<std::unordered_map<std::string, Value>> globals_stack_;
+    // A frame on the globals stack: the map that was swapped out plus the
+    // module-globals identity that was active at swap time. Identity lets
+    // call sites skip the full-map copy when a call stays inside one module.
+    using GlobalsFrame =
+        std::pair<std::unordered_map<std::string, Value>,
+                  std::shared_ptr<std::unordered_map<std::string, Value>>>;
+    std::vector<GlobalsFrame> globals_stack_;
+    // Identity (which module_globals shared_ptr) of the map currently
+    // installed as `globals` — null for the engine-main map. Restored from
+    // globals_stack_ frames on pop.
+    std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
+
+    // Swap `globals` + identity onto the stack as one unit (moving the
+    // map). Restores via popGlobals().
+    void pushGlobalsMove() {
+      globals_stack_.push_back({std::move(globals), globals_identity_});
+    }
+    // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
+    void pushGlobalsCopy() {
+      globals_stack_.push_back({globals, globals_identity_});
+    }
+    void popGlobals() {
+      globals = std::move(globals_stack_.back().first);
+      globals_identity_ = std::move(globals_stack_.back().second);
+      globals_stack_.pop_back();
+    }
  std::unordered_map<std::string, Value> rootGlobals_;
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.

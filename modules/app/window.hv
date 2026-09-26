@@ -248,9 +248,9 @@ class Window {
 
 		// Try screen position first (root translation) for absolute coords
 		if (!relative) {
-			_root = _root()
-			if (_root != 0) {
-				_r = x11.translateCoordinates(_d, _id, _root, 0, 0)
+			_rw = _root()
+			if (_rw != 0) {
+				_r = x11.translateCoordinates(_d, _id, _rw, 0, 0)
 				// rcode: 1 = success, 0 = failure (xcb status)
 				if (_r.rcode != 0) { return {x: _r.x, y: _r.y} }
 			}
@@ -286,9 +286,9 @@ class Window {
 	fn screenPos() {
 		_d = _dpy()
 		if _d == 0 { return null }
-		_root = _root()
-		if _root == 0 { return null }
-		_r = x11.translateCoordinates(_d, @id, _root, 0, 0)
+		_rw = _root()
+		if _rw == 0 { return null }
+		_r = x11.translateCoordinates(_d, @id, _rw, 0, 0)
 		if _r.rcode == 0 { null }
 		else { {x: _r.x, y: _r.y} }
 	}

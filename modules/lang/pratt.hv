@@ -788,9 +788,8 @@ if current().tid == TID.Identifier {
 field = advance()
 return AtExpression(field.value, l, c)
 }
-else {
-return error("Expected field name after '@'", l, c)
-}
+// Standalone @ is a self-reference (like 'this')
+return AtExpression(null, l, c)
 }
 else if tt == TID.AtAt {
 if current().tid == TID.Identifier {

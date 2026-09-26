@@ -191,7 +191,7 @@ use { add } from "math"
 | `function fn() end` | `fn fn() { }` |
 | `local x = 5` | `val x = 5` or `x = 5` |
 | `if x then ... end` | `if x { ... }` |
-| `for i=1,10 do ... end` | `for i in 1..=10 { }` |
+| `for i=1,10 do ... end` | `for i in 1..10 { }` |
 | `while x do ... end` | `while x { }` |
 | `return x` | (implicit) `x` |
 | `nil` | `nil` |

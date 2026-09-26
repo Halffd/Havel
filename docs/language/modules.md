@@ -139,7 +139,7 @@ val PI = 3.14159265359
 fn sin(x) { /* ... */ }
 fn cos(x) { /* ... */ }
 fn clamp(x, lo, hi) {
-    if x < lo { lo } elif x > hi { hi } else { x }
+    if x < lo { lo } else if x > hi { hi } else { x }
 }
 
 _internal_helper = 42  // private by convention (underscore prefix)

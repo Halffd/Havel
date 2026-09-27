@@ -146,6 +146,23 @@ void installQtUIBackendFactories() {
 
 } // namespace havel::host
 
+// The Qt UI backend has to be constructible before any host code calls
+// UIManager::backend(), which selects a backend on first use and only tries
+// once. HavelLauncher::execute() makes exactly that call before it runs the
+// script pipeline, so waiting for installQtBridge to run would leave the
+// launcher with no backend at all.
+//
+// The application references installQtBridge strongly, so this translation unit
+// is always extracted from libhavel_gui.a, and an initializer here runs before
+// main(). installQtUIBackendFactories is idempotent, so installQtBridge calling
+// it again is harmless.
+namespace {
+const bool g_qt_ui_backends_registered = [] {
+  havel::host::installQtUIBackendFactories();
+  return true;
+}();
+} // namespace
+
 namespace havel::compiler {
 
 // ============================================================================

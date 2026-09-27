@@ -1210,7 +1210,9 @@ public:
 
 class SelfHostedStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
+  int execute(const havel::init::LaunchConfig &cfg_in, int argc, char *argv[]) override {
+    // Mutable copy: the precompiled handoff replaces scriptFiles with .hvc paths.
+    havel::init::LaunchConfig cfg = cfg_in;
     info("Engine: self-hosted (Havel)");
 
     char selfBuf[PATH_MAX];
@@ -1271,6 +1273,76 @@ public:
     // Parse user scripts to check for hotkeys
     auto program = parseScript(combinedCode, cfg);
 
+    // Precompiled fast path (self-hosted split ticket, Milestone A):
+    // compile user scripts via the NATIVE pipeline (C++ parser + ByteCompiler)
+    // to .hvc bytecode BEFORE handing off to the self-hosted launcher, so the
+    // launcher spawns precompiled bytecode instead of re-parsing source with
+    // the interpreted Havel Pratt parser (~0.2-0.3 s/line — measured 225 s on
+    // a 2200-line script). The launcher still runs on the VM; it just receives
+    // .hvc paths instead of raw source.
+    // Precompiled fast path (self-hosted split ticket, Milestone A):
+    // user scripts are compiled via the NATIVE pipeline into .hvc bytecode
+    // and the launcher receives .hvc paths instead of raw source. The
+    // precompile itself runs after engine init (needs the host-function
+    // registry from modules->options() so `print` etc resolve).
+    std::vector<std::string> compiledScriptPaths;
+    bool allPrecompiled = true;
+    std::string precompiledScriptDir;
+    for (const auto &f : cfg.scriptFiles) {
+      bool isHvc = f.size() >= 4 && f.compare(f.size() - 4, 4, ".hvc") == 0;
+      if (isHvc) { compiledScriptPaths.push_back(f); continue; }
+      allPrecompiled = false;
+    }
+    if (!allPrecompiled && !cfg.scriptFiles.empty()) {
+      std::error_code dirEc0;
+      namespace fs = std::filesystem;
+      fs::path origSrcDir = fs::path(cfg.scriptFiles.front()).parent_path();
+      if (!dirEc0 && !origSrcDir.empty()) {
+        auto canonOrig = std::filesystem::canonical(origSrcDir, dirEc0);
+        precompiledScriptDir = dirEc0 ? origSrcDir.string() : canonOrig.string();
+      }
+    }
+    auto precompileScripts = [&](const havel::compiler::PipelineOptions &baseOptions,
+                                 havel::compiler::VM *vmOverride) -> int {
+      namespace fs = std::filesystem;
+      auto compile_t0 = havel::startup_now();
+      for (const auto &f : cfg.scriptFiles) {
+        std::string content = readScriptFile(f);
+        if (content.empty()) {
+          error("Failed to read script file: {}", f);
+          return 1;
+        }
+        havel::compiler::PipelineOptions options = baseOptions;
+        options.compile_unit_name = f;
+        options.vm_override = vmOverride;
+        auto chunk = havel::compiler::compileToBytecodeChunk(
+            content, "__main__", options);
+        if (!chunk) {
+          error("Native precompile failed for {}", f);
+          return 1;
+        }
+        havel::compiler::ValueSerializer serializer;
+        std::error_code ec;
+        std::string canonical = fs::canonical(f, ec).string();
+        if (ec) canonical = f;
+        std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
+        std::string cacheDir = havel::Env::cache() + "/havel";
+        fs::create_directories(cacheDir, ec);
+        auto bytes = serializer.serializeChunk(*chunk, canonical);
+        std::ofstream out(cacheDir + "/" + cacheName + ".hvc", std::ios::binary);
+        if (!out.is_open()) {
+          error("Cannot write precompiled chunk for {}", f);
+          return 1;
+        }
+        out.write(reinterpret_cast<const char *>(bytes.data()),
+                  static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        compiledScriptPaths.push_back(cacheDir + "/" + cacheName + ".hvc");
+      }
+      havel::startup_timing_report("selfhosted: native precompile", compile_t0);
+      cfg.scriptFiles = compiledScriptPaths;
+      return 0;
+    };
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
       error("Cannot read launcher.hv at {}", launcherPath);
@@ -1314,10 +1386,6 @@ public:
     if (cfg.headlessMode)
       appArgList.push_back("--headless");
 
-    // Script files
-    for (const auto &f : cfg.scriptFiles)
-      appArgList.push_back(f);
-
     // Eval string
     if (cfg.lintOnly)
       appArgList.push_back("--lint");
@@ -1325,7 +1393,6 @@ public:
       appArgList.push_back("--eval");
       appArgList.push_back(cfg.evalString);
     }
-
 
     // Script args (after --)
     if (!cfg.scriptArgs.empty()) {
@@ -1348,10 +1415,30 @@ public:
 
     // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
     try {
-      havel::HavelEngine engine(makeEngineConfig(cfg));
+  havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
+
+      // Precompile user scripts natively NOW (needs modules->options() with
+      // the host-function registry so `print` etc resolve during compile).
+      // Swaps cfg.scriptFiles to .hvc cache paths, so the launcher spawns
+      // precompiled bytecode instead of re-parsing source.
+      if (!allPrecompiled && !cfg.scriptFiles.empty()) {
+        auto *modules = engine.modules();
+        if (modules) {
+          int rc = precompileScripts(modules->options(), &vm);
+          if (rc != 0) return rc;
+        }
+        // Script files are now .hvc paths; append them + the original
+        // source dir for module resolution.
+        for (const auto &f : cfg.scriptFiles)
+          appArgList.push_back(f);
+        if (!precompiledScriptDir.empty()) {
+          appArgList.push_back("--script-dir");
+          appArgList.push_back(precompiledScriptDir);
+        }
+      }
 #ifdef HAVEL_ENABLE_LLVM
       // The precompiled-bytecode path (runBytecodeFiles) configures the ORC
       // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no

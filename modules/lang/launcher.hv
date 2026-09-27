@@ -57,11 +57,18 @@ fn parseArgs(args) {
         debugEmitter: false,
         stopOnError: false,
         headless: false,
+        scriptDir: null,
     }
     i = 0
     while i < #args {
         arg = args[i]
-        if arg == "--run" || arg == "run" {
+        if arg == "--script-dir" && i + 1 < #args {
+            // Precompiled-path handoff: original source dir for module
+            // resolution (consumed here, not treated as a script file)
+            lcfg.scriptDir = args[i + 1]
+            i = i + 1
+        }
+        else if arg == "--run" || arg == "run" {
             lcfg.mode = "run"
         }
         else if arg == "--repl" {
@@ -162,6 +169,80 @@ fn parseArgs(args) {
 
 fn runScript(lcfg) {
     t_total = now()
+
+    // Precompiled fast path (self-hosted split ticket): when the input is
+    // already compiled bytecode (.hvc), skip tokenize/parse/infer/emit
+    // entirely — load the chunk natively and spawn it. The slow Havel parser
+    // must never re-parse what the native pipeline already compiled.
+    allPrecompiled = #lcfg.scriptFiles > 0
+    for f in lcfg.scriptFiles {
+        if !(f.length() >= 4 && f.endsWith(".hvc")) { allPrecompiled = false }
+    }
+
+    // Set the VM script dir early so module resolution works in both paths
+    // Precompiled inputs live in the cache dir, so --script-dir (when given)
+    // points at the ORIGINAL source dir for module resolution.
+    dirSet = false
+    i = 0
+    while i < #args {
+        arg = args[i]
+        if arg == "--script-dir" && i + 1 < #args {
+            dir = args[i + 1]
+            if dir.startsWith("/") {
+                bc.set_script_dir(dir)
+            }
+            else {
+                bc.set_script_dir("${shell.cwd()}/${dir}")
+            }
+            dirSet = true
+        }
+        i = i + 1
+    }
+    if !dirSet && #lcfg.scriptFiles > 0 {
+        scriptPath = lcfg.scriptFiles[0]
+        slash = scriptPath.lastIndexOf("/")
+        if slash != null && slash >= 0 {
+            dir = scriptPath.slice(0, slash)
+            if dir.startsWith("/") {
+                bc.set_script_dir(dir)
+            }
+            else {
+                bc.set_script_dir("${shell.cwd()}/${dir}")
+            }
+        }
+        else {
+            bc.set_script_dir(shell.cwd())
+        }
+    }
+
+    if allPrecompiled {
+        t = now()
+        firstChunkId = null
+        for f in lcfg.scriptFiles {
+            cid = bc.load_chunk(f)
+            if cid == null {
+                print("Error: bc.load_chunk failed for ${f}")
+                return 1
+            }
+            if firstChunkId == null { firstChunkId = cid }
+        }
+        measure("precompiled: load", t)
+        // Merge is not supported for stored chunks; single-file precompiled
+        // inputs spawn directly (matches runBytecodeFiles semantics).
+        if #lcfg.scriptFiles == 1 {
+            spawnUserScriptStored(firstChunkId)
+            measure("TOTAL runScript(precompiled)", t_total)
+            return 0
+        }
+        // Multi-file: execute each stored chunk's __main__ in order
+        for f in lcfg.scriptFiles {
+            cid = bc.load_chunk(f)
+            bc.execute_stored(cid, "__main__")
+        }
+        measure("TOTAL runScript(precompiled-multi)", t_total)
+        return 0
+    }
+
     // Combine all script files
     combinedCode = ""
     combinedNames = ""
@@ -670,6 +751,11 @@ fn spawnUserScript(bcChunk) {
     // Store the bytecode chunk so we can spawn it
     chunkId = bc.store_chunk(bcChunk)
     // Spawn the __main__ function from the user script as a goroutine
+    bc.spawn_stored(chunkId, "__main__")
+}
+
+// Spawn __main__ from an already-stored chunk id (precompiled path).
+fn spawnUserScriptStored(chunkId) {
     bc.spawn_stored(chunkId, "__main__")
 }
 

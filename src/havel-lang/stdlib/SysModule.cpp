@@ -874,7 +874,21 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   api.registerFunction("__proc.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("__proc.runDetached() requires a command");
-    std::string cmd = api.resolveString(args[0]);
+
+    // Accept either "cmd" or ["cmd", "arg1", ...]; the array form is joined
+    // with spaces. This matches the modular bridge registration.
+    std::string cmd;
+    if (args[0].isArrayId()) {
+      uint32_t n = api.length(args[0]);
+      if (n == 0)
+        throw std::runtime_error("__proc.runDetached() requires a non-empty array");
+      for (uint32_t i = 0; i < n; ++i) {
+        if (i) cmd += " ";
+        cmd += api.resolveString(api.getAt(args[0], i));
+      }
+    } else {
+      cmd = api.resolveString(args[0]);
+    }
 
     auto presult = Launcher::runDetached(cmd);
     return Value::makeInt(presult.pid);

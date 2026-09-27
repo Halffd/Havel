@@ -1,4 +1,4 @@
-#include "BootstrapLexer.hpp"
+#include "Lexer.hpp"
 #include "core/io/KeyMap.hpp"
 #include "../../utils/Logger.hpp"
 #include <cctype>

@@ -49,7 +49,7 @@ print(sys.envAll().PATH)    // "/usr/bin:/bin"
 | `sys.cwd()` | `str` | Current working directory |
 | `sys.pid()` | `int` | Current process ID |
 | `sys.ppid()` | `int` | Parent process ID |
-| `sys.exit(code)` | `never` | Exit with code |
+| `sys.exit(code)` | `nil` | Exit with code |
 
 ```hv
 print(sys.cwd())      // "/home/user/project"
@@ -196,4 +196,4 @@ print("WM: " + detected.windowManager + " (" + detected.displayProtocol + ")")
 ---
 
 **Previous:** [Shell Module](/stdlib/shell)
-**Next:** [Network/HTTP Module →](/stdlib/network)
+**Next:** [HTTP Module →](/stdlib/clipboard)

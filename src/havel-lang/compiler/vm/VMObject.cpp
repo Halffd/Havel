@@ -12,6 +12,13 @@ void VM::registerHostFunction(const std::string &name,
     BytecodeHostFunction function) {
     auto it = host_functions.find(name);
     if (it != host_functions.end()) {
+        // Duplicate registration: the winner is whichever registration runs
+        // last. Log so duplicate impls cannot silently diverge (real example:
+        // process.runDetached accepted arrays via the bridge copy but only
+        // strings via the stdlib copy until they were unified).
+        havel::debug(
+            "duplicate host function registration for '" + name +
+            "' — overwriting previous implementation");
         auto rootIt = host_function_gc_roots_.find(name);
         if (rootIt != host_function_gc_roots_.end()) {
             unpinExternalRoot(rootIt->second);

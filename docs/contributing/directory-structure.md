@@ -252,5 +252,5 @@ build-release/            # Release build (mode 5/9)
 
 ---
 
-**Previous:** [Build System](/contributing/build-system)
+**Previous:** [Testing](/contributing/testing)
 **Next:** [Testing →](/contributing/testing)

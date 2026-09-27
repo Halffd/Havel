@@ -3,7 +3,7 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/capi/havel.h"
-#include "havel-lang/lexer/BootstrapLexer.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 #include <cassert>
 #include <cmath>
 #include <fstream>

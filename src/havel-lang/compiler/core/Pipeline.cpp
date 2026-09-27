@@ -2,15 +2,15 @@
 #include "../../../utils/Logger.hpp"
 
 #include "../../errors/ErrorSystem.h"
-#include "lexer/BootstrapLexer.hpp"
-#include "../../parser/BootstrapParser.h"
+#include "lexer/Lexer.hpp"
+#include "../../parser/Parser.h"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"
 #include "../semantic/SemanticAnalyzer.hpp"
 #include "../vm/VM.hpp"
 #include "ModuleGlobals.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
-#include "BootstrapByteCompiler.hpp"
+#include "ByteCompiler.hpp"
 #include "OptimizerDriver.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 

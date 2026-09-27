@@ -1,373 +1,121 @@
 ---
 title: "DSL & Input Commands"
-description: "Domain-specific language for input automation inside dsl blocks."
+description: "Domain-specific language for input automation inside dsl blocks and hotkey bodies."
 ---
 
 # DSL & Input Commands
 
-Inside `dsl { }` blocks (where `inInputContext = true`), a specialized syntax is available for input automation.
+This page documents the input-automation DSL that is **actually
+implemented**. Plenty of older drafts documented syntax that was never
+written; the "not implemented" list at the bottom keeps those out of
+production scripts.
 
----
+## Pipelines this applies to
 
-## Implementation Status
+- **Self-hosted** (`havel --run --self-hosted-path out`, `hvtest`): full
+  support.
+- **C++ bootstrap**: parses `dsl {}`, `> "text"`, `: N` sleep, `? cond {}`,
+  `* N {}`, `$ "cmd"`. Bare mouse/key forms below are self-hosted only.
 
-Most constructs below are only implemented in the **self-hosted pipeline**
-(`modules/lang/pratt.hv` + `emitter.hv`, used by `hvtest --smoke` and by
-`havel --run --self-hosted-path out`). The C++ bootstrap pipeline parses a
-subset; constructs that it cannot compile fail with `Unsupported statement
-in bytecode compiler` instead.
+Input commands degrade gracefully when `/dev/uinput` is unavailable (they
+log and continue), so parse+emit behavior is testable headless.
 
-Verified working in **both** pipelines (2026-09-24):
-
-| Construct | Notes |
-|---|---|
-| `dsl { > "text" }` | send text |
-| `dsl { : 100 }` | sleep milliseconds (`:1s` literal form is broken, parses as identifier `s`) |
-| `dsl { ? cond { body } }` | if sugar |
-| `dsl { * N { body } }` | repeat sugar (lowers to a counted loop) |
-| `dsl { -> expr }` | print sugar (`->` lexes as `ReturnType`) |
-| `dsl { $ "cmd" }` | shell pipe |
-| `repeat N { body }` (anywhere) | keyword form, e.g. `repeat 3 { ... }` |
-
-Self-hosted pipeline only (C++ bootstrap pipeline does not parse these
-inside `dsl {}`; call the `io` module directly there instead):
-
-| Construct | Notes |
-|---|---|
-| `dsl { *? cond { body } }` | repeat-while (lowers to `while`) |
-| `dsl { *: i in a..b { body } }` | repeat-for over a range (lowers to `for i in ..`) |
-| `dsl { ?; cond { body } }` | when-block sugar |
-| `dsl { {Key} }` | single-key send via `io.sendKey` |
-| `dsl { lmb }` / `dsl { click() }` / `dsl { click("right") }` | mouse click via `io.mouseClick` (also `rmb`/`mmb`) |
-| `dsl { m(x, y) }` `dsl { r(dx, dy) }` `dsl { w(dy, dx) }` | mouse move/relative/scroll via `io.mouseMoveTo`/`io.mouseMove`/`io.scroll` (canonical forms from docs/specs/Havel.md "Input Shortcuts") |
-| `dsl { !! }` | repeats the previous dsl input command of the enclosing block |
-| `dsl { < mouse }` | queries mouse state via `io.mouseState()`; `< keyboard` has no host binding |
-
-Known-broken / documented-but-not-implemented (do not rely on):
-
-| Construct | Status |
-|---|---|
-| `^{c}` modifier keys | reserved hotkey-literal syntax; use `> "..."` + host key APIs or a real `^{c} => { }` hotkey binding instead |
-| `< keyboard` | no host binding exists |
-
-
-
----
-
-
-
-## DSL Block
+## DSL block
 
 ```hv
 dsl {
-    // Input commands here
+    > "hello"          // send text
+    : 100              // sleep 100ms
+    $ "notify-send x"  // shell command
 }
 ```
 
-The `dsl` keyword creates a context where the following commands are available as statements.
+`dsl { }` sets an **input context**: the statement forms below are legal
+inside it. Hotkey bodies (`F1 => { ... }`) get the same input context —
+the forms work there too.
 
----
-
-## Core Operators
-
-### Sleep / Delay
+## Sending input
 
 ```hv
-: 500       // sleep 500ms
-:1s         // sleep 1 second (time literals)
-:100ms      // explicit milliseconds
+dsl {
+    "hello"            // bare string = send text
+    {Enter}            // send a single key
+    {F1}               // any key name works
+    lmb                // left mouse click
+    rmb                // right mouse click
+    mmb                // middle mouse click
+    click()            // same as lmb
+    click("right")     // same as rmb
+    m(100, 200)        // move mouse to absolute (x, y)
+    r(10, 20)          // relative move (dx, dy)
+    w(0, 3)            // scroll: w(dy, dx); +dy scrolls down
+}
 ```
 
-### Send Text
+Host bindings used: `io.sendKeys`, `io.sendKey`, `io.mouseClick`,
+`io.mouseMoveTo`, `io.mouseMove`, `io.scroll`.
+
+## Reading input state
 
 ```hv
-> "text"              // send text string
-> "hello {name}"      // interpolation works
+dsl {
+    < mouse            // io.mouseState()
+}
 ```
 
-### Send Keystrokes
+`< keyboard` is not implemented (no host binding).
+
+## Control flow sugar (input contexts)
 
 ```hv
-{Enter}             // press Enter
-{Tab}               // press Tab
-{Escape}            // press Escape
-{Backspace}         // press Backspace
-{Delete}            // press Delete
-{Up} {Down} {Left} {Right}  // arrow keys
-{F1} .. {F12}       // function keys
-{Home} {End} {PageUp} {PageDown}
+dsl {
+    * 3 { > "hi" }        // repeat 3 times    -> lowered to counted loop
+    *? x < 10 { x = x + 1 }  // while sugar
+    *: i in 0..3 { x = x + i } // for-in sugar (ranges are inclusive)
+    ? x > 5 { > "big" }   // if sugar
+    ?; x > 5 { > "big" }  // when-block sugar
+    -> x                  // print(x)
+    ;; repeats
+    > "a"
+    !!                    // re-emit the previous input command
+}
 ```
 
-### Modifiers with Keystrokes
+The `repeat N { }` keyword form works anywhere, no `dsl {}` needed.
+
+## Sleep
 
 ```hv
-^{c}        // Ctrl+C
-+{tab}      // Shift+Tab
-!{f4}       // Alt+F4
-#{space}    // Super+Space
+: 500       // milliseconds
 ```
 
-### Get Input/State
+Unit literals (`:1s`, `:1m30s`) are **not** implemented. Use `sleep()` or
+`sleepUntil()` from the standard library.
+
+## Not implemented (previously documented here, but never existed)
+
+- `^{c}` `+{tab}` `!{f4}` `#{space}` modifier+key sends. `^`, `+`, `!`,
+  `#` at statement starts are reserved for hotkey literals
+  (`^c => { ... }`). To send combos, call `io.sendKey`/`io.sendKeys`
+  with a combo string.
+- `lmb_down` / `lmb_up` bare identifiers. Use `io.keyDown`/ or
+  `io.mouseDown`/`io.mouseUp`.
+- `>> file` / `<< file` (read/write files/config). Use the `fs` module.
+- `<- x` ("return/break"). Use `return`/`break` in real control flow.
+- `|>` pipeline. Pipelines use `|`.
+- `& { ... }` fire-and-forget block, `data |> a |> b`, `{F1} .. {F12}`
+  brace ranges, `on keydown klist {}`/`off keydown` (real form:
+  `on keyDown(key1, key2) { ... }`, see docs/specs/Havel.md).
+
+## Example
 
 ```hv
-< mouse    // get mouse state
-< keyboard // get keyboard state
-```
-
----
-
-## Mouse Commands
-
-```hv
-lmb         // left mouse button click
-rmb         // right mouse button click
-mmb         // middle mouse button click
-
-lmb_down    // press down
-lmb_up      // release
-rmb_down
-rmb_up
-
-click()           // left click
-click("right")    // right click
-click("middle")   // middle click
-double_click()    // double click
-```
-
----
-
-## Mouse Movement
-
-```hv
-m(100, 200)       // move mouse to absolute (x, y)
-
-r(10, 20)         // relative move (delta x, delta y)
-```
-
----
-
-## Mouse Scroll
-
-```hv
-w(0, -3)          // scroll up 3 (w(dy, dx))
-w(0, 3)           // scroll down 3
-```
-
----
-
-## Control Flow
-
-### Repeat N Times
-
-```hv
-* 3 {
-    > "hello"
+dsl {
+    > "hello world"
+    : 250
+    {Enter}
+    lmb
     : 100
+    r(50, 0)
 }
 ```
-
-### While Loop
-
-```hv
-*? x < 10 {
-    > "x is {x}"
-    x = x + 1
-}
-```
-
-### For Loop
-
-```hv
-*: i in 1..10 {
-    > "i = {i}"
-}
-```
-
-### If Block
-
-```hv
-? x > 5 {
-    > "x is big"
-}
-```
-
-### When Block (Reactive)
-
-```hv
-?; x > 5 {
-    > "x became big"
-}
-```
-
----
-
-## Advanced Operators
-
-### Repeat Previous Line
-
-```hv
-> "hello"
-!!        // repeats: > "hello"
-```
-
-### Run in Thread
-
-```hv
-& {
-    // runs in background thread
-    > "background"
-}
-```
-
-### Pipeline (within DSL)
-
-```hv
-data |> process |> output
-```
-
-### Shell Command
-
-```hv
-$ "ls -la"    // execute shell command
-```
-
-### Print
-
-```hv
--> result     // print result
-```
-
-### Return/Break
-
-```hv
-<- x          // return x / break
-```
-
-### Write to Config/File
-
-```hv
->> config.key    // write to config
->> file.txt      // write to file
-```
-
-### Read from Config/File
-
-```hv
-<< config.key    // read from config
-<< file.txt      // read from file
-```
-
----
-
-## Hotkey Event Listeners
-
-```hv
-on keydown keylist { body }
-on keyup keylist { body }
-off keydown keylist
-off keyup keylist
-```
-
----
-
-## Complete Example: VS Code Workflow
-
-```hv
-// VS Code power-user workflow
-dsl {
-    // Open command palette
-    ^{p}
-    : 200
-    
-    // Open recent file
-    > "recent"
-    {Down}
-    {Down}
-    {Enter}
-    : 500
-    
-    // Split editor right
-    ^{\}
-    : 100
-    
-    // Open terminal
-    ^{`}
-    : 300
-    
-    // Run last command
-    > "!!"
-    {Enter}
-}
-
-// Or: Refactor workflow
-dsl {
-    // Rename symbol
-    ^{r}
-    : 300
-    > "newName"
-    {Enter}
-    : 500
-    
-    // Organize imports
-    > "organize imports"
-    {Enter}
-}
-
-// Or: Debug workflow
-dsl {
-    // Toggle breakpoint
-    ^{b}
-    : 100
-    
-    // Start debugging
-    {F5}
-    : 1000
-    
-    // Step over
-    {F10}
-    : 500
-    
-    // Step into
-    {F11}
-}
-```
-
----
-
-## Key Reference
-
-| Command | Description |
-|---------|-------------|
-| `:N` / `:Nms` / `:Ns` | Sleep/delay |
-| `> "text"` | Send text |
-| `{Key}` | Send keystroke |
-| `^{c}` | Modifier + key |
-| `< state` | Get input/state |
-| `lmb` / `rmb` / `mmb` | Mouse click |
-| `lmb_down` / `lmb_up` | Mouse press/release |
-| `click("right")` | Click with button |
-| `m(x, y)` | Move to absolute |
-| `r(dx, dy)` | Relative move |
-| `w(dy, dx)` | Scroll |
-| `* N { }` | Repeat N times |
-| `*? cond { }` | While loop |
-| `*: i in range { }` | For loop |
-| `? cond { }` | If block |
-| `?; cond { }` | When block (reactive) |
-| `!!` | Repeat previous line |
-| `& { }` | Run in thread |
-| `\|` | Pipeline |
-| `$ "cmd"` | Shell command |
-| `-> result` | Print |
-| `<- x` | Return/break |
-| `>> key` | Write to config/file |
-| `<< key` | Read from config/file |
-| `on keydown keys { }` | Key down listener |
-| `on keyup keys { }` | Key up listener |
-| `off keydown keys` | Remove key down listener |
-| `off keyup keys` | Remove key up listener |
-
----
-
-**Previous:** [Hotkeys](/language/hotkeys)
-**Next:** [Interoperability (FFI) →](/language/ffi)

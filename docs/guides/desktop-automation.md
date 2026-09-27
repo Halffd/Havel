@@ -60,38 +60,40 @@ fn get_active() => window.active()
 
 fn move(dx, dy) {
     win = get_active()
-    win.move(win.x + dx, win.y + dy)
+    p = win.pos()
+    win.move(p.x + dx, p.y + dy)
 }
 
 fn resize(dw, dh) {
     win = get_active()
-    win.resize(win.w + dw, win.h + dh)
+    s = win.size()
+    win.resize(s.w + dw, s.h + dh)
 }
 
 fn move_to_monitor(dir) {
     win = get_active()
-    monitors = window.monitors()
-    current = win.monitor()
+    monitors = window.getMonitors()
+    current = win.getCurrentMonitor()
     
     target = if dir == "left" {
-        monitors.find(m => m.x < current.x)?.last()
-    } elif dir == "right" {
-        monitors.find(m => m.x > current.x)?.first()
+        array.find(array.reversed(monitors), m => m.x < current.x)
+    } else if dir == "right" {
+        array.find(monitors, m => m.x > current.x)
     } else { null }
     
-    if target { win.moveToMonitor(target.name) }
+    if target { win.moveMonitor(target.name) }
 }
 
 fn snap(direction) {
     win = get_active()
-    mon = window.monitorOf(win.id)
+    mon = win.getCurrentMonitor()
     
     match direction {
         "left" => win.moveResize(mon.x, mon.y, mon.w / 2, mon.h)
         "right" => win.moveResize(mon.x + mon.w / 2, mon.y, mon.w / 2, mon.h)
         "top" => win.moveResize(mon.x, mon.y, mon.w, mon.h / 2)
         "bottom" => win.moveResize(mon.x, mon.y + mon.h / 2, mon.w, mon.h / 2)
-        "max" => win.maximize()
+        "max" => win.max()
     }
 }
 ```
@@ -102,39 +104,42 @@ fn snap(direction) {
 
 ```hv
 // input.hv
-use dsl
+// dsl { } is a statement form, not a module — no `use dsl`.
 
 fn type_text(text, delay = 50) {
     dsl {
-        "{text}"
-        :{delay}
+        "${text}"
+        : delay
     }
 }
 
 fn send_keys(keys) {
-    dsl {
-        for k in keys { {k} :50 }
-    }
+    for k in keys { io.sendKey(k) }
 }
 
 fn click_at(x, y, button = "left") {
     dsl {
-        w({x}, {y})
-        :100
-        click("{button}")
+        m(x, y)
+        : 100
+        click(button)
     }
 }
 
 fn drag(from_x, from_y, to_x, to_y) {
     dsl {
-        w({from_x}, {from_y})
-        lmb_down
-        :100
-        w({to_x}, {to_y})
-        lmb_up
+        m(from_x, from_y)
+        io.mouseDown(1)
+        : 100
+        m(to_x, to_y)
+        io.mouseUp(1)
     }
 }
 ```
+
+Inside `dsl` blocks: bare `"${text}"` sends text, `: ms` sleeps,
+`m(x, y)` moves the mouse, `click("left"|"right"|"middle")` clicks,
+`{key}` sends a key. `lmb_down`/`lmb_up` are not implemented — use
+`io.mouseDown(1)` / `io.mouseUp(1)` (1 = left button).
 
 ---
 
@@ -147,7 +152,7 @@ use config
 // Gaming mode
 mode.register("gaming", config.modes.gaming, fn => {
     win = window.active()
-    win.exe == "steam" || win.exe == "lutris" || win.title.matches(".*Game.*")
+    win.exe == "steam" || win.exe == "lutris" || string.match(win.title, ".*Game.*")
 })
 
 // Coding mode
@@ -162,16 +167,14 @@ mode.register("browser", 30, fn => {
     win.exe == "firefox" || win.exe == "chrome" || win.class == "Firefox"
 })
 
-// Mode transition handlers
-mode.onEnter("gaming", fn => {
+// Mode transition handlers — the mode module exposes `set`,
+// `register`, `current`, `previous`, `transitions`, `list`, `time`.
+// React to switches from hotkeys instead:
+^+F9 => {
+    mode.set("gaming")
     brightness.set(0.8)
     print("🎮 Gaming mode")
-})
-
-mode.onExit("gaming", fn => {
-    brightness.set(0.5)
-    print("🖥️ Desktop mode")
-})
+}
 ```
 
 ---
@@ -186,7 +189,7 @@ use input
 use modes
 
 print("Desktop automation loaded")
-print("Modes: " + config.modes.keys().join(", "))
+print("Modes: " + array.join(object.keys(config.modes), ", "))
 
 // Global hotkeys
 ^+Escape => { print("Exiting..."); exit(0) }
@@ -210,8 +213,8 @@ when mode == "coding" {
     
     // Terminal toggle
     ^+` => { 
-        term = window.findOne({ class: "Alacritty" })
-        if term { term.focus() } else { spawn("alacritty") }
+        hits = window.find({ class: "Alacritty" })
+        if len(hits) > 0 { hits[0].focus() } else { process.spawn("alacritty") }
     }
 }
 
@@ -237,9 +240,9 @@ when mode == "browser" {
 ^+F4 => shell.run("pactl set-sink-volume @DEFAULT_SINK@ +5%")
 
 // Screenshot
-Print => { 
-    path = screenshot.full()
-    print("Screenshot: {path.path}")
+Print => {
+    screenshot.capture()
+    print("Screenshot saved")
 }
 ```
 
@@ -266,7 +269,7 @@ when window.active.exe == "discord" {
 
 ```hv
 // profiles/browser.hv
-when window.active.exe.matches("firefox|chrome") {
+when string.match(window.active.exe, "firefox|chrome") {
     ^+L => input.send_keys(["Ctrl", "l"])      // Address bar
     ^+R => input.send_keys(["Ctrl", "r"])      // Reload
     ^+Shift+R => input.send_keys(["Ctrl", "Shift", "r"])  // Hard reload
@@ -275,8 +278,8 @@ when window.active.exe.matches("firefox|chrome") {
 
 Load dynamically:
 ```hv
-if window.active.exe == "discord" { load("profiles/discord.hv") }
-```
+// Load dynamically with `process.run("havel profiles/discord.hv")` or
+// gate usage on the current app inside your `when` blocks.```
 
 ---
 

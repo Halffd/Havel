@@ -775,11 +775,14 @@ ProcessResult Launcher::executeShell(const std::string &command,
   argv.push_back(const_cast<char *>(effectiveCommand.c_str()));
   argv.push_back(nullptr);
 
-  char *envp[] = {nullptr};
   pid_t pid = -1;
+  // Always inherit the parent environment. An earlier version passed an
+  // empty envp for detached children, which stripped PATH/HOME/DISPLAY/
+  // DBUS_SESSION_BUS_ADDRESS and made every session-dependent command
+  // (notify-send, media players, …) silently fail — "runDetached does
+  // nothing".
   int spawn_result = posix_spawnp(&pid, "/bin/sh", &actions, &attr,
-                                  argv.data(),
-                                  params.detachFromParent ? envp : environ);
+                                  argv.data(), environ);
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attr);
 

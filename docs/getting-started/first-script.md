@@ -12,7 +12,7 @@ Create `hello.hv`:
 ```hv
 // hello.hv
 fn greet(name) {
-    "Hello, {name}!"
+    "Hello, ${name}!"
 }
 
 print(greet("world"))

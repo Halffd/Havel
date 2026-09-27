@@ -20,7 +20,7 @@
 #include "stdlib/StateModule.hpp"
 #include "stdlib/StringModule.hpp"
 #include "stdlib/TokenTypeNames.hpp"
-#include "../../lexer/BootstrapLexer.hpp"
+#include "../../lexer/Lexer.hpp"
 
 #include <chrono>
 #include <climits>
@@ -58,7 +58,7 @@ void VM::registerDefaultHostFunctions() {
   // registers math right after addSearchPath calls. Registering math lazily
   // instead (plugin fallback) hit the math/math circular-dependency guard
   // and silently dropped randint/clamp/lerp from the math namespace.
-  // Native tokenizer: wraps the C++ BootstrapLexer for fast self-hosted lexing
+  // Native tokenizer: wraps the Lexer for fast self-hosted lexing
   {
     VMApi api(*this);
         api.registerFunction("_nativeTokenize", [api](const std::vector<Value> &args) -> Value {

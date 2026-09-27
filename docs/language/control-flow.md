@@ -20,7 +20,7 @@ if condition {
 
 if cond1 {
     // ...
-} elif cond2 {
+} else if cond2 {
     // ...
 } else {
     // ...
@@ -67,17 +67,13 @@ for (key, value) in object {
     // body
 }
 
-// Range
-for i in 0..10 {       // 0 to 9
-    print(i)
-}
-for i in 0..=10 {      // 0 to 10
+// Range (inclusive at both ends)
+for i in 0..10 {       // 0 to 10
     print(i)
 }
 
-// Destructuring in for
-for [x, y] in points {
-    print("{x}, {y}")
+for point in points {
+    print("${point[0]}, ${point[1]}")
 }
 ```
 

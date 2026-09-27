@@ -1,9 +1,9 @@
 // src/havel-lang/parser/Parser.h
 
 #pragma once
-#include "../ast/BootstrapAST.h"
+#include "../ast/AST.h"
 #include "../common/Debug.hpp"
-#include "../lexer/BootstrapLexer.hpp"
+#include "../lexer/Lexer.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>

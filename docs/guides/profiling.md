@@ -55,7 +55,7 @@ Havel supports DAP for debugger integration.
 ### Start DAP Server
 
 ```bash
-./build-debug/havel --dap
+./build-debug/havel-dap
 ```
 
 ### VS Code Launch Config
@@ -71,8 +71,7 @@ Havel supports DAP for debugger integration.
             "name": "Debug Havel Script",
             "program": "${file}",
             "cwd": "${workspaceFolder}",
-            "runtimeExecutable": "./build-debug/havel",
-            "runtimeArgs": ["--dap"]
+            "runtimeExecutable": "./build-debug/havel-dap"
         }
     ]
 }

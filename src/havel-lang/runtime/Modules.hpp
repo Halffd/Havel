@@ -105,7 +105,6 @@ public:
 private:
     void registerPureStdLib(compiler::VM &vm);
     void registerCoreStdLib(compiler::VM &vm);
-    std::unique_ptr<Modules> createModules(const HostContext &ctx);
 };
 
 void registerPureStdLib(compiler::VM &vm);

@@ -80,7 +80,7 @@ All notable changes to Havel are documented here.
 - Pipeline operator (`|>`, `<|`)
 - Nullish coalescing (`??`)
 - Optional chaining (`?.`)
-- Range expressions (`..`, `..=`)
+- Range expressions (`..`, inclusive)
 - Destructuring assignment
 - Module system (`use`, `import`, `from`, `as`)
 

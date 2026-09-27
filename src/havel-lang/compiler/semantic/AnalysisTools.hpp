@@ -4,7 +4,7 @@
 #include <iostream>
 #include <filesystem>
 #include <mutex>
-#include "../../ast/BootstrapAST.h"
+#include "../../ast/AST.h"
 #include "../core/BytecodeIR.hpp"
 #include <unordered_map>
 #include <unordered_set>

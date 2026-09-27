@@ -1947,8 +1947,19 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   template<typename JobFn, typename LiftFn>
   Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
     auto *sched = getScheduler();
-    if (sched && sched->current() && event_queue_ &&
-        !event_queue_->isShutdown()) {
+    // The async-park path requires ONE more precondition besides a live
+    // scheduler+queue: the VM must be dispatching inside a goroutine fiber
+    // (current_executing_fiber_ non-null). Conditional-hotkey predicate
+    // eval callbacks (run via callFunctionSync from drainPendingVarChanges)
+    // execute between goroutine ticks with no fiber executing, but
+    // scheduler_->current() may STILL be a stale pointer: engines that don't
+    // clear it on handleSuspended/yield (ExecutionEngine) leak it. Without
+    // this check the Pending token escapes into parkIfPendingCallResult with
+    // no fiber to park on, the result is neutralized to null, and the
+    // conditional evaluates to false — conditional hotkeys silently die.
+    bool can_park = sched && sched->current() && current_executing_fiber_ &&
+                    event_queue_ && !event_queue_->isShutdown();
+    if (can_park) {
       uint32_t token;
       {
         std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);

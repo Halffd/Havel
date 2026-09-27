@@ -567,6 +567,12 @@ bool VM::isTruthy(const Value &value) {
     // TODO: string pool lookup - assume truthy for now
     return true;
   }
+  // Heap strings (STRING_ID, e.g. str() output) are strings too: without this
+  // branch they fell through to the conservative false below, making
+  // `if str("x") {}` falsy while `if "x" {}` was truthy.
+  if (value.isStringId()) {
+    return true;
+  }
 
   // Step 5: arrays are truthy if non-empty
   if (value.isArrayId()) {

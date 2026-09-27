@@ -211,14 +211,14 @@ void Modules::installHostFunctions() {
 
     options_.host_functions["extension.load"] =
         [this](const std::vector<Value> &args) {
-            if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
+            if (args.empty() || (!args[0].isStringValId() && !args[0].isStringId())) return Value::makeBool(false);
             auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
             extensionLoader_->loadExtensionWithInit(name, getHavelAPI());
             return Value(extensionLoader_->isLoaded(name));
         };
     options_.host_functions["extension.isLoaded"] =
         [this](const std::vector<Value> &args) {
-            if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
+            if (args.empty() || (!args[0].isStringValId() && !args[0].isStringId())) return Value::makeBool(false);
             auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
             return Value(extensionLoader_->isLoaded(name));
         };
@@ -236,7 +236,7 @@ void Modules::installHostFunctions() {
         };
     options_.host_functions["extension.addSearchPath"] =
         [this](const std::vector<Value> &args) {
-            if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
+            if (args.empty() || (!args[0].isStringValId() && !args[0].isStringId())) return Value::makeBool(false);
             extensionLoader_->addSearchPath(ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString());
             return Value::makeBool(true);
         };

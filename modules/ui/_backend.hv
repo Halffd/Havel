@@ -4,6 +4,8 @@
 
 use "ffi" as ffi
 use "env" as env
+use "sys" as sys
+use "fs" as fs
 
 class ShimState {
   handle, fnInit, fnShutdown, fnWindow, fnPanel, fnModal,
@@ -120,11 +122,25 @@ class ShimState {
     @
   }
 
+  fn exeDir() {
+    args = sys.argv()
+    if #args == 0 { return "" }
+    parts = args[0].split("/")
+    if #parts < 2 { return "" }
+    parts.pop()
+    parts.join("/")
+  }
+
   fn shimPath() {
     dir = env.get("HAVEL_SHIM_DIR")
     if dir != null { return dir + "/havel_ui_shim.so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/shims/havel_ui_shim.so" }
+    exe = self.exeDir()
+    if exe != "" {
+      p = exe + "/shims/havel_ui_shim.so"
+      if fs.exists(p) { return p }
+    }
     "havel_ui_shim.so"
   }
 
@@ -133,6 +149,11 @@ class ShimState {
     if dir != null { return dir + "/havel_toolkit_" + name + ".so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/toolkits/havel_toolkit_" + name + ".so" }
+    exe = self.exeDir()
+    if exe != "" {
+      p = exe + "/toolkits/havel_toolkit_" + name + ".so"
+      if fs.exists(p) { return p }
+    }
     "havel_toolkit_" + name + ".so"
   }
 
@@ -236,39 +257,60 @@ class ShimState {
 }
 
 class Backend {
-  uiBackend, shim
+  uiBackend, toolkitHandle, shim
   fn @(toolkitName) {
+    @uiBackend = null
+    @toolkitHandle = null
     @shim = ShimState.new()
     @shim.resolveShimSyms()
-    @toolkitHandle = ffi.open(@shim.toolkitPath(toolkitName))
-    if @toolkitHandle == null {
-      print("ui._backend: failed to load toolkit: " + toolkitName)
-      return null
+    self.load(toolkitName)
+  }
+
+  // Returns true only when a real UIBackend was created. Callers must check this:
+  // `return null` inside a constructor initializer does not make `Backend.new()`
+  // return nil, it only exits the initializer early.
+  fn load(toolkitName) {
+    if @shim.handle == null {
+      print("ui._backend: shim not loaded: " + ffi.lastError())
+      return false
     }
-    infoFn = ffi.sym(@toolkitHandle, "havel_toolkit_info")
+    if @shim.fnInit == null {
+      print("ui._backend: shim is missing havel_ui_shim_init")
+      return false
+    }
+    h = ffi.open(@shim.toolkitPath(toolkitName))
+    if h == null {
+      print("ui._backend: failed to load toolkit " + toolkitName + ": " + ffi.lastError())
+      return false
+    }
+    @toolkitHandle = h
+    infoFn = ffi.sym(h, "havel_toolkit_info")
     if infoFn == null {
       print("ui._backend: no havel_toolkit_info in " + toolkitName)
-      return null
+      return false
     }
     abiPtr = ffi.call(infoFn, "pointer", [])
     if abiPtr == null {
       print("ui._backend: havel_toolkit_info returned null")
-      return null
+      return false
     }
     createFnPtr = ffi.get_ptr(ffi.ptr_add(abiPtr, 32))
     if createFnPtr == null {
       print("ui._backend: no create_ui_backend in ABI struct")
-      return null
+      return false
     }
-    @uiBackend = ffi.call(createFnPtr, "pointer", [])
-    if @uiBackend == null {
+    b = ffi.call(createFnPtr, "pointer", [])
+    if b == null {
       print("ui._backend: create_ui_backend returned null")
-      return null
+      return false
     }
+    @uiBackend = b
     ffi.call(@shim.fnInit, "int32", ["pointer"], @uiBackend)
     @shim.initialized = true
-    self
+    true
   }
+
+  fn ok() { @uiBackend != null }
 
   fn window(title) { ffi.call(@shim.fnWindow, "int64", ["pointer", "string"], @uiBackend, title) }
   fn panel(side) { ffi.call(@shim.fnPanel, "int64", ["pointer", "string"], @uiBackend, side) }

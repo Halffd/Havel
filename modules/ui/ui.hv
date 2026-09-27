@@ -8,26 +8,41 @@ use "ui/css" as css
 use "ui/style" as style
 
 class UIState {
-  backend, rules, styles, pendingEvents
+  backend, rules, styles, pendingEvents, initAttempted
   fn @() {
     @backend = null
     @rules = []
     @styles = {}
     @pendingEvents = []
+    @initAttempted = false
   }
 }
 
 _state = UIState.new()
 
+// Returns true only when a real UIBackend exists. A failed toolkit load must not
+// report success, otherwise every widget call runs against a null backend pointer.
 fn init(toolkitName) {
   name = toolkitName != null ? toolkitName : _backend_mod.detectToolkit()
-  if name == "" { return false }
-  _state.backend = _backend_mod.Backend.new(name)
-  _state.backend != null
+  if name == "" {
+    print("ui: no UI toolkit available (set HAVEL_BUILD_DIR or HAVEL_TOOLKIT_DIR)")
+    return false
+  }
+  b = _backend_mod.Backend.new(name)
+  if !b.ok() {
+    b.destroy()
+    _state.backend = null
+    return false
+  }
+  _state.backend = b
+  true
 }
 
 fn _requireBackend() {
-  if _state.backend == null { init(null) }
+  if _state.backend == null && !_state.initAttempted {
+    _state.initAttempted = true
+    init(null)
+  }
   _state.backend
 }
 

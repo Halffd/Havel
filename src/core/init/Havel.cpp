@@ -285,13 +285,14 @@ void Havel::initialize(bool isStartup) {
         havel::startup_timing_report("Modules-create", t);
         t = havel::startup_now();
 
-        // Register stdlib + install
+        // Register stdlib + install (also flushes options_.host_functions
+        // onto the VM and runs buildNamespaceGlobals before returning).
         modules_->install();
         havel::startup_timing_report("Modules-install", t);
         t = havel::startup_now();
-        for (const auto& [name, fn] : modules_->options().host_functions) {
-            bytecodeVM->registerHostFunction(name, fn);
-        }
+        // NOTE: Modules::install() already flushes options_.host_functions
+        // onto the same VM (hostContext->vm === bytecodeVM). The extra loop
+        // here was a source of duplicate host function registrations.
         // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
         modules_->runVmSetupCallbacks(*bytecodeVM);
         havel::startup_timing_report("host-functions-register", t);

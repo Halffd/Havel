@@ -264,11 +264,11 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         havel::startup_timing_report("modules-install", t);
         t = havel::startup_now();
 
-        for (const auto& [name, fn] : modules_->options().host_functions) {
-            vm_->registerHostFunction(name, fn);
-        }
-        havel::startup_timing_report("host-functions-register", t);
-        t = havel::startup_now();
+        // NOTE: Modules::install() already flushes options_.host_functions
+        // onto the same VM (hostContext_->vm === vm_) before returning, so
+        // the names are registered here. An extra registerHostFunction loop
+        // that used to sit at this point was removed — it contributed one
+        // extra duplicate-registration pass over every bridge-provided name.
 
         // Re-register channel prototype methods.
         // registerDefaultPrototypes() runs during HavelEngine::initializeFull

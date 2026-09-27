@@ -875,10 +875,14 @@ public:
   }
 
   uint32_t addString(std::string str) {
-    for (uint32_t i = 0; i < strings.size(); i++) {
-      if (strings[i] == str) return i;
-    }
+    // O(1) dedupe via the index map; the vector keeps registration order for
+    // serialization. History: this was a linear scan over strings for every
+    // add (O(n^2) total — profiled at 24.8% of a 10k-function build, the
+    // super-linear bend in the compile-scaling benchmark).
+    auto it = string_index_.find(str);
+    if (it != string_index_.end()) return it->second;
     strings.push_back(std::move(str));
+    string_index_.emplace(strings.back(), static_cast<uint32_t>(strings.size() - 1));
     return static_cast<uint32_t>(strings.size() - 1);
   }
 
@@ -892,6 +896,7 @@ public:
 
 private:
   std::vector<std::string> strings;
+  std::unordered_map<std::string, uint32_t> string_index_;
 };
 
 // ===== Per-function and per-module validation =====

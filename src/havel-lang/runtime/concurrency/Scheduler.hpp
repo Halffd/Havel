@@ -782,7 +782,16 @@ private:
   // Goroutine storage and queues
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
   mutable std::mutex goroutines_mutex_;
-  uint32_t next_goroutine_id_ = 2; // Start at 2 since ID 1 is reserved for main script
+  // Atomic: spawn() runs on the VM thread, but foreign threads can reach it
+  // too — a detached timer thread calling invokeCallback whose script body
+  // does `go { ... }` spawns from the timer thread. A plain uint32_t here
+  // let two concurrent spawns read the same counter value: both got the
+  // same gid, and goroutines_[gid] = std::move(g) in spawn() then silently
+  // overwrote the first goroutine — its raw pointer stayed in the run
+  // queues (pickNext/hasRunnableFibers) and the VM's current_, so the
+  // first goroutine UAF'd and every hotkey-persistent goroutine that
+  // collided died until restart.
+  std::atomic<uint32_t> next_goroutine_id_{2}; // Start at 2 since ID 1 is reserved for main script
 
   // Priority queues: hotkey fibers are prepended (immediate), normal/fg fibers use FIFO
   std::deque<Goroutine*> hotkey_queue_;    // HOTKEY priority (prepended)

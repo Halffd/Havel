@@ -151,15 +151,19 @@ fetchData().then(data => console.log(data));
 ```hv
 // Havel
 co fn fetchData() {
-    resp <- http.get(url)
-    http.json(resp)
+    resp = http.get(url)
+    json.parse(resp.body)
 }
 
 go {
-    data <- fetchData()
+    data = <-fetchData()
     print(data)
 }
 ```
+
+(`<-` await is prefix: `data = <-fetchData()`. The response object's
+`body` is a string; parse it with `json.parse` from `use json`. There
+is no `http.json` helper.)
 
 ### Modules
 
@@ -191,7 +195,7 @@ use { add } from "math"
 | `function fn() end` | `fn fn() { }` |
 | `local x = 5` | `val x = 5` or `x = 5` |
 | `if x then ... end` | `if x { ... }` |
-| `for i=1,10 do ... end` | `for i in 1..=10 { }` |
+| `for i=1,10 do ... end` | `for i in 1..10 { }` |
 | `while x do ... end` | `while x { }` |
 | `return x` | (implicit) `x` |
 | `nil` | `nil` |
@@ -311,8 +315,9 @@ const data = await resp.json();
 
 ```hv
 // Havel
+use json
 resp = http.get(url)
-data = http.json(resp)
+data = json.parse(resp.body)
 ```
 
 ---

@@ -46,13 +46,13 @@ Make hotkeys context-aware:
 
 ```hv
 // Only in Firefox
-^!R if window.active.exe == "firefox" => { send("^F5") }
+^!R if window.active().exe() == "firefox" => { send("^F5") }
 
 // Only in terminal
-^!T if window.active.class == "Alacritty" => { send("ls\n") }
+^!T if window.active().class() == "Alacritty" => { send("ls\n") }
 
 // When block: group under condition
-when window.active.title.contains("GitHub") {
+when string.has(window.active().title(), "GitHub") {
     ^!I => send("i")        // Open issues
     ^!P => send("p")        // Open PRs
     ^!N => send("n")        // New issue
@@ -96,8 +96,8 @@ Each trigger resumes the same goroutine, preserving `counter`.
 
 ```hv
 // Define a mode
-mode.register("coding", 10, fn => { 
-    window.active.class == "code" || window.active.class == "Alacritty" 
+mode.register("coding", 10, fn => {
+    string.has(window.active().exe(), "code") || string.has(window.active().exe(), "alacritty")
 })
 
 // Hotkeys active only in coding mode
@@ -116,26 +116,20 @@ when mode == "coding" {
 // winman.hv
 print("Window manager hotkeys active")
 
-// Focus movement
-^+Left  => { window.active.moveRelative(-50, 0) }
-^+Right => { window.active.moveRelative(50, 0) }
-^+Up    => { window.active.moveRelative(0, -50) }
-^+Down  => { window.active.moveRelative(0, 50) }
+// Focus movement — moveRel is a module function taking (id, dx, dy)
+^+Left  => { window.moveRel(window.activeId(), -50, 0) }
+^+Right => { window.moveRel(window.activeId(), 50, 0) }
+^+Up    => { window.moveRel(window.activeId(), 0, -50) }
+^+Down  => { window.moveRel(window.activeId(), 0, 50) }
 
-// Resize
-^+Shift+Left  => { window.active.resizeRelative(-50, 0) }
-^+Shift+Right => { window.active.resizeRelative(50, 0) }
-^+Shift+Up    => { window.active.resizeRelative(0, -50) }
-^+Shift+Down  => { window.active.resizeRelative(0, 50) }
-
-// Quick actions
-^+F     => { window.active.fullscreen(!window.active.fullscreen()) }
-^+M     => { window.active.minimize() }
-^+Q     => { window.active.close() }
+// Quick actions (obj-methods on the window object)
+^+F     => { window.active().toggleFullscreen() }
+^+M     => { window.active().min() }
+^+Q     => { window.active().close() }
 
 // Monitor switching
-#Left   => { window.active.moveToMonitor("left") }
-#Right  => { window.active.moveToMonitor("right") }
+#Left   => { window.active().moveMonitor("left") }
+#Right  => { window.active().moveMonitor("right") }
 ```
 
 Run: `./build-debug/havel winman.hv`

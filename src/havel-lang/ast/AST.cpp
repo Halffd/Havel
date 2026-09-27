@@ -1,4 +1,4 @@
-#include "BootstrapAST.h"
+#include "ast/AST.h"
 #include <iostream>
 namespace havel::ast {
 // Virtual destructors are already defaulted in the header for ASTNode and

@@ -478,7 +478,9 @@ This is intentional for performance — prototype tables are fixed at VM initial
 
 ### Equality
 
-Currently `==` performs **deep equality** (recursive value comparison). This may change to **reference equality** for objects with a separate `deepEq()` builtin for value comparison.
+Currently `==` performs **deep equality** (recursive value comparison). For
+comparison semantics from object code, `object.deepEqual(a, b)` is the
+verified helper.
 
 ---
 

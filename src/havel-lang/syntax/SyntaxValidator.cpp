@@ -4,7 +4,7 @@
  * Syntax-level validation implementation for Havel language.
  */
 #include "SyntaxValidator.hpp"
-#include "../ast/BootstrapAST.h"
+#include "../ast/AST.h"
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>

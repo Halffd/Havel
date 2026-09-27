@@ -145,5 +145,5 @@ if clipboard.hasImage() {
 
 ---
 
-**Previous:** [Network Module](/stdlib/network)
+**Previous:** [Sys Module](/stdlib/sys)
 **Next:** [Window Module →](/stdlib/window)

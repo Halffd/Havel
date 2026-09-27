@@ -1636,9 +1636,9 @@ havel_core
 set(LSP_SOURCES
 src/havel-lang/lsp/main.cpp
   src/havel-lang/lsp/LanguageServer.cpp
-  src/havel-lang/ast/BootstrapAST.cpp
-  src/havel-lang/lexer/BootstrapLexer.cpp
-  src/havel-lang/parser/BootstrapParser.cpp
+  src/havel-lang/ast/AST.cpp
+  src/havel-lang/lexer/Lexer.cpp
+  src/havel-lang/parser/Parser.cpp
   src/c/LoggerC.c
   src/c/Config.c
   src/dl/Loader.c
@@ -1823,7 +1823,7 @@ target_link_libraries(havel_api_test PRIVATE
     -Wl,--end-group
   )
 
-# brightness_test disabled - replaced by modules/lang/brightness/brightness.hv (FFI-based)
+# brightness_test disabled - replaced by modules/app/brightness/brightness.hv (FFI-based)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
@@ -2919,7 +2919,9 @@ if(ENABLE_HAVEL_LANG AND CMAKE_BUILD_TYPE STREQUAL "Release")
     # The .hvc files are installed to share/havel/modules/{std,lang} and
     # the runtime loads them from there via the module search path.
     set(HAVEL_STDLIB_SOURCES "${CMAKE_SOURCE_DIR}/modules/std")
-    set(HAVEL_LANG_SOURCES_DIR "${CMAKE_SOURCE_DIR}/modules/lang")
+    # NOTE: do *not* auto-derive a self-hosted module tree anymore. The former
+    # modules/lang content lives at archive/lang/ for reference only; the C++
+    # parse pipeline is authoritative.
 
     # Custom target to compile all .hv modules to .hvc bytecode
     # Uses a helper script since --build only compiles one file at a time
@@ -2945,11 +2947,7 @@ if(ENABLE_HAVEL_LANG AND CMAKE_BUILD_TYPE STREQUAL "Release")
         COMPONENT Runtime
         FILES_MATCHING PATTERN "*.hv"
     )
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/lang/
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/havel/modules/lang
-        COMPONENT Runtime
-        FILES_MATCHING PATTERN "*.hv"
-    )
+    # NOTE: modules/lang no longer installed — self-hosted path is opt-in only.
     # Install all module directories from source tree that contain .hv files
     # (excluding build-generated and test directories)
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/

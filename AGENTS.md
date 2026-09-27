@@ -361,8 +361,9 @@ Instead:
 - Make a deticated test for the feature/bug in hvtest or a scripts/tests
 - Mock if it needs real user input, but NEVER stub it or make a fake test
 
-## Self-hosted pipeline
-IF you are adding a new feature to Lexer.cpp, Parser.cpp or ByteCompiler.cpp think if it's *realy essential* for the self hosted pipeline at modules/lang, if it's not add it there as pure havel features, not on C++
+## Script execution pipeline
+Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). The Havel self-hosted mode is opt-in via `--self-hosted`. For anything in those files: do the change there, don't redirect to modules/lang.
+
 ONLY VM and existing host modules remain in C++ (until modules havel migration)
 
 ## NO #undef on X11 or Qt

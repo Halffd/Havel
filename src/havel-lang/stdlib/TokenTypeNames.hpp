@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../lexer/BootstrapLexer.hpp"
+#include "../lexer/Lexer.hpp"
 #include <string>
 #include <unordered_map>
 

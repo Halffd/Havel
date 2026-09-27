@@ -73,17 +73,19 @@ Created → Runnable → Running → Suspended → Runnable → ...
 ### Creation
 
 ```hv
-ch = channel()        // unbuffered
-ch = channel(10)      // buffered (capacity 10)
+ch = channel()        // unbuffered (there is no capacity-argument form)
 ```
 
 ### Operations
 
 ```hv
-ch <- value           // send (blocks if full)
-val = <- ch           // receive (blocks if empty)
+ch.send(value)        // send (blocks if full)
+val = ch.receive()    // receive (blocks if empty)
 ch.close()            // close channel
 ```
+
+There is no `<-` operator syntax — channels use `send`/`receive`/`close`
+prototype methods.
 
 ### Blocking Semantics
 
@@ -105,8 +107,8 @@ t = thread {
     }
 }
 
-t <- "hello"          // send message to thread
-msg = receive()       // receive in thread
+t.send("hello")       // send message to thread
+msg = receive()       // receive in thread (valid inside a thread block)
 wait t                // block until thread completes
 ```
 
@@ -116,8 +118,8 @@ wait t                // block until thread completes
 |--------|--------|-------------|
 | `thread { }` | `THREAD_SPAWN` | Spawn OS thread |
 | `wait t` | `THREAD_JOIN` | Block until thread done |
-| `t <- msg` | `THREAD_SEND` | Send to thread |
-| `receive()` | `THREAD_RECEIVE` | Receive next message |
+| `t.send(msg)` | `THREAD_SEND` | Send to thread |
+| `receive()` | `THREAD_RECEIVE` | Receive next message (inside thread) |
 
 Timers use separate OS threads with `cv.wait_for` for precise timing.
 
@@ -136,9 +138,9 @@ co fn generator() {
 
 gen = generator()
 while true {
-    val = <- gen        // resume, get yielded value
-    if val == nil { break }
-    print(val)
+    v = <- gen          // resume, get yielded value
+    if v == nil { break }
+    print(v)
 }
 ```
 
@@ -154,17 +156,18 @@ All values inside coroutines are GC-marked to prevent premature collection.
 
 ## Await / Fiber Receive (`<-`)
 
-The `<-` operator is the generic await mechanism:
+The `<-` operator is the generic await mechanism — **prefix** form:
 
 ```hv
-result <- channelRef     // await channel receive
-result <- threadRef      // await thread completion
-result <- timerRef       // await timer fire
-result <- waitgroupRef   // await waitgroup done
-result <- coroutineRef   // await coroutine yield
+v = <- channelRef      // await channel receive
+v = <- threadRef       // await thread completion
+v = <- timerRef        // await timer fire
+v = <- waitgroupRef    // await waitgroup done
+v = <- coroutineRef    // await coroutine yield
 ```
 
-Also available as `await expr` (equivalent).
+Bare `await expr` requires `use async_mod` (it is a module helper
+function, not a keyword).
 
 ### Dispatch Table
 
@@ -184,10 +187,8 @@ Non-blocking — the fiber parks and returns control to the scheduler.
 
 ```hv
 wg = waitgroup()
-wg.add(3)
+wg.add(1)
 
-go { work(); wg.done() }
-go { work(); wg.done() }
 go { work(); wg.done() }
 
 wait wg    // blocks until counter reaches 0
@@ -199,59 +200,50 @@ Uses `std::atomic<int>` — thread-safe without locking.
 
 ## Select
 
-Multiplex over multiple channels:
-
-```hv
-ch1 = channel()
-ch2 = channel()
-
-go { sleep(100); ch1 <- "one" }
-go { sleep(200); ch2 <- "two" }
-
-select {
-    case val <- ch1: print("ch1: {val}")
-    case val <- ch2: print("ch2: {val}")
-}
-```
+Not implemented. There is no `select` statement; use a merged channel,
+`<-`, or the `async_mod` helpers (`race`, `allSettled`, `chan`) for
+multiplexing.
 
 ---
 
 ## Async Utilities (Sidecar Module)
 
-Higher-level patterns implemented in Havel (`modules/app/async.hv`):
+Higher-level patterns implemented in Havel (`modules/app/async_mod.hv`,
+loaded with `use async_mod`; plain `use async` only exposes a trivial
+`await` shim):
 
 ```hv
-use async
+use async_mod
 
 // Timing
-debounced = async.debounce(fn(msg) { print(msg) }, 100)
-throttled = async.throttle(fn(x) { print(x) }, 500)
-result = async.retry(fn() { http.get(url) }, 3, 100)
-result = async.withTimeout(fn() { slow() }, 5000)
-winner = async.race([fn() { slow() }, fn() { fast() }])
-cached = async.once(fn() { expensive() })
+debounced = async_mod.debounce(fn(msg) { print(msg) }, 100)
+throttled = async_mod.throttle(fn(x) { print(x) }, 500)
+result = async_mod.retry(fn() { http.get(url) }, 3, 100)
+result = async_mod.withTimeout(fn() { slow() }, 5000)
+winner = async_mod.race([fn() { slow() }, fn() { fast() }])
+cached = async_mod.once(fn() { expensive() })
 
 // Parallel
-results = async.parallelMap(items, fn(x) { process(x) }, 4)
-results = async.parallelFilter(items, fn(x) { check(x) }, 4)
-async.parallelForEach(items, fn(x) { sideEffect(x) }, 4)
+results = async_mod.parallelMap(items, fn(x) { process(x) }, 4)
+results = async_mod.parallelFilter(items, fn(x) { check(x) }, 4)
+async_mod.parallelForEach(items, fn(x) { sideEffect(x) }, 4)
 
 // Promises (channel-based)
-p = async.promise(fn() { compute() })
-async.then(p, fn(v) { print(v) }, fn(e) { print("err: {e}") })
-all = async.all([p1, p2, p3])
-settled = async.allSettled([p1, p2, p3])
+p = async_mod.promise(fn() { compute() })
+async_mod.then(p, fn(v) { print(v) }, fn(e) { print("err: ${e}") })
+all = async_mod.all([p1, p2, p3])
+settled = async_mod.allSettled([p1, p2, p3])
 
 // Channels
-ch = async.chan(10)
-first = async.chanSelect([ch1, ch2])
-merged = async.merge([ch1, ch2])
-async.fanOut(source, workers)
+ch = async_mod.chan(10)
+first = async_mod.chanSelect([ch1, ch2])
+merged = async_mod.merge([ch1, ch2])
+async_mod.fanOut(source, workers)
 
 // Resilience
-wg = async.waitgroup()
-limiter = async.rateLimit(10)      // 10/sec max
-breaker = async.circuitBreaker(fn() { risky() }, 5, 30000)
+wg = async_mod.waitgroup()
+limiter = async_mod.rateLimit(10)      // 10/sec max
+breaker = async_mod.circuitBreaker(fn() { risky() }, 5, 30000)
 ```
 
 ---

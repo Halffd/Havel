@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "lexer/BootstrapLexer.hpp"
+#include "lexer/Lexer.hpp"
 
 namespace havel {
 using TokenType = TokenType;

@@ -158,8 +158,7 @@ Regular (non-f) strings only support `$var` short form; use f-strings for full e
 
 | Syntax | Meaning | Example |
 |--------|---------|---------|
-| `..` | Exclusive range | `1..10` → 1 to 9 |
-| `..=` | Inclusive range | `1..=10` → 1 to 10 |
+| `..` | Inclusive range | `1..10` → 1 to 10 (`type` == "range") |
 
 ### Pipeline & Flow
 
@@ -211,14 +210,14 @@ Regular (non-f) strings only support `$var` short form; use f-strings for full e
 | 50 | `is` `is not` `matches` `~` `!~` `as` | Left |
 | 55 | `in` `not in` | Left |
 | 60 | `==` `!=` `<` `>` `<=` `>=` | Left |
-| 65 | `..` `..=` range | Right |
+| 65 | `..` range | Right |
 | 70 | `+` `-` | Left |
 | 80 | `*` `/` `%` `//` `%%` | Left |
 | 90 | `**` power | Right |
 | 100 | Postfix `++` `--` | — |
 | 110 | `.` `.?` `?.` member access | Left |
 
-Right-associative: all assignments, `**`, `??`, `? :`, `..`/`..=`.
+Right-associative: all assignments, `**`, `??`, `? :`, `..`.
 
 Comparison operators are left-associative (NOT Python-style chaining).
 

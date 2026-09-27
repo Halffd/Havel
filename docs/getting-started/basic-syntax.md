@@ -52,13 +52,16 @@ f"interpolated {variable}"   // f-string (${expr} or {expr})
 
 ```hv
 name = "world"
-print("hello {name}")        // bare brace
-print("value: $x")           // short form (variable only)
-print(f"2 + 2 = {2 + 2}")    // f-string with expression
-print(`echo {name}`)         // backtick: shell interpolation
+print("hello ${name}")        // regular string: ${var} interpolates
+print("value: $name")         // short form (variable only)
+print(f"2 + 2 = {2 + 2}")     // f-string evaluates {expr}
+print(`echo {name}`)          // backtick: shell interpolation
 ```
 
-**Do not** use `+`, `,`, `.`, or newlines for concatenation — use `{var}` or `$var` interpolation.
+Bare `{name}` inside a regular (non-f) string prints the braces
+literally — use `${name}` or `$name`. `{expr}` evaluation only happens
+inside f-strings and backticks. `+` joins strings too ("a" + "b" gives
+"ab") but interpolation is the idiomatic style.
 
 ### Collections
 
@@ -66,10 +69,9 @@ print(`echo {name}`)         // backtick: shell interpolation
 [1, 2, 3]              // array
 []                      // empty array
 {1, 2, 3}              // set (unique elements)
-:{1, 2, 3}             // explicit set literal
 { key: value }         // sorted object (keys ordered)
 !{ key: value }        // unsorted object (insertion order)
-(1, "hello", true)     // tuple (heterogeneous, fixed-size)
+(1, "hello", true)     // tuple literal (type() reports it as "array")
 ```
 
 ## Variables
@@ -77,21 +79,22 @@ print(`echo {name}`)         // backtick: shell interpolation
 ### Declaration
 
 ```hv
-val x = 5              // mutable (default)
-x = 5              // mutable (default, python-style)
-VAL = 5            // immutable (uppercase convention)
-VAL PI = 3.14      // convention: uppercase = immutable
+x = 5                 // mutable (default)
+val x = 5             // immutable — enforced (reassignment throws)
+VAL = 5               // uppercase marks intent; still mutable (convention only)
 ```
 
-Uppercase names conventionally indicate immutability.
+`val` enforces immutability at runtime. Uppercase names only
+communicate immutability by convention; the runtime allows reassignment.
 
 ### Destructuring
 
 ```hv
 [a, b] = [1, 2]       // array destructuring
-(a, b) = (1, 2)       // tuple destructuring
-{ x, y } = { x: 1, y: 2 }  // object destructuring (keys match)
 ```
+
+Tuple/parens destructuring `(a, b) = (1, 2)` and object destructuring
+`{ x, y } = { x: 1 }` are not supported.
 
 ## Operators
 
@@ -100,9 +103,10 @@ Uppercase names conventionally indicate immutability.
 ```hv
 +  -  *  /  %      // basic
 **                  // power
-//                  // integer division
 %%                  // integer modulo
 ```
+
+`//` starts a comment; there is no `//` division operator.
 
 ### Comparison
 
@@ -138,9 +142,11 @@ Left-associative (not Python-style chaining): `a < b < c` is `(a < b) < c`.
 ### Range
 
 ```hv
-1..10    // exclusive (1 to 9)
-1..=10   // inclusive (1 to 10)
+1..10    // inclusive range (1 to 10); type(1..10) == "range"
 ```
+
+Ranges are inclusive at both ends, work in `for x in 1..10` loops, and
+are not indexable — convert with `array.range(n)` if you need indexing.
 
 ### Assignment
 
@@ -163,7 +169,7 @@ Outside `(( ))`, `|` is pipe-right, `&` is unused, `~` is home/tilde operator.
 
 ## Blocks
 
-Three equivalent styles:
+Two equivalent styles:
 
 ```hv
 // 1. Brace blocks
@@ -173,16 +179,16 @@ if x > 0 { print("positive") }
 if x > 0:
     print("positive")
     print("still in block")
-
-// 3. Double-colon for hotkey context
-F1 :: { print("F1") }
 ```
+
+(Hotkey bindings use `=>`, e.g. `F1 => { print("F1") }`; there is no
+`::` block syntax.)
 
 ## Control Flow (Preview)
 
 ```hv
 // If/else
-if x > 0 { "pos" } elif x < 0 { "neg" } else { "zero" }
+if x > 0 { "pos" } else if x < 0 { "neg" } else { "zero" }
 
 // Loops
 for i in 0..10 { print(i) }

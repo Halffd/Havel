@@ -3516,6 +3516,61 @@ static void test_fiber_suspend_coroutine_preserves_context() {
   CHECK(fib.suspended_reason == SuspensionReason::NONE, "reason cleared after resume");
 }
 
+static void test_spawn_concurrent_gid_uniqueness() {
+  // Regression: next_goroutine_id_ was a plain uint32_t incremented before
+  // spawn() took its locks. A foreign thread reaching spawn (detached timer
+  // thread -> invokeCallback -> script `go { }`) raced with VM-thread spawns:
+  // both read the same counter value, both got the same gid, and spawn's
+  // goroutines_[gid] = std::move(g) then overwrote the first goroutine while
+  // its raw pointer sat in the run queues — UAF, and the colliding
+  // hotkey-persistent goroutines died until process restart. With the
+  // atomic counter, concurrent spawns must produce strictly distinct ids.
+
+  auto& sched = Scheduler::instance();
+  sched.start();
+
+  constexpr int kThreads = 4;
+  constexpr int kSpawnsPerThread = 500;
+  std::vector<std::vector<uint32_t>> ids(kThreads);
+  std::vector<std::thread> workers;
+  for (int t = 0; t < kThreads; ++t) {
+    workers.emplace_back([&sched, &ids, t] {
+      ids[t].reserve(kSpawnsPerThread);
+      for (int i = 0; i < kSpawnsPerThread; ++i) {
+        ids[t].push_back(sched.spawn(0, {}, 0, "gid-race",
+                                     FiberPriority::NORMAL));
+      }
+    });
+  }
+  for (auto& w : workers) w.join();
+
+  // Every id must be distinct across all threads.
+  std::vector<uint32_t> all;
+  all.reserve(kThreads * kSpawnsPerThread);
+  for (auto& v : ids) all.insert(all.end(), v.begin(), v.end());
+  std::sort(all.begin(), all.end());
+  auto dup = std::adjacent_find(all.begin(), all.end());
+  CHECK(dup == all.end(), "concurrent spawns must never produce duplicate gids");
+  CHECK_EQ(all.size(), static_cast<size_t>(kThreads * kSpawnsPerThread),
+           "every spawn must return an id");
+
+  // Monotonicity: ids must be strictly increasing overall (never recycled).
+  CHECK_EQ(all.front(), all[0], "sanity");
+  for (size_t i = 1; i < all.size(); ++i) {
+    CHECK(all[i] > all[i - 1],
+          "gid counter is monotonic; recycled ids would break this");
+  }
+
+  // Cleanup: mark everything Done so later tests see a clean scheduler.
+  // Test threads have joined — no concurrency remains, so direct access is
+  // safe (matches the existing tests' cleanup pattern).
+  for (uint32_t id : all) {
+    auto* g = sched.get(id);
+    if (g) g->state = Scheduler::GoroutineState::Done;
+  }
+  sched.cleanupDoneGoroutines();
+}
+
 static void test_removeHotkey_while_hasRunnableFibers() {
   auto& sched = Scheduler::instance();
 
@@ -4025,6 +4080,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_hotkey_while_loop_exits_via_break();
   std::cout << " PASS hotkey while loop: exits → re-parks as HotkeyWait\n";
 
+  test_spawn_concurrent_gid_uniqueness();
+  std::cout << " PASS spawn: concurrent spawns produce strictly distinct monotonic gids\n";
+
   test_runBlockingHostCall_sync_when_no_fiber_executing();
   std::cout << " PASS runBlockingHostCall: sync inline when no fiber executing (stale current)\n";
 
@@ -4071,7 +4129,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 1 deferred-wakeup-fd poll regression test
   // + 3 runBlockingHostCall gate tests (stale-current regression,
   //   fiber-executing park, no-scheduler baseline)
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3;
+  // + 1 concurrent-spawn gid uniqueness regression test
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

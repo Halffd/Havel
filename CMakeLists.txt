@@ -1882,6 +1882,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # assignment, were dropped while only the scheduler set was listed).
   add_test(NAME lowering-opcode-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_lowering_opcodes.sh)
+  # Qt leak guard: libhavel_core.a and libhavel_lang.a are embedded by Qt-free
+  # hosts (havel-wm, the cranelift AOT shim, the AOT runtime). Fails if a
+  # core-facing bridge TU includes a Qt header or branches on
+  # HAVE_QT_EXTENSION, if the language archives gain an undefined Qt symbol,
+  # or if havel_core.a's Qt references drift from the pinned known-leaks
+  # ledger in the script (both new leaks and stale entries fail).
+  add_test(NAME core-no-qt-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_core_no_qt.sh
+                   ${CMAKE_BINARY_DIR})
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)

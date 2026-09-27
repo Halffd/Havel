@@ -26,6 +26,7 @@ typedef struct _GtkMenu GtkMenu;
 typedef struct _GtkMenuItem GtkMenuItem;
 typedef struct _GtkStatusIcon GtkStatusIcon;
 typedef struct _GMainLoop GMainLoop;
+typedef struct _cairo cairo_t;
 
 namespace havel::host {
 
@@ -141,7 +142,11 @@ public:
 private:
     GtkApplication* app_ = nullptr;
     std::string appId_ = "org.havel.ui";
-    std::unordered_map<std::string, GtkWidget*> widgets_;
+    std::unordered_map<ui::ElementId, GtkWidget*> widgets_;
+    std::unordered_map<ui::ElementId, std::shared_ptr<ui::UIElement>> elements_;
+    std::unordered_map<ui::ElementId, void*> menus_;   // GMenu*
+    std::unordered_map<ui::ElementId, GtkWidget*> toggleSwitches_;
+    ui::ElementId nextId_ = 1;
     std::function<void()> onAllWindowsClosedCallback_;
     GMainLoop* loop_ = nullptr;
     UIBackend::ApplicationMetadata appMeta_;
@@ -150,14 +155,17 @@ private:
     std::function<void()> idleCallback_;
     unsigned int idleSourceId_ = 0;
 
+    // Retained-mode canvas replay, called from the GtkDrawingArea draw func
+    static void replayCanvas(cairo_t *cr, ui::UIElement &element);
+
     // GTK helper methods
     GtkWidget* createWindowInternal(const std::string &title, bool modal = false);
     GtkWidget* createBoxInternal(bool horizontal);
     void setupSignalHandlers();
-    static void onWindowClosed(GtkWindow *window, gpointer userData);
-    void registerWidget(const std::string &id, GtkWidget *widget);
-    GtkWidget* getWidget(const std::string &id) const;
-    void destroyWidget(const std::string &id);
+    static void onWindowClosed(GtkWindow *window, void *userData);
+    std::shared_ptr<ui::UIElement> registerElem(const char *type, GtkWidget *widget);
+    GtkWidget* getWidget(ui::ElementId id) const;
+    void destroyWidget(ui::ElementId id);
 };
 
 } // namespace havel::host

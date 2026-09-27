@@ -629,7 +629,25 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 # Non-Qt host files in Qt-dependency directories (always built)
 list(APPEND CORE_SOURCES
 "src/host/module/ModuleLoader.cpp"
-"src/host/module/ModularHostBridges.cpp"
+"src/host/module/ModularHostBridges.hpp"
+# ModularHostBridges.cpp split per-domain (bridges/):
+"src/host/module/bridges/AppBridge.cpp"
+"src/host/module/bridges/AudioBridge.cpp"
+"src/host/module/bridges/AutomationBridge.cpp"
+"src/host/module/bridges/BridgesInternal.hpp"
+"src/host/module/bridges/BrightnessBridge.cpp"
+"src/host/module/bridges/BrowserBridge.cpp"
+"src/host/module/bridges/ConfigBridge.cpp"
+"src/host/module/bridges/DisplayBridge.cpp"
+"src/host/module/bridges/IOBridge.cpp"
+"src/host/module/bridges/InputBridge.cpp"
+"src/host/module/bridges/MediaBridge.cpp"
+"src/host/module/bridges/ModeBridge.cpp"
+"src/host/module/bridges/NetworkBridge.cpp"
+"src/host/module/bridges/SystemBridge.cpp"
+"src/host/module/bridges/TimerBridge.cpp"
+"src/host/module/bridges/ToolsBridge.cpp"
+"src/host/module/bridges/UIBridge.cpp"
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"
 "src/host/ui/UIManager.cpp"
@@ -2215,7 +2233,22 @@ if(ENABLE_HAVEL_LANG)
 
     set(HAVEL_LANG_CORE_SOURCES ${HAVEL_LANG_LIB_SOURCES})
 list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
-  ${CMAKE_SOURCE_DIR}/src/host/module/ModularHostBridges.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/AppBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/AudioBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/AutomationBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/BrightnessBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/BrowserBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/ConfigBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/DisplayBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/IOBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/InputBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/MediaBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/ModeBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/NetworkBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/SystemBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/TimerBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/ToolsBridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/host/module/bridges/UIBridge.cpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
 )

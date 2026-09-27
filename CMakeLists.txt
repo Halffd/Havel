@@ -672,6 +672,7 @@ endif()
 # Clipboard sources (always built, no Qt dependency)
 set(_CLIPBOARD_CORE_SOURCES
   "src/host/clipboard/Clipboard.cpp"
+  "src/host/clipboard/ClipboardBackendFactory.cpp"
   "src/host/clipboard/ClipboardInfo.cpp"
   "src/host/clipboard/ClipboardService.cpp"
   "src/host/clipboard/HistoryClipboard.cpp"
@@ -2796,6 +2797,29 @@ if(ENABLE_TESTS AND GTest_FOUND)
         -Wl,--end-group
     )
     add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
+
+    # Clipboard-backend registry seam behind Clipboard. Same shape as
+    # pixel_provider_test: no havel_gui, so the link is part of what it
+    # verifies.
+    add_executable(clipboard_backend_test
+        tests/clipboard_backend_ut.cpp
+    )
+    target_compile_features(clipboard_backend_test PRIVATE cxx_std_23)
+    target_include_directories(clipboard_backend_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(clipboard_backend_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME clipboard_backend_test COMMAND clipboard_backend_test)
 endif()
 
 # ==============================================================================

@@ -22,7 +22,9 @@
 #include "core/automation/ScreenCapture.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
+#include "extensions/qt/QtClipboardBackend.hpp"
 #include "extensions/qt/QtScreenshotBackend.hpp"
+#include "host/clipboard/ClipboardBackendFactory.hpp"
 #include "host/ui/QtBackend.hpp"
 #include "host/ui/UIBackendFactory.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
@@ -145,6 +147,16 @@ void installQtUIBackendFactories() {
   });
 }
 
+void installQtClipboardBackend() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    registerClipboardBackendFactory(
+        []() -> std::unique_ptr<IClipboardBackend> {
+          return std::make_unique<QtClipboardBackend>();
+        });
+  });
+}
+
 } // namespace havel::host
 
 // The Qt UI backend has to be constructible before any host code calls
@@ -153,8 +165,10 @@ void installQtUIBackendFactories() {
 // script pipeline, so waiting for installQtBridge to run would leave the
 // launcher with no backend at all.
 //
-// The screen provider behind pixel automation needs the same treatment: the
-// language host can read pixels through HostAPI.cpp with no bridge installed.
+// The screen provider behind pixel automation and the clipboard backend need
+// the same treatment: the language host can read pixels through HostAPI.cpp
+// and the clipboard modules construct ClipboardService with no bridge
+// installed.
 //
 // The application references installQtBridge strongly, so this translation unit
 // is always extracted from libhavel_gui.a, and an initializer here runs before
@@ -163,6 +177,7 @@ void installQtUIBackendFactories() {
 namespace {
 const bool g_qt_ui_backends_registered = [] {
   havel::host::installQtUIBackendFactories();
+  havel::host::installQtClipboardBackend();
   havel::qt::installQtScreenCapture();
   return true;
 }();
@@ -176,6 +191,7 @@ namespace havel::compiler {
 
 void installQtBridge(PipelineOptions &options, const HostContext *ctx) {
   havel::host::installQtUIBackendFactories();
+  havel::host::installQtClipboardBackend();
   havel::qt::installQtScreenCapture();
   options.host_functions["clipboard.get"] = [ctx](const auto &args) {
     return clipboardBridgeGet(args, ctx);

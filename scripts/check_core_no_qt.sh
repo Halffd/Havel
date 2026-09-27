@@ -41,7 +41,10 @@ QT_SYM_RE='(^|[^A-Za-z0-9_])(Q[A-Z][A-Za-z0-9_]*::|QObject|QMetaObject|QVariant|
 
 # havel_core objects still known to reference Qt (service layer, not yet
 # extracted). Keep sorted; see part 3 above.
-CORE_KNOWN_QT_LEAKS="Clipboard.cpp.o"
+# No known leaks left: every Qt implementation that used to sit in havel_core
+# (clipboard, pixel automation, UI backends, services) has been extracted into
+# havel_gui. The ledger is empty, so part 3 asserts the archive is Qt-free.
+CORE_KNOWN_QT_LEAKS=""
 
 fail=0
 

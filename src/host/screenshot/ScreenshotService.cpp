@@ -1,4 +1,8 @@
 #include "ScreenshotService.hpp"
+#ifdef HAVE_OPENCV
+#include <opencv2/imgcodecs.hpp>
+#endif
+#include <cstring>
 
 namespace havel::host {
 
@@ -13,6 +17,20 @@ void ScreenshotService::setBackend(std::unique_ptr<IScreenshotBackend> backend) 
 
 IScreenshotBackend* ScreenshotService::backend() const {
     return backend_.get();
+}
+
+bool ScreenshotService::saveToFile(const ScreenshotResult& result,
+                                   const std::string& path) {
+    if (!result || path.empty()) return false;
+#ifdef HAVE_OPENCV
+    cv::Mat img(result.height, result.width, CV_8UC4);
+    std::memcpy(img.data, result.data.data(), result.data.size());
+    return cv::imwrite(path, img);
+#else
+    (void)result;
+    (void)path;
+    return false;
+#endif
 }
 
 ScreenshotResult ScreenshotService::captureFullDesktop(const ScreenshotStyle& style) {

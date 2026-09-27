@@ -90,6 +90,11 @@ public:
     // Realization
     void realize(std::shared_ptr<ui::UIElement> element) override;
 
+    // Element resolution and parenting (id-only over the ffi shim)
+    std::shared_ptr<ui::UIElement> resolve(ui::ElementId id) override;
+    void addChild(std::shared_ptr<ui::UIElement> parent,
+                  std::shared_ptr<ui::UIElement> child) override;
+
     // Show/hide
     void show(std::shared_ptr<ui::UIElement> window) override;
     void hide(std::shared_ptr<ui::UIElement> window) override;
@@ -134,6 +139,17 @@ public:
   // Canvas drawing
   void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
   void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
+  void canvasDrawLine(std::shared_ptr<ui::UIElement> canvas, int x1, int y1, int x2,
+                      int y2) override;
+  void canvasDrawRect(std::shared_ptr<ui::UIElement> canvas, int x, int y, int w,
+                      int h) override;
+  void canvasDrawCircle(std::shared_ptr<ui::UIElement> canvas, int cx, int cy,
+                        int r) override;
+  void canvasSetPen(std::shared_ptr<ui::UIElement> canvas, int r, int g, int b,
+                    int width) override;
+  void canvasFill(std::shared_ptr<ui::UIElement> canvas, int x, int y) override;
+  void canvasBeginStroke(std::shared_ptr<ui::UIElement> canvas) override;
+  void canvasEndStroke(std::shared_ptr<ui::UIElement> canvas) override;
 
     // GTK-specific features
     GtkApplication* getApplication() const { return app_; }
@@ -146,6 +162,7 @@ private:
     std::unordered_map<ui::ElementId, std::shared_ptr<ui::UIElement>> elements_;
     std::unordered_map<ui::ElementId, void*> menus_;   // GMenu*
     std::unordered_map<ui::ElementId, GtkWidget*> toggleSwitches_;
+    std::unordered_map<ui::ElementId, int> gridCells_;  // next free grid slot
     ui::ElementId nextId_ = 1;
     std::function<void()> onAllWindowsClosedCallback_;
     GMainLoop* loop_ = nullptr;
@@ -166,6 +183,8 @@ private:
     std::shared_ptr<ui::UIElement> registerElem(const char *type, GtkWidget *widget);
     GtkWidget* getWidget(ui::ElementId id) const;
     void destroyWidget(ui::ElementId id);
+    void attachChildWidget(ui::ElementId parentId, GtkWidget *parent,
+                           GtkWidget *child);
 };
 
 } // namespace havel::host

@@ -13,7 +13,13 @@ static inline UIBackend* be(void* p) {
     return static_cast<UIBackend*>(p);
 }
 
-static inline std::shared_ptr<UIElement> findElem(UIBackend*, int64_t id) {
+static inline std::shared_ptr<UIElement> findElem(UIBackend* backend, int64_t id) {
+    // Backends that own an element registry hand back the live element, so
+    // property writes, parenting and canvas commands reach it instead of a
+    // throwaway copy. Ids the backend does not know keep the placeholder.
+    if (auto real = backend->resolve(static_cast<ElementId>(id))) {
+        return real;
+    }
     auto e = std::make_shared<UIElement>();
     e->id = static_cast<ElementId>(id);
     return e;
@@ -208,9 +214,10 @@ void havel_ui_shim_realize(void* backend, int64_t id) {
 
 void havel_ui_shim_add_child(void* backend, int64_t parentId, int64_t childId) {
     try {
-        auto parent = findElem(be(backend), parentId);
-        auto child = findElem(be(backend), childId);
-        if (parent && child) parent->add(child);
+        UIBackend* b = be(backend);
+        auto parent = findElem(b, parentId);
+        auto child = findElem(b, childId);
+        if (parent && child) b->addChild(parent, child);
     } catch (...) {}
 }
 

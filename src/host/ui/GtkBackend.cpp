@@ -66,6 +66,7 @@ void GtkBackend::destroyWidget(ui::ElementId id) {
     menus_.erase(mi);
   }
   toggleSwitches_.erase(id);
+  gridCells_.erase(id);
   elements_.erase(id);
 }
 
@@ -365,6 +366,44 @@ void GtkBackend::replayCanvas(cairo_t *cr, ui::UIElement &el) {
   parseColor(el.canvasStrokeColor, strokeR, strokeG, strokeB, strokeA);
   parseColor(el.canvasFillColor, fillR, fillG, fillB, fillA);
 
+  // The canvas script api sends a pen as r/g/b, the builder api as a color
+  // name. Accept both.
+  auto applyStroke = [&](const ui::CanvasCmd &cmd) {
+    auto color = cmd.params.find("color");
+    if (color != cmd.params.end() &&
+        std::holds_alternative<std::string>(color->second)) {
+      parseColor(std::get<std::string>(color->second), strokeR, strokeG, strokeB,
+                 strokeA);
+      return;
+    }
+    auto r = cmd.params.find("r"), g = cmd.params.find("g"),
+         b = cmd.params.find("b");
+    if (r != cmd.params.end() && g != cmd.params.end() &&
+        b != cmd.params.end()) {
+      strokeR = std::get<int64_t>(r->second) / 255.0;
+      strokeG = std::get<int64_t>(g->second) / 255.0;
+      strokeB = std::get<int64_t>(b->second) / 255.0;
+      strokeA = 1.0;
+    }
+  };
+  auto applyFill = [&](const ui::CanvasCmd &cmd) {
+    auto color = cmd.params.find("color");
+    if (color != cmd.params.end() &&
+        std::holds_alternative<std::string>(color->second)) {
+      parseColor(std::get<std::string>(color->second), fillR, fillG, fillB, fillA);
+      return;
+    }
+    auto r = cmd.params.find("r"), g = cmd.params.find("g"),
+         b = cmd.params.find("b");
+    if (r != cmd.params.end() && g != cmd.params.end() &&
+        b != cmd.params.end()) {
+      fillR = std::get<int64_t>(r->second) / 255.0;
+      fillG = std::get<int64_t>(g->second) / 255.0;
+      fillB = std::get<int64_t>(b->second) / 255.0;
+      fillA = 1.0;
+    }
+  };
+
   for (const auto &cmd : el.canvasCommands) {
     const std::string &t = cmd.type;
     auto p = [&](const std::string &k, int dflt) { return cmd.getParam(k, dflt); };
@@ -372,14 +411,11 @@ void GtkBackend::replayCanvas(cairo_t *cr, ui::UIElement &el) {
       cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
       cairo_paint(cr);
       cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    } else if (t == ui::CanvasCmdType::SET_COLOR || t == ui::CanvasCmdType::SET_STROKE) {
-      auto it = cmd.params.find("color");
-      if (it != cmd.params.end() && std::holds_alternative<std::string>(it->second))
-        parseColor(std::get<std::string>(it->second), strokeR, strokeG, strokeB, strokeA);
+    } else if (t == ui::CanvasCmdType::SET_COLOR ||
+               t == ui::CanvasCmdType::SET_STROKE) {
+      applyStroke(cmd);
     } else if (t == ui::CanvasCmdType::SET_FILL) {
-      auto it = cmd.params.find("color");
-      if (it != cmd.params.end() && std::holds_alternative<std::string>(it->second))
-        parseColor(std::get<std::string>(it->second), fillR, fillG, fillB, fillA);
+      applyFill(cmd);
     } else if (t == ui::CanvasCmdType::SET_LINE_WIDTH) {
       penWidth = p("width", 1);
       cairo_set_line_width(cr, penWidth);
@@ -458,17 +494,83 @@ void GtkBackend::realize(std::shared_ptr<ui::UIElement> element) {
   if (it != elements_.end()) it->second->realized = true;
 }
 
+std::shared_ptr<ui::UIElement> GtkBackend::resolve(ui::ElementId id) {
+  auto it = elements_.find(id);
+  return it != elements_.end() ? it->second : nullptr;
+}
+
+void GtkBackend::addChild(std::shared_ptr<ui::UIElement> parent,
+                          std::shared_ptr<ui::UIElement> child) {
+  if (!parent || !child) return;
+  // Record the tree edge on the real element, then link the native widgets.
+  if (!child->parent.expired()) return;   // already parented
+  parent->add(child);
+  GtkWidget *pw = getWidget(parent->id);
+  GtkWidget *cw = getWidget(child->id);
+  if (pw && cw) {
+    attachChildWidget(parent->id, pw, cw);
+    g_debug("gtk: attached %s into %s", g_type_name(G_OBJECT_TYPE(cw)),
+            g_type_name(G_OBJECT_TYPE(pw)));
+  } else {
+    g_debug("gtk: no native widget for child %llu or parent %llu",
+            (unsigned long long)child->id, (unsigned long long)parent->id);
+  }
+}
+
+void GtkBackend::attachChildWidget(ui::ElementId parentId, GtkWidget *parent,
+                                   GtkWidget *child) {
+  if (!parent || !child) return;
+  if (GTK_IS_WINDOW(parent)) {
+    // Windows hold a single vertical box; children go inside it.
+    GtkWidget *box = gtk_window_get_child(GTK_WINDOW(parent));
+    if (box && GTK_IS_BOX(box)) gtk_box_append(GTK_BOX(box), child);
+    return;
+  }
+  if (GTK_IS_BOX(parent)) {
+    gtk_box_append(GTK_BOX(parent), child);
+    return;
+  }
+  if (GTK_IS_GRID(parent)) {
+    auto it = elements_.find(parentId);
+    int cols = it != elements_.end() ? it->second->getProp("columns", 1) : 1;
+    if (cols < 1) cols = 1;
+    int slot = gridCells_[parentId]++;
+    gtk_grid_attach(GTK_GRID(parent), child, slot % cols, slot / cols, 1, 1);
+    return;
+  }
+  if (GTK_IS_SCROLLED_WINDOW(parent)) {
+    GtkWidget *inner = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(parent));
+    if (inner && GTK_IS_BOX(inner)) gtk_box_append(GTK_BOX(inner), child);
+    return;
+  }
+  g_warning("gtk: cannot attach child to widget of type %s",
+            g_type_name(G_OBJECT_TYPE(parent)));
+}
+
 void GtkBackend::show(std::shared_ptr<ui::UIElement> window) {
   if (!window) return;
   GtkWidget *w = getWidget(window->id);
   if (!w) return;
+  // The shim writes title/size onto the live element; apply them now.
+  auto el = elements_.find(window->id);
+  if (el != elements_.end()) {
+    auto title = el->second->getProp("title", std::string());
+    if (!title.empty() && GTK_IS_WINDOW(w)) {
+      gtk_window_set_title(GTK_WINDOW(w), title.c_str());
+    }
+    int width = el->second->getProp("width", 0);
+    int height = el->second->getProp("height", 0);
+    if (GTK_IS_WINDOW(w) && (width > 0 || height > 0)) {
+      gtk_window_set_default_size(GTK_WINDOW(w), width > 0 ? width : 800,
+                                  height > 0 ? height : 600);
+    }
+    el->second->visible = true;
+  }
   if (GTK_IS_WINDOW(w)) {
     gtk_window_present(GTK_WINDOW(w));
   } else {
     gtk_widget_set_visible(w, true);
   }
-  auto it = elements_.find(window->id);
-  if (it != elements_.end()) it->second->visible = true;
 }
 
 void GtkBackend::hide(std::shared_ptr<ui::UIElement> window) {
@@ -775,6 +877,9 @@ GtkWidget* GtkBackend::createWindowInternal(const std::string &title, bool modal
   gtk_window_set_title(GTK_WINDOW(win), title.c_str());
   gtk_window_set_default_size(GTK_WINDOW(win), 800, 600);
   if (modal) gtk_window_set_modal(GTK_WINDOW(win), true);
+  // A window holds exactly one child; keep an inner box so scripts can add
+  // any number of children to it.
+  gtk_window_set_child(GTK_WINDOW(win), createBoxInternal(false));
   g_signal_connect(win, "destroy", G_CALLBACK(onWindowClosed), this);
   return win;
 }
@@ -800,7 +905,11 @@ void GtkBackend::onWindowClosed(GtkWindow *, void *userData) {
 void GtkBackend::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
   if (!canvas) return;
   GtkWidget *w = getWidget(canvas->id);
-  if (w && GTK_IS_WIDGET(w)) gtk_widget_queue_draw(w);
+  if (w && GTK_IS_WIDGET(w)) {
+    g_debug("gtk: canvas %llu redraw with %zu commands",
+            (unsigned long long)canvas->id, canvas->canvasCommands.size());
+    gtk_widget_queue_draw(w);
+  }
 }
 
 void GtkBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
@@ -810,6 +919,86 @@ void GtkBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
     it->second->canvasCommands.clear();
     it->second->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
   }
+  canvasFlush(std::move(canvas));
+}
+
+void GtkBackend::canvasDrawLine(std::shared_ptr<ui::UIElement> canvas, int x1,
+                                int y1, int x2, int y2) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back(
+      {ui::CanvasCmdType::LINE,
+       {{"x1", static_cast<int64_t>(x1)},
+        {"y1", static_cast<int64_t>(y1)},
+        {"x2", static_cast<int64_t>(x2)},
+        {"y2", static_cast<int64_t>(y2)}}});
+  canvasFlush(std::move(canvas));
+}
+
+void GtkBackend::canvasDrawRect(std::shared_ptr<ui::UIElement> canvas, int x,
+                                int y, int w, int h) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back(
+      {ui::CanvasCmdType::RECT,
+       {{"x", static_cast<int64_t>(x)},
+        {"y", static_cast<int64_t>(y)},
+        {"w", static_cast<int64_t>(w)},
+        {"h", static_cast<int64_t>(h)}}});
+  canvasFlush(std::move(canvas));
+}
+
+void GtkBackend::canvasDrawCircle(std::shared_ptr<ui::UIElement> canvas, int cx,
+                                  int cy, int r) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back(
+      {ui::CanvasCmdType::CIRCLE,
+       {{"cx", static_cast<int64_t>(cx)},
+        {"cy", static_cast<int64_t>(cy)},
+        {"r", static_cast<int64_t>(r)}}});
+  canvasFlush(std::move(canvas));
+}
+
+void GtkBackend::canvasSetPen(std::shared_ptr<ui::UIElement> canvas, int r, int g,
+                              int b, int width) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasStrokeWidth = width;
+  it->second->canvasCommands.push_back(
+      {ui::CanvasCmdType::SET_STROKE,
+       {{"r", static_cast<int64_t>(r)},
+        {"g", static_cast<int64_t>(g)},
+        {"b", static_cast<int64_t>(b)},
+        {"width", static_cast<int64_t>(width)}}});
+}
+
+void GtkBackend::canvasFill(std::shared_ptr<ui::UIElement> canvas, int x, int y) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back(
+      {ui::CanvasCmdType::FILL_RECT,
+       {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}}});
+  canvasFlush(std::move(canvas));
+}
+
+void GtkBackend::canvasBeginStroke(std::shared_ptr<ui::UIElement> canvas) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back({ui::CanvasCmdType::SET_STROKE, {}});
+}
+
+void GtkBackend::canvasEndStroke(std::shared_ptr<ui::UIElement> canvas) {
+  if (!canvas) return;
+  auto it = elements_.find(canvas->id);
+  if (it == elements_.end()) return;
+  it->second->canvasCommands.push_back({ui::CanvasCmdType::SET_FILL, {}});
   canvasFlush(std::move(canvas));
 }
 

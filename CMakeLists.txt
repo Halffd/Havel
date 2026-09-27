@@ -652,6 +652,7 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/UIBridge.cpp"
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"
+"src/host/ui/UIBackendFactory.cpp"
 "src/host/ui/UIManager.cpp"
 "src/host/window/WindowService.cpp"
 "src/Havel.cpp"
@@ -664,8 +665,6 @@ if(ENABLE_QT_UI_BACKEND)
   set(_QT_CORE_SOURCES
     "src/host/automation/PixelAutomationService.cpp"
     "src/host/screenshot/ScreenshotService.cpp"
-    "src/host/ui/QtBackend.cpp"
-    "src/host/ui/UIService.cpp"
     "src/host/window/AltTabService.cpp"
   )
   list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
@@ -692,6 +691,11 @@ if(ENABLE_QT_UI_BACKEND)
   # havel_core / havel_lang_core, which must stay Qt-free.
   list(APPEND GUI_SOURCES
       ${CMAKE_SOURCE_DIR}/src/host/module/bridges/qt/QtBridge.cpp
+      # The Qt UI backend and its UIService glue. UIManager used to construct
+      # these inline, which is what put Qt symbols in libhavel_core.a; it now
+      # goes through the registry in src/host/ui/UIBackendFactory.hpp.
+      ${CMAKE_SOURCE_DIR}/src/host/ui/QtBackend.cpp
+      ${CMAKE_SOURCE_DIR}/src/host/ui/UIService.cpp
   )
 else()
   set(GUI_SOURCES "")

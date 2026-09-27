@@ -21,8 +21,13 @@
 #include "../BridgesInternal.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
+#include "extensions/qt/QtScreenshotBackend.hpp"
+#include "host/ui/QtBackend.hpp"
+#include "host/ui/UIBackendFactory.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+
+#include <mutex>
 
 namespace havel::compiler {
 
@@ -113,11 +118,42 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
   return Value::makeBool(true);
 }
 
+} // namespace havel::compiler
+
+// ============================================================================
+// in-process Qt UI backend registration
+//
+// These used to be constructed inline by UIManager::createBackend behind
+// HAVE_QT_EXTENSION, which is what dragged Qt into libhavel_core.a. The core
+// now only knows about the registry in host/ui/UIBackendFactory.hpp.
+// ============================================================================
+
+namespace havel::host {
+
+void installQtUIBackendFactories() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    registerUIBackendFactory(UIBackend::Api::QT,
+                             []() -> std::unique_ptr<UIBackend> {
+                               return std::make_unique<QtBackend>();
+                             });
+    registerInProcessScreenshotBackendFactory(
+        "qt", []() -> std::unique_ptr<IScreenshotBackend> {
+          return std::make_unique<QtScreenshotBackend>();
+        });
+  });
+}
+
+} // namespace havel::host
+
+namespace havel::compiler {
+
 // ============================================================================
 // entry point used by the bridge selection slot
 // ============================================================================
 
 void installQtBridge(PipelineOptions &options, const HostContext *ctx) {
+  havel::host::installQtUIBackendFactories();
   options.host_functions["clipboard.get"] = [ctx](const auto &args) {
     return clipboardBridgeGet(args, ctx);
   };

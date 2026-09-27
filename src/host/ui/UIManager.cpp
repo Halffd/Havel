@@ -1,29 +1,20 @@
 #include "UIManager.hpp"
+#include "UIBackendFactory.hpp"
 #include "c/ToolkitPlugin.h"
 #include "dl/Loader.h"
 #include "../screenshot/ScreenshotService.hpp"
 #include "../window/AltTabService.hpp"
 #include "../clipboard/Clipboard.hpp"
 
-#ifdef HAVE_QT_EXTENSION
-#include "ExtensionUIBridge.hpp"
-#include "QtBackend.hpp"
-#include "../../extensions/qt/QtScreenshotBackend.hpp"
-#include "../../extensions/qt/QtAltTabBackend.hpp"
-#include "../../extensions/qt/QtClipboardBackend.hpp"
-#include "../../extensions/qt/QtClipboardManagerBackend.hpp"
-#endif
-
+// GTK and ImGui are not Qt, so they stay constructed here: they compile into
+// libhavel_core.a and their headers drag in no Qt symbol. Only the Qt backend
+// moved out, into host/ui/UIBackendFactory.hpp.
 #ifdef HAVE_GTK_BACKEND
 #include "GtkBackend.hpp"
 #endif
 
 #ifdef HAVE_IMGUI_BACKEND
 #include "ImGuiBackend.hpp"
-#endif
-
-#ifdef HAVE_QT_EXTENSION
-#include "../../extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #endif
 
 namespace havel::host {
@@ -111,11 +102,10 @@ bool UIManager::isBackendAvailable(UIBackend::Api api) const {
 
     switch (api) {
     case UIBackend::Api::QT:
-#ifdef HAVE_QT_EXTENSION
-        return true;
-#else
-        return false;
-#endif
+        // Qt availability is a runtime property now: the target that owns Qt
+        // registers a factory, so a Qt-free build reports "unavailable" by
+        // having no factory rather than by an undefined macro.
+        return hasUIBackendFactory(UIBackend::Api::QT);
     case UIBackend::Api::GTK:
 #ifdef HAVE_GTK_BACKEND
         return true;
@@ -216,20 +206,20 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
 
     switch (api) {
     case UIBackend::Api::QT:
-#ifdef HAVE_QT_EXTENSION
+        // The in-process Qt path has always installed the in-process screenshot
+        // backend as a side effect of building the UI backend, so keep that.
         installToolkitBackendsInProcess("qt");
-        return std::make_unique<QtBackend>();
-#else
-        return nullptr;
-#endif
+        // Constructed by havel_gui, not here: this file is in libhavel_core.a
+        // and a Qt-free host must link it without pulling in Qt.
+        return createRegisteredUIBackend(UIBackend::Api::QT);
     case UIBackend::Api::GTK:
-#if defined(HAVE_GTK_BACKEND)
+#ifdef HAVE_GTK_BACKEND
         return std::make_unique<GtkBackend>();
 #else
         return nullptr;
 #endif
     case UIBackend::Api::IMGUI:
-#if defined(HAVE_IMGUI_BACKEND)
+#ifdef HAVE_IMGUI_BACKEND
         return std::make_unique<ImGuiBackend>();
 #else
         return nullptr;
@@ -240,7 +230,8 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
 }
 
 bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
-#if defined(HAVE_QT_EXTENSION)
+    // No Qt here: this only calls the toolkit ABI and Qt-free service setters,
+    // so it must not be gated on the build having a Qt extension.
     if (!abi) return false;
     bool any = false;
 
@@ -267,24 +258,16 @@ bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
     }
 
     return any;
-#else
-    (void)abi;
-    return false;
-#endif
 }
 
 bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) {
-    if (toolkitName == "qt") {
-#ifdef HAVE_QT_EXTENSION
-        havel::host::ScreenshotService::getInstance().setBackend(
-            std::make_unique<havel::host::QtScreenshotBackend>());
-        // AltTab backend created lazily on first use (after QApplication exists)
-        return true;
-#else
+    auto backend = createRegisteredScreenshotBackend(toolkitName);
+    if (!backend) {
         return false;
-#endif
     }
-    return false;
+    havel::host::ScreenshotService::getInstance().setBackend(std::move(backend));
+    // AltTab backend created lazily on first use (after QApplication exists)
+    return true;
 }
 
 } // namespace havel::host

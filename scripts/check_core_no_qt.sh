@@ -43,16 +43,13 @@ QT_SYM_RE='(^|[^A-Za-z0-9_])(Q[A-Z][A-Za-z0-9_]*::|QObject|QMetaObject|QVariant|
 # extracted). Keep sorted; see part 3 above.
 CORE_KNOWN_QT_LEAKS="Clipboard.cpp.o
 PixelAutomation.cpp.o
-PixelAutomationService.cpp.o
-QtBackend.cpp.o
-UIManager.cpp.o
-UIService.cpp.o"
+PixelAutomationService.cpp.o"
 
 fail=0
 
 echo "== part 1: core-facing bridge sources must be Qt-free =="
 
-# qt/QtGuiBridge.cpp is the optional Qt half of UIBridge; it is compiled into
+# qt/QtBridge.cpp is the optional Qt half of the bridges; it is compiled into
 # havel_gui, never into havel_core, so it is the one allowed exception.
 offenders="$(grep -rlE '#include[[:space:]]*[<"](qt\.hpp|Q[A-Z][A-Za-z0-9_]*)' \
     --include='*.cpp' --include='*.hpp' \

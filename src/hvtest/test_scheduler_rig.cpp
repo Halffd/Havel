@@ -3163,6 +3163,103 @@ static void test_sleep_interleaved_with_normal_goroutine() {
   sched.clearCurrent();
 }
 
+static void test_runBlockingHostCall_async_park_when_fiber_executing() {
+  // Positive control for the current_executing_fiber_ gate: when a real
+  // goroutine is mid-dispatch (current() non-null AND current_executing_fiber_
+  // set), runBlockingHostCall must keep taking the async/park path and
+  // return a Pending token. Killing this would silently turn every
+  // goroutine-blocking host call into a synchronous inline call and stall
+  // the scheduler on any X11/IO roundtrip.
+
+  HostContext ctx;
+  VM vm(ctx);
+  auto& sched = Scheduler::instance();
+  sched.start();
+  vm.setScheduler(&sched);
+
+  static EventQueue eq_async;
+  vm.setEventQueue(&eq_async);
+
+  Fiber* fake = new Fiber(0xdead, 0, 0, "fake-executing");
+  uint32_t gid = sched.spawn(0, {}, 0, "hk-running-posit",
+                             FiberPriority::HOTKEY);
+  auto* g = sched.get(gid);
+  CHECK(g != nullptr, "spawn returned null goroutine");
+  g->state = Scheduler::GoroutineState::Running;
+  g->persistent = true;
+  // Scheduler::spawn() allocates a fiber for us; we replace it with the
+  // fake we control so we can swing it across the VM's executing-fiber
+  // pointer. Goroutine dtor takes ownership either way.
+  delete g->fiber;
+  g->fiber = fake;
+  sched.setCurrent(g);
+
+  // Simulate the driver having installed the fiber as the currently
+  // executing one (HavelEngine.hpp does this around runDispatchLoopPublic).
+  vm.current_executing_fiber_ = fake;
+
+  bool jobPosted = false;
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobPosted = true; return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(42); });
+
+  // The worker threads in EventQueue are already running and can complete
+  // the job between postToWorker and this point — asserting !jobPosted
+  // here races with the worker pool. The observable that distinguishes
+  // async park from sync inline is the Pending marker on the return value;
+  // the gate in runBlockingHostCall only falls through to lift(job()) when
+  // event_queue_ is shutdown/null, sched->current() is null, or there's no
+  // executing fiber.
+  CHECK(result.isPending(),
+        "async path must produce a Pending token for the CALL epilogue");
+
+  // Drive the real CALL-epilogue park: the dispatcher pushes the returned
+  // Pending onto the stack and then calls parkIfPendingCallResult(). We
+  // replay exactly that here.
+  vm.stack.push_back(result);
+  bool parked = vm.parkIfPendingCallResult();
+  CHECK(parked, "park must succeed while a fiber is executing");
+  {
+    std::lock_guard<std::mutex> lk(g->wait_handle_mutex_);
+    CHECK(g->wait_handle.type == Scheduler::AwaitableType::EXTERNAL,
+          "goroutine WaitHandle must move to EXTERNAL after park");
+    CHECK(g->wait_handle.target_id != 0, "wait token must be non-zero");
+  }
+
+  // Drain cleanup — let the worker pool finish the posted job before the
+  // test moves on so it doesn't leak across tests.
+  constexpr int kMaxDrainIters = 200;
+  for (int i = 0; i < kMaxDrainIters && !jobPosted; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  CHECK(jobPosted, "worker pool failed to run the posted job in 200ms");
+
+  vm.current_executing_fiber_ = nullptr;
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Done;
+  // Do NOT null out g->fiber: it now points at our heap fiber and
+  // Goroutine::~Goroutine() owns that pointer (deletes it on shutdown).
+}
+
+static void test_runBlockingHostCall_sync_without_scheduler() {
+  // Baseline guard: no scheduler at all means the synchronous inline path
+  // runs. This case existed before the fiber gate change and must not flip.
+  HostContext ctx;
+  VM vm(ctx);
+  // Deliberately do NOT setScheduler or setEventQueue.
+
+  bool jobRan = false;
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobRan = true; return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(7); });
+
+  CHECK(jobRan, "no-scheduler path must run the job inline");
+  CHECK(result.isInt() && result.asInt() == 7,
+        "no-scheduler path must return the lifted value");
+  CHECK(!result.isPending(),
+        "no-scheduler path must never produce a Pending token");
+}
+
 static void test_runBlockingHostCall_sync_when_no_fiber_executing() {
   // Regression: runBlockingHostCall previously picked the async-park path
   // whenever scheduler_->current() was non-null. handleSuspended() and the
@@ -3931,6 +4028,12 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_runBlockingHostCall_sync_when_no_fiber_executing();
   std::cout << " PASS runBlockingHostCall: sync inline when no fiber executing (stale current)\n";
 
+  test_runBlockingHostCall_async_park_when_fiber_executing();
+  std::cout << " PASS runBlockingHostCall: async parks while fiber executes\n";
+
+  test_runBlockingHostCall_sync_without_scheduler();
+  std::cout << " PASS runBlockingHostCall: sync inline without scheduler\n";
+
   test_coroutine_suspend_and_resume();
   std::cout << " PASS coroutine suspend: suspend + unpark roundtrip\n";
 
@@ -3966,8 +4069,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 4 new scheduler API tests + 4 new hotkey query tests
   // + 14 async loop/coroutine/while-loop integration tests
   // + 1 deferred-wakeup-fd poll regression test
-  // + 1 runBlockingHostCall stale-current regression test
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 1;
+  // + 3 runBlockingHostCall gate tests (stale-current regression,
+  //   fiber-executing park, no-scheduler baseline)
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

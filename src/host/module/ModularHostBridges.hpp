@@ -344,12 +344,6 @@ public:
                                   const HostContext *ctx);
     static Value handleGroupFindBy(const std::vector<Value> &args,
                                     const HostContext *ctx);
-    static Value handleClipboardGet(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleClipboardSet(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleClipboardClear(const std::vector<Value> &args,
-                                       const HostContext *ctx);
     static Value handleScreenshotFull(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleScreenshotMonitor(const std::vector<Value> &args,
@@ -804,12 +798,6 @@ public:
                                   const HostContext *ctx);
     static Value handleGroupFindBy(const std::vector<Value> &args,
                                     const HostContext *ctx);
-    static Value handleClipboardGet(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleClipboardSet(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleClipboardClear(const std::vector<Value> &args,
-                                       const HostContext *ctx);
     static Value handleScreenshotFull(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleScreenshotMonitor(const std::vector<Value> &args,

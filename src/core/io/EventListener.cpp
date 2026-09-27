@@ -32,6 +32,11 @@
 
 namespace havel {
 
+// Defined by the GUI side (havel_gui) only when Qt is linked into the
+// process. Weak so embedders without Qt (havel-wm) do not acquire a Qt
+// dependency from the core archive.
+void notifyQtExitLoop(int code) __attribute__((weak));
+
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
     return "[none]";
@@ -646,9 +651,7 @@ void EventListener::PumpOnce() {
     auto *vm = executionEngine->getVM();
     if (vm && vm->exit_requested_.load()) {
       int code = vm->exit_code_.load();
-#ifdef HAVE_QT_EXTENSION
-      QCoreApplication::exit(code);
-#endif
+      if (&havel::notifyQtExitLoop) havel::notifyQtExitLoop(code);
       havel::exit(ExitReason::VmExit, code);
       return;
     }
@@ -847,9 +850,7 @@ void EventListener::EventLoop() {
           if (shutdownCallback_) {
             shutdownCallback_(code);
           }
-#ifdef HAVE_QT_EXTENSION
-          QCoreApplication::exit(code);
-#endif
+          if (&havel::notifyQtExitLoop) havel::notifyQtExitLoop(code);
         }
       }
     } else if (modules_) {

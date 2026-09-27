@@ -5,6 +5,13 @@
 #include "BridgesInternal.hpp"
 
 namespace havel::compiler {
+
+// Defined in src/extensions/gui/clipboard_manager/ClipboardManager.cpp
+// (havel_gui). Weak: absent when the Qt GUI library is not linked, e.g.
+// havel-wm embedding libhavel_lang + libhavel_core.
+void installQtClipboardBridge(PipelineOptions &options,
+                              const HostContext *ctx) __attribute__((weak));
+
 static Value createWindowObject(
     VM *vm, const HostContext *ctx, uint64_t windowId,
     const std::string &title, const std::string &windowClass,
@@ -704,18 +711,10 @@ options.host_functions["group.find"] = [ctx = ctx_](const auto &args) {
 options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
     return handleGroupFindBy(args, ctx);
 };
-options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardGet(args, ctx);
-  };
-  options.host_functions["clipboard.set"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardSet(args, ctx);
-  };
-  options.host_functions["clipboard.clear"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardClear(args, ctx);
-  };
-    options.host_functions["io.getClipboard"] = [ctx = ctx_](const auto &args) {
-        return handleClipboardGet(args, ctx);
-    };
+  // clipboard.* and io.getClipboard are registered by the Qt GUI side
+  // (havel_gui) via the weak hook below; the embeddable core must not
+  // reference QClipboard symbols.
+  if (&installQtClipboardBridge) installQtClipboardBridge(options, ctx_);
     options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);
   };
@@ -3413,72 +3412,6 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
 }
 
 
-Value
-UIBridge::handleClipboardGet(const std::vector<Value> &args,
-                             const HostContext *ctx) {
-#ifdef HAVE_QT_EXTENSION
-  (void)args;
-  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
-  if (!vm || !ctx->clipboardManager) {
-    return Value::makeNull();
-  }
-  auto *clipboard = ctx->clipboardManager->getClipboard();
-  if (!clipboard) {
-    return Value::makeNull();
-  }
-  const QString text = clipboard->text();
-  // Clipboard read returns a heap-allocated string so callers keep a stable
-  // reference across collection cycles.
-  auto ref = vm->getHeap().allocateString(text.toStdString());
-  return Value::makeStringId(ref.id);
-#else
-  (void)args;
-  (void)ctx;
-  return Value::makeNull();
-#endif
-}
-
-
-Value
-UIBridge::handleClipboardSet(const std::vector<Value> &args,
-                             const HostContext *ctx) {
-#ifdef HAVE_QT_EXTENSION
-  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
-  if (!vm || args.empty() || !ctx->clipboardManager) {
-    return Value::makeBool(false);
-  }
-  auto *clipboard = ctx->clipboardManager->getClipboard();
-  if (!clipboard) {
-    return Value::makeBool(false);
-  }
-  const std::string text = vm->resolveStringKey(args[0]);
-  clipboard->setText(QString::fromStdString(text));
-  return Value::makeBool(true);
-#else
-  (void)args;
-  (void)ctx;
-  return Value::makeBool(false);
-#endif
-}
-
-
-Value
-UIBridge::handleClipboardClear(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-#ifdef HAVE_QT_EXTENSION
-  (void)args;
-  if (!ctx->clipboardManager) {
-    return Value::makeBool(false);
-  }
-  auto *clipboard = ctx->clipboardManager->getClipboard();
-  if (!clipboard) {
-    return Value::makeBool(false);
-  }
-  clipboard->clear();
-  return Value::makeBool(true);
-#endif
-  return Value::makeBool(false);
-}
 
 
 Value

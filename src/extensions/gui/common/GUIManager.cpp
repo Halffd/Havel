@@ -5,10 +5,17 @@
 #include "host/ui/UIBackend.hpp"
 #include "host/ui/QtBackend.hpp"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QCursor>
 #include <QMetaObject>
 
 namespace havel {
+
+// Defined here (havel_gui) so core/io/EventListener.cpp can notify a live
+// Qt event loop on VM exit without libhavel_core.a referencing Qt symbols.
+void notifyQtExitLoop(int code) {
+  if (QCoreApplication::instance()) QCoreApplication::exit(code);
+}
 
 GUIManager::GUIManager(WindowManager &windowMgr)
     : QObject(nullptr), windowManager(windowMgr) {

@@ -2268,3 +2268,80 @@ int ClipboardManager::getHistoryCount() const {
 }
 
 } // namespace havel
+// ============================================================================
+// havel-lang bridge glue
+//
+// These host functions touch QClipboard, so they must not live in
+// libhavel_core.a (embedded by havel-wm without Qt). UIBridge declares
+// installQtClipboardBridge as a weak symbol and only calls it when this
+// definition is linked in.
+// ============================================================================
+#include "host/module/ModularHostBridges.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
+
+namespace havel::compiler {
+
+static Value clipboardBridgeGet(const std::vector<Value> &args,
+                                const HostContext *ctx) {
+  (void)args;
+  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
+  if (!vm || !ctx->clipboardManager) {
+    return Value::makeNull();
+  }
+  auto *clipboard = ctx->clipboardManager->getClipboard();
+  if (!clipboard) {
+    return Value::makeNull();
+  }
+  const QString text = clipboard->text();
+  // Clipboard read returns a heap-allocated string so callers keep a stable
+  // reference across collection cycles.
+  auto ref = vm->getHeap().allocateString(text.toStdString());
+  return Value::makeStringId(ref.id);
+}
+
+static Value clipboardBridgeSet(const std::vector<Value> &args,
+                                const HostContext *ctx) {
+  auto *vm = static_cast<VM *>(ctx ? ctx->vm : nullptr);
+  if (!vm || args.empty() || !ctx->clipboardManager) {
+    return Value::makeBool(false);
+  }
+  auto *clipboard = ctx->clipboardManager->getClipboard();
+  if (!clipboard) {
+    return Value::makeBool(false);
+  }
+  const std::string text = vm->resolveStringKey(args[0]);
+  clipboard->setText(QString::fromStdString(text));
+  return Value::makeBool(true);
+}
+
+static Value clipboardBridgeClear(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->clipboardManager) {
+    return Value::makeBool(false);
+  }
+  auto *clipboard = ctx->clipboardManager->getClipboard();
+  if (!clipboard) {
+    return Value::makeBool(false);
+  }
+  clipboard->clear();
+  return Value::makeBool(true);
+}
+
+void installQtClipboardBridge(PipelineOptions &options,
+                              const HostContext *ctx) {
+  options.host_functions["clipboard.get"] = [ctx](const auto &args) {
+    return clipboardBridgeGet(args, ctx);
+  };
+  options.host_functions["clipboard.set"] = [ctx](const auto &args) {
+    return clipboardBridgeSet(args, ctx);
+  };
+  options.host_functions["clipboard.clear"] = [ctx](const auto &args) {
+    return clipboardBridgeClear(args, ctx);
+  };
+  options.host_functions["io.getClipboard"] = [ctx](const auto &args) {
+    return clipboardBridgeGet(args, ctx);
+  };
+}
+
+} // namespace havel::compiler

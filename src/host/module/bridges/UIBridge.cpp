@@ -7,12 +7,6 @@
 
 namespace havel::compiler {
 
-// Defined in src/extensions/gui/clipboard_manager/ClipboardManager.cpp
-// (havel_gui). Weak: absent when the Qt GUI library is not linked, e.g.
-// havel-wm embedding libhavel_lang + libhavel_core.
-void installQtClipboardBridge(PipelineOptions &options,
-                              const HostContext *ctx) __attribute__((weak));
-
 static Value createWindowObject(
     VM *vm, const HostContext *ctx, uint64_t windowId,
     const std::string &title, const std::string &windowClass,
@@ -712,10 +706,12 @@ options.host_functions["group.find"] = [ctx = ctx_](const auto &args) {
 options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
     return handleGroupFindBy(args, ctx);
 };
-  // clipboard.* and io.getClipboard are registered by the Qt GUI side
-  // (havel_gui) via the weak hook below; the embeddable core must not
-  // reference QClipboard symbols.
-  if (&installQtClipboardBridge) installQtClipboardBridge(options, ctx_);
+  // The Qt bridge owns every host function that needs a Qt class:
+  // clipboard.*, io.getClipboard and gui.notify. The host selects it
+  // explicitly at startup (see BridgeSelection), so this call site stays
+  // Qt-free and the core never references QClipboard or GUIManager.
+  if (auto installQtBridge = ::havel::qtBridgeInstaller())
+    installQtBridge(options, ctx_);
     options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);
   };
@@ -723,12 +719,6 @@ options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
                                                       ctx_](const auto &args) {
     return handleScreenshotMonitor(args, ctx);
   };
-  // gui.notify needs the Qt-backed GUIManager, so the Qt bridge registers it.
-  // The host selects that bridge explicitly at startup (see BridgeSelection):
-  // a weak hook would not be linked, because ld does not extract an archive
-  // member to satisfy a weak reference.
-  if (auto installQtGuiBridge = ::havel::qtBridgeInstaller())
-    installQtGuiBridge(options, ctx_);
 }
 
 // Helper: Create window object with data fields

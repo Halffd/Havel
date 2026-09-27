@@ -1,0 +1,41 @@
+// test_qt_bridge_io_clipboard_registration.hv — guards the extraction of
+// io.getClipboard out of the core-facing bridge TUs.
+//
+// What: resolves io.getClipboard and invokes it, asserting the reference is a
+//       registered host function rather than nil.
+// Why:  io.getClipboard was glue at the bottom of the core-facing
+//       extensions/gui/clipboard_manager/ClipboardManager.cpp. It now lives in
+//       src/host/module/bridges/qt/QtBridge.cpp (havel_gui target only) and is
+//       installed through the explicit BridgeSelection slot that src/main.cpp
+//       fills with installQtBridge. A registration lost in that move makes the
+//       bare reference below resolve to nil, and the assert fails with
+//       "io.getClipboard must be registered by the Qt bridge" — observed, exit 1.
+// Expected: assert passes.
+//
+// Deliberately NOT asserted on the returned text:
+//   - reading an X11 clipboard can transfer ownership, so a second read in the
+//     same process can legitimately come back empty. Headless (nil) and desktop
+//     (text) runs therefore disagree, and no value assertion is stable in both.
+//   The registration, not the payload, is what this test guards.
+//
+// Non-vacuity evidence: renaming the registration key in QtBridge.cpp from
+// "io.getClipboard" to garbage and rebuilding makes this test exit 1 with the
+// assertion message above. That is how this test was validated.
+//
+// Note on the neighbouring clipboard.* names: clipboard.get / clipboard.set /
+// clipboard.clear are ALSO registered by the opt-in clipboard module plugin
+// (src/modules/clipboard/ClipboardModule.cpp), so those names resolve even when
+// the Qt bridge is absent and cannot discriminate. io.getClipboard and
+// gui.notify are registered by QtBridge and nothing else, which is why they are
+// the names guarded here and in test_gui_notify_registration.hv.
+
+getClipboardRef = io.getClipboard
+
+assert(getClipboardRef != nil, "io.getClipboard must be registered by the Qt bridge")
+
+// Invoke it. Without a clipboard manager the bridge returns nil; with one it
+// reads the real clipboard. Either way the call must not throw, and the
+// registration was already proven above.
+observed = io.getClipboard()
+
+print("qt bridge io.getClipboard registration: ok")

@@ -691,7 +691,7 @@ if(ENABLE_QT_UI_BACKEND)
   # stays together, but compiled into havel_gui (optional) — never into
   # havel_core / havel_lang_core, which must stay Qt-free.
   list(APPEND GUI_SOURCES
-      ${CMAKE_SOURCE_DIR}/src/host/module/bridges/qt/QtGuiBridge.cpp
+      ${CMAKE_SOURCE_DIR}/src/host/module/bridges/qt/QtBridge.cpp
   )
 else()
   set(GUI_SOURCES "")

@@ -7,8 +7,8 @@
 // Qt-free by contract: this header is the common include closure of every
 // core-facing bridge TU, so it must not pull in qt.hpp or the Qt-backed
 // managers from src/extensions/gui. Qt-only handlers live in
-// src/host/module/bridges/qt/ and reach the core through weak registration
-// hooks (see installQtClipboardBridge / installQtGuiBridge).
+// src/host/module/bridges/qt/QtBridge.cpp and reach the core through the
+// explicit bridge selection slot (see ../BridgeSelection.hpp).
 #include "../../host/window/WindowService.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../utils/DebugFlags.hpp"

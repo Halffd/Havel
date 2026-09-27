@@ -3163,6 +3163,64 @@ static void test_sleep_interleaved_with_normal_goroutine() {
   sched.clearCurrent();
 }
 
+static void test_runBlockingHostCall_sync_when_no_fiber_executing() {
+  // Regression: runBlockingHostCall previously picked the async-park path
+  // whenever scheduler_->current() was non-null. handleSuspended() and the
+  // handleYield() hotkey-park path do NOT clearCurrent, so a persistent
+  // hotkey goroutine that just settled into Suspended+HotkeyWait stays
+  // scheduler-current despite no longer executing. If the engine then runs
+  // a conditional-hotkey predicate via callFunctionSync (outside any fiber),
+  // any blocking host call inside the predicate gets a Pending token from
+  // runBlockingHostCall, which the CALL epilogue in parkIfPendingCallResult
+  // then has no fiber to park. The result was neutralized to null, so the
+  // condition evaluated to false and the hotkey silently died; the
+  // "Pending host-call result outside goroutine context" error logs once
+  // per mode-evaluation tick (the user's log shows that ~2s cadence).
+  //
+  // The fix gates the async path on current_executing_fiber_ too, so a
+  // predicate with no executing fiber falls through to the synchronous
+  // inline branch. This test exercises exactly that stale-current state.
+
+  HostContext ctx;
+  VM vm(ctx);
+  auto& sched = Scheduler::instance();
+  sched.start();
+  vm.setScheduler(&sched);
+
+  // EventQueue is short-lived here; just needs to exist so the non-stale
+  // branch in runBlockingHostCall is *reachable*. The scheduler is NOT
+  // idle: a stale hotkey goroutine sits in Suspended+HotkeyWait as the
+  // current goroutine (the exact leaking-state that used to trip the bug).
+  static EventQueue eq;
+  vm.setEventQueue(&eq);
+
+  uint32_t gid = sched.spawn(0, {}, 0, "hk-stale-current",
+                             FiberPriority::HOTKEY);
+  auto* g = sched.get(gid);
+  CHECK(g != nullptr, "spawn returned null goroutine");
+  g->persistent = true;
+  g->hotkey_alias = "hk-stale-current-alias";
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait,
+                             std::memory_order_release);
+  sched.setCurrent(g);   // stale: matches handleSuspended's leaked state
+  CHECK(sched.current() == g, "setup: stale scheduler current");
+
+  bool jobRan = false;
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobRan = true; return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(42); });
+
+  CHECK(jobRan, "inline job must execute when no fiber is executing");
+  CHECK(result.isInt() && result.asInt() == 42,
+        "blocking host call must return lifted result synchronously");
+  CHECK(!result.isPending(),
+        "Pending token must not escape a context with no fiber");
+
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Done;
+}
+
 static void test_hotkey_retrigger_during_sleep_does_not_double_wake() {
   auto& sched = Scheduler::instance();
 
@@ -3870,6 +3928,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_hotkey_while_loop_exits_via_break();
   std::cout << " PASS hotkey while loop: exits → re-parks as HotkeyWait\n";
 
+  test_runBlockingHostCall_sync_when_no_fiber_executing();
+  std::cout << " PASS runBlockingHostCall: sync inline when no fiber executing (stale current)\n";
+
   test_coroutine_suspend_and_resume();
   std::cout << " PASS coroutine suspend: suspend + unpark roundtrip\n";
 
@@ -3905,7 +3966,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 4 new scheduler API tests + 4 new hotkey query tests
   // + 14 async loop/coroutine/while-loop integration tests
   // + 1 deferred-wakeup-fd poll regression test
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1;
+  // + 1 runBlockingHostCall stale-current regression test
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

@@ -1,5 +1,6 @@
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+#include "havel-lang/compiler/CompilationService.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/InputBackend.hpp"
@@ -1306,6 +1307,9 @@ public:
                                  havel::compiler::VM *vmOverride) -> int {
       namespace fs = std::filesystem;
       auto compile_t0 = havel::startup_now();
+      // The CompilationService boundary (self-hosted split ticket, Milestone C):
+      // the backend is replaceable; NativeCompiler fronts the C++ pipeline.
+      havel::compiler::NativeCompiler backend;
       for (const auto &f : cfg.scriptFiles) {
         std::string content = readScriptFile(f);
         if (content.empty()) {
@@ -1315,11 +1319,13 @@ public:
         havel::compiler::PipelineOptions options = baseOptions;
         options.compile_unit_name = f;
         options.vm_override = vmOverride;
-        auto chunk = havel::compiler::compileToBytecodeChunk(
-            content, "__main__", options);
-        if (!chunk) {
+        auto unit = backend.compileSource(content, "__main__", options);
+        if (!unit.chunk) {
           error("Native precompile failed for {}", f);
           return 1;
+        }
+        if (unit.fromCache) {
+          info("precompile: {} served from .hvc incremental cache", f);
         }
         havel::compiler::ValueSerializer serializer;
         std::error_code ec;
@@ -1328,7 +1334,11 @@ public:
         std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
         std::string cacheDir = havel::Env::cache() + "/havel";
         fs::create_directories(cacheDir, ec);
-        auto bytes = serializer.serializeChunk(*chunk, canonical);
+        auto bytes = serializer.serializeChunk(
+            *unit.chunk, canonical,
+            havel::compiler::computePipelineFingerprint(
+                havel::ModuleLoader::getDefaultCacheDir()),
+            options.strictSemantics, options.optimizeBytecode);
         std::ofstream out(cacheDir + "/" + cacheName + ".hvc", std::ios::binary);
         if (!out.is_open()) {
           error("Cannot write precompiled chunk for {}", f);

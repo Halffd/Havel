@@ -1153,7 +1153,9 @@ for (const auto &err : parser.getErrors()) {
 std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     const std::string &source,
     const std::string &entry_function,
-    const PipelineOptions &options) {
+    const PipelineOptions &options,
+    bool *fromCache) {
+  if (fromCache) *fromCache = false;
   // Incremental serve path (TODO2.md Phase 4): reuse the .hvc entry that
   // autoCacheBytecodeChunk wrote for this compile unit when it validates
   // against the live source text, the current pipeline fingerprint, and the
@@ -1165,6 +1167,7 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   if (auto cached = loadCachedScriptChunk(options.compile_unit_name, source,
                                           options.strictSemantics,
                                           options.optimizeBytecode)) {
+    if (fromCache) *fromCache = true;
     return std::make_unique<BytecodeChunk>(std::move(*cached));
   }
   parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,

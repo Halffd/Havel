@@ -58,9 +58,13 @@ BytecodeSmokeResult runBytecodePipeline(
     const PipelineOptions &options);
 
 // Compile source to bytecode chunk without executing.
+// fromCache (optional out-param): set true when the chunk was served from
+// the .hvc incremental cache instead of a fresh compile — diagnostics only,
+// the chunk is semantically identical either way.
 std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     const std::string &source,
     const std::string &entry_function = "__main__",
-    const PipelineOptions &options = PipelineOptions{});
+    const PipelineOptions &options = PipelineOptions{},
+    bool *fromCache = nullptr);
 
 } // namespace havel::compiler

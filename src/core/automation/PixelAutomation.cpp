@@ -15,11 +15,9 @@
 #include "core/ocr/OCR.hpp"
 #include "core/io/IO.hpp"
 #include "core/automation/ScreenCapture.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#endif
 #include "core/window/WindowManager.hpp"
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 #ifdef LINUX_USED
@@ -118,9 +116,16 @@ struct PixelAutomation::Impl {
                 ScreenPixels pixels;
                 if (provider->capture(region, pixels) && pixels.w > 0 &&
                     pixels.h > 0) {
+                    // Copy into a Mat that owns its buffer before cvtColor runs,
+                    // so the cache never aliases the provider's std::vector —
+                    // that vector dies with this call, and depending on
+                    // cvtColor's dst reallocation to rescue the alias would be
+                    // an implementation detail, not a guarantee.
                     cachedScreenshot = cv::Mat(
-                        pixels.h, pixels.w, CV_8UC4, pixels.bgra.data(),
+                        pixels.h, pixels.w, CV_8UC4,
                         static_cast<size_t>(pixels.w) * 4);
+                    std::memcpy(cachedScreenshot.ptr<uchar>(),
+                                pixels.bgra.data(), pixels.bgra.size());
                     cv::cvtColor(cachedScreenshot, cachedScreenshot,
                                  cv::COLOR_BGRA2BGR);
                 }

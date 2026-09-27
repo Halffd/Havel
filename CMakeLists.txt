@@ -630,6 +630,8 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 list(APPEND CORE_SOURCES
 "src/host/module/ModuleLoader.cpp"
 "src/host/module/ModularHostBridges.hpp"
+"src/host/module/BridgeSelection.cpp"
+"src/host/module/BridgeSelection.hpp"
 # ModularHostBridges.cpp split per-domain (bridges/):
 "src/host/module/bridges/AppBridge.cpp"
 "src/host/module/bridges/AudioBridge.cpp"
@@ -685,6 +687,12 @@ list(APPEND CORE_SOURCES ${_CLIPBOARD_CORE_SOURCES})
 # (all gui/* files unconditionally include qt.hpp)
 if(ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
+  # Qt half of UIBridge. Lives outside src/extensions/gui so the bridge tree
+  # stays together, but compiled into havel_gui (optional) — never into
+  # havel_core / havel_lang_core, which must stay Qt-free.
+  list(APPEND GUI_SOURCES
+      ${CMAKE_SOURCE_DIR}/src/host/module/bridges/qt/QtGuiBridge.cpp
+  )
 else()
   set(GUI_SOURCES "")
 endif()
@@ -1325,6 +1333,7 @@ endif() # QT_BACKEND_AVAILABLE
 if(GTK4_TOOLKIT_AVAILABLE OR GTK_BACKEND_AVAILABLE)
 add_library(havel_toolkit_gtk MODULE
     src/extensions/gtk/havel_toolkit_gtk.cpp
+    src/host/ui/GtkBackend.cpp
 )
 set(_GTK_TK_INCLUDES ${GTK4_TOOLKIT_INCLUDE_DIRS})
 if(GTK_BACKEND_AVAILABLE)
@@ -1595,6 +1604,13 @@ $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
 -Wl,--end-group
 )
+
+# The app selects the optional Qt bridge explicitly (src/main.cpp). The define
+# is what keeps main.cpp free of a reference to installQtGuiBridge in builds
+# where havel_gui does not exist.
+if(ENABLE_QT_UI_BACKEND)
+  target_compile_definitions(havel PRIVATE HAVEL_QT_BRIDGE)
+endif()
 
 
 # ==============================================================================

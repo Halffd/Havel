@@ -2,6 +2,7 @@
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
+#include "../BridgeSelection.hpp"
 #include "BridgesInternal.hpp"
 
 namespace havel::compiler {
@@ -722,10 +723,12 @@ options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
                                                       ctx_](const auto &args) {
     return handleScreenshotMonitor(args, ctx);
   };
-  // GUI notifications
-  options.host_functions["gui.notify"] = [ctx = ctx_](const auto &args) {
-    return handleGUINotify(args, ctx);
-  };
+  // gui.notify needs the Qt-backed GUIManager, so the Qt bridge registers it.
+  // The host selects that bridge explicitly at startup (see BridgeSelection):
+  // a weak hook would not be linked, because ld does not extract an archive
+  // member to satisfy a weak reference.
+  if (auto installQtGuiBridge = ::havel::qtBridgeInstaller())
+    installQtGuiBridge(options, ctx_);
 }
 
 // Helper: Create window object with data fields
@@ -3419,11 +3422,9 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto result = service.captureFullDesktop();
   (void)result;
-#endif
   return Value::makeNull();
 }
 
@@ -3437,46 +3438,15 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
     if (auto *v = (args[0].isInt() ? &args[0] : nullptr))
       monitor = static_cast<int>(v->asInt());
   }
-#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto result = service.captureMonitor(monitor);
   (void)result;
-#endif
   return Value::makeNull();
 }
 
-
-Value UIBridge::handleGUINotify(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
-#ifdef HAVE_QT_EXTENSION
-  if (!ctx || !ctx->guiManager) {
-    return Value::makeBool(false);
-  }
-  if (args.size() < 2) {
-    throw std::runtime_error("gui.notify() requires title and message");
-  }
-
-  const std::string *title = nullptr;
-  const std::string *message = nullptr;
-
-  if (!title || !message) {
-    throw std::runtime_error("gui.notify() requires string arguments");
-  }
-
-  std::string icon = "info";
-  int durationMs = 0;
-
-  if (args.size() > 2 && args[2].isStringValId()) {
-    icon = strVal(args[2], ctx ? ctx->vm : nullptr);
-  }
-  if (args.size() > 3 && args[3].isInt()) {
-    durationMs = static_cast<int>(args[3].asInt());
-  }
-
-  ctx->guiManager->showNotification(*title, *message, icon, durationMs);
-#endif
-  return Value::makeBool(true);
-}
+// handleGUINotify lives in src/host/module/bridges/qt/QtGuiBridge.cpp: the
+// concrete GUIManager it calls is a QObject, so the body cannot sit in this
+// Qt-free translation unit.
 
 // ============================================================================
 // InputBridge Implementation

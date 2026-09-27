@@ -41,9 +41,7 @@ QT_SYM_RE='(^|[^A-Za-z0-9_])(Q[A-Z][A-Za-z0-9_]*::|QObject|QMetaObject|QVariant|
 
 # havel_core objects still known to reference Qt (service layer, not yet
 # extracted). Keep sorted; see part 3 above.
-CORE_KNOWN_QT_LEAKS="Clipboard.cpp.o
-PixelAutomation.cpp.o
-PixelAutomationService.cpp.o"
+CORE_KNOWN_QT_LEAKS="Clipboard.cpp.o"
 
 fail=0
 

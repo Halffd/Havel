@@ -663,7 +663,6 @@ list(APPEND CORE_SOURCES
 # Qt-dependent core sources (only built when in-process Qt backend is enabled)
 if(ENABLE_QT_UI_BACKEND)
   set(_QT_CORE_SOURCES
-    "src/host/automation/PixelAutomationService.cpp"
     "src/host/screenshot/ScreenshotService.cpp"
     "src/host/window/AltTabService.cpp"
   )
@@ -696,6 +695,11 @@ if(ENABLE_QT_UI_BACKEND)
       # goes through the registry in src/host/ui/UIBackendFactory.hpp.
       ${CMAKE_SOURCE_DIR}/src/host/ui/QtBackend.cpp
       ${CMAKE_SOURCE_DIR}/src/host/ui/UIService.cpp
+      # Pixel automation service (the whole TU is inside HAVE_QT_EXTENSION),
+      # and the Qt half of screen capture, which answers the provider slot in
+      # src/core/automation/ScreenCapture.hpp.
+      ${CMAKE_SOURCE_DIR}/src/host/automation/PixelAutomationService.cpp
+      ${CMAKE_SOURCE_DIR}/src/extensions/qt/QtScreenCapture.cpp
   )
 else()
   set(GUI_SOURCES "")
@@ -1377,18 +1381,37 @@ endif()
 
 # ImGui toolkit plugin
 if(IMGUI_BACKEND_AVAILABLE)
+# Dear ImGui ships its runtime sources next to imgui.h, so the toolkit
+# compiles them in and stays self-contained instead of depending on a system
+# imgui library.
+set(IMGUI_RUNTIME_SOURCES
+    ${IMGUI_INCLUDE_DIR}/imgui.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_draw.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_tables.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_widgets.cpp
+    ${IMGUI_INCLUDE_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_INCLUDE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+# GLFW3 already links glib on Linux, and the backend reports through the same
+# g_debug/g_warning channel as the GTK backend.
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
 add_library(havel_toolkit_imgui MODULE
     src/extensions/imgui/havel_toolkit_imgui.cpp
+    src/host/ui/ImGuiBackend.cpp
+    ${IMGUI_RUNTIME_SOURCES}
 )
 target_include_directories(havel_toolkit_imgui PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${GLFW3_INCLUDE_DIRS}
+    ${GLIB2_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIR}
+    ${IMGUI_INCLUDE_DIR}/backends
 )
 target_link_libraries(havel_toolkit_imgui PRIVATE
     ${GLFW3_LIBRARIES}
+    ${GLIB2_LIBRARIES}
     OpenGL::GL
     dl
 )
@@ -2744,6 +2767,35 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(query_system_test PRIVATE cxx_std_23)
     target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME query_system_test COMMAND query_system_test)
+
+    # Screen-provider seam behind PixelAutomation. This test deliberately does
+    # NOT link havel_gui: the whole point of the extraction is that the core
+    # resolves on its own, so the link is part of what it verifies.
+    add_executable(pixel_provider_test
+        tests/pixel_provider_ut.cpp
+    )
+    target_compile_features(pixel_provider_test PRIVATE cxx_std_23)
+    target_compile_definitions(pixel_provider_test PRIVATE
+        $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+    )
+    target_include_directories(pixel_provider_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(pixel_provider_test PRIVATE
+        # gtest_main has to precede the havel archives: havel_lang contains
+        # src/havel-lang/tools/HppCompiler.cpp, which defines its own main, and
+        # with the archives first the linker resolves main from that instead.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
 endif()
 
 # ==============================================================================

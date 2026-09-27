@@ -19,6 +19,7 @@
 
 #include "../../ModularHostBridges.hpp"
 #include "../BridgesInternal.hpp"
+#include "core/automation/ScreenCapture.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/qt/QtScreenshotBackend.hpp"
@@ -152,13 +153,17 @@ void installQtUIBackendFactories() {
 // script pipeline, so waiting for installQtBridge to run would leave the
 // launcher with no backend at all.
 //
+// The screen provider behind pixel automation needs the same treatment: the
+// language host can read pixels through HostAPI.cpp with no bridge installed.
+//
 // The application references installQtBridge strongly, so this translation unit
 // is always extracted from libhavel_gui.a, and an initializer here runs before
-// main(). installQtUIBackendFactories is idempotent, so installQtBridge calling
-// it again is harmless.
+// main(). installQtUIBackendFactories and installQtScreenCapture are
+// idempotent, so installQtBridge calling them again is harmless.
 namespace {
 const bool g_qt_ui_backends_registered = [] {
   havel::host::installQtUIBackendFactories();
+  havel::qt::installQtScreenCapture();
   return true;
 }();
 } // namespace
@@ -171,6 +176,7 @@ namespace havel::compiler {
 
 void installQtBridge(PipelineOptions &options, const HostContext *ctx) {
   havel::host::installQtUIBackendFactories();
+  havel::qt::installQtScreenCapture();
   options.host_functions["clipboard.get"] = [ctx](const auto &args) {
     return clipboardBridgeGet(args, ctx);
   };

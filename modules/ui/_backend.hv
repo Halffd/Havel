@@ -4,6 +4,8 @@
 
 use "ffi" as ffi
 use "env" as env
+use "sys" as sys
+use "fs" as fs
 
 class ShimState {
   handle, fnInit, fnShutdown, fnWindow, fnPanel, fnModal,
@@ -120,11 +122,25 @@ class ShimState {
     @
   }
 
+  fn exeDir() {
+    args = sys.argv()
+    if #args == 0 { return "" }
+    parts = args[0].split("/")
+    if #parts < 2 { return "" }
+    parts.pop()
+    parts.join("/")
+  }
+
   fn shimPath() {
     dir = env.get("HAVEL_SHIM_DIR")
     if dir != null { return dir + "/havel_ui_shim.so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/shims/havel_ui_shim.so" }
+    exe = self.exeDir()
+    if exe != "" {
+      p = exe + "/shims/havel_ui_shim.so"
+      if fs.exists(p) { return p }
+    }
     "havel_ui_shim.so"
   }
 
@@ -133,6 +149,11 @@ class ShimState {
     if dir != null { return dir + "/havel_toolkit_" + name + ".so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/toolkits/havel_toolkit_" + name + ".so" }
+    exe = self.exeDir()
+    if exe != "" {
+      p = exe + "/toolkits/havel_toolkit_" + name + ".so"
+      if fs.exists(p) { return p }
+    }
     "havel_toolkit_" + name + ".so"
   }
 

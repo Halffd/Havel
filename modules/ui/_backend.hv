@@ -305,7 +305,13 @@ class Backend {
       return false
     }
     @uiBackend = b
-    ffi.call(@shim.fnInit, "int32", ["pointer"], @uiBackend)
+    r = ffi.call(@shim.fnInit, "int32", ["pointer"], @uiBackend)
+    if r == 0 {
+      print("ui._backend: " + toolkitName + " backend failed to initialize")
+      ffi.call(@shim.fnShutdown, "void", ["pointer"], @uiBackend)
+      @uiBackend = null
+      return false
+    }
     @shim.initialized = true
     true
   }

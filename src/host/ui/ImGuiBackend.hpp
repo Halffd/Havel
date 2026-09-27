@@ -9,14 +9,18 @@
 
 #include "UIBackend.hpp"
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <deque>
+#include <filesystem>
 
 // Forward declarations for ImGui and GLFW
 struct GLFWwindow;
 struct ImGuiContext;
 struct ImFont;
+struct ImVec2;
 
 namespace havel::host {
 
@@ -80,6 +84,11 @@ public:
     // Realization
     void realize(std::shared_ptr<ui::UIElement> element) override;
 
+    // Element resolution and parenting (id-only over the ffi shim)
+    std::shared_ptr<ui::UIElement> resolve(ui::ElementId id) override;
+    void addChild(std::shared_ptr<ui::UIElement> parent,
+                  std::shared_ptr<ui::UIElement> child) override;
+
     // Show/hide
     void show(std::shared_ptr<ui::UIElement> window) override;
     void hide(std::shared_ptr<ui::UIElement> window) override;
@@ -124,6 +133,15 @@ public:
   // Canvas drawing
   void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
   void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
+  void canvasDrawLine(std::shared_ptr<ui::UIElement> canvas, int x1, int y1, int x2,
+                      int y2) override;
+  void canvasDrawRect(std::shared_ptr<ui::UIElement> canvas, int x, int y, int w,
+                      int h) override;
+  void canvasDrawCircle(std::shared_ptr<ui::UIElement> canvas, int cx, int cy,
+                        int r) override;
+  void canvasSetPen(std::shared_ptr<ui::UIElement> canvas, int r, int g, int b,
+                    int width) override;
+  void canvasFill(std::shared_ptr<ui::UIElement> canvas, int x, int y) override;
 
     // ImGui-specific features
     void setWindowTitle(const std::string &title);
@@ -145,61 +163,89 @@ private:
     int exitCode_ = 0;
     UIBackend::ApplicationMetadata appMeta_;
     
-    std::unordered_map<std::string, std::shared_ptr<ui::UIElement>> elements_;
-    std::unordered_map<std::string, std::string> elementValues_;
-    std::unordered_map<std::string, bool> elementOpen_; // for windows
-    std::vector<std::string> windowStack_;
+    std::unordered_map<ui::ElementId, std::shared_ptr<ui::UIElement>> elements_;
+    std::unordered_map<ui::ElementId, std::string> elementValues_;
+    std::unordered_map<ui::ElementId, bool> elementOpen_; // window visibility
+    std::vector<ui::ElementId> windowStack_;
+    // Creation order: immediate mode redraws the tree in this order so widget
+    // ids and stacking stay stable between frames.
+    std::vector<ui::ElementId> creationOrder_;
     std::function<void()> onAllWindowsClosedCallback_;
     std::function<void()> idleCallback_;
     
     // ImGui-specific storage
-    std::unordered_map<std::string, int> intValues_;
-    std::unordered_map<std::string, float> floatValues_;
-    std::unordered_map<std::string, bool> boolValues_;
-    std::unordered_map<std::string, std::string> textValues_;
-    std::unordered_map<std::string, int> comboSelections_;
+    std::unordered_map<ui::ElementId, int> intValues_;
+    std::unordered_map<ui::ElementId, float> floatValues_;
+    std::unordered_map<ui::ElementId, bool> boolValues_;
+    std::unordered_map<ui::ElementId, std::string> textValues_;
+    std::unordered_map<ui::ElementId, int> comboSelections_;
+    std::unordered_map<ui::ElementId, std::vector<std::string>> dropdownOptions_;
     
     // Tray (not applicable, but track for interface compliance)
     bool trayVisible_ = false;
     std::string trayIconPath_;
     std::string trayTooltip_;
 
+    // In-app notifications, drawn as an overlay for a few seconds
+    struct Toast {
+        std::string message;
+        std::string type;
+        double expiresAt = 0.0;
+    };
+    std::deque<Toast> toasts_;
+
+    // Modal dialogs: the synchronous api sets the pending dialog and pumps
+    // frames until the user answers.
+    struct PendingDialog {
+        enum class Kind { Alert, Confirm, File, Dir } kind = Kind::Alert;
+        std::string message;
+        std::string title;
+        std::string path;            // file/dir browser result
+        std::filesystem::path dir;   // file/dir browser position
+        bool answer = false;         // confirm result
+        bool done = false;
+    };
+    std::unique_ptr<PendingDialog> pendingDialog_;
+    std::string fileDialogBuffer_;
+    double now_ = 0.0;
+    double fpsLimit_ = 0.0;
+    // Frames actually presented since init; reported on close/shutdown so a
+    // silent "not rendering" path is visible in logs.
+    uint64_t frameCount_ = 0;
+
     // Helper methods
     bool initGLFW();
     bool initImGui();
     void shutdownGLFW();
     void shutdownImGui();
+    void reportGlfwError(const char *where) const;
     void renderFrame();
     void processInputs();
-    
-    // Element ID generation
-    std::string generateId(const std::string &prefix);
-    int idCounter_ = 0;
-    
-    // Drawing helpers
-    void drawWindow(std::shared_ptr<ui::UIElement> element);
-    void drawButton(std::shared_ptr<ui::UIElement> element);
-    void drawInput(std::shared_ptr<ui::UIElement> element);
-    void drawTextArea(std::shared_ptr<ui::UIElement> element);
-    void drawCheckbox(std::shared_ptr<ui::UIElement> element);
-    void drawToggle(std::shared_ptr<ui::UIElement> element);
-    void drawSlider(std::shared_ptr<ui::UIElement> element);
-    void drawDropdown(std::shared_ptr<ui::UIElement> element);
-    void drawLabel(std::shared_ptr<ui::UIElement> element);
-    void drawText(std::shared_ptr<ui::UIElement> element);
-    void drawProgress(std::shared_ptr<ui::UIElement> element);
-    void drawImage(std::shared_ptr<ui::UIElement> element);
-    void drawIcon(std::shared_ptr<ui::UIElement> element);
-    void drawRow(std::shared_ptr<ui::UIElement> element);
-    void drawCol(std::shared_ptr<ui::UIElement> element);
-    void drawGrid(std::shared_ptr<ui::UIElement> element);
-    void drawScroll(std::shared_ptr<ui::UIElement> element);
-    void drawCanvas(std::shared_ptr<ui::UIElement> element);
-    void drawMenu(std::shared_ptr<ui::UIElement> element);
-    void drawMenuItem(std::shared_ptr<ui::UIElement> element);
-    void drawDivider();
-    void drawSpacer(int size);
-    void drawSpinner();
+
+    // Runs frames until `done` flips or the deadline passes, so the
+    // synchronous dialog api can block on a user answer.
+    void pumpUntilAnswered(const std::function<bool()> &done, int timeoutMs);
+    void drawPendingDialog();
+    bool drawFileBrowser(bool directoriesOnly);
+
+    // Element ID generation: unique ElementId per element (registry key over
+    // the FFI shim, which passes id-only placeholder elements back in)
+    std::shared_ptr<ui::UIElement> createElem(const char *type);
+    ui::ElementId nextId_ = 1;
+
+    // Stable ImGui widget label for an element id
+    static std::string imguiId(const ui::ElementId id, const char *suffix = "");
+
+    // Immediate-mode tree walk
+    void drawElement(const std::shared_ptr<ui::UIElement> &element);
+    void drawChildren(const std::shared_ptr<ui::UIElement> &parent);
+    void drawMenuContents(const std::shared_ptr<ui::UIElement> &menu);
+    void drawMenuBarFor(const std::shared_ptr<ui::UIElement> &window);
+    void replayCanvas(const std::shared_ptr<ui::UIElement> &element,
+                      ImVec2 origin);
+    void drawToasts();
+    void dropElement(ui::ElementId id);
+
 };
 
 } // namespace havel::host

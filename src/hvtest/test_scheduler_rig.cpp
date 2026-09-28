@@ -3824,6 +3824,124 @@ static void test_removeHotkey_while_hasRunnableFibers() {
   CHECK(!sched.hasRunnableFibers(), "hasRunnableFibers must not crash after removal");
 }
 
+// The reported symptom is "hotkeys stop working" AFTER the session has been
+// running for a while -- every other regression here reproduces on the first
+// trigger. This soaks a persistent hotkey through the full production cycle
+// (io-thread trigger while Running -> handleReturned re-arm -> next trigger)
+// and asserts the two invariants that a per-cycle bug would violate:
+//
+//   1. the goroutine is still pickable and re-wakeable on EVERY cycle, so a
+//      hotkey can never get permanently wedged (the "stops working" state),
+//   2. neither goroutineCount() nor hotkey_queue_size drifts, so repeated
+//      cycles do not leak goroutines or queue entries.
+//
+// A single leaked entry per cycle is invisible after one trigger but grows
+// monotonically under sustained use, which is what the report describes.
+static void test_persistent_hotkey_soak_no_wedge_no_leak() {
+  auto& sched = Scheduler::instance();
+
+  const int cycles = 2000;
+  const HotkeyPolicy policies[] = {HotkeyPolicy::Drop, HotkeyPolicy::Replace,
+                                   HotkeyPolicy::Queue, HotkeyPolicy::Coalesce};
+  const char* names[] = {"Drop", "Replace", "Queue", "Coalesce"};
+
+  const size_t base_goroutines = sched.goroutineCount();
+  const size_t base_queue = sched.getSchedulerSummary().hotkey_queue_size;
+
+  for (int p = 0; p < 4; ++p) {
+    const std::string name = names[p];
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(p)}, 0, "rig_soak");
+    auto* g = sched.get(gid);
+    CHECK(g != nullptr, "spawn returned gid with no goroutine");
+    g->persistent = true;
+    g->hotkey_alias = "soak-" + name;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
+    g->hotkey_args = {Value::makeInt(p)};
+    g->hotkey_policy = policies[p];
+
+    // Drift is measured against the count right after this hotkey exists, so
+    // it isolates "the cycles added goroutines" from any pre-existing state.
+    const size_t count_after_spawn = sched.goroutineCount();
+
+    // createPersistentHotkeyCallback parks the fresh goroutine.
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+    if (g->fiber) {
+      g->fiber->state = FiberState::SUSPENDED;
+      g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+    }
+
+    for (int cycle = 0; cycle < cycles; ++cycle) {
+      // === io thread: a keypress lands while the body is still executing ===
+      // The vm thread owns the Running goroutine, so the live frame must
+      // survive untouched; only the retrigger intent may be recorded.
+      g->state = Scheduler::GoroutineState::Running;
+      g->ip = 1000 + static_cast<uint32_t>(cycle);
+      const uint32_t live_ip = g->ip;
+      const size_t live_depth = g->fiber ? g->fiber->call_stack.size() : 0;
+      bool accepted = sched.wakeHotkey(g, {}, "os-callback-soak");
+      if (policies[p] == HotkeyPolicy::Drop) {
+        CHECK(accepted, name + ": persistent Drop trigger reports accepted");
+        // Drop discards it: no retrigger, so the body runs to completion and
+        // the goroutine parks instead of re-running.
+        CHECK(!g->hotkey_retrigger.load(std::memory_order_acquire),
+              name + ": Drop must not arm the retrigger");
+      } else {
+        CHECK(accepted, name + ": trigger accepted");
+        CHECK(g->ip == live_ip, name + ": trigger must not disturb the live frame ip");
+        CHECK((g->fiber ? g->fiber->call_stack.size() : 0) == live_depth,
+              name + ": trigger must not disturb the live call stack");
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              name + ": trigger must not steal the Running goroutine");
+      }
+
+      // === vm thread: body returns, handleReturned() ===
+      if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+        g->hotkey_retrigger.store(false, std::memory_order_release);
+        sched.requeueFront(g);
+        CHECK(g->state == Scheduler::GoroutineState::Created,
+              name + ": retrigger must re-arm the goroutine");
+        auto* picked = sched.pickNext();
+        CHECK(picked == g,
+              name + ": re-armed hotkey must be the next one picked (cycle " +
+                  std::to_string(cycle) + ")");
+        sched.clearCurrent();
+        g->state = Scheduler::GoroutineState::Running;
+      }
+
+      // Body finished with no pending trigger -> park for the next keypress.
+      g->state = Scheduler::GoroutineState::Suspended;
+      g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+      if (g->fiber) {
+        g->fiber->state = FiberState::SUSPENDED;
+        g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+      }
+    }
+
+    // The hotkey must still be alive and re-wakeable after `cycles` cycles --
+    // this is the assertion that fails for "it stopped working after a while".
+    CHECK_EQ(sched.goroutineCount(), count_after_spawn,
+             name + ": goroutine count must not drift across cycles");
+    CHECK(sched.get(gid) != nullptr, name + ": hotkey must still be registered");
+    bool final_wake = sched.wakeHotkey(g, {}, "os-callback-soak-final");
+    CHECK(final_wake, name + ": hotkey must still fire after the soak");
+    CHECK(g->state == Scheduler::GoroutineState::Created,
+          name + ": final trigger must re-arm the hotkey");
+    CHECK(sched.pickNext() == g, name + ": final re-arm must be pickable");
+    sched.clearCurrent();
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+  }
+
+  sched.cleanupDoneGoroutines();
+
+  CHECK_EQ(sched.goroutineCount(), base_goroutines,
+           "soak must not leak goroutines");
+  CHECK_EQ(sched.getSchedulerSummary().hotkey_queue_size, base_queue,
+           "soak must not leak hotkey queue entries");
+}
+
 static void benchmark_scheduler_pump_cost() {
   auto& sched = Scheduler::instance();
   using clk = std::chrono::steady_clock;
@@ -3960,6 +4078,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
 
   test_os_callback_deferred_while_body_running();
   std::cout << " PASS os callback deferred from io thread while body running: re-arms once\n";
+
+  test_persistent_hotkey_soak_no_wedge_no_leak();
+  std::cout << " PASS persistent hotkey soak: no wedge, no leak over many cycles\n";
 
   test_stop_marks_all_done();
   std::cout << " PASS stop marks all goroutines Done\n";
@@ -4357,7 +4478,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 1 concurrent-spawn gid uniqueness regression test
   // + 1 get()-vs-spawn data race regression test (tsan)
   // + 1 cross-thread os-callback-while-running re-arm regression test
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1 + 1;
+  // + 1 persistent-hotkey soak test (no wedge, no leak over many cycles)
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1 + 1 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

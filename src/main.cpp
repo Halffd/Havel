@@ -1,4 +1,5 @@
 #include "core/init/HavelLauncher.hpp"
+#include "host/module/BridgeSelection.hpp"
 #include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
 #include "utils/StartupTiming.hpp"
@@ -8,6 +9,18 @@
 #include <string>
 #include <filesystem>
 
+#ifdef HAVEL_QT_BRIDGE
+// Definition of the optional Qt bridge installer, in
+// src/host/module/bridges/qt/QtBridge.cpp (compiled into havel_gui).
+// Referencing it here — from the application's own translation unit, not from
+// the core — is what forces the linker to pull that object out of the
+// havel_gui archive. A weak reference would not: ld does not extract an
+// archive member to satisfy one.
+namespace havel::compiler {
+void installQtBridge(PipelineOptions &options, const HostContext *ctx);
+} // namespace havel::compiler
+#endif
+
 #if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
 #include <X11/Xlib.h>
 #endif
@@ -15,6 +28,12 @@
 namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
+#ifdef HAVEL_QT_BRIDGE
+    // Select the optional Qt bridge before any pipeline is built. Hosts that
+    // do not link havel_gui (havel-wm, the AOT runtime) never call this and
+    // stay Qt-free.
+    havel::setQtBridgeInstaller(&havel::compiler::installQtBridge);
+#endif
 #if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
     XInitThreads();
 #endif

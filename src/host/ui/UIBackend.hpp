@@ -98,6 +98,21 @@ public:
     // Realization
     virtual void realize(std::shared_ptr<ui::UIElement> element) = 0;
 
+    // Element resolution. The ffi shim only carries element ids, so backends
+    // that keep the authoritative element expose it here instead of letting
+    // callers mutate a throwaway id-only copy.
+    virtual std::shared_ptr<ui::UIElement> resolve(ui::ElementId id) {
+        (void)id;
+        return nullptr;
+    }
+
+    // Parenting. Also id-only over the shim, so the backend records the tree
+    // edge and links the native child into the native parent.
+    virtual void addChild(std::shared_ptr<ui::UIElement> parent,
+                          std::shared_ptr<ui::UIElement> child) {
+        if (parent && child) parent->add(child);
+    }
+
     // Show/hide
     virtual void show(std::shared_ptr<ui::UIElement> window) = 0;
     virtual void hide(std::shared_ptr<ui::UIElement> window) = 0;

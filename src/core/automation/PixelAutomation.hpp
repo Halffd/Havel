@@ -5,10 +5,9 @@
 #include <vector>
 #include <chrono>
 
-#ifdef HAVE_QT_EXTENSION
-#include <qt.hpp>
-#include <QRect>
-#endif
+// No Qt here. This header is included by HostAPI.cpp in the language archive,
+// which Qt-free hosts link, so it must not name a Qt type. Screen access goes
+// through core/automation/ScreenCapture.hpp, whose Qt half lives in havel_gui.
 
 namespace havel {
 
@@ -29,10 +28,6 @@ struct ScreenRegion {
 
     ScreenRegion() = default;
     ScreenRegion(int x, int y, int w, int h) : x(x), y(y), w(w), h(h) {}
-
-#ifdef HAVE_QT_EXTENSION
-    QRect toQRect() const;
-#endif
 
     static ScreenRegion fullScreen();
 };

@@ -4,7 +4,9 @@
  * Core clipboard operations - NO history, NO monitoring.
  * Just get/set/clear with minimal overhead.
  *
- * Uses Qt internally but doesn't leak Qt types.
+ * Qt-free: the Qt implementation lives in havel_gui
+ * (src/extensions/qt/QtClipboardBackend.hpp) and arrives through
+ * ClipboardBackendFactory.hpp; this file never names a Qt type.
  */
 #pragma once
 
@@ -109,19 +111,19 @@ public:
   bool hasFiles() const;
 
 private:
-  std::unique_ptr<IClipboardBackend> backend_;
-  void *clipboard_ = nullptr;
+  // Lazily created from the registry on first use, so a Clipboard created
+  // after bridge installation still gets the Qt backend. mutable because the
+  // const getters create it.
+  mutable std::unique_ptr<IClipboardBackend> backend_;
   Method method_ = Method::AUTO;
 
+  // Create the registered backend once, when the method allows it. No-op when
+  // there is no factory (Qt-free hosts) or the method pins a non-registry path
+  // (X11/WAYLAND/EXTERNAL/WINDOWS/MACOS), matching what the old inline Qt
+  // branch did.
+  void ensureBackend() const;
+
   // Platform-specific implementations
-#ifdef HAVE_QT_EXTENSION
-  std::string getTextQt() const;
-  std::string getImageQt() const;
-  std::vector<std::string> getFilesQt() const;
-  bool setTextQt(const std::string &text);
-  bool setImageQt(const std::string &base64Png);
-  bool setFilesQt(const std::vector<std::string> &paths);
-#endif
   std::string getTextX11() const;
   std::string getTextWayland() const;
   std::string getTextExternal() const;

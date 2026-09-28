@@ -4,19 +4,15 @@
  * Core clipboard implementation - minimal overhead.
  */
 #include "Clipboard.hpp"
+#include "ClipboardBackendFactory.hpp"
 
-#ifdef HAVE_QT_EXTENSION
-#include <QBuffer>
-#include <QClipboard>
-#include <QGuiApplication>
-#include <QImage>
-#include <QIODevice>
-#include <QList>
-#include <QMimeData>
-#include <QUrl>
-#endif
 #include <cstdlib>
+#include <cerrno>
 #include <chrono>
+#include <poll.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <thread>
 #include <future>
 #include <mutex>
@@ -28,15 +24,32 @@ Clipboard::Clipboard() {
   method_ = detectBestMethod();
 }
 
+void Clipboard::ensureBackend() const {
+  if (backend_) {
+    return;
+  }
+  // The registered backend is the Qt clipboard. Method::X11/WAYLAND/EXTERNAL/
+  // WINDOWS/MACOS pin a non-registry path, which is what the old inline Qt
+  // branch respected.
+  if (method_ != Method::AUTO && method_ != Method::QT) {
+    return;
+  }
+  if (!hasClipboardBackendFactory()) {
+    return;
+  }
+  backend_ = createRegisteredClipboardBackend();
+}
+
 // Run external command with timeout (in milliseconds)
 std::string Clipboard::runWithTimeout(const std::string& cmd, int timeoutMs) const {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-  
-  std::thread([&promise, cmd]() {
+#if defined(_WIN32)
+  auto promise = std::make_shared<std::promise<std::string>>();
+  auto future = promise->get_future();
+
+  std::thread([promise, cmd]() {
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) {
-      promise.set_value("");
+      promise->set_value("");
       return;
     }
     char buffer[4096];
@@ -48,34 +61,223 @@ std::string Clipboard::runWithTimeout(const std::string& cmd, int timeoutMs) con
     if (!result.empty() && result.back() == '\n') {
       result.pop_back();
     }
-    promise.set_value(result);
+    promise->set_value(result);
   }).detach();
-  
+
   if (future.wait_for(std::chrono::milliseconds(2000)) == std::future_status::ready) {
     return future.get();
   }
   return "";
+#else
+  // The promise is shared with the detached thread: the thread may still be
+  // working after this function gave up on the future, and a set_value on a
+  // promise whose object was already destroyed is undefined.
+  auto promise = std::make_shared<std::promise<std::string>>();
+  auto future = promise->get_future();
+
+  std::thread([promise, cmd, timeoutMs]() {
+    int fds[2];
+    if (pipe(fds) != 0) {
+      promise->set_value("");
+      return;
+    }
+    const pid_t pid = fork();
+    if (pid < 0) {
+      close(fds[0]);
+      close(fds[1]);
+      promise->set_value("");
+      return;
+    }
+    if (pid == 0) {
+      close(fds[0]);
+      dup2(fds[1], STDOUT_FILENO);
+      close(fds[1]);
+      execl("/bin/sh", "sh", "-c", cmd.c_str(), static_cast<char *>(nullptr));
+      _exit(127);
+    }
+    close(fds[1]);
+
+    // Read through poll() with a deadline instead of blocking in fgets, and
+    // never park in pclose/waitpid on a live child: a thread blocked under
+    // libc's FILE lock (fgets) or inside pclose (which holds the lock while
+    // waiting for the child) deadlocks _IO_flush_all at process exit. Both
+    // were observed with `xclip -o` hanging on the X selection.
+    const int fd = fds[0];
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    char buffer[4096];
+    std::string result;
+    bool timedOut = false;
+    while (true) {
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now()).count();
+      if (remaining <= 0) {
+        timedOut = true;
+        break;
+      }
+      pollfd pfd{fd, POLLIN, 0};
+      const int ready = poll(&pfd, 1, static_cast<int>(remaining));
+      if (ready < 0) {
+        if (errno == EINTR) continue;
+        timedOut = true;
+        break;
+      }
+      if (ready == 0) {
+        timedOut = true;
+        break;
+      }
+      const ssize_t n = read(fd, buffer, sizeof(buffer));
+      if (n <= 0) {
+        break; // EOF or error
+      }
+      result.append(buffer, static_cast<size_t>(n));
+    }
+    close(fd);
+
+    // Kill the child if it outlived the read, then reap with a short grace
+    // period. Nothing here blocks indefinitely.
+    if (timedOut) {
+      kill(pid, SIGKILL);
+    }
+    int status = 0;
+    bool reaped = false;
+    const auto reapDeadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < reapDeadline) {
+      if (waitpid(pid, &status, WNOHANG) == pid) {
+        reaped = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!reaped) {
+      kill(pid, SIGKILL);
+      waitpid(pid, &status, 0); // a SIGKILLed child reaps promptly
+    }
+
+    if (!timedOut && !result.empty() && result.back() == '\n') {
+      result.pop_back();
+    }
+    promise->set_value(timedOut ? std::string() : result);
+  }).detach();
+
+  if (future.wait_for(std::chrono::milliseconds(2000)) == std::future_status::ready) {
+    return future.get();
+  }
+  return "";
+#endif
 }
 
 bool Clipboard::setTextWithTimeout(const std::string& text, const std::string& cmd, int timeoutMs) const {
-  std::promise<bool> promise;
-  auto future = promise.get_future();
-  
-  std::thread([&promise, text, cmd]() {
+#if defined(_WIN32)
+  // Shared promise, same reason as runWithTimeout.
+  auto promise = std::make_shared<std::promise<bool>>();
+  auto future = promise->get_future();
+
+  std::thread([promise, text, cmd]() {
     FILE* pipe = popen(cmd.c_str(), "w");
     if (!pipe) {
-      promise.set_value(false);
+      promise->set_value(false);
       return;
     }
     fputs(text.c_str(), pipe);
     int ret = pclose(pipe);
-    promise.set_value(ret == 0);
+    promise->set_value(ret == 0);
   }).detach();
-  
+
   if (future.wait_for(std::chrono::milliseconds(timeoutMs)) == std::future_status::ready) {
     return future.get();
   }
   return false;
+#else
+  // Shared promise, same reason as runWithTimeout. Same poll/kill/reap
+  // structure: a thread parked on a live child deadlocks process exit.
+  auto promise = std::make_shared<std::promise<bool>>();
+  auto future = promise->get_future();
+
+  std::thread([promise, text, cmd, timeoutMs]() {
+    int fds[2];
+    if (pipe(fds) != 0) {
+      promise->set_value(false);
+      return;
+    }
+    const pid_t pid = fork();
+    if (pid < 0) {
+      close(fds[0]);
+      close(fds[1]);
+      promise->set_value(false);
+      return;
+    }
+    if (pid == 0) {
+      close(fds[0]);
+      dup2(fds[1], STDIN_FILENO);
+      close(fds[1]);
+      execl("/bin/sh", "sh", "-c", cmd.c_str(), static_cast<char *>(nullptr));
+      _exit(127);
+    }
+    close(fds[1]);
+
+    const int fd = fds[0];
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    bool timedOut = false;
+    size_t written = 0;
+    while (written < text.size()) {
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now()).count();
+      if (remaining <= 0) {
+        timedOut = true;
+        break;
+      }
+      pollfd pfd{fd, POLLOUT, 0};
+      const int ready = poll(&pfd, 1, static_cast<int>(remaining));
+      if (ready < 0) {
+        if (errno == EINTR) continue;
+        timedOut = true;
+        break;
+      }
+      if (ready == 0) {
+        timedOut = true;
+        break;
+      }
+      const ssize_t n = write(fd, text.data() + written, text.size() - written);
+      if (n <= 0) {
+        timedOut = true;
+        break;
+      }
+      written += static_cast<size_t>(n);
+    }
+    // Closing the write end is what tells a stdin-reading command to finish;
+    // the read end is unused here but must not leak.
+    close(fd);
+
+    if (timedOut) {
+      kill(pid, SIGKILL);
+    }
+    int status = 0;
+    bool reaped = false;
+    const auto reapDeadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < reapDeadline) {
+      if (waitpid(pid, &status, WNOHANG) == pid) {
+        reaped = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!reaped) {
+      kill(pid, SIGKILL);
+      waitpid(pid, &status, 0); // a SIGKILLed child reaps promptly
+    }
+
+    promise->set_value(!timedOut);
+  }).detach();
+
+  if (future.wait_for(std::chrono::milliseconds(timeoutMs)) == std::future_status::ready) {
+    return future.get();
+  }
+  return false;
+#endif
 }
 
 Clipboard::Method Clipboard::detectBestMethod() {
@@ -91,12 +293,10 @@ Clipboard::Method Clipboard::detectBestMethod() {
     return Method::X11;
   }
 
-#ifdef HAVE_QT_EXTENSION
-  // Default to Qt if available
-  if (QGuiApplication::instance()) {
-    return Method::QT;
-  }
-#endif
+  // No Qt check here: the Qt backend arrives through the registry, and
+  // AUTO tries it first via ensureBackend, so Qt is still preferred when the
+  // Qt bridge is installed. Without a QApplication the Qt backend reports
+  // empty and AUTO falls through, exactly as the old inline check did.
 
   // Fallback to external commands
   return Method::EXTERNAL;
@@ -113,35 +313,19 @@ IClipboardBackend* Clipboard::backend() const {
 }
 
 void Clipboard::setMethod(Method method) {
+  // The registered backend (the Qt one) handles Method::QT; there is no
+  // Qt-specific pointer to refresh here any more.
   method_ = method;
-  // Re-initialize clipboard with new method
-  if (method_ == Method::QT) {
-#ifdef HAVE_QT_EXTENSION
-    if (QGuiApplication::instance()) {
-      clipboard_ = QGuiApplication::clipboard();
-    }
-#endif
-  } else {
-    // For other methods, we don't need a cached pointer
-    clipboard_ = nullptr;
-  }
 }
 
 std::string Clipboard::getText() const {
-    // 1. Try backend first
+    // 1. Try backend first (explicit, or lazily created from the registry)
+    ensureBackend();
     if (backend_) {
         std::string result = backend_->getText();
         if (!result.empty()) return result;
     }
-    
-#ifdef HAVE_QT_EXTENSION
-    // 1. Qt (if built and available)
-    if (method_ == Method::QT || method_ == Method::AUTO) {
-        std::string result = getTextQt();
-        if (!result.empty()) return result;
-    }
-#endif
-    
+
     // 2. Wayland native
     if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
         std::string result = getTextWayland();
@@ -165,18 +349,12 @@ std::string Clipboard::getText() const {
 }
 
 bool Clipboard::setText(const std::string &text) {
-    // 1. Try backend first
+    // 1. Try backend first (explicit, or lazily created from the registry)
+    ensureBackend();
     if (backend_) {
         if (backend_->setText(text)) return true;
     }
-    
-#ifdef HAVE_QT_EXTENSION
-    // 1. Qt (if built and available)
-    if (method_ == Method::QT || method_ == Method::AUTO) {
-        if (setTextQt(text)) return true;
-    }
-#endif
-    
+
     // 2. Wayland native
     if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
         if (setTextWayland(text)) return true;
@@ -203,33 +381,9 @@ bool Clipboard::hasText() const { return !getText().empty(); }
 // ============================================================================
 // Qt Implementation
 // ============================================================================
-
-#ifdef HAVE_QT_EXTENSION
-
-std::string Clipboard::getTextQt() const {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return "";
-  }
-  return cb->text().toStdString();
-}
-
-bool Clipboard::setTextQt(const std::string &text) {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return false;
-  }
-  cb->setText(QString::fromStdString(text));
-  return true;
-}
-
-#endif // HAVE_QT_EXTENSION
+// The Qt implementation lives in src/extensions/qt/QtClipboardBackend.hpp and
+// arrives here through ClipboardBackendFactory.hpp; ensureBackend() creates it
+// lazily, so there is nothing Qt-specific left in this file.
 
 // ============================================================================
 
@@ -328,13 +482,10 @@ bool Clipboard::setTextMacOS(const std::string &text) {
 // ============================================================================
 
 std::string Clipboard::getImage() const {
+    ensureBackend();
     if (backend_) return backend_->getImage();
     // Platform-specific image clipboard support
     switch (method_) {
-#ifdef HAVE_QT_EXTENSION
-  case Method::QT:
-    return getImageQt();
-#endif
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:
@@ -348,12 +499,9 @@ std::string Clipboard::getImage() const {
 }
 
 bool Clipboard::setImage(const std::string &base64Png) {
+    ensureBackend();
     if (backend_) return backend_->setImage(base64Png);
     switch (method_) {
-#ifdef HAVE_QT_EXTENSION
-  case Method::QT:
-    return setImageQt(base64Png);
-#endif
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:
@@ -366,50 +514,5 @@ bool Clipboard::setImage(const std::string &base64Png) {
     return false;
   }
 }
-
-#ifdef HAVE_QT_EXTENSION
-
-// Qt Image Implementation
-std::string Clipboard::getImageQt() const {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return "";
-  }
-
-  QImage image = cb->image();
-  if (image.isNull()) {
-    return "";
-  }
-
-  QByteArray byteArray;
-  QBuffer buffer(&byteArray);
-  buffer.open(QIODevice::WriteOnly);
-  image.save(&buffer, "PNG");
-  return byteArray.toBase64().toStdString();
-}
-
-bool Clipboard::setImageQt(const std::string &base64Png) {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return false;
-  }
-
-  QByteArray byteArray = QByteArray::fromBase64(QString::fromStdString(base64Png).toUtf8());
-  QImage image;
-  image.loadFromData(byteArray, "PNG");
-  if (image.isNull()) {
-    return false;
-  }
-  cb->setImage(image);
-  return true;
-}
-
-#endif // HAVE_QT_EXTENSION
 
 } // namespace havel::host

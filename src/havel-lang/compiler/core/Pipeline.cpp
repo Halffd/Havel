@@ -1,5 +1,6 @@
 #include "Pipeline.hpp"
 #include "../../../utils/Logger.hpp"
+#include "../../../utils/StartupTiming.hpp"
 
 #include "../../errors/ErrorSystem.h"
 #include "lexer/Lexer.hpp"
@@ -1153,7 +1154,22 @@ for (const auto &err : parser.getErrors()) {
 std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     const std::string &source,
     const std::string &entry_function,
-    const PipelineOptions &options) {
+    const PipelineOptions &options,
+    bool *fromCache) {
+  if (fromCache) *fromCache = false;
+  const bool timing = ::havel::startup_timing_enabled();
+  const auto t_total = ::havel::startup_now();
+  auto t_stage = ::havel::startup_now();
+  // [compile] diagnostics block (self-hosted split ticket #42). Emitted via
+  // the startup-timing channel (HAVEL_STARTUP_TIMING=1) so regressions are
+  // obvious without a debugger. Cache: HIT/MISS + per-stage wall times.
+  if (timing) {
+    fprintf(stderr, "[compile] source:     %s\n",
+            options.compile_unit_name.c_str());
+    fprintf(stderr, "[compile] frontend:   native\n");
+    fprintf(stderr, "[compile] cache:      miss\n");
+    fflush(stderr);
+  }
   // Incremental serve path (TODO2.md Phase 4): reuse the .hvc entry that
   // autoCacheBytecodeChunk wrote for this compile unit when it validates
   // against the live source text, the current pipeline fingerprint, and the
@@ -1165,6 +1181,11 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   if (auto cached = loadCachedScriptChunk(options.compile_unit_name, source,
                                           options.strictSemantics,
                                           options.optimizeBytecode)) {
+    if (fromCache) *fromCache = true;
+    if (timing) {
+      fprintf(stderr, "[compile] cache:      hit\n");
+      ::havel::startup_timing_report("compile.total", t_total);
+    }
     return std::make_unique<BytecodeChunk>(std::move(*cached));
   }
   parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,
@@ -1181,6 +1202,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     COMPILER_THROW(formatDiagnostic("ParseError", e.what(),
                                     options.compile_unit_name, source, e.line,
                                     e.column, e.length, "here"));
+  }
+  if (timing) {
+    ::havel::startup_timing_report("compile.tokenize+parse", t_stage);
+    t_stage = ::havel::startup_now();
   }
   if (!program) {
     COMPILER_THROW("Bytecode pipeline failed: parser returned null AST");
@@ -1199,6 +1224,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
 
   TypeChecker typeChecker;
   auto typeCheckResult = typeChecker.check(*program);
+  if (timing) {
+    ::havel::startup_timing_report("compile.typecheck", t_stage);
+    t_stage = ::havel::startup_now();
+  }
   if (!typeCheckResult.errors.empty()) {
     std::string allTypeErrors;
     for (const auto &err : typeCheckResult.errors) {
@@ -1282,6 +1311,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
 
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
+  if (timing) {
+    ::havel::startup_timing_report("compile.semantic", t_stage);
+    t_stage = ::havel::startup_now();
+  }
 
   // Report semantic errors
   if (!semResult.errors.empty()) {
@@ -1319,6 +1352,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   // compile options this request used (version-6 header).
   autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
                          options.strictSemantics, options.optimizeBytecode);
+  if (timing) {
+    ::havel::startup_timing_report("compile.emit", t_stage);
+    ::havel::startup_timing_report("compile.total", t_total);
+  }
 
   return chunk;
 }

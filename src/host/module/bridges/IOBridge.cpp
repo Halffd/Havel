@@ -158,40 +158,12 @@ Value IOBridge::handleSendText(const std::vector<Value> &args,
   if (args.empty() || !ctx->io) {
     return Value::makeBool(false);
   }
-  // TODO: string support - disabled until string pooling is implemented
+  // TODO: string support - disabled until string pooling is implemented.
+  // The old clipboard-paste implementation (QClipboard round-trip) was
+  // removed here: it was dead (#if 0), referenced a variable that no longer
+  // existed, and was the last Qt dependency in this Qt-free TU.
   (void)args;
   return Value::makeBool(false);
-#if 0
-  if (false) { // TODO: string support
-    // Use clipboard for reliable text input (handles all characters, spaces,
-    // newlines)
-    if (ctx->clipboardManager) {
-      // Backup old clipboard text
-      QString oldText = ctx->clipboardManager->getClipboard()->text();
-
-      // Set new text
-      ctx->clipboardManager->getClipboard()->setText(
-          QString::fromStdString(*text));
-
-      // Minimal delay - just enough for clipboard to sync
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-      // Send Ctrl+V to paste
-      ctx->io->Send("{LCtrl down}");
-      ctx->io->Send("v");
-      ctx->io->Send("{LCtrl up}");
-
-      // Restore old clipboard
-      ctx->clipboardManager->getClipboard()->setText(oldText);
-    } else {
-      // Fallback: use IO::SendText (handles clipboard backup/restore on
-      // Windows) or key events on Linux
-      ctx->io->SendText(*text);
-    }
-    return Value::makeBool(true);
-  }
-  return Value::makeBool(false);
-#endif
 }
 
 

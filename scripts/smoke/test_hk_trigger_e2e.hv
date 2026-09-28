@@ -1,0 +1,27 @@
+// Regression: full hotkey trigger path end-to-end (Milestone: "Havel
+// controls the WM"). Register F24 => { callback with WM action }, fire it
+// via hotkey.trigger, assert the callback RAN and the WM action executed.
+// The fiber wake is async, so a short sleep separates trigger from check —
+// matching real EventListener-driven input timing.
+// Expected: TRIGGERED printed, wm raise=true, fired==1, rc 0.
+
+use window
+
+fired = 0
+
+F24 => {
+    print("TRIGGERED")
+    fired = fired + 1
+    w = window.active()
+    print("wm raise:", w.raise())
+}
+
+print("registered, firing")
+hotkey.trigger("F24")
+sleep(200)
+print("fired:", fired)
+if fired != 1 {
+    print("FAIL hk-trigger-e2e: callback did not run")
+    process.exit(255)
+}
+process.exit(0)

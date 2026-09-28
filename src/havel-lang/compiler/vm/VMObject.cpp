@@ -145,9 +145,7 @@ Value VM::execLengthOp(Value v) {
  if (fnIt != host_functions.end()) return fnIt->second({v});
 }
   }
-  // DEBUG
-  fprintf(stderr, "DEBUG len: value received\n");
-  fflush(stderr);
+  // No op_length method and no object.len prototype: nothing to call.
   COMPILER_THROW("Length operator requires array, string, object, or set");
 }
  if (v.isArrayId()) {
@@ -185,11 +183,17 @@ Value VM::execLengthOp(Value v) {
     if (count < 0) count = 0;
     return Value::makeInt(count);
   }
-  // DEBUG
+  // No branch matched: log the tag so a bad encoding cannot fail silently,
+  // then throw.
   uint64_t tag = v.getTagBits() & 0x7;
-  fprintf(stderr, "DEBUG len: value tag = %llu (isArray=%d isString=%d isObject=%d isSet=%d isRange=%d isIter=%d)\n",
-          (unsigned long long)tag, v.isArrayId(), v.isStringId(), v.isObjectId(), v.isSetId(), v.isRangeId(), v.isIteratorId());
-  fflush(stderr);
+  havel::debug(
+      "len operator: unhandled value tag=" + std::to_string(tag) +
+      " isArray=" + std::to_string(static_cast<int>(v.isArrayId())) +
+      " isString=" + std::to_string(static_cast<int>(v.isStringId())) +
+      " isObject=" + std::to_string(static_cast<int>(v.isObjectId())) +
+      " isSet=" + std::to_string(static_cast<int>(v.isSetId())) +
+      " isRange=" + std::to_string(static_cast<int>(v.isRangeId())) +
+      " isIter=" + std::to_string(static_cast<int>(v.isIteratorId())));
   COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 

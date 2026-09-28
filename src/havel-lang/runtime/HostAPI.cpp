@@ -81,14 +81,11 @@ const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLi
 #include "core/automation/PixelAutomation.hpp"
 #include "core/io/MapManager.hpp"
 #include "core/process/ProcessManager.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
-#include "extensions/gui/common/GUIManager.hpp"
-#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#endif
+// GUIManager / ScreenshotManager / ClipboardManager are held as opaque
+// pointers only; HostAPI.hpp forward-declares all three. Including their
+// Qt-backed headers here would drag qt.hpp into libhavel_lang_core.
 #include "core/media/AudioManager.hpp"
 #include "core/window/WindowManager.hpp"
-// #include <QGuiApplication>
 
 namespace havel {
 

@@ -16,7 +16,9 @@ void registerTypeModule(const VMApi &api) {
     });
     api.registerFunction("type._isString", [](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("type._isString() requires an argument");
-        return Value(args[0].isStringValId());
+        // STRING_ID (heap string, e.g. str() output) and STRING_VAL_ID (chunk
+        // literal) are both strings.
+        return Value(args[0].isStringValId() || args[0].isStringId());
     });
     api.registerFunction("type._isArray", [](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("type._isArray() requires an argument");
@@ -99,7 +101,9 @@ void registerTypeModule(const VMApi &api) {
     });
     api.registerFunction("isString", [](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("isString() requires an argument");
-        return Value(args[0].isStringValId());
+        // STRING_ID (heap string, e.g. str() output) and STRING_VAL_ID (chunk
+        // literal) are both strings.
+        return Value(args[0].isStringValId() || args[0].isStringId());
     });
     api.registerFunction("isArray", [](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("isArray() requires an argument");
@@ -128,7 +132,7 @@ void registerTypeModule(const VMApi &api) {
         if (arg.isBool()) return Value::makeBool(arg.asBool());
         if (arg.isInt()) return Value::makeInt(arg.asInt());
         if (arg.isDouble()) return Value::makeDouble(arg.asDouble());
-        if (arg.isStringValId()) return arg;
+        if (arg.isStringValId() || arg.isStringId()) return arg;
         return Value::makeNull();
     });
     api.registerFunction("toNumber", [](const std::vector<Value> &args) {

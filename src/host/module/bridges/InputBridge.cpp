@@ -490,10 +490,8 @@ InputBridge::handleAltTabShow(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.show();
-#endif
   return Value::makeBool(true);
 }
 
@@ -503,10 +501,8 @@ InputBridge::handleAltTabHide(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.hide();
-#endif
   return Value::makeBool(true);
 }
 
@@ -516,10 +512,8 @@ InputBridge::handleAltTabToggle(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.toggle();
-#endif
   return Value::makeBool(true);
 }
 
@@ -529,10 +523,8 @@ InputBridge::handleAltTabNext(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.next();
-#endif
   return Value::makeBool(true);
 }
 
@@ -542,10 +534,8 @@ InputBridge::handleAltTabPrevious(const std::vector<Value> &args,
                                   const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.previous();
-#endif
   return Value::makeBool(true);
 }
 
@@ -555,10 +545,8 @@ InputBridge::handleAltTabSelect(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   altTab.select();
-#endif
   return Value::makeBool(true);
 }
 
@@ -567,7 +555,6 @@ Value
 InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
                                     const HostContext *ctx) {
   (void)args;
-#ifdef HAVE_QT_EXTENSION
   ::havel::AltTabService altTab;
   auto windows = altTab.getWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
@@ -589,7 +576,6 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
     vm->pushHostArrayValue(arr, Value::makeObjectId(winObj.id));
   }
   return Value::makeArrayId(arr.id);
-#endif
 }
 
 // ============================================================================

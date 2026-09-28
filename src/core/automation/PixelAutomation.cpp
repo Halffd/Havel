@@ -14,16 +14,10 @@
 
 #include "core/ocr/OCR.hpp"
 #include "core/io/IO.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#endif
+#include "core/automation/ScreenCapture.hpp"
 #include "core/window/WindowManager.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include <QCursor>
-#include <QGuiApplication>
-#include <QScreen>
-#endif
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 #ifdef LINUX_USED
@@ -79,19 +73,15 @@ int Color::distance(const Color &other) const {
 // ScreenRegion Implementation
 // ============================================================================
 
-#ifdef HAVE_QT_EXTENSION
-QRect ScreenRegion::toQRect() const { return QRect(x, y, w, h); }
-#endif
-
 ScreenRegion ScreenRegion::fullScreen() {
-#ifdef HAVE_QT_EXTENSION
-    QScreen *primaryScreen = QGuiApplication::primaryScreen();
-    if (primaryScreen) {
-        QRect geometry = primaryScreen->geometry();
-        return ScreenRegion(geometry.x(), geometry.y(), geometry.width(),
-                            geometry.height());
+    // The Qt implementation of the screen provider lives in havel_gui; with no
+    // provider registered this falls back to the same 1920x1080 as before.
+    if (const ScreenProvider *provider = screenProvider()) {
+        ScreenBounds bounds;
+        if (provider->bounds(bounds)) {
+            return ScreenRegion(bounds.x, bounds.y, bounds.w, bounds.h);
+        }
     }
-#endif
     return ScreenRegion(0, 0, 1920, 1080);
 }
 
@@ -117,35 +107,38 @@ struct PixelAutomation::Impl {
         std::chrono::steady_clock::time_point captureTime;
         int expiryMs = 0;
 
-        void capture() {
-#ifdef HAVE_QT_EXTENSION
-            QScreen *primaryScreen = QGuiApplication::primaryScreen();
-            if (primaryScreen) {
-                QPixmap pixmap = primaryScreen->grabWindow(0);
-                QImage image = pixmap.toImage();
-                cachedScreenshot =
-                    cv::Mat(image.height(), image.width(), CV_8UC4,
-                            const_cast<uchar *>(image.bits()), image.bytesPerLine());
-                cv::cvtColor(cachedScreenshot, cachedScreenshot, cv::COLOR_BGRA2BGR);
+        // Screen pixels come from whichever platform registered a provider; the
+        // Qt one is in havel_gui. With none registered there is nothing to
+        // cache, which is the same state the old code reached when
+        // primaryScreen() was null.
+        void grabInto(const ScreenBounds &region) {
+            if (const ScreenProvider *provider = screenProvider()) {
+                ScreenPixels pixels;
+                if (provider->capture(region, pixels) && pixels.w > 0 &&
+                    pixels.h > 0) {
+                    // Copy into a Mat that owns its buffer before cvtColor runs,
+                    // so the cache never aliases the provider's std::vector —
+                    // that vector dies with this call, and depending on
+                    // cvtColor's dst reallocation to rescue the alias would be
+                    // an implementation detail, not a guarantee.
+                    cachedScreenshot = cv::Mat(
+                        pixels.h, pixels.w, CV_8UC4,
+                        static_cast<size_t>(pixels.w) * 4);
+                    std::memcpy(cachedScreenshot.ptr<uchar>(),
+                                pixels.bgra.data(), pixels.bgra.size());
+                    cv::cvtColor(cachedScreenshot, cachedScreenshot,
+                                 cv::COLOR_BGRA2BGR);
+                }
             }
-#endif
             captureTime = std::chrono::steady_clock::now();
         }
 
+        void capture() {
+            grabInto({});
+        }
+
         void captureRegion(const ScreenRegion &region) {
-#ifdef HAVE_QT_EXTENSION
-            QScreen *primaryScreen = QGuiApplication::primaryScreen();
-            if (primaryScreen) {
-                QPixmap pixmap = primaryScreen->grabWindow(
-                    0, region.x, region.y, region.w, region.h);
-                QImage image = pixmap.toImage();
-                cachedScreenshot =
-                    cv::Mat(image.height(), image.width(), CV_8UC4,
-                            const_cast<uchar *>(image.bits()), image.bytesPerLine());
-                cv::cvtColor(cachedScreenshot, cachedScreenshot, cv::COLOR_BGRA2BGR);
-            }
-#endif
-            captureTime = std::chrono::steady_clock::now();
+            grabInto({region.x, region.y, region.w, region.h});
         }
 
         const cv::Mat &get() const { return cachedScreenshot; }
@@ -252,12 +245,10 @@ PixelAutomation::PixelAutomation() : impl_(std::make_unique<Impl>()) {}
 PixelAutomation::~PixelAutomation() = default;
 
 Color PixelAutomation::getPixel(int x, int y) {
-#ifdef HAVE_QT_EXTENSION
-    QScreen *primaryScreen = QGuiApplication::primaryScreen();
-    if (!primaryScreen) return Color(0, 0, 0);
+    const ScreenProvider *provider = screenProvider();
+    if (!provider) return Color(0, 0, 0);
 
     bool cursorHidden = false;
-    int cursorX = 0, cursorY = 0;
 
 #ifdef LINUX_USED
     Display *display = havel::DisplayManager::GetDisplay();
@@ -267,9 +258,8 @@ Color PixelAutomation::getPixel(int x, int y) {
         unsigned int mask;
         if (XQueryPointer(display, DefaultRootWindow(display), &root, &child,
                           &rootX, &rootY, &winX, &winY, &mask)) {
-            cursorX = rootX;
-            cursorY = rootY;
-            if (std::abs(cursorX - x) < 10 && std::abs(cursorY - y) < 10) {
+            if (std::abs(rootX - x) < 10 && std::abs(rootY - y) < 10) {
+                // The cursor would otherwise be sampled as the pixel under test.
                 XFixesHideCursor(display, DefaultRootWindow(display));
                 XFlush(display);
                 cursorHidden = true;
@@ -279,27 +269,27 @@ Color PixelAutomation::getPixel(int x, int y) {
     }
 #endif
 
-    int captureSize = 3;
-    QPixmap pixmap = primaryScreen->grabWindow(0, x - 1, y - 1, captureSize, captureSize);
+    // A 3x3 grab, sampled at its centre — what the old QScreen::grabWindow call
+    // did, so the coordinates line up with the old behaviour.
+    constexpr int captureSize = 3;
+    const ScreenBounds region{x - 1, y - 1, captureSize, captureSize};
+    ScreenPixels pixels;
+    const bool captured = provider->capture(region, pixels);
 
 #ifdef LINUX_USED
-    if (display) {
-        if (cursorHidden) {
-            XFixesShowCursor(display, DefaultRootWindow(display));
-            XFlush(display);
-        }
+    if (cursorHidden) {
+        XFixesShowCursor(display, DefaultRootWindow(display));
+        XFlush(display);
     }
 #endif
 
-    if (pixmap.isNull()) return Color(0, 0, 0);
+    if (!captured || pixels.w < captureSize || pixels.h < captureSize)
+        return Color(0, 0, 0);
 
-    QImage image = pixmap.toImage();
-    QRgb rgb = image.pixel(1, 1);
-    return Color(qRed(rgb), qGreen(rgb), qBlue(rgb), qAlpha(rgb));
-#else
-    (void)x; (void)y;
-    return Color(0, 0, 0);
-#endif
+    // bgra is blue, green, red, alpha in memory order.
+    const size_t offset = (static_cast<size_t>(1) * pixels.w + 1) * 4;
+    return Color(pixels.bgra[offset + 2], pixels.bgra[offset + 1],
+                 pixels.bgra[offset], pixels.bgra[offset + 3]);
 }
 
 bool PixelAutomation::pixelMatch(int x, int y, const Color &expectedColor, int tolerance) {

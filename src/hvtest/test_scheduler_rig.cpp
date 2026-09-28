@@ -485,6 +485,111 @@ static void test_drainDeferredCallbacks_spawn_integration() {
   sched.clearCurrent();
 }
 
+// Reproduces the production topology of a real keypress end to end.
+//
+// EventListener::DispatchHotkeyCallback dispatches the OS callback on a
+// detached thread; InputBridge's OS callback defers it through deferToVM (no
+// thread guard), and the deferred lambda then runs the isHotkeyPending +
+// get + wakeHotkey sequence on the io thread. ExecutionEngine::executeFrame
+// drains those callbacks from the io thread even when vm_->isInExecute() is
+// true, so the drain can land while the vm thread still has a hotkey goroutine
+// in state Running.
+//
+// The contract under test: the live frame survives the foreign drain, the
+// trigger is recorded as intent instead of resetting the goroutine, and the
+// goroutine re-arms exactly once when the vm thread re-arms it after the body
+// (what ExecutionEngine::handleReturned does).
+static void test_os_callback_deferred_while_body_running() {
+    auto& sched = Scheduler::instance();
+
+    for (auto policy : {HotkeyPolicy::Drop, HotkeyPolicy::Replace,
+                        HotkeyPolicy::Queue, HotkeyPolicy::Coalesce}) {
+        uint32_t gid = sched.spawnHotkey(7, {Value::makeInt(1)}, 0, "os_cb_hk");
+        auto* g = sched.get(gid);
+        g->persistent = true;
+        g->hotkey_policy = policy;
+        g->hotkey_alias = "os_cb_alias";
+        g->hotkey_callable = Value::makeFunctionObjId(7);
+        g->hotkey_args = {Value::makeInt(1)};
+
+        // vm thread: take the hotkey and start its body.
+        auto* picked = sched.pickNext();
+        CHECK(picked == g, "expected the persistent hotkey to be picked");
+        sched.clearCurrent();
+        g->state = Scheduler::GoroutineState::Running;
+        g->ip = 31337;
+        g->locals = {Value::makeInt(5)};
+        if (g->fiber) {
+            g->fiber->pushCall(77, 0, nullptr);
+            g->fiber->stack.push(Value::makeInt(9));
+        }
+        size_t live_frames = g->fiber ? g->fiber->call_stack.size() : 0;
+
+        // detached (io) thread: exactly the InputBridge OS-callback lambda.
+        std::thread io([&sched, gid, policy](){
+            sched.deferToVM([&sched, gid, policy](){
+                if (policy == HotkeyPolicy::Drop && sched.isHotkeyPending(gid)) {
+                    return;
+                }
+                auto* wg = sched.get(gid);
+                if (!wg) return;
+                sched.wakeHotkey(wg, {}, "os-callback");
+            });
+        });
+        io.join();
+
+        // io thread: drain, while the vm thread is still inside the body.
+        sched.drainDeferredCallbacks();
+
+        // The body was not corrupted and the trigger was not applied to it.
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              "foreign drain must not take ownership of the running goroutine");
+        CHECK_EQ(g->ip, 31337u, "foreign drain must not reset the live ip");
+        if (g->fiber) {
+            CHECK_EQ(g->fiber->call_stack.size(), live_frames,
+                     "foreign drain must not clear the live call stack");
+        }
+        if (policy != HotkeyPolicy::Drop) {
+            CHECK(g->hotkey_retrigger.load(std::memory_order_acquire),
+                  "non-Drop trigger arriving mid-body must set the retrigger flag");
+        } else {
+            // Drop policy deliberately discards a trigger on a busy goroutine.
+            CHECK(!g->hotkey_retrigger.load(std::memory_order_acquire),
+                  "Drop policy must not set the retrigger flag while running");
+        }
+        CHECK(sched.pickNext() != g, "running goroutine must not be in a run queue");
+
+        // vm thread: body finished. Mirror ExecutionEngine::handleReturned:
+        // retrigger set -> re-queue and run again; otherwise park in
+        // HotkeyWait and wait for the next trigger.
+        if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+            g->hotkey_retrigger.store(false, std::memory_order_release);
+            sched.requeueFront(g);
+            CHECK(g->state == Scheduler::GoroutineState::Created,
+                  "goroutine should be re-armed after the body completed");
+            auto* rearmed = sched.pickNext();
+            CHECK(rearmed == g, "re-armed hotkey must be picked up exactly once");
+        } else {
+            g->state = Scheduler::GoroutineState::Suspended;
+            g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait,
+                                      std::memory_order_release);
+            CHECK(!sched.isHotkeyPending(gid),
+                  "parked hotkey is idle, not pending (regression 0d576573)");
+            // The discarded trigger must not disarm the hotkey: the next
+            // keypress has to wake it again.
+            sched.wakeHotkey(g, {}, "os-callback");
+            CHECK(g->state == Scheduler::GoroutineState::Created,
+                  "next keypress must wake the parked hotkey");
+            auto* rewoken = sched.pickNext();
+            CHECK(rewoken == g, "re-woken hotkey must be picked up");
+        }
+
+        g->state = Scheduler::GoroutineState::Done;
+        sched.clearCurrent();
+        sched.cleanupDoneGoroutines();
+    }
+}
+
 static void test_stop_marks_all_done() {
   auto& sched = Scheduler::instance();
 
@@ -1132,6 +1237,109 @@ static void test_wakeHotkey_queue_always_wakes() {
 
     g->state = Scheduler::GoroutineState::Done;
     sched.clearCurrent();
+}
+
+// Regression: a trigger arriving from the IO thread while the VM thread is
+// mid-frame (state==Running) must NOT reset the live goroutine. requeueFront()
+// wipes ip/stack/locals/call_stack and sets state=Created; doing that under a
+// running frame destroys the executing call stack and leaves the goroutine
+// pushed into hotkey_queue_ that handleReturned() then parks as
+// Suspended+HotkeyWait -> permanently stuck non-runnable queue entry and a
+// swallowed trigger. The IO thread must only record intent (retrigger flag);
+// ExecutionEngine::handleReturned() does the requeue on the VM thread.
+static void test_wakeHotkey_while_running_preserves_live_frame() {
+    auto& sched = Scheduler::instance();
+
+    for (auto policy : {HotkeyPolicy::Replace, HotkeyPolicy::Queue, HotkeyPolicy::Coalesce}) {
+        uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "running_hk");
+        auto* g = sched.get(gid);
+        g->persistent = true;
+        g->hotkey_policy = policy;
+        g->hotkey_callable = Value::makeFunctionObjId(1);
+        g->hotkey_args = {Value::makeInt(10)};
+
+        // Take it off the queue, then mirror what ExecutionEngine::executeFrame
+        // does: the VM thread owns it and state is Running for the whole frame.
+        auto* picked = sched.pickNext();
+        CHECK(picked == g, "expected the spawned hotkey to be picked");
+        g->state = Scheduler::GoroutineState::Running;
+        g->ip = 4242;
+        g->locals = {Value::makeInt(7)};
+        if (g->fiber) {
+            g->fiber->pushCall(99, 0, nullptr);
+            g->fiber->stack.push(Value::makeInt(1234));
+        }
+        size_t live_frames = g->fiber ? g->fiber->call_stack.size() : 0;
+        size_t live_stack = g->fiber ? g->fiber->stack.size() : 0;
+
+        bool result = sched.wakeHotkey(g, {Value::makeInt(20)});
+        CHECK(result, "trigger on a running persistent hotkey must be accepted");
+        CHECK(g->hotkey_retrigger.load(std::memory_order_acquire),
+              "running hotkey must set the retrigger flag so handleReturned re-queues it");
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              "IO thread must not overwrite the Running state owned by the VM thread");
+        CHECK_EQ(g->ip, 4242u, "IO thread must not reset ip of a running goroutine");
+        CHECK_EQ(g->locals.size(), size_t(1), "IO thread must not clear locals of a running goroutine");
+        if (g->fiber) {
+            CHECK_EQ(g->fiber->call_stack.size(), live_frames,
+                     "IO thread must not clear the live call stack");
+            CHECK_EQ(g->fiber->stack.size(), live_stack,
+                     "IO thread must not clear the live fiber stack");
+        }
+
+        // Nothing was pushed: the goroutine is owned by the VM thread right now.
+        auto* next = sched.pickNext();
+        CHECK(next != g, "running goroutine must not be pushed into a run queue");
+
+        g->hotkey_retrigger.store(false, std::memory_order_release);
+        g->state = Scheduler::GoroutineState::Done;
+        sched.clearCurrent();
+    }
+}
+
+// Data race: get() reads goroutines_ with no lock while spawn() inserts under
+// goroutines_mutex_ on the other thread. Every other goroutines_ access in
+// Scheduler.cpp takes the lock; get() was the exception.
+//
+// This is reachable, not theoretical: EventListener::DispatchHotkeyCallback
+// runs each hotkey press on a detached thread, InputBridge's OS callback
+// defers through deferToVM (which has no thread guard), and the deferred
+// lambda calls get(persistentGid) on the io thread while the vm thread can be
+// inside spawn() from a host function. Requires a ThreadSanitizer build
+// (./build.sh 16) to observe; ASAN cannot see a data race.
+static void test_get_concurrent_with_spawn() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t seed = sched.spawn(1, {}, 0, "get_race_seed", FiberPriority::NORMAL);
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> reads{0};
+    std::thread reader([&]{
+        while (!stop.load(std::memory_order_acquire)) {
+            if (sched.get(seed) != nullptr) {
+                reads.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    std::vector<uint32_t> filler;
+    filler.reserve(2048);
+    for (int i = 0; i < 2048; ++i) {
+        // Force repeated rehash while the reader walks the same map.
+        filler.push_back(sched.spawn(2, {}, 0, "get_race_filler", FiberPriority::NORMAL));
+    }
+    stop.store(true, std::memory_order_release);
+    reader.join();
+
+    CHECK(reads.load() > 0, "reader thread performed no get() lookups");
+
+    // Leave the map as we found it.
+    for (uint32_t gid : filler) {
+        if (auto* g = sched.get(gid)) {
+            sched.markGoroutineDone(g);
+        }
+    }
+    sched.cleanupDoneGoroutines();
 }
 
 static void test_wakeHotkey_coalesce_while_pending() {
@@ -3163,6 +3371,165 @@ static void test_sleep_interleaved_with_normal_goroutine() {
   sched.clearCurrent();
 }
 
+static void test_runBlockingHostCall_async_park_when_fiber_executing() {
+  // Positive control for the current_executing_fiber_ gate: when a real
+  // goroutine is mid-dispatch (current() non-null AND current_executing_fiber_
+  // set), runBlockingHostCall must keep taking the async/park path and
+  // return a Pending token. Killing this would silently turn every
+  // goroutine-blocking host call into a synchronous inline call and stall
+  // the scheduler on any X11/IO roundtrip.
+
+  HostContext ctx;
+  VM vm(ctx);
+  auto& sched = Scheduler::instance();
+  sched.start();
+  vm.setScheduler(&sched);
+
+  static EventQueue eq_async;
+  vm.setEventQueue(&eq_async);
+
+  Fiber* fake = new Fiber(0xdead, 0, 0, "fake-executing");
+  uint32_t gid = sched.spawn(0, {}, 0, "hk-running-posit",
+                             FiberPriority::HOTKEY);
+  auto* g = sched.get(gid);
+  CHECK(g != nullptr, "spawn returned null goroutine");
+  g->state = Scheduler::GoroutineState::Running;
+  g->persistent = true;
+  // Scheduler::spawn() allocates a fiber for us; we replace it with the
+  // fake we control so we can swing it across the VM's executing-fiber
+  // pointer. Goroutine dtor takes ownership either way.
+  delete g->fiber;
+  g->fiber = fake;
+  sched.setCurrent(g);
+
+  // Simulate the driver having installed the fiber as the currently
+  // executing one (HavelEngine.hpp does this around runDispatchLoopPublic).
+  vm.current_executing_fiber_ = fake;
+
+  // atomic: the EventQueue worker thread writes this from the job posted
+  // below while the drain loop on this thread reads it. A plain bool is a
+  // data race that ThreadSanitizer reports, which drowns out the scheduler
+  // races this rig exists to catch.
+  std::atomic<bool> jobPosted{false};
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobPosted.store(true, std::memory_order_release); return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(42); });
+
+  // The worker threads in EventQueue are already running and can complete
+  // the job between postToWorker and this point — asserting !jobPosted
+  // here races with the worker pool. The observable that distinguishes
+  // async park from sync inline is the Pending marker on the return value;
+  // the gate in runBlockingHostCall only falls through to lift(job()) when
+  // event_queue_ is shutdown/null, sched->current() is null, or there's no
+  // executing fiber.
+  CHECK(result.isPending(),
+        "async path must produce a Pending token for the CALL epilogue");
+
+  // Drive the real CALL-epilogue park: the dispatcher pushes the returned
+  // Pending onto the stack and then calls parkIfPendingCallResult(). We
+  // replay exactly that here.
+  vm.stack.push_back(result);
+  bool parked = vm.parkIfPendingCallResult();
+  CHECK(parked, "park must succeed while a fiber is executing");
+  {
+    std::lock_guard<std::mutex> lk(g->wait_handle_mutex_);
+    CHECK(g->wait_handle.type == Scheduler::AwaitableType::EXTERNAL,
+          "goroutine WaitHandle must move to EXTERNAL after park");
+    CHECK(g->wait_handle.target_id != 0, "wait token must be non-zero");
+  }
+
+  // Drain cleanup — let the worker pool finish the posted job before the
+  // test moves on so it doesn't leak across tests.
+  constexpr int kMaxDrainIters = 200;
+  for (int i = 0; i < kMaxDrainIters && !jobPosted.load(std::memory_order_acquire); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  CHECK(jobPosted.load(std::memory_order_acquire), "worker pool failed to run the posted job in 200ms");
+
+  vm.current_executing_fiber_ = nullptr;
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Done;
+  // Do NOT null out g->fiber: it now points at our heap fiber and
+  // Goroutine::~Goroutine() owns that pointer (deletes it on shutdown).
+}
+
+static void test_runBlockingHostCall_sync_without_scheduler() {
+  // Baseline guard: no scheduler at all means the synchronous inline path
+  // runs. This case existed before the fiber gate change and must not flip.
+  HostContext ctx;
+  VM vm(ctx);
+  // Deliberately do NOT setScheduler or setEventQueue.
+
+  bool jobRan = false;
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobRan = true; return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(7); });
+
+  CHECK(jobRan, "no-scheduler path must run the job inline");
+  CHECK(result.isInt() && result.asInt() == 7,
+        "no-scheduler path must return the lifted value");
+  CHECK(!result.isPending(),
+        "no-scheduler path must never produce a Pending token");
+}
+
+static void test_runBlockingHostCall_sync_when_no_fiber_executing() {
+  // Regression: runBlockingHostCall previously picked the async-park path
+  // whenever scheduler_->current() was non-null. handleSuspended() and the
+  // handleYield() hotkey-park path do NOT clearCurrent, so a persistent
+  // hotkey goroutine that just settled into Suspended+HotkeyWait stays
+  // scheduler-current despite no longer executing. If the engine then runs
+  // a conditional-hotkey predicate via callFunctionSync (outside any fiber),
+  // any blocking host call inside the predicate gets a Pending token from
+  // runBlockingHostCall, which the CALL epilogue in parkIfPendingCallResult
+  // then has no fiber to park. The result was neutralized to null, so the
+  // condition evaluated to false and the hotkey silently died; the
+  // "Pending host-call result outside goroutine context" error logs once
+  // per mode-evaluation tick (the user's log shows that ~2s cadence).
+  //
+  // The fix gates the async path on current_executing_fiber_ too, so a
+  // predicate with no executing fiber falls through to the synchronous
+  // inline branch. This test exercises exactly that stale-current state.
+
+  HostContext ctx;
+  VM vm(ctx);
+  auto& sched = Scheduler::instance();
+  sched.start();
+  vm.setScheduler(&sched);
+
+  // EventQueue is short-lived here; just needs to exist so the non-stale
+  // branch in runBlockingHostCall is *reachable*. The scheduler is NOT
+  // idle: a stale hotkey goroutine sits in Suspended+HotkeyWait as the
+  // current goroutine (the exact leaking-state that used to trip the bug).
+  static EventQueue eq;
+  vm.setEventQueue(&eq);
+
+  uint32_t gid = sched.spawn(0, {}, 0, "hk-stale-current",
+                             FiberPriority::HOTKEY);
+  auto* g = sched.get(gid);
+  CHECK(g != nullptr, "spawn returned null goroutine");
+  g->persistent = true;
+  g->hotkey_alias = "hk-stale-current-alias";
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait,
+                             std::memory_order_release);
+  sched.setCurrent(g);   // stale: matches handleSuspended's leaked state
+  CHECK(sched.current() == g, "setup: stale scheduler current");
+
+  bool jobRan = false;
+  Value result = vm.runBlockingHostCall(
+      [&]() { jobRan = true; return AsyncCxxResult{}; },
+      [](const AsyncCxxResult&) { return Value::makeInt(42); });
+
+  CHECK(jobRan, "inline job must execute when no fiber is executing");
+  CHECK(result.isInt() && result.asInt() == 42,
+        "blocking host call must return lifted result synchronously");
+  CHECK(!result.isPending(),
+        "Pending token must not escape a context with no fiber");
+
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Done;
+}
+
 static void test_hotkey_retrigger_during_sleep_does_not_double_wake() {
   auto& sched = Scheduler::instance();
 
@@ -3361,6 +3728,61 @@ static void test_fiber_suspend_coroutine_preserves_context() {
   CHECK(fib.suspended_reason == SuspensionReason::NONE, "reason cleared after resume");
 }
 
+static void test_spawn_concurrent_gid_uniqueness() {
+  // Regression: next_goroutine_id_ was a plain uint32_t incremented before
+  // spawn() took its locks. A foreign thread reaching spawn (detached timer
+  // thread -> invokeCallback -> script `go { }`) raced with VM-thread spawns:
+  // both read the same counter value, both got the same gid, and spawn's
+  // goroutines_[gid] = std::move(g) then overwrote the first goroutine while
+  // its raw pointer sat in the run queues — UAF, and the colliding
+  // hotkey-persistent goroutines died until process restart. With the
+  // atomic counter, concurrent spawns must produce strictly distinct ids.
+
+  auto& sched = Scheduler::instance();
+  sched.start();
+
+  constexpr int kThreads = 4;
+  constexpr int kSpawnsPerThread = 500;
+  std::vector<std::vector<uint32_t>> ids(kThreads);
+  std::vector<std::thread> workers;
+  for (int t = 0; t < kThreads; ++t) {
+    workers.emplace_back([&sched, &ids, t] {
+      ids[t].reserve(kSpawnsPerThread);
+      for (int i = 0; i < kSpawnsPerThread; ++i) {
+        ids[t].push_back(sched.spawn(0, {}, 0, "gid-race",
+                                     FiberPriority::NORMAL));
+      }
+    });
+  }
+  for (auto& w : workers) w.join();
+
+  // Every id must be distinct across all threads.
+  std::vector<uint32_t> all;
+  all.reserve(kThreads * kSpawnsPerThread);
+  for (auto& v : ids) all.insert(all.end(), v.begin(), v.end());
+  std::sort(all.begin(), all.end());
+  auto dup = std::adjacent_find(all.begin(), all.end());
+  CHECK(dup == all.end(), "concurrent spawns must never produce duplicate gids");
+  CHECK_EQ(all.size(), static_cast<size_t>(kThreads * kSpawnsPerThread),
+           "every spawn must return an id");
+
+  // Monotonicity: ids must be strictly increasing overall (never recycled).
+  CHECK_EQ(all.front(), all[0], "sanity");
+  for (size_t i = 1; i < all.size(); ++i) {
+    CHECK(all[i] > all[i - 1],
+          "gid counter is monotonic; recycled ids would break this");
+  }
+
+  // Cleanup: mark everything Done so later tests see a clean scheduler.
+  // Test threads have joined — no concurrency remains, so direct access is
+  // safe (matches the existing tests' cleanup pattern).
+  for (uint32_t id : all) {
+    auto* g = sched.get(id);
+    if (g) g->state = Scheduler::GoroutineState::Done;
+  }
+  sched.cleanupDoneGoroutines();
+}
+
 static void test_removeHotkey_while_hasRunnableFibers() {
   auto& sched = Scheduler::instance();
 
@@ -3400,6 +3822,124 @@ static void test_removeHotkey_while_hasRunnableFibers() {
   CHECK_EQ(removed.load(), 200, "every distinct alias should be removed once");
   CHECK_EQ(sched.goroutineCount(), 0u, "all goroutines should be removed");
   CHECK(!sched.hasRunnableFibers(), "hasRunnableFibers must not crash after removal");
+}
+
+// The reported symptom is "hotkeys stop working" AFTER the session has been
+// running for a while -- every other regression here reproduces on the first
+// trigger. This soaks a persistent hotkey through the full production cycle
+// (io-thread trigger while Running -> handleReturned re-arm -> next trigger)
+// and asserts the two invariants that a per-cycle bug would violate:
+//
+//   1. the goroutine is still pickable and re-wakeable on EVERY cycle, so a
+//      hotkey can never get permanently wedged (the "stops working" state),
+//   2. neither goroutineCount() nor hotkey_queue_size drifts, so repeated
+//      cycles do not leak goroutines or queue entries.
+//
+// A single leaked entry per cycle is invisible after one trigger but grows
+// monotonically under sustained use, which is what the report describes.
+static void test_persistent_hotkey_soak_no_wedge_no_leak() {
+  auto& sched = Scheduler::instance();
+
+  const int cycles = 2000;
+  const HotkeyPolicy policies[] = {HotkeyPolicy::Drop, HotkeyPolicy::Replace,
+                                   HotkeyPolicy::Queue, HotkeyPolicy::Coalesce};
+  const char* names[] = {"Drop", "Replace", "Queue", "Coalesce"};
+
+  const size_t base_goroutines = sched.goroutineCount();
+  const size_t base_queue = sched.getSchedulerSummary().hotkey_queue_size;
+
+  for (int p = 0; p < 4; ++p) {
+    const std::string name = names[p];
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(p)}, 0, "rig_soak");
+    auto* g = sched.get(gid);
+    CHECK(g != nullptr, "spawn returned gid with no goroutine");
+    g->persistent = true;
+    g->hotkey_alias = "soak-" + name;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
+    g->hotkey_args = {Value::makeInt(p)};
+    g->hotkey_policy = policies[p];
+
+    // Drift is measured against the count right after this hotkey exists, so
+    // it isolates "the cycles added goroutines" from any pre-existing state.
+    const size_t count_after_spawn = sched.goroutineCount();
+
+    // createPersistentHotkeyCallback parks the fresh goroutine.
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+    if (g->fiber) {
+      g->fiber->state = FiberState::SUSPENDED;
+      g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+    }
+
+    for (int cycle = 0; cycle < cycles; ++cycle) {
+      // === io thread: a keypress lands while the body is still executing ===
+      // The vm thread owns the Running goroutine, so the live frame must
+      // survive untouched; only the retrigger intent may be recorded.
+      g->state = Scheduler::GoroutineState::Running;
+      g->ip = 1000 + static_cast<uint32_t>(cycle);
+      const uint32_t live_ip = g->ip;
+      const size_t live_depth = g->fiber ? g->fiber->call_stack.size() : 0;
+      bool accepted = sched.wakeHotkey(g, {}, "os-callback-soak");
+      if (policies[p] == HotkeyPolicy::Drop) {
+        CHECK(accepted, name + ": persistent Drop trigger reports accepted");
+        // Drop discards it: no retrigger, so the body runs to completion and
+        // the goroutine parks instead of re-running.
+        CHECK(!g->hotkey_retrigger.load(std::memory_order_acquire),
+              name + ": Drop must not arm the retrigger");
+      } else {
+        CHECK(accepted, name + ": trigger accepted");
+        CHECK(g->ip == live_ip, name + ": trigger must not disturb the live frame ip");
+        CHECK((g->fiber ? g->fiber->call_stack.size() : 0) == live_depth,
+              name + ": trigger must not disturb the live call stack");
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              name + ": trigger must not steal the Running goroutine");
+      }
+
+      // === vm thread: body returns, handleReturned() ===
+      if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+        g->hotkey_retrigger.store(false, std::memory_order_release);
+        sched.requeueFront(g);
+        CHECK(g->state == Scheduler::GoroutineState::Created,
+              name + ": retrigger must re-arm the goroutine");
+        auto* picked = sched.pickNext();
+        CHECK(picked == g,
+              name + ": re-armed hotkey must be the next one picked (cycle " +
+                  std::to_string(cycle) + ")");
+        sched.clearCurrent();
+        g->state = Scheduler::GoroutineState::Running;
+      }
+
+      // Body finished with no pending trigger -> park for the next keypress.
+      g->state = Scheduler::GoroutineState::Suspended;
+      g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+      if (g->fiber) {
+        g->fiber->state = FiberState::SUSPENDED;
+        g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+      }
+    }
+
+    // The hotkey must still be alive and re-wakeable after `cycles` cycles --
+    // this is the assertion that fails for "it stopped working after a while".
+    CHECK_EQ(sched.goroutineCount(), count_after_spawn,
+             name + ": goroutine count must not drift across cycles");
+    CHECK(sched.get(gid) != nullptr, name + ": hotkey must still be registered");
+    bool final_wake = sched.wakeHotkey(g, {}, "os-callback-soak-final");
+    CHECK(final_wake, name + ": hotkey must still fire after the soak");
+    CHECK(g->state == Scheduler::GoroutineState::Created,
+          name + ": final trigger must re-arm the hotkey");
+    CHECK(sched.pickNext() == g, name + ": final re-arm must be pickable");
+    sched.clearCurrent();
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+  }
+
+  sched.cleanupDoneGoroutines();
+
+  CHECK_EQ(sched.goroutineCount(), base_goroutines,
+           "soak must not leak goroutines");
+  CHECK_EQ(sched.getSchedulerSummary().hotkey_queue_size, base_queue,
+           "soak must not leak hotkey queue entries");
 }
 
 static void benchmark_scheduler_pump_cost() {
@@ -3536,6 +4076,12 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_drainDeferredCallbacks_spawn_integration();
   std::cout << " PASS drainDeferredCallbacks spawn integration\n";
 
+  test_os_callback_deferred_while_body_running();
+  std::cout << " PASS os callback deferred from io thread while body running: re-arms once\n";
+
+  test_persistent_hotkey_soak_no_wedge_no_leak();
+  std::cout << " PASS persistent hotkey soak: no wedge, no leak over many cycles\n";
+
   test_stop_marks_all_done();
   std::cout << " PASS stop marks all goroutines Done\n";
 
@@ -3617,6 +4163,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
 
     test_wakeHotkey_queue_always_wakes();
     std::cout << " PASS wakeHotkey Queue policy: always wakes\n";
+
+    test_wakeHotkey_while_running_preserves_live_frame();
+    std::cout << " PASS wakeHotkey while Running: preserves live frame, sets retrigger\n";
 
     test_wakeHotkey_coalesce_while_pending();
     std::cout << " PASS wakeHotkey Coalesce policy: updates args in-place while pending\n";
@@ -3870,6 +4419,18 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_hotkey_while_loop_exits_via_break();
   std::cout << " PASS hotkey while loop: exits → re-parks as HotkeyWait\n";
 
+  test_spawn_concurrent_gid_uniqueness();
+  std::cout << " PASS spawn: concurrent spawns produce strictly distinct monotonic gids\n";
+
+  test_runBlockingHostCall_sync_when_no_fiber_executing();
+  std::cout << " PASS runBlockingHostCall: sync inline when no fiber executing (stale current)\n";
+
+  test_runBlockingHostCall_async_park_when_fiber_executing();
+  std::cout << " PASS runBlockingHostCall: async parks while fiber executes\n";
+
+  test_runBlockingHostCall_sync_without_scheduler();
+  std::cout << " PASS runBlockingHostCall: sync inline without scheduler\n";
+
   test_coroutine_suspend_and_resume();
   std::cout << " PASS coroutine suspend: suspend + unpark roundtrip\n";
 
@@ -3900,12 +4461,25 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_fiber_suspend_coroutine_preserves_context();
   std::cout << " PASS fiber suspend: COROUTINE_WAIT context preserves ID\n";
 
+  // Runs last on purpose: it spawns ~2k goroutines through the shared
+  // Scheduler singleton (the constructor is private, so the rig cannot use a
+  // private instance) and advances the gid counter. Later assertions in this
+  // file compare absolute gids, so it has to run after all of them.
+  test_get_concurrent_with_spawn();
+  std::cout << " PASS get() concurrent with spawn (tsan-clean)\n";
+
   // 25 basic + 14 fiber/chunk + 18 hotkey policy + 10 callback rig
   // + 23 scheduler API gaps + 22 fiber API gaps + 4 hotkey edge-case gaps
   // + 4 new scheduler API tests + 4 new hotkey query tests
   // + 14 async loop/coroutine/while-loop integration tests
   // + 1 deferred-wakeup-fd poll regression test
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1;
+  // + 3 runBlockingHostCall gate tests (stale-current regression,
+  //   fiber-executing park, no-scheduler baseline)
+  // + 1 concurrent-spawn gid uniqueness regression test
+  // + 1 get()-vs-spawn data race regression test (tsan)
+  // + 1 cross-thread os-callback-while-running re-arm regression test
+  // + 1 persistent-hotkey soak test (no wedge, no leak over many cycles)
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1 + 1 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

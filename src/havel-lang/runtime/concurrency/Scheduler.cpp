@@ -124,6 +124,21 @@ Scheduler::Goroutine* Scheduler::current() {
 }
 
 Scheduler::Goroutine* Scheduler::get(uint32_t id) {
+	// goroutines_ is mutated under goroutines_mutex_ by spawn(),
+	// registerGoroutine(), registerMainGoroutine() and cleanupDoneGoroutines()
+	// (which erases). Every other reader in this file takes the lock; this one
+	// did not, so a concurrent spawn's insert/rehash raced this find() and it is
+	// reachable: EventListener::DispatchHotkeyCallback dispatches each hotkey
+	// press on a detached thread, InputBridge's OS callback defers through
+	// deferToVM (no thread guard), and the deferred lambda calls get() on the io
+	// thread while the vm thread can be inside spawn() from a host function.
+	// Confirmed with ThreadSanitizer before the lock was added: 6 data races,
+	// read at Scheduler.cpp:127/129 vs write at Scheduler.cpp:106.
+	//
+	// The returned Goroutine* is still only valid while the goroutine is in the
+	// map. Callers use it for persistent hotkey goroutines, which never reach
+	// Done and are therefore never erased.
+	std::lock_guard lock(goroutines_mutex_);
 	auto it = goroutines_.find(id);
 	if (it != goroutines_.end()) {
 		return it->second.get();
@@ -711,9 +726,42 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, cons
   // and the hotkey never fired. Bursty input is still coalesced: while the
   // hotkey body executes (100ms+ for slow bodies), state is Running and
   // redundant triggers are dropped here.
+  //
+  // Resolved before the Running guard below, so Drop keeps dropping even when
+  // the body is executing: the trigger is discarded and only a persistent
+  // goroutine reports it as accepted (it re-arms on its own).
+  if (g->hotkey_policy == HotkeyPolicy::Drop && isPending) {
+    return g->persistent;
+  }
+
+  // Running is owned exclusively by the VM thread (ExecutionEngine::executeFrame
+  // holds the live fiber for the whole frame; see the comment at the
+  // `g->state = Running` assignment). The IO thread must not touch ip, stack,
+  // locals, fiber->stack or fiber->call_stack here: requeueFront() resets all
+  // of them, which destroys the frame the VM is executing and leaves the
+  // pointer pushed into hotkey_queue_ that handleReturned() then parks as
+  // Suspended+HotkeyWait — a permanently stuck non-runnable queue entry plus a
+  // swallowed trigger.
+  //
+  // Per the hotkey_retrigger contract (Scheduler.hpp), a trigger that lands on
+  // a Running goroutine only records intent; ExecutionEngine::handleReturned()
+  // reads the flag on the VM thread after the body finishes and re-queues it
+  // there. Coalesce already used this path; Replace and Queue fell through to
+  // requeueFront() and corrupted live execution.
+  //
+  // Queue fidelity note: the flag is a single bit, so a burst of Queue
+  // triggers arriving during one long body collapses into a single queued
+  // re-run. That is the documented flag semantics, not a new coalescing rule.
+  if (g->state == GoroutineState::Running) {
+    if (!newArgs.empty()) {
+      g->hotkey_args = newArgs;
+    }
+    g->hotkey_retrigger.store(true, std::memory_order_release);
+    return true;
+  }
+
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:
-    if (isPending) return g->persistent;
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {
@@ -877,11 +925,15 @@ bool Scheduler::removeHotkeyByAlias(const std::string& alias) {
         std::lock_guard plock(priority_mutex_);
         removeFromQueues(target);
     }
+    // Read the id before the erase: erase() destroys the unique_ptr and frees
+    // the Goroutine, so touching target->id afterwards is a use-after-free.
+    // ThreadSanitizer flags it on the debug log below.
+    const uint32_t removed_id = target->id;
     {
         std::lock_guard glock(goroutines_mutex_);
-        goroutines_.erase(target->id);
+        goroutines_.erase(removed_id);
     }
-    ::havel::debug("[Scheduler] removeHotkeyByAlias: removed persistent goroutine gid={} alias='{}'", target->id, alias);
+    ::havel::debug("[Scheduler] removeHotkeyByAlias: removed persistent goroutine gid={} alias='{}'", removed_id, alias);
     return true;
 }
 

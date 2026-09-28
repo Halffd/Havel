@@ -348,6 +348,10 @@ public:
                                        const HostContext *ctx);
     static Value handleScreenshotMonitor(const std::vector<Value> &args,
                                           const HostContext *ctx);
+    static Value handleScreenshotRegion(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleScreenshotActiveWindow(const std::vector<Value> &args,
+                                              const HostContext *ctx);
     static Value handleGUINotify(const std::vector<Value> &args,
                                   const HostContext *ctx);
     static Value handleHotkeyRegister(const std::vector<Value> &args,
@@ -802,6 +806,10 @@ public:
                                        const HostContext *ctx);
     static Value handleScreenshotMonitor(const std::vector<Value> &args,
                                           const HostContext *ctx);
+    static Value handleScreenshotRegion(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleScreenshotActiveWindow(const std::vector<Value> &args,
+                                              const HostContext *ctx);
     static Value handleGUINotify(const std::vector<Value> &args,
                                   const HostContext *ctx);
     static Value handleActiveGet(const std::vector<Value> &args,

@@ -1134,6 +1134,64 @@ static void test_wakeHotkey_queue_always_wakes() {
     sched.clearCurrent();
 }
 
+// Regression: a trigger arriving from the IO thread while the VM thread is
+// mid-frame (state==Running) must NOT reset the live goroutine. requeueFront()
+// wipes ip/stack/locals/call_stack and sets state=Created; doing that under a
+// running frame destroys the executing call stack and leaves the goroutine
+// pushed into hotkey_queue_ that handleReturned() then parks as
+// Suspended+HotkeyWait -> permanently stuck non-runnable queue entry and a
+// swallowed trigger. The IO thread must only record intent (retrigger flag);
+// ExecutionEngine::handleReturned() does the requeue on the VM thread.
+static void test_wakeHotkey_while_running_preserves_live_frame() {
+    auto& sched = Scheduler::instance();
+
+    for (auto policy : {HotkeyPolicy::Replace, HotkeyPolicy::Queue, HotkeyPolicy::Coalesce}) {
+        uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "running_hk");
+        auto* g = sched.get(gid);
+        g->persistent = true;
+        g->hotkey_policy = policy;
+        g->hotkey_callable = Value::makeFunctionObjId(1);
+        g->hotkey_args = {Value::makeInt(10)};
+
+        // Take it off the queue, then mirror what ExecutionEngine::executeFrame
+        // does: the VM thread owns it and state is Running for the whole frame.
+        auto* picked = sched.pickNext();
+        CHECK(picked == g, "expected the spawned hotkey to be picked");
+        g->state = Scheduler::GoroutineState::Running;
+        g->ip = 4242;
+        g->locals = {Value::makeInt(7)};
+        if (g->fiber) {
+            g->fiber->pushCall(99, 0, nullptr);
+            g->fiber->stack.push(Value::makeInt(1234));
+        }
+        size_t live_frames = g->fiber ? g->fiber->call_stack.size() : 0;
+        size_t live_stack = g->fiber ? g->fiber->stack.size() : 0;
+
+        bool result = sched.wakeHotkey(g, {Value::makeInt(20)});
+        CHECK(result, "trigger on a running persistent hotkey must be accepted");
+        CHECK(g->hotkey_retrigger.load(std::memory_order_acquire),
+              "running hotkey must set the retrigger flag so handleReturned re-queues it");
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              "IO thread must not overwrite the Running state owned by the VM thread");
+        CHECK_EQ(g->ip, 4242u, "IO thread must not reset ip of a running goroutine");
+        CHECK_EQ(g->locals.size(), size_t(1), "IO thread must not clear locals of a running goroutine");
+        if (g->fiber) {
+            CHECK_EQ(g->fiber->call_stack.size(), live_frames,
+                     "IO thread must not clear the live call stack");
+            CHECK_EQ(g->fiber->stack.size(), live_stack,
+                     "IO thread must not clear the live fiber stack");
+        }
+
+        // Nothing was pushed: the goroutine is owned by the VM thread right now.
+        auto* next = sched.pickNext();
+        CHECK(next != g, "running goroutine must not be pushed into a run queue");
+
+        g->hotkey_retrigger.store(false, std::memory_order_release);
+        g->state = Scheduler::GoroutineState::Done;
+        sched.clearCurrent();
+    }
+}
+
 static void test_wakeHotkey_coalesce_while_pending() {
     auto& sched = Scheduler::instance();
 
@@ -3827,6 +3885,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
 
     test_wakeHotkey_queue_always_wakes();
     std::cout << " PASS wakeHotkey Queue policy: always wakes\n";
+
+    test_wakeHotkey_while_running_preserves_live_frame();
+    std::cout << " PASS wakeHotkey while Running: preserves live frame, sets retrigger\n";
 
     test_wakeHotkey_coalesce_while_pending();
     std::cout << " PASS wakeHotkey Coalesce policy: updates args in-place while pending\n";

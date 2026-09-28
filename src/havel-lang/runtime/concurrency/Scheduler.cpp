@@ -711,9 +711,42 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, cons
   // and the hotkey never fired. Bursty input is still coalesced: while the
   // hotkey body executes (100ms+ for slow bodies), state is Running and
   // redundant triggers are dropped here.
+  //
+  // Resolved before the Running guard below, so Drop keeps dropping even when
+  // the body is executing: the trigger is discarded and only a persistent
+  // goroutine reports it as accepted (it re-arms on its own).
+  if (g->hotkey_policy == HotkeyPolicy::Drop && isPending) {
+    return g->persistent;
+  }
+
+  // Running is owned exclusively by the VM thread (ExecutionEngine::executeFrame
+  // holds the live fiber for the whole frame; see the comment at the
+  // `g->state = Running` assignment). The IO thread must not touch ip, stack,
+  // locals, fiber->stack or fiber->call_stack here: requeueFront() resets all
+  // of them, which destroys the frame the VM is executing and leaves the
+  // pointer pushed into hotkey_queue_ that handleReturned() then parks as
+  // Suspended+HotkeyWait — a permanently stuck non-runnable queue entry plus a
+  // swallowed trigger.
+  //
+  // Per the hotkey_retrigger contract (Scheduler.hpp), a trigger that lands on
+  // a Running goroutine only records intent; ExecutionEngine::handleReturned()
+  // reads the flag on the VM thread after the body finishes and re-queues it
+  // there. Coalesce already used this path; Replace and Queue fell through to
+  // requeueFront() and corrupted live execution.
+  //
+  // Queue fidelity note: the flag is a single bit, so a burst of Queue
+  // triggers arriving during one long body collapses into a single queued
+  // re-run. That is the documented flag semantics, not a new coalescing rule.
+  if (g->state == GoroutineState::Running) {
+    if (!newArgs.empty()) {
+      g->hotkey_args = newArgs;
+    }
+    g->hotkey_retrigger.store(true, std::memory_order_release);
+    return true;
+  }
+
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:
-    if (isPending) return g->persistent;
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {

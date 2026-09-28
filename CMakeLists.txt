@@ -84,6 +84,19 @@ option(ASAN_DETECT_INITIALIZATION_ORDER_FIASCO "ASAN: Detect initialization orde
 option(ASAN_ALLOCATOR_MAY_RETURN_NULL "ASAN: Allow allocator to return null" OFF)
 option(ASAN_ABORT_ON_ERROR "ASAN: Abort on error (for debugging)" OFF)
 option(UBSAN_ABORT_ON_ERROR "UBSAN: Abort on error" OFF)
+
+# ThreadSanitizer must instrument every target, not just `havel`. TSAN can only
+# see a memory access if the code performing it was compiled with
+# -fsanitize=thread, so with flags on the executable alone every race inside
+# havel_lang (Scheduler, Fiber, VM) stayed invisible and the TSAN build silently
+# reported nothing. These global options are set before any target is created.
+#
+# Scoped to ENABLE_TSAN on purpose: ASAN/UBSAN keep their existing per-target
+# wiring below, so the default Debug dev build is unchanged.
+if(ENABLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=thread)
+endif()
 option(UBSAN_ALIGNMENT "UBSAN: Check alignment" ON)
 option(UBSAN_BOOL "UBSAN: Check bool" ON)
 option(UBSAN_ENUM "UBSAN: Check enum" ON)
@@ -1826,6 +1839,11 @@ endif()
 # Registered separately (links the runtime libs, like havel_api_test) so it
 # does not join the test-source loop, which compiles full app sources
 # without the definitions they need.
+# GTest is only imported when ENABLE_TESTS is on, so this target is guarded:
+# without the guard, any ENABLE_TESTS=OFF configuration (mode 16 ThreadSanitizer)
+# fails at generate time with "Target hpp_proto_test links to GTest::gtest but
+# the target was not found".
+if(ENABLE_TESTS)
 add_executable(hpp_proto_test tests/hpp_proto_test.cpp)
 set_target_properties(hpp_proto_test PROPERTIES
   CXX_STANDARD 23
@@ -1855,6 +1873,7 @@ if(ENABLE_MODULE_PLUGINS)
 set_target_properties(hpp_proto_test PROPERTIES ENABLE_EXPORTS ON)
 target_link_options(hpp_proto_test PRIVATE -Wl,--export-dynamic)
 endif()
+endif() # ENABLE_TESTS
 
 add_executable(havel_api_test tests/test_embed_api.cpp)
 set_target_properties(havel_api_test PROPERTIES

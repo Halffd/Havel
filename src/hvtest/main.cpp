@@ -275,8 +275,40 @@ if (mode_compare) {
 
 	if (mode_all || mode_cpp) {
 		std::cout << "\n=== C++ unit tests ===" << std::endl;
-		int ret = std::system("ctest --output-on-failure");
-		failures += (ret == 0) ? 0 : 1;
+		// ctest resolves CTestTestfile.cmake from the *current* directory.
+		// Run from the repo root there is no such file, so the old bare
+		// `ctest` call printed "No tests were found!!!" and returned 0 --
+		// a green exit code that executed zero tests. Point it at the build
+		// directory the hvtest binary itself lives in (build-debug/,
+		// build-release/, build-tsan/), and treat a "no tests" run as a
+		// failure so this can never silently pass again.
+		fs::path build_dir = fs::path(find_havel_binary()).parent_path();
+		std::string cmd = "ctest --test-dir \"" + build_dir.string() +
+		                   "\" --output-on-failure";
+		int ret = std::system(cmd.c_str());
+		if (ret != 0) {
+			failures += 1;
+		} else {
+			// ctest exits 0 even when it ran nothing; re-run the cheap
+			// listing to confirm the suite is actually populated.
+			std::string probe = "ctest --test-dir \"" + build_dir.string() +
+			                    "\" -N 2>/dev/null | grep -Eo 'Total Tests: [0-9]+'";
+			int n = 0;
+			FILE *pipe = popen(probe.c_str(), "r");
+			if (pipe) {
+				char buf[128] = {0};
+				if (fgets(buf, sizeof(buf), pipe)) {
+					const char *p = strstr(buf, ": ");
+					if (p) n = std::atoi(p + 2);
+				}
+				pclose(pipe);
+			}
+			if (n == 0) {
+				std::cerr << "ctest found 0 tests in " << build_dir.string()
+				          << " -- refusing to report success" << std::endl;
+				failures += 1;
+			}
+		}
 	}
 
 	return failures > 0 ? 1 : 0;

@@ -1192,6 +1192,51 @@ static void test_wakeHotkey_while_running_preserves_live_frame() {
     }
 }
 
+// Data race: get() reads goroutines_ with no lock while spawn() inserts under
+// goroutines_mutex_ on the other thread. Every other goroutines_ access in
+// Scheduler.cpp takes the lock; get() was the exception.
+//
+// This is reachable, not theoretical: EventListener::DispatchHotkeyCallback
+// runs each hotkey press on a detached thread, InputBridge's OS callback
+// defers through deferToVM (which has no thread guard), and the deferred
+// lambda calls get(persistentGid) on the io thread while the vm thread can be
+// inside spawn() from a host function. Requires a ThreadSanitizer build
+// (./build.sh 16) to observe; ASAN cannot see a data race.
+static void test_get_concurrent_with_spawn() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t seed = sched.spawn(1, {}, 0, "get_race_seed", FiberPriority::NORMAL);
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> reads{0};
+    std::thread reader([&]{
+        while (!stop.load(std::memory_order_acquire)) {
+            if (sched.get(seed) != nullptr) {
+                reads.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    std::vector<uint32_t> filler;
+    filler.reserve(2048);
+    for (int i = 0; i < 2048; ++i) {
+        // Force repeated rehash while the reader walks the same map.
+        filler.push_back(sched.spawn(2, {}, 0, "get_race_filler", FiberPriority::NORMAL));
+    }
+    stop.store(true, std::memory_order_release);
+    reader.join();
+
+    CHECK(reads.load() > 0, "reader thread performed no get() lookups");
+
+    // Leave the map as we found it.
+    for (uint32_t gid : filler) {
+        if (auto* g = sched.get(gid)) {
+            sched.markGoroutineDone(g);
+        }
+    }
+    sched.cleanupDoneGoroutines();
+}
+
 static void test_wakeHotkey_coalesce_while_pending() {
     auto& sched = Scheduler::instance();
 
@@ -3256,9 +3301,13 @@ static void test_runBlockingHostCall_async_park_when_fiber_executing() {
   // executing one (HavelEngine.hpp does this around runDispatchLoopPublic).
   vm.current_executing_fiber_ = fake;
 
-  bool jobPosted = false;
+  // atomic: the EventQueue worker thread writes this from the job posted
+  // below while the drain loop on this thread reads it. A plain bool is a
+  // data race that ThreadSanitizer reports, which drowns out the scheduler
+  // races this rig exists to catch.
+  std::atomic<bool> jobPosted{false};
   Value result = vm.runBlockingHostCall(
-      [&]() { jobPosted = true; return AsyncCxxResult{}; },
+      [&]() { jobPosted.store(true, std::memory_order_release); return AsyncCxxResult{}; },
       [](const AsyncCxxResult&) { return Value::makeInt(42); });
 
   // The worker threads in EventQueue are already running and can complete
@@ -3287,10 +3336,10 @@ static void test_runBlockingHostCall_async_park_when_fiber_executing() {
   // Drain cleanup — let the worker pool finish the posted job before the
   // test moves on so it doesn't leak across tests.
   constexpr int kMaxDrainIters = 200;
-  for (int i = 0; i < kMaxDrainIters && !jobPosted; ++i) {
+  for (int i = 0; i < kMaxDrainIters && !jobPosted.load(std::memory_order_acquire); ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  CHECK(jobPosted, "worker pool failed to run the posted job in 200ms");
+  CHECK(jobPosted.load(std::memory_order_acquire), "worker pool failed to run the posted job in 200ms");
 
   vm.current_executing_fiber_ = nullptr;
   sched.clearCurrent();
@@ -4183,6 +4232,13 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_fiber_suspend_coroutine_preserves_context();
   std::cout << " PASS fiber suspend: COROUTINE_WAIT context preserves ID\n";
 
+  // Runs last on purpose: it spawns ~2k goroutines through the shared
+  // Scheduler singleton (the constructor is private, so the rig cannot use a
+  // private instance) and advances the gid counter. Later assertions in this
+  // file compare absolute gids, so it has to run after all of them.
+  test_get_concurrent_with_spawn();
+  std::cout << " PASS get() concurrent with spawn (tsan-clean)\n";
+
   // 25 basic + 14 fiber/chunk + 18 hotkey policy + 10 callback rig
   // + 23 scheduler API gaps + 22 fiber API gaps + 4 hotkey edge-case gaps
   // + 4 new scheduler API tests + 4 new hotkey query tests
@@ -4191,7 +4247,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 3 runBlockingHostCall gate tests (stale-current regression,
   //   fiber-executing park, no-scheduler baseline)
   // + 1 concurrent-spawn gid uniqueness regression test
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1;
+  // + 1 get()-vs-spawn data race regression test (tsan)
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

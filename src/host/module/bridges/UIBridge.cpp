@@ -2,15 +2,10 @@
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
+#include "../BridgeSelection.hpp"
 #include "BridgesInternal.hpp"
 
 namespace havel::compiler {
-
-// Defined in src/extensions/gui/clipboard_manager/ClipboardManager.cpp
-// (havel_gui). Weak: absent when the Qt GUI library is not linked, e.g.
-// havel-wm embedding libhavel_lang + libhavel_core.
-void installQtClipboardBridge(PipelineOptions &options,
-                              const HostContext *ctx) __attribute__((weak));
 
 static Value createWindowObject(
     VM *vm, const HostContext *ctx, uint64_t windowId,
@@ -711,20 +706,18 @@ options.host_functions["group.find"] = [ctx = ctx_](const auto &args) {
 options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
     return handleGroupFindBy(args, ctx);
 };
-  // clipboard.* and io.getClipboard are registered by the Qt GUI side
-  // (havel_gui) via the weak hook below; the embeddable core must not
-  // reference QClipboard symbols.
-  if (&installQtClipboardBridge) installQtClipboardBridge(options, ctx_);
+  // The Qt bridge owns every host function that needs a Qt class:
+  // clipboard.*, io.getClipboard and gui.notify. The host selects it
+  // explicitly at startup (see BridgeSelection), so this call site stays
+  // Qt-free and the core never references QClipboard or GUIManager.
+  if (auto installQtBridge = ::havel::qtBridgeInstaller())
+    installQtBridge(options, ctx_);
     options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);
   };
   options.host_functions["screenshot.monitor"] = [ctx =
                                                       ctx_](const auto &args) {
     return handleScreenshotMonitor(args, ctx);
-  };
-  // GUI notifications
-  options.host_functions["gui.notify"] = [ctx = ctx_](const auto &args) {
-    return handleGUINotify(args, ctx);
   };
 }
 
@@ -3419,11 +3412,9 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
-#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto result = service.captureFullDesktop();
   (void)result;
-#endif
   return Value::makeNull();
 }
 
@@ -3437,46 +3428,15 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
     if (auto *v = (args[0].isInt() ? &args[0] : nullptr))
       monitor = static_cast<int>(v->asInt());
   }
-#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto result = service.captureMonitor(monitor);
   (void)result;
-#endif
   return Value::makeNull();
 }
 
-
-Value UIBridge::handleGUINotify(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
-#ifdef HAVE_QT_EXTENSION
-  if (!ctx || !ctx->guiManager) {
-    return Value::makeBool(false);
-  }
-  if (args.size() < 2) {
-    throw std::runtime_error("gui.notify() requires title and message");
-  }
-
-  const std::string *title = nullptr;
-  const std::string *message = nullptr;
-
-  if (!title || !message) {
-    throw std::runtime_error("gui.notify() requires string arguments");
-  }
-
-  std::string icon = "info";
-  int durationMs = 0;
-
-  if (args.size() > 2 && args[2].isStringValId()) {
-    icon = strVal(args[2], ctx ? ctx->vm : nullptr);
-  }
-  if (args.size() > 3 && args[3].isInt()) {
-    durationMs = static_cast<int>(args[3].asInt());
-  }
-
-  ctx->guiManager->showNotification(*title, *message, icon, durationMs);
-#endif
-  return Value::makeBool(true);
-}
+// handleGUINotify lives in src/host/module/bridges/qt/QtGuiBridge.cpp: the
+// concrete GUIManager it calls is a QObject, so the body cannot sit in this
+// Qt-free translation unit.
 
 // ============================================================================
 // InputBridge Implementation

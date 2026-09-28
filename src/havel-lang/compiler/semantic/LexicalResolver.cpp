@@ -1006,7 +1006,19 @@ case ast::NodeType::BlockStatement: {
     for (const auto &method : classDecl.definition.methods) {
       if (method) {
         beginFunction(method.get());
-        if (!method->isClassMethod) {
+        // Skip the implicit self when a param is literally named self
+        // (explicit receiver form op_index(self, k)) — declaring both
+        // hits the duplicate-declaration error.
+        bool explicitSelf = false;
+        for (const auto &param : method->parameters) {
+          if (param && param->pattern &&
+              param->pattern->kind == ast::NodeType::Identifier) {
+            const auto &ident =
+                static_cast<const ast::Identifier &>(*param->pattern);
+            if (ident.symbol == "self") explicitSelf = true;
+          }
+        }
+        if (!method->isClassMethod && !explicitSelf) {
           declareLocal("self", nullptr, false);
         }
         for (const auto &param : method->parameters) {
@@ -1045,7 +1057,18 @@ case ast::NodeType::BlockStatement: {
     for (const auto &method : structDecl.definition.methods) {
       if (method) {
         beginFunction(method.get());
-        declareLocal("self", nullptr, false);
+        bool explicitSelf = false;
+        for (const auto &param : method->parameters) {
+          if (param && param->pattern &&
+              param->pattern->kind == ast::NodeType::Identifier) {
+            const auto &ident =
+                static_cast<const ast::Identifier &>(*param->pattern);
+            if (ident.symbol == "self") explicitSelf = true;
+          }
+        }
+        if (!explicitSelf) {
+          declareLocal("self", nullptr, false);
+        }
         for (const auto &param : method->parameters) {
           if (param && param->pattern) {
             collectPatternIdentifiers(*param->pattern);

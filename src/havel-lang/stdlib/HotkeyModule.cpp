@@ -935,7 +935,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
     bool changed = false;
 
     auto aliasVal = vm.objectGetWithClassChain(args[1].asObjectId(), "alias");
-    if (aliasVal.isStringValId()) {
+    if (aliasVal.isStringValId() || aliasVal.isStringId()) {
         std::string newAlias = vm.resolveStringKey(aliasVal);
         if (newAlias != ctx->alias) {
             auto *sched = vm.getScheduler();
@@ -951,7 +951,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
     }
 
     auto keyVal = vm.objectGetWithClassChain(args[1].asObjectId(), "key");
-    if (keyVal.isStringValId()) {
+    if (keyVal.isStringValId() || keyVal.isStringId()) {
         std::string newKey = vm.resolveStringKey(keyVal);
         ctx->key = newKey;
         ctx->combo = newKey;
@@ -964,7 +964,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
     }
 
     auto policyVal = vm.objectGetWithClassChain(args[1].asObjectId(), "policy");
-    if (policyVal.isStringValId()) {
+    if (policyVal.isStringValId() || policyVal.isStringId()) {
         std::string policyStr = vm.resolveStringKey(policyVal);
         HotkeyPolicy policy = parsePolicy(policyStr);
         auto *sched = vm.getScheduler();
@@ -978,7 +978,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
     }
 
     auto condVal = vm.objectGetWithClassChain(args[1].asObjectId(), "condition");
-    if (condVal.isStringValId()) {
+    if (condVal.isStringValId() || condVal.isStringId()) {
         std::string newCond = vm.resolveStringKey(condVal);
         ctx->condition = newCond;
         auto s = vm.createRuntimeString(newCond);
@@ -987,7 +987,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
     }
 
     auto infoVal = vm.objectGetWithClassChain(args[1].asObjectId(), "info");
-    if (infoVal.isStringValId()) {
+    if (infoVal.isStringValId() || infoVal.isStringId()) {
         std::string newInfo = vm.resolveStringKey(infoVal);
         ctx->info = newInfo;
         auto s = vm.createRuntimeString(newInfo);

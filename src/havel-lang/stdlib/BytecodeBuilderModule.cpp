@@ -1148,6 +1148,26 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
         return result;
     });
 
+    api.registerFunction("bc.load_chunk", [api](const std::vector<Value> &args) -> Value {
+        // AOT/precompiled-path seam: load a serialized .hvc chunk from disk
+        // into stored_chunks and return its id, so a launcher can spawn/execute
+        // precompiled bytecode without re-parsing source (self-hosted split
+        // ticket, docs/plans/execution-path-map.md §6).
+        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+            throw std::runtime_error("bc.load_chunk: requires path (string)");
+        }
+        auto path = api.resolveString(args[0]);
+        havel::compiler::ValueSerializer serializer;
+        auto loaded = serializer.loadChunk(path);
+        if (!loaded) {
+            throw std::runtime_error("bc.load_chunk: cannot load " + path);
+        }
+        auto stored = std::make_shared<BytecodeChunk>(std::move(*loaded));
+        uint32_t id = static_cast<uint32_t>(g_builder.stored_chunks.size());
+        g_builder.stored_chunks.push_back(stored);
+        return Value::makeInt(static_cast<int64_t>(id));
+    });
+
     api.registerFunction("bc.execute_stored", [api](const std::vector<Value> &args) -> Value {
         if (args.empty() || !args[0].isInt()) {
             throw std::runtime_error("bc.execute_stored: requires chunk id (int)");
@@ -1258,6 +1278,7 @@ return result;
 
     auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
+  api.setField(bcObj, "clear_stored", api.makeFunctionRef("bc.clear_stored"));
     api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
     api.setField(bcObj, "func_push", api.makeFunctionRef("bc.func_push"));
     api.setField(bcObj, "func_pop", api.makeFunctionRef("bc.func_pop"));
@@ -1278,6 +1299,7 @@ return result;
   api.setField(bcObj, "serialize", api.makeFunctionRef("bc.serialize"));
     api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
     api.setField(bcObj, "store_chunk", api.makeFunctionRef("bc.store_chunk"));
+    api.setField(bcObj, "load_chunk", api.makeFunctionRef("bc.load_chunk"));
     api.setField(bcObj, "execute_stored", api.makeFunctionRef("bc.execute_stored"));
     api.setField(bcObj, "spawn_stored", api.makeFunctionRef("bc.spawn_stored"));
     api.setField(bcObj, "tick", api.makeFunctionRef("bc.tick"));

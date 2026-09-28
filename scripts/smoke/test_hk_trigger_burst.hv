@@ -1,0 +1,31 @@
+// Regression: bursty triggers at key-repeat spacing (5ms) — the Drop
+// policy must COALESCE only while the body runs, not swallow spaced
+// triggers. 100 spaced triggers must fire 100 callbacks (regression
+// 0d576573 class: the Drop pre-check swallowed every idle-parked
+// trigger; fixed in wakeHotkey).
+// Expected: fired==100, ok=true, rc 0.
+
+use window
+
+fired = 0
+
+F24 => {
+    fired = fired + 1
+    w = window.active()
+    w.raise()
+}
+
+i = 0
+while i < 100 {
+    hotkey.trigger("F24")
+    sleep(5)
+    i = i + 1
+}
+sleep(300)
+print("fired:", fired)
+print("ok:", fired == 100)
+if fired != 100 {
+    print("FAIL hk-trigger-burst: expected 100, got ${fired}")
+    process.exit(255)
+}
+process.exit(0)

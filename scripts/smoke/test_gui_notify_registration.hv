@@ -1,0 +1,21 @@
+// test_gui_notify_registration.hv — guards the extraction of gui.notify out of
+// the core-facing UIBridge translation unit.
+//
+// What: calls gui.notify and asserts the call resolves to a real host
+//       function instead of an unresolved identifier.
+// Why:  gui.notify was moved from src/host/module/bridges/UIBridge.cpp into
+//       src/host/module/bridges/qt/QtBridge.cpp (havel_gui target only), and its
+//       registration now goes through the explicit BridgeSelection slot that
+//       src/main.cpp fills with installQtBridge. A registration lost in that move
+//       shows up here as "Unresolved identifier 'notify'" at compile time — this
+//       test then fails. (The earlier weak-hook design could not work at all:
+//       a weak undefined symbol never pulls a member out of a static archive.)
+// Expected: assert passes. The returned value is false because the smoke
+//       harness has no QApplication/GUIManager; the point is that the host
+//       function is registered, not that a notification appears.
+
+// Referencing gui.notify must compile. If the Qt bridge did not register it,
+// the pipeline raises a SemanticError before the assertion is ever reached.
+res = gui.notify("smoke", "gui.notify is registered by the Qt bridge")
+
+assert(res == false, "gui.notify must be registered and return false without a GUI")

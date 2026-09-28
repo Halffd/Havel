@@ -4,9 +4,11 @@
 // translation units. This content was centralized when the monolithic
 // src/host/module/ModularHostBridges.cpp (~7.9k lines) was split.
 
-#ifdef HAVE_QT_EXTENSION
-#include "qt.hpp"
-#endif
+// Qt-free by contract: this header is the common include closure of every
+// core-facing bridge TU, so it must not pull in qt.hpp or the Qt-backed
+// managers from src/extensions/gui. Qt-only handlers live in
+// src/host/module/bridges/qt/QtBridge.cpp and reach the core through the
+// explicit bridge selection slot (see ../BridgeSelection.hpp).
 #include "../../host/window/WindowService.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../utils/DebugFlags.hpp"
@@ -22,13 +24,6 @@
 #include "core/BrightnessManager.hpp"
 #include <csignal>
 
-#ifdef HAVE_QT_EXTENSION
-#include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
-#include "extensions/gui/common/GUIManager.hpp"
-#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-// SettingsWindow removed (was part of deprecated AutomationSuite)
-#endif
-#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "host/app/AppService.hpp"
@@ -44,20 +39,16 @@
 #include "host/mouse/MouseService.hpp"
 #include "host/network/NetworkService.hpp"
 #include "host/process/ProcessService.hpp"
-#ifdef HAVE_QT_EXTENSION
+// Backend-abstracted host services: pImpl delegators whose headers carry no
+// Qt. The concrete backends live in the optional GUI bridge targets.
 #include "host/screenshot/ScreenshotService.hpp"
 #include "host/window/AltTabService.hpp"
-#endif
 #include "host/window/WindowService.hpp"
 #include "core/media/AudioManager.hpp"
 #include "core/process/Launcher.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/window/WindowManagerDetector.hpp"
 
-#ifdef HAVE_QT_EXTENSION
-#include <QClipboard>
-#include <QString>
-#endif
 #include <atomic>
 #include <algorithm>
 #include <ctime>
@@ -73,15 +64,11 @@
 
 namespace havel::compiler {
 
-namespace {
-
-// Resolve a string-ish Value to std::string. Used across bridges.
-static std::string strVal(const Value &v, const compiler::VM *vm) {
+// Resolve a string-ish Value to std::string. Used across bridges and by the
+// Qt bridge TU, so it is a shared inline rather than a per-TU static.
+inline std::string strVal(const Value &v, const compiler::VM *vm) {
     if (vm && (v.isStringValId() || v.isStringId())) return vm->resolveStringKey(v);
     return v.toString();
 }
-
-
-} // namespace
 
 } // namespace havel::compiler

@@ -643,6 +643,8 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 list(APPEND CORE_SOURCES
 "src/host/module/ModuleLoader.cpp"
 "src/host/module/ModularHostBridges.hpp"
+"src/host/module/BridgeSelection.cpp"
+"src/host/module/BridgeSelection.hpp"
 # ModularHostBridges.cpp split per-domain (bridges/):
 "src/host/module/bridges/AppBridge.cpp"
 "src/host/module/bridges/AudioBridge.cpp"
@@ -663,6 +665,7 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/UIBridge.cpp"
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"
+"src/host/ui/UIBackendFactory.cpp"
 "src/host/ui/UIManager.cpp"
 "src/host/window/WindowService.cpp"
 "src/Havel.cpp"
@@ -673,10 +676,7 @@ list(APPEND CORE_SOURCES
 # Qt-dependent core sources (only built when in-process Qt backend is enabled)
 if(ENABLE_QT_UI_BACKEND)
   set(_QT_CORE_SOURCES
-    "src/host/automation/PixelAutomationService.cpp"
     "src/host/screenshot/ScreenshotService.cpp"
-    "src/host/ui/QtBackend.cpp"
-    "src/host/ui/UIService.cpp"
     "src/host/window/AltTabService.cpp"
   )
   list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
@@ -685,6 +685,7 @@ endif()
 # Clipboard sources (always built, no Qt dependency)
 set(_CLIPBOARD_CORE_SOURCES
   "src/host/clipboard/Clipboard.cpp"
+  "src/host/clipboard/ClipboardBackendFactory.cpp"
   "src/host/clipboard/ClipboardInfo.cpp"
   "src/host/clipboard/ClipboardService.cpp"
   "src/host/clipboard/HistoryClipboard.cpp"
@@ -698,6 +699,22 @@ list(APPEND CORE_SOURCES ${_CLIPBOARD_CORE_SOURCES})
 # (all gui/* files unconditionally include qt.hpp)
 if(ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
+  # Qt half of UIBridge. Lives outside src/extensions/gui so the bridge tree
+  # stays together, but compiled into havel_gui (optional) — never into
+  # havel_core / havel_lang_core, which must stay Qt-free.
+  list(APPEND GUI_SOURCES
+      ${CMAKE_SOURCE_DIR}/src/host/module/bridges/qt/QtBridge.cpp
+      # The Qt UI backend and its UIService glue. UIManager used to construct
+      # these inline, which is what put Qt symbols in libhavel_core.a; it now
+      # goes through the registry in src/host/ui/UIBackendFactory.hpp.
+      ${CMAKE_SOURCE_DIR}/src/host/ui/QtBackend.cpp
+      ${CMAKE_SOURCE_DIR}/src/host/ui/UIService.cpp
+      # Pixel automation service (the whole TU is inside HAVE_QT_EXTENSION),
+      # and the Qt half of screen capture, which answers the provider slot in
+      # src/core/automation/ScreenCapture.hpp.
+      ${CMAKE_SOURCE_DIR}/src/host/automation/PixelAutomationService.cpp
+      ${CMAKE_SOURCE_DIR}/src/extensions/qt/QtScreenCapture.cpp
+  )
 else()
   set(GUI_SOURCES "")
 endif()
@@ -1338,6 +1355,7 @@ endif() # QT_BACKEND_AVAILABLE
 if(GTK4_TOOLKIT_AVAILABLE OR GTK_BACKEND_AVAILABLE)
 add_library(havel_toolkit_gtk MODULE
     src/extensions/gtk/havel_toolkit_gtk.cpp
+    src/host/ui/GtkBackend.cpp
 )
 set(_GTK_TK_INCLUDES ${GTK4_TOOLKIT_INCLUDE_DIRS})
 if(GTK_BACKEND_AVAILABLE)
@@ -1377,18 +1395,37 @@ endif()
 
 # ImGui toolkit plugin
 if(IMGUI_BACKEND_AVAILABLE)
+# Dear ImGui ships its runtime sources next to imgui.h, so the toolkit
+# compiles them in and stays self-contained instead of depending on a system
+# imgui library.
+set(IMGUI_RUNTIME_SOURCES
+    ${IMGUI_INCLUDE_DIR}/imgui.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_draw.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_tables.cpp
+    ${IMGUI_INCLUDE_DIR}/imgui_widgets.cpp
+    ${IMGUI_INCLUDE_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_INCLUDE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+# GLFW3 already links glib on Linux, and the backend reports through the same
+# g_debug/g_warning channel as the GTK backend.
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
 add_library(havel_toolkit_imgui MODULE
     src/extensions/imgui/havel_toolkit_imgui.cpp
+    src/host/ui/ImGuiBackend.cpp
+    ${IMGUI_RUNTIME_SOURCES}
 )
 target_include_directories(havel_toolkit_imgui PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${GLFW3_INCLUDE_DIRS}
+    ${GLIB2_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIR}
+    ${IMGUI_INCLUDE_DIR}/backends
 )
 target_link_libraries(havel_toolkit_imgui PRIVATE
     ${GLFW3_LIBRARIES}
+    ${GLIB2_LIBRARIES}
     OpenGL::GL
     dl
 )
@@ -1608,6 +1645,13 @@ $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
 -Wl,--end-group
 )
+
+# The app selects the optional Qt bridge explicitly (src/main.cpp). The define
+# is what keeps main.cpp free of a reference to installQtGuiBridge in builds
+# where havel_gui does not exist.
+if(ENABLE_QT_UI_BACKEND)
+  target_compile_definitions(havel PRIVATE HAVEL_QT_BRIDGE)
+endif()
 
 
 # ==============================================================================
@@ -1885,6 +1929,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # assignment, were dropped while only the scheduler set was listed).
   add_test(NAME lowering-opcode-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_lowering_opcodes.sh)
+  # Qt leak guard: libhavel_core.a and libhavel_lang.a are embedded by Qt-free
+  # hosts (havel-wm, the cranelift AOT shim, the AOT runtime). Fails if a
+  # core-facing bridge TU includes a Qt header or branches on
+  # HAVE_QT_EXTENSION, if the language archives gain an undefined Qt symbol,
+  # or if havel_core.a's Qt references drift from the pinned known-leaks
+  # ledger in the script (both new leaks and stale entries fail).
+  add_test(NAME core-no-qt-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_core_no_qt.sh
+                   ${CMAKE_BINARY_DIR})
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)
@@ -2734,6 +2787,58 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(query_system_test PRIVATE cxx_std_23)
     target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME query_system_test COMMAND query_system_test)
+
+    # Screen-provider seam behind PixelAutomation. This test deliberately does
+    # NOT link havel_gui: the whole point of the extraction is that the core
+    # resolves on its own, so the link is part of what it verifies.
+    add_executable(pixel_provider_test
+        tests/pixel_provider_ut.cpp
+    )
+    target_compile_features(pixel_provider_test PRIVATE cxx_std_23)
+    target_compile_definitions(pixel_provider_test PRIVATE
+        $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+    )
+    target_include_directories(pixel_provider_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(pixel_provider_test PRIVATE
+        # gtest_main has to precede the havel archives: havel_lang contains
+        # src/havel-lang/tools/HppCompiler.cpp, which defines its own main, and
+        # with the archives first the linker resolves main from that instead.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
+
+    # Clipboard-backend registry seam behind Clipboard. Same shape as
+    # pixel_provider_test: no havel_gui, so the link is part of what it
+    # verifies.
+    add_executable(clipboard_backend_test
+        tests/clipboard_backend_ut.cpp
+    )
+    target_compile_features(clipboard_backend_test PRIVATE cxx_std_23)
+    target_include_directories(clipboard_backend_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(clipboard_backend_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME clipboard_backend_test COMMAND clipboard_backend_test)
 endif()
 
 # ==============================================================================

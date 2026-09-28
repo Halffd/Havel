@@ -485,6 +485,111 @@ static void test_drainDeferredCallbacks_spawn_integration() {
   sched.clearCurrent();
 }
 
+// Reproduces the production topology of a real keypress end to end.
+//
+// EventListener::DispatchHotkeyCallback dispatches the OS callback on a
+// detached thread; InputBridge's OS callback defers it through deferToVM (no
+// thread guard), and the deferred lambda then runs the isHotkeyPending +
+// get + wakeHotkey sequence on the io thread. ExecutionEngine::executeFrame
+// drains those callbacks from the io thread even when vm_->isInExecute() is
+// true, so the drain can land while the vm thread still has a hotkey goroutine
+// in state Running.
+//
+// The contract under test: the live frame survives the foreign drain, the
+// trigger is recorded as intent instead of resetting the goroutine, and the
+// goroutine re-arms exactly once when the vm thread re-arms it after the body
+// (what ExecutionEngine::handleReturned does).
+static void test_os_callback_deferred_while_body_running() {
+    auto& sched = Scheduler::instance();
+
+    for (auto policy : {HotkeyPolicy::Drop, HotkeyPolicy::Replace,
+                        HotkeyPolicy::Queue, HotkeyPolicy::Coalesce}) {
+        uint32_t gid = sched.spawnHotkey(7, {Value::makeInt(1)}, 0, "os_cb_hk");
+        auto* g = sched.get(gid);
+        g->persistent = true;
+        g->hotkey_policy = policy;
+        g->hotkey_alias = "os_cb_alias";
+        g->hotkey_callable = Value::makeFunctionObjId(7);
+        g->hotkey_args = {Value::makeInt(1)};
+
+        // vm thread: take the hotkey and start its body.
+        auto* picked = sched.pickNext();
+        CHECK(picked == g, "expected the persistent hotkey to be picked");
+        sched.clearCurrent();
+        g->state = Scheduler::GoroutineState::Running;
+        g->ip = 31337;
+        g->locals = {Value::makeInt(5)};
+        if (g->fiber) {
+            g->fiber->pushCall(77, 0, nullptr);
+            g->fiber->stack.push(Value::makeInt(9));
+        }
+        size_t live_frames = g->fiber ? g->fiber->call_stack.size() : 0;
+
+        // detached (io) thread: exactly the InputBridge OS-callback lambda.
+        std::thread io([&sched, gid, policy](){
+            sched.deferToVM([&sched, gid, policy](){
+                if (policy == HotkeyPolicy::Drop && sched.isHotkeyPending(gid)) {
+                    return;
+                }
+                auto* wg = sched.get(gid);
+                if (!wg) return;
+                sched.wakeHotkey(wg, {}, "os-callback");
+            });
+        });
+        io.join();
+
+        // io thread: drain, while the vm thread is still inside the body.
+        sched.drainDeferredCallbacks();
+
+        // The body was not corrupted and the trigger was not applied to it.
+        CHECK(g->state == Scheduler::GoroutineState::Running,
+              "foreign drain must not take ownership of the running goroutine");
+        CHECK_EQ(g->ip, 31337u, "foreign drain must not reset the live ip");
+        if (g->fiber) {
+            CHECK_EQ(g->fiber->call_stack.size(), live_frames,
+                     "foreign drain must not clear the live call stack");
+        }
+        if (policy != HotkeyPolicy::Drop) {
+            CHECK(g->hotkey_retrigger.load(std::memory_order_acquire),
+                  "non-Drop trigger arriving mid-body must set the retrigger flag");
+        } else {
+            // Drop policy deliberately discards a trigger on a busy goroutine.
+            CHECK(!g->hotkey_retrigger.load(std::memory_order_acquire),
+                  "Drop policy must not set the retrigger flag while running");
+        }
+        CHECK(sched.pickNext() != g, "running goroutine must not be in a run queue");
+
+        // vm thread: body finished. Mirror ExecutionEngine::handleReturned:
+        // retrigger set -> re-queue and run again; otherwise park in
+        // HotkeyWait and wait for the next trigger.
+        if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+            g->hotkey_retrigger.store(false, std::memory_order_release);
+            sched.requeueFront(g);
+            CHECK(g->state == Scheduler::GoroutineState::Created,
+                  "goroutine should be re-armed after the body completed");
+            auto* rearmed = sched.pickNext();
+            CHECK(rearmed == g, "re-armed hotkey must be picked up exactly once");
+        } else {
+            g->state = Scheduler::GoroutineState::Suspended;
+            g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait,
+                                      std::memory_order_release);
+            CHECK(!sched.isHotkeyPending(gid),
+                  "parked hotkey is idle, not pending (regression 0d576573)");
+            // The discarded trigger must not disarm the hotkey: the next
+            // keypress has to wake it again.
+            sched.wakeHotkey(g, {}, "os-callback");
+            CHECK(g->state == Scheduler::GoroutineState::Created,
+                  "next keypress must wake the parked hotkey");
+            auto* rewoken = sched.pickNext();
+            CHECK(rewoken == g, "re-woken hotkey must be picked up");
+        }
+
+        g->state = Scheduler::GoroutineState::Done;
+        sched.clearCurrent();
+        sched.cleanupDoneGoroutines();
+    }
+}
+
 static void test_stop_marks_all_done() {
   auto& sched = Scheduler::instance();
 
@@ -3853,6 +3958,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_drainDeferredCallbacks_spawn_integration();
   std::cout << " PASS drainDeferredCallbacks spawn integration\n";
 
+  test_os_callback_deferred_while_body_running();
+  std::cout << " PASS os callback deferred from io thread while body running: re-arms once\n";
+
   test_stop_marks_all_done();
   std::cout << " PASS stop marks all goroutines Done\n";
 
@@ -4248,7 +4356,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   //   fiber-executing park, no-scheduler baseline)
   // + 1 concurrent-spawn gid uniqueness regression test
   // + 1 get()-vs-spawn data race regression test (tsan)
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1;
+  // + 1 cross-thread os-callback-while-running re-arm regression test
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1 + 3 + 1 + 1 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

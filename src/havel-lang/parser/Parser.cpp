@@ -50,6 +50,10 @@ static bool isKeywordToken(TokenType t) {
     case TokenType::Timeout: case TokenType::Interval: case TokenType::Wait:
     case TokenType::WaitGroup: case TokenType::Defer: case TokenType::Co:
     case TokenType::Yield: case TokenType::Update:
+    // `async` is contextual: parsePrefix turns it back into an identifier
+    // unless it starts an async expression, so name positions (`use async`,
+    // parameters, aliases) must accept the keyword token too.
+    case TokenType::Async:
         return true;
     default:
         return false;

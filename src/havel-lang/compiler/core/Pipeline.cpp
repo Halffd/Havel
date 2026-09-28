@@ -787,6 +787,18 @@ std::string opcodeName(OpCode opcode) {
   return "UNKNOWN";
 }
 
+// Hand ByteCompiler both halves of the resolver's name universe: the globals
+// the script declared (codegen needs them to pick STORE_GLOBAL vs STORE_VAR)
+// and the host functions / runtime globals (LexicalResolver only consults those
+// to decide whether a name resolves, so strict mode still accepts them).
+void seedByteCompilerGlobals(ByteCompiler &compiler,
+                             const std::unordered_set<std::string> &declared,
+                             const std::unordered_set<std::string> &known) {
+  std::unordered_set<std::string> all = declared;
+  all.insert(known.begin(), known.end());
+  compiler.setKnownGlobals(all);
+}
+
 BytecodeSmokeResult runBytecodePipeline(const std::string &source,
                                         const std::string &entry_function,
                                         const PipelineOptions &options) {
@@ -930,7 +942,8 @@ for (const auto &err : parser.getErrors()) {
   ByteCompiler compiler;
   compiler.setTypeCheckResult(std::move(semResult.typeCheckResult));
   // Pre-populate lexical resolution in the compiler
-  compiler.setKnownGlobals(semResult.lexicalResolution.global_variables);
+  seedByteCompilerGlobals(compiler, semResult.lexicalResolution.global_variables,
+                           semOptions.knownGlobals);
   compiler.setSourceFile(options.compile_unit_name);
   BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
@@ -1331,7 +1344,8 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
 
   ByteCompiler compiler;
   compiler.setTypeCheckResult(std::move(typeCheckResult));
-  compiler.setKnownGlobals(semResult.lexicalResolution.global_variables);
+  seedByteCompilerGlobals(compiler, semResult.lexicalResolution.global_variables,
+                           semOptions.knownGlobals);
   compiler.setSourceFile(options.compile_unit_name);
 
   auto chunk = compiler.compile(*program);

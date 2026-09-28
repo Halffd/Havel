@@ -2093,6 +2093,9 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   }
 
   if (enclosing->kind == ResolvedBindingKind::Local) {
+    // TEMPORARY diagnostic: nested-capture upvalue creation
+    havel::debug("[upvdiag] upvalue created for '" + name + "' fn_index=" +
+                 std::to_string(function_index));
     uint32_t upvalue_slot =
         addUpvalue(function_index, name, enclosing->slot, true);
     return ResolvedBinding{

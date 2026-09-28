@@ -1666,6 +1666,15 @@ case TokenType::Timeout:
             return nullptr;
           }
 
+  case TokenType::From: {
+    // Query expression: from x in src where cond select proj (desugared into
+    // filter/map pipeline stages). parsePrattExpression consumed 'from' before
+    // calling nud; step back so parseQueryExpression sees it as the current
+    // token (it advances past 'from' itself).
+    position--;
+    return parseQueryExpression();
+  }
+
         default: {
             errorAt(token, "Unexpected token in expression: " + token.value);
             return nullptr;
@@ -2323,7 +2332,14 @@ start = parsePrattExpression(0);
       // Parse body - use high rbp to prevent any infix ops after arrow body
       std::unique_ptr<ast::BlockStatement> body;
       if (at().type == TokenType::OpenBrace) {
-        body = parseBlockStatement();
+        // A hotkey handler body (F24 => { ... }) is an input context: bare
+        // input commands ("text", lmb, {Home}) parse without `>` per the
+        // spec's implicit input statements. The flag must go through the
+        // parseBlockStatement parameter — the brace branch sets
+        // context.inInputContext from it. Plain arrow functions
+        // (f = x => { ... }) are not input contexts.
+        body = parseBlockStatement(context.inInputContext ||
+                                   isHotkeyIdentifier(ident->symbol));
       } else {
         // Expression body: wrap in return
         auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
@@ -3447,6 +3463,29 @@ at(1).type == havel::TokenType::Arrow) {
       return parseDSLSleep();
     }
 
+    // In input context (hotkey blocks), a bare input-command identifier
+    // (lmb/rmb/m/r/w) is an implicit input statement, not a variable read —
+    // the same dispatch as parseStatement's default case, which identifiers
+    // never reach because this case handles them.
+    if (context.inInputContext &&
+        (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
+         at().value == "r" || at().value == "w")) {
+      const havel::TokenType next1 = at(1).type;
+      // Assignment targets and member access on same-named variables are not
+      // input commands: w = window.active(), w.raise() — observed in the
+      // hk-trigger burst regression.
+      if (next1 == havel::TokenType::Assign ||
+          next1 == havel::TokenType::Dot) {
+        // fall through to assignment/expression parsing
+      } else {
+        // 'w' not followed by '(' is a wait condition; with '(' it is wheel.
+        if (at().value == "w" && next1 != havel::TokenType::OpenParen) {
+          return parseWaitStatement();
+        }
+        return parseImplicitInputStatement();
+      }
+    }
+
     // Not a hotkey binding, parse as expression
     auto expr = parseExpression();
 
@@ -3560,6 +3599,12 @@ case havel::TokenType::Struct:
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
   case havel::TokenType::OpenBrace: {
+    // In input context (hotkey blocks), {Key} is a SendKey input command —
+    // the default case's implicit-input check never fires because this case
+    // handles braces.
+    if (context.inInputContext) {
+      return parseImplicitInputStatement();
+    }
     // Check if this is an object literal or destructuring pattern
     // Object literal: {key: value, ...}
     // Destructuring: {a, b} = obj or {a: b} = obj
@@ -9492,6 +9537,13 @@ return parsePostfixExpression(std::move(array));
     return parseIfExpression();
   }
 
+  case havel::TokenType::From: {
+    // Query expression: from x in src where cond select proj — the desugaring
+    // builds filter/map pipeline stages. Used as a plain expression, e.g. on
+    // the RHS of an assignment, so it dispatches from the expression parser.
+    return parseQueryExpression();
+  }
+
  default:
  failAt(tk, "Unexpected token in expression: " + tk.value);
   }
@@ -10343,11 +10395,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
   if (!first) return nullptr;
   alternatives.push_back(std::move(first));
   
-  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or) {
+  // The lexer emits BitwiseOr for a single bar in expression contexts (after
+  // a literal), Pipe for a pipeline `|` chain, Or for `||`. All three are
+  // pattern alternatives here.
+  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or ||
+         at().type == havel::TokenType::BitwiseOr) {
     advance(); // consume '|' or '||'
     auto next = parsePatternAtom();
     if (!next) {
-      failAt(at(), "Expected pattern after '|' or '||'");
+      failAt(at(), "Expected pattern after '|'");
       return nullptr;
     }
     alternatives.push_back(std::move(next));

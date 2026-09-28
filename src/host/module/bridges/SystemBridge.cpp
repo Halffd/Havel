@@ -324,6 +324,14 @@ ioObj, "locks",
   };
 
   // File operations
+  // `read`/`write` are the spec-mandated global core verbs (docs/specs/Havel.md
+  // "Available Globals"); `*File` names are the historical spellings.
+  options.host_functions["read"] = [ctx = ctx_](const auto &args) {
+    return handleFileRead(args, ctx);
+  };
+  options.host_functions["write"] = [ctx = ctx_](const auto &args) {
+    return handleFileWrite(args, ctx);
+  };
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
     return handleFileRead(args, ctx);
   };
@@ -386,88 +394,116 @@ ioObj, "locks",
 Value
 SystemBridge::handleFileRead(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("readFile() requires a file path");
   }
-  const std::string *path = nullptr;
-  if (!path) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string path;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    path = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("readFile() requires a string path");
   }
   ::havel::host::FileSystemService fs;
-  std::string content = fs.readFile(*path);
-  if (content.empty()) {
-    return Value::makeNull();
-  }
-  return Value::makeNull();
+  std::string content = fs.readFile(path);
+  auto outRef = vm->getHeap().allocateString(content);
+  return Value::makeStringId(outRef.id);
 }
 
 
 Value
 SystemBridge::handleFileWrite(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("writeFile() requires path and content");
   }
-  const std::string *path = nullptr;
-  const std::string *content = nullptr;
-  if (!path || !content) {
-    throw std::runtime_error("writeFile() requires string arguments");
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string path;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    path = vm->resolveStringKey(args[0]);
+  } else {
+    throw std::runtime_error("writeFile() requires a string path");
+  }
+  std::string content;
+  if (args[1].isStringValId() || args[1].isStringId()) {
+    content = vm->resolveStringKey(args[1]);
+  } else {
+    throw std::runtime_error("writeFile() requires string content");
   }
   ::havel::host::FileSystemService fs;
-  return Value::makeNull();
+  return Value::makeBool(fs.writeFile(path, content));
 }
 
 
 Value
 SystemBridge::handleFileExists(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("fileExists() requires a file path");
   }
-  const std::string *path = nullptr;
-  if (!path) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string path;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    path = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("fileExists() requires a string path");
   }
   ::havel::host::FileSystemService fs;
-  return Value::makeNull();
+  return Value::makeBool(fs.exists(path));
 }
 
 
 Value
 SystemBridge::handleFileSize(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("fileSize() requires a file path");
   }
-  const std::string *path = nullptr;
-  if (!path) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string path;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    path = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("fileSize() requires a string path");
   }
   ::havel::host::FileSystemService fs;
-  if (!fs.exists(*path)) {
+  if (!fs.exists(path)) {
     return Value::makeInt(static_cast<int64_t>(0));
   }
-  return Value::makeNull();
+  return Value::makeInt(fs.getFileSize(path));
 }
 
 
 Value
 SystemBridge::handleFileDelete(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("deleteFile() requires a file path");
   }
-  const std::string *path = nullptr;
-  if (!path) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string path;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    path = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("deleteFile() requires a string path");
   }
   ::havel::host::FileSystemService fs;
-  return Value::makeNull();
+  return Value::makeBool(fs.deleteFile(path));
 }
 
 

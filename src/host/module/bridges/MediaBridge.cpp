@@ -186,13 +186,19 @@ MediaBridge::handleMediaSetActivePlayer(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("media.setActivePlayer() requires a player name");
   }
-  const std::string *name = nullptr;
-  if (!name) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string name;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    name = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("media.setActivePlayer() requires a string");
   }
   try {
     ::havel::host::MediaService media;
-    media.setActivePlayer(*name);
+    media.setActivePlayer(name);
     return Value::makeBool(true);
   } catch (...) {
     return Value::makeBool(false);

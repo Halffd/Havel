@@ -25,6 +25,12 @@ void IOBridge::install(PipelineOptions &options) {
         return handleWait(args, ctx);
     };
     // Mouse functions
+    // `click`/`move` are the spec-mandated global core verbs
+    // (docs/specs/Havel.md "Available Globals"); the io.* and mouse.* names
+    // are the namespaced spellings of the same handlers.
+    options.host_functions["click"] = [ctx = ctx_](const auto &args) {
+        return handleMouseClick(args, ctx);
+    };
     options.host_functions["io.click"] = [ctx = ctx_](const auto &args) {
         return handleMouseClick(args, ctx);
     };
@@ -55,9 +61,12 @@ void IOBridge::install(PipelineOptions &options) {
  options.host_functions["mouse.up"] = [ctx = ctx_](const auto &args) {
  return handleMouseUp(args, ctx);
  };
- options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
- return handleMouseMoveTo(args, ctx);
- };
+  options.host_functions["move"] = [ctx = ctx_](const auto &args) {
+  return handleMouseMoveTo(args, ctx);
+  };
+  options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
+  return handleMouseMoveTo(args, ctx);
+  };
  options.host_functions["mouse.moveRel"] = [ctx = ctx_](const auto &args) {
  return handleMouseMoveRel(args, ctx);
  };

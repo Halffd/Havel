@@ -33,6 +33,44 @@
 
 namespace havel::compiler {
 
+// Sleep for duration_ms. When a scheduler is active and we are running inside
+// a fiber, the fiber is suspended instead of blocking, so the event loop keeps
+// processing input events (including exit requests from other hotkeys) while
+// this goroutine waits. With no scheduler, fall back to a chunked sleep that
+// still pumps pending events every 10ms.
+void VM::suspendOrSleepMs(int64_t duration_ms) {
+  if (duration_ms <= 0) {
+    return;
+  }
+
+  if (scheduler_ && current_executing_fiber_) {
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+    suspension_context_ =
+        reinterpret_cast<void *>(static_cast<intptr_t>(duration_ms));
+    return;
+  }
+
+  const int64_t kSleepChunkMs = 10;
+  auto deadline = std::chrono::steady_clock::now() +
+                  std::chrono::milliseconds(duration_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (exit_requested_.load()) {
+      return;
+    }
+    processPendingEvents();
+    if (yield_callback_) {
+      yield_callback_();
+    }
+    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        deadline - std::chrono::steady_clock::now());
+    auto chunk = std::min(static_cast<int64_t>(remaining.count()), kSleepChunkMs);
+    if (chunk > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+    }
+  }
+}
+
 void VM::registerDefaultHostFunctions() {
   // Register print as both host function AND global (for closure access)
   // Register string module host functions (toCodePointArray, etc.)
@@ -1402,30 +1440,7 @@ void VM::registerDefaultHostFunctions() {
       //         duration_ms, scheduler_, current_executing_fiber_);
     }
 
-    if (scheduler_ && current_executing_fiber_) {
-      suspension_requested_ = true;
-      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-      suspension_context_ =
-          reinterpret_cast<void *>(static_cast<intptr_t>(duration_ms));
-      return Value::makeNull();
-    }
-
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(duration_ms);
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (exit_requested_.load())
-        return Value::makeNull();
-      processPendingEvents();
-      if (yield_callback_) {
-        yield_callback_();
-      }
-      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-          deadline - std::chrono::steady_clock::now());
-      auto chunk =
-          std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
-      if (chunk > 0)
-        std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-    }
+    suspendOrSleepMs(duration_ms);
     return Value::makeNull();
   });
 
@@ -1474,42 +1489,38 @@ void VM::registerDefaultHostFunctions() {
       //         scheduler_, current_executing_fiber_, *duration_ms);
     }
 
-    if (scheduler_ && current_executing_fiber_) {
-      // Use the VM's goroutine suspension mechanism instead of blocking.
-      // This lets the scheduler put the goroutine to sleep and resume it
-      // after the duration, allowing the event loop to process input
-      // events (including exit requests from other hotkeys) while we wait.
-      // Only valid when running inside a fiber/goroutine context.
-      suspension_requested_ = true;
-      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-      suspension_context_ =
-          reinterpret_cast<void *>(static_cast<intptr_t>(*duration_ms));
-      return Value::makeNull();
-    }
-
-    // No scheduler — fall back to chunked sleep with event processing
-    {
-      const int SLEEP_CHUNK_MS = 10;
-      auto end_time = std::chrono::steady_clock::now() +
-                      std::chrono::milliseconds(*duration_ms);
-      while (std::chrono::steady_clock::now() < end_time) {
-        if (exit_requested_.load())
-          return Value::makeNull();
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - std::chrono::steady_clock::now());
-        auto chunk =
-            std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
-        if (chunk > 0) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-        }
-        processPendingEvents();
-        if (yield_callback_) {
-          yield_callback_();
-        }
-      }
-    }
+    suspendOrSleepMs(*duration_ms);
     return Value::makeNull();
   });
+
+  // sleepUntil("13:10") / sleepUntil("thursday 8:00") — spec global
+  // (docs/specs/Havel.md "Available Globals"). Sleeps until the next
+  // occurrence of the given wall-clock time, resuming after the computed
+  // delay via the same fiber-suspension path as sleep().
+  registerHostFunction("sleepUntil", 1,
+      [this](const std::vector<Value> &args) {
+        if (args.empty()) {
+          COMPILER_THROW("sleepUntil() requires one argument");
+        }
+
+        auto delta_ms = parseSleepUntilTarget(args[0]);
+        if (!delta_ms) {
+          COMPILER_THROW(
+              "sleepUntil(): invalid time format. Use 'HH:MM', 'HH:MM:SS' or "
+              "'HH:MM:SS.mmm', optionally prefixed with a weekday such as "
+              "'thursday 8:00' or 'mon 9:00'");
+        }
+
+        if (trace_execution_) {
+          // fprintf(stderr,
+          //         "[DEBUG] sleepUntil: delta_ms=%ld, scheduler_=%p, "
+          //         "current_executing_fiber_=%p\n",
+          //         *delta_ms, scheduler_, current_executing_fiber_);
+        }
+
+        suspendOrSleepMs(*delta_ms);
+        return Value::makeNull();
+      });
 
   // __async_probe(ms) — fiber-suspending blocking call validation seam.
   // Simulates a blocking host op (sleeps on the worker thread) and

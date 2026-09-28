@@ -367,11 +367,18 @@ Value callee_value = popStack();
 
 case OpCode::CALL_METHOD: {
     // Dispatches based on receiver type without boxing.
-    if (instruction.operands.size() != 2 ||
+    // Operands: <string method_name, uint32 arg_count[, bool is_pipe_stage]>.
+    // is_pipe_stage is set by pipeline compilation (`data |> doubled`) and
+    // gates the script-global fallback below — only pipe stages may call a
+    // same-named global with the receiver as the first argument.
+    if (instruction.operands.size() < 2 || instruction.operands.size() > 3 ||
         !instruction.operands[0].isStringValId() ||
         !instruction.operands[1].isInt()) {
-      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
+      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count[, bool is_pipe_stage]>");
     }
+    const bool isPipeCall = instruction.operands.size() >= 3 &&
+                            instruction.operands[2].isBool() &&
+                            instruction.operands[2].asBool();
 
             uint32_t strIndex = instruction.operands[0].asStringValId();
             const auto& cf_cm = currentFrame();
@@ -771,6 +778,25 @@ if (instanceObj) {
             }
           }
         }
+      }
+    }
+
+    if (isPipeCall && !found_host && vm_func.isNull()) {
+      // 1.6 Script-global fallback: `data |> doubled` where doubled is a
+      // script-defined fn. The array prototype has no such method and the
+      // array/Array module namespaces don't either; without this the pipeline
+      // silently returned null. The receiver is passed as the first argument
+      // (the pipe/method semantic), matching how prototypes receive self.
+      // Gated on isPipeCall: a plain `x.load(y)` member call must never
+      // resolve to a global `load` — the receiver is not an argument of the
+      // call the author wrote.
+      auto globalIt = globals.find(method_name);
+      if (globalIt != globals.end() &&
+          (globalIt->second.isFunctionObjId() ||
+           globalIt->second.isClosureId() ||
+           globalIt->second.isHostFuncId())) {
+        vm_func = globalIt->second;
+        isInstanceFunc = false;
       }
     }
 

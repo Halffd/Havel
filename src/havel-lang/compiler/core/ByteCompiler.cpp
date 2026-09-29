@@ -9125,19 +9125,8 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
 
 void ByteCompiler::compileGetInputExpression(
     const ast::GetInputExpression &expression) {
-  // '< mouse' reads input state — bound to mouse.state (io._mouseState),
-  // the XQueryPointer-based query. There is no io.getMouse host function;
-  // the io object only carries keyboard-state helpers.
-  if (expression.source == "mouse") {
-    uint32_t objSid = addStringConstant("mouse");
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
-    uint32_t methodSid = addStringConstant("state");
-    emit(OpCode::CALL_METHOD, std::vector<Value>{
-        Value::makeStringValId(methodSid), Value(static_cast<uint32_t>(0))});
-    return;
-  }
-  // < source (e.g., < clipboard)
-  // Compiled as call to io.getClipboard() or similar
+  // < source (e.g., < clipboard, < mouse)
+  // Compiled as call to io.getClipboard() / io.getMouse() or similar
   std::string fnName = "io.get" + expression.source;
   // Capitalize first letter of source if needed for camelCase
   if (!expression.source.empty()) {

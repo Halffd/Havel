@@ -169,11 +169,14 @@ Value
 MediaBridge::handleMediaGetActivePlayer(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
   try {
     ::havel::host::MediaService media;
-    // TODO: string pool integration - for now return null
-    (void)media;
-    return Value::makeNull();
+    auto outRef = vm->getHeap().allocateString(media.getActivePlayer());
+    return Value::makeStringId(outRef.id);
   } catch (...) {
     return Value::makeNull();
   }
@@ -218,9 +221,8 @@ Value MediaBridge::handleMediaGetAvailablePlayers(
     auto players = media.getAvailablePlayers();
     auto arr = vm->createHostArray();
     for (const auto &player : players) {
-      // TODO: string pool integration - for now return null
-      (void)player;
-      vm->pushHostArrayValue(arr, Value::makeNull());
+      auto outRef = vm->getHeap().allocateString(player);
+      vm->pushHostArrayValue(arr, Value::makeStringId(outRef.id));
     }
     return Value::makeArrayId(arr.id);
   } catch (...) {

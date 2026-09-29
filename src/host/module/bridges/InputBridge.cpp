@@ -3,6 +3,8 @@
 
 #include "../ModularHostBridges.hpp"
 #include "BridgesInternal.hpp"
+#include "host/ServiceRegistry.hpp"
+#include "host/io/MapManagerService.hpp"
 
 namespace havel::compiler {
 void InputBridge::install(PipelineOptions &options) {
@@ -470,18 +472,51 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
 Value
 InputBridge::handleMapManagerMap(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  return Value::makeBool(false);
+  if (args.size() < 2) {
+    return Value::makeBool(false);
+  }
+  // Same ServiceRegistry lookup the MapManagerModule plugin uses.
+  auto svc =
+      ::havel::host::ServiceRegistry::instance()
+          .get<::havel::host::MapManagerService>();
+  if (!svc) {
+    return Value::makeBool(false);
+  }
+  int id = args.size() > 2 && args[2].isInt()
+               ? static_cast<int>(args[2].asInt())
+               : 0;
+  try {
+    return Value::makeBool(svc->map(strVal(args[0], ctx ? ctx->vm : nullptr),
+                                    strVal(args[1], ctx ? ctx->vm : nullptr),
+                                    id));
+  } catch (const std::exception &e) {
+    (void)e;
+    return Value::makeBool(false);
+  }
 }
 
 
 Value InputBridge::handleMapManagerGetCurrentProfile(
     const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
+  // Same ServiceRegistry lookup the MapManagerModule plugin uses; the bridge
+  // registration must not shadow it with a dead stub.
+  auto svc =
+      ::havel::host::ServiceRegistry::instance()
+          .get<::havel::host::MapManagerService>();
+  if (!svc) {
+    return Value::makeNull();
+  }
+  try {
+    auto outRef = vm->getHeap().allocateString(svc->getCurrentProfile());
+    return Value::makeStringId(outRef.id);
+  } catch (...) {
+    return Value::makeNull();
+  }
 }
 
 
@@ -555,24 +590,32 @@ Value
 InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
                                     const HostContext *ctx) {
   (void)args;
-  ::havel::AltTabService altTab;
-  auto windows = altTab.getWindows();
-  auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) {
+  if (!ctx || !ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  // AltTabService is constructed standalone here with no backend, so its
+  // getWindows() is always empty. Source the window list from the
+  // WindowManager (the same data window.list serves) and mark the active one.
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto windows = winService.getAllWindows();
+  const uint64_t activeId = winService.getActiveWindow();
   auto arr = vm->createHostArray();
   auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = vm->createHostObject();
-    // TODO: string pool integration - for now return null for strings
-    (void)win.title; (void)win.className; (void)win.processName;
-    vm->setHostObjectField(winObj, "title", Value::makeNull());
-    vm->setHostObjectField(winObj, "className", Value::makeNull());
-    vm->setHostObjectField(winObj, "processName", Value::makeNull());
+    auto titleRef = vm->getHeap().allocateString(win.title);
+    vm->setHostObjectField(winObj, "title", Value::makeStringId(titleRef.id));
+    auto classRef = vm->getHeap().allocateString(win.windowClass);
+    vm->setHostObjectField(winObj, "className",
+                           Value::makeStringId(classRef.id));
+    auto procRef = vm->getHeap().allocateString(win.exe);
+    vm->setHostObjectField(winObj, "processName",
+                           Value::makeStringId(procRef.id));
     vm->setHostObjectField(winObj, "windowId",
-                           Value::makeInt(static_cast<int64_t>(win.windowId)));
-    vm->setHostObjectField(winObj, "active", Value::makeBool(win.active));
+                           Value::makeInt(static_cast<int64_t>(win.id)));
+    vm->setHostObjectField(winObj, "active",
+                           Value::makeBool(win.id == activeId));
     vm->pushHostArrayValue(arr, Value::makeObjectId(winObj.id));
   }
   return Value::makeArrayId(arr.id);

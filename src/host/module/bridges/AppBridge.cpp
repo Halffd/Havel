@@ -53,11 +53,13 @@ Value
 AppBridge::handleAppGetName(const std::vector<Value> &args,
                             const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getAppName());
+  return Value::makeStringId(outRef.id);
 }
 
 
@@ -65,22 +67,26 @@ Value
 AppBridge::handleAppGetVersion(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getAppVersion());
+  return Value::makeStringId(outRef.id);
 }
 
 
 Value AppBridge::handleAppGetOS(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
+                                         const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getOS());
+  return Value::makeStringId(outRef.id);
 }
 
 
@@ -88,11 +94,13 @@ Value
 AppBridge::handleAppGetHostname(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getHostname());
+  return Value::makeStringId(outRef.id);
 }
 
 
@@ -100,11 +108,13 @@ Value
 AppBridge::handleAppGetUsername(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getUsername());
+  return Value::makeStringId(outRef.id);
 }
 
 
@@ -112,11 +122,13 @@ Value
 AppBridge::handleAppGetHomeDir(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
-  (void)ctx;
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   ::havel::host::AppService app;
-  // TODO: string pool integration - for now return null
-  (void)app;
-  return Value::makeNull();
+  auto outRef = vm->getHeap().allocateString(app.getHomeDir());
+  return Value::makeStringId(outRef.id);
 }
 
 

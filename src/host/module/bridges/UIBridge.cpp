@@ -2022,9 +2022,12 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
 
   // Get selector string
   std::string selector;
-  // TODO: string support - for now return null
-  (void)selector;
-  return Value::makeNull();
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    auto *vm2 = static_cast<VM *>(ctx->vm);
+    selector = vm2 ? vm2->resolveStringKey(args[0]) : strVal(args[0], ctx->vm);
+  } else {
+    throw std::runtime_error("window.filter() requires a selector string");
+  }
 
   // Parse selector
   size_t spacePos = selector.find(' ');

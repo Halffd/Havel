@@ -4008,14 +4008,6 @@ break;
       COMPILER_THROW("Missing lexical binding for identifier: " +
                                  id.symbol);
     }
-    // TEMPORARY diagnostic: which binding kind does the compiler see?
-    if (id.symbol == "count") {
-      havel::debug("[binddiag] count@" + std::to_string(id.line) + ":" + std::to_string(id.column) +
-                   " binding kind=" + std::to_string(static_cast<int>(binding->kind)) +
-                   " slot=" + std::to_string(binding->slot) +
-                   " dist=" + std::to_string(binding->scope_distance));
-    }
-
     // Check for bare class member access (implicit @self.field)
     // If resolver gave Global but we're in a class context and the name
     // matches a class field/method, treat it as class member access.
@@ -9133,6 +9125,17 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
 
 void ByteCompiler::compileGetInputExpression(
     const ast::GetInputExpression &expression) {
+  // '< mouse' reads input state — bound to mouse.state (io._mouseState),
+  // the XQueryPointer-based query. There is no io.getMouse host function;
+  // the io object only carries keyboard-state helpers.
+  if (expression.source == "mouse") {
+    uint32_t objSid = addStringConstant("mouse");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+    uint32_t methodSid = addStringConstant("state");
+    emit(OpCode::CALL_METHOD, std::vector<Value>{
+        Value::makeStringValId(methodSid), Value(static_cast<uint32_t>(0))});
+    return;
+  }
   // < source (e.g., < clipboard)
   // Compiled as call to io.getClipboard() or similar
   std::string fnName = "io.get" + expression.source;

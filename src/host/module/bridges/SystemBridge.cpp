@@ -409,6 +409,9 @@ SystemBridge::handleFileRead(const std::vector<Value> &args,
   }
   ::havel::host::FileSystemService fs;
   std::string content = fs.readFile(path);
+  if (content.empty()) {
+    return Value::makeNull();
+  }
   auto outRef = vm->getHeap().allocateString(content);
   return Value::makeStringId(outRef.id);
 }

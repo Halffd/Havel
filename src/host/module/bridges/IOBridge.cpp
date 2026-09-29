@@ -73,9 +73,16 @@ void IOBridge::install(PipelineOptions &options) {
  options.host_functions["mouse.scroll"] = [ctx = ctx_](const auto &args) {
  return handleMouseScroll(args, ctx);
  };
- options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
- return handleMousePos(args, ctx);
- };
+  options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
+  return handleMousePos(args, ctx);
+  };
+  // `< mouse` compiles to io.getMouse (ByteCompiler::compileGetInputExpression
+  // builds "io.get" + Capitalized source); dsl.md documents the form as
+  // "io.mouseState()", which has no host binding. Bind it to the existing
+  // mouse-position handler so the documented dsl form works.
+  options.host_functions["io.getMouse"] = [ctx = ctx_](const auto &args) {
+  return handleMousePos(args, ctx);
+  };
  options.host_functions["mouse.setSpeed"] = [ctx = ctx_](const auto &args) {
  return handleMouseSetSpeed(args, ctx);
  };

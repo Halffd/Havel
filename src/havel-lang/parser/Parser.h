@@ -141,6 +141,10 @@ private:
   struct ParserContext {
     bool inInputContext =
         false; // Inside hotkey block (bare expressions are input)
+    // Inside a `dsl { }` block. Hotkey bodies also set inInputContext, but
+    // the dsl control-flow sugar (`*?`, `*:`, `->`, `?;`, `!!`) must not
+    // hijack `->` return annotations there.
+    bool inDslBlock = false;
     bool allowBraceSugar = true; // Allow expr { ... } as call sugar
     bool suppressBraceLambda = false; // In control-flow conditions: (x) { is not a lambda
     bool inMatchExpression = false; // Inside match expression (disable arrow functions)
@@ -282,7 +286,16 @@ private:
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();
   std::unique_ptr<ast::BlockStatement>
-  parseBlockStatement(bool inputContext = false);
+  parseBlockStatement(bool inputContext = false, bool dslBlock = false);
+  // dsl { } control-flow sugar (dsl.md). Each lowers to a plain AST node the
+  // C++ ByteCompiler already supports.
+  std::unique_ptr<ast::Statement> parseDslRepeatWhile();
+  std::unique_ptr<ast::Statement> parseDslRepeatFor();
+  std::unique_ptr<ast::Statement> parseDslPrint();
+  std::unique_ptr<ast::Statement> parseDslWhenBlock();
+  // Last input command batch built inside a dsl block, re-emitted by `!!`.
+  std::vector<ast::InputCommand> lastDslInputCmds_;
+  void rememberDslInputCmds(const std::vector<ast::InputCommand> &cmds);
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();
   std::unique_ptr<ast::Statement> parseUseStatement();

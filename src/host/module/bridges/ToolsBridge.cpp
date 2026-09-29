@@ -63,15 +63,20 @@ void ToolsBridge::install(PipelineOptions &options) {
 Value
 ToolsBridge::handleTextChunkerSetText(const std::vector<Value> &args,
                                       const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("textchunker.setText() requires text");
   }
-  const std::string *text = nullptr;
-  if (!text) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string text;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    text = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("textchunker.setText() requires a string");
   }
-  g_textChunker.setText(*text);
+  g_textChunker.setText(text);
   return Value::makeBool(true);
 }
 
@@ -80,10 +85,13 @@ Value
 ToolsBridge::handleTextChunkerGetText(const std::vector<Value> &args,
                                       const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  (void)g_textChunker.getText();
-  return Value::makeNull();
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string text = g_textChunker.getText();
+  auto outRef = vm->getHeap().allocateString(text);
+  return Value::makeStringId(outRef.id);
 }
 
 
@@ -137,37 +145,46 @@ Value ToolsBridge::handleTextChunkerSetCurrentChunk(
 Value
 ToolsBridge::handleTextChunkerGetChunk(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("textchunker.getChunk() requires a chunk index");
   }
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
   int64_t index = 0;
   if (args[0].isInt()) {
     index = args[0].asInt();
   }
-  // TODO: string pool integration - for now return null
-  (void)g_textChunker.getChunk(static_cast<int>(index));
-  return Value::makeNull();
+  std::string chunk = g_textChunker.getChunk(static_cast<int>(index));
+  auto outRef = vm->getHeap().allocateString(chunk);
+  return Value::makeStringId(outRef.id);
 }
 
 
 Value ToolsBridge::handleTextChunkerGetNextChunk(
     const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  (void)g_textChunker.getNextChunk();
-  return Value::makeNull();
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string chunk = g_textChunker.getNextChunk();
+  auto outRef = vm->getHeap().allocateString(chunk);
+  return Value::makeStringId(outRef.id);
 }
 
 
 Value ToolsBridge::handleTextChunkerGetPreviousChunk(
     const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  (void)g_textChunker.getPreviousChunk();
-  return Value::makeNull();
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string chunk = g_textChunker.getPreviousChunk();
+  auto outRef = vm->getHeap().allocateString(chunk);
+  return Value::makeStringId(outRef.id);
 }
 
 

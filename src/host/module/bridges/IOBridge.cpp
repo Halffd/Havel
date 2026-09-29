@@ -25,6 +25,12 @@ void IOBridge::install(PipelineOptions &options) {
         return handleWait(args, ctx);
     };
     // Mouse functions
+    // `click`/`move` are the spec-mandated global core verbs
+    // (docs/specs/Havel.md "Available Globals"); the io.* and mouse.* names
+    // are the namespaced spellings of the same handlers.
+    options.host_functions["click"] = [ctx = ctx_](const auto &args) {
+        return handleMouseClick(args, ctx);
+    };
     options.host_functions["io.click"] = [ctx = ctx_](const auto &args) {
         return handleMouseClick(args, ctx);
     };
@@ -55,18 +61,28 @@ void IOBridge::install(PipelineOptions &options) {
  options.host_functions["mouse.up"] = [ctx = ctx_](const auto &args) {
  return handleMouseUp(args, ctx);
  };
- options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
- return handleMouseMoveTo(args, ctx);
- };
+  options.host_functions["move"] = [ctx = ctx_](const auto &args) {
+  return handleMouseMoveTo(args, ctx);
+  };
+  options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
+  return handleMouseMoveTo(args, ctx);
+  };
  options.host_functions["mouse.moveRel"] = [ctx = ctx_](const auto &args) {
  return handleMouseMoveRel(args, ctx);
  };
  options.host_functions["mouse.scroll"] = [ctx = ctx_](const auto &args) {
  return handleMouseScroll(args, ctx);
  };
- options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
- return handleMousePos(args, ctx);
- };
+  options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
+  return handleMousePos(args, ctx);
+  };
+  // `< mouse` compiles to io.getMouse (ByteCompiler::compileGetInputExpression
+  // builds "io.get" + Capitalized source); dsl.md documents the form as
+  // "io.mouseState()", which has no host binding. Bind it to the existing
+  // mouse-position handler so the documented dsl form works.
+  options.host_functions["io.getMouse"] = [ctx = ctx_](const auto &args) {
+  return handleMousePos(args, ctx);
+  };
  options.host_functions["mouse.setSpeed"] = [ctx = ctx_](const auto &args) {
  return handleMouseSetSpeed(args, ctx);
  };

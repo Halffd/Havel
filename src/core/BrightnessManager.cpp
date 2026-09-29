@@ -548,12 +548,22 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
         XRRCrtcGamma *crtc_gamma =
             XRRGetCrtcGamma(x11_display, output_info->crtc);
         if (crtc_gamma) {
-          // Calculate average of all gamma values for a more accurate brightness
-          unsigned long long total = 0;
-          for (int j = 0; j < gamma_size; j++) {
-            total += crtc_gamma->red[j] + crtc_gamma->green[j] + crtc_gamma->blue[j];
-          }
-          brightness = (double)total / (gamma_size * 3 * 65535.0);
+          // Brightness estimate: the ramp's TOP value IS the applied
+          // brightness — the SET path writes
+          // value = brightness * tint * 65535 at j = gamma_size-1 (the
+          // gamma curve term is pow(1, ...) = 1 at the top). Averaging the
+          // whole ramp returned HALF the actual brightness for a linear
+          // ramp (the average of normalized [0,1] is 0.5), so every
+          // gamma-fallback read underread and the next increase() set
+          // (underread + step), dimming the screens on the first keypress
+          // after each restart. Max channel because the temperature tint
+          // scales channels below 1.0; the max channel keeps the estimate
+          // closest to the applied brightness.
+          unsigned short top = std::max({
+              crtc_gamma->red[gamma_size - 1],
+              crtc_gamma->green[gamma_size - 1],
+              crtc_gamma->blue[gamma_size - 1]});
+          brightness = (double)top / 65535.0;
           XRRFreeGamma(crtc_gamma);
         }
       }
@@ -1135,15 +1145,25 @@ bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
 
 // === TEMPERATURE INCREMENT METHODS ===
 bool BrightnessManager::increaseTemperature(int amount) {
-  int newTemp = std::min(
-      MAX_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) + amount);
-  return setTemperature(newTemp);
+  // Per-monitor increment: each monitor moves by `amount` from ITS current
+  // temperature, preserving relative differences. The old primary-based
+  // implementation set every monitor to primary+amount, dragging warmer
+  // monitors down instead of raising them. getTemperature(monitor) falls
+  // back to gamma for monitors without a stored value; brightness[monitor]
+  // (operator[]) would insert a bogus 0 entry instead.
+  bool success = false;
+  for (const auto &monitor : getConnectedMonitors()) {
+    int newTemp =
+        std::min(MAX_TEMPERATURE, getTemperature(monitor) + amount);
+    if (setTemperature(monitor, newTemp)) success = true;
+  }
+  return success;
 }
 
 bool BrightnessManager::increaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp = std::min(MAX_TEMPERATURE,
-                         static_cast<int>(temperature[monitor]) + amount);
+  int newTemp =
+      std::min(MAX_TEMPERATURE, getTemperature(monitor) + amount);
   return setTemperature(monitor, newTemp);
 }
 
@@ -1472,38 +1492,59 @@ BrightnessManager::RGBColor BrightnessManager::getGammaXrandrRGB(const std::stri
   return rgb;
 }
 bool BrightnessManager::increaseBrightness(double amount) {
-  double newBrightness = std::min(1.0, brightness[primaryMonitor] + amount);
-  return setBrightness(newBrightness);
+  // Per-monitor increment: each monitor moves by `amount` from ITS current
+  // value, preserving relative differences. The old primary-based
+  // implementation computed primary+amount and set every monitor to that
+  // SAME value, so monitors brighter than the primary were dragged DOWN
+  // (observed: dvi 0.149 -> 0.199, hdmi 0.1998 -> 0.1988 on one +0.05 call).
+  // getBrightness(monitor) falls back to gamma for monitors without a
+  // stored value; brightness[monitor] (operator[]) would insert a bogus 0.
+  bool success = false;
+  for (const auto &monitor : getConnectedMonitors()) {
+    double newBrightness = std::min(1.0, getBrightness(monitor) + amount);
+    if (setBrightness(monitor, newBrightness)) success = true;
+  }
+  return success;
 }
 
 bool BrightnessManager::increaseBrightness(const std::string &monitor,
                                            double amount) {
-  double newBrightness = std::min(1.0, brightness[monitor] + amount);
+  double newBrightness = std::min(1.0, getBrightness(monitor) + amount);
   return setBrightness(monitor, newBrightness);
 }
 
 bool BrightnessManager::decreaseBrightness(double amount) {
-  double newBrightness = std::max(0.0, brightness[primaryMonitor] - amount);
-  return setBrightness(newBrightness);
+  // Per-monitor decrement, same rationale as increaseBrightness above.
+  bool success = false;
+  for (const auto &monitor : getConnectedMonitors()) {
+    double newBrightness = std::max(0.0, getBrightness(monitor) - amount);
+    if (setBrightness(monitor, newBrightness)) success = true;
+  }
+  return success;
 }
 
 bool BrightnessManager::decreaseBrightness(const std::string &monitor,
                                            double amount) {
-  double newBrightness = std::max(0.0, brightness[monitor] - amount);
+  double newBrightness = std::max(0.0, getBrightness(monitor) - amount);
   return setBrightness(monitor, newBrightness);
 }
 
 // === TEMPERATURE INCREMENT METHODS (CONTINUED) ===
 bool BrightnessManager::decreaseTemperature(int amount) {
-  int newTemp = std::max(
-      MIN_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) - amount);
-  return setTemperature(newTemp);
+  // Per-monitor decrement, same rationale as increaseTemperature above.
+  bool success = false;
+  for (const auto &monitor : getConnectedMonitors()) {
+    int newTemp =
+        std::max(MIN_TEMPERATURE, getTemperature(monitor) - amount);
+    if (setTemperature(monitor, newTemp)) success = true;
+  }
+  return success;
 }
 
 bool BrightnessManager::decreaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp = std::max(MIN_TEMPERATURE,
-                         static_cast<int>(temperature[monitor]) - amount);
+  int newTemp =
+      std::max(MIN_TEMPERATURE, getTemperature(monitor) - amount);
   return setTemperature(monitor, newTemp);
 }
 

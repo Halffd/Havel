@@ -77,7 +77,15 @@ bool AltTabService::isAnimationsEnabled() const {
 }
 
 std::vector<AltTabInfo> AltTabService::getWindows() const {
-    return {};
+    if (!pImpl->backend) return {};
+    // The backend interface exposes window names; map them into AltTabInfo.
+    std::vector<AltTabInfo> windows;
+    for (const auto &name : pImpl->backend->getWindows()) {
+        AltTabInfo info;
+        info.title = name;
+        windows.push_back(info);
+    }
+    return windows;
 }
 
 int AltTabService::getWindowCount() const {

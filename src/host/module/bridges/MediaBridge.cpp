@@ -169,11 +169,14 @@ Value
 MediaBridge::handleMediaGetActivePlayer(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
   try {
     ::havel::host::MediaService media;
-    // TODO: string pool integration - for now return null
-    (void)media;
-    return Value::makeNull();
+    auto outRef = vm->getHeap().allocateString(media.getActivePlayer());
+    return Value::makeStringId(outRef.id);
   } catch (...) {
     return Value::makeNull();
   }
@@ -186,13 +189,19 @@ MediaBridge::handleMediaSetActivePlayer(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("media.setActivePlayer() requires a player name");
   }
-  const std::string *name = nullptr;
-  if (!name) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string name;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    name = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("media.setActivePlayer() requires a string");
   }
   try {
     ::havel::host::MediaService media;
-    media.setActivePlayer(*name);
+    media.setActivePlayer(name);
     return Value::makeBool(true);
   } catch (...) {
     return Value::makeBool(false);
@@ -212,9 +221,8 @@ Value MediaBridge::handleMediaGetAvailablePlayers(
     auto players = media.getAvailablePlayers();
     auto arr = vm->createHostArray();
     for (const auto &player : players) {
-      // TODO: string pool integration - for now return null
-      (void)player;
-      vm->pushHostArrayValue(arr, Value::makeNull());
+      auto outRef = vm->getHeap().allocateString(player);
+      vm->pushHostArrayValue(arr, Value::makeStringId(outRef.id));
     }
     return Value::makeArrayId(arr.id);
   } catch (...) {

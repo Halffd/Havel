@@ -1,0 +1,22 @@
+// Regression: extension.load(name) handed the C-ABI havel_extension_init a
+// zero-initialized API table from the getHavelAPI stub (the C host side,
+// HavelAPI.cpp/HavelValue.cpp, is not compiled), so the first
+// api->register_function call hit a NULL function pointer (SIGSEGV). It also
+// returned a bool even on success, and extension.list() returned an array of
+// nulls ((void)name; pushed makeNull). Expected: native module plugins load
+// and extension.load returns the module object; unknown names return false
+// without crashing; list entries are real name strings. Exit 0.
+fs1 = extension.load("fs")
+assert(type(fs1) == "object", "extension.load returns the module object")
+assert(type(fs1.read) == "function", "module object carries its functions")
+
+bogus = extension.load("nonexistent_totally_12345")
+assert(bogus == false, "unknown extension returns false without crashing")
+
+lst = extension.list()
+assert(type(lst) == "array", "extension.list returns an array")
+if len(lst) > 0 {
+  assert(type(lst[0]) == "string", "extension.list entries are names, not nulls")
+}
+
+return 0

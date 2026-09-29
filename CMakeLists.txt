@@ -2788,6 +2788,22 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME query_system_test COMMAND query_system_test)
 
+    # sleepUntil() target parsing (docs/specs/Havel.md "Available Globals").
+    # Self-contained: the parser only needs std, so this test links neither the
+    # application core nor the VM.
+    add_executable(sleep_until_parser_test
+        tests/sleep_until_parser_ut.cpp
+        src/havel-lang/compiler/vm/SleepUntilParser.cpp
+    )
+    target_include_directories(sleep_until_parser_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm
+    )
+    target_compile_features(sleep_until_parser_test PRIVATE cxx_std_23)
+    target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

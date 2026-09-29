@@ -182,10 +182,10 @@ AudioBridge::handleGetDevices(const std::vector<Value> &args,
 
   for (const auto &dev : devices) {
     auto obj = vm->createHostObject();
-    // TODO: string pool integration - for now return null for strings
-    (void)dev.name; (void)dev.description;
-    vm->setHostObjectField(obj, "name", Value::makeNull());
-    vm->setHostObjectField(obj, "description", Value::makeNull());
+    auto nameRef = vm->getHeap().allocateString(dev.name);
+    vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
+    auto descRef = vm->getHeap().allocateString(dev.description);
+    vm->setHostObjectField(obj, "description", Value::makeStringId(descRef.id));
     vm->setHostObjectField(obj, "index",
                            Value::makeInt(static_cast<int64_t>(dev.index)));
     vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev.isDefault));
@@ -222,10 +222,10 @@ AudioBridge::handleFindDeviceByIndex(const std::vector<Value> &args,
   }
 
   auto obj = vm->createHostObject();
-  // TODO: string pool integration - for now return null for strings
-  (void)dev->name; (void)dev->description;
-  vm->setHostObjectField(obj, "name", Value::makeNull());
-  vm->setHostObjectField(obj, "description", Value::makeNull());
+  auto nameRef = vm->getHeap().allocateString(dev->name);
+  vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
+  auto descRef = vm->getHeap().allocateString(dev->description);
+  vm->setHostObjectField(obj, "description", Value::makeStringId(descRef.id));
   vm->setHostObjectField(obj, "index",
                          Value::makeInt(static_cast<int64_t>(dev->index)));
   vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev->isDefault));
@@ -262,10 +262,10 @@ AudioBridge::handleFindDeviceByName(const std::vector<Value> &args,
   }
 
   auto obj = vm->createHostObject();
-  // TODO: string pool integration - for now return null for strings
-  (void)dev->name; (void)dev->description;
-  vm->setHostObjectField(obj, "name", Value::makeNull());
-  vm->setHostObjectField(obj, "description", Value::makeNull());
+  auto nameRef = vm->getHeap().allocateString(dev->name);
+  vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
+  auto descRef = vm->getHeap().allocateString(dev->description);
+  vm->setHostObjectField(obj, "description", Value::makeStringId(descRef.id));
   vm->setHostObjectField(obj, "index",
                          Value::makeInt(static_cast<int64_t>(dev->index)));
   vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev->isDefault));
@@ -300,9 +300,12 @@ AudioBridge::handleGetDefaultOutput(const std::vector<Value> &args,
   if (!ctx || !ctx->audioManager) {
     return Value::makeNull();
   }
-  // TODO: string pool integration - for now return null
-  (void)ctx->audioManager;
-  return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
+  auto outRef = vm->getHeap().allocateString(ctx->audioManager->getDefaultOutput());
+  return Value::makeStringId(outRef.id);
 }
 
 

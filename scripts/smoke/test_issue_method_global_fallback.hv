@@ -1,0 +1,21 @@
+// Regression: a member call `x.load(y)` on a receiver without that method
+// silently resolved to a same-named GLOBAL (host function `load`) with the
+// receiver prepended, so `image.load(path)` on a plain bool (the return of
+// extension.load) dispatched to the module loader's host `load` with 2 args
+// and threw "Host function 'load' expects 1 arguments, got 2".
+// The script-global CALL_METHOD fallback must apply to pipe stages only
+// (`data |> doubled` = doubled(data)); inherited-member-call syntax keeps its
+// null result. Expected: bool method call returns null; a pipe still passes
+// the piped value as the global fn's first argument. Exit 0.
+image = true
+img = image.load("/home/all/Pictures/photo.jpg")
+assert(img == null, "method call on bool without the method must return null, not hit the global")
+
+fn doubled(x) { x + x }
+a = "ab"
+r1 = a |> doubled
+assert(r1 == "abab", "pipe stage still calls the script global with the piped value first")
+r2 = "hello" |> len()
+assert(r2 == 5, "pipe stage still reaches prototype methods")
+
+return 0

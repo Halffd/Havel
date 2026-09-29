@@ -50,6 +50,10 @@ static bool isKeywordToken(TokenType t) {
     case TokenType::Timeout: case TokenType::Interval: case TokenType::Wait:
     case TokenType::WaitGroup: case TokenType::Defer: case TokenType::Co:
     case TokenType::Yield: case TokenType::Update:
+    // `async` is contextual: parsePrefix turns it back into an identifier
+    // unless it starts an async expression, so name positions (`use async`,
+    // parameters, aliases) must accept the keyword token too.
+    case TokenType::Async:
         return true;
     default:
         return false;
@@ -1662,6 +1666,15 @@ case TokenType::Timeout:
             return nullptr;
           }
 
+  case TokenType::From: {
+    // Query expression: from x in src where cond select proj (desugared into
+    // filter/map pipeline stages). parsePrattExpression consumed 'from' before
+    // calling nud; step back so parseQueryExpression sees it as the current
+    // token (it advances past 'from' itself).
+    position--;
+    return parseQueryExpression();
+  }
+
         default: {
             errorAt(token, "Unexpected token in expression: " + token.value);
             return nullptr;
@@ -2319,7 +2332,14 @@ start = parsePrattExpression(0);
       // Parse body - use high rbp to prevent any infix ops after arrow body
       std::unique_ptr<ast::BlockStatement> body;
       if (at().type == TokenType::OpenBrace) {
-        body = parseBlockStatement();
+        // A hotkey handler body (F24 => { ... }) is an input context: bare
+        // input commands ("text", lmb, {Home}) parse without `>` per the
+        // spec's implicit input statements. The flag must go through the
+        // parseBlockStatement parameter — the brace branch sets
+        // context.inInputContext from it. Plain arrow functions
+        // (f = x => { ... }) are not input contexts.
+        body = parseBlockStatement(context.inInputContext ||
+                                   isHotkeyIdentifier(ident->symbol));
       } else {
         // Expression body: wrap in return
         auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
@@ -2937,6 +2957,16 @@ position = savePos; // restore position
 
     switch (at().type) {
   case havel::TokenType::Hotkey: {
+      // dsl { } sugar: '!!' re-emits the previous input command batch. The
+      // lexer emits '!!' as a Hotkey token, so it lands here before the real
+      // hotkey-literal path.
+      if (context.inDslBlock && at().value == "!!") {
+        advance(); // consume '!!'
+        if (lastDslInputCmds_.empty()) {
+          failAt(at(), "'!!' has no previous dsl command to repeat");
+        }
+        return makeNode<havel::ast::InputStatement>(lastDslInputCmds_);
+      }
       // Parse hotkey with potential prefix conditions (when/if before =>)
       auto hotkeyToken = at(); // Store the hotkey token
       advance(); // consume the hotkey
@@ -3443,6 +3473,29 @@ at(1).type == havel::TokenType::Arrow) {
       return parseDSLSleep();
     }
 
+    // In input context (hotkey blocks), a bare input-command identifier
+    // (lmb/rmb/m/r/w) is an implicit input statement, not a variable read —
+    // the same dispatch as parseStatement's default case, which identifiers
+    // never reach because this case handles them.
+    if (context.inInputContext &&
+        (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
+         at().value == "r" || at().value == "w")) {
+      const havel::TokenType next1 = at(1).type;
+      // Assignment targets and member access on same-named variables are not
+      // input commands: w = window.active(), w.raise() — observed in the
+      // hk-trigger burst regression.
+      if (next1 == havel::TokenType::Assign ||
+          next1 == havel::TokenType::Dot) {
+        // fall through to assignment/expression parsing
+      } else {
+        // 'w' not followed by '(' is a wait condition; with '(' it is wheel.
+        if (at().value == "w" && next1 != havel::TokenType::OpenParen) {
+          return parseWaitStatement();
+        }
+        return parseImplicitInputStatement();
+      }
+    }
+
     // Not a hotkey binding, parse as expression
     auto expr = parseExpression();
 
@@ -3556,6 +3609,12 @@ case havel::TokenType::Struct:
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
   case havel::TokenType::OpenBrace: {
+    // In input context (hotkey blocks), {Key} is a SendKey input command —
+    // the default case's implicit-input check never fires because this case
+    // handles braces.
+    if (context.inInputContext) {
+      return parseImplicitInputStatement();
+    }
     // Check if this is an object literal or destructuring pattern
     // Object literal: {key: value, ...}
     // Destructuring: {a, b} = obj or {a: b} = obj
@@ -3742,12 +3801,28 @@ at().type == havel::TokenType::RegexString) {
   }
   case havel::TokenType::Greater:
     return parseInputStatement();
+  case havel::TokenType::ReturnType:
+    // '->' is print(expr) inside dsl { }; elsewhere it is a return-type
+    // annotation consumed by the function/lambda parsers, so it must not
+    // reach here.
+    if (context.inDslBlock) {
+      return parseDslPrint();
+    }
+    failAt(at(), "Unexpected '->'");
   case havel::TokenType::Dsl:
     advance(); // consume 'dsl'
     if (at().type != havel::TokenType::OpenBrace) {
       failAt(at(), "Expected '{' after 'dsl'");
     }
-    return parseBlockStatement(true); // Always input context
+    {
+      // Save and restore dsl-block context around the whole nested parse so
+      // the sugar is active inside but hotkey bodies elsewhere are not.
+      bool savedDslBlock = context.inDslBlock;
+      context.inDslBlock = true;
+      auto blk = parseBlockStatement(true, true);
+      context.inDslBlock = savedDslBlock;
+      return blk;
+    }
   case havel::TokenType::Less:
     if (context.inInputContext) {
       auto expr = parseGetInputExpression();
@@ -3759,6 +3834,9 @@ at().type == havel::TokenType::RegexString) {
     }
   case havel::TokenType::Question:
     if (context.inInputContext) {
+      if (at(1).type == havel::TokenType::Semicolon) {
+        return parseDslWhenBlock(); // '?;' when-block sugar
+      }
       return parseIfStatement(); // Mapping ? to if in DSL
     }
     {
@@ -3767,6 +3845,12 @@ at().type == havel::TokenType::RegexString) {
     }
   case havel::TokenType::Multiply:
     if (context.inInputContext) {
+      if (at(1).type == havel::TokenType::Question) {
+        return parseDslRepeatWhile();
+      }
+      if (at(1).type == havel::TokenType::Colon) {
+        return parseDslRepeatFor();
+      }
       return parseRepeatStatement(); // Mapping * to repeat in DSL
     }
     {
@@ -4351,6 +4435,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseMoreInputCommands(
     advance();
   }
 
+  rememberDslInputCmds(commands);
   return makeNode<havel::ast::InputStatement>(commands);
 }
 
@@ -4517,7 +4602,127 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
     advance();
   }
 
+  rememberDslInputCmds(commands);
   return makeNode<havel::ast::InputStatement>(commands);
+}
+
+// dsl.md sugar: '*? <cond> { body }' -> while loop (self-hosted pratt
+// parseDslRepeatWhile parity).
+std::unique_ptr<havel::ast::Statement> Parser::parseDslRepeatWhile() {
+  advance(); // consume '*'
+  advance(); // consume '?'
+
+  bool prevAllowBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllowBraceSugar;
+
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+  return makeNode<ast::WhileStatement>(std::move(condition),
+                                       std::move(body));
+}
+
+// dsl.md sugar: '*: <name> in <iter> { body }' -> for loop (inclusive range
+// comes from the RangeExpression itself, not the sugar).
+std::unique_ptr<havel::ast::Statement> Parser::parseDslRepeatFor() {
+  advance(); // consume '*'
+  advance(); // consume ':'
+
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected loop variable after '*:'");
+  }
+  auto name = makeNodeAt<ast::Identifier>(at(), advance().value);
+
+  if (at().type != havel::TokenType::In) {
+    failAt(at(), "Expected 'in' after '*:' loop variable");
+  }
+  advance(); // consume 'in'
+
+  bool prevAllowBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto iterExpr = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllowBraceSugar;
+
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> body;
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
+
+  return makeNode<ast::ForStatement>(std::move(name), std::move(iterExpr),
+                                     std::move(body));
+}
+
+// dsl.md sugar: '-> <expr>' prints the expression. '->' lexes as ReturnType.
+std::unique_ptr<havel::ast::Statement> Parser::parseDslPrint() {
+  advance(); // consume '->'
+  auto expr = parseExpression();
+  auto callee = makeNode<ast::Identifier>("print");
+  std::vector<std::unique_ptr<ast::Expression>> args;
+  args.push_back(std::move(expr));
+  auto call = makeNode<ast::CallExpression>(std::move(callee), std::move(args));
+  if (at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+  return makeNode<ast::ExpressionStatement>(std::move(call));
+}
+
+// dsl.md sugar: '?; <cond> { body }' -> when block (self-hosted pratt
+// parseDslWhenStatement parity).
+std::unique_ptr<havel::ast::Statement> Parser::parseDslWhenBlock() {
+  advance(); // consume '?'
+  advance(); // consume ';'
+
+  bool prevAllowBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllowBraceSugar;
+
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after '?;' condition");
+  }
+  auto body = parseBlockStatement();
+
+  std::vector<std::unique_ptr<ast::Statement>> stmts;
+  stmts.push_back(std::move(body));
+  return makeNode<ast::WhenBlock>(std::move(condition), std::move(stmts));
+}
+
+void Parser::rememberDslInputCmds(
+    const std::vector<ast::InputCommand> &cmds) {
+  if (context.inDslBlock) {
+    lastDslInputCmds_ = cmds;
+  }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
@@ -7440,8 +7645,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
 }
 
 std::unique_ptr<havel::ast::BlockStatement>
-Parser::parseBlockStatement(bool inputContext) {
+Parser::parseBlockStatement(bool inputContext, bool dslBlock) {
   auto block = makeNode<havel::ast::BlockStatement>();
+
+    // dsl-block context is inherited, not reset: nested blocks (if bodies,
+    // fn bodies) inside a `dsl { }` block keep the sugar, matching the
+    // self-hosted pratt where dslContext is only restored at the dsl block
+    // boundary. Only the Dsl statement case sets the flag.
+    if (dslBlock) {
+      context.inDslBlock = true;
+    }
 
     // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
     if (at().type == havel::TokenType::Colon) {
@@ -9488,6 +9701,13 @@ return parsePostfixExpression(std::move(array));
     return parseIfExpression();
   }
 
+  case havel::TokenType::From: {
+    // Query expression: from x in src where cond select proj — the desugaring
+    // builds filter/map pipeline stages. Used as a plain expression, e.g. on
+    // the RHS of an assignment, so it dispatches from the expression parser.
+    return parseQueryExpression();
+  }
+
  default:
  failAt(tk, "Unexpected token in expression: " + tk.value);
   }
@@ -10339,11 +10559,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
   if (!first) return nullptr;
   alternatives.push_back(std::move(first));
   
-  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or) {
+  // The lexer emits BitwiseOr for a single bar in expression contexts (after
+  // a literal), Pipe for a pipeline `|` chain, Or for `||`. All three are
+  // pattern alternatives here.
+  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or ||
+         at().type == havel::TokenType::BitwiseOr) {
     advance(); // consume '|' or '||'
     auto next = parsePatternAtom();
     if (!next) {
-      failAt(at(), "Expected pattern after '|' or '||'");
+      failAt(at(), "Expected pattern after '|'");
       return nullptr;
     }
     alternatives.push_back(std::move(next));
@@ -11722,8 +11946,29 @@ bool Parser::isAtEndOfBlock() {
 }
 
 std::unique_ptr<ast::Expression> Parser::parseGetInputExpression() {
-advance();
-return makeNode<ast::Identifier>("__get_input_stub__");
+  advance(); // consume '<'
+
+  std::string source;
+  std::unique_ptr<ast::Expression> prompt = nullptr;
+
+  if (at().type == havel::TokenType::Identifier) {
+    source = advance().value;
+
+    // Special case for in("...")
+    if (source == "in" && at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      if (at().type != havel::TokenType::CloseParen) {
+        prompt = parseExpression();
+      }
+      if (at().type == havel::TokenType::CloseParen) {
+        advance(); // consume ')'
+      }
+    }
+  } else {
+    failAt(at(), "Expected identifier after '<'");
+  }
+
+  return makeNode<ast::GetInputExpression>(source, std::move(prompt));
 }
 
 std::unique_ptr<ast::Statement> Parser::parseWaitStatement() {

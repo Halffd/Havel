@@ -548,12 +548,22 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
         XRRCrtcGamma *crtc_gamma =
             XRRGetCrtcGamma(x11_display, output_info->crtc);
         if (crtc_gamma) {
-          // Calculate average of all gamma values for a more accurate brightness
-          unsigned long long total = 0;
-          for (int j = 0; j < gamma_size; j++) {
-            total += crtc_gamma->red[j] + crtc_gamma->green[j] + crtc_gamma->blue[j];
-          }
-          brightness = (double)total / (gamma_size * 3 * 65535.0);
+          // Brightness estimate: the ramp's TOP value IS the applied
+          // brightness — the SET path writes
+          // value = brightness * tint * 65535 at j = gamma_size-1 (the
+          // gamma curve term is pow(1, ...) = 1 at the top). Averaging the
+          // whole ramp returned HALF the actual brightness for a linear
+          // ramp (the average of normalized [0,1] is 0.5), so every
+          // gamma-fallback read underread and the next increase() set
+          // (underread + step), dimming the screens on the first keypress
+          // after each restart. Max channel because the temperature tint
+          // scales channels below 1.0; the max channel keeps the estimate
+          // closest to the applied brightness.
+          unsigned short top = std::max({
+              crtc_gamma->red[gamma_size - 1],
+              crtc_gamma->green[gamma_size - 1],
+              crtc_gamma->blue[gamma_size - 1]});
+          brightness = (double)top / 65535.0;
           XRRFreeGamma(crtc_gamma);
         }
       }

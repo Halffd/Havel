@@ -832,6 +832,37 @@ endif()
         # test is skipped when Python is absent (see test registration below).
         message(STATUS "Python3 not found: ModuleGlobals.generated.hpp will not be regenerated")
     endif()
+
+    # -----------------------------------------------------------------------
+    # kHostFunctionNames — same Rust-like guarantee for host FUNCTION names:
+    # the canonical list is DERIVED from the actual registration sites
+    # (registerHostFunction / host_functions[] / registerFunction), so the
+    # strict-mode resolver in HavelLauncher::runBuild (no VM instance there)
+    # can never falsely reject a registered name. Previously a hand-maintained
+    # literal missed the entire bridge surface (deleteFile/click/etc. were
+    # rejected by --build --strict). The generated header is checked in; the
+    # custom command regenerates it whenever any scanned source changes, and
+    # staleness is caught by the havel-launcher globals drift guard.
+    # -----------------------------------------------------------------------
+    set(HOSTFN_GEN_SCRIPT
+        "${CMAKE_SOURCE_DIR}/scripts/gen_host_function_names.py")
+    set(HOSTFN_OUTPUT
+        "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core/HostFunctionNames.generated.hpp")
+    if(Python3_Interpreter_FOUND)
+        file(GLOB_RECURSE HOSTFN_DEP_SOURCES
+            "${CMAKE_SOURCE_DIR}/src/*.cpp")
+        add_custom_command(
+            OUTPUT ${HOSTFN_OUTPUT}
+            COMMAND ${Python3_EXECUTABLE} ${HOSTFN_GEN_SCRIPT}
+                    ${CMAKE_SOURCE_DIR}/src ${HOSTFN_OUTPUT}
+            DEPENDS ${HOSTFN_DEP_SOURCES} ${HOSTFN_GEN_SCRIPT}
+            COMMENT "Generating HostFunctionNames.generated.hpp from host-function registrations"
+            VERBATIM
+        )
+        add_custom_target(gen_host_function_names DEPENDS ${HOSTFN_OUTPUT})
+    else()
+        message(STATUS "Python3 not found: HostFunctionNames.generated.hpp will not be regenerated")
+    endif()
 endif()
 
 # Host modules (language bindings to system managers)
@@ -1582,6 +1613,9 @@ target_include_directories(havel_core
 if(ENABLE_HAVEL_LANG AND TARGET gen_module_globals)
   add_dependencies(havel_core gen_module_globals)
 endif()
+if(ENABLE_HAVEL_LANG AND TARGET gen_host_function_names)
+  add_dependencies(havel_core gen_host_function_names)
+endif()
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -1916,6 +1950,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # for --build/--full-aot depends on.
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
+  # Host-function names drift guard: fails if HostFunctionNames.generated.hpp
+  # is stale relative to the real registration sites, or if runBuild no longer
+  # seeds strict-mode known globals from kHostFunctionNames. Previously a
+  # hand-maintained literal missed the entire bridge surface
+  # (deleteFile/click/etc. were rejected by --build --strict).
+  add_test(NAME havel-launcher-globals-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_havel_launcher_globals.sh)
   # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
   # symbol defined in the runtime sources is missing from
   # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
@@ -2329,6 +2370,10 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
     if(TARGET gen_module_globals)
       add_dependencies(havel_lang gen_module_globals)
       add_dependencies(havel_lang_core gen_module_globals)
+    endif()
+    if(TARGET gen_host_function_names)
+      add_dependencies(havel_lang gen_host_function_names)
+      add_dependencies(havel_lang_core gen_host_function_names)
     endif()
 
     target_include_directories(havel_lang PRIVATE

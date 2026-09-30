@@ -2009,8 +2009,22 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
 
   // Program-root bindings that are tracked as globals should always resolve
   // as globals in __main__, even though they also have declaration slots.
+  // A genuine inner-scope local (for-loop iterators, let/val declared inside
+  // a nested block or loop body) SHADOWS the root global: without this, a
+  // pre-existing root global with the same name captured every read of the
+  // loop variable (the loop machinery stored the element into the local
+  // slot via the declaration, but body reads resolved to the stale global).
   if (function_index == 0 && global_variables_.count(name) > 0) {
-    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    bool shadowed_by_inner_local = false;
+    for (size_t sc = 1; sc < ctx.scopes.size(); ++sc) {
+      if (ctx.scopes[sc].count(name) > 0) {
+        shadowed_by_inner_local = true;
+        break;
+      }
+    }
+    if (!shadowed_by_inner_local) {
+      return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    }
   }
 
   // FIRST: Search local scopes (for loop vars, nested let declarations, etc.)

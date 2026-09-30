@@ -1,3 +1,13 @@
+// ============================================================
+// ⚠ SENDS REAL INPUT — DO NOT RUN AUTOMATED / FROM AN AGENT PIPELINE
+// ============================================================
+// This script issues actual mouse/keyboard/brightness events to the
+// running desktop session. It exists for manual verification by a human
+// only. Do not run it from CI, smoke, tests, hvtest, or agent-driven
+// sessions: it WILL move your cursor, click buttons, change display
+// brightness, and affect the focused window.
+// ============================================================
+
 print("-------- System Info --------")
 print("system.detect: " + type(system.detect))
 sys = system.detect()

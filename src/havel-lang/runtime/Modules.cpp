@@ -486,15 +486,12 @@ void Modules::installStdLib() {
         ctx_->vm->registerHostFunction(name, fn);
     }
     ctx_->vm->buildNamespaceGlobals();
+    // Bridge initializer registers shaped namespace objects (io/keyboard/devices).
+    // Must be set BEFORE registerDefaultHostGlobals fires via execute().
+    if (options_.system_object_initializer) {
+        ctx_->vm->setSystemObjectInitializer(options_.system_object_initializer);
+    }
 
-    // Re-register prototype methods whose host functions come from bridges
-    // (ConcurrencyBridge etc.). registerDefaultPrototypes() runs at VM init
-    // BEFORE this loop, so its by-name lookups ("channel.send" etc.) missed
-    // and stored a stale index 0. Registering the names AFTER the functions
-    // exist writes the real indices into prototypes_. Without this, a
-    // channel's ch.send(v) dispatched via CALL_METHOD silently resolves to
-    // the wrong host function (or a missing prototype) and drops the send.
-    ctx_->vm->registerPrototypeMethodByName("channel", "send", "channel.send");
     ctx_->vm->registerPrototypeMethodByName("channel", "receive", "channel.receive");
     ctx_->vm->registerPrototypeMethodByName("channel", "close", "channel.close");
     ctx_->vm->registerPrototypeMethodByName("thread", "send", "thread.send");

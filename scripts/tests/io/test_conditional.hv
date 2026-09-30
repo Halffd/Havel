@@ -114,12 +114,12 @@ vHk = ^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
 +s if mode == "gaming" => {
     winid = window.active().id
     interval 100 {
-        if winid != window.active().id || io.getKey("f") { return }
+        if winid != window.active().id || keyboard.getKey("f") { return }
         send("{enter}")
         sleep(100)
         send("f")
-        io.mouseMoveTo(1600, 900)
-        io.click(1)
+        mouse.move(1600, 900)
+        mouse.click(1)
     }
 }
 o => test()

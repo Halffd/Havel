@@ -139,7 +139,10 @@ mouseObj, "scroll",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.releaseAll")));
   vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
-  // IO object
+  // IO object — pure send/receive verbs plus clipboard and executor control.
+    // Keyboard state queries live on the `keyboard` object, input-device
+    // management on `devices`, and mouse ops on `mouse` (io used to carry
+    // duplicates of all three surfaces).
     auto ioObj = vm->createHostObject();
     auto ioObjGuard = vm->makeRoot(Value::makeObjectId(ioObj.id));
     vm->setHostObjectField(
@@ -154,33 +157,9 @@ mouseObj, "scroll",
  vm->setHostObjectField(
  ioObj, "wait",
  Value::makeHostFuncId(vm->getHostFunctionIndex("io.wait")));
- vm->setHostObjectField(
- ioObj, "click",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.click")));
- vm->setHostObjectField(
- ioObj, "mouseMoveTo",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveTo")));
- vm->setHostObjectField(
- ioObj, "mouseMoveRel",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveRel")));
-  vm->setHostObjectField(
-  ioObj, "mouseScroll",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseScroll")));
-  vm->setHostObjectField(
-  ioObj, "scroll",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.scroll")));
-  vm->setHostObjectField(
-  ioObj, "getKey",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.getKey")));
-  vm->setHostObjectField(
-  ioObj, "isKeyPressed",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.isKeyPressed")));
-  vm->setHostObjectField(
-  ioObj, "mouseDown",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseDown")));
- vm->setHostObjectField(
- ioObj, "mouseUp",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseUp")));
+    vm->setHostObjectField(
+        ioObj, "sendModifiers",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendModifiers")));
  vm->setHostObjectField(
  ioObj, "suspend",
  Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
@@ -193,52 +172,66 @@ mouseObj, "scroll",
     vm->setHostObjectField(
         ioObj, "setExecutorMode",
         Value::makeHostFuncId(vm->getHostFunctionIndex("io.setExecutorMode")));
-    vm->setHostObjectField(
-        ioObj, "state",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
-    vm->setHostObjectField(
-        ioObj, "modifiers",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io._getCurrentModifiers")));
-    vm->setHostObjectField(
-        ioObj, "sendModifiers",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendModifiers")));
-    vm->setHostObjectField(
-        ioObj, "setDevice",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io._addDevice")));
-    vm->setHostObjectField(
-        ioObj, "device",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io._devices")));
-    vm->setHostObjectField(
-        ioObj, "setLock",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io._setLock")));
-    vm->setHostObjectField(
-ioObj, "locks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._locks")));
+   vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+
+  // Keyboard object: key state queries and lock-key control.
+  auto keyboardObj = vm->createHostObject();
+  auto keyboardObjGuard = vm->makeRoot(Value::makeObjectId(keyboardObj.id));
   vm->setHostObjectField(
-    ioObj, "keys",
+  keyboardObj, "getKey",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.getKey")));
+  vm->setHostObjectField(
+  keyboardObj, "isKeyPressed",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.isKeyPressed")));
+  vm->setHostObjectField(
+    keyboardObj, "state",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
+  vm->setHostObjectField(
+    keyboardObj, "keys",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.keys")));
   vm->setHostObjectField(
-    ioObj, "lastKey",
+    keyboardObj, "lastKey",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastKey")));
   vm->setHostObjectField(
-    ioObj, "lastState",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastState")));
-  vm->setHostObjectField(
-    ioObj, "lastDevice",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastDevice")));
-  vm->setHostObjectField(
-    ioObj, "lastModifiers",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastModifiers")));
-  vm->setHostObjectField(
-    ioObj, "lastLocks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._lastLocks")));
-  vm->setHostObjectField(
-    ioObj, "lastKeys",
+    keyboardObj, "lastKeys",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastKeys")));
   vm->setHostObjectField(
-    ioObj, "reset",
+    keyboardObj, "lastState",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastState")));
+  vm->setHostObjectField(
+    keyboardObj, "modifiers",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._getCurrentModifiers")));
+  vm->setHostObjectField(
+    keyboardObj, "lastModifiers",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastModifiers")));
+  vm->setHostObjectField(
+    keyboardObj, "locks",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._locks")));
+  vm->setHostObjectField(
+    keyboardObj, "lastLocks",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._lastLocks")));
+  vm->setHostObjectField(
+    keyboardObj, "setLock",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._setLock")));
+  vm->setHostObjectField(
+    keyboardObj, "reset",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.reset")));
-  vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+  vm->setGlobal("keyboard", Value::makeObjectId(keyboardObj.id));
+
+  // Devices object: input device enumeration and routing.
+  auto devicesObj = vm->createHostObject();
+  auto devicesObjGuard = vm->makeRoot(Value::makeObjectId(devicesObj.id));
+  vm->setHostObjectField(
+    devicesObj, "setDevice",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._addDevice")));
+  vm->setHostObjectField(
+    devicesObj, "device",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io._devices")));
+  vm->setHostObjectField(
+    devicesObj, "lastDevice",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastDevice")));
+  vm->setGlobal("devices", Value::makeObjectId(devicesObj.id));
+
 
   // altTab object
   auto altTabObj = vm->createHostObject();

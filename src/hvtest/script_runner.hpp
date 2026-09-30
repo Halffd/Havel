@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <atomic>
 #include <fstream>
 #include <filesystem>
@@ -260,6 +262,16 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         }
         env.push_back(nullptr);
         execvpe(havel_bin.c_str(), args.data(), env.data());
+        // exec failed: report errno through the pipe (stdout is already
+        // dup2'd there). A bare _exit(127) showed up as 'exit=127, no
+        // captured output' for every test, hiding ETXTBSY (binary being
+        // relinked by a concurrent build), ENOENT (missing binary), etc.
+        int e = errno;
+        ssize_t ignored1 = ::write(STDERR_FILENO, "exec failed: ", 13);
+        const char *msg = std::strerror(e);
+        ssize_t ignored2 = ::write(STDERR_FILENO, msg, std::strlen(msg));
+        ssize_t ignored3 = ::write(STDERR_FILENO, "\n", 1);
+        (void)ignored1; (void)ignored2; (void)ignored3;
         _exit(127);
     }
 

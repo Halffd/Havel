@@ -1,0 +1,33 @@
+// Test: window.parent()/children() XQueryTree hierarchy getters
+// Verifies the active window's parent resolves to a nonzero int id (root
+// or WM frame for a top-level client) and children resolves to an array
+// of int ids (possibly empty for a plain client window).
+
+use window
+
+val active = window.active()
+assert(active != nil, "an active window must exist")
+val id = active.id
+assert(id != nil, "active window must have an id")
+
+val parent = window.parent(id)
+print("window.parent() = " + parent)
+assert(type(parent) == "int", "window.parent must return an int id, got " + type(parent))
+assert(parent > 0, "top-level client parent must be root or WM frame (nonzero), got " + parent)
+
+val kids = window.children(id)
+print("window.children() type: " + type(kids))
+assert(type(kids) == "array", "window.children must return an array, got " + type(kids))
+for k in kids {
+    assert(type(k) == "int", "each child id must be an int, got " + type(k))
+    assert(k > 0, "each child id must be positive, got " + k)
+}
+
+// Consistency: an unknown window id yields the inert defaults (0 / empty),
+// not a crash. Note id 0 itself means "the active window" (resolveWindowId
+// convention shared with window.title etc.), so use a clearly invalid id.
+assert(window.parent(99999999) == 0, "window.parent of an unknown id must be 0")
+assert(type(window.children(99999999)) == "array", "window.children of an unknown id must still return an array")
+
+print("PASS: window_parent_children")
+exit(0)

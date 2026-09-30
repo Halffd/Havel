@@ -642,6 +642,16 @@ public:
                                   const HostContext *ctx);
     static Value handleWindowList(const std::vector<Value> &args,
                                    const HostContext *ctx);
+    static Value handleWindowParent(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowChildren(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowProperties(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIcon(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+    static Value handleWindowScreenshot(const std::vector<Value> &args,
+                                         const HostContext *ctx);
     static Value handleWindowTitle(const std::vector<Value> &args,
                                     const HostContext *ctx);
     static Value handleWindowClass(const std::vector<Value> &args,

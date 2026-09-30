@@ -92,6 +92,15 @@ public:
   WindowInfo getWindowInfo(wID id) override;
   WindowInfo getActiveWindowInfo() override;
 
+  wID getWindowParent(wID id) override;
+  std::vector<wID> getWindowChildren(wID id) override;
+  std::vector<std::pair<std::string, std::string>>
+  getWindowProperties(wID id) override;
+  std::vector<uint8_t> getWindowIcon(wID id, int &width,
+                                     int &height) override;
+  std::vector<uint8_t> captureWindow(wID id, int &width,
+                                     int &height) override;
+
   std::string getProcessName(pid_t pid) override;
   std::string getProcessCmdline(pid_t pid) override;
 

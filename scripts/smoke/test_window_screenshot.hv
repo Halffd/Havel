@@ -1,0 +1,38 @@
+// Test: window.screenshot() captures the window's own pixels
+// Verifies the capture contract: an int image handle whose dimensions
+// match the window's geometry, for a mapped, visible window. The active
+// window is mapped and on-screen during a smoke run, so a capture must
+// produce a valid handle (0 would mean the inert default fired, which is
+// only for unimplemented backends / unmapped windows).
+
+use window
+use image
+
+val active = window.active()
+assert(active != nil, "an active window must exist")
+val id = active.id
+assert(id != nil, "active window must have an id")
+
+val h = window.screenshot(id)
+print("window.screenshot() handle = " + h)
+assert(type(h) == "int", "window.screenshot must return an int handle, got " + type(h))
+assert(h != 0, "capture of the mapped active window must produce a handle, got 0")
+
+val w = image.width(h)
+val hh = image.height(h)
+print("captured size: " + w + "x" + hh)
+assert(w > 0, "captured image width must be positive, got " + w)
+assert(hh > 0, "captured image height must be positive, got " + hh)
+
+// Pixel sanity: the corner pixel must be readable RGBA (no crash).
+val r = image.getPixel(h, 0, 0)
+assert(type(r) == "object", "image.getPixel on the capture must return an object, got " + type(r))
+
+image.release(h)
+
+// Inert default: an unknown window id yields 0, not a crash. (id 0 means
+// "the active window" per the resolveWindowId convention.)
+assert(window.screenshot(99999999) == 0, "window.screenshot of an unknown id must be 0")
+
+print("PASS: window_screenshot")
+exit(0)

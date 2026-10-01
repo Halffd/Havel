@@ -95,6 +95,58 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   ./build-debug/brightness_test
   ```
   Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
+- **FORBIDDEN in smoke/integration tests: any script that performs real I/O,
+  brightness, or dsl input.** See "NEVER put hardware-touching scripts in
+  smoke or integration tests" below for the full rule and rationale.
+
+### NEVER put hardware-touching scripts in smoke or integration tests
+
+`scripts/smoke/` and `scripts/integration/` are collected automatically by
+`hvtest --smoke` / `hvtest --scripts` and run by the ctest gate
+`hvtest-smoke`. A test placed there is executed by everyone who runs the
+suite, on a real desktop, with no per-test confirmation. Do NOT add scripts
+that:
+
+- **Touch brightness** — anything calling `brightness.*` (get/set/increase/
+  decrease/toggle, temperature, gamma). `brightness.set()` with one argument
+  is the **ALL-monitors** overload: it rewrites the gamma ramp of every
+  attached display. `brightness_test` is already excluded from ctest for
+  exactly this reason.
+- **Perform real I/O** — `io.*`, `mouse.*` (`move`, `moveRel`, `click`,
+  `scroll`, `pos`), `keyboard.*` (`tap`, `send`, `typeText`, `keycode`),
+  `hotkey.trigger`, `window.*` (`raise`, `focus`, `move`, `close`).
+- **Use dsl input forms** — `lmb`, `{Home}`, `< mouse`, `m(x, y)`, `r(dx, dy)`,
+  `w(dx, dy)`, `click()`, or a bare string literal used as an implicit
+  "type this" inside a `dsl {}` / hotkey block. These compile to real host
+  input calls; the sugar hides them from a grep for `mouse.`/`keyboard.`,
+  which is how they slipped into the suite.
+
+The headless sandbox (`--headless`, `HAVEL_HEADLESS=1`, cleared `DISPLAY`/
+`WAYLAND_DISPLAY`/`XAUTHORITY`) is a defence in depth, not a licence. It has
+been verified to block the X11 connect, the uinput open, and the `/dev/input`
+open at syscall level across a full suite run — but a path that constructs an
+`X11Adapter` or calls a module outside the gated blocks would not be covered,
+and dsl input reaches host functions whose gating is per-call-site rather than
+central. Never add a script whose *worst case* is a user losing their
+brightness settings or getting a key/mouse event they did not ask for.
+
+If you need to test these features, the options are, in order:
+
+1. **Test the pure function**, not the hardware. `brightness_ramp_test`
+   (gtest) exercises gamma-ramp maths against a synthetic
+   `XRRCrtcGamma`, no display needed.
+2. **Assert on the module's source** when the defect is argument forwarding or
+   shadowing — see
+   `scripts/smoke/test_issue_brightness_increase_ignores_monitor.hv`, which
+   reads `modules/app/brightness.hv` and checks `increase`/`decrease` forward
+   `monitorName` instead of calling the all-monitors `brightness.set()`.
+   Reading a file is safe; calling the function is not.
+3. **Put it in `scripts/tests/`** (not `smoke`/`integration`), so it is not
+   auto-collected, and run it by hand only with the user's screen in view.
+4. **Gate it on explicit opt-in** with a `// smoke:` header the user must
+   pass, and say so in the commit message.
+
+If you are unsure whether a script is safe, treat it as unsafe.
 
 CI runs: CMake configure → build → hvtest smoke → ctest
 

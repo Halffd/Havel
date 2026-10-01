@@ -1,0 +1,127 @@
+// smoke: brightness-step-honours-monitor-name = PASS
+// Regression: brightness.increase/decrease did nothing for the monitor you
+// named, and visibly dimmed the monitor you did NOT name.
+//
+// What: modules/app/brightness.hv defined its own increase(amount) that did
+// read-then-write via brightness.get() + brightness.set(). The one-argument
+// brightness.set() is BrightnessManager::setBrightness(double) -- the
+// ALL-monitors overload, not "the primary". So the module's signature silently
+// dropped the documented second argument, and each call wrote the *primary*
+// monitor's value out to every attached display.
+//
+// Observed on a two-monitor session with DVI-D-0 primary, calling
+// increase(0.05, "HDMI-0") while DVI-D-0 sat at 0.20: HDMI-0 rose 0.499 -> 0.549
+// but DVI-D-0 fell 0.20 -> 0.15, because `current` was read from monitors[0]
+// and 0.20 + 0.05 was written to both screens.
+//
+// The host functions brightness.increase/decrease already take
+// (amount, monitorName) and step each monitor from its own value
+// (BrightnessManager::increaseBrightness). The module shadowed them with a
+// reimplementation that discarded that. Fix: delegate to the host functions.
+//
+// Why this asserts on the module's source rather than calling it: the bug is
+// shadowing plus argument forwarding, and the only faithful check is the
+// module's own text. Calling the real increase() would write to the live
+// display -- which is the exact harm under test, and would move the screen of
+// anyone running the gate. Stubbing the host function instead would only prove
+// the stub ran, not that the module forwards the name.
+
+use "fs"
+
+failures = []
+
+fn fail(msg) {
+    failures.push(msg)
+}
+
+// Locate the source tree. cwd is the repo root when run as
+// `havel run scripts/smoke/...`, but ctest runs from build-debug, so a fixed
+// relative path resolves against the wrong directory and the file silently
+// reads as empty. Walk up until the module turns up.
+rel = "modules/app/brightness.hv"
+dir = sys.cwd()
+txt = null
+n = 0
+while n < 6 && txt == null {
+    if fs.exists("${dir}/${rel}") {
+        txt = fs.read("${dir}/${rel}")
+    } else {
+        dir = "${dir}/.."
+    }
+    n = n + 1
+}
+
+if txt == null {
+    fail("cannot locate " + rel + " from " + sys.cwd())
+    print("FAIL brightness-step: " + failures[0])
+    process.exit(255)
+} else {
+    // Split the file into top-level functions and pull out the ones under test.
+    // Whole-file find() is useless here: the explanatory comment above increase()
+    // also contains the string "brightness.increase(amount, monitorName)", so it
+    // matches before the definition does.
+    bodies = {}
+    for chunk in txt.split("\nfn ") {
+        bodies[chunk.split("(")[0]] = chunk.split("\n}")[0]
+    }
+
+for name in ["increase", "decrease", "toggle"] {
+        if !bodies.has(name) {
+            fail(name + ": not defined in " + rel)
+        }
+    }
+
+    for name in ["increase", "decrease"] {
+        if !bodies.has(name) { continue }
+        body = bodies[name]
+
+        // The monitor argument must exist at all. Before the fix these took
+        // exactly one parameter, so a per-monitor call had its name silently
+        // dropped.
+        if body.find("monitorName") < 0 {
+            fail(name + ": takes no monitor name -- a per-monitor call has it dropped")
+            continue
+        }
+
+        // When a name is given it must reach the host function. This is the
+        // exact forwarding the reimplementation threw away.
+        if body.find("brightness." + name + "(amount, monitorName)") < 0 {
+            fail(name + ": does not forward monitorName to the host function")
+        }
+
+        // The read-then-write pair must be gone. brightness.get() with no
+        // argument resolves to the primary monitor and brightness.set(value)
+        // writes ALL monitors, so pairing them is the cross-monitor corruption.
+        if body.find("brightness.get(") >= 0 {
+            fail(name + ": still reads brightness.get() itself; that is the primary monitor, which pairs with an all-monitors set")
+        }
+        if body.find("brightness.set(") >= 0 {
+            fail(name + ": still calls brightness.set() directly, which overwrites every display")
+        }
+    }
+
+    // toggle is genuinely read-then-write (there is no host toggle), so it is
+    // allowed to call get/set -- but it must pass the monitor name to set.
+    if bodies.has("toggle") {
+        body = bodies["toggle"]
+        if body.find("monitorName") < 0 {
+            fail("toggle: takes no monitor name -- a per-monitor toggle has it dropped")
+        }
+        if body.find("brightness.set(0.0, monitorName)") < 0 || body.find("brightness.set(1.0, monitorName)") < 0 {
+            fail("toggle: does not pass monitorName to brightness.set(), so it overwrites every display")
+        }
+    }
+
+    // process.exit is a cooperative shutdown -- it sets a flag the VM polls
+    // later, so this return is still reached. Keep PASS in the else so it
+    // cannot print after a failure.
+    if failures.len() > 0 {
+        for f in failures {
+            print("FAIL brightness-step: " + f)
+        }
+        process.exit(255)
+    } else {
+        print("PASS: brightness.increase/decrease/toggle honour the monitor name")
+        return "PASS"
+    }
+}

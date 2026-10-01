@@ -2904,6 +2904,32 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME headless_sandbox_test COMMAND headless_sandbox_test)
 
+    # Gamma-ramp brightness readback. extractBrightnessFromGammaRamp() read
+    # the ramp's middle index, which is exactly half the applied value for the
+    # linear ramp the set path writes -- and brightness.increase() is
+    # read-then-write, so the underread dimmed the display on first press.
+    add_executable(brightness_ramp_test
+        tests/brightness_ramp_ut.cpp
+    )
+    target_compile_features(brightness_ramp_test PRIVATE cxx_std_23)
+    target_include_directories(brightness_ramp_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(brightness_ramp_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME brightness_ramp_test COMMAND brightness_ramp_test)
+
     # Clipboard-backend registry seam behind Clipboard. Same shape as
     # pixel_provider_test: no havel_gui, so the link is part of what it
     # verifies.

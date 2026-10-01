@@ -8,6 +8,7 @@
 #include "core/process/ProcessManager.hpp"
 #include "utils/DebugFlags.hpp"
 #include "utils/ExitHandler.hpp"
+#include "utils/HeadlessRuntime.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -443,6 +444,13 @@ IO::IO() { importManager = std::make_shared<ImportManager>(); }
 
 void IO::ensureBackend() {
   std::call_once(backendInitFlag_, [this]() {
+    // std::call_once means the FIRST caller wins and the backend can never be
+    // torn down. If anything touched IO before SetHeadlessMode() ran, the
+    // headlessMode_ member would still be false and a real XTest/uinput
+    // backend would be built. HAVEL_HEADLESS is in the environment from the
+    // process's first instruction, so treat it as authoritative here and make
+    // the sandbox independent of call ordering.
+    const bool headless = headlessMode_ || havel::isHeadlessRuntime();
     debug("[IO] Starting IO backend init...");
     DisplayManager::Initialize();
     debug("[IO] DisplayManager initialized");
@@ -507,7 +515,7 @@ void IO::ensureBackend() {
 
 #ifdef __linux__
     // EventListener needs DisplayManager to be initialized
-    if (!headlessMode_) {
+    if (!headless) {
       // Use new unified EventListener
       if (debugging::debug_io)
         debug("Using new unified EventListener");
@@ -687,7 +695,7 @@ void IO::ensureBackend() {
     // Create IOBackend for platform-specific output (XTest, keybd_event, etc.)
     // Headless runs stay inert: no X11 connection, no XTest backend, so
     // mouse/keyboard host calls cannot reach the real desktop.
-    if (!headlessMode_) {
+    if (!headless) {
       ioBackend = IOBackend::Create(eventListener.get());
       if (ioBackend) {
         ioBackend->Initialize();
@@ -2611,8 +2619,22 @@ Key IO::GetKeyCode(cstr keyName) {
     return 0;
   }
 
+  // No display means no keycode table. XKeysymToKeycode dereferences the
+  // Display* unconditionally and segfaults on nullptr, and a sandboxed or
+  // headless run has none -- so refuse before touching X. 0 is already the
+  // "do nothing" signal for every caller of this function. IsInitialized() is
+  // used rather than GetDisplay() so resolving a keycode never forces the
+  // display open as a side effect.
+  Display *display = DisplayManager::IsInitialized() ? DisplayManager::GetDisplay()
+                                                     : nullptr;
+  if (!display) {
+    if (debugging::debug_io)
+      havel::debug("No display open: not mapping keysym for '{}'", keyName);
+    return 0;
+  }
+
   // Convert keysym to keycode
-  KeyCode keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
+  KeyCode keycode = XKeysymToKeycode(display, keysym);
   if (keycode == 0) {
     havel::warning("Invalid keycode for keysym: {}", keyName);
     return 0;

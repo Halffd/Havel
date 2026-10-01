@@ -2878,6 +2878,32 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
 
+    # Headless gate must hold on the HAVEL_HEADLESS env flag alone, without
+    # depending on SetHeadlessMode() having been called first. Regression cover
+    # for IO::ensureBackend()'s call_once ordering and DisplayManager's ":0"
+    # fallback, both of which could reach the live session.
+    add_executable(headless_sandbox_test
+        tests/headless_sandbox_ut.cpp
+    )
+    target_compile_features(headless_sandbox_test PRIVATE cxx_std_23)
+    target_include_directories(headless_sandbox_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(headless_sandbox_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME headless_sandbox_test COMMAND headless_sandbox_test)
+
     # Clipboard-backend registry seam behind Clipboard. Same shape as
     # pixel_provider_test: no havel_gui, so the link is part of what it
     # verifies.

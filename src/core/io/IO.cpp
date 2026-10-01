@@ -685,11 +685,15 @@ void IO::ensureBackend() {
     }
 
     // Create IOBackend for platform-specific output (XTest, keybd_event, etc.)
-    ioBackend = IOBackend::Create(eventListener.get());
-    if (ioBackend) {
-      ioBackend->Initialize();
-      if (debugging::debug_io)
-        debug("IOBackend initialized: {}", ioBackend->GetName());
+    // Headless runs stay inert: no X11 connection, no XTest backend, so
+    // mouse/keyboard host calls cannot reach the real desktop.
+    if (!headlessMode_) {
+      ioBackend = IOBackend::Create(eventListener.get());
+      if (ioBackend) {
+        ioBackend->Initialize();
+        if (debugging::debug_io)
+          debug("IOBackend initialized: {}", ioBackend->GetName());
+      }
     }
 #endif
     backendInitialized_ = true;

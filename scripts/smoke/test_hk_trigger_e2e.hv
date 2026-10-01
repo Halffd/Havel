@@ -13,7 +13,8 @@ F24 => {
     print("TRIGGERED")
     fired = fired + 1
     w = window.active()
-    print("wm raise:", w.raise())
+    if w != nil { print("wm raise:", w.raise()) }
+    else { print("wm raise: skipped (headless env)") }
 }
 
 print("registered, firing")

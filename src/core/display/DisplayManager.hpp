@@ -18,6 +18,9 @@ class HAVEL_EXPORT DisplayManager {
         static Display* display;
         static ::Window root;
         static bool initialized;
+        static bool headlessMode;
+        static void SetHeadlessMode(bool headless) { headlessMode = headless; }
+        static bool IsHeadlessMode() { return headlessMode; }
         static void Initialize();
         static Display* GetDisplay();
         static ::Window GetRootWindow();

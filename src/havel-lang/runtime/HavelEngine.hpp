@@ -30,6 +30,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "../stdlib/HotkeyModule.hpp"
 #include "core/window/WindowManager.hpp"
+#include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
 #include <filesystem>
 #include <memory>
@@ -72,8 +73,15 @@ public:
 
     void initializeMinimal() {
         io_holder_ = std::make_shared<IO>();
+        if (config_.headlessMode) {
+            io_holder_->SetHeadlessMode(true);
+            DisplayManager::SetHeadlessMode(true);
+            ::setenv("HAVEL_HEADLESS", "1", 1);
+        }
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
-        windowManager_ = std::make_shared<WindowManager>();
+        if (!config_.headlessMode) {
+            windowManager_ = std::make_shared<WindowManager>();
+        }
         if (!config_.headlessMode) {
             brightnessManager_ = std::make_shared<BrightnessManager>();
         }

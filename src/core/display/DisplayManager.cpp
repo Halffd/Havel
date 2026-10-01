@@ -19,11 +19,13 @@ namespace havel {
 Display *DisplayManager::display = nullptr;
 ::Window DisplayManager::root = 0;
 bool DisplayManager::initialized = false;
+bool DisplayManager::headlessMode = false;
 std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
 
 void DisplayManager::Initialize() {
-  if (!initialized) {
-    const char* displayName = std::getenv("DISPLAY");
+  if (initialized) return;
+  if (headlessMode) return;
+  const char* displayName = std::getenv("DISPLAY");
     if (!displayName || displayName[0] == '\0') {
       displayName = ":0";
     }
@@ -42,7 +44,6 @@ void DisplayManager::Initialize() {
         DisplayManager::Close();
       });
     }
-  }
 }
 
 void DisplayManager::Close() {

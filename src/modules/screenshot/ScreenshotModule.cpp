@@ -3,6 +3,7 @@
 #include "host/ServiceRegistry.hpp"
 #include "host/screenshot/ScreenshotService.hpp"
 #include "utils/Logger.hpp"
+#include "utils/HeadlessRuntime.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/qt/QtScreenshotBackend.hpp"
@@ -40,6 +41,10 @@ static void ensureQtBackend() {
     auto svc = getService();
     if (!svc) return;
     if (svc->hasBackend()) return;
+    
+    // Skip Qt backend creation in headless environments — would abort on
+    // QGuiApplication creation when no display is available.
+    if (havel::qtRuntimeUnavailable()) return;
     
 #ifdef HAVE_QT_EXTENSION
     try {

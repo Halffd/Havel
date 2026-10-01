@@ -235,6 +235,11 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         } else {
             flags = pre_flags;
         }
+        // --headless puts the child off X11/evdev/uinput and kills the
+        // brightness/event listeners: fixtures that still call mouse.move()
+        // or brightness.set() then no-op instead of touching the real
+        // desktop (that was the phantom-zoom vector in scripts/tests/io/*).
+        flags.insert(flags.begin(), "--headless");
         std::vector<char *> args;
         args.push_back(const_cast<char *>(havel_bin.c_str()));
         for (const auto &f : flags) {
@@ -247,11 +252,18 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         // then apply per-test header env overrides (// smoke: env = VAR=v).
         // entry_strings must outlive env (we store c_str pointers into it
         // up to the execvpe call).
+        // DISPLAY / WAYLAND_DISPLAY / XAUTHORITY are dropped so the child
+        // cannot reach the live session even if a code path we did not gate
+        // tries to connect; --headless is the primary guarantee.
         std::vector<char *> env;
         std::vector<std::string> entry_strings;
         for (char **e = ::environ; *e; ++e) {
+            if (std::strncmp(*e, "DISPLAY=", 8) == 0) continue;
+            if (std::strncmp(*e, "WAYLAND_DISPLAY=", 16) == 0) continue;
+            if (std::strncmp(*e, "XAUTHORITY=", 11) == 0) continue;
             env.push_back(*e);
         }
+        env.push_back(const_cast<char *>("HAVEL_HEADLESS=1"));
         for (const auto &kv : read_test_env(script_path)) {
             entry_strings.push_back(kv.first + "=" + kv.second);
             // setenv so any pre-exec code in this child sees the override

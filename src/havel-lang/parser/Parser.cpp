@@ -6511,11 +6511,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
         std::move(finallyBlock));
 }
 
-std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn) {
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn, bool skipKeyword) {
   auto keyword = at();
   size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
   size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
-  advance(); // consume "if"
+  if (!skipKeyword) {
+    advance(); // consume "if"
+  }
 
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
@@ -6546,10 +6548,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
     }
 
 std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-  if (at().type == havel::TokenType::Else) {
+  // 'elif' is sugar for 'else if' (TODO #4). It lexes as an Identifier, so
+  // the dispatch must accept it alongside Else; expression-position elif
+  // (never adjacent to a closed if body) still parses as a plain name.
+  bool isElif = at().type == havel::TokenType::Identifier &&
+                at().value == "elif";
+  if (at().type == havel::TokenType::Else || isElif) {
     if (at().column >= originalIfColumn) {
     size_t elseCol = at().column;
-    advance(); // consume "else"
+    advance(); // consume "else" or "elif"
 
     // Skip newlines before else body
     while (at().type == havel::TokenType::NewLine) {
@@ -6557,7 +6564,11 @@ std::unique_ptr<havel::ast::Statement> alternative = nullptr;
     }
 
     if (at().type == havel::TokenType::If) {
+      // "else if ..." — the nested if starts with the If keyword
       alternative = parseIfStatement(elseCol, originalIfColumn);
+    } else if (isElif) {
+      // "elif <cond> ..." — the condition follows directly, no If keyword
+      alternative = parseIfStatement(elseCol, originalIfColumn, true);
     } else if (at().type == havel::TokenType::OpenBrace ||
                at().type == havel::TokenType::Colon) {
       alternative = parseBlockStatement();

@@ -4496,15 +4496,40 @@ case ast::NodeType::CastExpression: {
       }
       else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);
-        if (call.callee) {
-          compileExpression(*call.callee);
+        if (call.callee && call.callee->kind == ast::NodeType::Identifier) {
+          // Bare callee in a pipe: dispatch as a method on the piped value
+          // (value.filter(pred)). CALL_METHOD resolves by the receiver's type
+          // at runtime and falls back to global/module functions, so
+          // `numbers | stage` reaches the array prototype's filter instead of
+          // whatever bare global shadows it (object.filter throws on arrays).
+          // The third operand marks this as a pipe-stage call: the VM only
+          // applies the script-global fallback (receiver passed as first arg)
+          // to pipe stages, never to `x.method(y)` member calls — otherwise a
+          // method name matching a global host function (e.g. `image.load`
+          // where `image` is a bool) silently re-dispatches to the global with
+          // the receiver prepended and blows an arity check.
+          emit(OpCode::LOAD_VAR, pipe_temp);
+          uint32_t method_sid = addStringConstant(
+              static_cast<const ast::Identifier &>(*call.callee).symbol);
+          for (const auto &arg : call.args) {
+            if (arg)
+              compileExpression(*arg);
+          }
+          emit(OpCode::CALL_METHOD, std::vector<Value>{
+              Value::makeStringValId(method_sid),
+              Value(static_cast<uint32_t>(call.args.size())),
+              Value::makeBool(true)});
+        } else {
+          if (call.callee) {
+            compileExpression(*call.callee);
+          }
+          emit(OpCode::LOAD_VAR, pipe_temp);
+          for (const auto &arg : call.args) {
+            if (arg)
+              compileExpression(*arg);
+          }
+          emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
         }
-        emit(OpCode::LOAD_VAR, pipe_temp);
-        for (const auto &arg : call.args) {
-          if (arg)
-            compileExpression(*arg);
-        }
-        emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
       }
       else if (stage->kind == ast::NodeType::Identifier) {
         const auto &ident = static_cast<const ast::Identifier &>(*stage);
@@ -8002,6 +8027,19 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
+  case ast::NodeType::PipelineExpression: {
+    // from/where/select queries desugar into a pipeline whose stages carry
+    // the filter/map lambdas; without this case they never get function
+    // indices and compile throws "Missing function index".
+    const auto &pipeline =
+        static_cast<const ast::PipelineExpression &>(expression);
+    for (const auto &stage : pipeline.stages) {
+      if (stage) {
+        collectLambdaExpressions(*stage, out);
+      }
+    }
+    break;
+  }
   case ast::NodeType::MemberExpression: {
     const auto &member = static_cast<const ast::MemberExpression &>(expression);
     if (member.object) {
@@ -9091,19 +9129,8 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
 
 void ByteCompiler::compileGetInputExpression(
     const ast::GetInputExpression &expression) {
-  // '< mouse' reads input state — bound to mouse.state (io._mouseState),
-  // the XQueryPointer-based query. There is no io.getMouse host function;
-  // the io object only carries keyboard-state helpers.
-  if (expression.source == "mouse") {
-    uint32_t objSid = addStringConstant("mouse");
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
-    uint32_t methodSid = addStringConstant("state");
-    emit(OpCode::CALL_METHOD, std::vector<Value>{
-        Value::makeStringValId(methodSid), Value(static_cast<uint32_t>(0))});
-    return;
-  }
-  // < source (e.g., < clipboard)
-  // Compiled as call to io.getClipboard() or similar
+  // < source (e.g., < clipboard, < mouse)
+  // Compiled as call to io.getClipboard() / io.getMouse() or similar
   std::string fnName = "io.get" + expression.source;
   // Capitalize first letter of source if needed for camelCase
   if (!expression.source.empty()) {

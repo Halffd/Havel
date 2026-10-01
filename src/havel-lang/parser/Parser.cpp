@@ -1667,6 +1667,15 @@ case TokenType::Timeout:
             return nullptr;
           }
 
+  case TokenType::From: {
+    // Query expression: from x in src where cond select proj (desugared into
+    // filter/map pipeline stages). parsePrattExpression consumed 'from' before
+    // calling nud; step back so parseQueryExpression sees it as the current
+    // token (it advances past 'from' itself).
+    position--;
+    return parseQueryExpression();
+  }
+
         default: {
             errorAt(token, "Unexpected token in expression: " + token.value);
             return nullptr;
@@ -9690,6 +9699,13 @@ return parsePostfixExpression(std::move(array));
   case havel::TokenType::If: {
     // If expression: if condition { expr } else { expr }
     return parseIfExpression();
+  }
+
+  case havel::TokenType::From: {
+    // Query expression: from x in src where cond select proj — the desugaring
+    // builds filter/map pipeline stages. Used as a plain expression, e.g. on
+    // the RHS of an assignment, so it dispatches from the expression parser.
+    return parseQueryExpression();
   }
 
  default:

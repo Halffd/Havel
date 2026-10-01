@@ -52,14 +52,16 @@ dsl {
 }
 ```
 
-Host bindings used: `io.sendKeys`, `io.sendKey`, `io.mouseClick`,
-`io.mouseMoveTo`, `io.mouseMove`, `io.scroll`.
+Host bindings used: `io.send`, `io.sendKey`, `mouse.click`,
+`mouse.move`, `mouse.moveRel`, `mouse.scroll`. The `use io` module also
+exposes `io.sendKeys`/`io.keyDown`/`io.keyUp` wrappers over the same
+backends.
 
 ## Reading input state
 
 ```hv
 dsl {
-    < mouse            // io.mouseState()
+    < mouse            // mouse.state()
 }
 ```
 
@@ -98,8 +100,8 @@ Unit literals (`:1s`, `:1m30s`) are **not** implemented. Use `sleep()` or
   `#` at statement starts are reserved for hotkey literals
   (`^c => { ... }`). To send combos, call `io.sendKey`/`io.sendKeys`
   with a combo string.
-- `lmb_down` / `lmb_up` bare identifiers. Use `io.keyDown`/ or
-  `io.mouseDown`/`io.mouseUp`.
+- `lmb_down` / `lmb_up` bare identifiers. Use `io.keyDown`/`io.keyUp`
+  (module wrappers) or `mouse.down`/`mouse.up`.
 - `>> file` / `<< file` (read/write files/config). Use the `fs` module.
 - `<- x` ("return/break"). Use `return`/`break` in real control flow.
 - `|>` pipeline. Pipelines use `|`.

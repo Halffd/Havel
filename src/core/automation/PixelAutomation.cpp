@@ -251,7 +251,14 @@ Color PixelAutomation::getPixel(int x, int y) {
     bool cursorHidden = false;
 
 #ifdef LINUX_USED
-    Display *display = havel::DisplayManager::GetDisplay();
+    // Never force display initialization from here. A caller that injects a
+    // ScreenProvider (unit tests, headless/daemon mode) must not open a
+    // connection to the X server just to hide the cursor. In normal desktop use
+    // the display is already open by the time a hotkey fires, so the cursor is
+    // still hidden before the grab.
+    Display *display = havel::DisplayManager::IsInitialized()
+                           ? havel::DisplayManager::GetDisplay()
+                           : nullptr;
     if (display) {
         Window root, child;
         int rootX, rootY, winX, winY;

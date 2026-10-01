@@ -2991,6 +2991,28 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
 endif()
 
 # ==============================================================================
+# TEST SANDBOXING
+# ==============================================================================
+# Every ctest process must be inert against the display and input devices, even
+# when it is a bare gtest binary that never goes through hvtest's
+# script_runner. Two layers:
+#   1. HAVEL_HEADLESS=1 makes DisplayManager::Initialize(), the IO backend, the
+#      WindowManager and the Qt application guards no-ops.
+#   2. Unsetting the display/session variables means XOpenDisplay(NULL) cannot
+#      fall back to ":0" on a machine that happens to have an X server running,
+#      so a missed guard degrades to a harmless failure instead of a real
+#      connection to the user's session.
+# Applied as a single pass over the collected test list so a newly added
+# add_test() cannot accidentally escape the sandbox.
+get_property(_havel_all_tests DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY TESTS)
+if(_havel_all_tests)
+  set_tests_properties(${_havel_all_tests} PROPERTIES ENVIRONMENT
+    "HAVEL_HEADLESS=1;DISPLAY=;WAYLAND_DISPLAY=;XAUTHORITY=;XDG_SESSION_TYPE=;QT_QPA_PLATFORM=offscreen"
+  )
+  unset(_havel_all_tests)
+endif()
+
+# ==============================================================================
 # INSTALLATION RULES
 # ==============================================================================
 install(TARGETS havel

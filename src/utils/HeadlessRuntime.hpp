@@ -34,4 +34,29 @@ inline bool qtRuntimeUnavailable() {
     return isHeadlessRuntime() || hasNoDisplayServer();
 }
 
+// True when a dlopen() target is an X11-family library that must not be loaded
+// while sandboxed.
+//
+// This is the only thing standing between a self-hosted module and the live
+// session. modules/app/keyboard.hv builds its own X11 stack entirely through
+// FFI -- ffi.open("libX11.so.6") + ffi.sym(...) + XTestFakeKeyEvent -- with no
+// reference to DisplayManager or IO, so neither of those headless gates can see
+// it. XOpenDisplay(NULL) also falls back to ":0" when DISPLAY is empty, exactly
+// like DisplayManager::Initialize() did, so an unsandboxed import of that module
+// reaches the user's keyboard. Refusing the dlopen leaves every symbol null and
+// the whole injection stack inert.
+//
+// Returns the base filename match; the caller supplies the path as passed to
+// ffi.open, with or without a directory prefix.
+inline bool isBlockedX11Library(const std::string &path) {
+    if (!isHeadlessRuntime()) return false;
+    const std::string base = path.substr(path.find_last_of('/') + 1);
+    for (const char *pat : {"libX11", "libXtst", "libXrandr", "libXext",
+                            "libXcomposite", "libXrender", "libXinerama",
+                            "libXcursor", "libXfixes", "libXi"}) {
+        if (base.rfind(pat, 0) == 0) return true;
+    }
+    return false;
+}
+
 } // namespace havel

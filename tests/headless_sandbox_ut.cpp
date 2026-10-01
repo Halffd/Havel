@@ -113,3 +113,62 @@ TEST(HeadlessSandbox, EnvFlagIsAuthoritativeOnItsOwn) {
   EXPECT_TRUE(havel::isHeadlessRuntime())
       << "HAVEL_HEADLESS=1 was not honoured on its own";
 }
+
+// modules/app/keyboard.hv reaches X entirely through FFI -- ffi.open +
+// ffi.sym + XTestFakeKeyEvent -- and never touches DisplayManager or IO, so
+// their headless gates cannot see it. The dlopen refusal is the only thing
+// stopping that module from pressing real keys, and XOpenDisplay(NULL) falls
+// back to ":0" when DISPLAY is empty. These pin the set of blocked libraries so
+// one cannot be dropped from the list unnoticed.
+TEST(HeadlessSandbox, X11LibrariesCannotBeLoaded) {
+  ScopedEnv guard;
+  ::setenv("HAVEL_HEADLESS", "1", 1);
+
+  // The injection stack: XTest is what actually synthesises key and mouse
+  // events, X11 is what it needs a display from.
+  for (const char *lib : {"libX11.so.6", "libXtst.so.6"}) {
+    EXPECT_TRUE(havel::isBlockedX11Library(lib))
+        << lib << " loaded under the sandbox -- keyboard.hv can inject real "
+                   "keystrokes through it";
+  }
+
+  // Everything else the display-touching modules reach for.
+  for (const char *lib : {"libXrandr.so.2", "libXext.so.6",
+                          "libXcomposite.so.1", "libXrender.so.1",
+                          "libXinerama.so.1", "libXcursor.so.1",
+                          "libXfixes.so.3", "libXi.so.6"}) {
+    EXPECT_TRUE(havel::isBlockedX11Library(lib)) << lib << " was not blocked";
+  }
+}
+
+TEST(HeadlessSandbox, X11LibraryBlockHandlesPathPrefixes) {
+  ScopedEnv guard;
+  ::setenv("HAVEL_HEADLESS", "1", 1);
+
+  // ffi.open() is called with plain sonames in the modules, but a caller may
+  // pass a full path; the match has to be on the base name.
+  EXPECT_TRUE(havel::isBlockedX11Library("/usr/lib/libX11.so.6"));
+  EXPECT_TRUE(havel::isBlockedX11Library("./libXtst.so.6"));
+}
+
+TEST(HeadlessSandbox, NonX11LibrariesStillLoad) {
+  ScopedEnv guard;
+  ::setenv("HAVEL_HEADLESS", "1", 1);
+
+  // Over-blocking would break unrelated FFI users, so the match must stay
+  // narrow. libz and libm must not be caught by a prefix like "libX".
+  for (const char *lib : {"libz.so.1", "libm.so.6", "libc.so.6", "libz.so"}) {
+    EXPECT_FALSE(havel::isBlockedX11Library(lib))
+        << lib << " was wrongly blocked by the X11 library filter";
+  }
+}
+
+TEST(HeadlessSandbox, X11LibrariesLoadWhenNotSandboxed) {
+  ScopedEnv guard;
+  ::unsetenv("HAVEL_HEADLESS");
+
+  // The block is a sandbox guard, not a permanent restriction: production runs
+  // with a live session must still be able to load these.
+  EXPECT_FALSE(havel::isBlockedX11Library("libX11.so.6"));
+  EXPECT_FALSE(havel::isBlockedX11Library("libXtst.so.6"));
+}

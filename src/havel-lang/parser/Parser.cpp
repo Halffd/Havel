@@ -50,11 +50,16 @@ static bool isKeywordToken(TokenType t) {
     case TokenType::Timeout: case TokenType::Interval: case TokenType::Wait:
     case TokenType::WaitGroup: case TokenType::Defer: case TokenType::Co:
     case TokenType::Yield: case TokenType::Update:
+    // `async` is contextual: parsePrefix turns it back into an identifier
+    // unless it starts an async expression, so name positions (`use async`,
+    // parameters, aliases) must accept the keyword token too.
+    case TokenType::Async:
         return true;
     default:
         return false;
     }
 }
+
 
 static double parseNumberLiteral(const std::string& s) {
     if (s.size() >= 2 && s[0] == '0') {
@@ -2319,7 +2324,14 @@ start = parsePrattExpression(0);
       // Parse body - use high rbp to prevent any infix ops after arrow body
       std::unique_ptr<ast::BlockStatement> body;
       if (at().type == TokenType::OpenBrace) {
-        body = parseBlockStatement();
+        // A hotkey handler body (F24 => { ... }) is an input context: bare
+        // input commands ("text", lmb, {Home}) parse without `>` per the
+        // spec's implicit input statements. The flag must go through the
+        // parseBlockStatement parameter — the brace branch sets
+        // context.inInputContext from it. Plain arrow functions
+        // (f = x => { ... }) are not input contexts.
+        body = parseBlockStatement(context.inInputContext ||
+                                   isHotkeyIdentifier(ident->symbol));
       } else {
         // Expression body: wrap in return
         auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
@@ -3021,6 +3033,28 @@ position = savePos; // restore position
         }
     }
     case havel::TokenType::Identifier: {
+    // In input context (hotkey blocks), a bare input-command identifier
+    // (lmb/rmb/m/r/w) is an implicit input statement, not a variable read —
+    // the same dispatch as the default case below, which identifiers never
+    // reach because this case handles them. Assignment targets and member
+    // access on same-named variables are not input commands:
+    // w = window.active(), w.raise() — observed in the hk-trigger burst
+    // regression.
+    if (context.inInputContext &&
+        (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
+         at().value == "r" || at().value == "w")) {
+      const havel::TokenType next1 = at(1).type;
+      if (next1 == havel::TokenType::Assign || next1 == havel::TokenType::Dot) {
+        // fall through to assignment/expression parsing
+      } else {
+        // 'w' not followed by '(' is a wait condition; with '(' it is wheel.
+        if (at().value == "w" && next1 != havel::TokenType::OpenParen) {
+          return parseWaitStatement();
+        }
+        return parseImplicitInputStatement();
+      }
+    }
+
     // Check for multiple assignment: a, b, c = value
     // Look ahead: identifier comma identifier ... = 
     if (at(1).type == havel::TokenType::Comma) {
@@ -3556,6 +3590,12 @@ case havel::TokenType::Struct:
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
   case havel::TokenType::OpenBrace: {
+    // In input context (hotkey blocks), {Key} is a SendKey input command —
+    // the default case's implicit-input check never fires because this case
+    // handles braces.
+    if (context.inInputContext) {
+      return parseImplicitInputStatement();
+    }
     // Check if this is an object literal or destructuring pattern
     // Object literal: {key: value, ...}
     // Destructuring: {a, b} = obj or {a: b} = obj
@@ -10338,8 +10378,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
   auto first = parsePatternAtom();
   if (!first) return nullptr;
   alternatives.push_back(std::move(first));
-  
-  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or) {
+
+  // The lexer emits BitwiseOr (not Pipe) for a single '|' after an
+  // expression-shaped token, so pattern alternatives must accept both.
+  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or ||
+         at().type == havel::TokenType::BitwiseOr) {
     advance(); // consume '|' or '||'
     auto next = parsePatternAtom();
     if (!next) {

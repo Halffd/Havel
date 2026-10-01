@@ -17,8 +17,15 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   collectTopLevelStructs(program);
   collectClassMembers(program);
 
-  // Seed known globals from previous REPL sessions
-  global_variables_.insert(known_globals_.begin(), known_globals_.end());
+  // global_variables_ stays limited to names the script itself declares (top
+  // level assignments, declarations, imports). known_globals_ additionally
+  // holds host functions and other runtime globals (count, len, type, ...) and
+  // is only consulted to decide whether a name resolves at all. Merging the two
+  // made every builtin look like a script-declared global, so assigning to such
+  // a name inside a function emitted STORE_GLOBAL and overwrote the builtin,
+  // and a closure capturing that name read the shared global instead of its own
+  // cell. Names carried over from earlier REPL lines are re-declared as globals
+  // by the top-level assignment path below, so they need no seeding here.
 
   // Enter global scope
   beginFunction(nullptr);

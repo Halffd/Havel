@@ -4518,11 +4518,16 @@ case ast::NodeType::CastExpression: {
           emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
         } else {
           // Method call on piped value: value.trim(), value.len(), etc.
+          // The third operand marks this as a pipe stage: CALL_METHOD may
+          // then fall back to a same-named script-global function with the
+          // receiver as first argument (`data |> doubled` where doubled is a
+          // script fn — the array has no such method).
           emit(OpCode::LOAD_VAR, pipe_temp);
           uint32_t method_sid = addStringConstant(ident.symbol);
           emit(OpCode::CALL_METHOD, std::vector<Value>{
               Value::makeStringValId(method_sid),
-              Value(static_cast<uint32_t>(0))});
+              Value(static_cast<uint32_t>(0)),
+              Value::makeBool(true)});
         }
       }
       else if (stage->kind == ast::NodeType::MemberExpression) {

@@ -3364,8 +3364,13 @@ skipNewlines()
                 test = null
             }
             else {
-                // expression as case
+                # '=>' terminates the test expression (same mechanism as
+                # match arms: Arrow BP is 0 while inMatchExpr). Scoped to
+                # the test only — case bodies may still contain lambdas.
+                prevMatch = inMatchExpr
+                inMatchExpr = true
                 test = parseExpr(0)
+                inMatchExpr = prevMatch
 
             }
             skipNewlines()

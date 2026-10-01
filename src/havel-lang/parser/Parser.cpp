@@ -6677,8 +6677,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
     if (at().type == havel::TokenType::Else) {
       advance(); // consume "else"
     } else {
+      // '=>' terminates the test expression (same mechanism as match arms:
+      // Arrow returns binding power 0 so the Pratt loop exits). Scoped to the
+      // test only — case bodies may still contain real lambdas.
+      bool savedInMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
       // Parse case test expression
       test = parseExpression();
+      context.inMatchExpression = savedInMatch;
     }
 
     // Expect '=>'

@@ -768,6 +768,28 @@ auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     break;
   }
 
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt =
+        static_cast<const ast::SwitchStatement &>(statement);
+    if (switch_stmt.expression) {
+      resolveExpression(*switch_stmt.expression);
+    }
+    // Cases resolve in the enclosing scope (no new scope per case — the
+    // subject is compiled into a hidden local, tests compare against it).
+    for (const auto &case_node : switch_stmt.cases) {
+      if (!case_node) {
+        continue;
+      }
+      if (case_node->test) {
+        resolveExpression(*case_node->test);
+      }
+      if (case_node->body) {
+        resolveStatement(*case_node->body);
+      }
+    }
+    break;
+  }
+
   case ast::NodeType::RepeatStatement: {
     const auto &repeat_stmt =
         static_cast<const ast::RepeatStatement &>(statement);

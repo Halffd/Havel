@@ -1119,6 +1119,10 @@ for (const auto &pending : pending_default_evals) {
                                    lastStmt->kind == ast::NodeType::WhileStatement ||
                                    lastStmt->kind == ast::NodeType::LoopStatement ||
                                    lastStmt->kind == ast::NodeType::DoWhileStatement);
+        // A switch in tail position propagates tail position to its case
+        // bodies (bare-expression case bodies are implicit returns).
+        bool isSwitchTail = lastStmt &&
+                            lastStmt->kind == ast::NodeType::SwitchStatement;
                                    
         if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
           const auto &exprStmt =
@@ -1139,7 +1143,7 @@ for (const auto &pending : pending_default_evals) {
           needsExplicitReturn = false;
         } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
                                  lastStmt->kind == ast::NodeType::BlockStatement ||
-                                 isLoop)) {
+                                 isLoop || isSwitchTail)) {
           // If/Match/Block/Loop in tail position
           enterTailPosition();
           compileStatement(*lastStmt);
@@ -3042,7 +3046,87 @@ case ast::NodeType::ImplDeclaration: {
 	break;
 }
 
-case ast::NodeType::UseStatement: {
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    // Subject stored in a hidden local; each case compares it
+    // (LOAD_VAR subject, test, EQ, JUMP_IF_FALSE next-case).
+    // The switch is like an if-chain: when in tail position, case bodies
+    // compile in tail position (implicit returns work).
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*switch_stmt.expression);
+    in_tail_position_ = saved_tail_cond;
+
+    uint32_t subjSlot = next_local_index++;
+    reserveLocalSlot(subjSlot);
+    emit(OpCode::STORE_VAR, subjSlot);
+
+    std::vector<uint32_t> endJumps;
+    const ast::SwitchCase *defaultCase = nullptr;
+    for (const auto &case_node : switch_stmt.cases) {
+      if (!case_node) {
+        continue;
+      }
+      if (!case_node->test) {
+        defaultCase = case_node.get();
+        continue;
+      }
+      emit(OpCode::LOAD_VAR, subjSlot);
+      in_tail_position_ = false; // test is an EQ operand, never TAIL_CALL
+      compileExpression(*case_node->test);
+      in_tail_position_ = saved_tail_cond;
+      emit(OpCode::EQ);
+      uint32_t nextCaseJump = emitJump(OpCode::JUMP_IF_FALSE);
+
+      bool was_tail = in_tail_position_;
+      bool body_was_tail = false;
+      if (was_tail) {
+        clearTailCallFlag();
+        enterTailPosition();
+        if (case_node->body) {
+          compileStatement(*case_node->body);
+        }
+        body_was_tail = wasTailCall();
+        exitTailPosition();
+      } else if (case_node->body) {
+        compileStatement(*case_node->body);
+      }
+      // Case body didn't emit tail call — emit RETURN (implicit return)
+      if (was_tail && !body_was_tail) {
+        emit(OpCode::RETURN);
+      }
+
+      endJumps.push_back(emitJump(OpCode::JUMP));
+      patchJump(nextCaseJump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
+    if (defaultCase && defaultCase->body) {
+      // in_tail_position_ is false here (the last case's exitTailPosition
+      // cleared it); the switch's original tail state is saved_tail_cond.
+      bool was_tail = saved_tail_cond;
+      bool body_was_tail = false;
+      if (was_tail) {
+        clearTailCallFlag();
+        enterTailPosition();
+        compileStatement(*defaultCase->body);
+        body_was_tail = wasTailCall();
+        exitTailPosition();
+      } else {
+        compileStatement(*defaultCase->body);
+      }
+      if (was_tail && !body_was_tail) {
+        emit(OpCode::RETURN);
+      }
+    }
+    uint32_t switchEnd =
+        static_cast<uint32_t>(current_function->instructions.size());
+    for (uint32_t j : endJumps) {
+      patchJump(j, switchEnd);
+    }
+    break;
+  }
+
+  case ast::NodeType::UseStatement: {
         compileUseStatement(static_cast<const ast::UseStatement &>(statement));
         break;
     }

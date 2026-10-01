@@ -9021,7 +9021,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
         case ast::InputCommand::MouseClick:
             // io.click(cmd.text) - text contains button name
             {
-                uint32_t strId = addStringConstant("io.click");
+                uint32_t strId = addStringConstant("mouse.click");
                 emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
             }
             { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
@@ -9030,7 +9030,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
         case ast::InputCommand::MouseMove:
             // io.mouseMoveTo(x, y) - xExprStr and yExprStr contain coordinates
             {
-                uint32_t strId = addStringConstant("io.mouseMoveTo");
+                uint32_t strId = addStringConstant("mouse.move");
                 emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
             }
  { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
@@ -9040,7 +9040,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
  case ast::InputCommand::MouseRelative:
  // Similar to MouseMove but relative
  {
- uint32_t strId = addStringConstant("io.mouseMoveRel");
+ uint32_t strId = addStringConstant("mouse.moveRel");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
  }
  { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };

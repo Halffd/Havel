@@ -17,16 +17,30 @@ void SystemBridge::install(PipelineOptions &options) {
   // Create system objects and extension object via initializer
   // This runs after all host functions are registered
   options.system_object_initializer = [](compiler::VM *vm) {
-    // System object
-    auto systemObj = vm->createHostObject();
-    auto systemObjGuard = vm->makeRoot(Value::makeObjectId(systemObj.id));
-    vm->setHostObjectField(
-        systemObj, "detect",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("system.detect")));
-    vm->setHostObjectField(
-        systemObj, "hardware",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("system.hardware")));
-    vm->setGlobal("system", Value::makeObjectId(systemObj.id));
+    // System object — merge into an existing global when present (VM's
+    // registerDefaultHostGlobals adds gc/gcStats to it; replacing here would
+    // wipe them and break system.gcStats()).
+    uint32_t sysDetectIdx = vm->getHostFunctionIndex("system.detect");
+    uint32_t sysHwIdx = vm->getHostFunctionIndex("system.hardware");
+    const auto &allGlobals = vm->getAllGlobals();
+    auto sysIt = allGlobals.find("system");
+    if (sysIt != allGlobals.end() && sysIt->second.isObjectId()) {
+      ObjectRef sysRef{sysIt->second.asObjectId(), true};
+      auto detect = vm->getHostObjectField(sysRef, "detect");
+      if (detect.isHostFuncId() || detect.isNull()) {
+        vm->setHostObjectField(sysRef, "detect", Value::makeHostFuncId(sysDetectIdx));
+      }
+      auto hardware = vm->getHostObjectField(sysRef, "hardware");
+      if (hardware.isHostFuncId() || hardware.isNull()) {
+        vm->setHostObjectField(sysRef, "hardware", Value::makeHostFuncId(sysHwIdx));
+      }
+    } else {
+      auto systemObj = vm->createHostObject();
+      auto systemObjGuard = vm->makeRoot(Value::makeObjectId(systemObj.id));
+      vm->setHostObjectField(systemObj, "detect", Value::makeHostFuncId(sysDetectIdx));
+      vm->setHostObjectField(systemObj, "hardware", Value::makeHostFuncId(sysHwIdx));
+      vm->setGlobal("system", Value::makeObjectId(systemObj.id));
+    }
 
     // Process object
     auto processObj = vm->createHostObject();
@@ -124,19 +138,19 @@ vm->setHostObjectField(
     Value::makeHostFuncId(vm->getHostFunctionIndex("io._mouseState")));
 vm->setHostObjectField(
     mouseObj, "lastButton",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastButton")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButton")));
 vm->setHostObjectField(
     mouseObj, "lastState",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastButtonState")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButtonState")));
 vm->setHostObjectField(
     mouseObj, "buttons",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.buttons")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.buttons")));
   vm->setHostObjectField(
 mouseObj, "scroll",
     Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   vm->setHostObjectField(
     mouseObj, "reset",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.releaseAll")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.releaseAll")));
   vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
   // IO object — pure send/receive verbs plus clipboard and executor control.
@@ -188,34 +202,34 @@ mouseObj, "scroll",
     Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
   vm->setHostObjectField(
     keyboardObj, "keys",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.keys")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.keys")));
   vm->setHostObjectField(
     keyboardObj, "lastKey",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastKey")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKey")));
   vm->setHostObjectField(
     keyboardObj, "lastKeys",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastKeys")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKeys")));
   vm->setHostObjectField(
     keyboardObj, "lastState",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastState")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastState")));
   vm->setHostObjectField(
     keyboardObj, "modifiers",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._getCurrentModifiers")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.modifiers")));
   vm->setHostObjectField(
     keyboardObj, "lastModifiers",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastModifiers")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastModifiers")));
   vm->setHostObjectField(
     keyboardObj, "locks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._locks")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.locks")));
   vm->setHostObjectField(
     keyboardObj, "lastLocks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._lastLocks")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastLocks")));
   vm->setHostObjectField(
     keyboardObj, "setLock",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._setLock")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.setLock")));
   vm->setHostObjectField(
     keyboardObj, "reset",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.reset")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.reset")));
   vm->setGlobal("keyboard", Value::makeObjectId(keyboardObj.id));
 
   // Devices object: input device enumeration and routing.
@@ -223,13 +237,13 @@ mouseObj, "scroll",
   auto devicesObjGuard = vm->makeRoot(Value::makeObjectId(devicesObj.id));
   vm->setHostObjectField(
     devicesObj, "setDevice",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._addDevice")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.add")));
   vm->setHostObjectField(
     devicesObj, "device",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._devices")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.list")));
   vm->setHostObjectField(
     devicesObj, "lastDevice",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.lastDevice")));
+    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.lastDevice")));
   vm->setGlobal("devices", Value::makeObjectId(devicesObj.id));
 
 

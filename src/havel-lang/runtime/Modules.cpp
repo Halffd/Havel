@@ -486,9 +486,12 @@ void Modules::installStdLib() {
         ctx_->vm->registerHostFunction(name, fn);
     }
     ctx_->vm->buildNamespaceGlobals();
-    // Bridge initializer registers shaped namespace objects (io/keyboard/devices).
-    // Must be set BEFORE registerDefaultHostGlobals fires via execute().
+    // Bridge initializer: shapes namespace objects (io/keyboard/devices/mouse).
+    // Runs after the flattener (which merges fields from host_function names)
+    // and is re-registered so pipeline executions re-run it after execute()'s
+    // registerDefaultHostGlobals call.
     if (options_.system_object_initializer) {
+        options_.system_object_initializer(ctx_->vm);
         ctx_->vm->setSystemObjectInitializer(options_.system_object_initializer);
     }
 

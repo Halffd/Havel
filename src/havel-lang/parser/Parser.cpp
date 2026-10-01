@@ -1289,7 +1289,7 @@ t == havel::TokenType::Continue ||
       if (isObject) {
         return parseObjectLiteral();
       }
-      
+
       // Check if it looks like a set literal
       bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
 nextTok.type == havel::TokenType::String ||
@@ -1354,9 +1354,17 @@ nextTok.type == havel::TokenType::RegexString ||
         return makeNodeAt<ast::SetExpression>(token, std::move(elements));
         }
       }
-      
-      // Default to object literal
-      return parseObjectLiteral();
+
+      // TODO #1: '{ expr }' with no top-level key: and no comma is a
+      // zero-arg lambda (lazy, callable) — not an eagerly-evaluated object
+      // literal. '{ key: value }' stays an object literal; '{ a, b }' stays
+      // a set; '{}' stays an empty object.
+      {
+        auto lambdaBody = parseBlockStatement();
+        return makeNodeAt<ast::LambdaExpression>(token,
+            std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+            std::move(lambdaBody));
+      }
     }
 
     case TokenType::Fn:

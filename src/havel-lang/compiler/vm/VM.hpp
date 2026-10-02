@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <format>
+#include <string_view>
 #include <functional>
 #include <memory>
 #include <cstdio>
@@ -2512,3 +2514,32 @@ public:
 };
 
 } // namespace havel::compiler
+
+// std::formatter for GoroutineCallResult so havel::debug() can log it.
+// GCC 16's libstdc++ statically asserts that every format-arg type has a
+// formatter; enums have none by default. Defined at global scope: a
+// `namespace std` block nested inside havel::compiler does not reopen ::std
+// under clang + GCC 16 headers.
+namespace std {
+template <>
+struct formatter<havel::compiler::VM::GoroutineCallResult, char>
+    : formatter<string_view, char> {
+  template <typename FormatContext>
+  auto format(const havel::compiler::VM::GoroutineCallResult &r,
+              FormatContext &ctx) const {
+    string_view name = "Failed";
+    switch (r) {
+    case havel::compiler::VM::GoroutineCallResult::Interpreter:
+      name = "Interpreter";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::JITExecuted:
+      name = "JITExecuted";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::Failed:
+      name = "Failed";
+      break;
+    }
+    return formatter<string_view, char>::format(name, ctx);
+  }
+};
+} // namespace std

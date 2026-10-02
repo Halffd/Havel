@@ -2466,19 +2466,21 @@ HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
 endif()
 
 # ==============================================================================
-# MODULE PLUGINS (conditional .so modules loaded via dlopen)
+# MODULE PLUGIN BUILD IDENTITY (whenever the havel lang is on)
 # ==============================================================================
-if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
-set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
-file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
-
-# -- module plugin build identity --------------------------------------------
 # Module plugins (.so) inline host VM code (VMApi -> VM::setGlobal etc.), so
 # a plugin compiled against a different VM layout crashes the host (observed:
 # stale havel_mod_math.so SIGFPE in _Mod_range_hashing after VM.hpp gained
 # new fields). Hash the ABI-critical headers at configure time and stamp the
 # value into both the host binary and every plugin; the loader rejects
 # plugins whose build id does not match the host's.
+#
+# Computed whenever ENABLE_HAVEL_LANG is on, NOT gated on
+# ENABLE_MODULE_PLUGINS: a configure without the plugins flag must still give
+# the host the same build id the existing plugin .so files carry, or every
+# module load fails with a spurious build-id mismatch ("host 0") until the
+# next full reconfigure. Drift happened twice; this removes the trigger.
+if(ENABLE_HAVEL_LANG)
 set(HAVEL_ABI_HEADERS
   ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VM.hpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMApi.hpp
@@ -2497,6 +2499,14 @@ string(MD5 HAVEL_MODULE_BUILD_ID_MD5 "${HAVEL_MODULE_BUILD_ID_SRC}")
 string(SUBSTRING "${HAVEL_MODULE_BUILD_ID_MD5}" 0 8 HAVEL_MODULE_BUILD_ID)
 add_compile_definitions(HAVEL_MODULE_BUILD_ID=0x${HAVEL_MODULE_BUILD_ID})
 message(STATUS "Module plugin build id: 0x${HAVEL_MODULE_BUILD_ID}")
+endif()
+
+# ==============================================================================
+# MODULE PLUGINS (conditional .so modules loaded via dlopen)
+# ==============================================================================
+if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
+set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
+file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 
 # Helper function to define a module plugin .so target
 # Usage: add_havel_module_plugin(name source [EXTRA_DEFS def1 def2 ...])

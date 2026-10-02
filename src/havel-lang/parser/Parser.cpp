@@ -3587,6 +3587,8 @@ at(1).type == havel::TokenType::Arrow) {
     return parseDoWhileStatement();
   case havel::TokenType::Switch:
     return parseSwitchStatement();
+  case havel::TokenType::Case:
+    return parseCaseOfStatement();
   case havel::TokenType::For:
     return parseForStatement();
   case havel::TokenType::Loop:
@@ -6899,9 +6901,42 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
   context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
+  auto cases = parseSwitchCaseList();
+
+  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
+                                               std::move(cases));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseCaseOfStatement() {
+  advance(); // consume "case"
+
+  // Parse the subject expression — any expression, including a `~` match
+  // (`case txt ~ name of { ... }`): the subject is the match result.
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto expression = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  // 'of' has no keyword token — it lexes as an Identifier.
+  if (at().type != havel::TokenType::Identifier || at().value != "of") {
+    failAt(at(), "Expected 'of' after case expression");
+  }
+  advance(); // consume "of"
+
+  auto cases = parseSwitchCaseList();
+
+  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
+                                               std::move(cases));
+}
+
+std::vector<std::unique_ptr<havel::ast::SwitchCase>>
+Parser::parseSwitchCaseList() {
   // Expect opening brace
   if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after switch expression");
+    failAt(at(), "Expected '{' after case subject");
   }
   advance(); // consume "{"
 
@@ -6909,8 +6944,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
 
   // Parse switch cases
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    // Skip newlines
-    while (at().type == havel::TokenType::NewLine) {
+    // Skip newlines and semicolons between cases
+    while (at().type == havel::TokenType::NewLine ||
+           at().type == havel::TokenType::Semicolon) {
       advance();
     }
 
@@ -6918,15 +6954,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
       break;
     }
 
-    // Parse case test expression or 'else'
+    // Parse case test expression, or an 'else' / '_' wildcard
     std::unique_ptr<havel::ast::Expression> test = nullptr;
 
-    if (at().type == havel::TokenType::Else) {
-      advance(); // consume "else"
+    if (at().type == havel::TokenType::Else ||
+        at().type == havel::TokenType::Underscore) {
+      advance(); // consume wildcard
     } else {
-      // '=>' terminates the test expression (same mechanism as match arms:
-      // Arrow returns binding power 0 so the Pratt loop exits). Scoped to the
-      // test only — case bodies may still contain real lambdas.
+      // '=>' and '->' terminate the test expression (same mechanism as match
+      // arms: Arrow/ReturnType return binding power 0 so the Pratt loop
+      // exits). Scoped to the test only — case bodies may still contain
+      // real lambdas.
       bool savedInMatch = context.inMatchExpression;
       context.inMatchExpression = true;
       // Parse case test expression
@@ -6934,11 +6972,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
       context.inMatchExpression = savedInMatch;
     }
 
-    // Expect '=>'
-    if (at().type != havel::TokenType::Arrow) {
-      failAt(at(), "Expected '=>' after switch case test");
+    // Expect '=>' or '->'
+    if (at().type != havel::TokenType::Arrow &&
+        at().type != havel::TokenType::ReturnType) {
+      failAt(at(), "Expected '=>' or '->' after case test");
     }
-    advance(); // consume "=>"
+    advance(); // consume the arrow
 
     // Parse case body
     std::unique_ptr<havel::ast::Statement> caseBody;
@@ -6954,20 +6993,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
     cases.push_back(makeNode<havel::ast::SwitchCase>(
         std::move(test), std::move(caseBody)));
 
-    // Skip newlines after case
-    while (at().type == havel::TokenType::NewLine) {
+    // Skip newlines and semicolons after case
+    while (at().type == havel::TokenType::NewLine ||
+           at().type == havel::TokenType::Semicolon) {
       advance();
     }
   }
 
   // Expect closing brace
   if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close switch statement");
+    failAt(at(), "Expected '}' to close case list");
   }
   advance(); // consume "}"
 
-  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
-                                                       std::move(cases));
+  return cases;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {

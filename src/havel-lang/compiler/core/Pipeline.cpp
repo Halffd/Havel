@@ -50,39 +50,6 @@ static const std::initializer_list<const char*> stdModuleGlobals = {
     "setFlag", "isOn", "dumpBytecodeSummary", "dumpBytecode", "traceBytecode"
 };
 
-// Load modules referenced by top-level `use` statements before semantic
-// analysis. Lazy modules (HAVEL_MODULE_PLUGIN_IMPL) register their host
-// functions only when loaded, so bare calls to their exports (regex_match,
-// regex_escape, ...) are unknown to strict-mode resolution unless the module
-// loads first — the same load the IMPORT opcode performs at runtime, just
-// earlier, so the names are in knownGlobals by the time the resolver runs.
-//
-// ensureModuleLoaded, NOT loadModule: loadModule gives the module a fresh
-// scope with globals.clear(), which would wipe the init-established global
-// state (math's sidecar constants, namespace objects) — observed as
-// physics/random smoke tests losing math.C. ensureModuleLoaded runs the lazy
-// initFn (plugin register_fn), which only registers host functions.
-// Without a VM there is nothing to load against; the runtime IMPORT still
-// handles those paths.
-void loadUseStatementModules(const ast::Program &program,
-                             const PipelineOptions &options) {
-  if (!options.vm_override) {
-    return;
-  }
-  for (const auto &stmt : program.body) {
-    if (stmt->kind != ast::NodeType::UseStatement) {
-      continue;
-    }
-    const auto &use = static_cast<const ast::UseStatement &>(*stmt);
-    if (use.isFileImport) {
-      continue;
-    }
-    for (const auto &moduleName : use.moduleNames) {
-      options.vm_override->ensureModuleLoaded(moduleName);
-    }
-  }
-}
-
 std::string bindingKindName(ResolvedBindingKind kind) {
   switch (kind) {
   case ResolvedBindingKind::Local:

@@ -2317,8 +2317,12 @@ Value UIBridge::handleWindowList(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowParent(const std::vector<Value> &args,
                                    const HostContext *ctx) {
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return the same value as an unknown id with a backend present (0),
+  // so callers never see null from an id-typed getter. Matches the
+  // icon/screenshot handlers' no-manager contract.
   if (!ctx->windowManager || !ctx->vm)
-    return Value::makeNull();
+    return Value::makeInt(0);
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
@@ -2338,8 +2342,18 @@ Value UIBridge::handleWindowParent(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowChildren(const std::vector<Value> &args,
                                      const HostContext *ctx) {
-  if (!ctx->windowManager || !ctx->vm)
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return an empty array, same as an unknown id with a backend present.
+  // Building the array needs the VM, so a missing VM still degrades to
+  // null (nothing better exists without an allocator).
+  if (!ctx->vm)
     return Value::makeNull();
+  auto *vmNoMgr = static_cast<VM *>(ctx->vm);
+  if (!ctx->windowManager) {
+    auto arr = vmNoMgr->createHostArray();
+    auto arrGuard = vmNoMgr->makeRoot(Value::makeArrayId(arr.id));
+    return Value::makeArrayId(arr.id);
+  }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
@@ -2365,8 +2379,18 @@ Value UIBridge::handleWindowChildren(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowProperties(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  if (!ctx->windowManager || !ctx->vm)
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return an empty object, same as an unknown id with a backend present.
+  // Building the object needs the VM, so a missing VM still degrades to
+  // null (nothing better exists without an allocator).
+  if (!ctx->vm)
     return Value::makeNull();
+  auto *vmNoMgr = static_cast<VM *>(ctx->vm);
+  if (!ctx->windowManager) {
+    auto obj = vmNoMgr->createHostObject();
+    auto objGuard = vmNoMgr->makeRoot(Value::makeObjectId(obj.id));
+    return Value::makeObjectId(obj.id);
+  }
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {

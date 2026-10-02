@@ -100,6 +100,12 @@ private:
   std::unordered_set<std::string> top_level_structs_;
   std::unordered_set<std::string> global_variables_;  // Top-level let declarations
   std::unordered_set<std::string> known_globals_;  // Pre-known globals (from previous REPL lines)
+  // Names declared into a __main__ scope slot by the implicit-global
+  // assignment path (declareLocal + global_variables_.insert + Global
+  // binding). They are semantically globals: the scope entry is slot
+  // bookkeeping, not a real local. The inner-local shadow rule must not
+  // mistake them for loop iterators / block-scoped let declarations.
+  std::unordered_set<std::string> implicit_scope_globals_;
   std::vector<FunctionContext> function_stack_;
   std::vector<ClassContext> class_stack_;  // Stack of class contexts for nested classes
   bool strict_mode_ = false;

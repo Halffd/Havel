@@ -1447,6 +1447,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           // At top-level program scope - declare as global variable
           uint32_t slot = declareLocal(ident.symbol, &ident, false);
           global_variables_.insert(ident.symbol);
+          implicit_scope_globals_.insert(ident.symbol);
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
           newBinding.slot = 0;
@@ -1482,6 +1483,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
+              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1532,6 +1534,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
+              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1602,6 +1605,7 @@ case ast::NodeType::MultipleAssignment: {
                 if (isGlobalScope) {
                     uint32_t slot = declareLocal(ident.symbol, &ident, false);
                     global_variables_.insert(ident.symbol);
+                    implicit_scope_globals_.insert(ident.symbol);
                     ResolvedBinding newBinding;
                     newBinding.kind = ResolvedBindingKind::Global;
                     newBinding.slot = 0;
@@ -2021,10 +2025,15 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   // pre-existing root global with the same name captured every read of the
   // loop variable (the loop machinery stored the element into the local
   // slot via the declaration, but body reads resolved to the stale global).
+  // implicit_scope_globals_ names are exempt: the implicit-global assignment
+  // path registers them in a scope slot for bookkeeping but notes a Global
+  // binding (STORE_GLOBAL) - reads must stay Global or they diverge from
+  // their own writes (reads saw a never-stored local slot, i.e. null).
   if (function_index == 0 && global_variables_.count(name) > 0) {
     bool shadowed_by_inner_local = false;
     for (size_t sc = 1; sc < ctx.scopes.size(); ++sc) {
-      if (ctx.scopes[sc].count(name) > 0) {
+      if (ctx.scopes[sc].count(name) > 0 &&
+          implicit_scope_globals_.count(name) == 0) {
         shadowed_by_inner_local = true;
         break;
       }

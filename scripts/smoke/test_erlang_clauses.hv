@@ -1,0 +1,31 @@
+// smoke: erlang-clauses = 4
+// Erlang-style multi-clause function heads (TODO #2): consecutive same-name
+// clauses merge into one function dispatched by guard order. Expected
+// results: fib(6)=8, grade picks per-guard, dbl returns its expression.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// Guarded clause + catch-all clause, blank line between them.
+fib(N) if N < 2 => N
+
+fib(N) => fib(N - 1) + fib(N - 2)
+
+// Multiple guarded clauses + catch-all.
+grade(S) if S >= 90 => "A"
+grade(S) if S >= 80 => "B"
+grade(S) => "F"
+
+// Single catch-all clause whose body is a bare expression (tail return).
+dbl(x) => x * 2
+
+assertEq(fib(6), 8, "fib(6)")
+assertEq(fib(0), 0, "fib(0)")
+assertEq(grade(95), "A", "grade(95)")
+assertEq(grade(85), "B", "grade(85)")
+assertEq(grade(10), "F", "grade(10)")
+assertEq(dbl(21), 42, "dbl(21)")
+print("PASS erlang-clauses")

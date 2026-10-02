@@ -3505,7 +3505,55 @@ at(1).type == havel::TokenType::Arrow) {
     }
 
     // Not a hotkey binding, parse as expression
+    // Peek: ident( ident... ) [if ...] => — an Erlang clause head. Suppress
+    // arrow-function parsing only for that shape, so the Pratt terminates at
+    // '=>' / 'if' and the clause dispatcher below can claim the statement.
+    auto isClauseHeadShape = [&]() -> bool {
+      if (at().type != havel::TokenType::Identifier ||
+          at(1).type != havel::TokenType::OpenParen) {
+        return false;
+      }
+      int depth = 0;
+      size_t k = 1;
+      for (; at(k).type != havel::TokenType::EOF_TOKEN && k < 256; ++k) {
+        if (at(k).type == havel::TokenType::OpenParen) {
+          ++depth;
+        } else if (at(k).type == havel::TokenType::CloseParen) {
+          if (--depth == 0) {
+            break;
+          }
+        }
+      }
+      auto next = at(k + 1).type;
+      return next == havel::TokenType::If || next == havel::TokenType::Arrow;
+    };
+    bool clauseShape = isClauseHeadShape();
+    bool prevMatchExpr = context.inMatchExpression;
+    if (clauseShape) {
+      context.inMatchExpression = true;
+    }
     auto expr = parseExpression();
+    if (clauseShape) {
+      context.inMatchExpression = prevMatchExpr;
+    }
+
+    // TODO #2: Erlang-style multi-clause function heads:
+    //   fib(N) if N < 2 => body1
+    //   fib(N) => body2
+    // Consecutive same-name clauses merge into one function dispatched by
+    // guard order. Also upgrades the previously-erroring
+    // `call(...) if cond { ... }` (call + if statement sharing the guard
+    // condition). Only fires for plain-name calls.
+    if (expr && expr->kind == ast::NodeType::CallExpression &&
+        (at().type == havel::TokenType::If ||
+         at().type == havel::TokenType::Arrow)) {
+      auto *callee =
+          dynamic_cast<ast::Identifier *>(
+              static_cast<ast::CallExpression *>(expr.get())->callee.get());
+      if (callee) {
+        return parseFunctionClauses(std::move(expr));
+      }
+    }
 
     // Require statement terminator: semicolon or newline
     // Prevents accidental expression chaining across lines:
@@ -4700,6 +4748,181 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDslPrint() {
 
 // dsl.md sugar: '?; <cond> { body }' -> when block (self-hosted pratt
 // parseDslWhenStatement parity).
+// Erlang-style multi-clause function heads (TODO #2). The first call was
+// already parsed by the caller; clauses are collected from here on. Each
+// clause is `name(params) [if guard] => body`; consecutive same-name
+// clauses merge into one FunctionDeclaration whose body is an if-chain
+// dispatched by guard order (first matching guard wins; a guardless clause
+// is the catch-all). A `call(...) if cond { ... }` sequence — previously a
+// parse error — is upgraded to a real if statement sharing the condition.
+std::unique_ptr<havel::ast::Statement>
+Parser::parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall) {
+  struct Clause {
+    std::unique_ptr<ast::Expression> guard; // nullptr = catch-all
+    std::unique_ptr<ast::Statement> body;
+  };
+  std::vector<Clause> clauses;
+
+  std::string name;
+  std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+  size_t clauseLine = 0, clauseCol = 0;
+
+  // Extract name/params from a plain-name call; bail to an expression
+  // statement when the shape is not a clause head.
+  auto headFromCall =
+      [&](std::unique_ptr<ast::Expression> &callExpr) -> bool {
+    auto *call = static_cast<ast::CallExpression *>(callExpr.get());
+    auto *calleeIdent = dynamic_cast<ast::Identifier *>(call->callee.get());
+    if (!calleeIdent || call->args.empty()) {
+      return false;
+    }
+    for (auto &arg : call->args) {
+      if (!dynamic_cast<ast::Identifier *>(arg.get())) {
+        return false; // non-identifier args are not clause params
+      }
+    }
+    name = calleeIdent->symbol;
+    clauseLine = call->line;
+    clauseCol = call->column;
+    params.clear();
+    for (auto &arg : call->args) {
+      auto *argIdent = static_cast<ast::Identifier *>(arg.get());
+      params.push_back(makeNode<ast::FunctionParameter>(
+          makeNode<ast::Identifier>(argIdent->symbol)));
+    }
+    return true;
+  };
+
+  // Parse one clause's guard/body from the current position (after the head).
+  // Returns false when the shape is not a clause (caller bails out).
+  auto parseOneClause = [&](std::unique_ptr<ast::Expression> &guardOut,
+                            std::unique_ptr<ast::Statement> &bodyOut) -> bool {
+    guardOut = nullptr;
+    if (at().type == havel::TokenType::If) {
+      advance(); // consume "if"
+      // '=>' terminates the guard expression (Arrow returns binding power 0
+      // while inMatchExpression — same mechanism as switch case tests).
+      bool prevAllow = context.allowBraceSugar;
+      context.allowBraceSugar = false;
+      bool prevSuppress = context.suppressBraceLambda;
+      context.suppressBraceLambda = true;
+      bool prevMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
+      guardOut = parseExpression();
+      context.inMatchExpression = prevMatch;
+      context.suppressBraceLambda = prevSuppress;
+      context.allowBraceSugar = prevAllow;
+      // `call(...) if cond { ... }` — a real if statement, not a clause.
+      if (at().type == havel::TokenType::OpenBrace) {
+        auto body = parseBlockStatement();
+        bodyOut = makeNode<ast::IfStatement>(std::move(guardOut),
+                                             std::move(body));
+        return false;       // signals: not a clause, bodyOut is the statement
+      }
+    }
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after function clause guard");
+    }
+    advance(); // consume "=>"
+
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::OpenBrace ||
+        at().type == havel::TokenType::Colon) {
+      bodyOut = parseBlockStatement();
+    } else {
+      auto expr = parseExpression();
+      bodyOut = makeNode<ast::ExpressionStatement>(std::move(expr));
+    }
+    return true;
+  };
+
+  if (!headFromCall(firstCall)) {
+    return makeNode<havel::ast::ExpressionStatement>(std::move(firstCall));
+  }
+
+  std::unique_ptr<ast::Statement> upgradedIf;
+  {
+    std::unique_ptr<ast::Expression> guard;
+    std::unique_ptr<ast::Statement> body;
+    bool isClause = parseOneClause(guard, body);
+    if (!isClause) {
+      // Upgraded `call if cond { ... }` — wrap the call + if as a block.
+      auto block = makeNode<ast::BlockStatement>();
+      block->body.push_back(
+          makeNode<ast::ExpressionStatement>(std::move(firstCall)));
+      block->body.push_back(std::move(body));
+      return block;
+    }
+    clauses.push_back(
+        Clause{std::move(guard), std::move(body)});
+  }
+
+  // Consecutive same-name clauses. Blank lines between clauses are skipped
+  // only when a matching clause head follows; otherwise the trailing newline
+  // stays so the statement dispatcher sees a proper terminator.
+  while (notEOF()) {
+    size_t look = 0;
+    while (at(look).type == havel::TokenType::NewLine) {
+      ++look;
+    }
+    if (at(look).type != havel::TokenType::Identifier ||
+        at(look).value != name ||
+        at(look + 1).type != havel::TokenType::OpenParen) {
+      break;
+    }
+    for (size_t k = 0; k < look; ++k) {
+      advance(); // consume skipped newlines between clauses
+    }
+    // Parse the head call manually (name(params)). '=>' terminates the
+    // head call (same inMatchExpression mechanism as the guard).
+    bool prevMatch = context.inMatchExpression;
+    context.inMatchExpression = true;
+    auto headExpr = parseExpression();
+    context.inMatchExpression = prevMatch;
+    if (!headExpr || headExpr->kind != ast::NodeType::CallExpression ||
+        !headFromCall(headExpr)) {
+      break;
+    }
+    std::unique_ptr<ast::Expression> guard;
+    std::unique_ptr<ast::Statement> body;
+    if (!parseOneClause(guard, body)) {
+      failAt(at(), "Mixed clause and statement forms for function '" + name + "'");
+    }
+    clauses.push_back(Clause{std::move(guard), std::move(body)});
+  }
+
+  // Build the if-chain from the clauses (first matching guard wins).
+  std::unique_ptr<ast::Statement> chain;
+  for (auto it = clauses.rbegin(); it != clauses.rend(); ++it) {
+    auto clauseBlock = makeNode<ast::BlockStatement>();
+    clauseBlock->body.push_back(std::move(it->body));
+    if (it->guard) {
+      chain = makeNode<ast::IfStatement>(std::move(it->guard),
+                                         std::move(clauseBlock),
+                                         std::move(chain));
+    } else if (chain) {
+      // Catch-all clause: the deepest if's else.
+      auto *deepest = static_cast<ast::IfStatement *>(chain.get());
+      while (deepest->alternative) {
+        deepest = static_cast<ast::IfStatement *>(deepest->alternative.get());
+      }
+      deepest->alternative = std::move(clauseBlock);
+    } else {
+      chain = std::move(clauseBlock); // only a catch-all clause
+    }
+  }
+
+  auto fnBody = makeNode<ast::BlockStatement>();
+  fnBody->body.push_back(std::move(chain));
+  auto decl = makeNodeAt<ast::FunctionDeclaration>(
+      Token(name, havel::TokenType::Identifier, name, clauseLine, clauseCol),
+      std::make_unique<ast::Identifier>(name), std::move(params),
+      std::move(fnBody));
+  return decl;
+}
+
 std::unique_ptr<havel::ast::Statement> Parser::parseDslWhenBlock() {
   advance(); // consume '?'
   advance(); // consume ';'

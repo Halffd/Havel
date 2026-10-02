@@ -293,6 +293,14 @@ private:
   std::unique_ptr<ast::Statement> parseDslRepeatFor();
   std::unique_ptr<ast::Statement> parseDslPrint();
   std::unique_ptr<ast::Statement> parseDslWhenBlock();
+  // Erlang-style multi-clause function heads (TODO #2):
+  //   fib(N) if N < 2 => body1
+  //   fib(N) => body2
+  // Consecutive same-name clauses merge into one FunctionDeclaration whose
+  // body is an if-chain dispatched by guard order. Also upgrades the
+  // previously-erroring `call(...) if cond { ... }` to a real if statement.
+  std::unique_ptr<ast::Statement>
+  parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall);
   // Last input command batch built inside a dsl block, re-emitted by `!!`.
   std::vector<ast::InputCommand> lastDslInputCmds_;
   void rememberDslInputCmds(const std::vector<ast::InputCommand> &cmds);

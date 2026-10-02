@@ -7632,6 +7632,16 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
   if (stmts.back()) {
     compileStatement(*stmts.back());
   }
+  // In tail position, a block whose last statement is a plain expression
+  // leaves that value on the stack (ExpressionStatement skips its POP in
+  // tail position). Emit RETURN so callers (function bodies, clause bodies)
+  // return the value instead of null. Not after a tail call — the caller's
+  // wasTailCall() contract owns that path.
+  if (saved_tail && stmts.back() &&
+      stmts.back()->kind == ast::NodeType::ExpressionStatement &&
+      !wasTailCall()) {
+    emit(OpCode::RETURN);
+  }
   in_tail_position_ = saved_tail;
 }
 

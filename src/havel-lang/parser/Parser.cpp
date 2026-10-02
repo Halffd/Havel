@@ -6954,12 +6954,32 @@ Parser::parseSwitchCaseList() {
       break;
     }
 
-    // Parse case test expression, or an 'else' / '_' wildcard
+    // Parse case test expression, or an 'else' / '_' wildcard, or a
+    // relational pattern (<0, >10, <=2, >=10).
     std::unique_ptr<havel::ast::Expression> test = nullptr;
 
     if (at().type == havel::TokenType::Else ||
         at().type == havel::TokenType::Underscore) {
       advance(); // consume wildcard
+    } else if (at().type == havel::TokenType::Less ||
+               at().type == havel::TokenType::Greater ||
+               at().type == havel::TokenType::LessEquals ||
+               at().type == havel::TokenType::GreaterEquals) {
+      // Relational case pattern: compare the subject against the operand.
+      auto opTok = advance();
+      havel::ast::BinaryOperator op;
+      switch (opTok.type) {
+      case havel::TokenType::Less:          op = havel::ast::BinaryOperator::Less; break;
+      case havel::TokenType::Greater:       op = havel::ast::BinaryOperator::Greater; break;
+      case havel::TokenType::LessEquals:    op = havel::ast::BinaryOperator::LessEqual; break;
+      default:                              op = havel::ast::BinaryOperator::GreaterEqual; break;
+      }
+      bool savedInMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
+      auto operand = parseExpression();
+      context.inMatchExpression = savedInMatch;
+      test = makeNodeAt<havel::ast::RelationalCaseTest>(opTok, std::move(op),
+                                                        std::move(operand));
     } else {
       // '=>' and '->' terminate the test expression (same mechanism as match
       // arms: Arrow/ReturnType return binding power 0 so the Pratt loop
@@ -6972,12 +6992,12 @@ Parser::parseSwitchCaseList() {
       context.inMatchExpression = savedInMatch;
     }
 
-    // Expect '=>' or '->'
-    if (at().type != havel::TokenType::Arrow &&
-        at().type != havel::TokenType::ReturnType) {
-      failAt(at(), "Expected '=>' or '->' after case test");
+    // Optional arrow: `pat => body` / `pat -> body`, or a bare
+    // `pat { body }` (the spec's switch form has no arrow).
+    if (at().type == havel::TokenType::Arrow ||
+        at().type == havel::TokenType::ReturnType) {
+      advance(); // consume the arrow
     }
-    advance(); // consume the arrow
 
     // Parse case body
     std::unique_ptr<havel::ast::Statement> caseBody;

@@ -3073,9 +3073,26 @@ case ast::NodeType::ImplDeclaration: {
       }
       emit(OpCode::LOAD_VAR, subjSlot);
       in_tail_position_ = false; // test is an EQ operand, never TAIL_CALL
-      compileExpression(*case_node->test);
+      // Relational case pattern (<0, >10, <=2, >=10): compare the subject
+      // against the operand with the relational op instead of EQ.
+      OpCode testOp = OpCode::EQ;
+      const ast::RelationalCaseTest *relTest = nullptr;
+      if (case_node->test &&
+          case_node->test->kind == ast::NodeType::RelationalCaseTest) {
+        relTest = static_cast<const ast::RelationalCaseTest *>(case_node->test.get());
+        switch (relTest->op) {
+        case ast::BinaryOperator::Less:          testOp = OpCode::LT; break;
+        case ast::BinaryOperator::LessEqual:     testOp = OpCode::LTE; break;
+        case ast::BinaryOperator::Greater:       testOp = OpCode::GT; break;
+        case ast::BinaryOperator::GreaterEqual:  testOp = OpCode::GTE; break;
+        default:                                 testOp = OpCode::EQ; break;
+        }
+        compileExpression(*relTest->operand);
+      } else {
+        compileExpression(*case_node->test);
+      }
       in_tail_position_ = saved_tail_cond;
-      emit(OpCode::EQ);
+      emit(testOp);
       uint32_t nextCaseJump = emitJump(OpCode::JUMP_IF_FALSE);
 
       bool was_tail = in_tail_position_;

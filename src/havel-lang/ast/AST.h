@@ -139,6 +139,7 @@ enum class NodeType {
   WildcardPattern, // _ for match statements
   SpreadPattern, // ..rest for array rest patterns
   ConstructorPattern, // Name(p1, p2) constructor destructuring in match
+  RelationalCaseTest, // <0, >10, <=2, >=10 relational case test in switch
   // Literals
   StringLiteral,                // "Hello"
   CharLiteral,                  // 'x' single char
@@ -1408,6 +1409,34 @@ struct CharLiteral : public Expression {
 
   std::string toString() const override {
     return "CharLiteral{'" + std::string(1, value) + "'}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Relational case test for switch/case: `<0`, `>10`, `<=2`, `>=10`.
+// Compares the switch subject against operand with op (the switch compile
+// emits LOAD subject, operand, LT/LTE/GT/GTE instead of EQ).
+struct RelationalCaseTest : public Expression {
+  BinaryOperator op;
+  std::unique_ptr<Expression> operand;
+
+  RelationalCaseTest(BinaryOperator o, std::unique_ptr<Expression> rhs)
+      : op(o), operand(std::move(rhs)) {
+    kind = NodeType::RelationalCaseTest;
+  }
+
+  std::string toString() const override {
+    std::string opStr;
+    switch (op) {
+    case BinaryOperator::Less: opStr = "<"; break;
+    case BinaryOperator::LessEqual: opStr = "<="; break;
+    case BinaryOperator::Greater: opStr = ">"; break;
+    case BinaryOperator::GreaterEqual: opStr = ">="; break;
+    default: opStr = "?"; break;
+    }
+    return "RelationalCaseTest{" + opStr + " " +
+           (operand ? operand->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3284,6 +3313,7 @@ public:
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
   virtual void visitCharLiteral(const CharLiteral &node) = 0;
   virtual void visitRangePattern(const RangePattern &node) = 0;
+  virtual void visitRelationalCaseTest(const RelationalCaseTest &node) = 0;
 
   virtual void visitInterpolatedStringExpression(
       const InterpolatedStringExpression &node) = 0;
@@ -3443,6 +3473,10 @@ inline void BlockExpression::accept(ASTVisitor &visitor) const {
 
 inline void HotkeyBinding::accept(ASTVisitor &visitor) const {
   visitor.visitHotkeyBinding(*this);
+}
+
+inline void RelationalCaseTest::accept(ASTVisitor &visitor) const {
+  visitor.visitRelationalCaseTest(*this);
 }
 
 inline void HotkeyExpression::accept(ASTVisitor &visitor) const {

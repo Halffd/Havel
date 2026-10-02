@@ -2014,6 +2014,14 @@ case ast::NodeType::MemberExpression: {
         break;
     }
 
+    case ast::NodeType::RelationalCaseTest: {
+        // Relational case pattern (<0, >10, <=2, >=10): only the operand
+        // carries symbols to resolve.
+        const auto &rel = static_cast<const ast::RelationalCaseTest &>(expression);
+        if (rel.operand) resolveExpression(*rel.operand);
+        break;
+    }
+
     default:
         break;
     }

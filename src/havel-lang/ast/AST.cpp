@@ -204,6 +204,11 @@ public:
     if (node.end) node.end->accept(*this);
   }
 
+  void visitRelationalCaseTest(const RelationalCaseTest &node) override {
+    out << getIndent() << node.toString() << std::endl;
+    if (node.operand) node.operand->accept(*this);
+  }
+
   void visitBooleanLiteral(const BooleanLiteral &node) override {
     out << getIndent() << node.toString() << std::endl;
   }

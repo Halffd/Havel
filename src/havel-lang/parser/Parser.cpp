@@ -2767,8 +2767,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
 
   // Keywords that should NOT be parsed as statements in inline context
   // (they belong to parent constructs like if/else/while)
-  if (at().type == havel::TokenType::Else ||
-      at().type == havel::TokenType::Catch ||
+  if (at().type == havel::TokenType::Else) {
+    // Reaching here means the `else` has no `if` to attach to. That happens
+    // when the if-body was inline (unbraced) and the enclosing block's `}`
+    // came first -- `if c <stmt> } else { ... }`. Returning null silently
+    // mis-compiled this: the else body ran BEFORE the preceding statements.
+    // Report it instead.
+    failAt(at(), "'else' without a matching 'if'. If the if body is a single "
+                 "statement, wrap it in braces: 'if cond { ... } else { ... }'");
+    return nullptr;
+  }
+  if (at().type == havel::TokenType::Catch ||
       at().type == havel::TokenType::Finally) {
     return nullptr;
   }
@@ -2861,8 +2870,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
   // Keywords that should NOT be parsed as statements
   // (they belong to parent constructs like if/else/while)
-  if (at().type == havel::TokenType::Else ||
-      at().type == havel::TokenType::Catch ||
+  if (at().type == havel::TokenType::Else) {
+    // Orphaned `else`: the matching `if` consumed an unbraced body and the
+    // enclosing `}` landed here first. Erroring is required -- returning null
+    // made the else body execute before the statements it should follow.
+    failAt(at(), "'else' without a matching 'if'. If the if body is a single "
+                 "statement, wrap it in braces: 'if cond { ... } else { ... }'");
+    return nullptr;
+  }
+  if (at().type == havel::TokenType::Catch ||
       at().type == havel::TokenType::Finally) {
     return nullptr;
   }

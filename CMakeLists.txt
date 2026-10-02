@@ -2885,6 +2885,30 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
 
+    # Orphaned `else` after an unbraced if-body must be a parse error, not a
+    # silently mis-ordered else body. Parser-only: compiles the same
+    # lexer+parser source set as the LSP target, so it links neither app core
+    # nor VM.
+    add_executable(parser_orphan_else_test
+        tests/parser_orphan_else_ut.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/core/io/KeyMap.cpp
+        src/c/LoggerC.c
+        src/c/Config.c
+        src/dl/Loader.c
+    )
+    target_include_directories(parser_orphan_else_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(parser_orphan_else_test PRIVATE cxx_std_23)
+    target_link_libraries(parser_orphan_else_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
+    add_test(NAME parser_orphan_else_test COMMAND parser_orphan_else_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

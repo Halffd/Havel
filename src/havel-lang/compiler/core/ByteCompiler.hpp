@@ -228,6 +228,10 @@ void emitNullableTypeAssertionForLocal(const std::string &inner_type,
     uint32_t slot,
     const std::string &label);
 const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
+  // WithMember: try each candidate owner (nearest first) with a runtime
+  // OBJECT_GET; first non-null member value wins. Leaves the value on the
+  // stack.
+  void compileWithMemberLookup(const ResolvedBinding &binding);
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
 

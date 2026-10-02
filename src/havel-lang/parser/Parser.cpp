@@ -8605,6 +8605,52 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
         alias->column = tok.column;
     }
 
+    // Comma-separated object list: `with io, mouse { ... }` desugars to
+    // nested with statements (With(io, With(mouse, body))) — the innermost
+    // owner resolves first at runtime.
+    if (at().type == havel::TokenType::Comma) {
+        std::vector<std::unique_ptr<havel::ast::Expression>> objects;
+        objects.push_back(std::move(object));
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            auto nextObj = parsePrattExpression(51);
+            objects.push_back(std::move(nextObj));
+        }
+        // Parse the shared body once.
+        if (at().type != havel::TokenType::OpenBrace) {
+            failAt(at(), "Expected '{' after with expression");
+        }
+        advance(); // consume '{'
+        std::vector<std::unique_ptr<havel::ast::Statement>> body;
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            auto stmt = parseStatement();
+            if (stmt) {
+                body.push_back(std::move(stmt));
+            }
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+        }
+        if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected '}' to close with block");
+        }
+        advance(); // consume '}'
+        // Nest from the innermost: With(objects[n-2], [With(objects[n-1], [body])]).
+        std::vector<std::unique_ptr<havel::ast::Statement>> innerBody;
+        innerBody.push_back(makeNode<havel::ast::WithStatement>(
+            std::move(objects.back()), nullptr, std::move(body)));
+        for (size_t i = objects.size() - 1; i > 0; i--) {
+            std::vector<std::unique_ptr<havel::ast::Statement>> wrapped;
+            wrapped.push_back(makeNode<havel::ast::WithStatement>(
+                std::move(objects[i - 1]), nullptr, std::move(innerBody)));
+            innerBody = std::move(wrapped);
+        }
+        return std::move(innerBody.front());
+    }
+
     if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after with expression");
     }

@@ -4166,6 +4166,13 @@ break;
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     break;
+  case ResolvedBindingKind::WithMember: {
+    // Bare identifier inside a with-block or after `use mod.*`: try each
+    // candidate owner (nearest first) with a runtime OBJECT_GET; the first
+    // non-null member value wins. Nullish-coalescing style chain.
+    compileWithMemberLookup(*binding);
+    break;
+  }
   }
     break;
   }
@@ -6001,6 +6008,34 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             return;
         }
         bool isHostFunc = binding && binding->kind == ResolvedBindingKind::HostFunction;
+        if (binding && binding->kind == ResolvedBindingKind::WithMember) {
+          // Bare with/use member call: resolve the member via the owner
+          // chain (first non-null wins), then call it with the args.
+          compileWithMemberLookup(*binding);
+          for (const auto &arg : expression.args) {
+            if (!arg) {
+              emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+              continue;
+            }
+            compileExpression(*arg);
+          }
+          uint32_t withTotalArgs = arg_count;
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+              compileExpression(*kwarg.value);
+              { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+              emit(OpCode::OBJECT_SET);
+            }
+            withTotalArgs++;
+          }
+          emit(OpCode::CALL, Value(withTotalArgs));
+          in_tail_position_ = saved_tail_position;
+          return;
+        }
         if (isHostFunc) {
             uint32_t strId = addStringConstant(binding ? binding->name : callee_id.symbol);
             emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
@@ -8607,6 +8642,47 @@ const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const
     return nullptr;
   }
   return &it->second;
+}
+
+void ByteCompiler::compileWithMemberLookup(const ResolvedBinding &binding) {
+  const uint32_t memberStrId = addStringConstant(binding.member);
+  const uint32_t memberConst = addConstant(Value::makeStringValId(memberStrId));
+  std::vector<uint32_t> foundJumps;
+  const size_t ownerCount = binding.owners.size();
+  for (size_t i = 0; i < ownerCount; ++i) {
+    const auto &owner = binding.owners[i];
+    if (owner.is_local) {
+      emit(OpCode::LOAD_VAR, owner.slot);
+    } else {
+      uint32_t ownerStrId = addStringConstant(owner.name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(ownerStrId));
+    }
+    emit(OpCode::LOAD_CONST, memberConst);
+    emit(OpCode::OBJECT_GET);
+    if (i + 1 < ownerCount) {
+      // Not the last owner: keep the value if non-null, else try the next.
+      emit(OpCode::DUP);
+      uint32_t tryNext = emitJump(OpCode::JUMP_IF_NULL);
+      foundJumps.push_back(emitJump(OpCode::JUMP));
+      patchJump(tryNext,
+                static_cast<uint32_t>(current_function->instructions.size()));
+      emit(OpCode::POP);
+    }
+  }
+  // After all owners: if the member was found, done. If null (missing on
+  // every owner), fall back to the bare name as a global — host functions
+  // (print, sleep, ...) live as globals and must keep working inside
+  // with-blocks; a truly unknown name still errors at runtime.
+  emit(OpCode::DUP);
+  uint32_t foundFinal = emitJump(OpCode::JUMP_IF_TRUE);
+  emit(OpCode::POP);
+  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(memberStrId));
+  uint32_t withEnd =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(foundFinal, withEnd);
+  for (uint32_t j : foundJumps) {
+    patchJump(j, withEnd);
+  }
 }
 
 uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {

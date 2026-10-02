@@ -130,6 +130,10 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
     if (!use.isFileImport) {
       for (const auto &module : use.moduleNames) {
         global_variables_.insert(module);
+        if (use.isWildcard) {
+          // `use mod.*`: module members resolve bare (runtime OBJECT_GET).
+          wildcard_modules_.push_back(module);
+        }
       }
     } else {
       if (use.isNamedImport) {
@@ -1286,6 +1290,22 @@ case ast::NodeType::DeferStatement: {
         if (withStmt.object) {
             resolveExpression(*withStmt.object);
         }
+        // Member flattening: track the with-object so bare identifiers in
+        // the body resolve via the owner at runtime. Only Identifier
+        // objects can be tracked; the object's resolution is known here.
+        bool pushedWith = false;
+        if (withStmt.object) {
+            if (auto *objIdent = dynamic_cast<const ast::Identifier *>(withStmt.object.get())) {
+                WithOwner owner;
+                owner.name = objIdent->symbol;
+                if (auto binding = resolveIdentifier(objIdent->symbol)) {
+                    owner.is_local = binding->kind == ResolvedBindingKind::Local;
+                    owner.slot = binding->slot;
+                }
+                with_stack_.push_back(owner);
+                pushedWith = true;
+            }
+        }
         beginScope();
         if (withStmt.alias) {
             declareLocal(withStmt.alias->symbol, withStmt.alias.get(), true);
@@ -1294,6 +1314,9 @@ case ast::NodeType::DeferStatement: {
             if (s) resolveStatement(*s);
         }
         endScope();
+        if (pushedWith) {
+            with_stack_.pop_back();
+        }
         break;
     }
 
@@ -1325,6 +1348,34 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         if (top_level_structs_.count(id.symbol)) {
             noteIdentifierBinding(
                 id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol, false});
+            break;
+        }
+    }
+    // Member flattening: inside a with-block (or after `use mod.*`), bare
+    // identifiers that are not REAL known globals resolve via the owners at
+    // runtime (OBJECT_GET per owner, first non-null wins; then a fallback
+    // LOAD_GLOBAL of the bare name so host functions like print still work).
+    // resolveIdentifier returns a lenient Global for unknown names at main
+    // scope, so a Global binding alone is not evidence of a real global.
+    bool isRealGlobal =
+        global_variables_.count(id.symbol) > 0 ||
+        known_globals_.count(id.symbol) > 0 ||
+        top_level_functions_.count(id.symbol) > 0 ||
+        top_level_structs_.count(id.symbol) > 0;
+    bool hasWithScope = !with_stack_.empty() || !wildcard_modules_.empty();
+    if (hasWithScope && (!binding || (binding->kind == ResolvedBindingKind::Global && !isRealGlobal))) {
+        ResolvedBinding withBinding;
+        withBinding.kind = ResolvedBindingKind::WithMember;
+        withBinding.member = id.symbol;
+        for (auto it = with_stack_.rbegin(); it != with_stack_.rend(); ++it) {
+            withBinding.owners.push_back(
+                WithMemberOwner{it->name, it->is_local, it->slot});
+        }
+        for (const auto &mod : wildcard_modules_) {
+            withBinding.owners.push_back(WithMemberOwner{mod, false, 0});
+        }
+        if (!withBinding.owners.empty()) {
+            noteIdentifierBinding(id, withBinding);
             break;
         }
     }

@@ -4832,8 +4832,24 @@ Parser::parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall) {
         at().type == havel::TokenType::Colon) {
       bodyOut = parseBlockStatement();
     } else {
-      auto expr = parseExpression();
-      bodyOut = makeNode<ast::ExpressionStatement>(std::move(expr));
+      // Erlang-style comma-separated statement sequence: each expression
+      // except the last is an effectful statement; the last one's value is
+      // the clause's value. Newlines after a comma continue the sequence.
+      auto block = makeNode<ast::BlockStatement>();
+      while (true) {
+        auto expr = parseExpression();
+        block->body.push_back(
+            makeNode<ast::ExpressionStatement>(std::move(expr)));
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+          while (at().type == havel::TokenType::NewLine) {
+            advance();
+          }
+          continue;
+        }
+        break;
+      }
+      bodyOut = std::move(block);
     }
     return true;
   };

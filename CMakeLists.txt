@@ -157,6 +157,32 @@ if(NOT PORTABLE_BUILD)
 endif()
 
 # Compiler-specific flags
+# -fuse-ld=lld is applied only when the system lld actually runs. A distro
+# upgrade can orphan it: /usr/bin/ld.lld linked against libLLVM.so.22.1 while
+# the box now ships only libLLVM.so.21.1/23.1, so every link dies with
+# "error while loading shared libraries" plus "clang++: error: unable to
+# execute command". Probe the binary clang would actually invoke and fall
+# back to the compiler default rather than hard-failing the whole build.
+set(HAVEL_LLD_LINK_FLAG "")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=ld.lld
+        OUTPUT_VARIABLE _havel_lld_path
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(_havel_lld_path)
+        execute_process(
+            COMMAND ${_havel_lld_path} --version
+            RESULT_VARIABLE _havel_lld_status
+            OUTPUT_QUIET ERROR_QUIET)
+        if(_havel_lld_status EQUAL 0)
+            set(HAVEL_LLD_LINK_FLAG "-fuse-ld=lld")
+        else()
+            message(STATUS "lld unusable (${_havel_lld_path}, status ${_havel_lld_status}); using default linker")
+        endif()
+    endif()
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     # No -ffast-math: core::Value is NaN-boxed (QNAN = 0x7ff8... is the
@@ -166,7 +192,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # (EventListener::Stop -> backend_->Shutdown); -fno-fast-math is clean,
     # with and without -g.
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${HAVEL_LLD_LINK_FLAG} -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
@@ -496,7 +522,7 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
 
-    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
+    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test QUIET)
 
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC

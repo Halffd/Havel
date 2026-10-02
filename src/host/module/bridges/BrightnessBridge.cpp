@@ -350,14 +350,13 @@ BrightnessBridge::handleIncreaseBrightness(const std::vector<Value> &args,
                                            const HostContext *ctx) {
   if (!ctx || !ctx->brightnessManager)
     return Value::makeBool(false);
-  if (args.size() < 1)
-    return Value::makeBool(false);
-
+  // 0 args means the default step (0.02), matching the module copy and
+  // DEFAULT_BRIGHTNESS_AMOUNT — the old `args.size() < 1` rejection made
+  // bare `brightness.increase()` return false with brightness stuck.
+  double amount = args.empty() ? 0.02 : args[0].asNumber();
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm)
     return Value::makeBool(false);
-
-  double amount = args[0].asNumber();
   bool success;
   if (args.size() >= 2) {
     std::string monitor = getMonitorFromArgs(args, 1, vm, ctx->brightnessManager);
@@ -378,14 +377,11 @@ BrightnessBridge::handleDecreaseBrightness(const std::vector<Value> &args,
                                            const HostContext *ctx) {
   if (!ctx || !ctx->brightnessManager)
     return Value::makeBool(false);
-  if (args.size() < 1)
-    return Value::makeBool(false);
-
+  // 0 args means the default step (0.02), matching the module copy.
+  double amount = args.empty() ? 0.02 : args[0].asNumber();
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm)
     return Value::makeBool(false);
-
-  double amount = args[0].asNumber();
   bool success;
   if (args.size() >= 2) {
     std::string monitor = getMonitorFromArgs(args, 1, vm, ctx->brightnessManager);
@@ -406,14 +402,12 @@ BrightnessBridge::handleIncreaseTemperature(const std::vector<Value> &args,
                                             const HostContext *ctx) {
   if (!ctx || !ctx->brightnessManager)
     return Value::makeBool(false);
-  if (args.size() < 1)
-    return Value::makeBool(false);
-
+  // 0 args means the default step (200K), matching the module copy and
+  // DEFAULT_TEMP_AMOUNT.
+  int amount = args.empty() ? 200 : static_cast<int>(args[0].asNumber());
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm)
     return Value::makeBool(false);
-
-  int amount = static_cast<int>(args[0].asNumber());
   bool success;
   if (args.size() >= 2) {
     std::string monitor = getMonitorFromArgs(args, 1, vm, ctx->brightnessManager);
@@ -434,14 +428,11 @@ BrightnessBridge::handleDecreaseTemperature(const std::vector<Value> &args,
                                             const HostContext *ctx) {
   if (!ctx || !ctx->brightnessManager)
     return Value::makeBool(false);
-  if (args.size() < 1)
-    return Value::makeBool(false);
-
+  // 0 args means the default step (200K), matching the module copy.
+  int amount = args.empty() ? 200 : static_cast<int>(args[0].asNumber());
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm)
     return Value::makeBool(false);
-
-  int amount = static_cast<int>(args[0].asNumber());
   bool success;
   if (args.size() >= 2) {
     std::string monitor = getMonitorFromArgs(args, 1, vm, ctx->brightnessManager);

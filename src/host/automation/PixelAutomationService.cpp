@@ -9,6 +9,7 @@
 #include "core/automation/PixelAutomation.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include "host/screenshot/ScreenshotService.hpp"
+#include "utils/HeadlessRuntime.hpp"
 #include <cstring>
 #include <QApplication>
 #include <QGuiApplication>
@@ -22,6 +23,9 @@ namespace havel::host {
 // ============================================================================
 
 static void ensureApp() {
+    // Qt aborts the process from the QApplication constructor when no display
+    // server is reachable; sandboxed runs (hvtest/ctest) never construct one.
+    if (havel::qtRuntimeUnavailable()) return;
     if (!QApplication::instance()) {
         static int argc = 1;
         static char *argv[] = {const_cast<char *>("havel"), nullptr};

@@ -60,7 +60,6 @@ static bool isKeywordToken(TokenType t) {
     }
 }
 
-
 static double parseNumberLiteral(const std::string& s) {
     if (s.size() >= 2 && s[0] == '0') {
         if (s[1] == 'x' || s[1] == 'X')
@@ -3052,28 +3051,6 @@ position = savePos; // restore position
         }
     }
     case havel::TokenType::Identifier: {
-    // In input context (hotkey blocks), a bare input-command identifier
-    // (lmb/rmb/m/r/w) is an implicit input statement, not a variable read —
-    // the same dispatch as the default case below, which identifiers never
-    // reach because this case handles them. Assignment targets and member
-    // access on same-named variables are not input commands:
-    // w = window.active(), w.raise() — observed in the hk-trigger burst
-    // regression.
-    if (context.inInputContext &&
-        (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
-         at().value == "r" || at().value == "w")) {
-      const havel::TokenType next1 = at(1).type;
-      if (next1 == havel::TokenType::Assign || next1 == havel::TokenType::Dot) {
-        // fall through to assignment/expression parsing
-      } else {
-        // 'w' not followed by '(' is a wait condition; with '(' it is wheel.
-        if (at().value == "w" && next1 != havel::TokenType::OpenParen) {
-          return parseWaitStatement();
-        }
-        return parseImplicitInputStatement();
-      }
-    }
-
     // Check for multiple assignment: a, b, c = value
     // Look ahead: identifier comma identifier ... = 
     if (at(1).type == havel::TokenType::Comma) {
@@ -3494,6 +3471,29 @@ at(1).type == havel::TokenType::Arrow) {
     // Colon-number DSL: :100 -> sleep(100)
     if (at().type == havel::TokenType::Colon && at(1).type == havel::TokenType::Number) {
       return parseDSLSleep();
+    }
+
+    // In input context (hotkey blocks), a bare input-command identifier
+    // (lmb/rmb/m/r/w) is an implicit input statement, not a variable read —
+    // the same dispatch as parseStatement's default case, which identifiers
+    // never reach because this case handles them.
+    if (context.inInputContext &&
+        (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
+         at().value == "r" || at().value == "w")) {
+      const havel::TokenType next1 = at(1).type;
+      // Assignment targets and member access on same-named variables are not
+      // input commands: w = window.active(), w.raise() — observed in the
+      // hk-trigger burst regression.
+      if (next1 == havel::TokenType::Assign ||
+          next1 == havel::TokenType::Dot) {
+        // fall through to assignment/expression parsing
+      } else {
+        // 'w' not followed by '(' is a wait condition; with '(' it is wheel.
+        if (at().value == "w" && next1 != havel::TokenType::OpenParen) {
+          return parseWaitStatement();
+        }
+        return parseImplicitInputStatement();
+      }
     }
 
     // Not a hotkey binding, parse as expression
@@ -6511,11 +6511,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
         std::move(finallyBlock));
 }
 
-std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn) {
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn, bool skipKeyword) {
   auto keyword = at();
   size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
   size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
-  advance(); // consume "if"
+  if (!skipKeyword) {
+    advance(); // consume "if"
+  }
 
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
@@ -6546,10 +6548,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
     }
 
 std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-  if (at().type == havel::TokenType::Else) {
+  // 'elif' is sugar for 'else if' (TODO #4). It lexes as an Identifier, so
+  // the dispatch must accept it alongside Else; expression-position elif
+  // (never adjacent to a closed if body) still parses as a plain name.
+  bool isElif = at().type == havel::TokenType::Identifier &&
+                at().value == "elif";
+  if (at().type == havel::TokenType::Else || isElif) {
     if (at().column >= originalIfColumn) {
     size_t elseCol = at().column;
-    advance(); // consume "else"
+    advance(); // consume "else" or "elif"
 
     // Skip newlines before else body
     while (at().type == havel::TokenType::NewLine) {
@@ -6557,7 +6564,11 @@ std::unique_ptr<havel::ast::Statement> alternative = nullptr;
     }
 
     if (at().type == havel::TokenType::If) {
+      // "else if ..." — the nested if starts with the If keyword
       alternative = parseIfStatement(elseCol, originalIfColumn);
+    } else if (isElif) {
+      // "elif <cond> ..." — the condition follows directly, no If keyword
+      alternative = parseIfStatement(elseCol, originalIfColumn, true);
     } else if (at().type == havel::TokenType::OpenBrace ||
                at().type == havel::TokenType::Colon) {
       alternative = parseBlockStatement();
@@ -10558,15 +10569,16 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
   auto first = parsePatternAtom();
   if (!first) return nullptr;
   alternatives.push_back(std::move(first));
-
-  // The lexer emits BitwiseOr (not Pipe) for a single '|' after an
-  // expression-shaped token, so pattern alternatives must accept both.
+  
+  // The lexer emits BitwiseOr for a single bar in expression contexts (after
+  // a literal), Pipe for a pipeline `|` chain, Or for `||`. All three are
+  // pattern alternatives here.
   while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or ||
          at().type == havel::TokenType::BitwiseOr) {
     advance(); // consume '|' or '||'
     auto next = parsePatternAtom();
     if (!next) {
-      failAt(at(), "Expected pattern after '|' or '||'");
+      failAt(at(), "Expected pattern after '|'");
       return nullptr;
     }
     alternatives.push_back(std::move(next));

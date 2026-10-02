@@ -11,6 +11,7 @@
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/core/ModuleGlobals.hpp"
+#include "havel-lang/compiler/core/HostFunctionNames.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/incremental/IncrementalDriver.hpp"
@@ -2754,84 +2755,32 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       compiler.setCollectErrors(true);
     }
     compiler.setStrictMode(cfg.strictSemantics);
-    // Populate known globals with built-in host functions for strict mode
+    // Populate known globals for strict mode. All host-function names are
+    // derived from the actual registration sites at build time
+    // (scripts/gen_host_function_names.py -> kHostFunctionNames, freshness
+    // checked by the havel-launcher globals drift guard); no hand-maintained
+    // copy. Module globals come from the canonical kModuleGlobals list the
+    // same way. Language keywords never reach the bare-identifier strict
+    // check, so the old keyword list has no place here.
     if (cfg.strictSemantics) {
-      std::unordered_set<std::string> knownGlobals = {
-        "print", "shell", "sys", "time", "str", "int", "num", "float",
-        "range", "len", "any", "all", "eval", "inspect", "prototypes",
-        "proto", "getproto", "setproto", "caller", "defun", "del",
-        "extension.load", "extension.isLoaded", "extension.list",
-        "extension.addSearchPath", "bit", "math", "json", "json.parse",
-        "json.stringify", "fs", "fs.read", "fs.write", "fs.append",
-        "fs.exists", "fs.remove", "fs.mkdir", "fs.listdir", "fs.isDir",
-        "fs.isFile", "fs.size", "fs.mtime", "fs.copy", "fs.move",
-        "process", "process.run", "process.spawn", "process.kill",
-        "thread", "thread.sleep", "channel", "channel.send",
-        "channel.receive", "channel.close", "interval", "timeout",
-        "interval.start", "interval.stop", "timeout.start", "timeout.cancel",
-        "wait", "wait.group", "defer", "try", "catch", "finally",
-        "throw", "type", "typeof", "Hotkey", "Input", "Window", "Mouse",
-        "Display", "Brightness", "Audio", "Media", "Image", "Log",
-        "Config", "Mode", "Timer", "App", "Automation", "Browser", "Tools",
-        "HotkeyManager", "EventListener", "KeyMap", "KeyTap", "LC",
-        "LibMpv", "MPV", "Pixel", "Protocols", "Screen", "Screenshot",
-        "Socket", "UInput", "WindowMatch", "WinWatch", "X11", "Zoom",
-        "DDC", "DRMBrightness", "Compositor", "DayNight", "Device",
-        "Evdev", "Gamepad", "Group", "IO", "Keyboard", "Keymap",
-        "AsyncMod", "AudioMod", "AutomationMod", "BrightnessMod",
-        "CompositorMod", "DayNightMod", "DisplayMod", "DeviceMod",
-        "DrmBrightnessMod", "EvdevMod", "GamepadMod", "GroupMod",
-        "ImageMod", "IOMod", "KeyboardMod", "KeymapMod", "KeytapMod",
-        "LCMod", "LibMpvMod", "MediaMod", "ModeMod", "ModesMod",
-        "MonitorMod", "MouseMod", "MpvMod", "OpencvMod", "PixelMod",
-        "ProtocolsMod", "ScreenMod", "ScreenshotMod", "SocketMod",
-        "UinputMod", "WindowMod", "WinmatchMod", "WinwatchMod", "X11Mod",
-        "ZoomMod", "ord", "char", "chr", "bytes", "base64", "hex",
-        "hash", "uuid", "crypto", "random", "semaphore", "mutex",
-        "notif", "config", "dotenv", "env", "format", "fsuv", "future",
-        "html", "ini", "list", "log", "map", "number", "object", "ocr",
-        "os", "parser", "path", "print", "process", "promise", "random",
-        "semaphore", "sqlite", "string", "sys", "terminal", "toml",
-        "yaml", "time", "sleep", "async", "await", "yield", "go",
-        "defer", "try", "catch", "finally", "throw", "import", "use",
-        "from", "as", "let", "const", "fn", "class", "struct", "trait",
-        "impl", "protocol", "enum", "match", "when", "if", "else",
-        "while", "for", "loop", "break", "continue", "return", "in",
-        "out", "to", "step", "by", "do", "end", "then", "case",
-        "default", "switch", "typeof", "instanceof", "is", "as",
-        "null", "true", "false", "nil", "self", "super", "this",
-        "base", "init", "deinit", "drop", "clone", "copy", "move",
-        "ref", "mut", "const", "pub", "priv", "mod", "use", "extern",
-        "inline", "static", "virtual", "override", "final", "abstract",
-        "sealed", "open", "closed", "public", "private", "protected",
-        "internal", "fileprivate", "package", "module", "import",
-        "export", "reexport", "as", "from", "where", "if", "unless",
-        "until", "while", "for", "loop", "each", "every", "some",
-        "none", "find", "filter", "map", "reduce", "fold", "scan",
-        "zip", "enumerate", "reverse", "sort", "sorted", "min", "max",
-        "sum", "product", "avg", "mean", "median", "mode", "std",
-        "var", "count", "len", "length", "size", "empty", "any", "all",
-        "first", "last", "head", "tail", "init", "take", "drop",
-        "skip", "limit", "slice", "chunk", "split", "join", "split",
-        "trim", "upper", "lower", "capitalize", "title", "camel",
-        "snake", "kebab", "pascal", "replace", "regex", "match",
-        "find", "search", "contains", "startsWith", "endsWith",
-        "padLeft", "padRight", "center", "ljust", "rjust", "zfill",
-        "format", "printf", "sprintf", "fprintf", "println", "print",
-        "eprint", "eprintln", "input", "readline", "stdin", "stdout",
-        "stderr", "args", "argv", "env", "getenv", "setenv", "unsetenv",
-        "exit", "abort", "panic", "unreachable", "todo", "fixme",
-        "note", "warning", "deprecated", "experimental", "unstable",
-        "internal", "private", "public", "protected", "internal"
-      };
-      // Module globals registered via setGlobal() at VM/module load time.
-      // These exist as globals when a built script runs, so strict-mode
-      // resolution must accept them here too. Sourced from the single
-      // canonical kModuleGlobals list (validated by the module-globals
-      // drift-guard test) rather than a hand-maintained copy.
+      std::unordered_set<std::string> knownGlobals;
+      for (const char *hf : havel::compiler::kHostFunctionNames) {
+        knownGlobals.insert(hf);
+        std::string name(hf);
+        auto dotPos = name.find('.');
+        if (dotPos != std::string::npos) {
+          knownGlobals.insert(name.substr(0, dotPos));
+        }
+      }
       for (const char *g : havel::compiler::kModuleGlobals) {
         knownGlobals.insert(g);
       }
+      // Runtime globals that are not host functions but are available at
+      // runtime (the same extras the pipeline path seeds in Pipeline.cpp).
+      knownGlobals.insert("process");
+      knownGlobals.insert("sys");
+      knownGlobals.insert("shell");
+      knownGlobals.insert("_nativeTokenize");
       compiler.setKnownGlobals(knownGlobals);
     }
     try {

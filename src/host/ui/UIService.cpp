@@ -6,6 +6,8 @@
 
 #include "UIService.hpp"
 
+#include "utils/HeadlessRuntime.hpp"
+
 #include <QColorDialog>
 #include <QFontDialog>
 #include <QInputDialog>
@@ -70,6 +72,9 @@ void UIService::resetPerRunState() {
 }
 
 void UIService::ensureApp() {
+  // Qt aborts the process from the QApplication constructor when no display
+  // server is reachable; sandboxed runs (hvtest/ctest) never construct one.
+  if (havel::qtRuntimeUnavailable()) return;
   if (!QApplication::instance()) {
     if (appMetaSet_ && appMeta_.argc && appMeta_.argv) {
       new QApplication(*appMeta_.argc, appMeta_.argv);

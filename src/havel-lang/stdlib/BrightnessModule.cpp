@@ -123,7 +123,10 @@ void registerBrightnessModule(const VMApi &api) {
     if (!g_brightnessManager) return Value::makeBool(false);
     double amount = 0.02;
     if (!args.empty()) amount = args[0].asDouble();
-    if (args.size() == 1) {
+    if (args.size() <= 1) {
+      // 0 args: default step; 1 arg: explicit amount. The old
+      // `args.size() == 1` check fell through to args[1] on an empty
+      // vector (OOB read -> garbage monitor -> false, brightness stuck).
       return Value(g_brightnessManager->increaseBrightness(amount));
     }
     std::string monitor = args[1].toString();
@@ -135,7 +138,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (!g_brightnessManager) return Value::makeBool(false);
     double amount = 0.02;
     if (!args.empty()) amount = args[0].asDouble();
-    if (args.size() == 1) {
+    if (args.size() <= 1) {
       return Value(g_brightnessManager->decreaseBrightness(amount));
     }
     std::string monitor = args[1].toString();
@@ -147,7 +150,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (!g_brightnessManager) return Value::makeBool(false);
     int amount = 200;
     if (!args.empty()) amount = static_cast<int>(args[0].asInt());
-    if (args.size() == 1) {
+    if (args.size() <= 1) {
       return Value(g_brightnessManager->increaseTemperature(amount));
     }
     std::string monitor = args[1].toString();
@@ -159,7 +162,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (!g_brightnessManager) return Value::makeBool(false);
     int amount = 200;
     if (!args.empty()) amount = static_cast<int>(args[0].asInt());
-    if (args.size() == 1) {
+    if (args.size() <= 1) {
       return Value(g_brightnessManager->decreaseTemperature(amount));
     }
     std::string monitor = args[1].toString();

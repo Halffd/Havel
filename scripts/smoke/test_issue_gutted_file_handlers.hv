@@ -1,0 +1,33 @@
+// Regression: host bridge file handlers were gutted — they declared
+// `const std::string *path = nullptr` and then threw on `!path`, so
+// readFile/writeFile/fileExists/fileSize/deleteFile always threw instead of
+// reading, writing, or checking anything. Also verifies the spec-mandated
+// global core verbs (docs/specs/Havel.md "Available Globals") resolve:
+// read, write, click, move (click/move resolve; running them would perform
+// real input, which smoke tests must not do).
+// Expected: write/read round trip, fileSize matches, exists/delete correct,
+// read of a missing file is nil, and all spec globals resolve. Exit 0.
+file = "/tmp/havel_spec_globals_smoke.txt"
+
+print(write(file, "spec globals round trip"))
+c = read(file)
+assert(c == "spec globals round trip", "read returns what write wrote")
+print(fileSize(file))
+assert(fileSize(file) == 23, "fileSize matches the written content")
+assert(fileExists(file) == true, "fileExists true after write")
+print(deleteFile(file))
+assert(fileExists(file) == false, "fileExists false after delete")
+print(read(file))
+assert(read(file) == nil, "read of a missing file returns nil")
+
+// Spec global core verbs resolve (registration is derived from the host
+// function registry; no hand-maintained list).
+assert(type(print) == "function", "print resolves")
+assert(type(sleep) == "function", "sleep resolves")
+assert(type(read) == "function", "read resolves")
+assert(type(write) == "function", "write resolves")
+assert(type(click) == "function", "click resolves")
+assert(type(move) == "function", "move resolves")
+assert(type(send) == "function", "send resolves")
+assert(type(play) == "function", "play resolves")
+assert(type(exit) == "function", "exit resolves")

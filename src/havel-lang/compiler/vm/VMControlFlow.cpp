@@ -782,7 +782,7 @@ if (instanceObj) {
     }
 
     if (isPipeCall && !found_host && vm_func.isNull()) {
-      // Script-global fallback: `data |> doubled` where doubled is a
+      // 1.6 Script-global fallback: `data |> doubled` where doubled is a
       // script-defined fn. The array prototype has no such method and the
       // array/Array module namespaces don't either; without this the pipeline
       // silently returned null. The receiver is passed as the first argument

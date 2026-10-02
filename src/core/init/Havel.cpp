@@ -96,6 +96,8 @@ void Havel::initialize(bool isStartup) {
     io = std::make_shared<IO>();
     if (headlessMode) {
       io->SetHeadlessMode(true);
+      DisplayManager::SetHeadlessMode(true);
+      ::setenv("HAVEL_HEADLESS", "1", 1);
     }
     if (replMode) {
       io->SetEventListenerThreaded(false);

@@ -832,6 +832,37 @@ endif()
         # test is skipped when Python is absent (see test registration below).
         message(STATUS "Python3 not found: ModuleGlobals.generated.hpp will not be regenerated")
     endif()
+
+    # -----------------------------------------------------------------------
+    # kHostFunctionNames — same Rust-like guarantee for host FUNCTION names:
+    # the canonical list is DERIVED from the actual registration sites
+    # (registerHostFunction / host_functions[] / registerFunction), so the
+    # strict-mode resolver in HavelLauncher::runBuild (no VM instance there)
+    # can never falsely reject a registered name. Previously a hand-maintained
+    # literal missed the entire bridge surface (deleteFile/click/etc. were
+    # rejected by --build --strict). The generated header is checked in; the
+    # custom command regenerates it whenever any scanned source changes, and
+    # staleness is caught by the havel-launcher globals drift guard.
+    # -----------------------------------------------------------------------
+    set(HOSTFN_GEN_SCRIPT
+        "${CMAKE_SOURCE_DIR}/scripts/gen_host_function_names.py")
+    set(HOSTFN_OUTPUT
+        "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core/HostFunctionNames.generated.hpp")
+    if(Python3_Interpreter_FOUND)
+        file(GLOB_RECURSE HOSTFN_DEP_SOURCES
+            "${CMAKE_SOURCE_DIR}/src/*.cpp")
+        add_custom_command(
+            OUTPUT ${HOSTFN_OUTPUT}
+            COMMAND ${Python3_EXECUTABLE} ${HOSTFN_GEN_SCRIPT}
+                    ${CMAKE_SOURCE_DIR}/src ${HOSTFN_OUTPUT}
+            DEPENDS ${HOSTFN_DEP_SOURCES} ${HOSTFN_GEN_SCRIPT}
+            COMMENT "Generating HostFunctionNames.generated.hpp from host-function registrations"
+            VERBATIM
+        )
+        add_custom_target(gen_host_function_names DEPENDS ${HOSTFN_OUTPUT})
+    else()
+        message(STATUS "Python3 not found: HostFunctionNames.generated.hpp will not be regenerated")
+    endif()
 endif()
 
 # Host modules (language bindings to system managers)
@@ -1582,6 +1613,9 @@ target_include_directories(havel_core
 if(ENABLE_HAVEL_LANG AND TARGET gen_module_globals)
   add_dependencies(havel_core gen_module_globals)
 endif()
+if(ENABLE_HAVEL_LANG AND TARGET gen_host_function_names)
+  add_dependencies(havel_core gen_host_function_names)
+endif()
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -1916,6 +1950,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # for --build/--full-aot depends on.
   add_test(NAME module-globals-drift-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_globals.sh)
+  # Host-function names drift guard: fails if HostFunctionNames.generated.hpp
+  # is stale relative to the real registration sites, or if runBuild no longer
+  # seeds strict-mode known globals from kHostFunctionNames. Previously a
+  # hand-maintained literal missed the entire bridge surface
+  # (deleteFile/click/etc. were rejected by --build --strict).
+  add_test(NAME havel-launcher-globals-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_havel_launcher_globals.sh)
   # Runtime ABI drift guard (TODO #27): fails when a havel_vm_*/havel_gc_/
   # symbol defined in the runtime sources is missing from
   # the RuntimeABI.hpp X-macro, or an ABI entry has no runtime definition.
@@ -2329,6 +2370,10 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
     if(TARGET gen_module_globals)
       add_dependencies(havel_lang gen_module_globals)
       add_dependencies(havel_lang_core gen_module_globals)
+    endif()
+    if(TARGET gen_host_function_names)
+      add_dependencies(havel_lang gen_host_function_names)
+      add_dependencies(havel_lang_core gen_host_function_names)
     endif()
 
     target_include_directories(havel_lang PRIVATE
@@ -2788,6 +2833,22 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(query_system_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME query_system_test COMMAND query_system_test)
 
+    # sleepUntil() target parsing (docs/specs/Havel.md "Available Globals").
+    # Self-contained: the parser only needs std, so this test links neither the
+    # application core nor the VM.
+    add_executable(sleep_until_parser_test
+        tests/sleep_until_parser_ut.cpp
+        src/havel-lang/compiler/vm/SleepUntilParser.cpp
+    )
+    target_include_directories(sleep_until_parser_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm
+    )
+    target_compile_features(sleep_until_parser_test PRIVATE cxx_std_23)
+    target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.
@@ -2816,6 +2877,58 @@ if(ENABLE_TESTS AND GTest_FOUND)
         -Wl,--end-group
     )
     add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
+
+    # Headless gate must hold on the HAVEL_HEADLESS env flag alone, without
+    # depending on SetHeadlessMode() having been called first. Regression cover
+    # for IO::ensureBackend()'s call_once ordering and DisplayManager's ":0"
+    # fallback, both of which could reach the live session.
+    add_executable(headless_sandbox_test
+        tests/headless_sandbox_ut.cpp
+    )
+    target_compile_features(headless_sandbox_test PRIVATE cxx_std_23)
+    target_include_directories(headless_sandbox_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(headless_sandbox_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME headless_sandbox_test COMMAND headless_sandbox_test)
+
+    # Gamma-ramp brightness readback. extractBrightnessFromGammaRamp() read
+    # the ramp's middle index, which is exactly half the applied value for the
+    # linear ramp the set path writes -- and brightness.increase() is
+    # read-then-write, so the underread dimmed the display on first press.
+    add_executable(brightness_ramp_test
+        tests/brightness_ramp_ut.cpp
+    )
+    target_compile_features(brightness_ramp_test PRIVATE cxx_std_23)
+    target_include_directories(brightness_ramp_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(brightness_ramp_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME brightness_ramp_test COMMAND brightness_ramp_test)
 
     # Clipboard-backend registry seam behind Clipboard. Same shape as
     # pixel_provider_test: no havel_gui, so the link is part of what it
@@ -2927,6 +3040,28 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)
         endif()
     endif()
+endif()
+
+# ==============================================================================
+# TEST SANDBOXING
+# ==============================================================================
+# Every ctest process must be inert against the display and input devices, even
+# when it is a bare gtest binary that never goes through hvtest's
+# script_runner. Two layers:
+#   1. HAVEL_HEADLESS=1 makes DisplayManager::Initialize(), the IO backend, the
+#      WindowManager and the Qt application guards no-ops.
+#   2. Unsetting the display/session variables means XOpenDisplay(NULL) cannot
+#      fall back to ":0" on a machine that happens to have an X server running,
+#      so a missed guard degrades to a harmless failure instead of a real
+#      connection to the user's session.
+# Applied as a single pass over the collected test list so a newly added
+# add_test() cannot accidentally escape the sandbox.
+get_property(_havel_all_tests DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY TESTS)
+if(_havel_all_tests)
+  set_tests_properties(${_havel_all_tests} PROPERTIES ENVIRONMENT
+    "HAVEL_HEADLESS=1;DISPLAY=;WAYLAND_DISPLAY=;XAUTHORITY=;XDG_SESSION_TYPE=;QT_QPA_PLATFORM=offscreen"
+  )
+  unset(_havel_all_tests)
 endif()
 
 # ==============================================================================

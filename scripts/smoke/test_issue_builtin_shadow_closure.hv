@@ -1,0 +1,34 @@
+// Regression: a function-local assignment whose name matches a runtime global
+// (host function) resolved to that global instead of declaring a local.
+// LexicalResolver merged known_globals_ (host names: count, type, len, ...)
+// into global_variables_, so the "fake global" check that turns a fabricated
+// global into a local never fired for those names. Effects: the assignment
+// overwrote the builtin, and every closure capturing the name shared a single
+// global cell (closure_counter_identity returned 7 instead of 4).
+// Expected: the local is per-invocation, the builtins survive, and a declared
+// top-level global is still written from inside a function. Exit 0.
+fn makeCounter():
+  count = 0
+  fn inc():
+    count += 1
+    return count
+  return inc
+
+first = makeCounter()
+second = makeCounter()
+assert(first() == 1, "first counter starts at 1")
+assert(second() == 1, "second counter owns a separate cell")
+assert(first() == 2, "first counter owns a separate cell")
+
+assert(type(count) == "function", "host function count survives the local of the same name")
+assert(len("abcd") == 4, "host function len is still callable")
+
+counter = 0
+fn bump():
+  counter += 1
+  return counter
+bump()
+bump()
+assert(counter == 2, "declared top-level global is still written from a function")
+
+return 0

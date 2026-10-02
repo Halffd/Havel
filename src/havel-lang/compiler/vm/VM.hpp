@@ -2042,6 +2042,13 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   bool isNull(const Value &value) const;
   bool isTruthy(const Value &value);
   std::optional<int64_t> parseDuration(const Value &value) const;
+  // Milliseconds from now until the next occurrence of a wall-clock target
+  // parsed from a sleepUntil() spec string ("13:10", "thursday 8:00").
+  std::optional<int64_t> parseSleepUntilTarget(const Value &value) const;
+
+  // Sleep for duration_ms, suspending the running fiber instead of blocking
+  // when a scheduler is active. Used by sleep(), sleep_ms() and sleepUntil().
+  void suspendOrSleepMs(int64_t duration_ms);
 
   // Image helpers - create GC-managed images
   VMImage createImage(int width, int height, int stride, PixelFormat format,

@@ -24,20 +24,6 @@
 #include "../../../host/app/AppService.hpp"
 #include "../../../host/media/MediaService.hpp"
 
-extern "C" {
-
-HavelAPI *getHavelAPI(void) {
-    static HavelAPI api = {};
-    static int initialized = 0;
-    if (!initialized) {
-        initialized = 1;
-        api.version = HAVEL_API_VERSION;
-    }
-    return &api;
-}
-
-}
-
 namespace havel::compiler {
 
 #ifdef HAVEL_CORE_PROFILE
@@ -305,10 +291,35 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   });
 
   options_.host_functions["extension.load"] =
-[this](const std::vector<Value> &args) {
+[this](const std::vector<Value> &args) -> Value {
   if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
   auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
-  extensionLoader_->loadExtensionWithInit(name, getHavelAPI());
+  auto *vm = static_cast<VM *>(ctx_->vm);
+  if (!vm) return Value::makeBool(false);
+
+  // Native module plugins (havel_mod_<name>.so) register through the VM's
+  // own VMApi and set their global object — the working path, so prefer
+  // them and return that object (image = extension.load("image") must
+  // yield something with .load()). C-ABI extensions (havel_extension_init)
+  // would receive the zero-initialized API table from the old getHavelAPI
+  // stub (the C API host side is not compiled into the binary) and
+  // segfaulted on the first api->register_function call (observed SIGSEGV
+  // at image_extension.cpp:207), so never hand a stub API to a C-ABI init.
+  auto globalIt = vm->getGlobals().find(name);
+  if (!(globalIt != vm->getGlobals().end() && globalIt->second.isObjectId())) {
+    if (auto plugin = extensionLoader_->loadModulePlugin(name)) {
+      VMApi api(*vm);
+      plugin->register_fn(static_cast<void *>(&api));
+      globalIt = vm->getGlobals().find(name);
+    }
+  }
+  if (globalIt != vm->getGlobals().end() && globalIt->second.isObjectId()) {
+    return globalIt->second;
+  }
+  // C-ABI extension fallback: load WITHOUT calling init — a stub API would
+  // crash it. The extension loads inertly; its functions stay unreachable
+  // until the C API host side is implemented.
+  extensionLoader_->loadExtensionWithInit(name, nullptr);
   return Value(extensionLoader_->isLoaded(name));
 };
   options_.host_functions["extension.isLoaded"] =
@@ -325,8 +336,10 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
         if (!vm) return Value::makeNull();
         auto arr = vm->createHostArray();
         for (const auto &name : names) {
-          (void)name;
-          vm->pushHostArrayValue(arr, Value::makeNull());
+          // Push the actual extension name — the old code discarded it
+          // ((void)name) and pushed null for every entry.
+          auto ref = vm->createRuntimeString(name);
+          vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
         }
         return Value::makeArrayId(arr.id);
       };
@@ -543,9 +556,15 @@ bool HostBridge::import(const std::string &importSpec) {
 }
 
 void HostBridge::loadExtension(const std::string &name) {
-  if (extensionLoader_) {
-    extensionLoader_->loadExtensionWithInit(name, getHavelAPI());
+  if (!extensionLoader_) {
+    return;
   }
+  // Same policy as the extension.load host function: prefer the native
+  // module plugin; C-ABI extensions load without init (no stub API).
+  if (extensionLoader_->loadModulePlugin(name)) {
+    return;
+  }
+  extensionLoader_->loadExtensionWithInit(name, nullptr);
 }
 
 void HostBridge::checkTimers() {

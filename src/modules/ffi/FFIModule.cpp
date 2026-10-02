@@ -5,8 +5,10 @@
 #include "havel-lang/ffi/FFIAccessors.hpp"
 #include "havel-lang/core/Value.hpp"
 #include "../../utils/Logger.hpp"
+#include "../../utils/HeadlessRuntime.hpp"
 #include <cstring>
 #include <cerrno>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -70,6 +72,15 @@ static Value ffiOpen(const compiler::VMApi& api, const std::vector<Value>& rawAr
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string path = api.toString(args[0]);
+    // Headless sandbox: never load X11-family libraries. Self-hosted
+    // application modules (x11.hv, mouse.hv, keyboard.hv, pixel.hv,
+    // screenshot.hv) all reach the display through ffi.open + XOpenDisplay;
+    // blocking the dlopen here keeps hvtest/ctest children from touching any
+    // X server even if a script imports those modules. See
+    // isBlockedX11Library() for why this has to live at the dlopen.
+    if (::havel::isBlockedX11Library(path)) {
+        return Value::makeNull();
+    }
     void* handle = FFICall::load_library(path);
     return Value::makePtr(handle);
 }

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <atomic>
 #include <fstream>
 #include <filesystem>
@@ -114,6 +116,16 @@ inline std::vector<std::string> read_test_flags(const std::string &script_path) 
 		}
 	}
 	return out;
+}
+
+// Environment keys owned by the sandbox. A // smoke: env = header may not
+// override these: doing so would let a single test hand its own child a real
+// display, session bus, or a non-headless flag, which defeats the guarantee
+// that no hvtest process touches the user's session.
+inline bool is_sandbox_env_key(const std::string &key) {
+	return key == "HAVEL_HEADLESS" || key == "DISPLAY" || key == "WAYLAND_DISPLAY" ||
+	       key == "XAUTHORITY" || key == "XDG_SESSION_TYPE" || key == "QT_QPA_PLATFORM" ||
+	       key == "DBUS_SESSION_BUS_ADDRESS";
 }
 
 // Read per-test environment overrides from the file header.
@@ -233,6 +245,11 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         } else {
             flags = pre_flags;
         }
+        // --headless puts the child off X11/evdev/uinput and kills the
+        // brightness/event listeners: fixtures that still call mouse.move()
+        // or brightness.set() then no-op instead of touching the real
+        // desktop (that was the phantom-zoom vector in scripts/tests/io/*).
+        flags.insert(flags.begin(), "--headless");
         std::vector<char *> args;
         args.push_back(const_cast<char *>(havel_bin.c_str()));
         for (const auto &f : flags) {
@@ -245,21 +262,55 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         // then apply per-test header env overrides (// smoke: env = VAR=v).
         // entry_strings must outlive env (we store c_str pointers into it
         // up to the execvpe call).
+        // --headless is the primary guarantee; the display/session variables
+        // are additionally dropped so a code path we did not gate cannot reach
+        // the live session even by accident.
         std::vector<char *> env;
         std::vector<std::string> entry_strings;
         for (char **e = ::environ; *e; ++e) {
+            if (std::strncmp(*e, "DISPLAY=", 8) == 0) continue;
+            if (std::strncmp(*e, "WAYLAND_DISPLAY=", 16) == 0) continue;
+            if (std::strncmp(*e, "XAUTHORITY=", 11) == 0) continue;
+            if (std::strncmp(*e, "DBUS_SESSION_BUS_ADDRESS=", 24) == 0) continue;
             env.push_back(*e);
         }
+        // Appended after the inherited env, so these win over anything the
+        // parent had. DBUS_SESSION_BUS_ADDRESS=disabled: is the documented
+        // libdbq way to say "there is no bus" -- it short-circuits before any
+        // connect() instead of reaching the user's session bus.
+        env.push_back(const_cast<char *>("HAVEL_HEADLESS=1"));
+        env.push_back(const_cast<char *>("DISPLAY="));
+        env.push_back(const_cast<char *>("WAYLAND_DISPLAY="));
+        env.push_back(const_cast<char *>("XAUTHORITY="));
+        env.push_back(const_cast<char *>("XDG_SESSION_TYPE="));
+        env.push_back(const_cast<char *>("QT_QPA_PLATFORM=offscreen"));
+        env.push_back(const_cast<char *>("DBUS_SESSION_BUS_ADDRESS=disabled:"));
         for (const auto &kv : read_test_env(script_path)) {
+            // The sandbox is authoritative: a test header must not be able to
+            // hand a child a real display, bus, or a non-headless flag. The
+            // value is only forwarded to the child via the env vector below --
+            // it is deliberately NOT setenv'd, which would mutate hvtest's own
+            // environment and leak this test's overrides into later tests.
+            if (is_sandbox_env_key(kv.first)) {
+                continue;
+            }
             entry_strings.push_back(kv.first + "=" + kv.second);
-            // setenv so any pre-exec code in this child sees the override
-            ::setenv(kv.first.c_str(), kv.second.c_str(), 1);
         }
         for (const auto &s : entry_strings) {
             env.push_back(const_cast<char *>(s.c_str()));
         }
         env.push_back(nullptr);
         execvpe(havel_bin.c_str(), args.data(), env.data());
+        // exec failed: report errno through the pipe (stdout is already
+        // dup2'd there). A bare _exit(127) showed up as 'exit=127, no
+        // captured output' for every test, hiding ETXTBSY (binary being
+        // relinked by a concurrent build), ENOENT (missing binary), etc.
+        int e = errno;
+        ssize_t ignored1 = ::write(STDERR_FILENO, "exec failed: ", 13);
+        const char *msg = std::strerror(e);
+        ssize_t ignored2 = ::write(STDERR_FILENO, msg, std::strlen(msg));
+        ssize_t ignored3 = ::write(STDERR_FILENO, "\n", 1);
+        (void)ignored1; (void)ignored2; (void)ignored3;
         _exit(127);
     }
 

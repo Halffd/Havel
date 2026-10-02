@@ -12,7 +12,7 @@ fired = 0
 F24 => {
     fired = fired + 1
     w = window.active()
-    w.raise()
+    if w != nil { w.raise() }
 }
 
 i = 0

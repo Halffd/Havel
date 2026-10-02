@@ -95,6 +95,75 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   ./build-debug/brightness_test
   ```
   Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
+- **FORBIDDEN in smoke/integration tests: any script that performs real I/O,
+  brightness, or dsl input.** See "NEVER put hardware-touching scripts in
+  smoke or integration tests" below for the full rule and rationale.
+
+### NEVER put hardware-touching scripts in smoke or integration tests
+
+`scripts/smoke/` and `scripts/integration/` are collected automatically by
+`hvtest --smoke` / `hvtest --scripts` and run by the ctest gate
+`hvtest-smoke`. A test placed there is executed by everyone who runs the
+suite, on a real desktop, with no per-test confirmation. Do NOT add scripts
+that:
+
+- **Touch brightness** — anything calling `brightness.*` (get/set/increase/
+  decrease/toggle, temperature, gamma). `brightness.set()` with one argument
+  is the **ALL-monitors** overload: it rewrites the gamma ramp of every
+  attached display. `brightness_test` is already excluded from ctest for
+  exactly this reason.
+- **Perform real I/O** — `io.*`, `mouse.*` (`move`, `moveRel`, `click`,
+  `scroll`, `pos`), `keyboard.*` (`tap`, `send`, `typeText`, `keycode`),
+  `hotkey.trigger`, `window.*` (`raise`, `focus`, `move`, `close`).
+- **Use dsl input forms** — `lmb`, `{Home}`, `< mouse`, `m(x, y)`, `r(dx, dy)`,
+  `w(dx, dy)`, `click()`, or a bare string literal used as an implicit
+  "type this" inside a `dsl {}` / hotkey block. These compile to real host
+  input calls; the sugar hides them from a grep for `mouse.`/`keyboard.`,
+  which is how they slipped into the suite.
+
+The headless sandbox (`--headless`, `HAVEL_HEADLESS=1`, cleared `DISPLAY`/
+`WAYLAND_DISPLAY`/`XAUTHORITY`/`DBUS_SESSION_BUS_ADDRESS`) is a defence in
+depth, not a licence. Its effectiveness is **unverified**: an earlier attempt
+to measure it with `strace -e trace=openat,write` captured none of the
+syscalls X11 actually needs (`socket`, `connect`, `writev`, `ioctl` were all
+zero), so the apparent "0 X11 connections" was an artifact of the trace
+filter, not a result. The apparent 2990 `libX11.so.6` hits were `ld.so`
+probing its search path, all `ENOENT` — the loader looking, not a gate
+refusing. Additionally, dsl input reaches host functions whose gating is
+per-call-site rather than central, and `X11Adapter::Init()` has no headless
+guard of its own. Never add a script whose *worst case* is a user losing
+their brightness settings or getting a key/mouse event they did not ask for.
+
+If you need to test these features, the options are, in order:
+
+1. **Test the pure function**, not the hardware. `brightness_ramp_test`
+   (gtest) exercises gamma-ramp maths against a synthetic
+   `XRRCrtcGamma`, no display needed.
+2. **Assert on the module's source** when the defect is argument forwarding or
+   shadowing. Reading a file and checking its text is safe; calling the
+   function is not. See `scripts/smoke/test_issue_gutted_file_handlers.hv`,
+   which resolves the input globals `click` and `move` to prove they exist
+   but deliberately never invokes them.
+3. **Use `havel --lint FILE` for syntax/compile coverage.** It parses,
+   type-checks, and bytecode-compiles without executing the script, so IO
+   *syntax* can be covered with no side effects. Verified: `--lint` on a
+   script containing `fs.write`, `mouse.move`, and `keyboard.tap("Home")`
+   exits 0 and creates no file; malformed dsl sugar fails with a source
+   location and a non-zero error count. This is the correct way to keep
+   coverage of constructs like `lmb`, `{Home}`, `< mouse`, `m/r/w/click()`.
+   A smoke script may shell out to `--lint`; it may not run the linted file.
+4. **Put it in `scripts/tests/`** (not `smoke`/`integration`), so it is not
+   auto-collected, and run it by hand only with the user's screen in view.
+   Hardware-specific checks belong in `scripts/tests/io/`; scripts that
+   apply real display or input state belong in `scripts/hardware/`.
+
+There is no opt-in path into `smoke`/`integration`. A script in those
+directories executes on every contributor's machine with no per-test
+confirmation, so "explicitly gated" is not a mitigation — it only moves the
+blast radius to whoever passes the flag. If a test cannot be made
+side-effect-free, it does not belong there.
+
+If you are unsure whether a script is safe, treat it as unsafe.
 
 CI runs: CMake configure → build → hvtest smoke → ctest
 
@@ -1054,3 +1123,5 @@ If no results, run `opencode-rag index`.
 - A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
 - NEVER finish a coding session without adding quirks for resolved errors.
 <!-- END opencode-rag -->
+
+# Never run any script in scripts/tests/io or brightness scripts touching real hardware

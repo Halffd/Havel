@@ -1,0 +1,38 @@
+// Test: elif keyword is sugar for else-if chains (TODO #4)
+// Covers: elif without else, chained elifs, elif inside a function,
+// and plain `elif` in expression position (must stay a plain name).
+x = 5
+if x > 10 {
+    print("huge")
+} elif x > 3 {
+    print("big")
+} else {
+    print("small")
+}
+assert(x > 3, "x still 5")
+
+y = 0
+if y == 1 {
+    assert(false, "wrong branch: one")
+} elif y == 2 {
+    assert(false, "wrong branch: two")
+} elif y == 3 {
+    assert(false, "wrong branch: three")
+} else {
+    print("none branch hit")
+}
+
+fn check(n) {
+    if n > 3 {
+        1
+    } elif n > 1 {
+        2
+    } else {
+        3
+    }
+}
+assert(check(5) == 1, "check(5) must be 1")
+assert(check(2) == 2, "check(2) must be 2")
+assert(check(0) == 3, "check(0) must be 3")
+
+println("PASS: elif chains")

@@ -3,6 +3,7 @@
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 
+#include "SleepUntilParser.hpp"
 #include <sstream>
 #include <regex>
 #include <unordered_set>
@@ -644,8 +645,20 @@ std::optional<int64_t> VM::parseDuration(const Value &value) const {
     }
   }
 
-return std::nullopt;
+  return std::nullopt;
 }
+
+// sleepUntil() target parsing. Accepts an optional leading weekday name
+// (full or three-letter abbreviation) followed by a wall-clock time:
+//   "13:10", "23:59:59", "0:0:30.500", "thursday 8:00", "mon 9:00"
+// Returns milliseconds from now until the next occurrence of that target.
+std::optional<int64_t> VM::parseSleepUntilTarget(const Value &value) const {
+  if (!value.isStringValId() && !value.isStringId() && !value.isRegexValId()) {
+    return std::nullopt;
+  }
+  return computeSleepUntilDelayMs(resolveStringKey(value));
+}
+
 std::string VM::resolveStringKey(const Value &value) const {
     if (value.isStringValId()) {
         uint32_t id = value.asStringValId();

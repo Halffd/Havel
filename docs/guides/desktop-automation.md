@@ -128,10 +128,10 @@ fn click_at(x, y, button = "left") {
 fn drag(from_x, from_y, to_x, to_y) {
     dsl {
         m(from_x, from_y)
-        io.mouseDown(1)
+        mouse.down(1)
         : 100
         m(to_x, to_y)
-        io.mouseUp(1)
+        mouse.up(1)
     }
 }
 ```
@@ -139,7 +139,7 @@ fn drag(from_x, from_y, to_x, to_y) {
 Inside `dsl` blocks: bare `"${text}"` sends text, `: ms` sleeps,
 `m(x, y)` moves the mouse, `click("left"|"right"|"middle")` clicks,
 `{key}` sends a key. `lmb_down`/`lmb_up` are not implemented — use
-`io.mouseDown(1)` / `io.mouseUp(1)` (1 = left button).
+`mouse.down(1)` / `mouse.up(1)` (1 = left button).
 
 ---
 

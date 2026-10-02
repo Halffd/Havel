@@ -35,9 +35,13 @@ Value ConfigBridge::handleGet(const std::vector<Value> &args,
   // Return value based on default type
   if (args[1].isStringValId()) {
     std::string def = strVal(args[1], ctx ? ctx->vm : nullptr);
-    // TODO: string pool integration - for now return null
-    (void)config; (void)key; (void)def;
-    return Value::makeNull();
+    if (!ctx || !ctx->vm) {
+      return Value::makeNull();
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string value = config.Get(key, def);
+    auto outRef = vm->getHeap().allocateString(value);
+    return Value::makeStringId(outRef.id);
   } else if (args[1].isInt()) {
     int64_t def = args[1].asInt();
     return Value::makeInt(config.Get(key, def));

@@ -1740,7 +1740,6 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return diffPipeline(cfg);
     }
 
-    fprintf(stderr, "[DEBUG] Creating strategy for mode=%d\n", (int)cfg.mode);
     auto strategy = createStrategy(cfg);
     return strategy->execute(cfg, argc, argv);
   } catch (const std::exception &e) {

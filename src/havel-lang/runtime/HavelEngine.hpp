@@ -1191,9 +1191,15 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-        std::cerr << "[DEBUG] pickNext Created gid=" << g->id << " name='" << g->name << "'\n";
-        auto result = vm_->startGoroutineCall(g->callable, g->locals);
-        std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
+        const bool traceStart = std::getenv("HAVEL_TRACE_HOTKEY_START") != nullptr;
+      if (traceStart) {
+        ::havel::debug("[HavelEngine] pickNext: gid={} name='{}' state=Created dispatch=start",
+                       g->id, g->name);
+      }
+      auto result = vm_->startGoroutineCall(g->callable, g->locals);
+        if (traceStart) {
+          ::havel::debug("[HavelEngine] startGoroutineCall: gid={} dispatch={}", g->id, result);
+        }
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           dispatchTick(g);

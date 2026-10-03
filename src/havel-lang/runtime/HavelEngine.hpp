@@ -740,7 +740,6 @@ vm_->addIntervalResult(timer_id, result);
             processGoroutines();
         }
     }
-
     void tickGoroutines() {
         if (!initialized_) return;
     auto* sched = vm_->getScheduler();
@@ -760,6 +759,13 @@ vm_->addIntervalResult(timer_id, result);
       return;
     }
         vm_->tickScheduler();
+    }
+
+    // REPL runs disable the HotkeyWait keep-alive in processGoroutines so
+    // execute() returns and the REPL loop takes over pumping (see
+    // keepAliveForHotkeyWakes_).
+    void setKeepAliveForHotkeyWakes(bool keepAlive) {
+        keepAliveForHotkeyWakes_ = keepAlive;
     }
 
     compiler::VM* vm() const { return vm_.get(); }
@@ -803,6 +809,11 @@ private:
     bool initialized_ = false;
     std::unique_ptr<compiler::Fiber> main_script_fiber_;
     bool inline_yield_active_ = false;
+    // When true (script-only runs), the processGoroutines loop keeps
+    // pumping while hotkey goroutines sit in HotkeyWait so daemon-style
+    // hotkey configs stay alive. REPL runs set this to false so
+    // execute() returns and the REPL loop takes over pumping.
+    bool keepAliveForHotkeyWakes_ = true;
     // Var names produced by emitVariableChanged from inside a goroutine's
     // dispatch loop. Drained by processGoroutines between scheduler ticks so
     // conditional hotkey re-evals happen outside any fiber context.
@@ -1171,8 +1182,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           }
         }
         if (sched->hasHotkeyWaitSuspended()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(2));
-          continue;
+          // Script-only runs (daemon-style hotkey configs) keep pumping so
+          // asynchronously-pressed hotkeys still fire; the app is meant to
+          // stay alive after the main script parks. REPL runs must NOT:
+          // engine.execute() has to return so the REPL loop can take over
+          // pumping (runMinimalReplLoop). With the keep-alive on, -m --repl
+          // wedged here forever right after the script's prints — REPL
+          // banner never appeared.
+          if (keepAliveForHotkeyWakes_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            continue;
+          }
+          // REPL mode: hotkey-wait goroutines never carry sleep deadlines,
+          // so the deadline check below breaks the loop for us.
         }
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();

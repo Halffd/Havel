@@ -1066,8 +1066,24 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
+  auto *sched = bytecodeVM ? bytecodeVM->getScheduler() : nullptr;
+  if (io || sched) {
+    // Pump both halves every loop tick (50ms):
+    //  - io->PumpOnce(): EventListener/hotkey key events
+    //  - tickScheduler(): run woken hotkey/event goroutines
+    // The old pump only did PumpOnce, so a hotkey press marked its fiber
+    // runnable and nothing ever executed it — hotkeys silently did nothing
+    // for the whole REPL session (the reported failure). Minimal mode
+    // already pumps goroutines via HavelEngine::tickGoroutines; this is
+    // the full-mode equivalent, guarded by the same idle probe.
+    repl.setPumpCallback([io, bytecodeVM, sched]() {
+      if (io) io->PumpOnce();
+      if (bytecodeVM && sched && sched->hasPendingWork()) {
+        bytecodeVM->tickScheduler();
+      }
+    });
+  }
   if (io) {
-    repl.setPumpCallback([io]() { io->PumpOnce(); });
     repl.setUngrabCallback([io, hkManager]() {
       if (hkManager)
         hkManager->suspendGrabs();
@@ -1097,6 +1113,10 @@ public:
         }
         info("Running scripts and starting REPL in minimal mode...");
         havel::HavelEngine engine(makeEngineConfig(cfg));
+        // execute() must return so runMinimalReplLoop can take over
+        // pumping; the default HotkeyWait keep-alive would wedge here
+        // forever right after a hotkey-registering script.
+        engine.setKeepAliveForHotkeyWakes(false);
         engine.initializeMinimal();
         info("Executing script code...");
         try {
@@ -1170,6 +1190,9 @@ public:
         auto [combinedCode, combinedNames] = *result;
 
         havel::HavelEngine engine(makeEngineConfig(cfg));
+        // REPL takes over pumping after execute() returns (see
+        // ScriptAndReplStrategy's minimal branch).
+        engine.setKeepAliveForHotkeyWakes(false);
         engine.initializeMinimal();
 
         if (!combinedCode.empty()) {

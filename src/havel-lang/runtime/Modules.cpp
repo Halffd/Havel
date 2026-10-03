@@ -1,5 +1,6 @@
 #include "Modules.hpp"
 #include "../compiler/runtime/ConcurrencyBridge.hpp"
+#include "../runtime/events/EventRuntime.hpp"
 #include "../../host/module/ModularHostBridges.hpp"
 #include "../../host/module/ExecutionPolicy.hpp"
 #include "../../host/app/AppService.hpp"
@@ -88,6 +89,7 @@ void Modules::shutdown() {
     automationBridge_.reset();
     browserBridge_.reset();
     toolsBridge_.reset();
+    eventBridge_.reset();
     extensionLoader_.reset();
 }
 
@@ -130,12 +132,18 @@ void Modules::initBridges() {
     appBridge_ = std::make_unique<compiler::AppBridge>(ctx_);
     concurrencyBridge_ = std::make_unique<compiler::ConcurrencyBridge>(*ctx_);
     const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
+    // Generic event bus: owned by the engine, created lazily here so the
+    // EventBridge's host functions and the VM pump's dispatch() can reach it.
+    if (!ctx_->eventRuntime) {
+        const_cast<HostContext &>(*ctx_).eventRuntime = new compiler::EventRuntime();
+    }
     if (ctx_->hotkeyManager) {
         ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
     }
     automationBridge_ = std::make_unique<compiler::AutomationBridge>(ctx_);
     browserBridge_ = std::make_unique<compiler::BrowserBridge>(ctx_);
     toolsBridge_ = std::make_unique<compiler::ToolsBridge>(ctx_);
+    eventBridge_ = std::make_unique<compiler::EventBridge>(ctx_);
 }
 
 void Modules::installHostFunctions() {
@@ -171,6 +179,7 @@ void Modules::installHostFunctions() {
     browserBridge_->install(options_);
     configBridge_->install(options_);
     toolsBridge_->install(options_);
+    eventBridge_->install(options_);
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();

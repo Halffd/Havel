@@ -1,0 +1,73 @@
+// smoke: event-bus = 3
+// Architecture: `on` as a first-class event subscription primitive over the
+// generic event bus (EventRuntime). Producers publish (event.publish /
+// `emit`), the runtime dispatches in the VM's pump, handlers execute in VM
+// context with the payload as their `event` argument. `where` filters gate
+// per-event; event.cancel drops one subscription (reload clears all).
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// Plain subscription: handler runs on publish, dispatched by the pump.
+hit = 0
+on "my.event" {
+  hit = 1
+}
+event.publish("my.event")
+
+// Payload: the emitted object's fields become the handler's `event`.
+foo = ""
+on "payload.event" {
+  foo = event.foo
+}
+event.publish("payload.event", {foo: 42})
+
+// `where` filter: only the matching handler runs.
+special = 0
+on "filtered.event" where event.kind == "special" {
+  special = 1
+}
+nonspecial = 0
+on "filtered.event" where event.kind != "special" {
+  nonspecial = 1
+}
+event.publish("filtered.event", {kind: "special"})
+
+// emit syntax sugar over event.publish.
+emitted = 0
+on "sugar.event" {
+  emitted = 1
+}
+emit "sugar.event"
+
+// Cancel: the canceled handler never runs. The subscription id comes
+// from event.subscribe (the `w = on ...` lifetime syntax needs on-as-
+// expression -- deferred).
+w = event.subscribe("canceled.event", fn(ev) {
+  print("FAIL: canceled handler ran")
+  process.exit(255)
+})
+if w == 0 {
+  print("FAIL: event.subscribe returned 0")
+  process.exit(255)
+}
+event.cancel(w)
+event.publish("canceled.event")
+
+print("main done")
+t = 0
+while t < 5 {
+  sleep(100)
+  t = t + 1
+}
+
+// The pump window is over: all dispatches happened.
+assertEq(hit, 1, "subscription fires")
+assertEq(foo, "42", "payload event.foo")
+assertEq(special, 1, "where filter matches")
+assertEq(nonspecial, 0, "where filter rejects")
+assertEq(emitted, 1, "emit syntax sugar")
+print("PASS event-bus")

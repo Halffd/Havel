@@ -277,6 +277,12 @@ private:
   // Shared brace-delimited case list: `pat -> body` / `pat => body` /
   // `else` / `_` wildcard tests, newline-separated cases.
   std::vector<std::unique_ptr<ast::SwitchCase>> parseSwitchCaseList();
+  // `on <dotted-name-or-string> [(arg)] [where <expr>] { body }` — a generic
+  // event subscription (architecture doc: `on` as syntax sugar over
+  // subscriptions).
+  std::unique_ptr<ast::Statement> parseOnEventStatement();
+  // `emit <name-or-string> [payload]` — syntax sugar over event.publish.
+  std::unique_ptr<ast::Statement> parseEmitStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();
   std::unique_ptr<ast::Statement> parseRepeatStatement();

@@ -5,6 +5,7 @@
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
+#include "events/EventRuntime.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
@@ -902,6 +903,13 @@ vm_->addIntervalResult(timer_id, result);
             auto shared_chunk =
                 std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
             vm_->storeMainChunk(shared_chunk);
+            // Subscription lifetime (reload safety): drop every generic
+            // event subscription from the OLD compile before the script's
+            // `on reload { }` body runs — it re-subscribes against the new
+            // chunk. Without this, repeated reloads stack handlers forever.
+            if (hostContext_ && hostContext_->eventRuntime) {
+                hostContext_->eventRuntime->clearAll();
+            }
             // The script's own cleanup/re-register hook.
             if (auto *onReloadFn = vm_->getMainChunk()->getFunction("__on_reload__")) {
                 uint32_t idx = vm_->getMainChunk()->getFunctionIndex(onReloadFn);
@@ -1306,6 +1314,12 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();
+            }
+            // Generic event bus: run queued events' matching subscriptions'
+            // handlers in VM context (never on backend threads — producers
+            // publish; the runtime dispatches; handlers execute here).
+            if (hostContext_->eventRuntime) {
+                hostContext_->eventRuntime->dispatch();
             }
             // Auto-reload: FILE_READY events set reload_pending_; run the
             // reload OUTSIDE any fiber context (a nested callFunctionSync

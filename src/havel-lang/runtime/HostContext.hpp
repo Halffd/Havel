@@ -12,6 +12,11 @@
  */
 #pragma once
 
+// Forward declarations
+namespace havel::compiler {
+class EventRuntime;
+}
+
 #include <functional>
 #include <memory>
 #include <optional>
@@ -103,6 +108,12 @@ struct HostContext {
 
   // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)
   class compiler::EventQueue *eventQueue = nullptr;
+
+  // Generic event bus (architecture: `on` as syntax sugar over
+  // subscriptions). Owned by the engine; the EventBridge's
+  // event.subscribe/publish/unsubscribe host functions and the VM pump's
+  // dispatch() talk to it. Host event sources publish here.
+  class compiler::EventRuntime *eventRuntime = nullptr;
 
   // Auto-reload request (embedder-provided): the AppBridge's
   // app.enableReload/disableReload/toggleReload call it; the engine wires it

@@ -60,6 +60,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"impl", TokenType::Impl},
     {"this", TokenType::This},
     {"on", TokenType::On},
+    {"emit", TokenType::Emit},
     {"off", TokenType::Off},
     {"when", TokenType::When},
     {"mode", TokenType::Mode},

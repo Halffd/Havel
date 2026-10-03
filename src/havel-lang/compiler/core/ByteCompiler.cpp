@@ -435,6 +435,7 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   std::vector<const ast::FunctionDeclaration *> declared_functions;
   std::vector<const ast::LambdaExpression *> declared_lambdas;
   std::vector<const ast::Statement *> declared_on_blocks;
+  std::vector<const ast::OnEventStatement *> declared_on_events;
   declared_functions.reserve(program.body.size());
 
   uint32_t next_function_index = 0;
@@ -523,6 +524,7 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     }
     collectFunctionDeclarations(*statement, declared_functions);
     collectLambdaExpressions(*statement, declared_lambdas);
+    collectOnEventStatements(*statement, declared_on_events);
     // Lifecycle blocks compile as chunk-level functions too.
     if (statement->kind == ast::NodeType::OnStartStatement ||
         statement->kind == ast::NodeType::OnReloadStatement) {
@@ -562,6 +564,17 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     on_block_indices_by_node_[onBlock] = next_function_index++;
   }
 
+  for (const auto *onEvent : declared_on_events) {
+    if (!onEvent) {
+      continue;
+    }
+    if (on_event_indices_by_node_.find(onEvent) !=
+        on_event_indices_by_node_.end()) {
+      continue;
+    }
+    on_event_indices_by_node_[onEvent] = next_function_index++;
+  }
+
   const uint32_t main_function_index = next_function_index++;
   compiled_functions.resize(main_function_index + 1);
 
@@ -580,6 +593,16 @@ ByteCompiler::compileImpl(const ast::Program &program) {
       continue;
     }
     compileOnBlock(*onBlock);
+  }
+
+  // `on <event> { ... }` handlers compile as functions taking one `event`
+  // parameter (before __main__); REGISTER_EVENT bytecode in __main__ calls
+  // event.subscribe.
+  for (const auto *onEvent : declared_on_events) {
+    if (!onEvent) {
+      continue;
+    }
+    compileOnEventStatement(*onEvent);
   }
 
  // First pass: collect own (non-inherited) field/method names for every class.
@@ -728,7 +751,9 @@ for (const auto &statement : program.body) {
     if (statement->kind != ast::NodeType::FunctionDeclaration &&
         statement->kind != ast::NodeType::DecoratorStatement &&
         statement->kind != ast::NodeType::OnStartStatement &&
-        statement->kind != ast::NodeType::OnReloadStatement) {
+        statement->kind != ast::NodeType::OnReloadStatement &&
+        statement->kind != ast::NodeType::OnEventStatement &&
+        statement->kind != ast::NodeType::EmitStatement) {
       if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
         enterTailPosition();
         clearTailCallFlag();
@@ -771,8 +796,7 @@ for (const auto &statement : program.body) {
     // Lifecycle blocks: register __on_start__ / __on_reload__ in globals
     // (the function bodies compiled before __main__ in the function pass).
     if (statement->kind == ast::NodeType::OnStartStatement ||
-        statement->kind == ast::NodeType::OnReloadStatement) {
-        auto on_index_it = on_block_indices_by_node_.find(statement.get());
+        statement->kind == ast::NodeType::OnReloadStatement) {        auto on_index_it = on_block_indices_by_node_.find(statement.get());
         if (on_index_it == on_block_indices_by_node_.end()) {
             continue;
         }
@@ -783,6 +807,48 @@ for (const auto &statement : program.body) {
              addConstant(Value::makeFunctionObjId(on_index_it->second)));
         uint32_t onNameStrId = addStringConstant(onName);
         emit(OpCode::STORE_GLOBAL, Value::makeStringValId(onNameStrId));
+        continue;
+    }
+
+    // REGISTER_EVENT: `on <event> { ... }` — the handler fn was compiled
+    // before __main__; this calls event.subscribe(name, handler, [arg]).
+    if (statement->kind == ast::NodeType::OnEventStatement) {
+        const auto &onEvent =
+            static_cast<const ast::OnEventStatement &>(*statement);
+        auto ev_index_it = on_event_indices_by_node_.find(statement.get());
+        if (ev_index_it == on_event_indices_by_node_.end()) {
+            continue;
+        }
+        uint32_t subscribe_sid = addStringConstant("event.subscribe");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(subscribe_sid));
+        uint32_t name_sid = addStringConstant(onEvent.eventName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeFunctionObjId(ev_index_it->second)));
+        if (onEvent.eventArg) {
+            compileExpression(*onEvent.eventArg);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+        emit(OpCode::POP);
+        continue;
+    }
+
+    // `emit <name> [payload]` — sugar over the event.publish host function.
+    if (statement->kind == ast::NodeType::EmitStatement) {
+        const auto &emitStmt = static_cast<const ast::EmitStatement &>(*statement);
+        uint32_t publish_sid = addStringConstant("event.publish");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(publish_sid));
+        uint32_t name_sid = addStringConstant(emitStmt.eventName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        if (emitStmt.payload) {
+            compileExpression(*emitStmt.payload);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        emit(OpCode::POP);
         continue;
     }
 
@@ -963,8 +1029,54 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
   return "_";
 }
 
-void ByteCompiler::compileOnBlock(const ast::Statement &stmt) {
-  auto index_it = on_block_indices_by_node_.find(&stmt);
+// `on <event> { ... }` handler: the body (with the optional `where` filter
+// folded in as an if-guard) compiles as a function taking one `event`
+// parameter. Registration bytecode is emitted by the caller into __main__.
+void ByteCompiler::compileOnEventStatement(const ast::OnEventStatement &stmt) {
+  auto index_it = on_event_indices_by_node_.find(&stmt);
+  if (index_it == on_event_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for event handler: " +
+                   stmt.eventName);
+  }
+
+  BytecodeFunction bf("__on_event__", 1, 0); // params=1 (event), locals=0
+  bf.source_line = stmt.line;
+  bf.source_file = source_file_;
+  enterFunction(std::move(bf), index_it->second);
+  auto on_upvalues_it = lexical_resolution_.on_event_upvalues.find(&stmt);
+  if (on_upvalues_it != lexical_resolution_.on_event_upvalues.end()) {
+    current_function->upvalues = on_upvalues_it->second;
+  }
+
+  enterTailPosition();
+  clearTailCallFlag();
+  if (stmt.filter) {
+    // The `where` predicate becomes the if-guard; the body is the
+    // consequence. Both see the `event` parameter.
+    enterTailPosition();
+    clearTailCallFlag();
+    compileExpression(*stmt.filter);
+    exitTailPosition();
+    uint32_t guardJump = emitJump(OpCode::JUMP_IF_FALSE);
+    if (stmt.body) {
+      compileStatement(*stmt.body);
+    }
+    // Guard failed: skip the body, return without running it.
+    patchJump(guardJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  } else if (stmt.body) {
+    compileStatement(*stmt.body);
+  }
+  exitTailPosition();
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  emit(OpCode::RETURN);
+
+  leaveFunction();
+}
+
+void ByteCompiler::compileOnBlock(const ast::Statement &stmt) {  auto index_it = on_block_indices_by_node_.find(&stmt);
   if (index_it == on_block_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for lifecycle block");
   }
@@ -7785,6 +7897,54 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
     emit(OpCode::RETURN);
   }
   in_tail_position_ = saved_tail;
+}
+
+void ByteCompiler::collectOnEventStatements(
+    const ast::Statement &statement,
+    std::vector<const ast::OnEventStatement *> &out) const {
+  switch (statement.kind) {
+  case ast::NodeType::OnEventStatement: {
+    const auto &onEvent =
+        static_cast<const ast::OnEventStatement &>(statement);
+    out.push_back(&onEvent);
+    break;
+  }
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block.body) {
+      if (!nested) {
+        continue;
+      }
+      collectOnEventStatements(*nested, out);
+    }
+    break;
+  }
+  case ast::NodeType::IfStatement: {
+    const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
+    if (if_statement.consequence) {
+      collectOnEventStatements(*if_statement.consequence, out);
+    }
+    if (if_statement.alternative) {
+      collectOnEventStatements(*if_statement.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::OnStartStatement:
+  case ast::NodeType::OnReloadStatement: {
+    const ast::Statement *body = nullptr;
+    if (statement.kind == ast::NodeType::OnStartStatement) {
+      body = static_cast<const ast::OnStartStatement &>(statement).body.get();
+    } else {
+      body = static_cast<const ast::OnReloadStatement &>(statement).body.get();
+    }
+    if (body) {
+      collectOnEventStatements(*body, out);
+    }
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 void ByteCompiler::collectFunctionDeclarations(

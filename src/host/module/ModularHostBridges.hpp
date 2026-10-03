@@ -1236,4 +1236,12 @@ private:
     const HostContext *ctx_;
 };
 
+class EventBridge : public BridgeModule {
+public:
+    explicit EventBridge(const HostContext *ctx) : ctx_(ctx) {}
+    void install(compiler::PipelineOptions &options) override;
+private:
+    const HostContext *ctx_;
+};
+
 } // namespace havel::compiler

@@ -306,6 +306,10 @@ if (ctx.owner) {
 			// Lifecycle hook bodies compile as chunk-level functions; their
 			// upvalues must reach compileOnBlock.
 			result_.on_block_upvalues[ctx.owner] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnEventStatement) {
+			// `on <event> { ... }` handler functions; upvalues reach
+			// compileOnEventStatement.
+			result_.on_event_upvalues[ctx.owner] = ctx.upvalues;
 		}
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
@@ -1300,6 +1304,32 @@ case ast::NodeType::OnReloadStatement: {
     resolveStatement(*onBody);
   }
   endFunction();
+  break;
+}
+
+case ast::NodeType::OnEventStatement: {
+  // `on <event> { ... }` handler: own function context with one `event`
+  // parameter (the payload passed at dispatch time). The filter and the
+  // body both see `event`.
+  const auto &onEvent = static_cast<const ast::OnEventStatement &>(statement);
+  beginFunction(&onEvent);
+  declareLocal("event", nullptr, false);
+  if (onEvent.filter) {
+    resolveExpression(*onEvent.filter);
+  }
+  if (onEvent.body) {
+    resolveStatement(*onEvent.body);
+  }
+  endFunction();
+  break;
+}
+
+case ast::NodeType::EmitStatement: {
+  // `emit <name> [payload]` — resolve the payload object's fields.
+  const auto &emit = static_cast<const ast::EmitStatement &>(statement);
+  if (emit.payload) {
+    resolveExpression(*emit.payload);
+  }
   break;
 }
 

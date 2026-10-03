@@ -59,6 +59,9 @@ struct LexicalResolutionResult {
   // `on start { }` / `on reload { }` lifecycle blocks compile as chunk-level
   // functions; their upvalues are keyed by the block's ASTNode*.
   std::unordered_map<const ast::ASTNode *, std::vector<UpvalueDescriptor>> on_block_upvalues;  std::unordered_map<const ast::IntervalExpression *, std::vector<UpvalueDescriptor>> interval_expression_upvalues;
+  // `on <event> { ... }` handler functions (one `event` parameter); their
+  // upvalues are keyed by the statement's ASTNode*.
+  std::unordered_map<const ast::ASTNode *, std::vector<UpvalueDescriptor>> on_event_upvalues;
   std::unordered_map<const ast::TimeoutExpression *, std::vector<UpvalueDescriptor>> timeout_expression_upvalues;
   std::unordered_map<const ast::ThreadExpression *, std::vector<UpvalueDescriptor>> thread_expression_upvalues;
   std::unordered_map<const ast::UpdateBlockExpression *, std::vector<UpvalueDescriptor>> update_block_expression_upvalues;

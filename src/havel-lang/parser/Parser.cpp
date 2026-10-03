@@ -3694,6 +3694,8 @@ at(1).type == havel::TokenType::Arrow) {
     return parseContinueStatement();
   case havel::TokenType::On:
     return parseOnStatement();
+  case havel::TokenType::Emit:
+    return parseEmitStatement();
   case havel::TokenType::Off:
     return parseOffModeStatement();
  case havel::TokenType::Fn:
@@ -7033,6 +7035,64 @@ std::unique_ptr<havel::ast::Statement> Parser::parseCaseOfStatement() {
                                                std::move(cases));
 }
 
+std::unique_ptr<havel::ast::Statement> Parser::parseEmitStatement() {
+  advance(); // consume "emit"
+
+  // The event name token (an identifier or a string literal).
+  auto nameTok = advance();
+  std::string eventName = nameTok.value;
+
+  // Optional payload: emit "my.event" { foo: 123 } / emit mpv.paused
+  std::unique_ptr<havel::ast::Expression> payload;
+  if (at().type == havel::TokenType::OpenBrace) {
+    payload = parseExpression(); // object literal
+  }
+
+  auto stmt = makeNode<havel::ast::EmitStatement>(std::move(eventName),
+                                                  std::move(payload));
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnEventStatement() {
+  // The event name token (a dotted identifier or a string literal).
+  auto nameTok = advance();
+  std::string eventName = nameTok.value;
+
+  // Optional argument: on file.changed("./config.hv") { ... }
+  std::unique_ptr<havel::ast::Expression> eventArg;
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume "("
+    if (at().type != havel::TokenType::CloseParen) {
+      eventArg = parseExpression();
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after event argument");
+      return nullptr;
+    }
+    advance(); // consume ")"
+  }
+
+  // Optional filter: on window.focused where window.class == "Firefox" { }
+  std::unique_ptr<havel::ast::Expression> filter;
+  if (at().type == havel::TokenType::Where ||
+      (at().type == havel::TokenType::Identifier && at().value == "where")) {
+    advance(); // consume "where"
+    filter = parseExpression();
+  }
+
+  // Handler body
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after event subscription");
+    return nullptr;
+  }
+  auto body = parseBlockStatement();
+
+  auto stmt = makeNode<havel::ast::OnEventStatement>(
+      std::move(eventName), std::move(eventArg), std::move(filter),
+      std::move(body));
+  return stmt;
+}
+
 std::vector<std::unique_ptr<havel::ast::SwitchCase>>
 Parser::parseSwitchCaseList() {
   // Expect opening brace
@@ -7376,6 +7436,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
   if (at().type == havel::TokenType::Mode) {
     // on mode {name} { ... }
     return parseOnModeStatementBody();
+  } else if (at().type == havel::TokenType::String ||
+             (at().type == havel::TokenType::Identifier &&
+              at().value.find('.') != std::string::npos)) {
+    // Dotted/qualified event names (file.changed, window.focused,
+    // "my.event") — a generic event subscription, not one of the fixed
+    // lifecycle forms below. `on <name> [(arg)] [where <expr>] { body }`.
+    return parseOnEventStatement();
   } else if (at().type == havel::TokenType::Identifier) {
     std::string keyword = at().value;
     if (keyword == "reload") {

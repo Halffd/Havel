@@ -680,6 +680,7 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/BrowserBridge.cpp"
 "src/host/module/bridges/ConfigBridge.cpp"
 "src/host/module/bridges/DisplayBridge.cpp"
+"src/host/module/bridges/EventBridge.cpp"
 "src/host/module/bridges/IOBridge.cpp"
 "src/host/module/bridges/InputBridge.cpp"
 "src/host/module/bridges/MediaBridge.cpp"

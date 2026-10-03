@@ -434,6 +434,7 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   // function objects.
   std::vector<const ast::FunctionDeclaration *> declared_functions;
   std::vector<const ast::LambdaExpression *> declared_lambdas;
+  std::vector<const ast::Statement *> declared_on_blocks;
   declared_functions.reserve(program.body.size());
 
   uint32_t next_function_index = 0;
@@ -522,6 +523,11 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     }
     collectFunctionDeclarations(*statement, declared_functions);
     collectLambdaExpressions(*statement, declared_lambdas);
+    // Lifecycle blocks compile as chunk-level functions too.
+    if (statement->kind == ast::NodeType::OnStartStatement ||
+        statement->kind == ast::NodeType::OnReloadStatement) {
+      declared_on_blocks.push_back(statement.get());
+    }
   }
 
   for (const auto *decl : declared_functions) {
@@ -545,6 +551,17 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     lambda_indices_by_node_[lambda] = next_function_index++;
   }
 
+  for (const auto *onBlock : declared_on_blocks) {
+    if (!onBlock) {
+      continue;
+    }
+    if (on_block_indices_by_node_.find(onBlock) !=
+        on_block_indices_by_node_.end()) {
+      continue;
+    }
+    on_block_indices_by_node_[onBlock] = next_function_index++;
+  }
+
   const uint32_t main_function_index = next_function_index++;
   compiled_functions.resize(main_function_index + 1);
 
@@ -554,6 +571,15 @@ ByteCompiler::compileImpl(const ast::Program &program) {
       continue;
     }
     compileFunction(*decl);
+  }
+
+  // Lifecycle blocks compile as chunk-level functions (before __main__):
+  // __on_start__ runs once at script load, __on_reload__ on reloads.
+  for (const auto *onBlock : declared_on_blocks) {
+    if (!onBlock) {
+      continue;
+    }
+    compileOnBlock(*onBlock);
   }
 
  // First pass: collect own (non-inherited) field/method names for every class.
@@ -700,7 +726,9 @@ for (const auto &statement : program.body) {
     // First pass: compile all non-function statements (variable assignments, use statements, etc.)
     // This ensures module-level variables are initialized before functions capture them.
     if (statement->kind != ast::NodeType::FunctionDeclaration &&
-        statement->kind != ast::NodeType::DecoratorStatement) {
+        statement->kind != ast::NodeType::DecoratorStatement &&
+        statement->kind != ast::NodeType::OnStartStatement &&
+        statement->kind != ast::NodeType::OnReloadStatement) {
       if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
         enterTailPosition();
         clearTailCallFlag();
@@ -737,6 +765,24 @@ for (const auto &statement : program.body) {
 
         uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
         emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+        continue;
+    }
+
+    // Lifecycle blocks: register __on_start__ / __on_reload__ in globals
+    // (the function bodies compiled before __main__ in the function pass).
+    if (statement->kind == ast::NodeType::OnStartStatement ||
+        statement->kind == ast::NodeType::OnReloadStatement) {
+        auto on_index_it = on_block_indices_by_node_.find(statement.get());
+        if (on_index_it == on_block_indices_by_node_.end()) {
+            continue;
+        }
+        const char *onName =
+            statement->kind == ast::NodeType::OnStartStatement ? "__on_start__"
+                                                               : "__on_reload__";
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeFunctionObjId(on_index_it->second)));
+        uint32_t onNameStrId = addStringConstant(onName);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(onNameStrId));
         continue;
     }
 
@@ -915,6 +961,43 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
     return id->symbol;
   }
   return "_";
+}
+
+void ByteCompiler::compileOnBlock(const ast::Statement &stmt) {
+  auto index_it = on_block_indices_by_node_.find(&stmt);
+  if (index_it == on_block_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for lifecycle block");
+  }
+  const char *name = stmt.kind == ast::NodeType::OnStartStatement
+                         ? "__on_start__"
+                         : "__on_reload__";
+  const ast::Statement *body = nullptr;
+  if (stmt.kind == ast::NodeType::OnStartStatement) {
+    body = static_cast<const ast::OnStartStatement &>(stmt).body.get();
+  } else {
+    body = static_cast<const ast::OnReloadStatement &>(stmt).body.get();
+  }
+
+  BytecodeFunction bf(name, 0, 0);
+  bf.source_line = stmt.line;
+  bf.source_file = source_file_;
+  enterFunction(std::move(bf), index_it->second);
+  auto on_upvalues_it = lexical_resolution_.on_block_upvalues.find(&stmt);
+  if (on_upvalues_it != lexical_resolution_.on_block_upvalues.end()) {
+    current_function->upvalues = on_upvalues_it->second;
+  }
+
+// The body (a block or a single statement) compiles in tail position;
+  // the hook's return value is meaningless, so RETURN null afterwards
+  // (unreachable when the body's own implicit return fired).
+  enterTailPosition();
+  clearTailCallFlag();
+  compileStatement(body ? *body : stmt);
+  exitTailPosition();
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  emit(OpCode::RETURN);
+
+  leaveFunction();
 }
 
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
@@ -3158,6 +3241,13 @@ case ast::NodeType::ImplDeclaration: {
         static_cast<const ast::ShellCommandStatement &>(statement));
     break;
   }
+
+  case ast::NodeType::OnStartStatement:
+  case ast::NodeType::OnReloadStatement:
+    // Lifecycle blocks compile as chunk-level functions (__on_start__ /
+    // __on_reload__); the index reservation happens in the pre-pass.
+    compileOnBlock(statement);
+    break;
 
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +

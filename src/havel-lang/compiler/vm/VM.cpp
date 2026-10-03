@@ -543,6 +543,18 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   frame_count_++;
   locals.resize(entry->local_count);
 
+  // Lifecycle hook: `on start { }` runs once at script load, before the
+  // entry function. Compiled as __on_start__; callFunctionSync saves and
+  // restores this frame, so the entry frame below is untouched.
+  if (function_name != "__on_start__") {
+    if (const auto *onStartFn = chunk.getFunction("__on_start__")) {
+      callFunctionSync(
+          Value::makeFunctionObjId(chunk.getFunctionIndex(onStartFn)), {});
+      current_chunk = &chunk;
+    } else {
+    }
+  }
+
   if (!args.empty()) {
     if (entry->variadic_param_index != UINT32_MAX) {
       // Variadic function: allow >= variadic_param_index args

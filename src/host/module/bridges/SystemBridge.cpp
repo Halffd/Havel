@@ -330,6 +330,40 @@ mouseObj, "scroll",
         Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   };
 
+  options.host_functions["runOnce"] =
+      [ctx = ctx_,
+       seen = std::make_shared<
+           std::pair<std::mutex, std::unordered_set<std::string>>>()](
+          const std::vector<Value> &args) -> Value {
+    if (args.size() < 2) {
+      return Value::makeBool(false);
+    }
+    auto *vm = static_cast<compiler::VM *>(ctx ? ctx->vm : nullptr);
+    if (!vm) {
+      return Value::makeBool(false);
+    }
+    std::string id, command;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+      id = vm->resolveStringKey(args[0]);
+    } else {
+      return Value::makeBool(false);
+    }
+    if (args[1].isStringValId() || args[1].isStringId()) {
+      command = vm->resolveStringKey(args[1]);
+    } else {
+      return Value::makeBool(false);
+    }
+    {
+      std::lock_guard<std::mutex> lock(seen->first);
+      if (seen->second.count(id) > 0) {
+        return Value::makeBool(true); // already ran for this id — skip
+      }
+      seen->second.insert(id);
+    }
+    auto result = ::havel::Launcher::runSync(command);
+    return Value::makeBool(result.success);
+  };
+
   // File operations
   // `read`/`write` are the spec-mandated global core verbs (docs/specs/Havel.md
   // "Available Globals"); `*File` names are the historical spellings.

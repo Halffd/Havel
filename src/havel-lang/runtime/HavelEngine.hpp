@@ -560,6 +560,16 @@ vm_->addIntervalResult(timer_id, result);
         }
         uint32_t funcIndex = vm_->getMainChunk()->getFunctionIndex(entryFunc);
         compiler::Value entryCallable = compiler::Value::makeFunctionObjId(funcIndex);
+
+        // Lifecycle hook: `on start { }` runs once at script load, before
+        // the entry function. `on reload { }` bodies are compiled as
+        // __on_reload__ and await the reload path.
+        if (auto *onStartFn = vm_->getMainChunk()->getFunction("__on_start__")) {
+          uint32_t onStartIndex = vm_->getMainChunk()->getFunctionIndex(onStartFn);
+          vm_->callFunctionSync(
+              compiler::Value::makeFunctionObjId(onStartIndex), {});
+        }
+
         vm_->spawnGoroutine(entryCallable, {});
 
         // Set the script directory for relative imports
@@ -652,9 +662,18 @@ vm_->addIntervalResult(timer_id, result);
             }
         }
 
+        // Lifecycle hook: `on start { }` runs once at script load, before
+        // the entry function. `on reload { }` bodies are compiled as
+        // __on_reload__ and await the reload path.
+        if (auto *onStartFn = vm_->getMainChunk()->getFunction("__on_start__")) {
+          uint32_t onStartIndex = vm_->getMainChunk()->getFunctionIndex(onStartFn);
+          vm_->callFunctionSync(
+              compiler::Value::makeFunctionObjId(onStartIndex), {});
+        } else {
+        }
+
         // Call the entry function synchronously - it may spawn goroutines via host functions
         compiler::Value result = vm_->callFunctionSync(entryCallable, {});
-
         // NOTE: Does NOT call processGoroutines(). Caller must drive the scheduler
         // (e.g., via tickGoroutines() in an event loop) to run spawned goroutines.
         return result;

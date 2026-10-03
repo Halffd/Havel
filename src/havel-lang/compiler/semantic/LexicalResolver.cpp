@@ -301,6 +301,11 @@ if (ctx.owner) {
 			auto *m = static_cast<const ast::TraitMethod *>(ctx.owner);
 			result_.trait_method_local_counts[m] = ctx.next_slot;
 			result_.trait_method_upvalues[m] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnStartStatement ||
+		           ctx.owner->kind == ast::NodeType::OnReloadStatement) {
+			// Lifecycle hook bodies compile as chunk-level functions; their
+			// upvalues must reach compileOnBlock.
+			result_.on_block_upvalues[ctx.owner] = ctx.upvalues;
 		}
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
@@ -1278,6 +1283,25 @@ case ast::NodeType::BlockStatement: {
 case ast::NodeType::UseStatement:
   // Global imports already handled in first pass of resolve()
   break;
+
+case ast::NodeType::OnStartStatement:
+case ast::NodeType::OnReloadStatement: {
+  // Lifecycle hook bodies resolve like function bodies (own function
+  // context — the compile creates a chunk-level function per block).
+  const ast::Statement *onBase = &statement;
+  const ast::Statement *onBody = nullptr;
+  if (statement.kind == ast::NodeType::OnStartStatement) {
+    onBody = static_cast<const ast::OnStartStatement &>(statement).body.get();
+  } else {
+    onBody = static_cast<const ast::OnReloadStatement &>(statement).body.get();
+  }
+  beginFunction(onBase);
+  if (onBody) {
+    resolveStatement(*onBody);
+  }
+  endFunction();
+  break;
+}
 
 case ast::NodeType::DeferStatement: {
         const auto &defer_stmt = static_cast<const ast::DeferStatement &>(statement);

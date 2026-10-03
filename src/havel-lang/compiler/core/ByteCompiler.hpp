@@ -266,6 +266,14 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   std::vector<uint32_t> saved_next_local_index_;
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
       function_indices_by_node_;
+  // `on start { }` / `on reload { }` lifecycle blocks compile as chunk-level
+  // functions named __on_start__ / __on_reload__; the engine calls
+  // __on_start__ once before the entry function.
+  std::unordered_map<const ast::ASTNode *, uint32_t> on_block_indices_by_node_;
+  // Lifecycle blocks (`on start { }` / `on reload { }`). Despite the similar
+  // name this is unrelated to compileWhenBlock; the index map is keyed by
+  // ASTNode*, so it takes the base Statement and dispatches on kind.
+  void compileOnBlock(const ast::Statement &stmt);
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>
   class_method_indices_by_node_;
 	std::unordered_map<const ast::StructMethodDef *, uint32_t>

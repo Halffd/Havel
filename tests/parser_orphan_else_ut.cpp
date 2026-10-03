@@ -237,11 +237,53 @@ TEST(ParserOrphanElse, TryCatchFinallyFormsStillParse) {
                        "        print \"caught\"\n"
                        "    }\n"
                        "}\n"));
-  EXPECT_FALSE(rejects("fn t() {\n"
-                       "    try {\n"
-                       "        print \"body\"\n"
-                       "    } finally {\n"
-                       "        print \"finally\"\n"
-                       "    }\n"
-                       "}\n"));
+EXPECT_FALSE(rejects("fn t() {\n"
+                        "    try {\n"
+                        "        print \"body\"\n"
+                        "    } finally {\n"
+                        "        print \"finally\"\n"
+                        "    }\n"
+                        "}\n"));
+}
+
+// A braced if body whose `else` is dedented below that `if`. parseIfStatement
+// declines the `else` (Parser.cpp: `at().column >= originalIfColumn`), so it
+// reaches the orphan guard having already lost its owner to indentation.
+// The diagnostic must name that, not blame a missing `if` that is present.
+TEST(ParserOrphanElse, DedentedElseNamesTheDedent) {
+  const std::string src = "fn t(k) {\n"
+                          "    if k == 1 {\n"
+                          "        print \"a\"\n"
+                          "    }\n"
+                          "  else if k == 2 {\n"
+                          "        print \"b\"\n"
+                          "    }\n"
+                          "}\n";
+  EXPECT_TRUE(rejectsWith(src, "dedented below the 'if'"));
+}
+
+// Same source with the `else` aligned to its `if` is valid and must parse.
+TEST(ParserOrphanElse, AlignedElseStillParses) {
+  const std::string src = "fn t(k) {\n"
+                          "    if k == 1 {\n"
+                          "        print \"a\"\n"
+                          "    }\n"
+                          "    else if k == 2 {\n"
+                          "        print \"b\"\n"
+                          "    }\n"
+                          "}\n";
+  EXPECT_FALSE(rejects(src)) << "aligned else must remain valid";
+}
+
+// A genuine orphan `else` (no `if` ever declined it) must keep the original
+// missing-if diagnostic, so the new dedent message cannot mask real mistakes.
+TEST(ParserOrphanElse, TrueOrphanElseKeepsMissingIfMessage) {
+  const std::string src = "fn t() {\n"
+                          "    print \"a\"\n"
+                          "    else {\n"
+                          "        print \"b\"\n"
+                          "    }\n"
+                          "}\n";
+  EXPECT_TRUE(rejectsWith(src, "without a matching 'if'"));
+  EXPECT_FALSE(rejectsWith(src, "dedented below the 'if'"));
 }

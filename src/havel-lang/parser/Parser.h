@@ -126,6 +126,14 @@ private:
   size_t tokens_consumed_ = 0;
   int recursion_depth_ = 0;
 
+  // Column of the most recent `if` that saw an `else` token but declined it
+  // because the token was dedented below that `if`, plus the column of that
+  // `else` itself. Columns are 0 when nothing was declined. Lets
+  // parseStatement() name the real cause instead of blaming a missing `if`
+  // when the `else` actually lost its owner to indentation.
+  size_t declined_else_if_column_ = 0;
+  size_t declined_else_col_ = 0;
+
   // Prevent copying/moving - Parser must not be copied or moved
   // to avoid memory corruption and invalid state
   Parser(const Parser &) = delete;

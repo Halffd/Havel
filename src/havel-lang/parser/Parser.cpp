@@ -2913,8 +2913,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Orphaned `else`: the matching `if` consumed an unbraced body and the
     // enclosing `}` landed here first. Erroring is required -- returning null
     // made the else body execute before the statements it should follow.
-    failAt(at(), "'else' without a matching 'if'. If the if body is a single "
-                 "statement, wrap it in braces: 'if cond { ... } else { ... }'");
+    if (declined_else_if_column_ != 0 && declined_else_col_ == at().column) {
+      // This exact token was already offered to an `if` and rejected for being
+      // dedented below it. Report that instead of a phantom missing `if`.
+      size_t ifCol = declined_else_if_column_;
+      size_t elseCol = declined_else_col_;
+      declined_else_if_column_ = 0;
+      declined_else_col_ = 0;
+      failAt(at(), "'else' at column " + std::to_string(elseCol) +
+                       " is dedented below the 'if' at column " +
+                       std::to_string(ifCol) + " it belongs to, so no 'if' can "
+                       "claim it. Align the 'else' with its 'if', or indent the "
+                       "'if' body in braces so the pairing is unambiguous");
+    } else {
+      failAt(at(), "'else' without a matching 'if'. If the if body is a single "
+                   "statement, wrap it in braces: 'if cond { ... } else { ... }'");
+    }
     return nullptr;
   }
   if (at().type == havel::TokenType::Catch ||
@@ -6887,7 +6901,6 @@ std::unique_ptr<havel::ast::Statement> alternative = nullptr;
     if (at().column >= originalIfColumn) {
     size_t elseCol = at().column;
     advance(); // consume "else" or "elif"
-
     // Skip newlines before else body
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -6905,6 +6918,13 @@ std::unique_ptr<havel::ast::Statement> alternative = nullptr;
     } else {
       alternative = parseInlineStatement();
     }
+    } else {
+      // The `else` is dedented below this `if`, so it cannot bind here. Record
+      // both columns: if it later surfaces in parseStatement() as an orphan it
+      // has lost its owner purely to indentation, and saying "no matching if"
+      // would send the reader hunting for a missing `if` that is right there.
+      declined_else_if_column_ = originalIfColumn;
+      declined_else_col_ = at().column;
     }
   }
 

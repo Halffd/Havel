@@ -1979,6 +1979,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_test(NAME core-no-qt-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_core_no_qt.sh
                    ${CMAKE_BINARY_DIR})
+  # Orphaned module plugin guard: the module output directory is never pruned,
+  # so a plugin whose target was renamed or removed leaves its .so behind and
+  # the loader keeps probing it, reporting a misleading build-id mismatch
+  # (observed on `use math` after the math -> math_native rename, and on
+  # `use alt_tab_gui` after those GUI modules were dropped).
+  add_test(NAME module-plugins-drift-guard
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_module_plugins.sh)
   # GDB Value decoder: builds tools/gdb/value_probe.cpp (an independent mirror
   # of the NaN-boxing layout) and asserts every havel-* command's output, so a
   # change to Value.hpp without a matching change to havel.py fails here.

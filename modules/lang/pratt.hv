@@ -2063,7 +2063,7 @@ fn parseMatchExpr() {
         }
     }
  } else if current().tid == TID.Identifier && current().value == "elif" {
-    # 'elif' is sugar for 'else if' — the condition follows directly
+    // 'elif' is sugar for 'else if' — the condition follows directly
     advance()
     skipNewlines()
     elseBranch = parseIfExpr()
@@ -2858,7 +2858,7 @@ fn parseIfStatement() {
       if elseBranch == null: elseBranch = BlockStatement([], l, c)
 }
 } else if current().tid == TID.Identifier && current().value == "elif" {
-    # 'elif' is sugar for 'else if' — the condition follows directly
+    // 'elif' is sugar for 'else if' — the condition follows directly
     advance()
     skipNewlines()
     elseBranch = parseIfStatement()

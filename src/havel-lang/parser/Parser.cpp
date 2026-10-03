@@ -2671,6 +2671,25 @@ Parser::produceAST(const std::string &sourceCode) {
       continue;
     }
 
+    // A closing delimiter with no construct open at top level used to become
+    // ExpressionStatement{nullptr}, which silently dropped it and kept
+    // compiling. Record it and resynchronize instead. Throwing here would
+    // escape produceAST entirely and callers swallow it silently.
+    if (at().type == havel::TokenType::CloseBrace ||
+        at().type == havel::TokenType::CloseParen ||
+        at().type == havel::TokenType::CloseBracket) {
+      const char *what =
+          at().type == havel::TokenType::CloseBrace
+              ? "'}' - no open block to close"
+              : (at().type == havel::TokenType::CloseParen
+                     ? "')' - no open parenthesis"
+                     : "']' - no open bracket");
+      errors.push_back(CompilerError(ErrorSeverity::Error, at().line, at().column,
+                                     std::string("Unmatched ") + what));
+      advance();
+      continue;
+    }
+
     // Error throttle - stop after too many errors
     if (errors.size() > 100) {
       std::string firstError = errors.empty() ? "" : ": " + errors[0].message;
@@ -2733,6 +2752,17 @@ Parser::parseStrict(const std::string &sourceCode) {
             at().type == havel::TokenType::Semicolon) {
             advance();
             continue;
+        }
+
+        // Same top-level unmatched-delimiter guard as produceAST.
+        if (at().type == havel::TokenType::CloseBrace) {
+            failAt(at(), "Unmatched '}' - no open block to close");
+        }
+        if (at().type == havel::TokenType::CloseParen) {
+            failAt(at(), "Unmatched ')' - no open parenthesis");
+        }
+        if (at().type == havel::TokenType::CloseBracket) {
+            failAt(at(), "Unmatched ']' - no open bracket");
         }
 
         size_t beforePos = position;

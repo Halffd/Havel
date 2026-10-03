@@ -2909,6 +2909,28 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(parser_orphan_else_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
     add_test(NAME parser_orphan_else_test COMMAND parser_orphan_else_test)
 
+    # Companion to parser_orphan_else_test: covers the other silent
+    # ExpressionStatement{nullptr} family -- top-level closing delimiters.
+    add_executable(parser_unmatched_delimiter_test
+        tests/parser_unmatched_delimiter_ut.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/core/io/KeyMap.cpp
+        src/c/LoggerC.c
+        src/c/Config.c
+        src/dl/Loader.c
+    )
+    target_include_directories(parser_unmatched_delimiter_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(parser_unmatched_delimiter_test PRIVATE cxx_std_23)
+    target_link_libraries(parser_unmatched_delimiter_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
+    add_test(NAME parser_unmatched_delimiter_test COMMAND parser_unmatched_delimiter_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

@@ -1,0 +1,27 @@
+// smoke: app-reload = 2
+// Spec (docs/specs/Havel.md "Auto-reload"): app.enableReload/disableReload/
+// toggleReload + app.reload state. API-only assertions -- the watcher
+// thread and chunk swap need a long-running script, verified by hand.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// enableReload turns the state on. app.reload is the host fn (the flatten
+// of the app.* names shadows a state field), so the state is read by
+// CALLING it: app.reload().
+app.enableReload()
+assertEq(app.reload(), true, "enableReload -> app.reload() true")
+
+// toggleReload flips it off.
+app.toggleReload()
+assertEq(app.reload(), false, "toggleReload -> app.reload() false")
+
+// disableReload leaves it off (and returns true -- the API is supported).
+disabled = app.disableReload()
+assertEq(disabled, true, "disableReload returns true")
+assertEq(app.reload(), false, "disableReload -> app.reload() false")
+
+print("PASS app-reload")

@@ -33,6 +33,9 @@
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
 #include <filesystem>
+#include <thread>
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <cstdlib>
@@ -111,6 +114,8 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             vm_->setTraceExecution(true);
         }
         hostContext_->vm = vm_.get();
+        hostContext_->request_auto_reload = [this](bool on) { setAutoReload(on); };
+        hostContext_->auto_reload_state = [this]() { return isAutoReload(); };
         hostAPI->SetVM(vm_.get());
         vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals
   // Register traceBytecode as a host function so it's always available for self-hosted compiler
@@ -319,6 +324,14 @@ vm_->addIntervalResult(timer_id, result);
 } catch (const std::exception& e) {
 ::havel::error("[HavelEngine] Timer callback exception: {}", e.what());
 }
+});
+
+                hostContext_->eventQueue->onEvent(compiler::EventType::FILE_READY,
+[this](const compiler::Event& event) {
+    // Auto-reload: the watched script file changed. Queue the reload —
+    // processGoroutines runs it OUTSIDE any fiber context.
+    (void)event;
+    reload_pending_.store(true);
 });
 }
 
@@ -570,6 +583,32 @@ vm_->addIntervalResult(timer_id, result);
               compiler::Value::makeFunctionObjId(onStartIndex), {});
         }
 
+        // Remember for auto-reload: the watcher polls this file, and
+        // reloadScript() re-compiles this source.
+        reload_source_ = source;
+        reload_compile_unit_ = compileUnitName;
+        {
+            namespace fs = std::filesystem;
+            std::string name = compileUnitName;
+            auto plusPos = name.find(" + ");
+            if (plusPos != std::string::npos)
+                name = name.substr(0, plusPos);
+            fs::path p(name);
+            if (p.is_absolute() && fs::exists(p)) {
+                reload_watch_path_ = fs::weakly_canonical(p).string();
+            } else if (!p.is_absolute()) {
+                fs::path resolved = fs::current_path() / p;
+                if (fs::exists(resolved)) {
+                    reload_watch_path_ = fs::weakly_canonical(resolved).string();
+                }
+            }
+        }
+        // If auto-reload was requested before any script ran, start the
+        // watcher now that a path is known.
+        if (auto_reload_enabled_.load() && !reload_watch_path_.empty()) {
+            startReloadWatcher();
+        }
+
         vm_->spawnGoroutine(entryCallable, {});
 
         // Set the script directory for relative imports
@@ -785,8 +824,102 @@ vm_->addIntervalResult(timer_id, result);
     Modules* modules() const { return modules_.get(); }
     bool isInitialized() const { return initialized_; }
 
+    // --- Auto-reload (spec: app.enableReload + `on reload { }`) ------------
+    void setAutoReload(bool on) {
+        if (on == auto_reload_enabled_.load()) return;
+        auto_reload_enabled_.store(on);
+        if (on) {
+            if (reload_watch_path_.empty()) {
+                ::havel::error("[HavelEngine] auto-reload enabled but no script "
+                               "path known yet; reload starts after execute()");
+                return;
+            }
+            startReloadWatcher();
+        } else {
+            stopReloadWatcher();
+        }
+    }
+
+    bool isAutoReload() const { return auto_reload_enabled_.load(); }
+
+  private:
+    // The mtime-poll watcher body, shared by setAutoReload and the
+    // deferred start in execute(). Polls every 250ms; on change pushes
+    // FILE_READY to the event queue.
+    void startReloadWatcher() {
+        if (reload_watcher_.joinable()) return; // already running
+        reload_watcher_stop_.store(false);
+        reload_watcher_ = std::thread([this]() {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            auto last = fs::last_write_time(reload_watch_path_, ec);
+            if (ec) return;
+            while (!reload_watcher_stop_.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                auto now = fs::last_write_time(reload_watch_path_, ec);
+                if (ec) continue;
+                if (now != last) {
+                    last = now;
+                    if (hostContext_ && hostContext_->eventQueue) {
+                        hostContext_->eventQueue->push(
+                            compiler::Event(compiler::EventType::FILE_READY));
+                    }
+                }
+            }
+        });
+    }
+
+    void stopReloadWatcher() {
+        reload_watcher_stop_.store(true);
+        if (reload_watcher_.joinable()) {
+            reload_watcher_.join();
+        }
+    }
+
+  public:
+    // Re-compile the last-executed source and swap the main chunk. Globals
+    // persist; the script's `on reload { }` body handles its own cleanup
+    // (e.g. hotkeys). Runs outside any fiber context (from processGoroutines).
+    void reloadScript() {
+        if (!vm_ || reload_source_.empty()) return;
+        if (!modules_) return;
+        try {
+            compiler::PipelineOptions options = modules_->options();
+            options.compile_unit_name = reload_compile_unit_;
+            options.vm_override = vm_.get();
+            for (const auto &[name, fn] : vm_->getHostFunctions()) {
+                options.host_functions[name] = fn;
+            }
+            options.debugBytecode = config_.debugBytecode;
+            options.debugEmitter = config_.debugEmitter;
+            options.optimizeBytecode = config_.optimizeBytecode;
+            auto chunk = compiler::compileToBytecodeChunk(reload_source_, "__main__",
+                                                          options);
+            if (!chunk) {
+                ::havel::error("[HavelEngine] reload: compilation failed");
+                return;
+            }
+            auto shared_chunk =
+                std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+            vm_->storeMainChunk(shared_chunk);
+            // The script's own cleanup/re-register hook.
+            if (auto *onReloadFn = vm_->getMainChunk()->getFunction("__on_reload__")) {
+                uint32_t idx = vm_->getMainChunk()->getFunctionIndex(onReloadFn);
+                vm_->callFunctionSync(
+                    compiler::Value::makeFunctionObjId(idx), {});
+            }
+        } catch (const std::exception &e) {
+            ::havel::error("[HavelEngine] reload exception: {}", e.what());
+        }
+    }
+
     void shutdown() {
         if (!initialized_) return;
+        // Stop the auto-reload watcher before tearing the VM down.
+        if (auto_reload_enabled_.load()) {
+            auto_reload_enabled_.store(false);
+        }
+        stopReloadWatcher();
         if (modules_) {
             modules_->shutdown();
         }
@@ -827,6 +960,18 @@ private:
     // conditional hotkey re-evals happen outside any fiber context.
     std::vector<std::string> pending_var_changes_;
     std::mutex pending_var_changes_mutex_;
+
+    // Auto-reload (spec: app.enableReload + `on reload { }`): a watcher
+    // thread polls the script file's mtime; on change it pushes FILE_READY,
+    // whose handler sets reload_pending_; processGoroutines runs the reload
+    // outside any fiber context (re-compile, chunk swap, __on_reload__).
+    std::atomic<bool> auto_reload_enabled_{false};
+    std::atomic<bool> reload_watcher_stop_{false};
+    std::atomic<bool> reload_pending_{false};
+    std::thread reload_watcher_;
+    std::string reload_watch_path_;
+    std::string reload_source_;
+    std::string reload_compile_unit_;
 
   static compiler::Scheduler::SuspensionReason toSchedulerReasonPublic(uint8_t fiberReason) {
     using F = compiler::SuspensionReason;
@@ -1161,6 +1306,13 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();
+            }
+            // Auto-reload: FILE_READY events set reload_pending_; run the
+            // reload OUTSIDE any fiber context (a nested callFunctionSync
+            // inside a goroutine frame wedges the pipeline, same as the
+            // conditional-hotkey re-eval arm).
+            if (reload_pending_.exchange(false)) {
+                reloadScript();
             }
             sched->drainDeferredCallbacks(compiler::FiberPriority::NORMAL);
 

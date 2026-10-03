@@ -104,6 +104,12 @@ struct HostContext {
   // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)
   class compiler::EventQueue *eventQueue = nullptr;
 
+  // Auto-reload request (embedder-provided): the AppBridge's
+  // app.enableReload/disableReload/toggleReload call it; the engine wires it
+  // to its file watcher + reload path. app.reload reads auto_reload_state.
+  std::function<void(bool)> request_auto_reload;
+  std::function<bool()> auto_reload_state;
+
   // Capability-based extensions (embedder-provided)
   std::unordered_map<std::string, std::shared_ptr<Capability>> caps;
 

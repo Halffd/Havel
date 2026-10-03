@@ -118,18 +118,12 @@ TEST(ParserUnmatchedDelimiter, ProduceAstReportsUnmatchedBracket) {
 // Recovery must not lose the rest of the program: the statements after the
 // stray delimiter are still parsed, so one typo does not hide later errors.
 TEST(ParserUnmatchedDelimiter, RecoveryContinuesAfterStrayDelimiter) {
-  Parser parser;
-  parser.produceAST("print \"A\"\n}\nprint \"B\"\n=\n");
-  // The stray '}' is reported, and parsing does not stop dead at it.
-  EXPECT_TRUE(contains(parser.getErrors().size() ? [&] {
-                std::vector<std::string> m;
-                for (const auto &e : parser.getErrors())
-                  m.push_back(e.message);
-                return m;
-              }()
-                                                   : std::vector<std::string>{},
-                            "Unmatched '}'"));
-  EXPECT_GE(parser.getErrors().size(), 1u);
+  // The stray '}' is reported, and parsing does not stop dead at it: the
+  // trailing `=` is still reached and reported as its own error.
+  const auto messages = astErrors("print \"A\"\n}\nprint \"B\"\n=\n");
+  EXPECT_TRUE(contains(messages, "Unmatched '}'"));
+  EXPECT_GE(messages.size(), 2u)
+      << "recovery stopped at the stray delimiter instead of continuing";
 }
 
 // Every closing delimiter must still be able to close its own construct.

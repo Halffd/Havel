@@ -49,6 +49,22 @@ void ConcurrencyBridge::install(PipelineOptions &options) {
   };
   options.host_functions["thread.receive"] = options.host_functions["thread_receive"];
 
+  // Spec's async module (docs/specs/Havel.md Async section): string-keyed
+  // channels. send pushes, receive blocks until a message arrives,
+  // tryReceive returns "" when empty. State persists for the host process.
+  options.host_functions["async_send"] = [this](const std::vector<Value> &args) {
+    return asyncSend(args);
+  };
+  options.host_functions["async.send"] = options.host_functions["async_send"];
+  options.host_functions["async_receive"] = [this](const std::vector<Value> &args) {
+    return asyncReceive(args);
+  };
+  options.host_functions["async.receive"] = options.host_functions["async_receive"];
+  options.host_functions["async_tryReceive"] = [this](const std::vector<Value> &args) {
+    return asyncTryReceive(args);
+  };
+  options.host_functions["async.tryReceive"] = options.host_functions["async_tryReceive"];
+
   // Interval operations (snake_case + dot aliases)
   options.host_functions["interval_start"] = [this](const std::vector<Value> &args) {
     return intervalStart(args);
@@ -234,8 +250,110 @@ Value ConcurrencyBridge::threadReceive(const std::vector<Value> &args) {
   return message;
 }
 
-Value ConcurrencyBridge::intervalStart(const std::vector<Value> &args) {
-  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
+// --- Spec's async module (docs/specs/Havel.md Async section) ---------------
+// String-keyed channels shared across the host process. The registry is
+// function-static so it persists across script reloads. Values are stored
+// as-is (like thread mailboxes); a condition variable wakes blocking
+// receivers when a sender pushes.
+
+namespace {
+std::mutex &asyncChannelsMutex() {
+  static std::mutex m;
+  return m;
+}
+std::unordered_map<std::string,
+                   std::pair<std::deque<Value>, std::condition_variable>>
+    &asyncChannels() {
+  static std::unordered_map<
+      std::string, std::pair<std::deque<Value>, std::condition_variable>>
+      channels;
+  return channels;
+}
+} // namespace
+
+Value ConcurrencyBridge::asyncSend(const std::vector<Value> &args) {
+  if (args.size() < 2) {
+    return Value::makeNull();
+  }
+  auto *vm = ctx_ ? ctx_->vm : nullptr;
+  if (!vm) {
+    return Value::makeNull();
+  }
+  if (!args[0].isStringValId() && !args[0].isStringId()) {
+    return Value::makeNull();
+  }
+  if (!args[1].isStringValId() && !args[1].isStringId()) {
+    return Value::makeNull();
+  }
+  std::string chan = vm->resolveStringKey(args[0]);
+  std::string data = vm->resolveStringKey(args[1]);
+  auto ref = vm->getHeap().allocateString(std::move(data));
+  Value stored = Value::makeStringId(ref.id);
+  {
+    std::lock_guard<std::mutex> lock(asyncChannelsMutex());
+    auto &entry = asyncChannels()[chan];
+    entry.first.push_back(std::move(stored));
+    entry.second.notify_all();
+  }
+  return Value::makeNull();
+}
+
+Value ConcurrencyBridge::asyncReceive(const std::vector<Value> &args) {
+  if (args.empty()) {
+    return Value::makeNull();
+  }
+  std::string chan;
+  {
+    auto *vm = ctx_ ? ctx_->vm : nullptr;
+    if (!vm) {
+      return Value::makeNull();
+    }
+    if (args[0].isStringValId() || args[0].isStringId()) {
+      chan = vm->resolveStringKey(args[0]);
+    } else {
+      return Value::makeNull();
+    }
+  }
+  std::unique_lock<std::mutex> lock(asyncChannelsMutex());
+  auto &entry = asyncChannels()[chan];
+  entry.second.wait(lock, [&entry] { return !entry.first.empty(); });
+  Value message = entry.first.front();
+  entry.first.pop_front();
+  return message;
+}
+
+Value ConcurrencyBridge::asyncTryReceive(const std::vector<Value> &args) {
+  if (args.empty()) {
+    return Value::makeNull();
+  }
+  std::string chan;
+  {
+    auto *vm = ctx_ ? ctx_->vm : nullptr;
+    if (!vm) {
+      return Value::makeNull();
+    }
+    if (args[0].isStringValId() || args[0].isStringId()) {
+      chan = vm->resolveStringKey(args[0]);
+    } else {
+      return Value::makeNull();
+    }
+  }
+  std::lock_guard<std::mutex> lock(asyncChannelsMutex());
+  auto &entry = asyncChannels()[chan];
+  if (entry.first.empty()) {
+    auto *vm = ctx_ ? ctx_->vm : nullptr;
+    if (vm) {
+      auto ref = vm->getHeap().allocateString("");
+      return Value::makeStringId(ref.id);
+    }
+    return Value::makeNull();
+  }
+  Value message = entry.first.front();
+  entry.first.pop_front();
+  return message;
+}
+
+Value ConcurrencyBridge::intervalStart(const std::vector<Value> &args) {  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
     return Value::makeNull();
   }
 

@@ -431,7 +431,14 @@ Instead:
 - Mock if it needs real user input, but NEVER stub it or make a fake test
 
 ## Script execution pipeline
-Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). The Havel self-hosted mode is opt-in via `--self-hosted`. For anything in those files: do the change there, don't redirect to modules/lang.
+Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). For anything in those files: do the change there, don't redirect to modules/lang.
+
+**Self-hosted mode (`--self-hosted`) is DEPRECATED and retired.** The C++ pipeline is the only maintained path. `modules/lang/` is reference-only: it is not installed, not built, and it does not parse under the C++ pipeline (several files use method shorthand and other constructs the parser rejects). Do not:
+- add features to the self-hosted path
+- redirect C++ parser work into `modules/lang`
+- treat parse failures in `modules/lang/*.hv` as regressions of the C++ parser
+
+A stray-brace fix in `modules/lang/` is still acceptable housekeeping, but it is not required and not worth further effort.
 
 ONLY VM and existing host modules remain in C++ (until modules havel migration)
 

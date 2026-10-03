@@ -1212,6 +1212,12 @@ public:
 
 class SelfHostedStrategy : public RunStrategy {
 public:
+  // DEPRECATED: the self-hosted engine path is retired. The C++ pipeline in
+  // src/havel-lang/ (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp) is
+  // authoritative, and modules/lang/ is reference-only and not installed.
+  // Reached only through the explicit --self-hosted flag. Do not extend this
+  // path, and do not chase parse failures in modules/lang/ source: those files
+  // use constructs the C++ parser does not accept and are not built.
   int execute(const havel::init::LaunchConfig &cfg_in, int argc, char *argv[]) override {
     // Mutable copy: the precompiled handoff replaces scriptFiles with .hvc paths.
     havel::init::LaunchConfig cfg = cfg_in;

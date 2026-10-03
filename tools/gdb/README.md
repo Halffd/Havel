@@ -70,6 +70,18 @@ Explicit commands decode on demand and leave normal `print` untouched. Verified:
 with this module loaded, `print` and `print/d` produce byte-identical output for
 non-Havel types.
 
+## Deliberately not covered
+
+`BytecodeHostFunction` is a bare `std::function<Value(const std::vector<Value>&)>`
+— there is no metadata in it to decode, and its internals are libstdc++
+implementation detail.
+
+The host-function registry is not dumped here either. `hvdb` already does it
+natively and in more detail: `hostfuncs [filter]` lists the registry and
+`hostfunc <name>` shows index, module, arity, namespace, callable and global
+binding. A GDB command for the same data would be a second implementation of
+something that already ships.
+
 ## Safety
 
 All decoding reads the private `bits_` field and plain data members. No

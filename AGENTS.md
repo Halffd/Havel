@@ -89,12 +89,16 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals
   or the tiering system, run the full set deliberately.
-- **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
-  **Run manually only with visible monitor:**
-  ```bash
-  ./build-debug/brightness_test
-  ```
-  Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
+- **Brightness is live hardware, not a test binary.** The old `brightness_test`
+  binary was removed (see `CMakeLists.txt:1941`); brightness now lives in
+  `modules/app/brightness.hv`, which wraps the C++ `BrightnessManager` and
+  writes `/sys/class/backlight/*/brightness`
+  (`src/core/BrightnessManager.cpp:1369-1371`). Any script calling
+  `brightness.set/increase/decrease` mutates the real monitor.
+  **Never run brightness code headless/SSH** unless the user explicitly asks.
+- **`brightness_ramp_test` IS in ctest and is safe.** Despite the similar name
+  it is pure gamma-ramp math over a buffer (`tests/brightness_ramp_ut.cpp`) —
+  no `/dev`, DRM, ioctl, or sysfs writes. Do not exclude it from ctest.
 
 CI runs: CMake configure → build → hvtest smoke → ctest
 

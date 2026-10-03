@@ -31,27 +31,6 @@ void IOBridge::install(PipelineOptions &options) {
     options.host_functions["click"] = [ctx = ctx_](const auto &args) {
         return handleMouseClick(args, ctx);
     };
-    options.host_functions["io.click"] = [ctx = ctx_](const auto &args) {
-        return handleMouseClick(args, ctx);
-    };
-    options.host_functions["io.mouseMoveTo"] = [ctx = ctx_](const auto &args) {
-        return handleMouseMoveTo(args, ctx);
-    };
-    options.host_functions["io.mouseMoveRel"] = [ctx = ctx_](const auto &args) {
-        return handleMouseMoveRel(args, ctx);
-    };
-    options.host_functions["io.mouseScroll"] = [ctx = ctx_](const auto &args) {
-        return handleMouseScroll(args, ctx);
-    };
-    options.host_functions["io.scroll"] = [ctx = ctx_](const auto &args) {
-        return handleMouseScroll(args, ctx);
-    };
-    options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
-        return handleMouseDown(args, ctx);
-    };
- options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
- return handleMouseUp(args, ctx);
- };
  options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
  return handleMouseClick(args, ctx);
  };
@@ -107,13 +86,13 @@ options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
  options.host_functions["io.setExecutorMode"] = [ctx = ctx_](const auto &args) {
      return handleSetExecutorMode(args, ctx);
  };
-  options.host_functions["io.getKey"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["keyboard.getKey"] = [ctx = ctx_](const auto &args) {
       return handleGetKey(args, ctx);
   };
-  options.host_functions["io.isKeyPressed"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["keyboard.isKeyPressed"] = [ctx = ctx_](const auto &args) {
       return handleIsKeyPressed(args, ctx);
   };
-    options.host_functions["io.state"] = [ctx = ctx_](const auto &args) {
+    options.host_functions["keyboard.state"] = [ctx = ctx_](const auto &args) {
         if (args.empty()) {
             if (!ctx->io) return Value::makeBool(false);
             return Value::makeBool(ctx->io->IsAnyKeyPressed());

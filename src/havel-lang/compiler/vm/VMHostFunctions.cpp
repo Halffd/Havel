@@ -284,45 +284,35 @@ void VM::registerDefaultHostFunctions() {
                              return Value::makeBool(false);
                            return Value::makeBool(io->IsSuspended());
                          });
-    api.registerFunction("io._isKeyPressed",
-                         [getIO, toStr](const std::vector<Value> &args) {
-                           auto *io = getIO();
-                           if (!io)
-                             return Value::makeBool(false);
-                           if (args.empty())
-                             return Value::makeBool(false);
-                           return Value::makeBool(
-                               io->IsKeyPressed(toStr(args[0])));
-                         });
-    api.registerFunction("io._isShiftPressed",
+    api.registerFunction("keyboard.isShiftPressed",
                          [getIO](const std::vector<Value> &) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
                            return Value::makeBool(io->IsShiftPressed());
                          });
-    api.registerFunction("io._isCtrlPressed",
+    api.registerFunction("keyboard.isCtrlPressed",
                          [getIO](const std::vector<Value> &) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
                            return Value::makeBool(io->IsCtrlPressed());
                          });
-    api.registerFunction("io._isAltPressed",
+    api.registerFunction("keyboard.isAltPressed",
                          [getIO](const std::vector<Value> &) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
                            return Value::makeBool(io->IsAltPressed());
                          });
-    api.registerFunction("io._isWinPressed",
+    api.registerFunction("keyboard.isWinPressed",
                          [getIO](const std::vector<Value> &) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
                            return Value::makeBool(io->IsWinPressed());
                          });
-    api.registerFunction("io._getCurrentModifiers",
+    api.registerFunction("keyboard.modifiers",
                          [getIO](const std::vector<Value> &) {
                            auto *io = getIO();
                            if (!io)
@@ -445,7 +435,7 @@ void VM::registerDefaultHostFunctions() {
                          });
     // Mouse state query (X11 direct)
     api.registerFunction(
-        "io._mouseState", [api](const std::vector<Value> &args) {
+        "mouse.state", [api](const std::vector<Value> &args) {
           int button = 1;
           if (!args.empty()) {
             if (args[0].isInt())
@@ -490,7 +480,7 @@ void VM::registerDefaultHostFunctions() {
           return Value::makeBool(false);
         });
     // Lock state queries (X11 direct)
-    api.registerFunction("io._lastLocks", [](const std::vector<Value> &) {
+    api.registerFunction("keyboard.lastLocks", [](const std::vector<Value> &) {
       auto display = havel::DisplayManager::GetDisplay();
       if (!display)
         return Value::makeInt(0);
@@ -499,7 +489,7 @@ void VM::registerDefaultHostFunctions() {
         return Value::makeInt(0);
       return Value::makeInt(static_cast<int64_t>(xkbState.locked_mods));
     });
-    api.registerFunction("io._locks", [api](const std::vector<Value> &) {
+    api.registerFunction("keyboard.locks", [api](const std::vector<Value> &) {
       auto display = havel::DisplayManager::GetDisplay();
       bool caps = false, num = false, scroll = false;
       if (display) {
@@ -516,7 +506,7 @@ void VM::registerDefaultHostFunctions() {
       api.vm().setHostObjectField(obj, "scroll", Value::makeBool(scroll));
       return Value::makeObjectId(obj.id);
     });
-    api.registerFunction("io._setLock", [api, getIO](
+    api.registerFunction("keyboard.setLock", [api, getIO](
                                             const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
@@ -605,7 +595,7 @@ void VM::registerDefaultHostFunctions() {
       return Value::makeBool(true);
     });
     // Device management
-    api.registerFunction("io._devices", [api,
+    api.registerFunction("devices.list", [api,
                                          getIO](const std::vector<Value> &) {
       auto *io = getIO();
       if (!io)
@@ -621,7 +611,7 @@ void VM::registerDefaultHostFunctions() {
       }
       return Value::makeObjectId(obj.id);
     });
-    api.registerFunction("io._addDevice", [api, getIO](
+    api.registerFunction("devices.add", [api, getIO](
                                               const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
@@ -706,7 +696,7 @@ void VM::registerDefaultHostFunctions() {
     };
 
     api.registerFunction(
-        "eventListener.keys", [api, getEL](const std::vector<Value> &) {
+        "keyboard.keys", [api, getEL](const std::vector<Value> &) {
           auto *el = getEL();
           if (!el)
             return Value::makeNull();
@@ -723,7 +713,7 @@ void VM::registerDefaultHostFunctions() {
           }
           return Value::makeArrayId(arrRef.id);
         });
-    api.registerFunction("eventListener.lastKey",
+    api.registerFunction("keyboard.lastKey",
                          [api, getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
@@ -735,7 +725,7 @@ void VM::registerDefaultHostFunctions() {
                            auto ref = api.vm().getHeap().allocateString(name);
                            return Value::makeStringId(ref.id);
                          });
-    api.registerFunction("eventListener.lastState",
+    api.registerFunction("keyboard.lastState",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
@@ -743,14 +733,14 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(el->GetLastKeyWasDown());
                          });
     api.registerFunction(
-        "eventListener.lastDevice", [api, getEL](const std::vector<Value> &) {
+        "devices.lastDevice", [api, getEL](const std::vector<Value> &) {
           auto *el = getEL();
           if (!el)
             return Value::makeNull();
           auto ref = api.vm().getHeap().allocateString(el->GetLastKeyDevice());
           return Value::makeStringId(ref.id);
         });
-    api.registerFunction("eventListener.lastModifiers",
+    api.registerFunction("keyboard.lastModifiers",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
@@ -758,7 +748,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeInt(el->GetLastKeyModifiers());
                          });
     api.registerFunction(
-        "eventListener.lastKeys", [api, getEL](const std::vector<Value> &) {
+        "keyboard.lastKeys", [api, getEL](const std::vector<Value> &) {
           auto *el = getEL();
           if (!el)
             return Value::makeNull();
@@ -775,7 +765,7 @@ void VM::registerDefaultHostFunctions() {
           }
           return Value::makeArrayId(arrRef.id);
         });
-    api.registerFunction("eventListener.reset",
+    api.registerFunction("keyboard.reset",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
@@ -783,14 +773,14 @@ void VM::registerDefaultHostFunctions() {
                            el->ReleaseAllVirtualKeys();
                            return Value::makeBool(true);
                          });
-    api.registerFunction("eventListener.lastButton",
+    api.registerFunction("mouse.lastButton",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
                              return Value::makeInt(0);
                            return Value::makeInt(el->GetLastButtonCode());
                          });
-    api.registerFunction("eventListener.lastButtonState",
+    api.registerFunction("mouse.lastButtonState",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)
@@ -798,7 +788,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(el->GetLastButtonWasDown());
                          });
     api.registerFunction(
-        "eventListener.buttons", [getEL](const std::vector<Value> &) {
+        "mouse.buttons", [getEL](const std::vector<Value> &) {
           auto *el = getEL();
           if (!el)
             return Value::makeInt(0);
@@ -809,7 +799,7 @@ void VM::registerDefaultHostFunctions() {
           }
           return Value::makeInt(pressed);
         });
-    api.registerFunction("eventListener.releaseAll",
+    api.registerFunction("mouse.releaseAll",
                          [getEL](const std::vector<Value> &) {
                            auto *el = getEL();
                            if (!el)

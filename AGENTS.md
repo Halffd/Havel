@@ -349,11 +349,22 @@ Host functions are registered via `registerHostFunction()` and exist as globals.
 - If you see `host_global_names` in code → DELETE IT.
 - If you think you need `host_global_names` → YOU ARE WRONG.
 
-If  touching Parser.cpp, Lexer.cpp, ByteCompiler.cpp for NON-BOOTSTRAP reasons:
+## modules/lang is frozen (bootstrap only)
 
-STOP
-redirect to havel equivalent in modules/lang
-fix it there instead
+`modules/lang/` is the self-hosted Havel compiler. It is FROZEN:
+
+- Do NOT add features to it.
+- Do NOT redirect new fixes there. Fix the default path in `src/havel-lang/`.
+- DO keep it working. `HavelLauncher.cpp` hard-depends on
+  `modules/lang/launcher.hv` and errors out with
+  `Cannot find modules/lang/launcher.hv` if it is missing.
+  `VM.cpp` puts `modules/lang` on the module search path, and sidecars such as
+  `modules/lang/math/math.hv` and `physics.hv` are part of the `math` module.
+- Bug fixes inside it are allowed only when the bootstrap itself is broken.
+  Keep those minimal.
+- When touching Parser.cpp, Lexer.cpp or ByteCompiler.cpp for a
+  NON-BOOTSTRAP reason, the change goes in the C++ pipeline. Do not mirror it
+  into `modules/lang`.
 
 ## IO and UI
 NEVER run hotkey scripts, IO Scripts or scripts with event loops/UI or servers/sockets they will hang for user input or listen

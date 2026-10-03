@@ -81,10 +81,19 @@ BrightnessManager::BrightnessManager() {
       displayMethod = "x11";
     }
   } else {
-    // Default to X11
+    // Default to X11. GetDisplay() returns null under the headless sandbox
+    // instead of throwing, but GetRootWindow() does throw -- and an
+    // unconstructed BrightnessManager cannot serve the display-independent
+    // parts of this class (gamma ramp readback, RGB curve math). Degrade to
+    // "no display" rather than making construction depend on a live session.
     x11_display = DisplayManager::GetDisplay();
-    x11_root = DisplayManager::GetRootWindow();
-    displayMethod = "x11";
+    if (x11_display) {
+      x11_root = DisplayManager::GetRootWindow();
+      displayMethod = "x11";
+    } else {
+      displayMethod = "none";
+      debug("No X11 display available; brightness control is inactive");
+    }
   }
 
   vector<string> monitors = getConnectedMonitors();
@@ -102,7 +111,8 @@ BrightnessManager::BrightnessManager() {
     if (dayNightSettings.autoAdjust) {
       applyCurrentTimeSettings();
     }
-  } else {
+  } else if (displayMethod == "x11") {
+    // Only an actual X11 session with no outputs is odd. Headless is expected.
     error("No monitors detected!");
   }
 }
@@ -581,8 +591,26 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
 
 /**
  * Safely extracts brightness value from gamma ramp using proper bounds checking
- * and error handling. Uses the middle value of the red channel as brightness
- * estimate.
+ * and error handling. Uses the TOP of the ramp, across all three channels.
+ *
+ * The set path (fill_gamma_ramp / setBrightness) writes
+ * value = pow(normalized, 1/gamma) * tint * brightness at index j, where
+ * normalized = j/(size-1). At j = size-1 that is exactly
+ * brightness * tint, so the top of the ramp IS the applied brightness. Any
+ * interior index, or an average over the ramp, reads a fraction of it: for the
+ * linear ramp the set path actually writes (gamma 1.0, no tint) the middle
+ * index is 0.5*brightness and the ramp average is also 0.5*brightness.
+ *
+ * That underread was not cosmetic. brightness.increase() is read-then-write
+ * (modules/app/brightness.hv: `let current = brightness.get()` then
+ * `brightness.set(current + amount)`), so a halved readback made the write land
+ * below the current value and the display DIMMED on the first keypress instead
+ * of brightening.
+ *
+ * Max across channels rather than red alone: a temperature tint scales channels
+ * below 1.0, so a blue-heavy ramp has a low blue top and any single channel
+ * would underread. This matches getBrightnessGamma(), which had already been
+ * corrected for the same reason.
  *
  * @param gamma - XRandR gamma ramp structure (must not be null)
  * @param monitor_name - Monitor identifier for logging purposes
@@ -601,15 +629,26 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
     return -1.0;
   }
 
+  // The estimate takes the max channel, so the other two are read too. XLib
+  // always populates all three, but a caller-built ramp need not.
+  if (!gamma->green || !gamma->blue) {
+    error("Gamma green/blue channel is null for monitor: {}", monitor_name);
+    return -1.0;
+  }
+
   if (gamma->size <= 0) {
     error("Invalid gamma ramp size ({}) for monitor: {}", gamma->size,
                   monitor_name);
     return -1.0;
   }
 
-  // Use middle index of gamma ramp for brightness estimation
-  const int middle_index = gamma->size / 2;
-  const uint16_t raw_gamma_value = gamma->red[middle_index];
+  // Brightness lives at the TOP of the ramp -- see the note above on why an
+  // interior index underreads. Take the max channel so a temperature tint that
+  // scales some channels below 1.0 does not drag the estimate down.
+  const int top_index = gamma->size - 1;
+  const unsigned short raw_gamma_value =
+      std::max({gamma->red[top_index], gamma->green[top_index],
+                gamma->blue[top_index]});
 
   // Convert from 16-bit gamma value to normalized brightness [0.0, 1.0]
   // Max gamma value is 65535 (2^16 - 1)
@@ -620,9 +659,9 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
   // Clamp to valid range (paranoid safety check)
   const double clamped_brightness = std::clamp(normalized_brightness, 0.0, 1.0);
 
-  debug("Monitor {}: gamma_size={}, middle_index={}, raw_value={}, "
+  debug("Monitor {}: gamma_size={}, top_index={}, raw_value={}, "
                 "brightness={:.3f}",
-                monitor_name, gamma->size, middle_index, raw_gamma_value,
+                monitor_name, gamma->size, top_index, raw_gamma_value,
                 clamped_brightness);
 
   return clamped_brightness;

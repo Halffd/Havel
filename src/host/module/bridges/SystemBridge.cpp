@@ -42,46 +42,87 @@ void SystemBridge::install(PipelineOptions &options) {
       vm->setGlobal("system", Value::makeObjectId(systemObj.id));
     }
 
-    // Process object
-    auto processObj = vm->createHostObject();
-    auto processObjGuard = vm->makeRoot(Value::makeObjectId(processObj.id));
-    vm->setHostObjectField(
-        processObj, "find",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
-    vm->setHostObjectField(
-        processObj, "exists",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
-    vm->setHostObjectField(
-        processObj, "kill",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
-    vm->setHostObjectField(
-        processObj, "nice",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
-    vm->setHostObjectField(
-        processObj, "run",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
-    vm->setHostObjectField(
-        processObj, "runDetached",
+    // Process object — merge into an existing global when present. The
+    // sys stdlib plugin builds a `process` object from __proc.* functions
+    // (including getState/sendSignal and the SIG* constants). Replacing it
+    // here (the old behavior) silently discarded those fields whenever the
+    // initializer ran after plugin registration — a hotkey script calling
+    // process.getState() then no-opped with no error. Mirror the `system`
+    // merge above: fill only missing or host-function slots.
+    auto procIt = allGlobals.find("process");
+    bool hasExistingProc =
+        procIt != allGlobals.end() && procIt->second.isObjectId();
+    compiler::ObjectRef procObj{};
+    if (hasExistingProc) {
+      procObj = ObjectRef{procIt->second.asObjectId(), true};
+    } else {
+      auto created = vm->createHostObject();
+      // Keep the fresh object rooted until setGlobal below.
+      auto procObjGuard = vm->makeRoot(Value::makeObjectId(created.id));
+      (void)procObjGuard;
+      procObj = created;
+    }
+    // Fill a field only when the slot is empty or holds a host function
+    // reference (same contract as buildNamespaceGlobals' merge), so int
+    // constants (SIGSTOP, ...) from the stdlib object are never clobbered.
+    auto setProcField = [&](const char *name, Value v) {
+      auto existing = vm->getHostObjectField(procObj, name);
+      if (existing.isHostFuncId() || existing.isNull()) {
+        vm->setHostObjectField(procObj, name, std::move(v));
+      }
+    };
+    // Bridge-owned process.* host functions.
+    setProcField("find",
+                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
+    setProcField(
+        "exists", Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
+    setProcField("kill",
+                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
+    setProcField("nice",
+                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
+    setProcField("run",
+                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
+    setProcField(
+        "runDetached",
         Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
-    vm->setHostObjectField(
-        processObj, "spawn",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.spawn")));
-    vm->setHostObjectField(
-        processObj, "wait",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.wait")));
-    vm->setHostObjectField(
-        processObj, "killObj",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.killObj")));
-    vm->setHostObjectField(
-        processObj, "exit",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("sys.exit")));
-    vm->setHostObjectField(
-        processObj, "pid",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.pid")));
-    vm->setHostObjectField(
-        processObj, "ppid",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.ppid")));
-    vm->setGlobal("process", Value::makeObjectId(processObj.id));
+    // Cross-module functions from the sys stdlib plugin. Guarded: the
+    // plugin may not be loaded in every embedding. (The old code used
+    // getHostFunctionIndex("process.spawn") etc., which registered PHANTOM
+    // names — indices with no implementation — when only the __proc.*
+    // originals exist.)
+    auto wireProcFn = [&](const char *field, const char *hostName) {
+      if (vm->hasHostFunction(hostName)) {
+        setProcField(field, Value::makeHostFuncId(vm->getHostFunctionIndex(hostName)));
+      }
+    };
+    wireProcFn("spawn", "__proc.spawn");
+    wireProcFn("wait", "__proc.wait");
+    wireProcFn("killObj", "__proc.killObj");
+    wireProcFn("exit", "sys.exit");
+    wireProcFn("pid", "__proc.pid");
+    wireProcFn("ppid", "__proc.ppid");
+    wireProcFn("getState", "__proc.getState");
+    // sendSignal is the same contract as process.kill (PID + name-or-raw
+    // signum); the stdlib exposes both names, so mirror it here.
+    wireProcFn("sendSignal", "__proc.kill");
+#ifndef _WIN32
+    setProcField("SIGKILL", Value::makeInt(SIGKILL));
+    setProcField("SIGTERM", Value::makeInt(SIGTERM));
+    setProcField("SIGHUP", Value::makeInt(SIGHUP));
+    setProcField("SIGINT", Value::makeInt(SIGINT));
+    setProcField("SIGSTOP", Value::makeInt(SIGSTOP));
+    setProcField("SIGCONT", Value::makeInt(SIGCONT));
+#else
+    setProcField("SIGKILL", Value::makeInt(9));
+    setProcField("SIGTERM", Value::makeInt(15));
+    setProcField("SIGHUP", Value::makeInt(1));
+    setProcField("SIGINT", Value::makeInt(2));
+    setProcField("SIGSTOP", Value::makeInt(19));
+    setProcField("SIGCONT", Value::makeInt(18));
+#endif
+    if (!hasExistingProc) {
+      vm->setGlobal("process", Value::makeObjectId(procObj.id));
+    }
 
     // Extension object
     auto extensionObj = vm->createHostObject();
@@ -621,22 +662,25 @@ SystemBridge::handleProcessKill(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.kill() requires a number PID");
   }
-  std::string sig;
-  if (args[1].isStringValId() || args[1].isStringId()) {
+  int signal_num = -1;
+  if (args[1].isInt()) {
+    // Raw signum: process.SIGSTOP (19) etc. passed straight through.
+    signal_num = static_cast<int>(args[1].asInt());
+  } else if (args[1].isStringValId() || args[1].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    sig = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
+    std::string sig = vm ? vm->resolveStringKey(args[1])
+                         : strVal(args[1], ctx ? ctx->vm : nullptr);
+    auto mapped = ::havel::host::ProcessService::signalFromName(sig);
+    if (!mapped) {
+      // Previously unknown names silently fell through to SIGTERM, so
+      // process.kill(pid, "SIGSTOP") terminated the target instead of
+      // pausing it. Unknown signal names must be loud.
+      throw std::runtime_error("process.kill(): unknown signal '" + sig + "'");
+    }
+    signal_num = *mapped;
   } else {
-    throw std::runtime_error("process.kill() requires a string signal");
+    throw std::runtime_error("process.kill() requires a string or number signal");
   }
-  int signal_num = 15; // Default SIGTERM
-  if (sig == "SIGKILL" || sig == "kill")
-    signal_num = 9;
-  else if (sig == "SIGTERM" || sig == "term")
-    signal_num = 15;
-  else if (sig == "SIGHUP" || sig == "hangup")
-    signal_num = 1;
-  else if (sig == "SIGINT" || sig == "int")
-    signal_num = 2;
   return Value::makeBool(
       ::havel::host::ProcessService::sendSignal(pid, signal_num));
 }

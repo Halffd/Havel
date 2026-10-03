@@ -82,6 +82,16 @@ public:
     /// @return true on success
     static bool sendSignal(int32_t pid, int signal);
 
+    /// Map a signal name to its signal number.
+    /// Accepts "SIGKILL"/"kill", "SIGTERM"/"term", "SIGHUP"/"hangup",
+    /// "SIGINT"/"int", "SIGSTOP"/"stop", "SIGCONT"/"cont".
+    /// Single source for every host surface that takes a signal by name
+    /// (__proc.kill, process.kill, process.sendSignal) so they cannot
+    /// diverge (real past divergence: the bridge copy silently sent
+    /// SIGTERM for "SIGSTOP" because its map lacked the entry).
+    /// @return signal number, or nullopt for an unknown name
+    static std::optional<int> signalFromName(const std::string& name);
+
     /// Set process priority (nice value)
     /// @param pid Process ID
     /// @param nice Nice value (-20 to 19)

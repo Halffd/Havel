@@ -2878,6 +2878,58 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
 
+    # Headless gate must hold on the HAVEL_HEADLESS env flag alone, without
+    # depending on SetHeadlessMode() having been called first. Regression cover
+    # for IO::ensureBackend()'s call_once ordering and DisplayManager's ":0"
+    # fallback, both of which could reach the live session.
+    add_executable(headless_sandbox_test
+        tests/headless_sandbox_ut.cpp
+    )
+    target_compile_features(headless_sandbox_test PRIVATE cxx_std_23)
+    target_include_directories(headless_sandbox_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(headless_sandbox_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME headless_sandbox_test COMMAND headless_sandbox_test)
+
+    # Gamma-ramp brightness readback. extractBrightnessFromGammaRamp() read
+    # the ramp's middle index, which is exactly half the applied value for the
+    # linear ramp the set path writes -- and brightness.increase() is
+    # read-then-write, so the underread dimmed the display on first press.
+    add_executable(brightness_ramp_test
+        tests/brightness_ramp_ut.cpp
+    )
+    target_compile_features(brightness_ramp_test PRIVATE cxx_std_23)
+    target_include_directories(brightness_ramp_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(brightness_ramp_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test above.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME brightness_ramp_test COMMAND brightness_ramp_test)
+
     # Clipboard-backend registry seam behind Clipboard. Same shape as
     # pixel_provider_test: no havel_gui, so the link is part of what it
     # verifies.
@@ -2988,6 +3040,28 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
         add_test(NAME cranelift_proto_driver COMMAND cranelift_proto_driver)
         endif()
     endif()
+endif()
+
+# ==============================================================================
+# TEST SANDBOXING
+# ==============================================================================
+# Every ctest process must be inert against the display and input devices, even
+# when it is a bare gtest binary that never goes through hvtest's
+# script_runner. Two layers:
+#   1. HAVEL_HEADLESS=1 makes DisplayManager::Initialize(), the IO backend, the
+#      WindowManager and the Qt application guards no-ops.
+#   2. Unsetting the display/session variables means XOpenDisplay(NULL) cannot
+#      fall back to ":0" on a machine that happens to have an X server running,
+#      so a missed guard degrades to a harmless failure instead of a real
+#      connection to the user's session.
+# Applied as a single pass over the collected test list so a newly added
+# add_test() cannot accidentally escape the sandbox.
+get_property(_havel_all_tests DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY TESTS)
+if(_havel_all_tests)
+  set_tests_properties(${_havel_all_tests} PROPERTIES ENVIRONMENT
+    "HAVEL_HEADLESS=1;DISPLAY=;WAYLAND_DISPLAY=;XAUTHORITY=;XDG_SESSION_TYPE=;QT_QPA_PLATFORM=offscreen"
+  )
+  unset(_havel_all_tests)
 endif()
 
 # ==============================================================================

@@ -112,3 +112,55 @@ TEST(ParserOrphanElse, CatchAndFinallyStillParse) {
                           "}\n";
   EXPECT_FALSE(rejects(src));
 }
+
+// `elif` is sugar for `else if`, so it is only valid directly after an if body.
+// An `elif` at statement start is the same class of mistake as an orphan
+// `else`, and used to surface much later as "Unresolved identifier 'elif'".
+TEST(ParserOrphanElse, OrphanElifAfterClosedBlockIsRejected) {
+  const std::string src = "fn t(h) {\n"
+                          "    print \"A\"\n"
+                          "    if h\n"
+                          "        print \"B\"\n"
+                          "}\n"
+                          "elif h\n"
+                          "    print \"C\"\n";
+  EXPECT_TRUE(rejects(src));
+}
+
+TEST(ParserOrphanElse, OrphanElifAtTopLevelIsRejected) {
+  EXPECT_TRUE(rejects("print \"A\"\nelif x > 3 {\n    print \"B\"\n}\n"));
+}
+
+// `elif` is documented to stay a plain name outside an if body. These forms
+// must keep parsing, so the guard cannot just reserve the identifier.
+TEST(ParserOrphanElse, ElifRemainsUsableAsAPlainVariable) {
+  EXPECT_FALSE(rejects("elif = 5\n"));
+  EXPECT_FALSE(rejects("elif = 5\nprint elif\n"));
+  EXPECT_FALSE(rejects("x = 1\nprint x + elif\n"));
+}
+
+// `elif` directly after an if body is the supported sugar form.
+TEST(ParserOrphanElse, ElifSugarAfterIfBodyStillParses) {
+  const std::string src = "x = 5\n"
+                          "if x > 10 {\n"
+                          "    print \"huge\"\n"
+                          "} elif x > 3 {\n"
+                          "    print \"big\"\n"
+                          "} else {\n"
+                          "    print \"small\"\n"
+                          "}\n";
+  EXPECT_FALSE(rejects(src));
+}
+
+// Chained elifs inside a function body, plus elif with no trailing else.
+TEST(ParserOrphanElse, ChainedElifInsideFunctionStillParses) {
+  const std::string src = "fn check(n) {\n"
+                          "    if n > 3 {\n"
+                          "        1\n"
+                          "    } elif n > 1 {\n"
+                          "        2\n"
+                          "    }\n"
+                          "    0\n"
+                          "}\n";
+  EXPECT_FALSE(rejects(src));
+}

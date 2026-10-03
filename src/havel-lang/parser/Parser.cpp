@@ -2913,6 +2913,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
 
+  // Orphaned `elif`: `elif` is sugar for `else if` only when it directly
+  // follows an if body, which parseIfStatement already consumes. Elsewhere it
+  // stays a plain name, so only reject it when something expression-shaped
+  // follows -- `elif x > 3 {` is always a typo, while `elif = 5`, a bare
+  // `elif` and `elif.field` keep working. Without this the typo surfaced much
+  // later as the misleading "Unresolved identifier 'elif'".
+  if (at().type == havel::TokenType::Identifier && at().value == "elif" &&
+      at(1).type != havel::TokenType::Assign &&
+      at(1).type != havel::TokenType::Dot &&
+      at(1).type != havel::TokenType::NewLine &&
+      at(1).type != havel::TokenType::Semicolon &&
+      at(1).type != havel::TokenType::CloseBrace &&
+      at(1).type != havel::TokenType::EOF_TOKEN) {
+    failAt(at(), "'elif' without a matching 'if'. 'elif' is sugar for "
+                 "'else if' and must directly follow an if body");
+  }
+
     // Context-sensitive decorator detection:
     // [decorator] or [decorator(args)] at statement start = decorator
     // Must be followed by a declaration (fn, class, etc.)

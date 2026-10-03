@@ -1979,6 +1979,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_test(NAME core-no-qt-guard
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_core_no_qt.sh
                    ${CMAKE_BINARY_DIR})
+  # GDB Value decoder: builds tools/gdb/value_probe.cpp (an independent mirror
+  # of the NaN-boxing layout) and asserts every havel-* command's output, so a
+  # change to Value.hpp without a matching change to havel.py fails here.
+  add_test(NAME gdb-value-decoders
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/gdb/test_printers.sh)
   if(ENABLE_COVERAGE)
     target_compile_options(hvtest PRIVATE --coverage)
     target_link_options(hvtest PRIVATE --coverage)

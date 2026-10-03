@@ -1,0 +1,33 @@
+# Convenience loader so you do not have to remember the path.
+#
+#   (gdb) source tools/gdb/load-gdb-printers
+#
+# Equivalent to sourcing tools/gdb/havel.py directly. Searches the current
+# directory and its parents, so it works from anywhere inside the repo.
+python
+import os
+
+_candidate = None
+_dir = os.getcwd()
+for _ in range(8):
+    _probe = os.path.join(_dir, "tools", "gdb", "havel.py")
+    if os.path.exists(_probe):
+        _candidate = _probe
+        break
+    _parent = os.path.dirname(_dir)
+    if _parent == _dir:
+        break
+    _dir = _parent
+
+if _candidate is None:
+    raise gdb.GdbError(
+        "tools/gdb/havel.py not found; run gdb from inside the repo or "
+        "source tools/gdb/havel.py by path"
+    )
+
+with open(_candidate) as _handle:
+    exec(
+        compile(_handle.read(), _candidate, "exec"),
+        {"__name__": "__havel_gdb__", "__file__": _candidate},
+    )
+end

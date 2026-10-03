@@ -205,6 +205,19 @@ TEST(ParserOrphanElse, OrphanFinallyInsideFunctionIsRejected) {
   EXPECT_TRUE(rejectsWith(src, "can only appear within a 'try'"));
 }
 
+// `elif` after an unbraced if body is handled by parseIfStatement, not as a
+// statement start, so the orphan-elif guard must not fire on it. The guard only
+// sees `elif` when no if owns it.
+TEST(ParserOrphanElse, ElifAfterUnbracedIfBodyStillParses) {
+  const std::string src = "fn t(h) {\n"
+                          "    if h\n"
+                          "        print \"A\"\n"
+                          "    elif !h\n"
+                          "        print \"B\"\n"
+                          "}\n";
+  EXPECT_FALSE(rejects(src));
+}
+
 // try/catch/finally is the construct that owns those keywords, in both the
 // bare and parenthesised catch-variable forms.
 TEST(ParserOrphanElse, TryCatchFinallyFormsStillParse) {

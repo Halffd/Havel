@@ -1035,6 +1035,12 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   }
 
   switch (token.type) {
+    case TokenType::On:
+      // `on <event> { body }` in expression position (the lifetime syntax):
+      // `let w = on file.changed("./foo") { ... }` — the subscription id is
+      // the expression's value.
+      return parseOnEventExpression();
+
     case TokenType::Number:
         return makeNodeAt<ast::NumberLiteral>(token, parseNumberLiteral(token.value), hasDecimalPart(token.value));
 
@@ -7054,43 +7060,69 @@ std::unique_ptr<havel::ast::Statement> Parser::parseEmitStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseOnEventStatement() {
+  std::string eventName;
+  std::unique_ptr<havel::ast::Expression> eventArg;
+  std::unique_ptr<havel::ast::Expression> filter;
+  std::unique_ptr<havel::ast::Statement> body;
+  if (!parseOnEventParts(eventName, eventArg, filter, body)) {
+    return nullptr;
+  }
+  auto stmt = makeNode<havel::ast::OnEventStatement>(
+      std::move(eventName), std::move(eventArg), std::move(filter),
+      std::move(body));
+  return stmt;
+}
+
+bool Parser::parseOnEventParts(std::string &nameOut,
+                               std::unique_ptr<havel::ast::Expression> &argOut,
+                               std::unique_ptr<havel::ast::Expression> &filterOut,
+                               std::unique_ptr<havel::ast::Statement> &bodyOut) {
   // The event name token (a dotted identifier or a string literal).
   auto nameTok = advance();
-  std::string eventName = nameTok.value;
+  nameOut = nameTok.value;
 
   // Optional argument: on file.changed("./config.hv") { ... }
-  std::unique_ptr<havel::ast::Expression> eventArg;
   if (at().type == havel::TokenType::OpenParen) {
     advance(); // consume "("
     if (at().type != havel::TokenType::CloseParen) {
-      eventArg = parseExpression();
+      argOut = parseExpression();
     }
     if (at().type != havel::TokenType::CloseParen) {
       failAt(at(), "Expected ')' after event argument");
-      return nullptr;
+      return false;
     }
     advance(); // consume ")"
   }
 
   // Optional filter: on window.focused where window.class == "Firefox" { }
-  std::unique_ptr<havel::ast::Expression> filter;
   if (at().type == havel::TokenType::Where ||
       (at().type == havel::TokenType::Identifier && at().value == "where")) {
     advance(); // consume "where"
-    filter = parseExpression();
+    filterOut = parseExpression();
   }
 
   // Handler body
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after event subscription");
+    return false;
+  }
+  bodyOut = parseBlockStatement();
+  return true;
+}
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parseOnEventExpression() {
+  std::string eventName;
+  std::unique_ptr<havel::ast::Expression> eventArg;
+  std::unique_ptr<havel::ast::Expression> filter;
+  std::unique_ptr<havel::ast::Statement> body;
+  if (!parseOnEventParts(eventName, eventArg, filter, body)) {
     return nullptr;
   }
-  auto body = parseBlockStatement();
-
-  auto stmt = makeNode<havel::ast::OnEventStatement>(
+  auto expr = makeNode<havel::ast::OnEventExpression>(
       std::move(eventName), std::move(eventArg), std::move(filter),
       std::move(body));
-  return stmt;
+  return expr;
 }
 
 std::vector<std::unique_ptr<havel::ast::SwitchCase>>

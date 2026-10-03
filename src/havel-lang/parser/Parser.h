@@ -281,6 +281,14 @@ private:
   // event subscription (architecture doc: `on` as syntax sugar over
   // subscriptions).
   std::unique_ptr<ast::Statement> parseOnEventStatement();
+  // `on <event> { body }` in expression position: `let w = on ... { ... }`.
+  // Shares parseOnEventParts with the statement form.
+  std::unique_ptr<ast::Expression> parseOnEventExpression();
+  // Shared: the event name, optional (arg), optional where-filter, body.
+  bool parseOnEventParts(std::string &nameOut,
+                         std::unique_ptr<ast::Expression> &argOut,
+                         std::unique_ptr<ast::Expression> &filterOut,
+                         std::unique_ptr<ast::Statement> &bodyOut);
   // `emit <name-or-string> [payload]` — syntax sugar over event.publish.
   std::unique_ptr<ast::Statement> parseEmitStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();

@@ -88,6 +88,10 @@ private:
     struct QueuedEvent {
         std::string name;
         EventPayload payload;
+        // Matching handlers snapshot taken at publish time: a later
+        // unsubscribe/cancel must not retroactively drop events that were
+        // published while the subscription existed.
+        std::vector<HandlerFn> handlers;
     };
 
     mutable std::mutex mutex_;

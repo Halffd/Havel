@@ -140,6 +140,7 @@ enum class NodeType {
   SpreadPattern, // ..rest for array rest patterns
   ConstructorPattern, // Name(p1, p2) constructor destructuring in match
   OnEventStatement, // generic on-event subscriptions (file.changed, "my.event")
+  OnEventExpression, // `let w = on file.changed("./x") { ... }` — subscription as a value
   EmitStatement,    // emit "my.event" { payload } — sugar over event.publish
   RelationalCaseTest, // <0, >10, <=2, >=10 relational case test in switch
   // Literals
@@ -2130,6 +2131,35 @@ struct OnEventStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On Event Expression — the same subscription as OnEventStatement but in
+// expression position: `let w = on file.changed("./foo") { ... }` / `w =
+// on window.focused { ... }`. Compiles to event.subscribe whose return
+// (the subscription id) is the expression's value.
+struct OnEventExpression : public Expression {
+  std::string eventName;
+  std::unique_ptr<Expression> eventArg;
+  std::unique_ptr<Expression> filter;
+  std::unique_ptr<Statement> body;
+
+  OnEventExpression(std::string name, std::unique_ptr<Expression> arg,
+                    std::unique_ptr<Expression> filt,
+                    std::unique_ptr<Statement> bd)
+      : eventName(std::move(name)), eventArg(std::move(arg)),
+        filter(std::move(filt)), body(std::move(bd)) {
+    kind = NodeType::OnEventExpression;
+  }
+
+  std::string toString() const override {
+    std::string s = "OnEventExpression{event: " + eventName;
+    if (eventArg) s += "(arg)";
+    if (filter) s += ", filter";
+    s += ", body: " + (body ? body->toString() : "nullptr") + "}";
+    return s;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Emit Statement (emit "my.event" { foo: 123 } / emit mpv.paused) —
 // syntax sugar over the event.publish host function. Libraries build
 // their own event APIs without touching the compiler.
@@ -3367,6 +3397,7 @@ public:
   virtual void visitRangePattern(const RangePattern &node) = 0;
   virtual void visitRelationalCaseTest(const RelationalCaseTest &node) = 0;
   virtual void visitOnEventStatement(const OnEventStatement &node) = 0;
+  virtual void visitOnEventExpression(const OnEventExpression &node) = 0;
   virtual void visitEmitStatement(const EmitStatement &node) = 0;
 
   virtual void visitInterpolatedStringExpression(
@@ -3535,6 +3566,10 @@ inline void RelationalCaseTest::accept(ASTVisitor &visitor) const {
 
 inline void OnEventStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOnEventStatement(*this);
+}
+
+inline void OnEventExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitOnEventExpression(*this);
 }
 
 inline void EmitStatement::accept(ASTVisitor &visitor) const {

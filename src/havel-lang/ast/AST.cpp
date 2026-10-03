@@ -216,6 +216,13 @@ public:
     if (node.body) node.body->accept(*this);
   }
 
+  void visitOnEventExpression(const OnEventExpression &node) override {
+    out << getIndent() << node.toString() << std::endl;
+    if (node.eventArg) node.eventArg->accept(*this);
+    if (node.filter) node.filter->accept(*this);
+    if (node.body) node.body->accept(*this);
+  }
+
   void visitEmitStatement(const EmitStatement &node) override {
     out << getIndent() << node.toString() << std::endl;
     if (node.payload) node.payload->accept(*this);

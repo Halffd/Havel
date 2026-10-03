@@ -1,4 +1,6 @@
 #include "EventRuntime.hpp"
+#include <iostream>
+#include <cstdlib>
 
 namespace havel::compiler {
 
@@ -34,7 +36,17 @@ void EventRuntime::clearAll() {
 
 void EventRuntime::publish(const std::string &name, EventPayload payload) {
     std::lock_guard<std::mutex> lock(mutex_);
-    queue_.push_back(QueuedEvent{name, std::move(payload)});
+    // Snapshot the matching handlers at publish time: a later
+    // unsubscribe/cancel must not retroactively drop events that were
+    // published while the subscription existed.
+    QueuedEvent queued{name, std::move(payload), {}};
+    auto it = subscriptions_.find(name);
+    if (it != subscriptions_.end()) {
+        for (const auto &sub : it->second) {
+            queued.handlers.push_back(sub.handler);
+        }
+    }
+    queue_.push_back(std::move(queued));
 }
 
 void EventRuntime::dispatch() {
@@ -48,21 +60,11 @@ void EventRuntime::dispatch() {
     while (!local.empty()) {
         QueuedEvent event = std::move(local.front());
         local.pop_front();
-        // Copy the matching subscriptions so a handler that
-        // subscribes/unsubscribes during dispatch cannot invalidate the
-        // iteration.
-        std::vector<Subscription> matching;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto it = subscriptions_.find(event.name);
-            if (it == subscriptions_.end()) {
-                continue;
-            }
-            matching = it->second;
-        }
-        for (auto &sub : matching) {
-            if (sub.handler) {
-                sub.handler(event.payload);
+        // The matching handlers were snapshotted at publish time — a
+        // cancel after publish cannot retroactively drop the event.
+        for (auto &handler : event.handlers) {
+            if (handler) {
+                handler(event.payload);
             }
         }
     }

@@ -44,17 +44,15 @@ on "sugar.event" {
 emit "sugar.event"
 
 // Cancel: the canceled handler never runs. The subscription id comes
-// from event.subscribe (the `w = on ...` lifetime syntax needs on-as-
-// expression -- deferred).
-w = event.subscribe("canceled.event", fn(ev) {
-  print("FAIL: canceled handler ran")
-  process.exit(255)
-})
-if w == 0 {
-  print("FAIL: event.subscribe returned 0")
-  process.exit(255)
+// from the `w = on ...` lifetime form (on-as-expression).
+fired = 0
+w = on "canceled.event" {
+  fired = fired + 1
 }
+event.publish("canceled.event")
+event.publish("canceled.event")
 event.cancel(w)
+event.publish("canceled.event")
 event.publish("canceled.event")
 
 print("main done")
@@ -70,4 +68,5 @@ assertEq(foo, "42", "payload event.foo")
 assertEq(special, 1, "where filter matches")
 assertEq(nonspecial, 0, "where filter rejects")
 assertEq(emitted, 1, "emit syntax sugar")
+assertEq(fired, 2, "publish-time snapshot: 2 fires before cancel")
 print("PASS event-bus")

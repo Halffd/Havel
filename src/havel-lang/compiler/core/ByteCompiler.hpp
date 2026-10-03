@@ -169,10 +169,14 @@ void optimizeJumps();  // Jump threading optimization
       const ast::Statement &statement,
       std::vector<const ast::LambdaExpression *> &out) const;
   // Collect `on <event> { ... }` statements (top-level + nested) for
-  // handler-fn index reservation and compilation.
+  // handler-fn index reservation and compilation. Also descends into
+  // assignments to catch `w = on ... { ... }` (OnEventExpression).
   void collectOnEventStatements(
       const ast::Statement &statement,
       std::vector<const ast::OnEventStatement *> &out) const;
+  void collectOnEventExpressions(
+      const ast::Statement &statement,
+      std::vector<const ast::OnEventExpression *> &out) const;
   void collectLambdaExpressions(
       const ast::Expression &expression,
       std::vector<const ast::LambdaExpression *> &out) const;
@@ -284,6 +288,8 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   // ASTNode*, so it takes the base Statement and dispatches on kind.
   void compileOnBlock(const ast::Statement &stmt);
   void compileOnEventStatement(const ast::OnEventStatement &stmt);
+  void compileOnEventExpression(const ast::OnEventExpression &stmt);
+  void compileOnEventExprRegistration(const ast::OnEventExpression &stmt);
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>
   class_method_indices_by_node_;
 	std::unordered_map<const ast::StructMethodDef *, uint32_t>

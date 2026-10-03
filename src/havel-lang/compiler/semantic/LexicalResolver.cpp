@@ -310,6 +310,10 @@ if (ctx.owner) {
 			// `on <event> { ... }` handler functions; upvalues reach
 			// compileOnEventStatement.
 			result_.on_event_upvalues[ctx.owner] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnEventExpression) {
+			// `let w = on <event> { ... }` handler functions (expression
+			// position); upvalues reach compileOnEventExpression.
+			result_.on_event_upvalues[ctx.owner] = ctx.upvalues;
 		}
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
@@ -2124,6 +2128,22 @@ case ast::NodeType::MemberExpression: {
         // carries symbols to resolve.
         const auto &rel = static_cast<const ast::RelationalCaseTest &>(expression);
         if (rel.operand) resolveExpression(*rel.operand);
+        break;
+    }
+
+    case ast::NodeType::OnEventExpression: {
+        // `let w = on <event> { ... }` — own function context with one
+        // `event` parameter (same shape as the statement form).
+        const auto &onEvent = static_cast<const ast::OnEventExpression &>(expression);
+        beginFunction(&onEvent);
+        declareLocal("event", nullptr, false);
+        if (onEvent.filter) {
+          resolveExpression(*onEvent.filter);
+        }
+        if (onEvent.body) {
+          resolveStatement(*onEvent.body);
+        }
+        endFunction();
         break;
     }
 

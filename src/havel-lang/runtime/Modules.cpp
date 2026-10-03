@@ -155,22 +155,38 @@ void Modules::installHostFunctions() {
     return ctx_->vm->execLengthOp(args[0]);
   };
 
-    ioBridge_->install(options_);
-    systemBridge_->install(options_);
-    uiBridge_->install(options_);
-    inputBridge_->install(options_);
-    mediaBridge_->install(options_);
-    audioBridge_->install(options_);
-    displayBridge_->install(options_);
-    brightnessBridge_->install(options_);
-    modeBridge_->install(options_);
-    timerBridge_->install(options_);
-    appBridge_->install(options_);
-    concurrencyBridge_->install(options_);
-    automationBridge_->install(options_);
-    browserBridge_->install(options_);
-    configBridge_->install(options_);
-    toolsBridge_->install(options_);
+    // Each bridge writes straight into the flat options_.host_functions map,
+    // so the module label is recovered from the keys the call adds rather than
+    // from a duplicated list of function names.
+    auto installBridge = [&](const char *module, auto install) {
+        std::unordered_set<std::string> before;
+        before.reserve(options_.host_functions.size());
+        for (auto &kv : options_.host_functions) before.insert(kv.first);
+        install();
+        for (auto &kv : options_.host_functions)
+            if (!before.count(kv.first))
+                host_function_modules_[kv.first] = module;
+    };
+
+    host_function_modules_["type"] = "modules";
+    host_function_modules_["len"] = "modules";
+
+    installBridge("io", [&] { ioBridge_->install(options_); });
+    installBridge("system", [&] { systemBridge_->install(options_); });
+    installBridge("ui", [&] { uiBridge_->install(options_); });
+    installBridge("input", [&] { inputBridge_->install(options_); });
+    installBridge("media", [&] { mediaBridge_->install(options_); });
+    installBridge("audio", [&] { audioBridge_->install(options_); });
+    installBridge("display", [&] { displayBridge_->install(options_); });
+    installBridge("brightness", [&] { brightnessBridge_->install(options_); });
+    installBridge("mode", [&] { modeBridge_->install(options_); });
+    installBridge("timer", [&] { timerBridge_->install(options_); });
+    installBridge("app", [&] { appBridge_->install(options_); });
+    installBridge("concurrency", [&] { concurrencyBridge_->install(options_); });
+    installBridge("automation", [&] { automationBridge_->install(options_); });
+    installBridge("browser", [&] { browserBridge_->install(options_); });
+    installBridge("config", [&] { configBridge_->install(options_); });
+    installBridge("tools", [&] { toolsBridge_->install(options_); });
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
@@ -456,11 +472,16 @@ void Modules::installStdLib() {
         if (mod.eager) {
             auto plugin = extensionLoader_->loadModulePlugin(mod.name);
             if (plugin) {
+                // Everything this plugin registers belongs to the module the
+                // scanner reported, which is the only authoritative owner.
+                compiler::VM::HostModuleScope scope(vm, mod.name);
                 plugin->register_fn(static_cast<void *>(&api));
             }
         } else {
             std::string modName = mod.name;
-            vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
+            auto *vmPtr = &vm;
+            vm.registerLazyModule(modName, [this, modName, vmPtr](compiler::VMApi &a) {
+                compiler::VM::HostModuleScope scope(*vmPtr, modName);
                 auto plugin = extensionLoader_->loadModulePlugin(modName);
                 if (plugin) {
                     plugin->register_fn(static_cast<void *>(&a));
@@ -484,6 +505,11 @@ void Modules::installStdLib() {
     // never set on the hotkey global object.
     for (const auto &[name, fn] : options_.host_functions) {
         ctx_->vm->registerHostFunction(name, fn);
+        // The bridges contributed these into a flat map, so the owner recorded
+        // during installHostFunctions() is applied here, after registration.
+        auto mod = host_function_modules_.find(name);
+        if (mod != host_function_modules_.end())
+            ctx_->vm->setHostFunctionModule(name, mod->second);
     }
     ctx_->vm->buildNamespaceGlobals();
     // Bridge initializer: shapes namespace objects (io/keyboard/devices/mouse).

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "host/screenshot/IScreenshotBackend.hpp"
+#include "utils/HeadlessRuntime.hpp"
 
 #include <QImage>
 #include <QScreen>
@@ -91,7 +92,11 @@ public:
 private:
     static bool ensureQtApplication() {
         if (QGuiApplication::instance()) return true;
-        
+
+        // Qt aborts the process from the QGuiApplication constructor when no
+        // display server is reachable; sandboxed runs never construct one.
+        if (havel::qtRuntimeUnavailable()) return false;
+
         static int dummy_argc = 1;
         static char* dummy_argv[] = { const_cast<char*>("havel-screenshot"), nullptr };
 

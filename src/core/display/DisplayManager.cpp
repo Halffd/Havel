@@ -1,5 +1,6 @@
 #include "core/display/DisplayManager.hpp"
 #include "utils/ExitHandler.hpp"
+#include "utils/HeadlessRuntime.hpp"
 #include "utils/Logger.hpp"
 #include "x11.h"
 #include <X11/extensions/Xrandr.h>
@@ -19,11 +20,18 @@ namespace havel {
 Display *DisplayManager::display = nullptr;
 ::Window DisplayManager::root = 0;
 bool DisplayManager::initialized = false;
+bool DisplayManager::headlessMode = false;
 std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
 
 void DisplayManager::Initialize() {
-  if (!initialized) {
-    const char* displayName = std::getenv("DISPLAY");
+  if (initialized) return;
+  // headlessMode alone is not enough: it is a settable flag, so a caller that
+  // touches the display before SetHeadlessMode() (or forgets it entirely)
+  // would fall through to the ":0" fallback below and attach to the real
+  // session. HAVEL_HEADLESS is in the environment from the process's first
+  // instruction, so treat it as authoritative.
+  if (headlessMode || isHeadlessRuntime()) return;
+  const char* displayName = std::getenv("DISPLAY");
     if (!displayName || displayName[0] == '\0') {
       displayName = ":0";
     }
@@ -42,7 +50,6 @@ void DisplayManager::Initialize() {
         DisplayManager::Close();
       });
     }
-  }
 }
 
 void DisplayManager::Close() {

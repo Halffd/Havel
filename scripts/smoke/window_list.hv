@@ -1,24 +1,30 @@
 // Test: window.list() returns array of window objects
-// Verifies WindowModule basic enumeration works
+// Verifies WindowModule basic enumeration works.
+// Headless compatibility: sandboxed children (hvtest/ctest) have no window
+// manager — window.list() must return nil there instead of connecting to X11.
 
 use window
 
 val all = window.list()
-print("window.list() type: " + type(all))
-assert(type(all) == "array", "window.list() must return array")
+if all == nil {
+    print("no window manager (headless env), window.list() = nil")
+} else {
+    print("window.list() type: " + type(all))
+    assert(type(all) == "array", "window.list() must return array")
 
-val count = all.length()
-print("window count: " + count)
-assert(count >= 0, "window count must be non-negative")
+    val count = all.length()
+    print("window count: " + count)
+    assert(count >= 0, "window count must be non-negative")
 
-if count > 0 {
-    val first = all[0]
-    print("first window: " + first.title)
-    assert(first.id != nil, "window must have id")
-    assert(first.title != nil, "window must have title")
-    assert(first.class != nil, "window must have class")
-    assert(first.exe != nil, "window must have exe")
-    assert(first.pid != nil, "window must have pid")
+    if count > 0 {
+        val first = all[0]
+        print("first window: " + first.title)
+        assert(first.id != nil, "window must have id")
+        assert(first.title != nil, "window must have title")
+        assert(first.class != nil, "window must have class")
+        assert(first.exe != nil, "window must have exe")
+        assert(first.pid != nil, "window must have pid")
+    }
 }
 
 print("PASS: window_list")

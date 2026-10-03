@@ -1054,3 +1054,5 @@ If no results, run `opencode-rag index`.
 - A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
 - NEVER finish a coding session without adding quirks for resolved errors.
 <!-- END opencode-rag -->
+
+# Never run any script in scripts/tests/io or brightness scripts touching real hardware

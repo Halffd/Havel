@@ -4,7 +4,10 @@
 
 #include "../ModularHostBridges.hpp"
 #include "BridgesInternal.hpp"
-#include "../../../havel-lang/runtime/events/EventRuntime.hpp"
+#include "../../havel-lang/runtime/events/EventRuntime.hpp"
+#include "../../havel-lang/runtime/events/EventSource.hpp"
+#include "../../../host/platform/FileWatcher.hpp"
+#include "../../../host/platform/WindowEventSource.hpp"
 #include "../../../havel-lang/compiler/vm/VM.hpp"
 
 namespace havel::compiler {
@@ -62,6 +65,23 @@ void EventBridge::install(PipelineOptions &options) {
     if (args.size() >= 3 && !args[2].isNull()) {
       if (args[2].isStringValId() || args[2].isStringId()) {
         runtime->setSubscriptionArg(subId, vm->resolveStringKey(args[2]));
+      }
+    }
+    // Subscription lifecycle drives the native event sources (the host
+    // boundary, not the language): `on file.changed(path)` establishes the
+    // inotify watch for that path; `on window.*` starts the X11 source.
+    if (name.rfind("file.", 0) == 0) {
+      if (ctx->fileWatcher) {
+        std::string watchPath =
+            runtime->getSubscriptionArg(subId).empty()
+                ? "."
+                : runtime->getSubscriptionArg(subId);
+        ctx->fileWatcher->start(*runtime);
+        ctx->fileWatcher->watch(watchPath);
+      }
+    } else if (name.rfind("window.", 0) == 0) {
+      if (ctx->windowEventSource) {
+        ctx->windowEventSource->start(*runtime);
       }
     }
     return Value(static_cast<int64_t>(subId));

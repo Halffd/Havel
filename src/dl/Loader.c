@@ -444,7 +444,12 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     }
     const char *canonical = alias_map_lookup(loader, name);
     if (!canonical) {
-      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      /* Miss is a normal return here, not a failure: callers probe for a
+       * native plugin before falling back to a Havel/C++ module, and every
+       * one of them handles NULL. Logging at ERROR produced a false alarm
+       * for scripts using no modules at all (e.g. print("hi") reported
+       * "library not found for ffi"). Keep it at DEBUG. */
+      HAVEL_LOGF_DEBUG("havel_loader_load_module: no native plugin for %s", name);
       return NULL;
     }
     snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", canonical);
@@ -455,7 +460,7 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     }
     path = find_library(loader, lib_name);
     if (!path) {
-      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      HAVEL_LOGF_DEBUG("havel_loader_load_module: no native plugin for %s (alias %s)", name, canonical);
       return NULL;
     }
   }

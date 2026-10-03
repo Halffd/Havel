@@ -689,6 +689,10 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/SystemBridge.cpp"
 "src/host/module/bridges/TimerBridge.cpp"
 "src/host/module/bridges/ToolsBridge.cpp"
+# Native event sources (platform boundary): inotify file watching + X11
+# window events publish into the EventRuntime; the VM pump dispatches.
+"src/host/platform/FileWatcher.cpp"
+"src/host/platform/WindowEventSource.cpp"
 "src/host/module/bridges/UIBridge.cpp"
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"

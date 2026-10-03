@@ -6,6 +6,8 @@
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
 #include "events/EventRuntime.hpp"
+#include "../../host/platform/FileWatcher.hpp"
+#include "../../host/platform/WindowEventSource.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
@@ -340,6 +342,20 @@ vm_->addIntervalResult(timer_id, result);
         watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
         vm_->setWatcherRegistry(watcher_registry_.get());
         havel::startup_timing_report("watcher-registry", t);
+
+        // Native event sources (architecture: the host supplies event
+        // sources; the core runtime and the language see none of their
+        // mechanics). Sources publish into the EventRuntime; the VM pump
+        // dispatches. Created here, wired into the HostContext so the
+        // EventBridge's subscriptions can start them.
+        file_watcher_ = std::make_unique<compiler::FileWatcher>();
+        window_event_source_ = std::make_unique<compiler::WindowEventSource>();
+        if (hostContext_) {
+            const_cast<HostContext &>(*hostContext_).fileWatcher = file_watcher_.get();
+            const_cast<HostContext &>(*hostContext_).windowEventSource =
+                window_event_source_.get();
+        }
+        havel::startup_timing_report("event-sources", t);
 
         // Synchronous reactive when evaluation: STORE_GLOBAL commits the new
         // value then calls emitVariableChanged, which invokes this callback
@@ -928,6 +944,13 @@ vm_->addIntervalResult(timer_id, result);
             auto_reload_enabled_.store(false);
         }
         stopReloadWatcher();
+        // Stop the native event sources before tearing the VM down.
+        if (file_watcher_) {
+            file_watcher_->stop();
+        }
+        if (window_event_source_) {
+            window_event_source_->stop();
+        }
         if (modules_) {
             modules_->shutdown();
         }
@@ -976,6 +999,11 @@ private:
     std::atomic<bool> auto_reload_enabled_{false};
     std::atomic<bool> reload_watcher_stop_{false};
     std::atomic<bool> reload_pending_{false};
+    // Native event sources (host/platform boundary) — publish into the
+    // EventRuntime; the VM pump dispatches. Wired into the HostContext so
+    // the EventBridge's subscriptions start them.
+    std::unique_ptr<compiler::FileWatcher> file_watcher_;
+    std::unique_ptr<compiler::WindowEventSource> window_event_source_;
     std::thread reload_watcher_;
     std::string reload_watch_path_;
     std::string reload_source_;

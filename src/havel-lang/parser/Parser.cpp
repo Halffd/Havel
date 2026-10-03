@@ -7077,9 +7077,29 @@ bool Parser::parseOnEventParts(std::string &nameOut,
                                std::unique_ptr<havel::ast::Expression> &argOut,
                                std::unique_ptr<havel::ast::Expression> &filterOut,
                                std::unique_ptr<havel::ast::Statement> &bodyOut) {
-  // The event name token (a dotted identifier or a string literal).
-  auto nameTok = advance();
-  nameOut = nameTok.value;
+  // The event name: a string literal, a dotted identifier chain
+  // (file.changed — the lexer has no dot-in-identifier, so the chain is
+  // assembled from Identifier Dot Identifier), or a plain identifier.
+  std::string name;
+  auto nameTok = at();
+  if (nameTok.type == havel::TokenType::String ||
+      nameTok.type == havel::TokenType::MultilineString) {
+    advance();
+    name = nameTok.value;
+  } else if (nameTok.type == havel::TokenType::Identifier) {
+    advance();
+    name = nameTok.value;
+    while (at().type == havel::TokenType::Dot &&
+           at(1).type == havel::TokenType::Identifier) {
+      advance(); // consume "."
+      auto member = advance();
+      name += "." + member.value;
+    }
+  } else {
+    failAt(nameTok, "Expected event name after 'on'");
+    return false;
+  }
+  nameOut = std::move(name);
 
   // Optional argument: on file.changed("./config.hv") { ... }
   if (at().type == havel::TokenType::OpenParen) {
@@ -7470,8 +7490,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
     return parseOnModeStatementBody();
   } else if (at().type == havel::TokenType::String ||
              (at().type == havel::TokenType::Identifier &&
-              at().value.find('.') != std::string::npos)) {
-    // Dotted/qualified event names (file.changed, window.focused,
+              at(1).type == havel::TokenType::Dot)) {
+    // String names or dotted chains (file.changed — the lexer has no
+    // dot-in-identifier, so the chain is assembled by the parts parser).
+    // A generic event subscription, not one of the fixed lifecycle forms
+    // below. `on <name> [(arg)] [where <expr>] { body }`.
     // "my.event") — a generic event subscription, not one of the fixed
     // lifecycle forms below. `on <name> [(arg)] [where <expr>] { body }`.
     return parseOnEventStatement();

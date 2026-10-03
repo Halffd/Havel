@@ -15,6 +15,8 @@
 // Forward declarations
 namespace havel::compiler {
 class EventRuntime;
+class FileWatcher;
+class WindowEventSource;
 }
 
 #include <functional>
@@ -114,6 +116,13 @@ struct HostContext {
   // event.subscribe/publish/unsubscribe host functions and the VM pump's
   // dispatch() talk to it. Host event sources publish here.
   class compiler::EventRuntime *eventRuntime = nullptr;
+
+  // Native event sources (owned by the engine, wired here so the
+  // EventBridge can start them per subscription): `on file.changed(path)`
+  // starts the inotify watcher for that path; `on window.*` starts the X11
+  // window event source.
+  class compiler::FileWatcher *fileWatcher = nullptr;
+  class compiler::WindowEventSource *windowEventSource = nullptr;
 
   // Auto-reload request (embedder-provided): the AppBridge's
   // app.enableReload/disableReload/toggleReload call it; the engine wires it

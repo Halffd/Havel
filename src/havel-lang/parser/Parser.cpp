@@ -2809,7 +2809,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   }
   if (at().type == havel::TokenType::Catch ||
       at().type == havel::TokenType::Finally) {
-    return nullptr;
+    // parseTryStatement consumes `catch`/`finally` itself, so reaching either
+    // here means no `try` owns them. Returning null silently dropped the token
+    // and made the real mistake surface later as a confusing error such as
+    // "Expected '=' or ':' after key". The keyword switch in this function
+    // already carries this exact diagnostic; it was unreachable because this
+    // guard returned first.
+    failAt(at(), std::string("'") +
+                     (at().type == havel::TokenType::Catch ? "catch"
+                                                           : "finally") +
+                     "' can only appear within a 'try' statement");
   }
 
   // Parse based on current token
@@ -2910,7 +2919,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   }
   if (at().type == havel::TokenType::Catch ||
       at().type == havel::TokenType::Finally) {
-    return nullptr;
+    // parseTryStatement consumes `catch`/`finally` itself, so reaching either
+    // here means no `try` owns them. Returning null silently dropped the token
+    // and made the real mistake surface later as a confusing error such as
+    // "Expected '=' or ':' after key". The keyword switch in this function
+    // already carries this exact diagnostic; it was unreachable because this
+    // guard returned first.
+    failAt(at(), std::string("'") +
+                     (at().type == havel::TokenType::Catch ? "catch"
+                                                           : "finally") +
+                     "' can only appear within a 'try' statement");
   }
 
   // Orphaned `elif`: `elif` is sugar for `else if` only when it directly

@@ -35,6 +35,20 @@ bool rejects(const std::string &source) {
   }
   return false;
 }
+
+// Same, but also requires the diagnostic to name the real problem. `catch` and
+// `finally` already had a correct failAt in the keyword switch, so asserting
+// only "some error" would pass even while the guard swallowed the token and a
+// misleading error surfaced instead.
+bool rejectsWith(const std::string &source, const std::string &needle) {
+  Parser parser;
+  try {
+    parser.parseStrict(source);
+  } catch (const ParseError &e) {
+    return std::string(e.what()).find(needle) != std::string::npos;
+  }
+  return false;
+}
 } // namespace
 
 // The exact broken shape: inline if-body, then the enclosing `}`, then `else`.
@@ -163,4 +177,58 @@ TEST(ParserOrphanElse, ChainedElifInsideFunctionStillParses) {
                           "    0\n"
                           "}\n";
   EXPECT_FALSE(rejects(src));
+}
+
+// `catch`/`finally` belong to parseTryStatement. Reaching either as a
+// statement meant no `try` owned them: the token was dropped silently and the
+// mistake resurfaced as "Expected '=' or ':' after key".
+TEST(ParserOrphanElse, OrphanCatchAtTopLevelIsRejected) {
+  EXPECT_TRUE(rejectsWith("catch e {\n    print \"c\"\n}\n",
+                          "can only appear within a 'try'"));
+}
+
+TEST(ParserOrphanElse, OrphanCatchInsideFunctionIsRejected) {
+  const std::string src = "fn t() {\n"
+                          "    catch e {\n"
+                          "        print \"c\"\n"
+                          "    }\n"
+                          "}\n";
+  EXPECT_TRUE(rejectsWith(src, "can only appear within a 'try'"));
+}
+
+TEST(ParserOrphanElse, OrphanFinallyInsideFunctionIsRejected) {
+  const std::string src = "fn t() {\n"
+                          "    finally {\n"
+                          "        print \"f\"\n"
+                          "    }\n"
+                          "}\n";
+  EXPECT_TRUE(rejectsWith(src, "can only appear within a 'try'"));
+}
+
+// try/catch/finally is the construct that owns those keywords, in both the
+// bare and parenthesised catch-variable forms.
+TEST(ParserOrphanElse, TryCatchFinallyFormsStillParse) {
+  EXPECT_FALSE(rejects("fn t() {\n"
+                       "    try {\n"
+                       "        print \"body\"\n"
+                       "    } catch e {\n"
+                       "        print \"caught\"\n"
+                       "    } finally {\n"
+                       "        print \"finally\"\n"
+                       "    }\n"
+                       "}\n"));
+  EXPECT_FALSE(rejects("fn t() {\n"
+                       "    try {\n"
+                       "        print \"body\"\n"
+                       "    } catch (e) {\n"
+                       "        print \"caught\"\n"
+                       "    }\n"
+                       "}\n"));
+  EXPECT_FALSE(rejects("fn t() {\n"
+                       "    try {\n"
+                       "        print \"body\"\n"
+                       "    } finally {\n"
+                       "        print \"finally\"\n"
+                       "    }\n"
+                       "}\n"));
 }

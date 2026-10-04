@@ -9,9 +9,14 @@
 #include "../../../extensions/HavelCAPI.h"
 #include "../../../extensions/HavelValue.h"
 #include "../vm/VM.hpp"
+#include "HavelAPI.hpp"
+#include "utils/Logger.hpp"
 
 #include <cstring>
 #include <cstdio>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 namespace havel::compiler {
 
@@ -74,6 +79,20 @@ static void* api_get_host_service(const char* name) {
  * ========================================================================== */
 
 /**
+ * Registry of functions registered through the C API (api_register_function)
+ * plus the VM recorded at drain time for value conversion.
+ *
+ * This used to be a function-local static inside api_register_function with
+ * no reader at all: every extension function registered through the C ABI
+ * was silently discarded, which is how the qt.* / gtk.* namespaces went dark
+ * after their extensions moved into the toolkit plugins. Modules::install
+ * drains it via takeRegisteredExtensionFunctions().
+ */
+static std::unordered_map<std::string, BytecodeHostFunction> g_extensionFunctions;
+static std::mutex g_extensionFunctionsMutex;
+static VM* g_extension_vm = nullptr;
+
+/**
  * Wrapper that converts C API call to C++ Value call
  */
 struct ExtensionFunctionWrapper {
@@ -132,9 +151,17 @@ struct ExtensionFunctionWrapper {
                     bytecodeResult = Value::makeDouble(havel_get_float(result));
                     break;
                 case HAVEL_STRING: {
-                    // TODO: Store string in pool and use makeStringValId
-                    (void)havel_get_string(result);
-                    bytecodeResult = Value::makeNull();
+                    // Intern through the VM recorded at drain time
+                    // (takeRegisteredExtensionFunctions). Without a VM there
+                    // is no string pool to intern into; fall back to null as
+                    // before, but the normal path always has one.
+                    const char* s = havel_get_string(result);
+                    if (g_extension_vm && s) {
+                        bytecodeResult = Value::makeStringId(
+                            g_extension_vm->createRuntimeString(std::string(s)).id);
+                    } else {
+                        bytecodeResult = Value::makeNull();
+                    }
                     break;
                 }
                 case HAVEL_HANDLE: {
@@ -167,31 +194,42 @@ struct ExtensionFunctionWrapper {
 /**
  * Register extension function with HostBridge
  */
-static void api_register_function(const char* module, const char* name, 
+static void api_register_function(const char* module, const char* name,
                                    HavelNativeFn fn) {
     if (!module || !name || !fn) {
         return;
     }
-    
-    /* Create wrapper that converts between C and C++ calling conventions */
-    auto* wrapper = new ExtensionFunctionWrapper{fn};
-    
+
+    /* Create wrapper that converts between C and C++ calling conventions.
+     * Owned by the host-function lambda via shared_ptr: the registry map may
+     * overwrite entries (repeat registrations) and BytecodeHostFunction is
+     * copied around, so raw new here leaked every wrapper (ASan flagged 87
+     * leaks per qt registration pass). */
+    auto wrapper = std::make_shared<ExtensionFunctionWrapper>();
+    wrapper->c_function = fn;
+
     /* Create C++ function that calls the wrapper */
     BytecodeHostFunction cppFn = [wrapper](const std::vector<Value>& args) {
-        return ExtensionFunctionWrapper::callWrapper(args, wrapper);
+        return ExtensionFunctionWrapper::callWrapper(args, wrapper.get());
     };
-    
-    /* Register with HostBridge - this is called during HostBridge::install() */
+
     /* The function name format is "module.function" */
     std::string fullName = std::string(module) + "." + name;
-    
-    /* Store in options for later registration */
-    /* Note: This requires HostBridge to be accessible */
-    /* For now, we store in a global registry */
-    static std::unordered_map<std::string, BytecodeHostFunction> extensionFunctions;
-    extensionFunctions[fullName] = std::move(cppFn);
-    
-    printf("[HavelAPI] Registered extension function: %s\n", fullName.c_str());
+
+    {
+        std::lock_guard<std::mutex> lk(g_extensionFunctionsMutex);
+        g_extensionFunctions[fullName] = std::move(cppFn);
+    }
+    ::havel::debug("[HavelAPI] Registered extension function: {}", fullName);
+}
+
+std::unordered_map<std::string, BytecodeHostFunction>
+takeRegisteredExtensionFunctions(VM* vm) {
+    std::lock_guard<std::mutex> lk(g_extensionFunctionsMutex);
+    g_extension_vm = vm;
+    auto out = std::move(g_extensionFunctions);
+    g_extensionFunctions.clear();
+    return out;
 }
 
 /* ==========================================================================
@@ -263,24 +301,10 @@ HavelAPI* getHavelAPI(void) {
     return &g_havelAPI;
 }
 
-/**
- * Get registered extension functions
- * HostBridge calls this during install() to register extension functions
- */
-const std::unordered_map<std::string, BytecodeHostFunction>& getExtensionFunctions() {
-    static std::unordered_map<std::string, BytecodeHostFunction> functions;
-    return functions;
-}
-
-/**
- * Register extension function directly with HostBridge
- * Called by Loader after loading extension
- */
-void registerExtensionFunction(const std::string& fullName, BytecodeHostFunction fn) {
-    auto& functions = const_cast<std::unordered_map<std::string, BytecodeHostFunction>&>(
-        getExtensionFunctions());
-    functions[fullName] = std::move(fn);
-    printf("[HavelAPI] Registered: %s\n", fullName.c_str());
+/* Declared in HavelCAPI.h; toolkit-plugin hosts (UIManager) use it to hand
+ * extensions the real table at backend-creation time. */
+extern "C" void* havel_get_global_c_api(void) {
+    return &g_havelAPI;
 }
 
 } /* namespace havel::compiler */

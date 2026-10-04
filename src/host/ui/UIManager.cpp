@@ -2,6 +2,7 @@
 #include "UIBackendFactory.hpp"
 #include "c/ToolkitPlugin.h"
 #include "dl/Loader.h"
+#include "extensions/HavelCAPI.h"
 #include "../screenshot/ScreenshotService.hpp"
 #include "../window/AltTabService.hpp"
 #include "../clipboard/Clipboard.hpp"
@@ -186,7 +187,12 @@ std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const
 
 void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
     if (!toolkit.abi || !toolkit.abi->register_extension_functions) return;
-    toolkit.abi->register_extension_functions(nullptr);
+    // Pass the real global C-API table: it is a static dispatch struct that
+    // exists before any engine or VM, and registration only fills the
+    // extension-function registry (drained by Modules::install). The old
+    // nullptr call crashed toolkit plugins that dereferenced it and left
+    // qt.* permanently unregistered.
+    toolkit.abi->register_extension_functions(havel_get_global_c_api());
 }
 
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {

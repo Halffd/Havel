@@ -734,9 +734,20 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
-            # Note: Disabled C API files (not implemented)
-            # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
-            # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
+    )
+
+    # C API host side: the extension registry behind api_register_function
+    # (HavelCAPI.h). Excluded for a long time as "not implemented" while its
+    # api_register_function stored into a function-local static with no
+    # reader — the C-ABI extensions (qt.*, gtk.*, ...) were registered into
+    # a black hole and the namespaces went dark. Now compiled in and
+    # drained by Modules::install (takeRegisteredExtensionFunctions).
+    # HavelValue.cpp carries no global state (refcounted calloc values), so
+    # this copy coexists with the havel_extension_runtime copy the toolkit
+    # plugins link.
+    list(APPEND HAVEL_LANG_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
+        ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
     )
 
 # Exclude stdlib modules when building as plugins — they become havel_mod_*.so
@@ -1386,6 +1397,7 @@ endif() # QT_BACKEND_AVAILABLE
 if(GTK4_TOOLKIT_AVAILABLE OR GTK_BACKEND_AVAILABLE)
 add_library(havel_toolkit_gtk MODULE
     src/extensions/gtk/havel_toolkit_gtk.cpp
+    src/extensions/gtk/gtk_extension.cpp
     src/host/ui/GtkBackend.cpp
 )
 set(_GTK_TK_INCLUDES ${GTK4_TOOLKIT_INCLUDE_DIRS})
@@ -1394,7 +1406,10 @@ if(GTK_BACKEND_AVAILABLE)
 endif()
 list(APPEND _GTK_TK_INCLUDES
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/extensions
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
     /usr/include/cairo
     /usr/include/freetype2
     /usr/include/libpng16
@@ -1405,7 +1420,7 @@ set(_GTK_TK_LIBS ${GTK4_TOOLKIT_LIBRARIES})
 if(GTK_BACKEND_AVAILABLE)
     set(_GTK_TK_LIBS ${GTK4_LIBRARIES})
 endif()
-target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} dl)
+target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} havel_extension_runtime dl)
 target_compile_definitions(havel_toolkit_gtk PRIVATE
     HAVE_GTK_BACKEND
     HAVEL_MODULE_PLUGIN

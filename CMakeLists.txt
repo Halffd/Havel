@@ -673,14 +673,10 @@ list(APPEND CORE_SOURCES
 "src/modules/HostModules.cpp"
 )
 
-# Qt-dependent core sources (only built when in-process Qt backend is enabled)
-if(ENABLE_QT_UI_BACKEND)
-  set(_QT_CORE_SOURCES
-    "src/host/screenshot/ScreenshotService.cpp"
-    "src/host/window/AltTabService.cpp"
-  )
-  list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
-endif()
+# ScreenshotService is OpenCV-based (HAVE_OPENCV), not Qt-dependent, and
+# UIBridge.cpp references it unconditionally, so it must always build.
+# (AltTabService.cpp is already in the unconditional list above.)
+list(APPEND CORE_SOURCES "src/host/screenshot/ScreenshotService.cpp")
 
 # Clipboard sources (always built, no Qt dependency)
 set(_CLIPBOARD_CORE_SOURCES
@@ -2611,7 +2607,8 @@ add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
 add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
 add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
-  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp
+    EXTRA_DEFS $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
@@ -2648,11 +2645,12 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
-add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
-add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
-add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
-target_sources(havel_mod_ui PRIVATE ${CMAKE_SOURCE_DIR}/src/host/ui/GuiThreadManager.cpp)
+# ui has non-Qt backends (gtk namespace, toolkit reachability) so the
+# plugin builds everywhere; its Qt slice compiles only when the Qt
+# backend exists. Same gate as the main targets use.
+add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp
+  EXTRA_DEFS $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>)
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
     ${CMAKE_BINARY_DIR}/generated/wayland
@@ -2663,6 +2661,11 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 
 # Qt-dependent modules
 if(ENABLE_QT)
+  # Qt-only GUI plugins (unconditional #include <QApplication> in their
+  # sources) and the Qt-side sources of havel_mod_ui.
+  add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  target_sources(havel_mod_ui PRIVATE ${CMAKE_SOURCE_DIR}/src/host/ui/GuiThreadManager.cpp)
   add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)

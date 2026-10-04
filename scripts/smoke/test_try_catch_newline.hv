@@ -1,0 +1,46 @@
+// smoke: try-catch-newline = 2
+// `try { x }\ncatch { ... }` with the catch on the line AFTER the try's
+// closing brace must parse. Previously the catch check didn't skip the
+// newline, so the try ended without its catch and the standalone catch
+// errored "'catch' can only appear within a 'try' statement" (this shape
+// lives in modules/app/window.hv:1754).
+caught = 0
+
+try {
+  throw "boom"
+}
+catch {
+  caught = 1
+}
+
+// finally on its own line too.
+cleaned = 0
+try {
+  cleaned = 1
+}
+finally {
+  print("finally ran")
+}
+
+// Same-line catch still works.
+inline = 0
+try {
+  throw 42
+} catch {
+  inline = 1
+}
+
+print("main done")
+if caught != 1 {
+  print("FAIL: newline-separated catch did not run")
+  process.exit(255)
+}
+if cleaned != 1 {
+  print("FAIL: try body did not run")
+  process.exit(255)
+}
+if inline != 1 {
+  print("FAIL: same-line catch did not run")
+  process.exit(255)
+}
+print("PASS try-catch-newline")

@@ -6818,6 +6818,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
   }
   auto tryBody = parseBlockStatement();
 
+  // Skip newlines between the try body's closing brace and the optional
+  // catch/finally — `try { x }\ncatch { ... }` must parse.
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
   std::unique_ptr<havel::ast::Identifier> catchVariable = nullptr;
   std::unique_ptr<havel::ast::Statement> catchBody = nullptr;
 

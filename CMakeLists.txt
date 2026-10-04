@@ -704,14 +704,17 @@ list(APPEND CORE_SOURCES
 "src/modules/HostModules.cpp"
 )
 
-# Qt-dependent core sources (only built when in-process Qt backend is enabled)
-if(ENABLE_QT_UI_BACKEND)
-  set(_QT_CORE_SOURCES
-    "src/host/screenshot/ScreenshotService.cpp"
-    "src/host/window/AltTabService.cpp"
-  )
-  list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
-endif()
+# ScreenshotService/AltTabService: NOT Qt-dependent despite their old
+# placement (ScreenshotService.cpp includes only OpenCV + cstring;
+# AltTabService.cpp only <memory>). Both are referenced unconditionally by
+# core TUs (UIBridge, UIManager, HostModules), so they must build always --
+# a Qt-UI-less configure (build.sh's headless modes) failed to link with
+# undefined references to ScreenshotService otherwise.
+set(_SCREENSHOT_CORE_SOURCES
+  "src/host/screenshot/ScreenshotService.cpp"
+  "src/host/window/AltTabService.cpp"
+)
+list(APPEND CORE_SOURCES ${_SCREENSHOT_CORE_SOURCES})
 
 # Clipboard sources (always built, no Qt dependency)
 set(_CLIPBOARD_CORE_SOURCES

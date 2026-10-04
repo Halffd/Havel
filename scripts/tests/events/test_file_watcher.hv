@@ -1,0 +1,35 @@
+// smoke: file-watcher-glob = 3
+// Native event sources: `on file.created/modified/changed(pattern)` — the
+// glob's directory part is the inotify watch, the basename pattern filters
+// (fnmatch). The 50ms settle window coalesces the editor-save cascade.
+//
+// NOTE: writes to /tmp/opencode — real fs I/O, NOT in the auto-collected
+// smoke suite. Run by hand:
+//   ./build-debug/havel --run scripts/tests/events/test_file_watcher.hv
+//
+// Expected: created=1 modified=1 changed=2 (skip.txt filtered out).
+
+created = 0
+modified = 0
+changed = 0
+
+on file.created("/tmp/opencode/watchtest-glob/*.hv") {
+  created = created + 1
+  print("created: " + event.path)
+}
+on file.modified("/tmp/opencode/watchtest-glob/*.hv") {
+  modified = modified + 1
+  print("modified: " + event.path)
+}
+on file.changed("/tmp/opencode/watchtest-glob/*.hv") {
+  changed = changed + 1
+}
+
+print("main done — writes happen while the pump runs")
+t = 0
+while t < 60 {
+  sleep(100)
+  t = t + 1
+}
+
+print("created=" + str(created) + " modified=" + str(modified) + " changed=" + str(changed))

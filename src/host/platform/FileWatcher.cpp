@@ -2,14 +2,16 @@
 
 #include <cerrno>
 #include <cstring>
+#include <fnmatch.h>
 #include <sys/inotify.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <chrono>
 #include <filesystem>
 
 #include "utils/Logger.hpp"
+#include <iostream>
+#include <cstdlib>
 
 namespace havel::compiler {
 namespace {
@@ -22,8 +24,13 @@ std::string maskToKind(uint32_t mask) {
     if (mask & (IN_DELETE | IN_MOVED_FROM)) {
         return "deleted";
     }
-    // IN_MODIFY / IN_ATTRIB / IN_CLOSE_WRITE / IN_MOVED_TO|IN_MODIFY mixes
+    // IN_MODIFY / IN_ATTRIB / IN_CLOSE_WRITE / mixed
     return "modified";
+}
+
+// Whether the path contains glob metacharacters.
+bool hasGlobMeta(const std::string &path) {
+    return path.find_first_of("*?[") != std::string::npos;
 }
 
 // Coalescing settle window: inotify cascades from one save land inside it.
@@ -58,7 +65,7 @@ void FileWatcher::stop() {
         inotify_fd_ = -1;
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    watch_paths_.clear();
+    watch_entries_.clear();
     pending_.clear();
 }
 
@@ -67,9 +74,36 @@ FileWatcher::WatchId FileWatcher::watch(const std::string &path) {
     if (inotify_fd_ < 0) {
         return -1;
     }
-    // Duplicate watch: same path already watched — return the existing wd.
-    for (const auto &[wd, existing] : watch_paths_) {
-        if (existing == path) {
+    namespace fs = std::filesystem;
+
+    if (hasGlobMeta(path)) {
+        // Glob: watch the pattern's directory; the basename pattern filters.
+        fs::path p(path);
+        fs::path dir = p.parent_path();
+        std::string pattern = p.filename().string();
+        std::string dirStr = dir.empty() ? std::string(".") : dir.string();
+        // Duplicate watch: same dir+pattern already watched.
+        for (const auto &[wd, existing] : watch_entries_) {
+            if (existing.directory == dirStr && existing.pattern == pattern) {
+                return wd;
+            }
+        }
+        int wd = inotify_add_watch(inotify_fd_, dirStr.c_str(),
+                                   IN_CREATE | IN_DELETE | IN_MODIFY |
+                                       IN_ATTRIB | IN_CLOSE_WRITE |
+                                       IN_MOVED_TO | IN_MOVED_FROM);
+        if (wd < 0) {
+            ::havel::error("[FileWatcher] inotify_add_watch('{}') failed: {}",
+                           dirStr, strerror(errno));
+            return -1;
+        }
+        watch_entries_[wd] = WatchEntry{dirStr, pattern, ""};
+        return wd;
+    }
+
+    // Non-glob: watch the file or directory as-is.
+    for (const auto &[wd, existing] : watch_entries_) {
+        if (existing.exactPath == path) {
             return wd;
         }
     }
@@ -81,24 +115,24 @@ FileWatcher::WatchId FileWatcher::watch(const std::string &path) {
                        strerror(errno));
         return -1;
     }
-    watch_paths_[wd] = path;
+    watch_entries_[wd] = WatchEntry{path, "", path};
     return wd;
 }
 
 bool FileWatcher::unwatch(WatchId id) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = watch_paths_.find(id);
-    if (it == watch_paths_.end()) {
+    auto it = watch_entries_.find(id);
+    if (it == watch_entries_.end()) {
         return false;
     }
     inotify_rm_watch(inotify_fd_, id);
-    watch_paths_.erase(it);
+    watch_entries_.erase(it);
     return true;
 }
 
 size_t FileWatcher::watchCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return watch_paths_.size();
+    return watch_entries_.size();
 }
 
 void FileWatcher::loop() {
@@ -106,7 +140,7 @@ void FileWatcher::loop() {
     auto lastFlush = std::chrono::steady_clock::now();
 
     while (running_.load()) {
-        std::vector<std::pair<int, uint32_t>> nativeEvents;
+        std::vector<std::tuple<int, std::string, uint32_t>> nativeEvents;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (inotify_fd_ < 0) {
@@ -120,7 +154,10 @@ void FileWatcher::loop() {
                         reinterpret_cast<struct inotify_event *>(buffer.data() + offset);
                     // Self-events from inotify_add_watch are noise.
                     if (!(ev->mask & IN_IGNORED)) {
-                        nativeEvents.emplace_back(ev->wd, ev->mask);
+                        // ev->name holds the changed entry's name when len > 0
+                        std::string name =
+                            ev->len > 0 ? std::string(ev->name) : std::string();
+                        nativeEvents.emplace_back(ev->wd, std::move(name), ev->mask);
                     }
                     offset += sizeof(struct inotify_event) + ev->len;
                 }
@@ -155,6 +192,12 @@ void FileWatcher::loop() {
                     EventPayload payload;
                     payload.fields["path"] = path;
                     payload.fields["kind"] = kind;
+                    // Kind-specific name (file.created/modified/deleted)
+                    // plus the generic umbrella (file.changed) so both
+                    // `on file.created(...)` and `on file.changed(...)`
+                    // subscriptions match.
+                    if (std::getenv("HAVEL_FW_DIAG")) std::cerr << "[fw-diag] publishing file." << kind << " path=" << path << "\n";
+                    runtime_->publish("file." + kind, payload);
                     runtime_->publish("file.changed", std::move(payload));
                 }
                 lastFlush = now;
@@ -166,14 +209,28 @@ void FileWatcher::loop() {
 }
 
 void FileWatcher::handleNativeEvents(
-    const std::vector<std::pair<int, uint32_t>> &events) {
+    const std::vector<std::tuple<int, std::string, uint32_t>> &events) {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto &[wd, mask] : events) {
-        auto pathIt = watch_paths_.find(wd);
-        if (pathIt == watch_paths_.end()) {
+    for (const auto &[wd, entryName, mask] : events) {
+        auto entryIt = watch_entries_.find(wd);
+        if (entryIt == watch_entries_.end()) {
             continue;
         }
-        const std::string &path = pathIt->second;
+        const WatchEntry &entry = entryIt->second;
+
+        std::string path;
+        if (!entry.pattern.empty()) {
+            // Glob watch: the event is for an entry of the watched dir.
+            // Filter by the basename pattern (fnmatch).
+            if (entryName.empty() ||
+                fnmatch(entry.pattern.c_str(), entryName.c_str(), 0) != 0) {
+                continue;
+            }
+            path = entry.directory + "/" + entryName;
+        } else {
+            // Non-glob: the exact path (the watched file/dir itself).
+            path = entry.exactPath;
+        }
 
         // Kind precedence: deleted > created > modified. A save cascade
         // (OPEN, MODIFY, MODIFY, CLOSE_WRITE) coalesces into one modified;

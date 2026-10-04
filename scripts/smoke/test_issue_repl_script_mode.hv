@@ -17,6 +17,11 @@
 // input or display is touched. Pre-fix, cases 1 and 3 hang until the
 // `timeout 25` wrapper kills them (exit 124) and case 2 ignores exit and
 // also hangs; post-fix every case exits 0.
+//
+// Three ASAN-instrumented child launches: budget generously for a loaded
+// machine so hvtest's 60s default cannot kill the test mid-child.
+//
+// smoke: timeout = 180
 // Expected: PASS, exit 0.
 
 use "fs"

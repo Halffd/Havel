@@ -1,5 +1,7 @@
 // Regression for the dead qt.*/gtk.* extension namespaces.
 //
+// smoke: timeout = 240
+//
 // Since the "Qt6 extension merged into havel_toolkit_qt.so" refactor,
 // api_register_function stored every C-ABI registration in a
 // function-local static map with no reader, and UIManager called the
@@ -35,6 +37,9 @@ if build_dir == "" {
     process.exit(0)
 }
 
+FIXTURE_DIR = "${sys.tmpdir()}/havel_qt_ns_smoke_${sys.pid()}"
+fs.mkdir(FIXTURE_DIR)
+
 // Child: REPL session from the build dir (toolkit resolves), print whether
 // qt.init resolves, exit. The function reference is never invoked.
 // `env -u HAVEL_HEADLESS` strips the ctest sandbox's headless marker (it
@@ -45,6 +50,31 @@ if build_dir == "" {
 res = process.run("cd \"${build_dir}\" && printf 'print(\"QT_FN_\" + str(qt.init != nil))\\nexit\\n' | env -u HAVEL_HEADLESS timeout 25 ./havel --repl 2>&1")
 assert(res.exitCode == 0, "repl session with qt toolkit must exit 0 (pre-null-guard it SIGSEGV'd at backend creation), got ${res.exitCode}")
 assert(res.stdout.includes("QT_FN_true"), "qt.init must resolve as a function when the toolkit registers; got: ${res.stdout}")
+
+// ---------------------------------------------------------------- case 2
+// `--ui gtk` from a display-less child running a UI-declaring script: the
+// gtk toolkit plugin must load, the register bridge must run (gtk.*
+// registrations are visible with -d), and GTK's failed headless initialize
+// must degrade to the documented "No UI backend available" refusal (exit 1)
+// instead of crashing. DISPLAY/WAYLAND/XAUTHORITY are stripped so
+// GtkBackend::initialize can never touch a real desktop session even when
+// the suite runs on one; HAVEL_HEADLESS is stripped so registration is
+// actually reached.
+GTK_CHILD = "${FIXTURE_DIR}/gtk_child.hv"
+fs.write(GTK_CHILD, "use ui\nprocess.exit(0)\n")
+res2 = process.run("cd \"${build_dir}\" && env -u HAVEL_HEADLESS -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY timeout 25 ./havel --ui gtk -d \"${GTK_CHILD}\" 2>&1")
+assert(res2.exitCode == 1, "display-less gtk session must end in the documented refusal (exit 1), got ${res2.exitCode}")
+assert(res2.stdout.includes("Registered extension function: gtk.init"), "gtk register bridge must run; got: ${res2.stdout}")
+assert(res2.stdout.includes("No UI backend available"), "headless GTK must refuse with the documented error, got: ${res2.stdout}")
+
+// ---------------------------------------------------------------- case 3
+// Invalid --ui value: warning + auto fallback, never fatal.
+res3 = process.run("cd \"${build_dir}\" && printf 'exit\\n' | env -u HAVEL_HEADLESS timeout 25 ./havel --ui bogus --repl 2>&1")
+assert(res3.exitCode == 0, "invalid --ui value must fall back to auto and still work, got ${res3.exitCode}")
+assert(res3.stdout.includes("ignoring 'bogus'"), "invalid --ui value must be warned about, got: ${res3.stdout}")
+
+// Clean up.
+fs.remove(FIXTURE_DIR)
 
 print("OK qt-namespace")
 process.exit(0)

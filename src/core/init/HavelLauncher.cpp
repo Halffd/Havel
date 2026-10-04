@@ -2043,6 +2043,21 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.strictSemantics = true;
     } else if (arg == "--no-strict-semantics") {
       cfg.strictSemantics = false;
+    } else if (arg == "--ui") {
+      if (i + 1 < argc) {
+        std::string uiName = argv[++i];
+        if (uiName == "qt" || uiName == "gtk" || uiName == "imgui" ||
+            uiName == "auto") {
+          // Applies lazily at first backend creation; an unavailable
+          // backend falls back to auto detection inside UIManager.
+          host::UIManager::instance().setPreferredBackend(uiName);
+        } else {
+          warning("--ui expects qt, gtk, imgui or auto; ignoring '{}'",
+                  uiName);
+        }
+      } else {
+        warning("--ui requires an argument (qt, gtk, imgui, auto)");
+      }
     } else if (arg == "--convert" && i + 1 < argc) {
       cfg.mode = LaunchConfig::Mode::CLI;
       cfg.buildOnly = true;
@@ -2304,9 +2319,10 @@ Options:
   -t, --trace         Trace bytecode execution (show each instruction)
   -dgc, --debug-gc    Enable GC debugging
   -de, --debug-engine Enable engine debugging
-  -dio, --debug-io    Enable IO debugging
-  -dhk, --debug-hotkeys Enable hotkey debugging
-  -e, --error         Stop on first error/warning
+   -dio, --debug-io    Enable IO debugging
+   -dhk, --debug-hotkeys Enable hotkey debugging
+   --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
+   -e, --error         Stop on first error/warning
   -E, --eval CODE     Run inline Havel code
   -m, --minimal       Minimal mode (no IO/hotkeys/GUI)
   --headless            Headless mode (skip X11/BrightnessManager/EventListener)

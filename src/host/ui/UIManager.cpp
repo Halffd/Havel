@@ -25,6 +25,17 @@ UIManager& UIManager::instance() {
     return inst;
 }
 
+// Preferred backend requested via --ui (see setPreferredBackend).
+static std::string g_preferred_backend;
+
+void UIManager::setPreferredBackend(const std::string &apiName) {
+    g_preferred_backend = apiName;
+}
+
+std::string UIManager::preferredBackend() {
+    return g_preferred_backend;
+}
+
 void UIManager::destroyBackend() {
     if (!backend_) return;
     if (auto fn = backend_->getDestroyFn()) {
@@ -137,6 +148,18 @@ bool UIManager::isBackendAvailable(const std::string& apiName) const {
 }
 
 UIBackend::Api UIManager::detectBestBackend() const {
+    const std::string preferred = preferredBackend();
+    if (!preferred.empty() && preferred != "auto") {
+        UIBackend::Api api = UIBackend::Api::AUTO;
+        if (preferred == "qt") api = UIBackend::Api::QT;
+        else if (preferred == "gtk") api = UIBackend::Api::GTK;
+        else if (preferred == "imgui") api = UIBackend::Api::IMGUI;
+        if (api != UIBackend::Api::AUTO && isBackendAvailable(api)) {
+            return api;
+        }
+        // Requested but unavailable: fall back to the auto order below so
+        // a bad --ui value degrades instead of killing the app.
+    }
     if (isBackendAvailable(UIBackend::Api::QT)) {
         return UIBackend::Api::QT;
     }

@@ -27,6 +27,14 @@ public:
 
     UIBackend::Api detectBestBackend() const;
 
+    // Force backend choice for the next backend() creation ("qt", "gtk",
+    // "imgui", "auto"). Applied lazily: nothing loads until something asks
+    // for a backend. An unavailable request falls back to auto detection,
+    // so `--ui gtk` on a machine without the GTK toolkit/plugin degrades
+    // instead of dying.
+    static void setPreferredBackend(const std::string &apiName);
+    static std::string preferredBackend();
+
     void shutdown();
 
     bool isInitialized() const;

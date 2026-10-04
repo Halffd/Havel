@@ -7,8 +7,7 @@
 #include "../../host/ServiceRegistry.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../compiler/module/HavelAPI.hpp"
-#include "../parser/Parser.h"
-#include "../compiler/core/ByteCompiler.hpp"
+#include "../compiler/vm/ModuleCompilerHook.hpp"
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
@@ -320,13 +319,12 @@ void Modules::installHostFunctions() {
         std::string code = ctx_->vm->resolveStringKey(args[0]);
         if (code.empty()) return Value::makeNull();
         try {
-            parser::Parser parser;
-            auto program = parser.produceAST(code);
-            if (!program || parser.hasErrors()) return Value::makeNull();
-            compiler::ByteCompiler byteCompiler;
-            auto chunk = byteCompiler.compile(*program);
-            if (!chunk) return Value::makeNull();
-            return ctx_->vm->execute(*chunk, "__main__");
+            auto compiled =
+                compiler::ModuleCompilerHook::instance().compileSource(code);
+            if (compiled.status != compiler::SourceCompileStatus::Ok ||
+                !compiled.chunk)
+                return Value::makeNull();
+            return ctx_->vm->execute(*compiled.chunk, "__main__");
         } catch (...) {
             return Value::makeNull();
         }

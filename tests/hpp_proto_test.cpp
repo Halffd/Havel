@@ -12,10 +12,20 @@
 // registers through VMApi, the same surface every native module uses.
 
 #include "c/ModulePlugin.h"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
 #include <gtest/gtest.h>
+
+// gtest_main provides main(), so there is no entrypoint to anchor the
+// module compiler hook registration in. A static initializer is safe
+// here: this TU is compiled directly into the test binary, and the
+// registration is idempotent.
+namespace {
+const bool moduleCompilerHookInstalled =
+    havel::compiler::registerSourceModuleCompilerHook();
+} // namespace
 
 #include <cstdint>
 #include <cstdlib>

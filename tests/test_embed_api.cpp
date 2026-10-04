@@ -1,5 +1,6 @@
 #include "Havel.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/capi/havel.h"
@@ -812,6 +813,9 @@ static void test_capi_cfunction_call() {
 }
 
 int main() {
+    // SDK host: embedded scripts import modules / call eval at runtime.
+    havel::compiler::registerSourceModuleCompilerHook();
+
     std::cout << "=== Havel Embeddable API Tests ===" << std::endl;
 
     test_vm_default_construct();

@@ -15,10 +15,8 @@
 #include "../../../host/ui/UIManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
-#include "havel-lang/parser/Parser.h"
-#include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/vm/ModuleCompilerHook.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "havel-lang/lexer/Lexer.hpp"
 
 #include <fstream>
 #include "../../../host/app/AppService.hpp"
@@ -397,13 +395,10 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     std::string code = ctx_->vm->resolveStringKey(args[0]);
     if (code.empty()) return Value::makeNull();
     try {
-      parser::Parser parser;
-      auto program = parser.produceAST(code);
-      if (!program || parser.hasErrors()) return Value::makeNull();
-      ByteCompiler byteCompiler;
-      auto chunk = byteCompiler.compile(*program);
-      if (!chunk) return Value::makeNull();
-      return ctx_->vm->execute(*chunk, "__main__");
+      auto compiled = ModuleCompilerHook::instance().compileSource(code);
+      if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk)
+        return Value::makeNull();
+      return ctx_->vm->execute(*compiled.chunk, "__main__");
     } catch (...) {
       return Value::makeNull();
     }

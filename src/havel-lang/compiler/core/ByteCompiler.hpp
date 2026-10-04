@@ -288,6 +288,7 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   // ASTNode*, so it takes the base Statement and dispatches on kind.
   void compileOnBlock(const ast::Statement &stmt);
   void compileOnEventStatement(const ast::OnEventStatement &stmt);
+  void compileImportStatement(const ast::ImportStatement &statement);
   void compileOnEventExpression(const ast::OnEventExpression &stmt);
   void compileOnEventExprRegistration(const ast::OnEventExpression &stmt);
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>

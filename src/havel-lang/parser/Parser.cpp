@@ -8386,10 +8386,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
     items.push_back({"*", "*"});
   }
   // Handle comma-separated identifiers: `import a, b, c from "module"`
+  // with optional `as` aliases: `import string as s`.
   else if (at().type == havel::TokenType::Identifier) {
     while (notEOF() && at().type == havel::TokenType::Identifier) {
       std::string name = advance().value;
-      items.push_back({name, name});
+      std::string alias = name;
+
+      if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected alias name after 'as'");
+        }
+        alias = advance().value;
+      }
+      items.push_back({name, alias});
 
       if (at().type == havel::TokenType::Comma) {
         advance();

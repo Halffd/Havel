@@ -1227,6 +1227,61 @@ void ByteCompiler::compileOnEventStatement(const ast::OnEventStatement &stmt) {
   leaveFunction();
 }
 
+// `import math` / `import { item } from "module"` / `import * from "m"`.
+// Semantics mirror `use`: no 'from' means the items are module names
+// (IMPORT + STORE_GLOBAL); with 'from', the items bind to the module's
+// members (IMPORT the module, then LOAD_GLOBAL basename, OBJECT_GET item,
+// STORE_GLOBAL alias).
+void ByteCompiler::compileImportStatement(
+    const ast::ImportStatement &statement) {
+  if (statement.modulePath.empty()) {
+    for (const auto &[name, alias] : statement.importedItems) {
+      if (name == "*") {
+        // `import * from "mod"`: wildcard flatten of the module.
+        uint32_t mod_sid = addStringConstant(alias);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(mod_sid)));
+        emit(OpCode::IMPORT);
+        emit(OpCode::IMPORT_WILDCARD);
+      } else {
+        // Import the original name, store under the alias.
+        uint32_t name_sid = addStringConstant(name);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::IMPORT);
+        uint32_t store_sid = addStringConstant(alias);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
+      }
+    }
+    return;
+  }
+
+  // With 'from': import the module, store it under the path's basename,
+  // then bind each item to the module's member.
+  uint32_t path_sid = addStringConstant(statement.modulePath);
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+  emit(OpCode::IMPORT);
+
+  namespace fs = std::filesystem;
+  fs::path p(statement.modulePath);
+  std::string basename = p.stem().empty() ? statement.modulePath
+                                          : p.stem().string();
+  uint32_t base_sid = addStringConstant(basename);
+  emit(OpCode::STORE_GLOBAL, Value::makeStringValId(base_sid));
+
+  for (const auto &[name, alias] : statement.importedItems) {
+    if (name == "*") {
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(base_sid));
+      emit(OpCode::IMPORT_WILDCARD);
+      continue;
+    }
+    uint32_t item_sid = addStringConstant(name);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(base_sid));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(item_sid)));
+    emit(OpCode::OBJECT_GET);
+    uint32_t store_sid = addStringConstant(alias);
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
+  }
+}
+
 void ByteCompiler::compileOnBlock(const ast::Statement &stmt) {  auto index_it = on_block_indices_by_node_.find(&stmt);
   if (index_it == on_block_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for lifecycle block");
@@ -3493,6 +3548,12 @@ case ast::NodeType::ImplDeclaration: {
         compileUseStatement(static_cast<const ast::UseStatement &>(statement));
         break;
     }
+
+  case ast::NodeType::ImportStatement: {
+    compileImportStatement(
+        static_cast<const ast::ImportStatement &>(statement));
+    break;
+  }
 
     case ast::NodeType::WithStatement: {
         compileWithStatement(static_cast<const ast::WithStatement &>(statement));

@@ -125,6 +125,31 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                 top_level_functions_.insert(fn.name->symbol);
             }
     }
+  } else if (statement->kind == ast::NodeType::ImportStatement) {
+    // `import math` / `import { item, item as alias } from "module"` /
+    // `import a, b from "module"` / `import * from "module"`.
+    const auto &import = static_cast<const ast::ImportStatement &>(*statement);
+    if (import.modulePath.empty()) {
+      // No 'from': the items are built-in module names (like `use`).
+      for (const auto &[name, alias] : import.importedItems) {
+        global_variables_.insert(alias);
+        if (name == "*") {
+          // `import * from "mod"`: the module members resolve bare.
+          wildcard_modules_.push_back(import.modulePath.empty() ? alias : import.modulePath);
+        }
+      }
+    } else {
+      // With 'from': the item aliases resolve as globals; the compile
+      // binds them to the module's members (LOAD_GLOBAL basename,
+      // OBJECT_GET item, STORE_GLOBAL alias).
+      for (const auto &[name, alias] : import.importedItems) {
+        global_variables_.insert(alias);
+        if (name == "*") {
+          // `import * from "mod"`: the module members resolve bare.
+          wildcard_modules_.push_back(import.modulePath);
+        }
+      }
+    }
   } else if (statement->kind == ast::NodeType::UseStatement) {
     const auto &use = static_cast<const ast::UseStatement &>(*statement);
     if (!use.isFileImport) {
@@ -143,8 +168,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                                   : use.importNames[i];
           global_variables_.insert(alias);
         }
-      } else if (!use.alias.empty()) {
-        global_variables_.insert(use.alias);
+      } else if (!use.alias.empty()) {        global_variables_.insert(use.alias);
       }
     }
   }
@@ -1289,6 +1313,10 @@ case ast::NodeType::BlockStatement: {
   }
 
 case ast::NodeType::UseStatement:
+  // Global imports already handled in first pass of resolve()
+  break;
+
+case ast::NodeType::ImportStatement:
   // Global imports already handled in first pass of resolve()
   break;
 

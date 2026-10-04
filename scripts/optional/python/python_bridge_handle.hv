@@ -1,0 +1,24 @@
+// smoke: python-bridge-handle
+// Tests the opaque-handle path: a compiled re.Pattern has no direct Havel
+// representation, so it must arrive wrapped with __py_type/__py_repr, its
+// method must be callable through py.method, and py.release must drop it.
+// Expected: "Pattern"
+// Fails if the opaque wrapper is malformed, if py.method cannot reach the
+// object through the handle, or if release does not remove the handle.
+
+pattern = py.call("re", "compile", "a+")
+if pattern.__py_type != "Pattern" {
+  print("FAIL python-bridge-handle: expected Pattern, got " + str(pattern.__py_type))
+  process.exit(255)
+}
+if pattern.__py_repr != "re.compile('a+')" {
+  print("FAIL python-bridge-handle: unexpected repr " + str(pattern.__py_repr))
+  process.exit(255)
+}
+matched = py.method(pattern, "match", "aaa")
+if matched == nil {
+  print("FAIL python-bridge-handle: match on 'aaa' returned nil")
+  process.exit(255)
+}
+py.release(pattern)
+return pattern.__py_type

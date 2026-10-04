@@ -71,6 +71,7 @@ option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
 option(ENABLE_HVDB "Build Havel debugger (hvdb)" ON)
 option(ENABLE_HAVEL_DAP "Build DAP server (havel-dap)" ON)
 option(ENABLE_HVTEST "Build test runner (hvtest)" ON)
+option(ENABLE_PYTHON "Build the optional CPython bridge plugin (havel_mod_python)" OFF)
 option(ENABLE_TSAN "Enable ThreadSanitizer (mutually exclusive with ASAN/UBSAN)" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer (default ON for Debug)" ON)
@@ -868,6 +869,10 @@ endif()
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX ".*clipboardmgr.*")
+# The CPython bridge is a dlopen'd module plugin only. It must never be
+# compiled into havel_modules/havel_core: that would pull Python.h and
+# libpython into the embeddable core and break builds without CPython.
+list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX ".*/modules/python/.*")
 # Remove Qt-dependent modules when in-process Qt UI backend is disabled
 if(NOT ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE _QT_MODULES
@@ -2637,6 +2642,42 @@ target_sources(havel_mod_ffi PRIVATE
 target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES} havel_ffi_types)
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
+
+# -- optional CPython bridge ------------------------------------------------
+# Off by default. havel_core and havel_lang never link libpython; the
+# interpreter is reached only through this dlopen'd module, matching the seam
+# that keeps Qt out of the embeddable core.
+if(ENABLE_PYTHON)
+  pkg_check_modules(PYTHON_EMBED QUIET python3-embed)
+  if(NOT PYTHON_EMBED_FOUND)
+    message(FATAL_ERROR
+      "ENABLE_PYTHON=ON but python3-embed was not found by pkg-config. "
+      "Install the CPython development package (python3-dev / python3-devel), "
+      "or configure with -DENABLE_PYTHON=OFF.")
+  endif()
+  add_havel_module_plugin(python ${CMAKE_SOURCE_DIR}/src/modules/python/PythonModule.cpp)
+  target_include_directories(havel_mod_python PRIVATE ${PYTHON_EMBED_INCLUDE_DIRS})
+  target_link_directories(havel_mod_python PRIVATE ${PYTHON_EMBED_LIBRARY_DIRS})
+  target_link_libraries(havel_mod_python PRIVATE ${PYTHON_EMBED_LIBRARIES})
+  # These scripts live outside scripts/smoke on purpose: hvtest sweeps that
+  # directory unconditionally, so a plugin-gated test placed there would fail
+  # every build that leaves ENABLE_PYTHON off. Registered here instead, which
+  # keeps them running wherever the bridge is actually built.
+  if(ENABLE_HAVEL_LANG AND ENABLE_HVTEST)
+    foreach(py_test eval namespace call handle)
+      add_test(NAME python-bridge-${py_test}
+               COMMAND $<TARGET_FILE:havel> run
+                       ${CMAKE_SOURCE_DIR}/scripts/optional/python/python_bridge_${py_test}.hv)
+      set_tests_properties(python-bridge-${py_test} PROPERTIES
+               WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+               ENVIRONMENT "DBUS_SESSION_BUS_ADDRESS=/dev/null"
+               TIMEOUT 120)
+    endforeach()
+  endif()
+  message(STATUS "CPython bridge: enabled (${PYTHON_EMBED_VERSION})")
+else()
+  message(STATUS "CPython bridge: disabled (configure with -DENABLE_PYTHON=ON)")
+endif()
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)
 # IO module converted to pure Havel (modules/app/io.hv)
 add_havel_module_plugin(mapmanager   ${CMAKE_SOURCE_DIR}/src/modules/mapmanager/MapManagerModule.cpp)

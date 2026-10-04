@@ -2864,6 +2864,29 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
 
+    # C-ABI value conversion round-trips (HavelValue <-> VM Value). The
+    # qt.*/gtk.* extension wrappers depend on these; before the C-API
+    # restoration strings/handles/arrays/objects silently degraded to null.
+    # Links havel_lang for VM + HavelAPI.cpp + HavelValue.cpp; the suite
+    # runs under ASan+LSan so refcount imbalance fails the test.
+    add_executable(capi_value_conversion_test
+        tests/capi_value_conversion_ut.cpp
+    )
+    target_include_directories(capi_value_conversion_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/extensions
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(capi_value_conversion_test PRIVATE cxx_std_23)
+    # havel_core and havel_lang have a symbol cycle (EventListener ->
+    # ExecutionEngine and back), so they must be grouped like the main
+    # binary links them.
+    target_link_libraries(capi_value_conversion_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group)
+    add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

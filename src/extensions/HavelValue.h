@@ -130,6 +130,10 @@ void havel_array_push(HavelValue* arr, HavelValue* v);
 void havel_object_set(HavelValue* obj, const char* key, HavelValue* v);
 HavelValue* havel_object_get(const HavelValue* obj, const char* key);
 
+/* Read-only enumeration (for host-side conversion of object results) */
+size_t havel_object_count(const HavelValue* obj);
+const char* havel_object_key(const HavelValue* obj, size_t index);
+
 /* ==========================================================================
  * Memory management
  * ========================================================================== */

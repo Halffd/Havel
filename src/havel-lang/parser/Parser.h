@@ -433,6 +433,26 @@ private:
   // Main Pratt expression parser - parse with given right binding power
   std::unique_ptr<ast::Expression> parsePrattExpression(int rbp = 0);
 
+  // Continue Pratt parsing with `left` already parsed, so callers that build a
+  // node by hand can still absorb the infix/postfix tail of the expression.
+  std::unique_ptr<ast::Expression>
+  parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left);
+
+  // Condition of a hotkey prefix (`X when <cond> =>`) or of a `when` block.
+  // Stops before the caller's `=>` / `{` terminator, and understands the
+  // spec's bare-word shorthand: `when mode gaming` means `when mode ==
+  // "gaming"`.
+  std::unique_ptr<ast::Expression> parseConditionExpression();
+
+  // Consume a leading `when`/`if` (if present) and parse the condition that
+  // follows it. Used by every hotkey binding form so the condition grammar
+  // lives in exactly one place.
+  std::unique_ptr<ast::Expression> parseHotkeyPrefixCondition();
+
+  // True for a bare word that can stand in for the right-hand side of a
+  // shorthand condition (`when title Firefox`, `when title "genshin"`).
+  static bool isConditionShorthandWord(TokenType type);
+
   // Get left binding power for a token type - inline for performance
   inline int getBindingPower(TokenType type) const;
 

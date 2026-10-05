@@ -63,10 +63,9 @@ assert(res.exitCode == 0, "multi-line pipeline stage must pass --lint, got exit 
 
 // ------------------------------------------------------- fixture 2: hotkeys
 // `|`-prefixed hotkey bindings: a key-only modifier prefix and a bare key.
-// The `if`-triggered form (`|^f4 if => {`) is deliberately absent: it fails at
-// statement start with or without the `|` prefix (`f4 if => {` fails the same
-// way), which is a separate pre-existing defect in the trigger syntax, not the
-// `|` disambiguation under test here.
+// The `if`-triggered form (`|^f4 if => {`) is deliberately absent: `if` always
+// takes a condition (`F2 if mode == "work" =>`, which does parse), so a bare
+// `if` with nothing between it and `=>` is not a form the spec defines.
 hotkey_src = """
 use "fs"
 |*f13 => {

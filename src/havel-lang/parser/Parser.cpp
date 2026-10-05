@@ -944,6 +944,19 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
     left->length = start_token.length;
   }
 
+  return parsePrattExpression(rbp, std::move(left));
+}
+
+std::unique_ptr<ast::Expression>
+Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
+  DepthGuard depth_guard(recursion_depth_);
+
+  // The base operand already carries its own span; reuse it so the infix and
+  // implicit-call length arithmetic below has the same anchors it would have
+  // had if this operand had been produced by nud() in the caller.
+  Token start_token(std::string(), TokenType::Number, std::string(),
+                    left->line, left->column, left->length);
+
   // While the next token has higher binding power than our right binding power
   // Guard against infinite loops from malformed binding power tables
         int infixIterations = 0;
@@ -3114,15 +3127,7 @@ position = savePos; // restore position
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-    if (at().type == havel::TokenType::When) {
-      advance(); // consume 'when'
-      // Parse legacy when syntax (e.g., "when mode gaming")
-      // Stop at => so condition doesn't consume the arrow
-      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    } else if (at().type == havel::TokenType::If) {
-      advance(); // consume 'if'
-      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    }
+    prefixCondition = parseHotkeyPrefixCondition();
 
     if (at().type == havel::TokenType::Arrow) {
       advance(); // consume '=>'
@@ -3230,13 +3235,7 @@ position = savePos; // restore position
 
         // Check for prefix condition
         std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-        if (at().type == havel::TokenType::When) {
-          advance();
-          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-        } else if (at().type == havel::TokenType::If) {
-          advance();
-          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-        }
+        prefixCondition = parseHotkeyPrefixCondition();
 
         if (at().type != havel::TokenType::Arrow) {
           failAt(hotkeyToken, "Expected '=>' after hotkey in assignment");
@@ -3314,13 +3313,7 @@ position = savePos; // restore position
 
       // Check for prefix condition
       std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+      prefixCondition = parseHotkeyPrefixCondition();
 
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
@@ -3534,14 +3527,7 @@ at(1).type == havel::TokenType::Arrow) {
 
       // Check for prefix condition (before =>)
       std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
-        advance(); // consume 'when'
-        // Stop at => (binding power 10) so condition doesn't consume the arrow
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
-        advance(); // consume 'if'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+      prefixCondition = parseHotkeyPrefixCondition();
 
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
@@ -7954,13 +7940,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Toke
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-    if (at().type == havel::TokenType::When) {
-        advance(); // consume 'when'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    } else if (at().type == havel::TokenType::If) {
-        advance(); // consume 'if'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    }
+    prefixCondition = parseHotkeyPrefixCondition();
 
     if (at().type != havel::TokenType::Arrow) {
         failAt(hotkeyToken, "Expected '=>' after hotkey literal");
@@ -8116,6 +8096,66 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
   return binding;
 }
 
+bool Parser::isConditionShorthandWord(TokenType type) {
+  // A bare word in a condition is always the value being tested against the
+  // preceding operand (`when mode gaming`, `when title "genshin"`), so it is
+  // read as a string. `mode`, `title`, `class`, `process` and `group` all hold
+  // strings, and the spec spells the shorthand with both bare and quoted words.
+  return type == TokenType::Identifier || type == TokenType::String;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseConditionExpression() {
+  // `bp(Assignment)` is what keeps the caller's `=>` out of the condition; the
+  // logical operators bind looser than that and are still absorbed, so
+  // `when mode == "gaming" && title == "Game"` parses as one condition.
+  //
+  // Implicit-call sugar has to be off here. With it on, `when mode gaming` is
+  // read as `mode(gaming)`, and that call's argument is parsed at rbp 0, which
+  // then eats the binding's `=>` as an arrow lambda.
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+
+  auto left = parsePrattExpression(bp(BindingPower::Assignment));
+  if (!left) {
+    context.allowBraceSugar = prevAllow;
+    return nullptr;
+  }
+
+  // Bare-word shorthand: `when mode gaming` is `when mode == "gaming"`. More
+  // than one shorthand word keeps chaining (`when a b && c d`), because each
+  // equality is handed back to the Pratt loop for the infix tail that follows.
+  while (isConditionShorthandWord(at().type)) {
+    Token wordToken = advance();
+    auto right = makeNodeAt<ast::StringLiteral>(wordToken, wordToken.value, false);
+    auto eq = makeNodeAt<ast::BinaryExpression>(wordToken, std::move(left),
+                                               ast::BinaryOperator::Equal,
+                                               std::move(right));
+    left = parsePrattExpression(bp(BindingPower::Assignment), std::move(eq));
+    if (!left) {
+      context.allowBraceSugar = prevAllow;
+      return nullptr;
+    }
+  }
+
+  context.allowBraceSugar = prevAllow;
+  return left;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseHotkeyPrefixCondition() {
+  bool hasCondition = false;
+  if (at().type == TokenType::When) {
+    advance(); // consume 'when'
+    hasCondition = true;
+  } else if (at().type == TokenType::If) {
+    advance(); // consume 'if'
+    hasCondition = true;
+  }
+  if (!hasCondition) {
+    return nullptr;
+  }
+  return parseConditionExpression();
+}
+
 std::unique_ptr<ast::Expression>
 Parser::combineConditions(std::unique_ptr<ast::Expression> left,
                           std::unique_ptr<ast::Expression> right) {
@@ -8133,13 +8173,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
   advance(); // consume 'when'
 
   // Parse the condition
-  bool prevAllow = context.allowBraceSugar;
-  context.allowBraceSugar = false;
   bool prevSuppress = context.suppressBraceLambda;
   context.suppressBraceLambda = true;
-  auto condition = parseExpression();
+  auto condition = parseConditionExpression();
   context.suppressBraceLambda = prevSuppress;
-  context.allowBraceSugar = prevAllow;
 
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after when condition");

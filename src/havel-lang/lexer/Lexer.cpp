@@ -2121,7 +2121,15 @@ currentTokens.back().type == TokenType::Semicolon ||
 currentTokens.back().type == TokenType::CloseBrace ||
 currentTokens.back().type == TokenType::EOF_TOKEN;
 if (prevIsStatementStart) {
-char next = peek();
+// A statement-start `|` is a hotkey prefix when the construct is a binding
+// (`|*f13 => {`, `|m => {`). isHotkeyLookahead() is the same test the general
+// hotkey path uses -- it only accepts a following `=>`/`if =>`/`when =>` --
+// so it separates a binding from a pipeline stage. Bindings scan as a hotkey;
+// only a real stage becomes a Pipe token.
+if (isHotkeyLookahead()) {
+currentTokens.push_back(scanHotkey());
+continue;
+}
 // Skip spaces/tabs before the check: the spec's multi-line pipelines put
 // each stage on its own line ("data\n  | transform"), so `|` + spaces +
 // alpha is a pipe stage, not a hotkey prefix. Without the skip the `|`

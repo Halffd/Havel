@@ -1,6 +1,7 @@
 #include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/ModuleCompilerHook.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
@@ -8,17 +9,24 @@
 namespace havel::compiler {
 namespace {
 
-// SDK-side hook: full Lexer -> Parser -> ByteCompiler pipeline.
-// Mirrors exactly what the VM used to inline at every dynamic compile
-// site (loadModule / loadScript / runInContext / eval): a default
-// Parser (DebugOptions{}), default-constructed ByteCompiler (strict
-// mode off, no optimizer), and the same exception surfaces.
+// SDK-side hook: the compile pipeline the VM is not allowed to reach.
+// Module mode reproduces exactly what the VM used to inline at every
+// dynamic compile site (loadModule / loadScript / runInContext / module
+// eval): a default Parser (DebugOptions{}), default-constructed
+// ByteCompiler (strict mode off, no optimizer), and the same exception
+// surfaces. FullPipeline mode is what the eval host function used:
+// compileToBytecodeChunk, which additionally loads use-statement modules,
+// type checks and resolves names.
 class SourceModuleCompilerHook final : public ModuleCompilerHook {
 public:
   bool canCompile() const override { return true; }
 
-  SourceCompileResult compileSource(const std::string &source) override {
+  SourceCompileResult compileSource(const std::string &source,
+                                    SourceCompileMode mode) override {
     SourceCompileResult result;
+
+    if (mode == SourceCompileMode::FullPipeline)
+      return compileFullPipeline(source);
 
     parser::Parser parser;
     std::unique_ptr<ast::Program> program;
@@ -62,6 +70,35 @@ public:
   }
 
 private:
+  // The eval host function's pipeline. The unit name is "<eval>" and the
+  // chunk entry "__main__" to match what eval used to pass. max_instructions
+  // is deliberately not forwarded: compileToBytecodeChunk never reads it
+  // (only runPipeline calls vm->setMaxInstructions), and the VM enforces its
+  // own limit in the dispatch loop, so passing a value from the runtime side
+  // would be dead data anyway.
+  static SourceCompileResult compileFullPipeline(const std::string &source) {
+    SourceCompileResult result;
+
+    PipelineOptions options;
+    options.compile_unit_name = "<eval>";
+    options.debugBytecode = false;
+
+    try {
+      result.chunk = compileToBytecodeChunk(source, "__main__", options);
+    } catch (const std::exception &e) {
+      result.status = SourceCompileStatus::CompileError;
+      result.error = e.what();
+      return result;
+    }
+    if (!result.chunk) {
+      result.status = SourceCompileStatus::NullChunk;
+      return result;
+    }
+
+    result.status = SourceCompileStatus::Ok;
+    return result;
+  }
+
   // Protocol/trait/impl extraction previously lived inline in
   // VM::loadScript's AST walk. Runtime code must not see AST types, so
   // the hook translates top-level declarations into plain descriptors

@@ -42,6 +42,17 @@ enum class SourceCompileStatus {
   NoCompiler,  // no hook registered (runtime-only build without SDK)
 };
 
+// How much frontend work the request needs.
+//
+// Module    bare Parser + ByteCompiler. What every module load, loadScript,
+//           runInContext and the module-level eval have always used.
+// FullPipeline
+//           the whole SDK pipeline (use-statement module loading, type
+//           check, name resolution) behind compileToBytecodeChunk. Only the
+//           eval host function ever needed it. Asking for it in a runtime
+//           without an SDK is a NoCompiler error, exactly like Module.
+enum class SourceCompileMode { Module, FullPipeline };
+
 struct SourceCompileResult {
   SourceCompileStatus status = SourceCompileStatus::NoCompiler;
   std::string error; // raw diagnostic; call site adds its own prefix
@@ -55,7 +66,9 @@ public:
   virtual ~ModuleCompilerHook() = default;
 
   virtual bool canCompile() const = 0;
-  virtual SourceCompileResult compileSource(const std::string &source) = 0;
+  virtual SourceCompileResult compileSource(const std::string &source,
+                                            SourceCompileMode mode =
+                                                SourceCompileMode::Module) = 0;
 
   // Process-wide hook. Never null: when nothing is registered an internal
   // null-object is returned (canCompile() == false, NoCompiler).

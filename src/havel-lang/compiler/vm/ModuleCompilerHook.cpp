@@ -9,7 +9,8 @@ class NullCompilerHook final : public ModuleCompilerHook {
 public:
   bool canCompile() const override { return false; }
 
-  SourceCompileResult compileSource(const std::string &) override {
+  SourceCompileResult compileSource(const std::string &,
+                                   SourceCompileMode) override {
     SourceCompileResult result;
     result.status = SourceCompileStatus::NoCompiler;
     result.error = "no compiler available in this runtime";

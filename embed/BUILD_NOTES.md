@@ -39,7 +39,8 @@ The embedding API requires:
 
 ```cmake
 target_link_libraries(your_app
-    havel_lang          # Core language
+    havel_runtime       # Core language runtime (VM, values, GC, stdlib)
+    havel_compiler      # Compiler SDK (parser, semantic, bytecode) + hook
     Qt6::Core           # Qt dependencies
     Qt6::Gui
     Qt6::Widgets
@@ -47,6 +48,11 @@ target_link_libraries(your_app
     pthread
 )
 ```
+
+Linking only `havel_runtime` gives a runtime without a compiler: source
+imports then fail with a `NoCompiler` diagnostic instead of a link error, so
+the host must call `registerSourceModuleCompilerHook()` from
+`src/havel-lang/compiler/core/SourceModuleCompilerHook.hpp` to accept source.
 
 ## Alternative: Use Havel as Script Engine
 

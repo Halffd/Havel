@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../semantic/LexicalResolver.hpp"
 #include "../semantic/TypeChecker.hpp"
 #include <functional>
@@ -15,33 +16,6 @@ struct CompileSnapshot {
   std::string resolver;
   std::string bytecode;
   std::string artifact_path;
-};
-
-struct PipelineOptions {
-    std::string compile_unit_name = "unit";
-    std::string snapshot_dir;
-    bool write_snapshot_artifact = false;
-    bool debugBytecode = false;
-    bool debugEmitter = false;
-    bool traceExecution = false;
-    // Run the CFG optimization pipeline (reconstruct -> passes -> lower) over
-    // compiled functions. Functions with opcodes the CFG model cannot carry
-    // (exception handlers, inline caches, coroutine suspension) are skipped.
-    bool optimizeBytecode = false;
-    uint64_t max_instructions = 0; // 0 = unlimited
-    std::unordered_map<std::string, BytecodeHostFunction> host_functions;
-    VM *vm_override = nullptr;
-    std::function<void(VM &)> vm_setup;
-    std::function<void(VM *)> system_object_initializer; // Create system object with proper namespacing
-    // Optional yield hook invoked from the main fiber dispatch loop
-    // (sleep host function chunked path). Default callback only drains
-    // pending events and wakes sleeping goroutines; a richer caller
-    // (HavelEngine) supplies a callback that also pumps the scheduler
-    // so spawned goroutines get a chance to run while main blocks in
-    // a long sleep.
-    std::function<void()> yield_callback;
-    // Strict semantic analysis: treat undefined variables as errors
-    bool strictSemantics = true;
 };
 
 struct BytecodeSmokeResult {

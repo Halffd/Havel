@@ -2,7 +2,7 @@
 
 #include "../../runtime/HostContext.hpp"
 #include "../core/BytecodeIR.hpp"
-#include "../core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "EventQueue.hpp"
 
 #include <functional>

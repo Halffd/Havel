@@ -2,10 +2,11 @@
 
 #include "../core/Value.hpp"
 #include <cstdio>
+#include "compiler/vm/ModuleCompilerHook.hpp"
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
-#include "../compiler/core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
 #ifdef HAVEL_ENABLE_LLVM
@@ -543,14 +544,27 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk (without executing)
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk (without executing). The compile goes through
+        // the compiler hook rather than compileToBytecodeChunk directly: this
+        // header is runtime, and a runtime-only embedder has no compiler
+        // archive to link against. The engine keeps running the VM itself
+        // (storeMainChunk + spawnGoroutine), so it wants a chunk, not a
+        // pipeline result.
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Spawn the entry function as a goroutine
@@ -616,14 +630,22 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk, through the compiler hook (see execute()).
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)

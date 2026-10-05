@@ -10,8 +10,18 @@ public:
   bool canCompile() const override { return false; }
 
   SourceCompileResult compileSource(const std::string &,
-                                   SourceCompileMode) override {
+                                   SourceCompileMode,
+                                   const PipelineOptions *) override {
     SourceCompileResult result;
+    result.status = SourceCompileStatus::NoCompiler;
+    result.error = "no compiler available in this runtime";
+    return result;
+  }
+
+  SourceExecuteResult compileAndExecute(const std::string &,
+                                        const std::string &,
+                                        const SourceExecuteOptions &) override {
+    SourceExecuteResult result;
     result.status = SourceCompileStatus::NoCompiler;
     result.error = "no compiler available in this runtime";
     return result;

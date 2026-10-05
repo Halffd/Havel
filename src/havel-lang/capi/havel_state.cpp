@@ -1,7 +1,7 @@
 // havel_state.cpp - C API state management
 #include "havel.h"
+#include "../compiler/vm/ModuleCompilerHook.hpp"
 #include "../compiler/vm/VM.hpp"
-#include "../compiler/core/Pipeline.hpp"
 #include "core/Value.hpp"
 #ifdef HAVE_LIBFFI
 #include "../ffi/FFITypes.hpp"
@@ -550,16 +550,26 @@ int havel_loadstring(HavelState* H, const char* s, const char* name) {
     if (!H->vm) return HAVEL_ERR;
   try {
     std::string unitName = name ? name : "entry";
-    havel::compiler::PipelineOptions opts;
+
+    // Compile-and-execute goes through the compiler hook so the runtime
+    // archive keeps no dependency on the pipeline. A runtime-only build
+    // without the SDK reports NoCompiler here instead of failing to link.
+    havel::compiler::SourceExecuteOptions opts;
     opts.compile_unit_name = unitName;
     opts.vm_override = H->vm.get();
-    auto result = havel::compiler::runBytecodePipeline(s, "__main__", opts);
+
+    auto compiled = havel::compiler::ModuleCompilerHook::instance().compileAndExecute(s, "__main__", opts);
+    if (compiled.status != havel::compiler::SourceCompileStatus::Ok) {
+        H->last_error = compiled.error;
+        return HAVEL_ERR;
+    }
+
     for (const auto& kv : H->vm->globals) {
         if (H->globals.find(kv.first) == H->globals.end()) {
             H->globals[kv.first] = kv.second;
         }
     }
-    H->stack.push_back(result.return_value);
+    H->stack.push_back(compiled.return_value);
         return HAVEL_OK;
     } catch (const std::exception& e) {
         H->last_error = e.what();

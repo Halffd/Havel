@@ -22,11 +22,12 @@ public:
   bool canCompile() const override { return true; }
 
   SourceCompileResult compileSource(const std::string &source,
-                                    SourceCompileMode mode) override {
+                                    SourceCompileMode mode,
+                                    const PipelineOptions *options) override {
     SourceCompileResult result;
 
     if (mode == SourceCompileMode::FullPipeline)
-      return compileFullPipeline(source);
+      return compileFullPipeline(source, options);
 
     parser::Parser parser;
     std::unique_ptr<ast::Program> program;
@@ -69,6 +70,31 @@ public:
     return result;
   }
 
+  SourceExecuteResult compileAndExecute(const std::string &source,
+                                        const std::string &entry_function,
+                                        const SourceExecuteOptions &options) override {
+    SourceExecuteResult result;
+
+    // Only the two knobs the caller owns are forwarded; every other
+    // PipelineOptions field stays at its default, which is exactly what
+    // havel_loadstring relied on when it called the pipeline directly.
+    PipelineOptions pipeline;
+    pipeline.compile_unit_name = options.compile_unit_name;
+    pipeline.vm_override = options.vm_override;
+
+    try {
+      result.return_value =
+          runBytecodePipeline(source, entry_function, pipeline).return_value;
+    } catch (const std::exception &e) {
+      result.status = SourceCompileStatus::ExecuteFailed;
+      result.error = e.what();
+      return result;
+    }
+
+    result.status = SourceCompileStatus::Ok;
+    return result;
+  }
+
 private:
   // The eval host function's pipeline. The unit name is "<eval>" and the
   // chunk entry "__main__" to match what eval used to pass. max_instructions
@@ -76,15 +102,25 @@ private:
   // (only runPipeline calls vm->setMaxInstructions), and the VM enforces its
   // own limit in the dispatch loop, so passing a value from the runtime side
   // would be dead data anyway.
-  static SourceCompileResult compileFullPipeline(const std::string &source) {
+  //
+  // A caller that already holds a populated PipelineOptions (HavelEngine)
+  // passes it and gets exactly the options it built; without one, the eval
+  // defaults apply.
+  static SourceCompileResult
+  compileFullPipeline(const std::string &source,
+                      const PipelineOptions *options) {
     SourceCompileResult result;
 
-    PipelineOptions options;
-    options.compile_unit_name = "<eval>";
-    options.debugBytecode = false;
+    PipelineOptions pipeline;
+    if (options) {
+      pipeline = *options;
+    } else {
+      pipeline.compile_unit_name = "<eval>";
+      pipeline.debugBytecode = false;
+    }
 
     try {
-      result.chunk = compileToBytecodeChunk(source, "__main__", options);
+      result.chunk = compileToBytecodeChunk(source, "__main__", pipeline);
     } catch (const std::exception &e) {
       result.status = SourceCompileStatus::CompileError;
       result.error = e.what();

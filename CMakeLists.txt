@@ -497,7 +497,7 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
 
-    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
+    find_package(Qt6 COMPONENTS Core Widgets Gui Test OPTIONAL_COMPONENTS Charts)
 
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC

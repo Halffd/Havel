@@ -23,7 +23,7 @@ namespace havel::host {
  * 
  * No monitoring, no callbacks - just history.
  */
-class HistoryClipboard : public Clipboard {
+class HAVEL_EXPORT HistoryClipboard : public Clipboard {
 public:
     HistoryClipboard();
     ~HistoryClipboard();

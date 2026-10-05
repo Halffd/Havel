@@ -2,6 +2,7 @@
 
 #include "UIBackend.hpp"
 #include "dl/Loader.hpp"
+#include "havel-lang/common/Export.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,7 +11,11 @@ struct HavelToolkitABI;
 
 namespace havel::host {
 
-class UIManager {
+// HAVEL_EXPORT: the ui module plugin (havel_mod_ui.so) resolves these
+// methods from the main executable at dlopen time. Release builds compile
+// with -fvisibility=hidden, so without the explicit attribute the plugin
+// fails to load on undefined symbols.
+class HAVEL_EXPORT UIManager {
 public:
     static UIManager &instance();
 

@@ -26,7 +26,7 @@ namespace havel::host {
  * 
  * Use when you need to react to clipboard changes automatically.
  */
-class MonitoringClipboard : public HistoryClipboard {
+class HAVEL_EXPORT MonitoringClipboard : public HistoryClipboard {
 public:
     MonitoringClipboard();
     ~MonitoringClipboard();

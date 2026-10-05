@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -33,8 +34,14 @@ struct ProcessInfo {
  *
  * Provides system-level process operations without any language runtime coupling.
  * All methods return simple C++ types (bool, int, string, vector, etc.)
+ *
+ * HAVEL_EXPORT: the sys module plugin (havel_mod_sys.so) calls
+ * signalFromName and resolves it from the main executable at dlopen time.
+ * Release builds compile with -fvisibility=hidden, so without the explicit
+ * default-visibility attribute the symbol never reaches .dynsym and the plugin
+ * fails to load with "undefined symbol: ...ProcessService::signalFromName".
  */
-class ProcessService {
+class HAVEL_EXPORT ProcessService {
 public:
     ProcessService() = default;
     ~ProcessService() = default;

@@ -261,6 +261,39 @@ regProto("where", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
   });
 
+// Pipeline lambda stage (spec's "Lambda Filter/Map Detection"): the lambda
+// in a pipeline is a FILTER if it returns bool, a MAP if it returns a value.
+// Detection: run the lambda on the first element; a bool result means
+// filter, anything else means map. The piped value must be an array --
+// scalar pipe stages use the regular call path instead.
+regProtoVar("pipeApply", [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) {
+      return args.empty() ? Value::makeNull() : args[0];
+    }
+    if (!args[0].isArrayId()) {
+      // Scalar pipe stage: the lambda transforms the scalar (map semantics
+      // on a non-collection — `x | fn => fn + 10` transforms x).
+      return vm.call(args[1], {args[0]});
+    }
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) {
+      return args[0];
+    }
+    bool isFilter = vm.call(args[1], {(*arr)[0]}).isBool();
+    auto resultRef = vm.getHeap().allocateArray();
+    auto* result = vm.getHeap().array(resultRef.id);
+    for (const auto& v : *arr) {
+      if (isFilter) {
+        if (vm.toBoolPublic(vm.call(args[1], {v}))) {
+          result->push_back(v);
+        }
+      } else {
+        result->push_back(vm.call(args[1], {v}));
+      }
+    }
+    return Value::makeArrayId(resultRef.id);
+  });
+
 regProtoVar("reduce", [&vm](const std::vector<Value>& args) {
 if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
 if (args[0].isArrayId()) {

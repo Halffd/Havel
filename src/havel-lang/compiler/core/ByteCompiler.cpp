@@ -5012,9 +5012,16 @@ case ast::NodeType::CastExpression: {
       bool is_tap = false;
 
       if (stage->kind == ast::NodeType::LambdaExpression) {
-        compileExpression(*stage);
+        // Spec's pipeline semantics: the lambda acts as filter (bool
+        // result) or map (value result), applied PER ELEMENT via the
+        // array prototype's pipeApply. CALL_METHOD is receiver-first:
+        // LOAD_VAR then the lambda, matching the other stages.
         emit(OpCode::LOAD_VAR, pipe_temp);
-        emit(OpCode::CALL, 1);
+        compileExpression(*stage);
+        emit(OpCode::CALL_METHOD, std::vector<Value>{
+            Value::makeStringValId(addStringConstant("pipeApply")),
+            Value(static_cast<uint32_t>(1)),
+            Value::makeBool(true)});
       }
       else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);

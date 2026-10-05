@@ -134,6 +134,7 @@ void Modules::initBridges() {
     const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
     // Generic event bus: owned by the engine, created lazily here so the
     // EventBridge's host functions and the VM pump's dispatch() can reach it.
+    // Engine's shutdown deletes it (unique_ptr-style ownership).
     if (!ctx_->eventRuntime) {
         const_cast<HostContext &>(*ctx_).eventRuntime = new compiler::EventRuntime();
     }

@@ -947,12 +947,25 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   // While the next token has higher binding power than our right binding power
   // Guard against infinite loops from malformed binding power tables
         int infixIterations = 0;
-        while (rbp < getBindingPower(at().type)) {
+        while (rbp < getBindingPower(at().type) ||
+               (at().type == TokenType::NewLine &&
+                (at(1).type == TokenType::Pipe ||
+                 at(1).type == TokenType::PipeRight) &&
+                rbp < getBindingPower(TokenType::Pipe))) {
             infixIterations++;
     if (infixIterations > 10000) {
       throw std::runtime_error("Pratt infix loop exceeded at token " + std::to_string(position) + ": " + at().toString() + " (rbp=" + std::to_string(rbp) + ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
     }
     Token op_token = at();
+    // Multi-line pipeline continuation: the spec's form puts each stage on
+    // its own line (`data\n  | transform`). The led loop would otherwise
+    // exit at the newline (BP 0) and the stage would parse as a separate
+    // statement ("Unexpected token in expression: |"). Skip the newline;
+    // the op is the pipe.
+    if (op_token.type == TokenType::NewLine) {
+      advance();
+      op_token = at();
+    }
     try {
       advance(); // consume the operator
       auto next = led(op_token, std::move(left));
@@ -3701,7 +3714,18 @@ at(1).type == havel::TokenType::Arrow) {
   case havel::TokenType::On:
     return parseOnStatement();
   case havel::TokenType::Emit:
-    return parseEmitStatement();
+    // `emit <name> [payload]` is a statement; a bare `emit` followed by a
+    // terminator/operator is a soft-identifier reference (a param or
+    // variable named emit in a function body — `fn tagOf(emit) { emit }`).
+    // Without this peek the body's bare reference parsed as an emit
+    // statement with an empty/`}` name and the compiler threw
+    // "Unsupported statement: EmitStatement{event: }".
+    if (at(1).type == havel::TokenType::Identifier ||
+        at(1).type == havel::TokenType::String ||
+        at(1).type == havel::TokenType::MultilineString) {
+      return parseEmitStatement();
+    }
+    break; // fall through to expression: `emit` as a name
   case havel::TokenType::Off:
     return parseOffModeStatement();
  case havel::TokenType::Fn:

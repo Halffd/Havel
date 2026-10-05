@@ -954,6 +954,12 @@ vm_->addIntervalResult(timer_id, result);
         if (modules_) {
             modules_->shutdown();
         }
+        // Delete the generic event bus (created with raw new in
+        // Modules::initBridges; unique_ptr-style ownership lives here).
+        if (hostContext_ && hostContext_->eventRuntime) {
+            delete hostContext_->eventRuntime;
+            const_cast<HostContext &>(*hostContext_).eventRuntime = nullptr;
+        }
         if (vm_) {
 #ifdef HAVEL_ENABLE_LLVM
             // Drop the backend view before the VM deletes the JIT it owns.

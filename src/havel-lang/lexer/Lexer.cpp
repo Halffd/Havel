@@ -2122,12 +2122,23 @@ currentTokens.back().type == TokenType::CloseBrace ||
 currentTokens.back().type == TokenType::EOF_TOKEN;
 if (prevIsStatementStart) {
 char next = peek();
-if (isAlpha(next) || next == '+' || next == '!' || next == '^' ||
-next == '#' || next == '@' || next == '~' || next == '$' ||
-next == '*') {
-currentTokens.push_back(scanHotkey());
+// Skip spaces/tabs before the check: the spec's multi-line pipelines put
+// each stage on its own line ("data\n  | transform"), so `|` + spaces +
+// alpha is a pipe stage, not a hotkey prefix. Without the skip the `|`
+// fell through to scanHotkey (a Hotkey token) and the statement parser
+// rejected it ("Expected '=>' after hotkey literal").
+char look = peek();
+size_t spaces = 0;
+while ((look == ' ' || look == '\t') && !isAtEnd()) { advance(); look = peek(); spaces++; }
+if (isAlpha(look) || look == '+' || look == '!' || look == '^' ||
+look == '#' || look == '@' || look == '~' || look == '$' ||
+look == '*') {
+currentTokens.push_back(makeToken("|", TokenType::Pipe));
 continue;
 }
+// Not a pipe stage: rewind the skipped spaces and fall through to the
+// hotkey prefix path.
+for (size_t i = 0; i < spaces; ++i) position--;
 }
 }
 // Inside (( )), single | is bitwise OR, not pipeline
@@ -2144,7 +2155,7 @@ if (c == '|' && !currentTokens.empty()) {
 TokenType prevType = currentTokens.back().type;
 // After Assign, check if this is a hotkey binding (|x if => or |x =>)
 if (prevType == TokenType::Assign && !isAtEnd() && isHotkeyLookahead()) {
-  currentTokens.push_back(scanHotkey());
+    currentTokens.push_back(scanHotkey());
   continue;
 }
 if (prevType == TokenType::Number ||
@@ -2676,6 +2687,7 @@ bool Lexer::isSoftIdentifier(TokenType t) {
   return t == TokenType::Identifier ||
          t == TokenType::On ||
          t == TokenType::Off ||
+         t == TokenType::Emit ||
          t == TokenType::When ||
          t == TokenType::Mode ||
          t == TokenType::Val ||

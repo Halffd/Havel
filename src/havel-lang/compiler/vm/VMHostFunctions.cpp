@@ -1626,6 +1626,41 @@ void VM::registerDefaultHostFunctions() {
     return Value(diff <= eps * scale);
   });
 
+  // min(a, b, ...) / max(a, b, ...) - variadic numeric extrema per the spec
+  // ("min(3, 1, 4, 2)    // Minimum: 1.0"). A single array argument keeps the
+  // std.array array-form semantics (min([5, 3, 1, 4]) == 1) by delegating to
+  // the array prototype host function - same dual-form contract as `sorted`.
+  // Without this canonical registration the bare name is taken by
+  // std.array's fn min(arr), so variadic scalar calls like min(5, maxSize)
+  // silently return null.
+  registerHostFunction("min", [this](const std::vector<Value> &args) {
+    if (args.size() == 1 && args[0].isArrayId())
+      return invokeHostFunctionDirect("array.min", args);
+    if (args.empty()) return Value::makeNull();
+    return invokeHostFunctionDirect("math.min", args);
+  });
+  registerHostFunction("max", [this](const std::vector<Value> &args) {
+    if (args.size() == 1 && args[0].isArrayId())
+      return invokeHostFunctionDirect("array.max", args);
+    if (args.empty()) return Value::makeNull();
+    return invokeHostFunctionDirect("math.max", args);
+  });
+
+  // hypot(a, b, ...) - multi-dimensional hypotenuse, sqrt of sum of squares.
+  // The spec documents 2- and 3-argument forms (hypot(1, 2, 2) == 3). The
+  // math sidecar's Havel fn hypot(a, b) silently drops extra args, so
+  // hypot(1, 2, 2) returned sqrt(5); MathModule's mergeExports guard keeps
+  // that closure from clobbering this canonical global.
+  registerHostFunction("hypot", [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeNull();
+    double sum = 0.0;
+    for (const auto &arg : args) {
+      const double v = toFloat(arg);
+      sum += v * v;
+    }
+    return Value(std::sqrt(sum));
+  });
+
   // range([start], stop, [step]) - returns array of integers
   // range(stop) -> [0, 1, ..., stop-1]
   // range(start, stop) -> [start, start+1, ..., stop-1]

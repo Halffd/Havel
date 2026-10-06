@@ -30,7 +30,13 @@ static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
   for (const auto& [name, value] : *obj) {
     if (name.empty() || name[0] == '_') continue;
     api.setField(targetObj, name, value);
-    api.setGlobal(name, value);
+    // Mirror the ArrayModule/ObjectModule rule: a pure-Havel sidecar export
+    // must not clobber a canonical host-function global (the bare `hypot`
+    // dispatcher, for example) - setGlobal() here would overwrite it and
+    // make the variadic spec form silently depend on module install order.
+    if (!vm.isHostFunctionGlobal(name)) {
+      api.setGlobal(name, value);
+    }
   }
 }
 
@@ -166,7 +172,9 @@ void registerMathModule(const VMApi &api) {
         // Expose on the math namespace too: `use math` contract
         // (math/math sidecar merges the same way via mergeExports).
         api.setField(mathObj, name, value);
-        api.setGlobal(name, value);
+        if (!vm.isHostFunctionGlobal(name)) {
+          api.setGlobal(name, value);
+        }
       }
     }
   }

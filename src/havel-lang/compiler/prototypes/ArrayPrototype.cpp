@@ -546,6 +546,79 @@ if (s) delim = *s;
     return Value::makeNull();
   });
 
+  // sortByKey(key[, cmp]) - return a NEW array sorted by an object field.
+  // Documented in docs/specs/Havel.md "Object Sorting with sortByKey()":
+  //   arr.sortByKey("age")                    // ascending by age
+  //   arr.sortByKey("name", (a, b) => b > a)  // comparator receives KEY VALUES
+  //   arr.sortByKey("age", (a, b) => b - a)   // descending by age
+  // Non-mutating (like sorted()); default order is ascending numeric, or
+  // lexicographic for string keys.
+  regProtoVar("sortByKey", [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (!args[0].isArrayId() || args.size() < 2) return Value::makeNull();
+    std::string key;
+    if (args[1].isStringValId() && vm.getCurrentChunk()) {
+      key = vm.getCurrentChunk()->getString(args[1].asStringValId());
+    } else if (args[1].isStringId()) {
+      const std::string *s = vm.getHeap().string(args[1].asStringId());
+      if (s) key = *s;
+    } else {
+      return Value::makeNull();
+    }
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateArray();
+    auto* result = vm.getHeap().array(resultRef.id);
+    result->assign(arr->begin(), arr->end());
+    auto keyVal = [&vm, &key](const Value &elem) -> Value {
+      if (!elem.isObjectId()) return Value::makeNull();
+      auto *obj = vm.getHeap().object(elem.asObjectId());
+      if (!obj) return Value::makeNull();
+      auto *val = obj->get(key);
+      if (!val) return Value::makeNull();
+      // String literals are stored chunk-relative (StringValId); materialize
+      // to a heap string so the default lexicographic order and user
+      // comparators can compare them like any other string.
+      if (val->isStringValId() && vm.getCurrentChunk()) {
+        auto ref = vm.getHeap().allocateString(
+            vm.getCurrentChunk()->getString(val->asStringValId()));
+        return Value::makeStringId(ref.id);
+      }
+      return *val;
+    };
+    if (args.size() > 2 && (args[2].isFunctionObjId() || args[2].isClosureId())) {
+      std::sort(result->begin(), result->end(), [&vm, &args, &keyVal](const Value& a, const Value& b) {
+        auto res = vm.call(args[2], {keyVal(a), keyVal(b)});
+        // Numeric: negative means a first (same contract as sort/sorted).
+        // Bool: true means a first - this is what makes the documented
+        // `sortByKey("name", (a, b) => b > a)` example do anything at all.
+        // (Note: that example's "descending" comment in the spec is a doc
+        // error; b > a is ascending, exactly like a - b.)
+        if (res.isInt()) return res.asInt() < 0;
+        if (res.isBool()) return res.asBool();
+        return false;
+      });
+    } else {
+      std::sort(result->begin(), result->end(), [&vm, &keyVal](const Value& a, const Value& b) {
+        auto va = keyVal(a);
+        auto vb = keyVal(b);
+        if (va.isInt() && vb.isInt()) return va.asInt() < vb.asInt();
+        if ((va.isInt() || va.isDouble()) && (vb.isInt() || vb.isDouble())) {
+          double da = va.isInt() ? static_cast<double>(va.asInt()) : va.asDouble();
+          double db = vb.isInt() ? static_cast<double>(vb.asInt()) : vb.asDouble();
+          return da < db;
+        }
+        if (va.isStringId() && vb.isStringId()) {
+          const std::string *sa = vm.getHeap().string(va.asStringId());
+          const std::string *sb = vm.getHeap().string(vb.asStringId());
+          if (sa && sb) return *sa < *sb;
+        }
+        return false;
+      });
+    }
+    return Value::makeArrayId(resultRef.id);
+  });
+
   regProto("unique", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {

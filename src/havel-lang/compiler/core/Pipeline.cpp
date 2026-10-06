@@ -1008,7 +1008,8 @@ for (const auto &err : parser.getErrors()) {
     // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
     // compile options this request used (version-6 header).
     autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
-                           options.strictSemantics, options.optimizeBytecode);
+                         options.strictSemantics, options.optimizeBytecode,
+                         source);
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -1402,7 +1403,8 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
   // compile options this request used (version-6 header).
   autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
-                         options.strictSemantics, options.optimizeBytecode);
+                         options.strictSemantics, options.optimizeBytecode,
+                         source);
   if (timing) {
     ::havel::startup_timing_report("compile.emit", t_stage);
     ::havel::startup_timing_report("compile.total", t_total);

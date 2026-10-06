@@ -12,6 +12,9 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <cstdio>
+#include <cstdlib>
+#include "utils/StartupTiming.hpp"
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -311,20 +314,34 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUni
                                                    const std::string& sourceText,
                                                    bool request_strict,
                                                    bool request_optimized) {
+    // Every gate below can refuse to serve. Without the reason, a permanent
+    // cache miss looks identical to a cold cache, so name the gate that
+    // rejected. Opt-in, on the same channel as the [compile] block in
+    // Pipeline.cpp (HAVEL_STARTUP_TIMING=1).
+    const bool trace = ::havel::startup_timing_enabled();
+    auto reject = [trace](const char* reason, const std::string& detail = {}) {
+        if (trace) {
+            fprintf(stderr, "[compile] cache.reject: %s%s%s\n", reason,
+                    detail.empty() ? "" : " (", detail.c_str());
+            if (!detail.empty()) fprintf(stderr, "[compile] cache.reject.detail: %s\n", detail.c_str());
+            fflush(stderr);
+        }
+        return std::optional<BytecodeChunk>{};
+    };
     if (compileUnitName.empty() || sourceText.empty()) {
-        return std::nullopt;
+        return reject("empty-unit-or-source");
     }
     const std::string cacheName =
         havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
     if (cacheName.empty()) {
-        return std::nullopt;
+        return reject("no-cache-name");
     }
     const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     const std::filesystem::path hvcPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hvc");
     std::error_code ec;
     if (!std::filesystem::exists(hvcPath, ec) || ec) {
-        return std::nullopt;
+        return reject("no-entry", hvcPath.string());
     }
 
     // Header-prefix read only (same discipline as ModuleLoader's
@@ -334,7 +351,7 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUni
     if (!srcInfo.hasInfo) {
         // Legacy entry without embedded identity: cannot validate. Compile
         // fresh (the fresh compile re-stamps the entry).
-        return std::nullopt;
+        return reject("entry-without-identity");
     }
 
     // Pipeline gate (mirrors checkBcCache): reject when BOTH the entry and
@@ -344,7 +361,9 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUni
     if (!srcInfo.pipelineFingerprint.empty()) {
         const std::string currentFp = computePipelineFingerprint(cacheDir);
         if (!currentFp.empty() && currentFp != srcInfo.pipelineFingerprint) {
-            return std::nullopt;
+            return reject("pipeline-fingerprint-drift",
+                          srcInfo.pipelineFingerprint.substr(0, 12) + " != " +
+                              currentFp.substr(0, 12));
         }
     }
 
@@ -356,7 +375,12 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUni
     if (!srcInfo.has_compile_flags ||
         srcInfo.compiled_strict != request_strict ||
         srcInfo.compiled_optimized != request_optimized) {
-        return std::nullopt;
+        return reject("compile-option-mismatch",
+                      "stored strict=" + std::to_string(srcInfo.compiled_strict) +
+                          " opt=" + std::to_string(srcInfo.compiled_optimized) +
+                          " has_flags=" + std::to_string(srcInfo.has_compile_flags) +
+                          " | requested strict=" + std::to_string(request_strict) +
+                          " opt=" + std::to_string(request_optimized));
     }
 
     // Source gate: the embedded identity is the size + sha256 of the source
@@ -369,22 +393,24 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUni
     if (allZero) {
         // Entry written from a source path that did not exist at write
         // time (in-memory units): no content identity to validate against.
-        return std::nullopt;
+        return reject("zero-source-hash", srcInfo.path);
     }
     if (srcInfo.size != sourceText.size()) {
-        return std::nullopt;
+        return reject("source-size-differs",
+                      std::to_string(srcInfo.size) + " != " +
+                          std::to_string(sourceText.size()));
     }
     const auto liveHash = sha256(reinterpret_cast<const uint8_t*>(sourceText.data()),
                                  sourceText.size());
     if (liveHash != srcInfo.hash) {
-        return std::nullopt;
+        return reject("source-hash-differs", srcInfo.path);
     }
 
     // Validated: load the chunk (mmap for big files, same as module loads).
     ValueSerializer serializer;
     auto chunk = serializer.loadChunk(hvcPath.string());
     if (!chunk) {
-        return std::nullopt;
+        return reject("entry-unreadable", hvcPath.string());
     }
     g_incremental_cache_hits.fetch_add(1, std::memory_order_relaxed);
     return chunk;
@@ -1009,15 +1035,19 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
 
 std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                                       const std::string& pipelineFingerprint) {
-    // Legacy v5 form: no compile-option flags recorded. Callers that
-    // compile through the production pipeline should use the 5-argument
-    // form so the incremental serve path can require an exact match.
+    // Convenience form for writers with no compile-option information: stamps
+    // the entry as compiled without strict resolution and without bytecode
+    // optimization. The incremental serve path then only accepts it for a
+    // request that also asks for neither, so an entry written this way can
+    // never be served to an option-carrying compile. Callers that compile with
+    // options should use the 5-argument form.
     return serializeChunk(chunk, sourcePath, pipelineFingerprint, false, false);
 }
 
 std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                                       const std::string& pipelineFingerprint,
-                                                      bool compiled_strict, bool compiled_optimized) {
+                                                      bool compiled_strict, bool compiled_optimized,
+                                                      const std::string& compiledText) {
     std::vector<uint8_t> data;
     auto append = [&data](const void* ptr, size_t size) {
         if (ptr == nullptr || size == 0) return;
@@ -1033,7 +1063,19 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
     // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index,
     // 5 = pipeline fingerprint for self-hosted-compiled entries,
     // 6 = compile-option flags for the incremental serve path)
-    uint32_t version = pipelineFingerprint.empty() ? 4 : 6;
+    //
+    // Always 6. Whether the pipeline fingerprint is present is recorded
+    // separately, in flags bit 1. Deriving the version from the fingerprint's
+    // presence conflated two independent facts: with no fingerprint the entry
+    // became v4, carried no compile-option flags, and the serve path's
+    // compile-option gate (which rejects entries without recorded flags) could
+    // never be satisfied - so those entries were written on every run and
+    // never served, i.e. no cache hit at all. That is reachable in any
+    // environment where the four self-hosted-compiler modules are not in the
+    // cache dir yet, which makes computePipelineFingerprint return "".
+    // v6 readers already tolerate an absent fingerprint (the fingerprint gate
+    // is conditional on it being non-empty).
+    uint32_t version = 6;
     append(&version, sizeof(version));
 
     // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint,
@@ -1090,7 +1132,11 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
     // Source size + hash
     uint64_t srcSize = 0;
     std::array<uint8_t, 32> srcHash{};
-    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+    if (!compiledText.empty()) {
+        srcSize = compiledText.size();
+        srcHash = sha256(reinterpret_cast<const uint8_t*>(compiledText.data()),
+                         compiledText.size());
+    } else if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
         srcSize = std::filesystem::file_size(srcPath);
         srcHash = sha256_file(srcPath);
     }

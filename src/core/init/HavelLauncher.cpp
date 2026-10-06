@@ -1362,7 +1362,8 @@ public:
             *unit.chunk, canonical,
             havel::compiler::computePipelineFingerprint(
                 havel::ModuleLoader::getDefaultCacheDir()),
-            options.strictSemantics, options.optimizeBytecode);
+            options.strictSemantics, options.optimizeBytecode,
+            content);
         std::ofstream out(cacheDir + "/" + cacheName + ".hvc", std::ios::binary);
         if (!out.is_open()) {
           error("Cannot write precompiled chunk for {}", f);
@@ -2528,7 +2529,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             *chunk, f,
             havel::compiler::computePipelineFingerprint(
                 havel::ModuleLoader::getDefaultCacheDir()),
-            cfg.strictSemantics, false);
+            cfg.strictSemantics, false, content);
         std::error_code writeDirEc;
         std::filesystem::create_directories(
             std::filesystem::path(fileCachePath).parent_path(), writeDirEc);

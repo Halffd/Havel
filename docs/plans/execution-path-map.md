@@ -210,6 +210,39 @@ installed on this machine, so an LLVM build is possible; none was produced
 in this session, so every measurement in this document comes from the
 interpreter.
 
+Cranelift status update (2026-10-06, Phase A verification, VERIFIED):
+built as an equivalent crane/no-LLVM config (`build-crane-nollvm-hl`:
+release, headless, `ENABLE_CRANELIFT=ON`, `ENABLE_LLVM=OFF`,
+`ENABLE_TESTS=ON`; mode 18's Debug+ASAN was unsuitable for latency
+measurement). Results, with `scripts/benchmarks/README.md` as the
+reproducible record:
+
+- `cranelift_proto_driver`: exit 0 - hclb ABI bit-identical to C++ Value,
+  native execute of a compiled function, MOD refused.
+- Real VM tiering happens in normal programs under `--tiering` (the opt-in;
+  `--target jit` alone does NOT enable it): `[tiering] hot -> tier1` then
+  `[backend] tier1 hot via cranelift`; profiler reports `tier1=2`,
+  interpreted instructions collapse (306M -> 172k), outputs identical to
+  the interpreter on every workload.
+- Fallback verified: `__main__` is declined by can_lower and stays
+  interpreted, correctly.
+- Module-tiering coherence smoke (`test_issue_mod_lazy_cache_tiering.hv`,
+  `--tiering`): exit 0, tier1=2.
+- Compile latency: ~61ms first function (includes one-time backend init),
+  ~1ms marginal.
+- Execution: ~18-20% less CPU than the interpreter on loop-heavy benches,
+  ~par on call-heavy tiny functions. The interpreter does ~1780x more
+  dispatch work on the big bench, so the win is far below theoretical;
+  causes identified in the lowering (per-op unconditional bridge call,
+  per-backedge hook) and recorded in the benchmarks README as Phase B
+  targets.
+- Tier-2: `tier2_enqueued>0, tier2_compiled=0` without LLVM - the
+  optimizing tier is absent, as designed.
+- Fix that was required to build the driver in a headless config: the
+  cranelift_proto_driver CMake block linked `havel_gui` unconditionally;
+  sibling targets guard it with `$<BOOL:${ENABLE_QT_UI_BACKEND}>`, and the
+  driver now does the same.
+
 ---
 
 ## 6. Known gaps mapped to ticket items

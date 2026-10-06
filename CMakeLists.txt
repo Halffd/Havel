@@ -3146,11 +3146,14 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
             # that define what they need (havel_lang, havel_gui). CMake
             # dedups repeats, so these explicit positions also win over the
             # shim's transitive expansion.
+            # havel_gui exists only in Qt UI backend builds — headless crane
+            # configs must not ask the linker for it (same guard as
+            # hpp_proto_test below).
             havel_aot_core_shim
             havel_lang_core
             havel_core
             havel_lang
-            havel_gui
+            $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
             ${COMMON_LIBS}
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
             ${CMAKE_DL_LIBS}

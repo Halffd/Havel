@@ -600,6 +600,7 @@ void Havel::setupSignalHandling() {
                      : sig == SIGINT  ? ExitReason::SignalInt
                      : sig == SIGTERM ? ExitReason::SignalTerm
                      : sig == SIGQUIT ? ExitReason::SignalQuit
+                     : sig == SIGHUP  ? ExitReason::SignalHup
                      : ExitReason::Forced,
                     code);
       };
@@ -608,6 +609,7 @@ void Havel::setupSignalHandling() {
       sigaction(SIGABRT, &sa, nullptr);
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
+      sigaction(SIGHUP,  &sa, nullptr);
 
   if (debugging::debug_io) debug("Signal handling initialized - fallback handlers for REPL mode");
   } else {

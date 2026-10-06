@@ -532,12 +532,14 @@ static void installMinimalSignalHandlers() {
     ExitReason reason = ExitReason::SignalInt;
     if (sig == SIGTERM) reason = ExitReason::SignalTerm;
     else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
+    else if (sig == SIGHUP) reason = ExitReason::SignalHup;
     else if (sig == SIGSEGV) reason = ExitReason::SignalCrash;
     havel::exit(reason, 0);
   };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
   sigaction(SIGQUIT, &sa, nullptr);
+  sigaction(SIGHUP,  &sa, nullptr);
   sigaction(SIGSEGV, &sa, nullptr);
 }
 

@@ -36,6 +36,7 @@ static const char *reasonStr(ExitReason r) {
   case ExitReason::SignalInt:   return "SIGINT";
   case ExitReason::SignalTerm:  return "SIGTERM";
   case ExitReason::SignalQuit:  return "SIGQUIT";
+  case ExitReason::SignalHup:   return "SIGHUP";
   case ExitReason::SignalCrash: return "crash";
   case ExitReason::Exception:   return "exception";
   case ExitReason::Forced:      return "forced";
@@ -48,6 +49,7 @@ static bool isSignalContext(ExitReason reason) {
   return reason == ExitReason::SignalInt ||
          reason == ExitReason::SignalTerm ||
          reason == ExitReason::SignalQuit ||
+         reason == ExitReason::SignalHup ||
          reason == ExitReason::SignalCrash;
 }
 

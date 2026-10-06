@@ -2424,8 +2424,12 @@ void EventListener::HandleSignal(int sig) {
       SignalSafeShutdown(sig, true);
     }
     break;
-  case SIGHUP:
   case SIGQUIT:
+    if (!shutdown.load()) {
+      SignalSafeShutdown(sig, true);
+    }
+    break;
+  case SIGHUP:
     if (!shutdown.load()) {
       SignalSafeShutdown(sig, true);
     }
@@ -2454,13 +2458,13 @@ void EventListener::RequestShutdownFromSignal(int sig) {
 }
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
-  int exitCode =
-      (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+  int exitCode = (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT || sig == SIGHUP) ? 0 : sig + 128;
   if (exitAfter) {
     ExitReason reason = sig == SIGINT    ? ExitReason::SignalInt
                         : sig == SIGTERM ? ExitReason::SignalTerm
                         : sig == SIGQUIT ? ExitReason::SignalQuit
-                                         : ExitReason::SignalCrash;
+                                         : sig == SIGHUP  ? ExitReason::SignalHup
+                        : ExitReason::SignalCrash;
     havel::exit(reason, exitCode);
   } else {
     EmergencyUngrabAllEvdevSignalSafe();

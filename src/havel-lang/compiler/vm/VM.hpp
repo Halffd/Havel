@@ -427,9 +427,16 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     // A frame on the globals stack: the map that was swapped out plus the
     // module-globals identity that was active at swap time. Identity lets
     // call sites skip the full-map copy when a call stays inside one module.
-    using GlobalsFrame =
-        std::pair<std::unordered_map<std::string, Value>,
-                  std::shared_ptr<std::unordered_map<std::string, Value>>>;
+    // Fields keep the pair names (.first/.second) so existing access sites
+    // read unchanged. fiber_restored marks frames (re)installed wholesale
+    // by loadFiberState's globals_stack_ repair: such frames hold deep
+    // copies taken at suspension time and can be OLDER than live ambient
+    // writes (see popGlobals' stale-frame guard).
+    struct GlobalsFrame {
+      std::unordered_map<std::string, Value> first;
+      std::shared_ptr<std::unordered_map<std::string, Value>> second;
+      bool fiber_restored = false;
+    };
     std::vector<GlobalsFrame> globals_stack_;
     // Identity (which module_globals shared_ptr) of the map currently
     // installed as `globals` — null for the engine-main map. Restored from
@@ -446,8 +453,25 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
       globals_stack_.push_back({globals, globals_identity_});
     }
     void popGlobals() {
-      globals = std::move(globals_stack_.back().first);
-      globals_identity_ = std::move(globals_stack_.back().second);
+      auto &frame = globals_stack_.back();
+      // Stale-frame guard: loadFiberState's globals_stack_ repair can
+      // (re)install suspension-time copies of the engine-main scope into
+      // the live globals stack (tagged fiber_restored). Such a frame can be
+      // OLDER than writes the main fiber made while a goroutine was parked
+      // (loop accumulators, counters); restoring it wholesale clobbers
+      // those writes back to spawn-time values and scatters later writes
+      // across orphaned copies. When a fiber-restored frame and the current
+      // ambient are BOTH engine-main lineage (null identity), merge the
+      // fresher current writes into the frame before restoring. Frames
+      // pushed by real module/loader calls are never tagged, so their pops
+      // behave exactly as before - module sandboxes stay untouched.
+      if (frame.fiber_restored && !frame.second && !globals_identity_) {
+        for (const auto &[k, v] : globals) {
+          frame.first[k] = v;
+        }
+      }
+      globals = std::move(frame.first);
+      globals_identity_ = std::move(frame.second);
       globals_stack_.pop_back();
     }
  std::unordered_map<std::string, Value> rootGlobals_;

@@ -1,0 +1,51 @@
+// Regression (two stacked bugs, both exercised by test_cooperative_async):
+// 1) VM globals-stack churn: after a goroutine suspend/resume cycle,
+//    loadFiberState's globals_stack_ repair could leave spawn-era copies of
+//    the engine-main scope in the live stack; a later popGlobals restored
+//    one of those stale maps over main's live writes, so a main-fiber
+//    accumulator (total = total + v inside a channel-receive loop) re-read
+//    its pre-loop value every iteration (total stuck at 0+3).
+// 2) Loop-var shadowing: see test_issue_loop_var_shadows_global.
+// Pure VM test: channels + goroutines only, no IO.
+// Expected result: received values [0,1,2,3], in-loop accumulator 6,
+// post-loop re-accumulation 6.
+use async_mod
+
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+ch = async_mod.chan()
+for i in 0 .. 3 {
+  (fn(n) {
+    go(fn() {
+      async_mod.sleep(10 * n)
+      ch.send(n)
+    })
+  })(i)
+}
+
+// Accumulate while receiving: main suspends on every receive, so its own
+// global writes must survive the suspend/resume churn.
+total = 0
+recv = []
+for i in 0 .. 3 {
+  v = ch.receive()
+  recv.push(v)
+  total = total + v
+}
+assertEq(recv, [0, 1, 2, 3], "received values in order")
+assertEq(total, 6, "accumulator survives receive suspensions")
+
+// Re-accumulate after all receives, reusing the receive-loop variable name
+// as the for-each iterator (exercises the loop-var shadow fix too).
+sum = 0
+for v in recv {
+  sum = sum + v
+}
+assertEq(sum, 6, "for-each shadow of v iterates all elements")
+
+print("ok")

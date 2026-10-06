@@ -1503,7 +1503,13 @@ void VM::loadFiberState(Fiber *fiber) {
       auto &live_frame = globals_stack_[gsi];
       auto &saved_frame = fiber->saved_globals_stack[gsi];
       if (live_frame.first.empty()) {
-        live_frame = saved_frame;
+        // Wholesale install of a saved (suspension-time) copy. Tag it:
+        // popGlobals' stale-frame guard needs to know this frame's content
+        // can be older than live ambient writes made while the fiber was
+        // parked (main-fiber accumulators, goroutine globals churn).
+        live_frame.first = std::move(saved_frame.first);
+        live_frame.second = std::move(saved_frame.second);
+        live_frame.fiber_restored = true;
         continue;
       }
       if (!live_frame.second && saved_frame.second) {
@@ -1632,7 +1638,13 @@ void VM::saveFiberState(Fiber *fiber) {
   // tick_in=5 survives a GC-churned ambient that lost it) without
   // breaking shared-write semantics (ambient stays the primary map).
   fiber->saved_globals = globals;
-  fiber->saved_globals_stack = globals_stack_;
+  // SavedGlobalsFrame (Fiber.hpp) is a plain pair; GlobalsFrame carries the
+  // fiber_restored tag, which is live-stack bookkeeping only — drop it here.
+  fiber->saved_globals_stack.clear();
+  fiber->saved_globals_stack.reserve(globals_stack_.size());
+  for (const auto &gf : globals_stack_) {
+    fiber->saved_globals_stack.emplace_back(gf.first, gf.second);
+  }
   fiber->saved_globals_mirror_id = globals_mirror_object_id_;
   fiber->has_saved_globals = true;
 

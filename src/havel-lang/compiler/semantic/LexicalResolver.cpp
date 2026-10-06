@@ -1603,8 +1603,13 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             bool isGlobalScope = !insideFunction;
 
             if (isGlobalScope) {
-          // At top-level program scope - declare as global variable
-          uint32_t slot = declareLocal(ident.symbol, &ident, false);
+          // At top-level program scope - declare as global variable.
+          // No declareLocal here: the binding is Global (stores go through
+          // STORE_GLOBAL), so a scope entry + local slot would be junk
+          // state. It misfired the nested-scope shadow check in
+          // resolveIdentifierInFunction: body reads of an implicit global
+          // assigned inside a loop resolved to the never-written local
+          // slot (nulls in test_cooperative_async) instead of the global.
           global_variables_.insert(ident.symbol);
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
@@ -1639,7 +1644,9 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
-              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              // Global binding: no declareLocal (see the plain-assignment
+              // isGlobalScope branch - a scope entry + slot here is junk
+              // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
@@ -1689,7 +1696,9 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
-              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              // Global binding: no declareLocal (see the plain-assignment
+              // isGlobalScope branch - a scope entry + slot here is junk
+              // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
@@ -2198,9 +2207,28 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   auto &ctx = function_stack_[function_index];
 
   // Program-root bindings that are tracked as globals should always resolve
-  // as globals in __main__, even though they also have declaration slots.
+  // as globals in __main__, even though they also have declaration slots —
+  // UNLESS a nested (non-root) scope of __main__ re-declared the name, e.g.
+  // a for-loop iterator shadowing a script global (`v = 3; for v in vals`).
+  // The iterator binding writes a local slot (declarationSlot/STORE_VAR), so
+  // reads inside the loop must resolve to that slot; resolving them as the
+  // global made the loop var invisible (body saw the stale pre-loop value,
+  // total += v stuck at the last receive value - see test_cooperative_async).
+  // Nested-function captures of the shadowed slot need this too: the early
+  // return also cut off upvalue capture of the loop-local.
   if (function_index == 0 && global_variables_.count(name) > 0) {
-    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    bool shadowed_in_nested_scope = false;
+    if (!function_stack_.empty() && function_stack_[0].scopes.size() > 1) {
+      for (size_t sc = 1; sc < function_stack_[0].scopes.size(); ++sc) {
+        if (function_stack_[0].scopes[sc].count(name) > 0) {
+          shadowed_in_nested_scope = true;
+          break;
+        }
+      }
+    }
+    if (!shadowed_in_nested_scope) {
+      return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    }
   }
 
   // FIRST: Search local scopes (for loop vars, nested let declarations, etc.)

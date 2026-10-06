@@ -384,24 +384,60 @@ clean() {
   rm -f "${BUILD_LOG}"
 }
 
+# Print the path to an LLVM tool, or nothing if it is not installed anywhere we
+# know about. Debian-family LLVM packages split the toolchain across directories:
+# the compiler and lld sit next to llvm-config, the binutils sit in /usr/bin.
+llvm_tool() {
+  local base="$1" name="$2" candidate
+  for candidate in "${base}/bin/${name}" "$(llvm-config --bindir 2>/dev/null)/${name}" "/usr/bin/${name}"; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  command -v "$name" 2>/dev/null || true
+}
+
 build() {
   show_config
   log "INFO" "Building in ${BUILD_TYPE} mode with ${THREADS} threads..." "${BLUE}"
   mkdir -p "${SCRIPT_DIR}/${BUILD_DIR}"
 
+  # Resolve the compiler exactly once. Passing it twice (a bare name, then an
+  # absolute path) makes CMake see CMAKE_C_COMPILER change, and CMake answers
+  # that by deleting the cache and re-running the configure from the *cached*
+  # command line -- which drops every -D flag from this invocation, so options
+  # like ENABLE_MODULE_PLUGINS silently revert to their OFF default and the
+  # plugins get linked into the binary instead of built as loadable modules.
+  local c_compiler="clang" cxx_compiler="clang++"
+  if [[ "$ENABLE_LLVM" == "ON" ]]; then
+    local llvm_base_dir
+    llvm_base_dir="$(llvm-config --prefix 2>/dev/null || echo "/usr")"
+    c_compiler="$(llvm_tool "$llvm_base_dir" clang)"
+    cxx_compiler="$(llvm_tool "$llvm_base_dir" clang++)"
+  fi
+
   local cmake_cmd="cmake -B ${SCRIPT_DIR}/${BUILD_DIR}"
   cmake_cmd+=" -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
-  cmake_cmd+=" -DCMAKE_C_COMPILER=clang"
-  cmake_cmd+=" -DCMAKE_CXX_COMPILER=clang++"
+  cmake_cmd+=" -DCMAKE_C_COMPILER=$c_compiler"
+  cmake_cmd+=" -DCMAKE_CXX_COMPILER=$cxx_compiler"
   cmake_cmd+=" -DUSE_CLANG=ON"
   cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
   if [[ "$ENABLE_LLVM" == "ON" ]]; then
-    llvm_bin_dir="$(llvm-config --bindir 2>/dev/null || echo "/usr/bin")"
-    llvm_base_dir="$(llvm-config --prefix 2>/dev/null || echo "/usr")"
-    cmake_cmd+=" -DLLVM_DIR=$llvm_base_dir/lib/cmake/llvm \
-        -DCMAKE_C_COMPILER=$llvm_base_dir/bin/clang \
-        -DCMAKE_CXX_COMPILER=$llvm_base_dir/bin/clang++ \
-        -DCMAKE_LINKER=$llvm_base_dir/bin/ld.lld"
+    cmake_cmd+=" -DLLVM_DIR=$llvm_base_dir/lib/cmake/llvm"
+    # The binutils are packaged separately from the compiler on Debian-family
+    # LLVM builds: clang/clang++/ld.lld land in /usr/lib/llvmNN/bin while
+    # llvm-ar, llvm-ranlib, llvm-nm and friends land in /usr/bin. Handing CMake
+    # a path that does not exist makes it fail at the archive step with
+    # "Error running link command: no such file or directory", so resolve each
+    # tool instead of assuming one directory holds all of them.
+    cmake_cmd+=" -DCMAKE_AR=$(llvm_tool "$llvm_base_dir" llvm-ar)"
+    cmake_cmd+=" -DCMAKE_RANLIB=$(llvm_tool "$llvm_base_dir" llvm-ranlib)"
+    local lld_path
+    lld_path="$(llvm_tool "$llvm_base_dir" ld.lld)"
+    if [[ -n "$lld_path" ]]; then
+      cmake_cmd+=" -DCMAKE_LINKER=$lld_path"
+    fi
   fi
   cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
   cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"

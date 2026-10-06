@@ -2986,7 +2986,16 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test above.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        # This test drives DisplayManager and IO::ensureBackend(), which reach
+        # UIBridge and from there HostModules.cpp.o. That member constructs
+        # PixelAutomationService under HAVE_QT_EXTENSION, and the class lives in
+        # havel_gui. Release hides the resulting undefined reference behind
+        # -O3 -flto=thin -Wl,--gc-sections; an -O0 build does not, so the link
+        # fails there. Link havel_gui under the same condition the executables
+        # use (_LIBS) so the dependency is satisfied in every configuration.
+        -Wl,--start-group havel_lang havel_core
+        $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
+        -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

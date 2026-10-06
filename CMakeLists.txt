@@ -522,7 +522,14 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
 
-    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test QUIET)
+    # Charts is deliberately absent. Nothing links Qt6::Charts --
+    # src/extensions/gui/system_monitor/SystemMonitor.hpp carries local stub
+    # QChart/QChartView classes precisely because the real ones are not linked.
+    # Asking for the component anyway made Qt6_FOUND false wherever
+    # libqt6charts is not installed, which turned a missing, unused charting
+    # library into a hard "Qt6 backend requested but Qt6 not found" configure
+    # failure for the whole build.
+    find_package(Qt6 COMPONENTS Core Widgets Gui Test QUIET)
 
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC

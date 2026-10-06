@@ -980,3 +980,33 @@ int havel_call_named_function(HavelState* H, const char* name) {
         return HAVEL_ERR;
     }
 }
+void* havel_pin_main_chunk(HavelState* H) {
+    if (!H || !H->vm) return nullptr;
+    auto* holder = new std::shared_ptr<havel::compiler::BytecodeChunk>(H->vm->getMainChunk());
+    return holder;
+}
+
+void havel_restore_chunk(HavelState* H, void* pin) {
+    if (!H || !H->vm || !pin) return;
+    auto* holder = (std::shared_ptr<havel::compiler::BytecodeChunk>*)pin;
+    // setMainChunkShared also resets current_chunk to the restored chunk,
+    // so later closure invocations resolve in the pinned chunk
+    H->vm->setMainChunkShared(*holder);
+    delete holder;
+}
+
+int havel_pin_callable(HavelState* H, int idx) {
+    if (!H || !H->vm) return HAVEL_ERR;
+    int t = havel_gettop(H);
+    int i = idx >= 0 ? idx : t + idx;
+    if (i < 0 || i >= t) return HAVEL_ERR;
+    try {
+        havel::core::Value pinned = H->vm->pinCallableAsClosure(H->stack[i]);
+        if (pinned.isNull()) return HAVEL_ERR;
+        H->stack[i] = pinned;
+        return HAVEL_OK;
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        return HAVEL_ERR;
+    }
+}

@@ -174,19 +174,41 @@ Note (observed this session): for module names registered as host builtins
 ## 5. AOT / JIT paths
 
 ```
---target jit      → cfg.useJIT = true; VM tiering backend (ORC LLJIT)
+--target jit      → cfg.useJIT = true; VM tiering backend (ORC LLJIT) when
+                    ENABLE_LLVM=ON. Without LLVM the flag is accepted but
+                    changes nothing: no backend is linked, everything runs
+                    interpreted (measured: identical output and profiler
+                    tier1=0 tier2=0 under --target jit and --target
+                    interpret in an ENABLE_LLVM=OFF build).
 --emit-llvm/-asm  → runBuild + BytecodeOrcJIT::translate per function → .ll / .s
 --target aot + --build → .hvc + .o (LLVM machine code) + .so (shared object)
 --full-aot        → everything above + stub.cpp linked into native executable
                     (incremental cache keyed, e.g. "AOT ELF stored in
                      incremental cache (key c11d85872406)")
---target aot (no --build) → parsed into cfg.target but NOT dispatched to the
-                    AOT emission path; falls through to ScriptStrategy
-                    (known gap — ticket item #45 "separate compile from execute")
+--target aot (no --build) → --target aot itself sets buildOnly + emitObj +
+                    emitBinary, so it IS the compile-only stage (this is
+                    the "separate compile from execute" the ticket asks
+                    for; `havel run file.hv` is the execute stage). In an
+                    ENABLE_LLVM=OFF build it compiles the .hvc, then fails
+                    cleanly: "AOT compilation requires LLVM support.
+                    Rebuild with ENABLE_LLVM=ON", exit 1 (measured).
 ```
 
-Cranelift backend exists as `src/havel-lang/compiler/cranelift-backend/`
-(Rust) but is not linked through CMake; no working integration.
+Cranelift backend: `src/havel-lang/compiler/cranelift-backend/` is a Rust
+staticlib (single lib.rs, ~3.5k lines) that CMake builds via cargo when
+`ENABLE_CRANELIFT=ON` (build.sh modes 17/18/19: build-crane,
+build-crane-nollvm, build-crane-release) and links into `havel_runtime`.
+The VM constructs it as the tier-1 "fast" backend of the TieredBackend
+composite (tier 2 = ORC); `can_lower()` declines any function outside its
+documented opcode subset, so a declined function stays interpreted rather
+than being partially compiled. Status in this environment: OFF in
+build-headless, never exercised here; the intended verification is the
+cranelift_proto_driver test (ENABLE_TESTS + ENABLE_CRANELIFT), which was
+not built. ORC JIT: BytecodeOrcJIT.cpp is excluded from the build unless
+ENABLE_LLVM=ON (CMakeLists.txt ~767). LLVM 23.1.1 dev packages are
+installed on this machine, so an LLVM build is possible; none was produced
+in this session, so every measurement in this document comes from the
+interpreter.
 
 ---
 
@@ -194,7 +216,7 @@ Cranelift backend exists as `src/havel-lang/compiler/cranelift-backend/`
 
 | Gap | Ticket item | Status |
 |-----|-------------|--------|
-| `--target aot` without `--build` does nothing | #8 separate compile/execute, #45 | open |
+| `--target aot` without `--build` does nothing | #8 separate compile/execute, #45 | wrong as stated: `--target aot` sets buildOnly+emitObj+emitBinary, i.e. it IS compile-only; dispatches to the build path and fails cleanly (exit 1, explicit error) in LLVM-off builds |
 | engine.execute(source) couples parse+execute | #8 | partly addressed: `CompilationService`/`CompiledUnit` split the boundary, but `HavelEngine::execute` still takes source and drives the VM |
 | incremental/ library not wired into main pipeline | #10, #35 | partly addressed: the script/precompile path validates `.hvc` through `loadCachedScriptChunk`; `IncrementalDriver` (fingerprints, DependencyGraph, TieredCache) is only reached by the AOT ELF step |
 | self-hosted parse ~0.2-0.3 s/line (structural) | #6, #14, #37, #38 | mitigated on the script path (§3a). Still true for `--eval`/REPL/large `--lint`, which hand source to the launcher (§3b) |

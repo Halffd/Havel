@@ -42,6 +42,21 @@ NOT enable tiering.
 Compile latency: ~61ms first function (includes one-time backend init),
 ~1ms marginal per small function (tier_bench_two_fns debug timestamps).
 
+## After the branch fix (2026-10-07, binop call-then-select -> branch)
+
+Cost 1 below was fixed: the arithmetic/EQ lowering now branches and only
+pays the bridge call on the non-int path (verified: 27 Rust lowering tests,
+driver exit 0, output parity on all three benches, tiering smoke exit 0).
+
+| bench | interpreter | tier-1 (after fix) | delta |
+|---|---|---|---|
+| tier_bench_loop | 5.33u + 0.76s | 3.11u + 1.60s | ~23% less CPU (user -42%) |
+| tier_bench_two_fns | 29.82u + 0.80s | 18.91u + 3.74s | ~26% less CPU (user -37%) |
+
+User time in tiered mode dropped 22-25% versus the call-then-select
+lowering. The remaining gap to theoretical is cost 2 (below) plus the sys
+time increase, which grows with the fix and is not yet profiled.
+
 ## Known costs eating the theoretical win (Phase B targets)
 
 The interpreter executes ~1780x more dispatch work on tier_bench_two_fns

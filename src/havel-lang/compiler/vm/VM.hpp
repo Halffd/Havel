@@ -436,6 +436,7 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
       std::unordered_map<std::string, Value> first;
       std::shared_ptr<std::unordered_map<std::string, Value>> second;
       bool fiber_restored = false;
+      Fiber* owner = nullptr;
     };
     std::vector<GlobalsFrame> globals_stack_;
     // Identity (which module_globals shared_ptr) of the map currently
@@ -446,11 +447,11 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     // Swap `globals` + identity onto the stack as one unit (moving the
     // map). Restores via popGlobals().
     void pushGlobalsMove() {
-      globals_stack_.push_back({std::move(globals), globals_identity_});
+      globals_stack_.push_back({std::move(globals), globals_identity_, false, current_executing_fiber_});
     }
     // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
     void pushGlobalsCopy() {
-      globals_stack_.push_back({globals, globals_identity_});
+      globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
     }
     void popGlobals() {
       auto &frame = globals_stack_.back();
@@ -465,7 +466,25 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
       // fresher current writes into the frame before restoring. Frames
       // pushed by real module/loader calls are never tagged, so their pops
       // behave exactly as before - module sandboxes stay untouched.
-      if (frame.fiber_restored && !frame.second && !globals_identity_) {
+      const bool engine_main_both = (!frame.second && !globals_identity_);
+      const bool foreign_pop = engine_main_both &&
+                               frame.owner &&
+                               current_executing_fiber_ &&
+                               frame.owner != current_executing_fiber_;
+      if (foreign_pop) {
+        for (const auto &[k, v] : frame.first) {
+          if (!globals.count(k)) {
+            globals.emplace(k, v);
+          }
+        }
+        globals_stack_.pop_back();
+        return;
+      }
+      bool should_merge_into_frame = false;
+      if (engine_main_both && frame.fiber_restored) {
+        should_merge_into_frame = true;
+      }
+      if (should_merge_into_frame) {
         for (const auto &[k, v] : globals) {
           frame.first[k] = v;
         }

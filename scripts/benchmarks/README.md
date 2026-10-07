@@ -60,20 +60,36 @@ time increase, which grows with the fix and is not yet profiled.
 ## Known costs eating the theoretical win (Phase B targets)
 
 The interpreter executes ~1780x more dispatch work on tier_bench_two_fns
-(306M vs 172k instructions) yet tier-1 only saves ~20% CPU. Identified in the
-lowering (cranelift-backend/src/lib.rs), confirmed by the sys-time increase:
+(306M vs 172k instructions) yet tier-1 only saves ~20% CPU. Measured
+isolation (tier-while probe: same loop as tier_bench_loop but a manual
+while-counter instead of `for j in 0 .. 1000`):
 
-1. **Every ADD/SUB/MUL/EQ emits an unconditional bridge call**
-   (`havel_vm_add(vm, l, r)`), then `select`s between the bridge result and
-   the inline int-48 result. The call executes even when both operands are
-   ints and its result is discarded. Branch around the call instead of
-   selecting after it.
-2. **Every backward JUMP calls `havel_vm_backedge`** unthrottled; the C++
-   side (`recordBackedgePublic`) does an `unordered_map[ip]` increment plus
-   two atomic RMWs per iteration. Needs a counter-in-native-code scheme or a
-   throttled re-check.
-3. sys time rises 0.9s -> 3.0s on the big bench; source not yet profiled
-   (suspect JIT page permissions / mmap churn).
+| loop shape | interpreter | tier-1 |
+|---|---|---|
+| while-counter (no ITER opcodes) | 1.14u | **0.34u** |
+| range for-in (ITER_NEW/ITER_NEXT) | 5.67u | 3.45u |
+
+1. **The range iterator dominates tiered loop time**: identical work,
+   tiered while-counter 0.34s user vs tiered for-in 3.45s - 10x. The
+   iterator allocates per iteration (tiered for-in run: ~2M heap
+   allocations; tiered while-counter: ~3k) and crosses a bridge call per
+   ITER_NEXT. Fixing ITER_NEXT's per-iteration allocation/bridge is the
+   biggest remaining win for range-loop code.
+2. **Every ADD/SUB/MUL/EQ emitted an unconditional bridge call** - FIXED
+   (branch-based lowering, see above).
+3. **The per-iteration backedge hook** (`havel_vm_backedge` per taken
+   backward edge: map increment + two atomics + C call) is ~85ns/call in
+   the tiered while-counter probe (4M calls in 0.34s user) - a minor cost
+   for range-loop code (ITER dominates) but a real one for while-style
+   loops. A batched form (`havel_vm_backedge_n(vm, ip, stride)`) exists on
+   the C++ side but is not yet wired into the lowering.
+4. sys time rises under tiering (0.76s -> 1.6s); source not yet profiled.
+
+Language-semantics note discovered while isolating: `for j in 0 .. 1000`
+is INCLUSIVE of the end (verified: `for j in 0 .. 5` counts 6). The
+while-counter probe therefore does 1000 iterations per call vs the for-in
+bench's 1001 - a 0.1% work difference, irrelevant to the comparison, but
+relevant to anyone writing benchmarks against these ranges.
 
 None of these were changed during the verification phase; they are recorded
 so the next change has a before/after to diff against.

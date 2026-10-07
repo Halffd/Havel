@@ -1206,6 +1206,14 @@ op_CALL: {
       throw std::runtime_error(e.what());
     }
   }
+  // exit() host calls must stop the script immediately, mirroring the slow
+  // dispatch loop's post-CALL check (VM.cpp:~2121). Without this a
+  // fast-dispatched script keeps running past process.exit() and any later
+  // exit() call overwrites the recorded exit code — a test with the
+  // `if fail { exit(255) } ... exit(0)` pattern could never fail.
+  if (exit_requested_.load())
+    return;
+
   // IMMEDIATE check for suspension after CALL - host functions may request
   // suspension
   if (suspension_requested_ || last_suspension_reason_ != 0) {
@@ -3019,6 +3027,13 @@ op_default: {
   }
   if (suspension_requested_ || last_suspension_reason_ != 0 ||
       tickBudgetExhausted())
+    goto slow_dispatch_fallback;
+  // exit() may have been called inside executeInstruction (e.g. a
+  // CALL_METHOD to process.exit). Stop immediately, mirroring the slow
+  // path's post-CALL check and op_CALL's own check: without it the fast
+  // loop keeps running past process.exit() and a later exit() call
+  // overwrites the recorded exit code.
+  if (exit_requested_.load())
     goto slow_dispatch_fallback;
   // Fiber-suspending host call via CALL_METHOD or another complex
   // opcode: executeInstruction pushed a Pending marker; park the

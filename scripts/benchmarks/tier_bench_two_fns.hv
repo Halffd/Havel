@@ -1,0 +1,45 @@
+// tiering benchmark 3: two hot functions, large loops.
+// Measures marginal compile latency (the debug log shows hotA's first
+// compile - one-time backend init included - then hotB's marginal compile)
+// and the steady-state native advantage on 24M backedges.
+//
+// run with HAVEL_LOG_LEVEL=debug to see the [tiering]/[backend] lines:
+//   [tiering] hotA -> tier1 (... hotness=1000)
+//   [backend] tier1 hotA via cranelift      <- delta = first-compile latency
+//   [tiering] hotB -> tier1 (...)
+//   [backend] tier1 hotB via cranelift      <- delta = marginal latency
+//
+// Baseline (build-crane-nollvm-hl, release, headless, CPU time):
+//   interpreter 34.16u + 0.87s
+//   tier-1      25.21u + 2.99s   (~20% less CPU)
+//   first compile ~61ms, marginal ~1ms
+
+fn hotA(a) {
+    acc = a
+    for j in 0 .. 2000 {
+        acc = acc + j * 2
+        if acc > 100000 {
+            acc = acc - 100000
+        }
+    }
+    return acc
+}
+
+fn hotB(a) {
+    acc = a
+    for j in 0 .. 2000 {
+        acc = acc + j * 3
+        if acc > 100000 {
+            acc = acc - 90000
+        }
+    }
+    return acc
+}
+
+t1 = 0
+t2 = 0
+for i in 0 .. 3000 {
+    t1 = hotA(i)
+    t2 = hotB(i)
+}
+print("t1 $t1 t2 $t2")

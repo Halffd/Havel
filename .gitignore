@@ -44,7 +44,10 @@ src/wm/xdg*
 .qwen
 .windsurf
 .cursor
-benchmarks
+# Root-level scratch benchmark output only. scripts/benchmarks/ is a tracked
+# source directory (tier-1 harness); a bare "benchmarks" rule silently hid
+# it from git status.
+/benchmarks
 benchmark
 protocols
 generated

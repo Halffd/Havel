@@ -1,0 +1,25 @@
+// tiering benchmark 1: call-heavy tiny function.
+// 200k invocations of a 5-instruction cranelift-eligible function.
+// Exercises the tier-up-by-invocation path and the per-call backend entry
+// cost. All opcodes inside hot() are in the Cranelift lowering subset.
+//
+// run: havel --tiering tier_bench_calls.hv --minimal   (tier-1 enabled)
+//      havel tier_bench_calls.hv --minimal             (interpreter baseline)
+//
+// The profiler line must show tier1=2 in the --tiering run (hot + __main__
+// attempt; __main__ is declined by can_lower and stays interpreted - the
+// by-design fallback). Output must be identical in both modes.
+
+fn hot(a, b) {
+    acc = a + b * 3
+    if acc > 500 {
+        acc = acc - 500
+    }
+    return acc
+}
+
+total = 0
+for i in 0 .. 200000 {
+    total = hot(total, i)
+}
+print("total $total")

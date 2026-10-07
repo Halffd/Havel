@@ -2122,10 +2122,10 @@ currentTokens.back().type == TokenType::CloseBrace ||
 currentTokens.back().type == TokenType::EOF_TOKEN;
 if (prevIsStatementStart) {
 // A statement-start `|` is a hotkey prefix when the construct is a binding
-// (`|*f13 => {`, `|m => {`). isHotkeyLookahead() is the same test the general
-// hotkey path uses -- it only accepts a following `=>`/`if =>`/`when =>` --
-// so it separates a binding from a pipeline stage. Bindings scan as a hotkey;
-// only a real stage becomes a Pipe token.
+// (`|*f13 => {`, `|m if => {`). isHotkeyLookahead() is the same test the
+// general hotkey path uses -- it only accepts a following `=>`/`if =>`/
+// `when =>` -- so it separates a binding from a pipeline stage. Bindings
+// scan as a hotkey; only a real stage becomes a Pipe token.
 if (isHotkeyLookahead()) {
 currentTokens.push_back(scanHotkey());
 continue;

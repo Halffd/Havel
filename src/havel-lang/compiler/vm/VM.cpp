@@ -3411,8 +3411,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
   bool frame_owns_globals = false;
   if (closure_globals) {
-    uint32_t cid = currentFrame().closure_id;
-    auto *c = heap_.closure(cid);
     if (closure_globals != globals_identity_) {
       pushGlobalsMove();
       globals = *closure_globals;

@@ -523,8 +523,7 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTOUIC ON)
 
     # Charts is deliberately absent. Nothing links Qt6::Charts --
-    # src/extensions/gui/system_monitor/SystemMonitor.hpp carries local stub
-    # QChart/QChartView classes precisely because the real ones are not linked.
+    # Qt Charts dependency removed; dead stubs cleaned up.
     # Asking for the component anyway made Qt6_FOUND false wherever
     # libqt6charts is not installed, which turned a missing, unused charting
     # library into a hard "Qt6 backend requested but Qt6 not found" configure
@@ -2305,6 +2304,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     string(REPLACE ";" "," SANITIZE_FLAGS_JOINED "${SANITIZE_FLAGS}")
     target_compile_options(havel PRIVATE -fsanitize=${SANITIZE_FLAGS_JOINED} -fno-omit-frame-pointer -g)
     target_link_options(havel PRIVATE -fsanitize=${SANITIZE_FLAGS_JOINED})
+    # ASan's fixed shadow [0x7fff8000, 0x10007fff7fff] overlaps where
+    # hardened kernels (linux-hardened with vm.mmap_rnd_bits=32) map large
+    # PIE images (observed at 0x100000000), so the runtime aborts at
+    # startup: "Shadow memory range interleaves with an existing memory
+    # mapping". Linking non-PIE puts the binary at 0x400000, outside the
+    # shadow, and keeps ASan usable on those kernels.
+    if(ENABLE_ASAN)
+      target_link_options(havel PRIVATE -no-pie)
+    endif()
   endif()
 endif()
 

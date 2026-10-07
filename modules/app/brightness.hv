@@ -53,32 +53,54 @@ fn getMonitors() {
     brightness.getMonitors()
 }
 
-// Convenience functions (global - primary monitor)
-fn increase(amount = 0.02) {
-    let current = brightness.get()
-    brightness.set(current + amount)
+// Convenience functions.
+//
+// These delegate to the brightness.increase/decrease host functions rather than
+// reimplementing read-then-write here. The host functions already take
+// (amount, monitorName) and step each monitor from its OWN value; reimplementing
+// it in Havel silently dropped monitorName, so a per-monitor hotkey raised one
+// screen by writing the primary's value to all of them.
+//
+// The one-argument brightness.set() is the ALL-monitors overload -- it does not
+// mean "the primary", it overwrites every attached display. That is why the
+// step has to stay on the host side, where the monitor argument is honoured.
+fn increase(amount = 0.02, monitorName = null) {
+    if monitorName == null {
+        brightness.increase(amount)
+    } else {
+        brightness.increase(amount, monitorName)
+    }
 }
 
-fn decrease(amount = 0.02) {
-    let current = brightness.get()
-    brightness.set(current - amount)
+fn decrease(amount = 0.02, monitorName = null) {
+    if monitorName == null {
+        brightness.decrease(amount)
+    } else {
+        brightness.decrease(amount, monitorName)
+    }
 }
 
 // Per-monitor brightness control:
-// Use brightness.increase(amount, monitorName) and brightness.decrease(amount, monitorName)
-// directly for per-monitor control.
+// brightness.increase(amount, monitorName) / brightness.decrease(amount, monitorName)
 // Example:
 //   let monitors = brightness.getMonitors()
-//   let m0 = monitors[0]
-//   brightness.increase(0.1, m0.name)
-//   brightness.decrease(0.1, m0.name)
+//   brightness.increase(0.1, monitors[0].name)
+//   brightness.decrease(0.1, monitors[0].name)
 
-fn toggle() {
-    let current = brightness.get()
+fn toggle(monitorName = null) {
+    let current = monitorName == null ? brightness.get() : brightness.get(monitorName)
     if current > 0.5 {
-        brightness.set(0.0)
+        if monitorName == null {
+            brightness.set(0.0)
+        } else {
+            brightness.set(0.0, monitorName)
+        }
     } else {
-        brightness.set(1.0)
+        if monitorName == null {
+            brightness.set(1.0)
+        } else {
+            brightness.set(1.0, monitorName)
+        }
     }
 }
 

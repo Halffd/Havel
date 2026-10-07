@@ -899,6 +899,17 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     // instruction forever (the old per-step executeOneStep mapped
     // VMExecutionResult::ERROR to Done inside the switch).
     compiler::Scheduler::Goroutine* failing_g = nullptr;
+    // A goroutine that exhausts its tick budget re-queues immediately and
+    // pickNext() offers it again on the very next call. Without per-pass
+    // tracking, ONE busy sibling (e.g. a hot while-loop goroutine) consumed
+    // the entire 512-dispatch budget in a single pump invocation
+    // (~512 x tick_duration), freezing the caller whose yield invoked the
+    // pump: hotkey bodies ran but nothing else observed them for seconds.
+    // Hold each goroutine to ONE tick per pass; re-queue the held ones
+    // after the loop so the next pass continues fairly.
+    std::unordered_set<uint32_t> ticked_this_pass;
+    std::vector<compiler::Scheduler::Goroutine*> held;
+
     try {
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
@@ -917,6 +928,13 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         ::havel::info("[INLINE_YIELD] pickNext returned g={} state={}", g ? g->id : 0, g ? static_cast<int>(g->state.load()) : -1);
       }
       if (!g) break;
+      if (!ticked_this_pass.insert(g->id).second) {
+        // Already had its tick this pass: hold it out of the queues so
+        // pickNext can offer a different goroutine (or none), then
+        // re-queue below. Not counted against the budget.
+        held.push_back(g);
+        continue;
+      }
       failing_g = g;
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
@@ -1108,6 +1126,20 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       }
       // Reset inline_yield_active_ so scheduling isn't frozen.
     }
+
+    // Re-queue goroutines held out after their one tick this pass (see the
+    // held vector above). Only still-runnable ones go back; suspended
+    // (their tick ended in a wait) and Done goroutines are already parked
+    // by their outcome handling. Runs after the catch too, so an exception
+    // in one sibling's dispatch cannot strand the held ones.
+    for (auto* h : held) {
+      if (h && (h->state == compiler::Scheduler::GoroutineState::Runnable ||
+                h->state == compiler::Scheduler::GoroutineState::Running)) {
+        if (h->fiber) vm_->saveFiberStatePublic(h->fiber);
+        sched->yield(h);
+      }
+    }
+    held.clear();
 
     // Restore the main-script snapshot we saved above so the shared VM
     // stack and frame arena match __main__'s half-run state — see

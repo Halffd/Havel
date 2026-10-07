@@ -4,6 +4,8 @@
 #include "../ModularHostBridges.hpp"
 #include "../BridgeSelection.hpp"
 #include "BridgesInternal.hpp"
+#include "host/image/ImageService.hpp"
+#include "host/ServiceRegistry.hpp"
 
 namespace havel::compiler {
 
@@ -413,6 +415,21 @@ void UIBridge::install(PipelineOptions &options) {
   };
   options.host_functions["window.all"] = [ctx = ctx_](const auto &args) {
     return handleWindowList(args, ctx);
+  };
+  options.host_functions["window.parent"] = [ctx = ctx_](const auto &args) {
+    return handleWindowParent(args, ctx);
+  };
+  options.host_functions["window.children"] = [ctx = ctx_](const auto &args) {
+    return handleWindowChildren(args, ctx);
+  };
+  options.host_functions["window.properties"] = [ctx = ctx_](const auto &args) {
+    return handleWindowProperties(args, ctx);
+  };
+  options.host_functions["window.icon"] = [ctx = ctx_](const auto &args) {
+    return handleWindowIcon(args, ctx);
+  };
+  options.host_functions["window.screenshot"] = [ctx = ctx_](const auto &args) {
+    return handleWindowScreenshot(args, ctx);
   };
   options.host_functions["window.pidWindow"] = [ctx = ctx_](const auto &args) {
     return handleWindowFindByPid(args, ctx);
@@ -2295,6 +2312,163 @@ Value UIBridge::handleWindowList(const std::vector<Value> &args,
     vm->pushHostArrayValue(arr, winObj);
   }
   return Value::makeArrayId(arr.id);
+}
+
+
+Value UIBridge::handleWindowParent(const std::vector<Value> &args,
+                                   const HostContext *ctx) {
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return the same value as an unknown id with a backend present (0),
+  // so callers never see null from an id-typed getter. Matches the
+  // icon/screenshot handlers' no-manager contract.
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeInt(0);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid)
+      return Value::makeNull();
+    wid = activeInfo.id;
+  }
+  // 0 = root/no parent (XQueryTree on a top-level client returns the root
+  // or the WM frame).
+  return Value::makeInt(static_cast<int64_t>(winService.getWindowParent(wid)));
+}
+
+
+Value UIBridge::handleWindowChildren(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return an empty array, same as an unknown id with a backend present.
+  // Building the array needs the VM, so a missing VM still degrades to
+  // null (nothing better exists without an allocator).
+  if (!ctx->vm)
+    return Value::makeNull();
+  auto *vmNoMgr = static_cast<VM *>(ctx->vm);
+  if (!ctx->windowManager) {
+    auto arr = vmNoMgr->createHostArray();
+    auto arrGuard = vmNoMgr->makeRoot(Value::makeArrayId(arr.id));
+    return Value::makeArrayId(arr.id);
+  }
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid)
+      return Value::makeNull();
+    wid = activeInfo.id;
+  }
+  auto children = winService.getWindowChildren(wid);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+  for (uint64_t child : children) {
+    vm->pushHostArrayValue(arr,
+                           Value::makeInt(static_cast<int64_t>(child)));
+  }
+  return Value::makeArrayId(arr.id);
+}
+
+
+Value UIBridge::handleWindowProperties(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  // Type-stable inert default: no window manager (headless sandbox) must
+  // return an empty object, same as an unknown id with a backend present.
+  // Building the object needs the VM, so a missing VM still degrades to
+  // null (nothing better exists without an allocator).
+  if (!ctx->vm)
+    return Value::makeNull();
+  auto *vmNoMgr = static_cast<VM *>(ctx->vm);
+  if (!ctx->windowManager) {
+    auto obj = vmNoMgr->createHostObject();
+    auto objGuard = vmNoMgr->makeRoot(Value::makeObjectId(obj.id));
+    return Value::makeObjectId(obj.id);
+  }
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid)
+      return Value::makeNull();
+    wid = activeInfo.id;
+  }
+  auto properties = winService.getWindowProperties(wid);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  auto objGuard = vm->makeRoot(Value::makeObjectId(obj.id));
+  for (const auto &[name, value] : properties) {
+    auto ref = vm->createRuntimeString(value);
+    vm->setHostObjectField(obj, name, Value::makeStringId(ref.id));
+  }
+  return Value::makeObjectId(obj.id);
+}
+
+
+Value UIBridge::handleWindowIcon(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeInt(0);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid)
+      return Value::makeInt(0);
+    wid = activeInfo.id;
+  }
+  int width = 0, height = 0;
+  auto rgba = winService.getWindowIcon(wid, width, height);
+  if (rgba.empty() || width <= 0 || height <= 0)
+    return Value::makeInt(0); // no icon on this window; 0 = no image handle
+  // Handles are only valid inside the registry's ImageService (the same
+  // instance image.load/image.width use), not a temporary one.
+  auto svc = ::havel::host::ServiceRegistry::instance()
+                 .get<::havel::host::ImageService>();
+  if (!svc)
+    return Value::makeInt(0);
+  return Value::makeInt(svc->fromRGBA(rgba, width, height));
+}
+
+
+Value UIBridge::handleWindowScreenshot(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeInt(0);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid)
+      return Value::makeInt(0);
+    wid = activeInfo.id;
+  }
+  int width = 0, height = 0;
+  auto rgba = winService.captureWindow(wid, width, height);
+  if (rgba.empty() || width <= 0 || height <= 0)
+    return Value::makeInt(0);
+  // Handles are only valid inside the registry's ImageService (the same
+  // instance image.load/image.width use), not a temporary one.
+  auto svc = ::havel::host::ServiceRegistry::instance()
+                 .get<::havel::host::ImageService>();
+  if (!svc)
+    return Value::makeInt(0);
+  return Value::makeInt(svc->fromRGBA(rgba, width, height));
 }
 
 

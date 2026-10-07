@@ -1,4 +1,5 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
@@ -214,6 +215,10 @@ static void runScript() {
 }
 
 int main() {
+    // SDK host: DAP evaluates expressions at runtime through the
+    // module compiler hook.
+    havel::compiler::registerSourceModuleCompilerHook();
+
     std::thread vm_thread;
     bool vm_started = false;
 

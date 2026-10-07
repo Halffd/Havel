@@ -347,9 +347,11 @@ public:
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath);
   // pipelineFingerprint: identity of the self-hosted compiler that produced
   // this chunk (hash over the lang emitter/pratt bytecode caches). Embedded
-  // as a version-5 header field so a cached entry compiled by an older
-  // emitter is rejected instead of silently served. Empty string keeps the
-  // legacy version-4 form for in-memory/internal uses.
+  // as a version-5 header field, gated on flags bit 1, so a cached entry
+  // compiled by an older emitter is rejected instead of silently served.
+  // Empty string means no fingerprint was available; the entry is still
+  // version 6 and still carries its compile-option flags (the two are
+  // independent - see the comment in serializeChunk's implementation).
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                        const std::string& pipelineFingerprint);
   // Compiled-with flags (version 6): records the compile options the entry
@@ -358,9 +360,22 @@ public:
   // strict lexical resolution turns undeclared reads into compile errors,
   // and the optimizer rewrites opcodes/removes instructions. Every caller
   // must state its real compile configuration explicitly.
+  //
+  // compiledText, when non-empty, is the exact text that was compiled and
+  // becomes the stamped source identity (size + sha256). Leave it empty only
+  // when the compiled text is byte-identical to the file at sourcePath - the
+  // identity is then taken from that file. Passing it matters whenever the
+  // compiled text is not the file verbatim (a launcher that joins inputs with
+  // a trailing newline, or strips a shebang): stamping the file while
+  // compiling something else makes the stamped identity and the text the
+  // serve path validates against disagree forever, which reads as "always a
+  // cache miss" rather than as a bug. It is also the more correct identity for
+  // multi-file units, where the chunk covers every input, not just the one
+  // named by sourcePath.
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
                                        const std::string& pipelineFingerprint,
-                                       bool compiled_strict, bool compiled_optimized);
+                                       bool compiled_strict, bool compiled_optimized,
+                                       const std::string& compiledText = std::string());
   std::vector<uint8_t> serializeChunkWithGlobals(const BytecodeChunk& chunk,
                                                   const std::unordered_map<std::string, Value>& globals,
                                                   const std::string& sourcePath = "");
@@ -459,10 +474,12 @@ bool isPipelineFingerprintInput(const std::string& cacheName);
 inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
                                    const BytecodeChunk& chunk,
                                    bool compiled_strict,
-                                   bool compiled_optimized) {
+                                   bool compiled_optimized,
+                                   const std::string& compiledText = std::string()) {
   try {
-    ::havel::debug("[BC-CACHE] autoCache: {} ({} funcs)", compileUnitName,
-                   chunk.getFunctionCount());
+    ::havel::debug("[BC-CACHE] autoCache: {} ({} funcs, strict={}, opt={})",
+                   compileUnitName, chunk.getFunctionCount(),
+                   compiled_strict ? 1 : 0, compiled_optimized ? 1 : 0);
     ValueSerializer serializer;
     const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);
@@ -470,7 +487,8 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
     std::vector<uint8_t> data =
         serializer.serializeChunk(chunk, compileUnitName,
                                    computePipelineFingerprint(cacheDir),
-                                   compiled_strict, compiled_optimized);
+                                   compiled_strict, compiled_optimized,
+                                   compiledText);
 
     std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
 

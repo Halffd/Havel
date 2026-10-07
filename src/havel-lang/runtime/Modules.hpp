@@ -2,7 +2,7 @@
 
 #include "HostContext.hpp"
 #include "dl/Loader.hpp"
-#include "../compiler/core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../compiler/vm/VM.hpp"
 #include "../compiler/runtime/EventQueue.hpp"

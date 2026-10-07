@@ -50,12 +50,30 @@ static const std::initializer_list<const char*> stdModuleGlobals = {
     "setFlag", "isOn", "dumpBytecodeSummary", "dumpBytecode", "traceBytecode"
 };
 
-// Load modules referenced by top-level `use` statements before semantic
-// analysis. Lazy modules (HAVEL_MODULE_PLUGIN_IMPL) register their host
-// functions only when loaded, so bare calls to their exports (regex_match,
-// regex_escape, ...) are unknown to strict-mode resolution unless the module
-// loads first — the same load the IMPORT opcode performs at runtime, just
-// earlier, so the names are in knownGlobals by the time the resolver runs.
+std::string bindingKindName(ResolvedBindingKind kind) {
+  switch (kind) {
+  case ResolvedBindingKind::Local:
+    return "Local";
+  case ResolvedBindingKind::Upvalue:
+    return "Upvalue";
+  case ResolvedBindingKind::Global:
+    return "Global";
+  case ResolvedBindingKind::Function:
+    return "Function";
+  case ResolvedBindingKind::HostFunction:
+    return "HostFunction";
+  case ResolvedBindingKind::ClassMember:
+    return "ClassMember";
+  }
+  return "Unknown";
+}
+
+// Load the modules a script's `use x` statements name, BEFORE the semantic
+// pass. Lazy modules only register their functions when loaded, so bare
+// calls to their exports (regex_match, regex_escape, ...) are unknown to
+// strict-mode resolution unless the module loads first — the same load the
+// IMPORT opcode performs at runtime, just earlier, so the names are in
+// knownGlobals by the time the resolver runs.
 //
 // ensureModuleLoaded, NOT loadModule: loadModule gives the module a fresh
 // scope with globals.clear(), which would wipe the init-established global
@@ -81,24 +99,6 @@ void loadUseStatementModules(const ast::Program &program,
       options.vm_override->ensureModuleLoaded(moduleName);
     }
   }
-}
-
-std::string bindingKindName(ResolvedBindingKind kind) {
-  switch (kind) {
-  case ResolvedBindingKind::Local:
-    return "Local";
-  case ResolvedBindingKind::Upvalue:
-    return "Upvalue";
-  case ResolvedBindingKind::Global:
-    return "Global";
-  case ResolvedBindingKind::Function:
-    return "Function";
-  case ResolvedBindingKind::HostFunction:
-    return "HostFunction";
-  case ResolvedBindingKind::ClassMember:
-    return "ClassMember";
-  }
-  return "Unknown";
 }
 
 std::string sanitizeFileStem(const std::string &value) {
@@ -1008,7 +1008,8 @@ for (const auto &err : parser.getErrors()) {
     // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
     // compile options this request used (version-6 header).
     autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
-                           options.strictSemantics, options.optimizeBytecode);
+                         options.strictSemantics, options.optimizeBytecode,
+                         source);
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -1402,7 +1403,8 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
   // compile options this request used (version-6 header).
   autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
-                         options.strictSemantics, options.optimizeBytecode);
+                         options.strictSemantics, options.optimizeBytecode,
+                         source);
   if (timing) {
     ::havel::startup_timing_report("compile.emit", t_stage);
     ::havel::startup_timing_report("compile.total", t_total);

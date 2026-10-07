@@ -1611,6 +1611,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           // assigned inside a loop resolved to the never-written local
           // slot (nulls in test_cooperative_async) instead of the global.
           global_variables_.insert(ident.symbol);
+          implicit_scope_globals_.insert(ident.symbol);
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
           newBinding.slot = 0;
@@ -1648,6 +1649,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               // isGlobalScope branch - a scope entry + slot here is junk
               // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
+              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1700,6 +1702,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               // isGlobalScope branch - a scope entry + slot here is junk
               // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
+              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1770,6 +1773,7 @@ case ast::NodeType::MultipleAssignment: {
                 if (isGlobalScope) {
                     uint32_t slot = declareLocal(ident.symbol, &ident, false);
                     global_variables_.insert(ident.symbol);
+                    implicit_scope_globals_.insert(ident.symbol);
                     ResolvedBinding newBinding;
                     newBinding.kind = ResolvedBindingKind::Global;
                     newBinding.slot = 0;
@@ -2207,26 +2211,26 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   auto &ctx = function_stack_[function_index];
 
   // Program-root bindings that are tracked as globals should always resolve
-  // as globals in __main__, even though they also have declaration slots —
-  // UNLESS a nested (non-root) scope of __main__ re-declared the name, e.g.
-  // a for-loop iterator shadowing a script global (`v = 3; for v in vals`).
-  // The iterator binding writes a local slot (declarationSlot/STORE_VAR), so
-  // reads inside the loop must resolve to that slot; resolving them as the
-  // global made the loop var invisible (body saw the stale pre-loop value,
-  // total += v stuck at the last receive value - see test_cooperative_async).
-  // Nested-function captures of the shadowed slot need this too: the early
-  // return also cut off upvalue capture of the loop-local.
+  // as globals in __main__, even though they also have declaration slots.
+  // A genuine inner-scope local (for-loop iterators, let/val declared inside
+  // a nested block or loop body) SHADOWS the root global: without this, a
+  // pre-existing root global with the same name captured every read of the
+  // loop variable (the loop machinery stored the element into the local
+  // slot via the declaration, but body reads resolved to the stale global).
+  // implicit_scope_globals_ names are exempt: the implicit-global assignment
+  // path registers them in a scope slot for bookkeeping but notes a Global
+  // binding (STORE_GLOBAL) - reads must stay Global or they diverge from
+  // their own writes (reads saw a never-stored local slot, i.e. null).
   if (function_index == 0 && global_variables_.count(name) > 0) {
-    bool shadowed_in_nested_scope = false;
-    if (!function_stack_.empty() && function_stack_[0].scopes.size() > 1) {
-      for (size_t sc = 1; sc < function_stack_[0].scopes.size(); ++sc) {
-        if (function_stack_[0].scopes[sc].count(name) > 0) {
-          shadowed_in_nested_scope = true;
-          break;
-        }
+    bool shadowed_by_inner_local = false;
+    for (size_t sc = 1; sc < ctx.scopes.size(); ++sc) {
+      if (ctx.scopes[sc].count(name) > 0 &&
+          implicit_scope_globals_.count(name) == 0) {
+        shadowed_by_inner_local = true;
+        break;
       }
     }
-    if (!shadowed_in_nested_scope) {
+    if (!shadowed_by_inner_local) {
       return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
     }
   }

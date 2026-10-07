@@ -715,12 +715,9 @@ list(APPEND CORE_SOURCES
 # AltTabService.cpp only <memory>). Both are referenced unconditionally by
 # core TUs (UIBridge, UIManager, HostModules), so they must build always --
 # a Qt-UI-less configure (build.sh's headless modes) failed to link with
-# undefined references to ScreenshotService otherwise.
-set(_SCREENSHOT_CORE_SOURCES
-  "src/host/screenshot/ScreenshotService.cpp"
-  "src/host/window/AltTabService.cpp"
-)
-list(APPEND CORE_SOURCES ${_SCREENSHOT_CORE_SOURCES})
+# undefined references to ScreenshotService otherwise. AltTabService.cpp is
+# already in the unconditional glob above.
+list(APPEND CORE_SOURCES "src/host/screenshot/ScreenshotService.cpp")
 
 # Clipboard sources (always built, no Qt dependency)
 set(_CLIPBOARD_CORE_SOURCES
@@ -774,9 +771,22 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
-            # Note: Disabled C API files (not implemented)
-            # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
-            # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
+    )
+
+    # C API host side: the extension registry behind api_register_function
+    # (HavelCAPI.h). Excluded for a long time as "not implemented" while its
+    # api_register_function stored into a function-local static with no
+    # reader — the C-ABI extensions (qt.*, gtk.*, ...) were registered into
+    # a black hole and the namespaces went dark. Now compiled in and
+    # drained by Modules::install (takeRegisteredExtensionFunctions).
+    # HavelValue.cpp lives outside src/havel-lang, so the glob misses it and
+    # it has to be appended; HavelAPI.cpp is already globbed (see the
+    # compiler/module pattern in the runtime/compiler partition below).
+    # HavelValue.cpp carries no global state (refcounted calloc values), so
+    # this copy coexists with the havel_extension_runtime copy the toolkit
+    # plugins link.
+    list(APPEND HAVEL_LANG_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
     )
 
 # Exclude stdlib modules when building as plugins — they become havel_mod_*.so
@@ -1426,6 +1436,7 @@ endif() # QT_BACKEND_AVAILABLE
 if(GTK4_TOOLKIT_AVAILABLE OR GTK_BACKEND_AVAILABLE)
 add_library(havel_toolkit_gtk MODULE
     src/extensions/gtk/havel_toolkit_gtk.cpp
+    src/extensions/gtk/gtk_extension.cpp
     src/host/ui/GtkBackend.cpp
 )
 set(_GTK_TK_INCLUDES ${GTK4_TOOLKIT_INCLUDE_DIRS})
@@ -1434,7 +1445,10 @@ if(GTK_BACKEND_AVAILABLE)
 endif()
 list(APPEND _GTK_TK_INCLUDES
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/extensions
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
     /usr/include/cairo
     /usr/include/freetype2
     /usr/include/libpng16
@@ -1445,7 +1459,7 @@ set(_GTK_TK_LIBS ${GTK4_TOOLKIT_LIBRARIES})
 if(GTK_BACKEND_AVAILABLE)
     set(_GTK_TK_LIBS ${GTK4_LIBRARIES})
 endif()
-target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} dl)
+target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} havel_extension_runtime dl)
 target_compile_definitions(havel_toolkit_gtk PRIVATE
     HAVE_GTK_BACKEND
     HAVEL_MODULE_PLUGIN
@@ -2370,7 +2384,28 @@ $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 )
 
 # ==============================================================================
-# HAVEL LANGUAGE LIBRARY (CONDITIONAL)
+# HAVEL LANGUAGE LIBRARIES (CONDITIONAL)
+#
+# The language builds as two archives instead of one:
+#
+#   havel_runtime   the shippable VM. Values, GC, bytecode execution,
+#                   stdlib, FFI + C API, module/plugin loading, AOT core
+#                   exports. It must never need the compiler: every dynamic
+#                   compile goes through ModuleCompilerHook (see
+#                   src/havel-lang/compiler/vm/ModuleCompilerHook.hpp), which
+#                   a runtime-only build leaves uninstalled so source imports
+#                   fail with a clean NoCompiler diagnostic instead of a link
+#                   error.
+#   havel_compiler  the SDK. Lexer-driven frontend, parser, AST, semantic
+#                   passes, bytecode compilation, JIT backends, incremental
+#                   driver and developer tools.
+#   havel_lang      compatibility umbrella (INTERFACE) so every pre-split
+#                   consumer keeps linking the one name it linked before.
+#
+# The partition below is derived from the real source list, so a new file
+# cannot silently fall out of the build: anything that matches no runtime
+# pattern lands in havel_compiler, and the count check fails the configure
+# step if a source ends up in neither archive.
 # ==============================================================================
 if(ENABLE_HAVEL_LANG)
     set(HAVEL_LANG_LIB_SOURCES ${HAVEL_LANG_SOURCES})
@@ -2383,16 +2418,87 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JIT.cpp
     )
 # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
+    # PureStdLib.cpp and RuntimeErrorTracker.cpp are already globbed under
+    # src/havel-lang; only the C sources and the host module loader are not.
     list(APPEND HAVEL_LANG_LIB_SOURCES
     ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
     ${CMAKE_SOURCE_DIR}/src/dl/Loader.c
     ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
     ${CMAKE_SOURCE_DIR}/src/c/Config.c
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RuntimeErrorTracker.cpp
 )
-    add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
 
+    # -----------------------------------------------------------------------
+    # Runtime / compiler partition.
+    #
+    # compiler/vm, compiler/gc, compiler/runtime, compiler/module and
+    # compiler/prototypes execute bytecode and are runtime even though they
+    # live under compiler/. Only RuntimeProfiler joins them there: VM.hpp
+    # includes it, so it is runtime despite its directory.
+    # -----------------------------------------------------------------------
+    set(HAVEL_RUNTIME_SOURCE_PATTERNS
+        "/havel-lang/compiler/vm/"
+        "/havel-lang/compiler/gc/"
+        "/havel-lang/compiler/runtime/"
+        "/havel-lang/compiler/module/"
+        "/havel-lang/compiler/prototypes/"
+        "/havel-lang/compiler/core/RuntimeProfiler\\.cpp$"
+        "/havel-lang/runtime/"
+        "/havel-lang/stdlib/"
+        "/havel-lang/lexer/"
+        "/havel-lang/core/"
+        "/havel-lang/ffi/"
+        "/havel-lang/capi/"
+        "/havel-lang/utils/ErrorPrinter\\.cpp$"
+        "/src/host/module/ModuleLoader\\.cpp$"
+        "/src/extensions/HavelValue\\.cpp$"
+        "/src/c/LoggerC\\.c$"
+        "/src/c/Config\\.c$"
+        "/src/dl/Loader\\.c$"
+    )
+    set(HAVEL_RUNTIME_LIB_SOURCES "")
+    set(HAVEL_COMPILER_LIB_SOURCES "")
+    foreach(_lang_src IN LISTS HAVEL_LANG_LIB_SOURCES)
+        set(_lang_src_is_runtime FALSE)
+        foreach(_runtime_pattern IN LISTS HAVEL_RUNTIME_SOURCE_PATTERNS)
+            if(_lang_src MATCHES "${_runtime_pattern}")
+                set(_lang_src_is_runtime TRUE)
+                break()
+            endif()
+        endforeach()
+        if(_lang_src_is_runtime)
+            list(APPEND HAVEL_RUNTIME_LIB_SOURCES "${_lang_src}")
+        else()
+            list(APPEND HAVEL_COMPILER_LIB_SOURCES "${_lang_src}")
+        endif()
+    endforeach()
+
+    list(LENGTH HAVEL_LANG_LIB_SOURCES _lang_src_count)
+    list(LENGTH HAVEL_RUNTIME_LIB_SOURCES _runtime_src_count)
+    list(LENGTH HAVEL_COMPILER_LIB_SOURCES _compiler_src_count)
+    math(EXPR _partitioned_src_count "${_runtime_src_count} + ${_compiler_src_count}")
+    if(NOT _lang_src_count EQUAL _partitioned_src_count)
+        message(FATAL_ERROR
+            "havel runtime/compiler partition lost sources: "
+            "${_lang_src_count} language sources, "
+            "${_runtime_src_count} runtime + ${_compiler_src_count} compiler")
+    endif()
+    message(STATUS "Havel runtime lib:  ${_runtime_src_count} sources")
+    message(STATUS "Havel compiler lib: ${_compiler_src_count} sources")
+
+    add_library(havel_runtime STATIC ${HAVEL_RUNTIME_LIB_SOURCES})
+    add_library(havel_compiler STATIC ${HAVEL_COMPILER_LIB_SOURCES})
+    # The SDK compiles for the runtime: Value, GC, BytecodeIR, prototypes.
+    target_link_libraries(havel_compiler PUBLIC havel_runtime)
+
+    add_library(havel_lang INTERFACE)
+    target_link_libraries(havel_lang INTERFACE havel_runtime havel_compiler)
+
+    # -----------------------------------------------------------------------
+    # havel_lang_core is the lean AOT "core profile" variant: the same sources
+    # minus the ORC JIT and the log module. It still carries the compiler
+    # partition for now; dropping it is what makes the core profile a genuine
+    # runtime-only image.
+    # -----------------------------------------------------------------------
     set(HAVEL_LANG_CORE_SOURCES ${HAVEL_LANG_LIB_SOURCES})
 list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
   ${CMAKE_SOURCE_DIR}/src/host/module/bridges/AppBridge.cpp
@@ -2416,67 +2522,40 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
 )
     add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
 
-    if(TARGET gen_module_globals)
-      add_dependencies(havel_lang gen_module_globals)
-      add_dependencies(havel_lang_core gen_module_globals)
-    endif()
-    if(TARGET gen_host_function_names)
-      add_dependencies(havel_lang gen_host_function_names)
-      add_dependencies(havel_lang_core gen_host_function_names)
-    endif()
+    # Shared compile configuration for every language archive. Kept in one
+    # function so the split cannot give the runtime and the SDK divergent
+    # include paths, feature defines or link libraries.
+    function(havel_lang_configure_archive _lang_target)
+        if(TARGET gen_module_globals)
+            add_dependencies(${_lang_target} gen_module_globals)
+        endif()
+        if(TARGET gen_host_function_names)
+            add_dependencies(${_lang_target} gen_host_function_names)
+        endif()
 
-    target_include_directories(havel_lang PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/src/include
-        ${CMAKE_SOURCE_DIR}/include
-        ${X11_INCLUDE_DIR}
-        ${XI_INCLUDE_DIR}
-        ${PIPEWIRE_INCLUDE_DIRS}
-  ${ALSA_INCLUDE_DIRS}
-        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-        $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
-        # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
-        # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
-    )
-
-target_link_libraries(havel_lang PRIVATE
-${COMMON_LIBS}
-$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-$<$<BOOL:${HAVE_LIBFFI}>:ffi>
-dl
-havel_core
-)
-
-    target_link_libraries(havel_lang_core PRIVATE
-${COMMON_LIBS}
-$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-$<$<BOOL:${HAVE_LIBFFI}>:ffi>
-dl
-havel_core
-)
-
-    target_include_directories(havel_lang_core PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/src/include
-        ${CMAKE_SOURCE_DIR}/include
-        ${X11_INCLUDE_DIR}
-        ${XI_INCLUDE_DIR}
- ${PIPEWIRE_INCLUDE_DIRS}
-  ${ALSA_INCLUDE_DIRS}
-        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-        $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
-    )
-
-    # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
-    # in PIE test binaries. Release builds keep LTO for performance.
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_target_properties(havel_lang PROPERTIES
-            INTERPROCEDURAL_OPTIMIZATION OFF
+        target_include_directories(${_lang_target} PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/include
+            ${CMAKE_SOURCE_DIR}/include
+            ${X11_INCLUDE_DIR}
+            ${XI_INCLUDE_DIR}
+            ${PIPEWIRE_INCLUDE_DIRS}
+            ${ALSA_INCLUDE_DIRS}
+            ${CMAKE_SOURCE_DIR}/src/havel-lang
+            $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
+            # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
+            # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
         )
-        target_compile_options(havel_lang PRIVATE -fno-lto)
-    endif()
 
-target_compile_definitions(havel_lang PRIVATE
+        target_link_libraries(${_lang_target} PRIVATE
+${COMMON_LIBS}
+$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+$<$<BOOL:${HAVE_LIBFFI}>:ffi>
+dl
+havel_core
+)
+
+        target_compile_definitions(${_lang_target} PRIVATE
 $<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
@@ -2490,26 +2569,37 @@ $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
 HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
 )
 
-    target_compile_definitions(havel_lang_core PRIVATE
-$<$<BOOL:${ENABLE_CRANELIFT}>:HAVEL_ENABLE_CRANELIFT>
-$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
-$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
-$<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
-$<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
-$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_CORE_LIB>
-$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_GUI_LIB>
-$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDGETS_LIB>
-$<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
-HAVEL_CORE_PROFILE
-HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
-)
+        # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
+        # in PIE test binaries. Release builds keep LTO for performance.
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set_target_properties(${_lang_target} PROPERTIES
+                INTERPROCEDURAL_OPTIMIZATION OFF
+            )
+            target_compile_options(${_lang_target} PRIVATE -fno-lto)
+        endif()
+    endfunction()
+
+    havel_lang_configure_archive(havel_runtime)
+    havel_lang_configure_archive(havel_compiler)
+    havel_lang_configure_archive(havel_lang_core)
+    target_compile_definitions(havel_lang_core PRIVATE HAVEL_CORE_PROFILE)
+
+    # PIC: havel is ENABLE_EXPORTS so the plugins resolve VM symbols from the
+    # executable, and the language archives are embedded in it.
+    set_target_properties(havel_runtime PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        INTERPROCEDURAL_OPTIMIZATION OFF
+    )
+    set_target_properties(havel_compiler PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        INTERPROCEDURAL_OPTIMIZATION OFF
+    )
 
     # -----------------------------------------------------------------------
     # Note: LLVM_INCLUDE_DIRS handling is applied globally at source assembly
     # stage to all targets that use HAVEL_LANG_SOURCES (including tests).
     # This prevents LLVM 23's bare `namespace __detail` from polluting
-    # std::__detail across every translation unit in havel_lang.
+    # std::__detail across every translation unit in the language archives.
     # -----------------------------------------------------------------------
 
 endif()
@@ -2655,7 +2745,8 @@ add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
 add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
 add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
-  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp
+    EXTRA_DEFS $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
@@ -2672,8 +2763,8 @@ target_include_directories(havel_ffi_types PUBLIC
   ${CMAKE_SOURCE_DIR}/include
 )
 target_link_libraries(havel_ffi_types PRIVATE ${LIBFFI_LIBRARIES})
-# Link into main binary (via havel_lang)
-target_link_libraries(havel_lang PRIVATE havel_ffi_types)
+# Link into main binary (via havel_runtime, which owns ffi/)
+target_link_libraries(havel_runtime PRIVATE havel_ffi_types)
 
 add_havel_module_plugin(ffi          ${CMAKE_SOURCE_DIR}/src/modules/ffi/FFIModule.cpp
   EXTRA_DEFS $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>)
@@ -2692,11 +2783,12 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(file_automator  ${CMAKE_SOURCE_DIR}/src/modules/file_automator/FileAutomatorModule.cpp)
-add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
-add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
 add_havel_module_plugin(system_monitor  ${CMAKE_SOURCE_DIR}/src/modules/system_monitor/SystemMonitorModule.cpp)
-add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
-target_sources(havel_mod_ui PRIVATE ${CMAKE_SOURCE_DIR}/src/host/ui/GuiThreadManager.cpp)
+# ui has non-Qt backends (gtk namespace, toolkit reachability) so the
+# plugin builds everywhere; its Qt slice compiles only when the Qt
+# backend exists. Same gate as the main targets use.
+add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp
+  EXTRA_DEFS $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>)
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
     ${CMAKE_BINARY_DIR}/generated/wayland
@@ -2707,6 +2799,11 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 
 # Qt-dependent modules
 if(ENABLE_QT)
+  # Qt-only GUI plugins (unconditional #include <QApplication> in their
+  # sources) and the Qt-side sources of havel_mod_ui.
+  add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  add_havel_module_plugin(system_monitor_gui ${CMAKE_SOURCE_DIR}/src/modules/system_monitor_gui/SystemMonitorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
+  target_sources(havel_mod_ui PRIVATE ${CMAKE_SOURCE_DIR}/src/host/ui/GuiThreadManager.cpp)
   add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
   get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
@@ -2738,10 +2835,9 @@ endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
 if(ENABLE_HAVEL_LANG)
-    set_target_properties(havel_lang PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
-        INTERPROCEDURAL_OPTIMIZATION OFF
-    )
+    # havel_runtime / havel_compiler already carry POSITION_INDEPENDENT_CODE
+    # and INTERPROCEDURAL_OPTIMIZATION OFF (set where the split is defined);
+    # the shim reuses havel_lang_core and matches them.
 
     add_library(havel_aot_core_shim STATIC
         src/havel-lang/runtime/AotCoreShim.cpp
@@ -2908,7 +3004,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
 
-    # Orphaned `else` after an unbraced if-body must be a parse error, not a
+# Orphaned `else` after an unbraced if-body must be a parse error, not a
     # silently mis-ordered else body. Parser-only: compiles the same
     # lexer+parser source set as the LSP target, so it links neither app core
     # nor VM.
@@ -2953,6 +3049,29 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(parser_unmatched_delimiter_test PRIVATE cxx_std_23)
     target_link_libraries(parser_unmatched_delimiter_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
     add_test(NAME parser_unmatched_delimiter_test COMMAND parser_unmatched_delimiter_test)
+
+    # C-ABI value conversion round-trips (HavelValue <-> VM Value). The
+    # qt.*/gtk.* extension wrappers depend on these; before the C-API
+    # restoration strings/handles/arrays/objects silently degraded to null.
+    # Links havel_lang for VM + HavelAPI.cpp + HavelValue.cpp; the suite
+    # runs under ASan+LSan so refcount imbalance fails the test.
+    add_executable(capi_value_conversion_test
+        tests/capi_value_conversion_ut.cpp
+    )
+    target_include_directories(capi_value_conversion_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/extensions
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(capi_value_conversion_test PRIVATE cxx_std_23)
+    # havel_core and havel_lang have a symbol cycle (EventListener ->
+    # ExecutionEngine and back), so they must be grouped like the main
+    # binary links them.
+    target_link_libraries(capi_value_conversion_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group)
+    add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
@@ -3114,10 +3233,10 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
 
         # Wire the Rust staticlib into the VM so the TieredBackend can
         # construct the Cranelift tier-1 backend (HAVEL_ENABLE_CRANELIFT).
-        target_link_libraries(havel_lang PRIVATE
+        target_link_libraries(havel_runtime PRIVATE
             ${CRANELIFT_BUILD_DIR}/libhavel_cranelift_backend.a
             ${CMAKE_DL_LIBS})
-        add_dependencies(havel_lang cranelift_backend_lib)
+        add_dependencies(havel_runtime cranelift_backend_lib)
 
         if(ENABLE_TESTS)
         add_executable(cranelift_proto_driver
@@ -3142,11 +3261,14 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
             # that define what they need (havel_lang, havel_gui). CMake
             # dedups repeats, so these explicit positions also win over the
             # shim's transitive expansion.
+            # havel_gui exists only in Qt UI backend builds — headless crane
+            # configs must not ask the linker for it (same guard as
+            # hpp_proto_test below).
             havel_aot_core_shim
             havel_lang_core
             havel_core
             havel_lang
-            havel_gui
+            $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
             ${COMMON_LIBS}
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
             ${CMAKE_DL_LIBS}
@@ -3207,8 +3329,15 @@ install(TARGETS hpkg
     )
 endif()
 
-if(TARGET havel_lang)
-    install(TARGETS havel_lang
+if(TARGET havel_runtime)
+    install(TARGETS havel_runtime
+        ARCHIVE DESTINATION lib
+        COMPONENT Development
+    )
+endif()
+
+if(TARGET havel_compiler)
+    install(TARGETS havel_compiler
         ARCHIVE DESTINATION lib
         COMPONENT Development
     )
@@ -3301,8 +3430,9 @@ endif()
 if(TARGET hpkg)
 message(STATUS "Package manager: hpkg")
 endif()
-if(TARGET havel_lang)
-    message(STATUS "Language lib:    libhavel_lang.a")
+if(TARGET havel_runtime)
+    message(STATUS "Runtime lib:     libhavel_runtime.a")
+    message(STATUS "Compiler lib:    libhavel_compiler.a")
 endif()
 
 if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
@@ -3443,8 +3573,5 @@ include(CPack)
   if(PIPEWIRE_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_PIPEWIRE)
   endif()
-if(TARGET havel_lang)
-    target_include_directories(havel_lang PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/havel-lang
-    )
-endif()
+# src/havel-lang is already on the language archives' include path via
+# havel_lang_configure_archive(); nothing left to add here.

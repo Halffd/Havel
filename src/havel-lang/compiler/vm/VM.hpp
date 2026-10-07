@@ -1427,42 +1427,28 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
-    // Module-function gate: module functions do NOT tier yet. The JIT
-    // execute path pushes no interpreter frame, so a compiled module
-    // function's Runtime-ABI global writes persist against the CALLER's
-    // frame (closure_id 0 when called from __main__), never reaching the
-    // module's sidecar - module-level caches then diverge depending on
+    // Module-function tiering: LIFTED (previously gated behind
+    // HAVEL_TIER1_MODULES). The gate existed because the JIT execute path
+    // pushed no interpreter frame, so a compiled module function's
+    // Runtime-ABI global writes persisted against the CALLER's frame
+    // (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverged depending on
     // which path touched them last (the self-hosted parser's BP_TABLE
-    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
-    // compiled function itself returns correct values). doCall's JIT
-    // branch now performs the module-globals snapshot swap for ClosureId
-    // calls (matching the interpreter), which fixes that half; lifting
-    // this gate additionally requires the JIT path to establish the
-    // callee's frame context (closure_id/module_globals) for the bridges.
-    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
-    // Status 2026-09-12: the doCall JIT branch now establishes callee
-    // frame context (synthetic CallFrame with closure_id/chunk, globals
-    // sidecar swap, current_chunk swap - see VM.cpp doCall jit path), and
-    // module tiering passed a correctness sweep with it: 16 real smoke
-    // tests (an initial 5 "failures" were nonexistent filenames, caught
-    // and rerun), full --lint parse+typecheck+emit, and an 80-fn
-    // parse-verification script (AST stmt count exact) all pass with
-    // tier1=5 parser functions compiled. An earlier note claiming
-    // divergence was a flawed test (missing --lint flag + load-confounded
-    // timings), not a real repro. Gate remains until the remaining risk
-    // is covered by the full suite: tiered module functions still bypass
-    // interpreter frame management (coroutine/suspension opcodes route
-    // through the JitCoroutineSignal fallback) and the old BP_TABLE
-    // divergence class deserves a targeted regression test before
-    // lifting by default.
-    static const bool allow_module_tiering =
-        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
-    if (!allow_module_tiering && frame_count_ > 0) {
-      const auto& cf = currentFrame();
-      if (cf.chunk && cf.chunk != main_chunk_.get()) {
-        return;
-      }
-    }
+    // broke exactly this way). Both prerequisites the gate's lift
+    // demanded are now in place: doCall's JIT branch performs the
+    // module-globals snapshot swap for ClosureId calls AND establishes
+    // the callee's frame context (synthetic CallFrame with
+    // closure_id/chunk, globals sidecar swap, current_chunk swap - see
+    // VM.cpp doCall jit path), passing a correctness sweep (16 real smoke
+    // tests, full --lint parse+typecheck+emit, an 80-fn
+    // parse-verification script with tier1=5 parser functions compiled).
+    // The BP_TABLE-divergence class the old comment demanded a regression
+    // test for is covered by scripts/smoke/test_issue_mod_lazy_cache_tiering.hv
+    // (drives module functions past tier-up, asserts the module cache is
+    // built exactly once and correct through the tiered path; slow-tier,
+    // so the full pre-merge gate runs it). Coroutine/suspension opcodes
+    // in tiered module functions route through the JitCoroutineSignal
+    // fallback. HAVEL_TIERING=0 remains the global opt-out.
     const size_t size = func.instructions.size();
     if (size == 0 || size > tier1_max_instructions_) {
       return;  // never worth compiling (empty or above the tier-1 cap)

@@ -9,9 +9,9 @@
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
-#include "../core/Pipeline.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
+#include "ModuleCompilerHook.hpp"
 #include "VM.hpp"
 #include "VMInternals.hpp"
 #include "stdlib/FsModule.hpp"
@@ -1553,17 +1553,19 @@ void VM::registerDefaultHostFunctions() {
     if (code.empty())
       return Value::makeNull();
 
-    havel::compiler::PipelineOptions options;
-    options.compile_unit_name = "<eval>";
-    options.debugBytecode = false;
-    options.max_instructions = max_instructions_;
-
+    // FullPipeline mode: eval has always compiled through the whole SDK
+    // pipeline (use-statement module loading, type check, name resolution),
+    // not the bare ByteCompiler the module loads use. It goes through the
+    // hook so the runtime never links the compiler itself.
     std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
-    try {
-      chunk =
-          havel::compiler::compileToBytecodeChunk(code, "__main__", options);
-    } catch (const std::exception &e) {
-      COMPILER_THROW(std::string("eval(): ") + e.what());
+    {
+      auto compiled = ModuleCompilerHook::instance().compileSource(
+          code, SourceCompileMode::FullPipeline);
+      if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk)
+        COMPILER_THROW(std::string("eval(): ") +
+                       (compiled.error.empty() ? "compilation failed"
+                                               : compiled.error));
+      chunk = std::move(compiled.chunk);
     }
 
     // Execute using executePersistent which preserves globals/heap/state

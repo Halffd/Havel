@@ -28,11 +28,14 @@ else
     exit 1
 fi
 
-# Install library
-if [ -f build-debug/libhavel_lang.a ]; then
-    install -m 644 build-debug/libhavel_lang.a "$LIBDIR/libhavel_lang.a"
-    echo "  Installed: $LIBDIR/libhavel_lang.a"
-fi
+# Install libraries: the runtime (VM) and the compiler SDK are separate
+# archives now, so an embedder can take the runtime without the SDK.
+for lib in libhavel_runtime.a libhavel_compiler.a; do
+    if [ -f "build-debug/$lib" ]; then
+        install -m 644 "build-debug/$lib" "$LIBDIR/$lib"
+        echo "  Installed: $LIBDIR/$lib"
+    fi
+done
 
 # Install pkg-config file
 if [ -f havel.pc ]; then

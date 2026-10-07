@@ -235,6 +235,9 @@ std::function<void()> REPL::pumpCallbackForHook_;
 std::string REPL::callbackLine_;
 bool REPL::callbackLineReady_ = false;
 static compiler::VM* g_repl_vm = nullptr;
+// The run() loop instance, used by the readline event hook below. Cleared
+// after the producer thread joins, so a stale instance is never touched.
+static REPL* g_active_repl = nullptr;
 
 // Signal handler for REPL (not static - declared as friend in header)
 void replSignalHandler(int sig) {
@@ -406,12 +409,12 @@ void REPL::replInputThreadEntry() {
 
         // Read line using existing logic (blocking)
         // We'll reuse the readline logic but without the event pump
-        std::string prompt = accumulatedInput.empty()
-            ? config_.prompt
-            : config_.continuePrompt;
+        std::string prompt = awaitingContinuation_.load()
+            ? config_.continuePrompt
+            : config_.prompt;
 
         std::string line = readLineNoPump(prompt);
-        
+
         if (!replThreadRunning_.load()) {
             break;
         }
@@ -427,9 +430,15 @@ void REPL::replInputThreadEntry() {
                 inputQueue_.push("__EOF__");  // Special EOF marker
             } else {
                 inputQueue_.push("");  // Clear accumulated input
+                inputQueue_.push("__EOF__");
             }
-            std::cin.clear();
-            continue;
+            // EOF is terminal for the reader, but do NOT wake()/shutdown
+            // the queue from here: wake() sets the shutdown flag, and the
+            // consumer drops every queued line once shutdown is set — a
+            // piped multi-line session lost everything after the first
+            // line. The __EOF__ marker drives the main loop's exit after
+            // the queue drains.
+            break;
         }
 
         // Trim whitespace
@@ -460,6 +469,13 @@ std::string REPL::readLineNoPump(const std::string& prompt) {
         free(line);
         return result;
     }
+    // readline() returns NULL only on EOF (or alloc failure). Returning ""
+    // alone hid EOF from the caller — std::cin.eof() is never set by
+    // readline, so the producer treated EOF as an empty line, skipped it,
+    // and looped forever re-printing the prompt (observed as an endless
+    // "havel>" flood at 100% CPU when stdin is a pipe). Mark EOF so the
+    // producer terminates.
+    std::cin.setstate(std::ios::eofbit);
     return "";
 #else
     std::cout << prompt;
@@ -504,6 +520,12 @@ void REPL::processPendingInput() {
             // EOF marker - exit REPL
             std::cin.setstate(std::ios::eofbit);
             accumulatedInput.clear();
+            awaitingContinuation_.store(false);
+            // The old code only returned from processPendingInput; the
+            // run() loop then kept waiting on the queue (replThreadRunning_
+            // still true), so an EOF'd session hung forever doing nothing.
+            replThreadRunning_.store(false);
+            inputQueue_.wake();
             return;
         }
 
@@ -513,6 +535,7 @@ void REPL::processPendingInput() {
                 interrupted_.store(false);
                 std::cout << "^C\n";
                 accumulatedInput.clear();
+                awaitingContinuation_.store(false);
                 return;
             }
             // Empty input - just continue
@@ -544,8 +567,12 @@ void REPL::processPendingInput() {
 
         // Check if input is complete
         if (!isInputComplete(accumulatedInput)) {
+            // Genuinely waiting for more input: switch the producer's
+            // prompt to the continuation form.
+            awaitingContinuation_.store(true);
             continue;  // Need more input
         }
+        awaitingContinuation_.store(false);
 
         // Add complete input to readline history (single or multi-line)
 #ifdef HAVE_READLINE
@@ -832,7 +859,12 @@ void REPL::printError(const std::string& error, int line, int column, int length
 
 bool REPL::handleCommand(const std::string& input) {
     if (input == "exit" || input == "quit" || input == ":q") {
-        return true; // Exit signal
+        // This used to be a documented no-op: handleCommand returned an
+        // "exit signal" but the caller only skipped accumulation, so
+        // typing `exit` left the REPL waiting for more input forever.
+        replThreadRunning_.store(false);
+        inputQueue_.wake();
+        return true;
     }
 
     if (input == "help" || input == "?") {
@@ -1230,8 +1262,35 @@ int REPL::run() {
     logOutput("=== Havel REPL session started at " + sessionStart_ + " ===\n");
 
     accumulatedInput.clear();
+    awaitingContinuation_.store(false);
     currentLine = 0;
     int consecutiveInterrupts = 0;
+
+#ifdef HAVE_READLINE
+    // Abort a blocked readline() when the session is shutting down (exit
+    // command, EOF, double Ctrl-C). readline calls rl_event_hook at most
+    // ten times a second while waiting for terminal input; setting rl_done
+    // makes it return immediately. Without this, run()'s join on the
+    // producer thread hung after `exit` — the producer was already blocked
+    // reading the NEXT line, and nothing told readline to stop until the
+    // user pressed one more key.
+    //
+    // TTY only. With rl_event_hook installed on a NON-tty stdin (pipe,
+    // closed file), readline switches to a FIONREAD/pselect polling loop
+    // that never issues the 0-byte read() which signals EOF — a piped
+    // session hung in that poll forever (observed: printf ... | havel --repl
+    // never exits). Without the hook, a piped readline() blocks in read(),
+    // sees EOF, and returns NULL like it always did.
+    if (isatty(STDIN_FILENO)) {
+        g_active_repl = this;
+        rl_event_hook = []() -> int {
+            if (g_active_repl && !g_active_repl->replThreadRunning_.load()) {
+                rl_done = 1;
+            }
+            return 0;
+        };
+    }
+#endif
 
     // Start REPL input thread (separate thread for blocking read)
     replThreadRunning_.store(true);
@@ -1269,6 +1328,11 @@ int REPL::run() {
     if (replInputThread_.joinable()) {
         replInputThread_.join();
     }
+
+#ifdef HAVE_READLINE
+    g_active_repl = nullptr;
+    rl_event_hook = nullptr;
+#endif
 
     logOutput("=== Havel REPL session ended at " + sessionStart_ + " ===\n");
 

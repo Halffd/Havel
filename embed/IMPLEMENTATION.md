@@ -94,7 +94,7 @@ Link against the Havel static library:
 
 ```bash
 g++ -std=c++23 myapp.cpp src/Havel.cpp \
-    -L build-debug -lhavel_lang \
+    -L build-debug -lhavel_runtime -lhavel_compiler \
     -lQt6Core -lQt6Gui -lX11 -lpthread
 ```
 

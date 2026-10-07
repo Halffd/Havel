@@ -2,6 +2,7 @@
 
 #include "../core/Value.hpp"
 #include <cstdio>
+#include "compiler/vm/ModuleCompilerHook.hpp"
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
@@ -9,6 +10,7 @@
 #include "../../host/platform/FileWatcher.hpp"
 #include "../../host/platform/WindowEventSource.hpp"
 #include "../compiler/core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
 #ifdef HAVEL_ENABLE_LLVM
@@ -573,14 +575,27 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk (without executing)
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk (without executing). The compile goes through
+        // the compiler hook rather than compileToBytecodeChunk directly: this
+        // header is runtime, and a runtime-only embedder has no compiler
+        // archive to link against. The engine keeps running the VM itself
+        // (storeMainChunk + spawnGoroutine), so it wants a chunk, not a
+        // pipeline result.
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Spawn the entry function as a goroutine
@@ -682,14 +697,22 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk, through the compiler hook (see execute()).
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)
@@ -815,7 +838,6 @@ vm_->addIntervalResult(timer_id, result);
             processGoroutines();
         }
     }
-
     void tickGoroutines() {
         if (!initialized_) return;
     auto* sched = vm_->getScheduler();
@@ -835,6 +857,13 @@ vm_->addIntervalResult(timer_id, result);
       return;
     }
         vm_->tickScheduler();
+    }
+
+    // REPL runs disable the HotkeyWait keep-alive in processGoroutines so
+    // execute() returns and the REPL loop takes over pumping (see
+    // keepAliveForHotkeyWakes_).
+    void setKeepAliveForHotkeyWakes(bool keepAlive) {
+        keepAliveForHotkeyWakes_ = keepAlive;
     }
 
     compiler::VM* vm() const { return vm_.get(); }
@@ -992,6 +1021,11 @@ private:
     bool initialized_ = false;
     std::unique_ptr<compiler::Fiber> main_script_fiber_;
     bool inline_yield_active_ = false;
+    // When true (script-only runs), the processGoroutines loop keeps
+    // pumping while hotkey goroutines sit in HotkeyWait so daemon-style
+    // hotkey configs stay alive. REPL runs set this to false so
+    // execute() returns and the REPL loop takes over pumping.
+    bool keepAliveForHotkeyWakes_ = true;
     // Var names produced by emitVariableChanged from inside a goroutine's
     // dispatch loop. Drained by processGoroutines between scheduler ticks so
     // conditional hotkey re-evals happen outside any fiber context.
@@ -1390,8 +1424,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           }
         }
         if (sched->hasHotkeyWaitSuspended()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(2));
-          continue;
+          // Script-only runs (daemon-style hotkey configs) keep pumping so
+          // asynchronously-pressed hotkeys still fire; the app is meant to
+          // stay alive after the main script parks. REPL runs must NOT:
+          // engine.execute() has to return so the REPL loop can take over
+          // pumping (runMinimalReplLoop). With the keep-alive on, -m --repl
+          // wedged here forever right after the script's prints — REPL
+          // banner never appeared.
+          if (keepAliveForHotkeyWakes_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            continue;
+          }
+          // REPL mode: hotkey-wait goroutines never carry sleep deadlines,
+          // so the deadline check below breaks the loop for us.
         }
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();

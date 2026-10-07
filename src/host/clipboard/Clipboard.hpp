@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
+
 #include "ClipboardInfo.hpp"
 #include "IClipboardBackend.hpp"
 
@@ -26,7 +28,11 @@ namespace havel::host {
  * No history, no monitoring, no callbacks.
  * Just the basics with zero overhead.
  */
-class Clipboard {
+// HAVEL_EXPORT: the clipboard/historyclipboard/monitoringclipboard module
+// plugins resolve these methods from the main executable at dlopen time.
+// Release builds compile with -fvisibility=hidden, so without the explicit
+// attribute the plugins fail to load on undefined symbols.
+class HAVEL_EXPORT Clipboard {
 public:
   // Clipboard backend methods
   enum class Method {

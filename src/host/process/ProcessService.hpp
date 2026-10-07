@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -33,8 +34,14 @@ struct ProcessInfo {
  *
  * Provides system-level process operations without any language runtime coupling.
  * All methods return simple C++ types (bool, int, string, vector, etc.)
+ *
+ * HAVEL_EXPORT: the sys module plugin (havel_mod_sys.so) calls
+ * signalFromName and resolves it from the main executable at dlopen time.
+ * Release builds compile with -fvisibility=hidden, so without the explicit
+ * default-visibility attribute the symbol never reaches .dynsym and the plugin
+ * fails to load with "undefined symbol: ...ProcessService::signalFromName".
  */
-class ProcessService {
+class HAVEL_EXPORT ProcessService {
 public:
     ProcessService() = default;
     ~ProcessService() = default;
@@ -81,6 +88,16 @@ public:
     /// @param signal Signal number
     /// @return true on success
     static bool sendSignal(int32_t pid, int signal);
+
+    /// Map a signal name to its signal number.
+    /// Accepts "SIGKILL"/"kill", "SIGTERM"/"term", "SIGHUP"/"hangup",
+    /// "SIGINT"/"int", "SIGSTOP"/"stop", "SIGCONT"/"cont".
+    /// Single source for every host surface that takes a signal by name
+    /// (__proc.kill, process.kill, process.sendSignal) so they cannot
+    /// diverge (real past divergence: the bridge copy silently sent
+    /// SIGTERM for "SIGSTOP" because its map lacked the entry).
+    /// @return signal number, or nullopt for an unknown name
+    static std::optional<int> signalFromName(const std::string& name);
 
     /// Set process priority (nice value)
     /// @param pid Process ID

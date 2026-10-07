@@ -1,6 +1,7 @@
 #include "smoke_runner.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Modules.hpp"
@@ -985,6 +986,10 @@ int runStdlibCase(const std::string &name, const std::string &source,
 } // namespace
 
 int run_smoke_tests(int argc, char **argv) {
+  // SDK host: scripts under test import modules and call eval, both of
+  // which compile at runtime through the module compiler hook.
+  havel::compiler::registerSourceModuleCompilerHook();
+
   bool dump_bytecode = false;
   std::string snapshot_dir = "/tmp/havel-bytecode-snapshots";
   for (int i = 1; i < argc; ++i) {

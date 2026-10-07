@@ -7,8 +7,8 @@
 #include "../../host/media/MediaService.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../compiler/vm/VMApi.hpp"
-#include "../parser/Parser.h"
-#include "../compiler/core/ByteCompiler.hpp"
+#include "../compiler/module/HavelAPI.hpp"
+#include "../compiler/vm/ModuleCompilerHook.hpp"
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
@@ -19,11 +19,12 @@
 
 namespace havel {
 
-// getHavelAPI stub deleted: it returned a zero-initialized API table (the C
-// API host side, HavelAPI.cpp/HavelValue.cpp, is not compiled into the
-// binary), and handing it to havel_extension_init segfaulted on the first
-// api->register_function call. extension.load now prefers native module
-// plugins and loads C-ABI extensions without init.
+// The C API host side (HavelAPI.cpp/HavelValue.cpp) is compiled in again.
+// api_register_function fills the registry that
+// takeRegisteredExtensionFunctions (Modules::install) drains into the
+// host-function table; UIManager hands toolkit plugins (qt/gtk) the real
+// table at backend-creation time. extension.load still prefers native
+// module plugins and loads C-ABI extensions without init.
 
 using compiler::Value;
 using compiler::ObjectRef;
@@ -328,13 +329,12 @@ void Modules::installHostFunctions() {
         std::string code = ctx_->vm->resolveStringKey(args[0]);
         if (code.empty()) return Value::makeNull();
         try {
-            parser::Parser parser;
-            auto program = parser.produceAST(code);
-            if (!program || parser.hasErrors()) return Value::makeNull();
-            compiler::ByteCompiler byteCompiler;
-            auto chunk = byteCompiler.compile(*program);
-            if (!chunk) return Value::makeNull();
-            return ctx_->vm->execute(*chunk, "__main__");
+            auto compiled =
+                compiler::ModuleCompilerHook::instance().compileSource(code);
+            if (compiled.status != compiler::SourceCompileStatus::Ok ||
+                !compiled.chunk)
+                return Value::makeNull();
+            return ctx_->vm->execute(*compiled.chunk, "__main__");
         } catch (...) {
             return Value::makeNull();
         }
@@ -486,6 +486,18 @@ void Modules::installStdLib() {
 
     installStdLib();
     installHostFunctions();
+
+    // Drain extension functions registered through the C ABI
+    // (havel_toolkit_qt/gtk plugins register via the global HavelAPI table
+    // at backend-creation time). Without this drain the registry contents
+    // never reach the VM and the qt.*/gtk.* namespaces stay empty.
+    for (auto &[name, fn] : compiler::takeRegisteredExtensionFunctions(
+             ctx_ ? ctx_->vm : nullptr)) {
+      if (options_.host_functions.find(name) ==
+          options_.host_functions.end()) {
+        options_.host_functions[name] = std::move(fn);
+      }
+    }
 
     // Register host functions on the VM before vm_setup_callbacks run.
     // vm_setup_callbacks (e.g. hotkey object wiring) call getHostFunctionIndex

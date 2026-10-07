@@ -9,9 +9,14 @@
 #include "../../../extensions/HavelCAPI.h"
 #include "../../../extensions/HavelValue.h"
 #include "../vm/VM.hpp"
+#include "HavelAPI.hpp"
+#include "utils/Logger.hpp"
 
 #include <cstring>
 #include <cstdio>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 namespace havel::compiler {
 
@@ -74,92 +79,210 @@ static void* api_get_host_service(const char* name) {
  * ========================================================================== */
 
 /**
+ * Registry of functions registered through the C API (api_register_function)
+ * plus the VM recorded at drain time for value conversion.
+ *
+ * This used to be a function-local static inside api_register_function with
+ * no reader at all: every extension function registered through the C ABI
+ * was silently discarded, which is how the qt.* / gtk.* namespaces went dark
+ * after their extensions moved into the toolkit plugins. Modules::install
+ * drains it via takeRegisteredExtensionFunctions().
+ */
+static std::unordered_map<std::string, BytecodeHostFunction> g_extensionFunctions;
+static std::mutex g_extensionFunctionsMutex;
+static VM* g_extension_vm = nullptr;
+
+/* ==========================================================================
+ * Bidirectional value conversion (declared in HavelAPI.hpp)
+ * ==========================================================================
+ *
+ * Handles round-trip through g_handle_registry: a HAVEL_HANDLE result is
+ * wrapped in a VM host object carrying the "__capi_handle" id field, and
+ * converting such an object back returns the registered HavelValue with
+ * pointer identity. That is the contract C-ABI widget APIs (qt.*, gtk.*)
+ * rely on: widgetNew(...) hands the script an opaque object the script
+ * can only pass back to other qt.* calls.
+ *
+ * Known limit: VM objects are garbage-collected without a finalizer into
+ * this registry, so the small registry entry (and the +1 reference it
+ * pins) lives until process exit. The C values wrap pointers owned by
+ * the toolkit, so the leak is a few dozen bytes per handle.
+ */
+
+static std::unordered_map<int64_t, HavelValue*> g_handle_registry;
+static std::mutex g_handle_registry_mutex;
+static std::atomic<int64_t> g_next_handle_id{1};
+
+static constexpr int kCapiMaxDepth = 16;
+
+static const char* kCapiHandleMarker = "__capi_handle";
+
+HavelValue* valueToHavelValue(VM* vm, const Value& v, int depth) {
+    if (depth > kCapiMaxDepth) return havel_new_null();
+
+    if (v.isNull()) {
+        return havel_new_null();
+    }
+    if (v.isBool()) {
+        return havel_new_bool(v.asBool() ? 1 : 0);
+    }
+    if (v.isInt()) {
+        return havel_new_int(v.asInt());
+    }
+    if (v.isDouble()) {
+        return havel_new_float(v.asDouble());
+    }
+    if ((v.isStringValId() || v.isStringId()) && vm) {
+        std::string s = vm->resolveStringKey(v);
+        return havel_new_string(s.c_str());
+    }
+    if (v.isObjectId() && vm) {
+        // Marker object: hand back the registered handle with identity.
+        auto ref = havel::compiler::ObjectRef{v.asObjectId(), true};
+        Value marker = vm->getHostObjectField(ref, kCapiHandleMarker);
+        if (marker.isInt()) {
+            std::lock_guard<std::mutex> lk(g_handle_registry_mutex);
+            auto it = g_handle_registry.find(marker.asInt());
+            if (it != g_handle_registry.end()) {
+                havel_incref(it->second);
+                return it->second;
+            }
+        }
+        // Plain object: convert fields to a C object value.
+        HavelValue* obj = havel_new_object();
+        for (const auto& key : vm->getHostObjectKeys(ref)) {
+            Value field = vm->getHostObjectField(ref, key);
+            HavelValue* field_c = valueToHavelValue(vm, field, depth + 1);
+            havel_object_set(obj, key.c_str(), field_c);
+            havel_decref(field_c); // object_set takes its own reference
+        }
+        return obj;
+    }
+    if (v.isArrayId() && vm) {
+        auto ref = havel::compiler::ArrayRef{v.asArrayId()};
+        size_t len = vm->getHostArrayLength(ref);
+        HavelValue* arr = havel_new_array(len ? len : 4);
+        for (size_t i = 0; i < len; ++i) {
+            HavelValue* elem = valueToHavelValue(
+                vm, vm->getHostArrayValue(ref, i), depth + 1);
+            havel_array_push(arr, elem);
+            havel_decref(elem); // push takes its own reference
+        }
+        return arr;
+    }
+    /* Unsupported VM types (enums, closures, coroutines, ...) */
+    return havel_new_null();
+}
+
+Value havelValueToValue(VM* vm, HavelValue* hv, int depth) {
+    if (!hv) return Value::makeNull();
+    if (depth > kCapiMaxDepth) return Value::makeNull();
+
+    switch (havel_get_type(hv)) {
+        case HAVEL_NULL:
+            return Value::makeNull();
+        case HAVEL_BOOL:
+            return Value::makeBool(havel_get_bool(hv) != 0);
+        case HAVEL_INT:
+            return Value::makeInt(havel_get_int(hv));
+        case HAVEL_FLOAT:
+            return Value::makeDouble(havel_get_float(hv));
+        case HAVEL_STRING: {
+            const char* s = havel_get_string(hv);
+            if (vm && s) {
+                return Value::makeStringId(
+                    vm->createRuntimeString(std::string(s)).id);
+            }
+            return Value::makeNull();
+        }
+        case HAVEL_HANDLE: {
+            // Register and wrap: the VM object carries the registry id.
+            if (!vm) return Value::makeNull();
+            havel_incref(hv);
+            int64_t id = g_next_handle_id.fetch_add(1);
+            {
+                std::lock_guard<std::mutex> lk(g_handle_registry_mutex);
+                g_handle_registry[id] = hv;
+            }
+            auto obj = vm->createHostObject();
+            vm->setHostObjectField(obj, kCapiHandleMarker,
+                                   Value::makeInt(id));
+            return Value::makeObjectId(obj.id);
+        }
+        case HAVEL_ARRAY: {
+            if (!vm) return Value::makeNull();
+            size_t len = havel_array_length(hv);
+            auto arr = vm->createHostArray();
+            for (size_t i = 0; i < len; ++i) {
+                HavelValue* elem = havel_array_get(hv, i);
+                if (!elem) {
+                    vm->pushHostArrayValue(arr, Value::makeNull());
+                    continue;
+                }
+                vm->pushHostArrayValue(
+                    arr, havelValueToValue(vm, elem, depth + 1));
+            }
+            return Value::makeArrayId(arr.id);
+        }
+        case HAVEL_OBJECT: {
+            if (!vm) return Value::makeNull();
+            auto obj = vm->createHostObject();
+            size_t count = havel_object_count(hv);
+            for (size_t i = 0; i < count; ++i) {
+                const char* key = havel_object_key(hv, i);
+                HavelValue* field = key ? havel_object_get(hv, key) : nullptr;
+                if (!key) continue;
+                vm->setHostObjectField(
+                    obj, key,
+                    havelValueToValue(vm, field, depth + 1));
+            }
+            return Value::makeObjectId(obj.id);
+        }
+    }
+    return Value::makeNull();
+}
+
+/**
  * Wrapper that converts C API call to C++ Value call
  */
 struct ExtensionFunctionWrapper {
     HavelNativeFn c_function;
-    
-    static Value callWrapper(const std::vector<Value>& args, 
-                                      void* userData) {
+
+    static Value callWrapper(const std::vector<Value>& args,
+                              void* userData) {
         auto* wrapper = static_cast<ExtensionFunctionWrapper*>(userData);
         if (!wrapper || !wrapper->c_function) {
             return Value::makeNull();
         }
-        
-        /* Convert Value args to HavelValue args */
+
+        /* Convert Value args to HavelValue args (strings, handles and
+         * collections included — not just primitives) */
         std::vector<HavelValue*> c_args;
         c_args.reserve(args.size());
-        
         for (const auto& arg : args) {
-            HavelValue* havelVal = nullptr;
-
-            /* Convert Value to HavelValue */
-            if (arg.isNull()) {
-                havelVal = havel_new_null();
-            } else if (arg.isBool()) {
-                havelVal = havel_new_bool(arg.asBool() ? 1 : 0);
-            } else if (arg.isInt()) {
-                havelVal = havel_new_int(arg.asInt());
-            } else if (arg.isDouble()) {
-                havelVal = havel_new_float(arg.asDouble());
-            } else {
-                havelVal = havel_new_null();  /* Unsupported type */
-            }
-            
-            c_args.push_back(havelVal);
+            c_args.push_back(valueToHavelValue(g_extension_vm, arg));
         }
-        
+
         /* Call C extension function */
         HavelValue* result = wrapper->c_function(
-            static_cast<int>(c_args.size()), 
+            static_cast<int>(c_args.size()),
             c_args.data()
         );
-        
-        /* Convert HavelValue result to Value */
-        Value bytecodeResult;
-        if (result) {
-            switch (havel_get_type(result)) {
-                case HAVEL_NULL:
-                    bytecodeResult = Value::makeNull();
-                    break;
-                case HAVEL_BOOL:
-                    bytecodeResult = Value::makeBool(havel_get_bool(result) != 0);
-                    break;
-                case HAVEL_INT:
-                    bytecodeResult = Value::makeInt(havel_get_int(result));
-                    break;
-                case HAVEL_FLOAT:
-                    bytecodeResult = Value::makeDouble(havel_get_float(result));
-                    break;
-                case HAVEL_STRING: {
-                    // TODO: Store string in pool and use makeStringValId
-                    (void)havel_get_string(result);
-                    bytecodeResult = Value::makeNull();
-                    break;
-                }
-                case HAVEL_HANDLE: {
-                    /* For now, handles return nullptr to VM */
-                    bytecodeResult = Value::makeNull();
-                    break;
-                }
-                case HAVEL_ARRAY:
-                case HAVEL_OBJECT:
-                    /* Complex types not yet supported */
-                    bytecodeResult = Value::makeNull();
-                    break;
-            }
 
+        /* Convert HavelValue result to Value (borrows; registry pins
+         * handle results itself) */
+        Value bytecodeResult = havelValueToValue(g_extension_vm, result);
+
+        if (result) {
             /* Free the result - ownership transferred */
             havel_decref(result);
-        } else {
-            bytecodeResult = Value::makeNull();
         }
-        
+
         /* Free argument values */
         for (auto* val : c_args) {
             havel_decref(val);
         }
-        
+
         return bytecodeResult;
     }
 };
@@ -167,31 +290,42 @@ struct ExtensionFunctionWrapper {
 /**
  * Register extension function with HostBridge
  */
-static void api_register_function(const char* module, const char* name, 
+static void api_register_function(const char* module, const char* name,
                                    HavelNativeFn fn) {
     if (!module || !name || !fn) {
         return;
     }
-    
-    /* Create wrapper that converts between C and C++ calling conventions */
-    auto* wrapper = new ExtensionFunctionWrapper{fn};
-    
+
+    /* Create wrapper that converts between C and C++ calling conventions.
+     * Owned by the host-function lambda via shared_ptr: the registry map may
+     * overwrite entries (repeat registrations) and BytecodeHostFunction is
+     * copied around, so raw new here leaked every wrapper (ASan flagged 87
+     * leaks per qt registration pass). */
+    auto wrapper = std::make_shared<ExtensionFunctionWrapper>();
+    wrapper->c_function = fn;
+
     /* Create C++ function that calls the wrapper */
     BytecodeHostFunction cppFn = [wrapper](const std::vector<Value>& args) {
-        return ExtensionFunctionWrapper::callWrapper(args, wrapper);
+        return ExtensionFunctionWrapper::callWrapper(args, wrapper.get());
     };
-    
-    /* Register with HostBridge - this is called during HostBridge::install() */
+
     /* The function name format is "module.function" */
     std::string fullName = std::string(module) + "." + name;
-    
-    /* Store in options for later registration */
-    /* Note: This requires HostBridge to be accessible */
-    /* For now, we store in a global registry */
-    static std::unordered_map<std::string, BytecodeHostFunction> extensionFunctions;
-    extensionFunctions[fullName] = std::move(cppFn);
-    
-    printf("[HavelAPI] Registered extension function: %s\n", fullName.c_str());
+
+    {
+        std::lock_guard<std::mutex> lk(g_extensionFunctionsMutex);
+        g_extensionFunctions[fullName] = std::move(cppFn);
+    }
+    ::havel::debug("[HavelAPI] Registered extension function: {}", fullName);
+}
+
+std::unordered_map<std::string, BytecodeHostFunction>
+takeRegisteredExtensionFunctions(VM* vm) {
+    std::lock_guard<std::mutex> lk(g_extensionFunctionsMutex);
+    g_extension_vm = vm;
+    auto out = std::move(g_extensionFunctions);
+    g_extensionFunctions.clear();
+    return out;
 }
 
 /* ==========================================================================
@@ -263,24 +397,10 @@ HavelAPI* getHavelAPI(void) {
     return &g_havelAPI;
 }
 
-/**
- * Get registered extension functions
- * HostBridge calls this during install() to register extension functions
- */
-const std::unordered_map<std::string, BytecodeHostFunction>& getExtensionFunctions() {
-    static std::unordered_map<std::string, BytecodeHostFunction> functions;
-    return functions;
-}
-
-/**
- * Register extension function directly with HostBridge
- * Called by Loader after loading extension
- */
-void registerExtensionFunction(const std::string& fullName, BytecodeHostFunction fn) {
-    auto& functions = const_cast<std::unordered_map<std::string, BytecodeHostFunction>&>(
-        getExtensionFunctions());
-    functions[fullName] = std::move(fn);
-    printf("[HavelAPI] Registered: %s\n", fullName.c_str());
+/* Declared in HavelCAPI.h; toolkit-plugin hosts (UIManager) use it to hand
+ * extensions the real table at backend-creation time. */
+extern "C" void* havel_get_global_c_api(void) {
+    return &g_havelAPI;
 }
 
 } /* namespace havel::compiler */

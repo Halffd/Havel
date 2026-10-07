@@ -225,6 +225,14 @@ private:
     std::thread replInputThread_;
     std::atomic<bool> replThreadRunning_{false};
 
+    // True only while the VM thread is waiting for more input to complete a
+    // multi-line expression. The producer reads this to decide between the
+    // primary and continuation prompts. accumulatedInput cannot be used for
+    // this: it stays non-empty WHILE the accumulated code is executing, so
+    // the producer printed the continuation prompt for lines that were
+    // already complete (output interleaved as "... 2" with the result).
+    std::atomic<bool> awaitingContinuation_{false};
+
     // Output log stream (append to file)
     std::ofstream outputLog_;
 

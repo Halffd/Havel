@@ -153,6 +153,15 @@ pub const OP_TRY_EXIT: u32 = 58;
 pub const OP_THROW: u32 = 59;
 pub const OP_LOAD_EXCEPTION: u32 = 60;
 
+// Native backedge-hook throttle: a taken backward edge reports through
+// havel_vm_backedge_n every BACKEDGE_STRIDE-th edge with an exact delta of
+// BACKEDGE_STRIDE (per-site counter), instead of calling the hook per
+// iteration. Power of two so the counter test is a mask. Yield-request
+// latency grows by at most one stride of loop iterations, which the
+// cooperative scheduler treats as bounded overshoot (the interpreter's own
+// yield check is per-backedge but interpreted loops are the slow path).
+pub const BACKEDGE_STRIDE: u32 = 64;
+
 #[derive(Debug)]
 pub struct LoweringError(pub String);
 
@@ -432,6 +441,15 @@ mod fallback_shims {
 
     unsafe extern "C" fn shim_backedge(_vm: *mut c_void, _ip: u32) {}
 
+    // Batched-backedge test shim: records the reported deltas so unit tests
+    // can assert the throttle fires once per stride with an exact delta.
+    static SHIM_BACKEDGE_N_TOTAL: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    unsafe extern "C" fn shim_backedge_n(_vm: *mut c_void, _ip: u32, n: u32) {
+        use std::sync::atomic::Ordering;
+        SHIM_BACKEDGE_N_TOTAL.fetch_add(n as u64, Ordering::SeqCst);
+    }
+
     // Null-vm upvalue bridges: no closure context exists standalone, so
     // reads yield null and writes drop (mirrors the C null-vm behavior).
     unsafe extern "C" fn shim_upvalue_get(_vm: *mut c_void, _slot: u32) -> u64 {
@@ -519,6 +537,7 @@ mod fallback_shims {
             "havel_vm_bit_lsh" => Some(shim_bit_lsh as *const u8),
             "havel_vm_bit_rsh" => Some(shim_bit_rsh as *const u8),
             "havel_vm_backedge" => Some(shim_backedge as *const u8),
+            "havel_vm_backedge_n" => Some(shim_backedge_n as *const u8),
             "havel_vm_upvalue_get" => Some(shim_upvalue_get as *const u8),
             "havel_vm_upvalue_set" => Some(shim_upvalue_set as *const u8),
             "havel_vm_object_get_raw_ic" => Some(shim_object_get_null as *const u8),
@@ -710,6 +729,19 @@ impl CraneliftBackend {
                 _ => {}
             }
         }
+
+        // ---- Backward-jump site collection ----
+        // Interpreter parity: only a TAKEN backward edge (strictly
+        // earlier target) is a loop backedge, so only those sites get a
+        // native hook. Each site receives a stride counter so the hook
+        // fires every BACKEDGE_STRIDE-th taken edge with an exact delta
+        // instead of per iteration.
+        let backedge_sites: Vec<usize> = (0..n)
+            .filter(|&i| {
+                matches!(code[2 * i], OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE)
+                    && (code[2 * i + 1] as usize) < i
+            })
+            .collect();
 
         // ---- Static stack-depth pre-pass ----
         // Real bytecode keeps operand-stack values across basic blocks
@@ -989,6 +1021,20 @@ impl CraneliftBackend {
             .module
             .declare_function("havel_vm_backedge", Linkage::Import, &backedge_sig)
             .map_err(|e| err(format!("declare havel_vm_backedge: {e}")))?;
+        // Batched backedge hook the lowering actually emits: (vm, ip, n)
+        // reports n taken backedges at once, every BACKEDGE_STRIDE-th
+        // taken edge per site.
+        let mut backedge_n_sig = self.module.make_signature();
+        backedge_n_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+            AbiParam::new(int32),
+        ];
+        backedge_n_sig.returns = vec![];
+        let backedge_n_id = self
+            .module
+            .declare_function("havel_vm_backedge_n", Linkage::Import, &backedge_n_sig)
+            .map_err(|e| err(format!("declare havel_vm_backedge_n: {e}")))?;
         // Upvalue bridges: closures read/write captured locals through the
         // running closure's upvalue cells. get: (vm, slot) -> Value;
         // set: (vm, slot, Value) -> ().
@@ -1264,6 +1310,7 @@ impl CraneliftBackend {
         // call/global set were declared but never inserted, so the first
         // lowering that reached them panicked ("gc_register_roots bridge").
         bridge_ids.insert("havel_vm_backedge", backedge_id);
+        bridge_ids.insert("havel_vm_backedge_n", backedge_n_id);
         bridge_ids.insert("havel_vm_upvalue_get", upvalue_get_id);
         bridge_ids.insert("havel_vm_upvalue_set", upvalue_set_id);
         bridge_ids.insert("havel_vm_object_get_raw_ic", object_get_id);
@@ -1506,6 +1553,17 @@ impl CraneliftBackend {
                 builder.def_var(var, v);
                 var_of.insert(i, var);
             }
+            // Backedge-site stride counters, zero-initialized in the entry
+            // block so the def dominates every use; the values are
+            // loop-carried across backedges by the variable liveness pass.
+            let mut site_counter_of: HashMap<usize, Variable> = HashMap::new();
+            for &site in &backedge_sites {
+                let var = Variable::from_u32(next_var);
+                next_var += 1;
+                builder.declare_var(var, int64);
+                builder.def_var(var, zero64);
+                site_counter_of.insert(site, var);
+            }
             // Entry terminator: edge into instruction 0's leader block
             // (last instruction in the entry block; constants and argument
             // loads above stay unterminated and dominate the body).
@@ -1587,9 +1645,14 @@ impl CraneliftBackend {
                 b.ins().select(is_ext, bridge_on, sel_scalar)
             };
 
-            // Speculative int binop via selects: int/int -> inline op, else
-            // bridge. The bridge call is emitted unconditionally (pure
-            // runtime semantics); the select keeps the applicable result.
+            // Speculative int binop via a branch: int/int -> inline op, else
+            // bridge. The bridge call is emitted on the non-int path only.
+            // History: this used call-then-select - the call was emitted
+            // unconditionally and executed on every op even when both
+            // operands were ints and its result was discarded (a select
+            // cannot remove a call; only a branch keeps it off the hot
+            // path). scripts/benchmarks/tier_bench_loop.hv and
+            // tier_bench_two_fns.hv are the before/after for this change.
             let lower_binop = |b: &mut FunctionBuilder, op: u32, l: Value, r: Value| -> Value {
                 let is_int = {
                     let tl = b.ins().band(l, tag_mask);
@@ -1598,35 +1661,9 @@ impl CraneliftBackend {
                     let ri = b.ins().icmp(IntCC::Equal, tr, tag_int_bits);
                     b.ins().band(li, ri)
                 };
-                let bridge_name = match op {
-                    OP_ADD => "havel_vm_add",
-                    OP_SUB => "havel_vm_sub",
-                    OP_MUL => "havel_vm_mul",
-                    OP_LT => "havel_vm_lt",
-                    // EQ/NEQ may compare string CONTENT across
-                    // representations (heap StringId vs chunk-local
-                    // StringValId) via the heap, so the pure word bridges
-                    // are not enough: route through the vm-aware bridges,
-                    // mirroring the ORC lowering's EQ/NEQ slow path.
-                    OP_EQ => "havel_vm_eq_vm",
-                    OP_NEQ => "havel_vm_neq_vm",
-                    OP_LTE => "havel_vm_lte",
-                    OP_GT => "havel_vm_gt",
-                    _ => "havel_vm_gte",
-                };
-                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
-                // comparisons are pure word semantics and take (l, r) per
-                // RuntimeABI.
-                let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
-                let bridged = if is_pure_comparison {
-                    let call = b.ins().call(func_ref, &[l, r]);
-                    b.inst_results(call)[0]
-                } else {
-                    let call = b.ins().call(func_ref, &[vm, l, r]);
-                    b.inst_results(call)[0]
-                };
-
+                // Inline int-48 fast path: payload extract + op + re-tag.
+                // Computed before the branch so the int path is a single
+                // brif into the merge block.
                 let masked_l = b.ins().band(l, payload_mask);
                 let shl_l = b.ins().ishl(masked_l, shift16);
                 let lv = b.ins().sshr(shl_l, shift16);
@@ -1650,20 +1687,60 @@ impl CraneliftBackend {
                         b.ins().uextend(int64, c)
                     }
                 };
-                match op {
+                let on = match op {
                     OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE => {
                         let bit = b.ins().band(raw, one64);
-                        let on = b.ins().bor(bit, bool_tagged);
-                        b.ins().select(is_int, on, bridged)
+                        b.ins().bor(bit, bool_tagged)
                     }
                     _ => {
-                        let on = {
-                            let masked = b.ins().band(raw, payload_mask);
-                            b.ins().bor(masked, int48_tagged)
-                        };
-                        b.ins().select(is_int, on, bridged)
+                        let masked = b.ins().band(raw, payload_mask);
+                        b.ins().bor(masked, int48_tagged)
                     }
-                }
+                };
+
+                let bridge_name = match op {
+                    OP_ADD => "havel_vm_add",
+                    OP_SUB => "havel_vm_sub",
+                    OP_MUL => "havel_vm_mul",
+                    OP_LT => "havel_vm_lt",
+                    // EQ/NEQ may compare string CONTENT across
+                    // representations (heap StringId vs chunk-local
+                    // StringValId) via the heap, so the pure word bridges
+                    // are not enough: route through the vm-aware bridges,
+                    // mirroring the ORC lowering's EQ/NEQ slow path.
+                    OP_EQ => "havel_vm_eq_vm",
+                    OP_NEQ => "havel_vm_neq_vm",
+                    OP_LTE => "havel_vm_lte",
+                    OP_GT => "havel_vm_gt",
+                    _ => "havel_vm_gte",
+                };
+                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
+                // comparisons are pure word semantics and take (l, r) per
+                // RuntimeABI.
+                let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
+                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
+
+                // Diamond: both-int takes the inline result straight into
+                // the merge; the slow path pays the bridge call. The merged
+                // value is merge_blk's block param, which dominates every
+                // later block in the straight-line flow, so the vstack
+                // discipline (edge_args over dominating values) is intact.
+                let bridge_blk = b.create_block();
+                let merge_blk = b.create_block();
+                b.append_block_param(merge_blk, int64);
+                b.ins()
+                    .brif(is_int, merge_blk, &[BlockArg::Value(on)], bridge_blk, &[]);
+                b.switch_to_block(bridge_blk);
+                let bridged = if is_pure_comparison {
+                    let call = b.ins().call(func_ref, &[l, r]);
+                    b.inst_results(call)[0]
+                } else {
+                    let call = b.ins().call(func_ref, &[vm, l, r]);
+                    b.inst_results(call)[0]
+                };
+                b.ins().jump(merge_blk, &[BlockArg::Value(bridged)]);
+                b.switch_to_block(merge_blk);
+                b.block_params(merge_blk)[0]
             };
 
             // Straight-line lowering. The virtual stack flows across block

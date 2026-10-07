@@ -599,6 +599,10 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
+  // Hotkey/event callbacks run as goroutines: without this line their
+  // exceptions vanish entirely (reported as "hotkey does nothing" with no
+  // diagnostics anywhere). Always log; debug_mode_ adds the cerr echo.
+  ::havel::error("[ExecutionEngine] Goroutine error: {}", msg);
   if (debug_mode_) {
     std::cerr << "[ExecutionEngine] Goroutine error: " << msg << "\n";
   }

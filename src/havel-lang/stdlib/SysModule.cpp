@@ -37,6 +37,7 @@
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
 #include "core/process/Launcher.hpp"
+#include "host/process/ProcessService.hpp"
 #include "utils/SafeExec.hpp"
 
 using havel::compiler::Value;
@@ -760,14 +761,17 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     if (!args[0].isInt())
       throw std::runtime_error("__proc.kill() requires a number PID");
     int32_t pid = static_cast<int32_t>(args[0].asInt());
-    std::string sig = api.resolveString(args[1]);
-    int signum = 15;
-    if (sig == "SIGKILL" || sig == "kill") signum = 9;
-    else if (sig == "SIGTERM" || sig == "term") signum = 15;
-    else if (sig == "SIGHUP" || sig == "hangup") signum = 1;
-    else if (sig == "SIGINT" || sig == "int") signum = 2;
-    else if (sig == "SIGSTOP" || sig == "stop") signum = 19;
-    else if (sig == "SIGCONT" || sig == "cont") signum = 18;
+    int signum = -1;
+    if (args[1].isInt()) {
+      // Raw signum: process.SIGSTOP (19) etc. passed straight through.
+      signum = static_cast<int>(args[1].asInt());
+    } else {
+      std::string sig = api.resolveString(args[1]);
+      auto mapped = havel::host::ProcessService::signalFromName(sig);
+      if (!mapped)
+        throw std::runtime_error("__proc.kill(): unknown signal '" + sig + "'");
+      signum = *mapped;
+    }
 #ifndef _WIN32
     return Value::makeBool(kill(pid, signum) == 0);
 #else
@@ -792,12 +796,16 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     }
     std::string line;
     std::getline(statFile, line);
-    // Parse state character (3rd field)
-    size_t firstSpace = line.find(' ');
-    size_t secondSpace = line.find(' ', firstSpace + 1);
-    size_t thirdSpace = line.find(' ', secondSpace + 1);
-    if (thirdSpace != std::string::npos && thirdSpace + 1 < line.size()) {
-      char stateChar = line[thirdSpace + 1];
+    // /proc/<pid>/stat: "pid (comm) state ppid ...". comm may contain
+    // spaces and ')' (e.g. "(Web Content)"), so field positions found by
+    // space-splitting are unreliable. The state character is the one right
+    // after the LAST ')'. The old space-index arithmetic read the first
+    // char of the NEXT field (ppid) instead and returned UNKNOWN for
+    // virtually every process.
+    size_t closeParen = line.rfind(')');
+    if (closeParen != std::string::npos &&
+        closeParen + 2 < line.size()) {
+      char stateChar = line[closeParen + 2];
       switch (stateChar) {
         case 'R': return api.makeString("RUNNING");
         case 'S': return api.makeString("SLEEPING");
@@ -820,7 +828,10 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 #endif
   });
 
-  // Signal constants are defined in modules/std/process.hv
+  // Signal constants: exposed on the `process` namespace object below (same
+  // numbers as modules/std/process.hv; values from <signal.h> so both stay
+  // tied to the platform ABI). modules/std/process.hv keeps its own copies
+  // for `use { SIGSTOP } from "process"` style imports.
   // ========================================================================
 
   // ========================================================================
@@ -1070,6 +1081,26 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     api.setField(processObj, "exit", api.makeFunctionRef("sys.exit"));
     api.setField(processObj, "pid", api.makeFunctionRef("__proc.pid"));
     api.setField(processObj, "ppid", api.makeFunctionRef("__proc.ppid"));
+    // State query + generic signal entry point. sendSignal aliases __proc.kill
+    // (same contract as modules/std/process.hv's sendSignal): both take a
+    // PID and a signal name or raw signum.
+    api.setField(processObj, "getState", api.makeFunctionRef("__proc.getState"));
+    api.setField(processObj, "sendSignal", api.makeFunctionRef("__proc.kill"));
+#ifndef _WIN32
+    api.setField(processObj, "SIGKILL", Value::makeInt(SIGKILL));
+    api.setField(processObj, "SIGTERM", Value::makeInt(SIGTERM));
+    api.setField(processObj, "SIGHUP", Value::makeInt(SIGHUP));
+    api.setField(processObj, "SIGINT", Value::makeInt(SIGINT));
+    api.setField(processObj, "SIGSTOP", Value::makeInt(SIGSTOP));
+    api.setField(processObj, "SIGCONT", Value::makeInt(SIGCONT));
+#else
+    api.setField(processObj, "SIGKILL", Value::makeInt(9));
+    api.setField(processObj, "SIGTERM", Value::makeInt(15));
+    api.setField(processObj, "SIGHUP", Value::makeInt(1));
+    api.setField(processObj, "SIGINT", Value::makeInt(2));
+    api.setField(processObj, "SIGSTOP", Value::makeInt(19));
+    api.setField(processObj, "SIGCONT", Value::makeInt(18));
+#endif
     api.setGlobal("process", processObj);
 }
 

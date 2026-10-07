@@ -989,8 +989,26 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         if (frames_drained) {
           // Goroutine's entry function returned.
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
-          g->state = compiler::Scheduler::GoroutineState::Done;
-          if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+          if (g->persistent) {
+            // Persistent goroutines (hotkeys) re-park on HotkeyWait after
+            // their body runs, mirroring the pump loop's outcome handling.
+            // Marking them Done here makes wakeHotkey refuse every future
+            // trigger ("ignoring trigger (awaiting cleanup)") and the
+            // hotkey dies after firing once.
+            g->state = compiler::Scheduler::GoroutineState::Suspended;
+            g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
+            if (g->fiber) {
+              g->fiber->state = compiler::FiberState::SUSPENDED;
+              g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+            }
+          } else {
+            g->state = compiler::Scheduler::GoroutineState::Done;
+            if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+          }
+          // The reason (if any) belongs to this dispatch and has been
+          // consumed; clear it so the next sibling's dispatch does not see
+          // it as a stale entry.
+          vm_->clearLastSuspension();
         } else if (last_reason != 0) {
           // Suspension: the dispatch loop stashed the reason/context on
           // last_suspension_* at its periodic checkpoint. Resolve the
@@ -998,34 +1016,56 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
           auto fiber_reason = g->fiber->suspended_reason;
           void* context = g->fiber->suspension_context;
-          if (std::getenv("HAVEL_TRACE_SLEEP")) {
-            fprintf(stderr, "[SLEEPDBG] inline suspend gid=%d fiber_reason=%d last_reason=%d\n", g->id, (int)fiber_reason, (int)last_reason);
-          }
-          sched->suspend(g, toSchedulerReasonPublic(static_cast<uint8_t>(fiber_reason)));
-          if (fiber_reason == compiler::SuspensionReason::SLEEP) {
-            int64_t ms = reinterpret_cast<intptr_t>(context);
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-          }
-          if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
-            uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
-            g->wait_handle.target_id = co_id;
-          }
-          if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
-            uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
-            g->wait_handle.target_id = tid;
-          }
-          if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
-            uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
-            g->wait_handle.target_id = ch_id;
-          }
-          if (fiber_reason == compiler::SuspensionReason::TIMER) {
-            uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
-            g->wait_handle.target_id = timer_id;
+          if (fiber_reason == compiler::SuspensionReason::NONE) {
+            // The fiber itself never suspended: last_reason is a STALE
+            // VM-level reason left by a PREVIOUS sibling's dispatch (the
+            // clear above runs once per invocation, but each sibling
+            // dispatch re-stashes its own reason). Suspending here would
+            // park the goroutine with reason None and no wake path —
+            // permanently bricked (the hotkey-under-load stall: the hotkey
+            // goroutine picked after a busy sibling's sleep consumed zero
+            // instructions and was never seen again). Clear the stale
+            // reason and leave the goroutine Running so the yield below
+            // re-queues it and the next pick re-runs it cleanly.
+            vm_->clearLastSuspension();
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] inline stale-reason gid=%d last_reason=%d -> requeue\n", g->id, (int)last_reason);
+            }
+          } else {
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] inline suspend gid=%d fiber_reason=%d last_reason=%d\n", g->id, (int)fiber_reason, (int)last_reason);
+            }
+            sched->suspend(g, toSchedulerReasonPublic(static_cast<uint8_t>(fiber_reason)));
+            if (fiber_reason == compiler::SuspensionReason::SLEEP) {
+              int64_t ms = reinterpret_cast<intptr_t>(context);
+              g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+              g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+            }
+            if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
+              uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+              g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
+              g->wait_handle.target_id = co_id;
+            }
+            if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
+              uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+              g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
+              g->wait_handle.target_id = tid;
+            }
+            if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
+              uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+              g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
+              g->wait_handle.target_id = ch_id;
+            }
+            if (fiber_reason == compiler::SuspensionReason::TIMER) {
+              uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+              g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
+              g->wait_handle.target_id = timer_id;
+            }
+            // The reason has been consumed into sched->suspend + the wait
+            // handle. Clear it (mirrors the pump loop's clearLastSuspension
+            // after its own outcome handling) so the next sibling's
+            // dispatch is not poisoned by this goroutine's reason.
+            vm_->clearLastSuspension();
           }
         } else {
           // Tick budget expired (or complex-opcode fallback): remain

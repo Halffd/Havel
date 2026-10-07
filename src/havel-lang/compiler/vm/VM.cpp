@@ -1510,6 +1510,7 @@ void VM::loadFiberState(Fiber *fiber) {
         live_frame.first = std::move(saved_frame.first);
         live_frame.second = std::move(saved_frame.second);
         live_frame.fiber_restored = true;
+        live_frame.owner = fiber;
         continue;
       }
       if (!live_frame.second && saved_frame.second) {

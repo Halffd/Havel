@@ -442,14 +442,21 @@ private:
 };
 
 // ============================================================================
-// Pipeline fingerprint: identity of the self-hosted compiler that a cached
-// chunk was built with. Hash over the bytecode caches of the modules that
-// ARE the compiler (lang emitter + pratt). An emitter/pratt change re-emits
-// those caches, changing the fingerprint, so user-module entries compiled
-// by the old emitter are rejected instead of served (source-hash validation
-// alone cannot see pipeline changes).
-// Returns the empty string when the inputs are missing (C++-pipeline-only
-// environment): entries then serialize without a fingerprint (legacy v4).
+// Pipeline fingerprint: identity of the compiler that a cached chunk was
+// built with. Hash over the bytecode caches of the modules that ARE the
+// self-hosted compiler (lang emitter + pratt + lexer + scope) plus the
+// running executable's ELF build-id. An emitter/pratt change re-emits
+// those caches, changing the fingerprint, and any change to the binary's
+// link inputs (different checkout, sibling working tree, rebuilt compiler
+// objects) changes the build-id, so user-module entries compiled by an
+// incompatible binary are rejected instead of served (source-hash
+// validation alone cannot see pipeline changes, and the lang caches are
+// shared across checkouts via ~/.cache/havel, so they alone cannot
+// distinguish binaries).
+// Returns the empty string only when the binary build-id is unreadable
+// (entries then serialize unstamped, legacy v4, and readers treat them
+// as stale); in a C++-pipeline-only environment (lang caches missing)
+// the fingerprint is the build-id alone.
 // ============================================================================
 std::string computePipelineFingerprint(const std::string& cacheDir);
 

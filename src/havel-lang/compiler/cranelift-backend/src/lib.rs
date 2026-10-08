@@ -538,6 +538,7 @@ mod fallback_shims {
             "havel_vm_bit_rsh" => Some(shim_bit_rsh as *const u8),
             "havel_vm_backedge" => Some(shim_backedge as *const u8),
             "havel_vm_backedge_n" => Some(shim_backedge_n as *const u8),
+            "havel_vm_gc_checkpoint" => Some(shim_gc_checkpoint as *const u8),
             "havel_vm_upvalue_get" => Some(shim_upvalue_get as *const u8),
             "havel_vm_upvalue_set" => Some(shim_upvalue_set as *const u8),
             "havel_vm_object_get_raw_ic" => Some(shim_object_get_null as *const u8),
@@ -589,6 +590,19 @@ unsafe extern "C" fn shim_gc_register_roots(
     _count: u32,
 ) {
     // No-op: no GC in standalone harness
+}
+
+// GC safe-point checkpoint shim: counts calls and spilled roots so unit
+// tests can assert the checkpoint rides the backedge-hook stride cadence
+// and carries the frame's live values.
+pub(crate) static SHIM_GC_CHECKPOINT_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub(crate) static SHIM_GC_CHECKPOINT_ROOTS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+unsafe extern "C" fn shim_gc_checkpoint(_vm: *mut c_void, _roots: *const u64, count: u32) {
+    use std::sync::atomic::Ordering;
+    SHIM_GC_CHECKPOINT_TOTAL.fetch_add(1, Ordering::SeqCst);
+    SHIM_GC_CHECKPOINT_ROOTS.fetch_add(count as u64, Ordering::SeqCst);
 }
 
 unsafe extern "C" fn shim_gc_unregister_roots(_frame: *mut c_void) {
@@ -742,6 +756,25 @@ impl CraneliftBackend {
                     && (code[2 * i + 1] as usize) < i
             })
             .collect();
+
+        // ---- Local-slot collection ----
+        // Every LOAD_VAR/STORE_VAR operand names a local slot. Pre-declare
+        // them all in the entry block (null-initialized unless seeded from
+        // the args array) so (a) every use is dominated by a def even on
+        // paths that store later or never, and (b) the GC safe-point
+        // checkpoint can spill the whole frame - locals included - as
+        // extra roots at the backedge hook.
+        let local_slots: Vec<u32> = {
+            let mut s: Vec<u32> = (0..n)
+                .filter_map(|i| match code[2 * i] {
+                    OP_LOAD_VAR | OP_STORE_VAR => Some(code[2 * i + 1]),
+                    _ => None,
+                })
+                .collect();
+            s.sort_unstable();
+            s.dedup();
+            s
+        };
 
         // ---- Static stack-depth pre-pass ----
         // Real bytecode keeps operand-stack values across basic blocks
@@ -1035,6 +1068,25 @@ impl CraneliftBackend {
             .module
             .declare_function("havel_vm_backedge_n", Linkage::Import, &backedge_n_sig)
             .map_err(|e| err(format!("declare havel_vm_backedge_n: {e}")))?;
+        // GC safe-point checkpoint emitted at the throttled backedge hook:
+        // (vm, roots, count) -> (). The caller spills its frame's live
+        // values (locals + operand stack) into `roots` immediately before
+        // the call so a collection sees them.
+        let mut gc_checkpoint_sig = self.module.make_signature();
+        gc_checkpoint_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+        ];
+        gc_checkpoint_sig.returns = vec![];
+        let gc_checkpoint_id = self
+            .module
+            .declare_function(
+                "havel_vm_gc_checkpoint",
+                Linkage::Import,
+                &gc_checkpoint_sig,
+            )
+            .map_err(|e| err(format!("declare havel_vm_gc_checkpoint: {e}")))?;
         // Upvalue bridges: closures read/write captured locals through the
         // running closure's upvalue cells. get: (vm, slot) -> Value;
         // set: (vm, slot, Value) -> ().
@@ -1311,6 +1363,7 @@ impl CraneliftBackend {
         // lowering that reached them panicked ("gc_register_roots bridge").
         bridge_ids.insert("havel_vm_backedge", backedge_id);
         bridge_ids.insert("havel_vm_backedge_n", backedge_n_id);
+        bridge_ids.insert("havel_vm_gc_checkpoint", gc_checkpoint_id);
         bridge_ids.insert("havel_vm_upvalue_get", upvalue_get_id);
         bridge_ids.insert("havel_vm_upvalue_set", upvalue_set_id);
         bridge_ids.insert("havel_vm_object_get_raw_ic", object_get_id);
@@ -1544,6 +1597,12 @@ impl CraneliftBackend {
             // arg_count slots.
             let mut var_of: HashMap<u32, Variable> = HashMap::new();
             let mut next_var = 0u32;
+            // Frame-root list in spill order: argument slots first (seeded
+            // from the args array), then every other local slot
+            // (null-initialized so the def dominates every use). The GC
+            // safe-point checkpoint at the backedge hook spills these
+            // (plus the operand stack) as extra roots.
+            let mut frame_root_vars: Vec<Variable> = Vec::new();
             for i in 0..arg_count {
                 let var = Variable::from_u32(next_var);
                 next_var += 1;
@@ -1553,6 +1612,21 @@ impl CraneliftBackend {
                 let v = builder.ins().load(int64, MemFlags::new(), p, 0);
                 builder.def_var(var, v);
                 var_of.insert(i, var);
+                frame_root_vars.push(var);
+            }
+            {
+                let null_word = builder.ins().iconst(int64, NULL_TAGGED as i64);
+                for &slot in &local_slots {
+                    if slot < arg_count {
+                        continue; // seeded from the args array above
+                    }
+                    let var = Variable::from_u32(next_var);
+                    next_var += 1;
+                    builder.declare_var(var, int64);
+                    builder.def_var(var, null_word);
+                    var_of.insert(slot, var);
+                    frame_root_vars.push(var);
+                }
             }
             // Backedge-site stride counters, zero-initialized in the entry
             // block so the def dominates every use; the values are
@@ -1744,6 +1818,12 @@ impl CraneliftBackend {
                 b.block_params(merge_blk)[0]
             };
 
+            // Resolve the GC safe-point checkpoint bridge ref up front
+            // (bridge_refs carries every declared id).
+            let gc_checkpoint_ref = *bridge_refs
+                .get("havel_vm_gc_checkpoint")
+                .expect("gc_checkpoint bridge");
+
             // Throttled backedge hook + edge to `target`, appended at the
             // current position - which callers must guarantee is a TAKEN
             // backward edge (interpreter parity: only taken backward edges
@@ -1751,11 +1831,20 @@ impl CraneliftBackend {
             // stride counter fires havel_vm_backedge_n(vm, ip, STRIDE)
             // every BACKEDGE_STRIDE-th taken edge with an exact delta; the
             // per-edge cost is one variable read, an add, a mask and a
-            // well-predicted branch. Leaves the builder positioned in the
+            // well-predicted branch. The hook block is also the GC safe
+            // point: it spills the frame's live values (frame_root_vars +
+            // the operand stack at this edge) into a roots array and calls
+            // havel_vm_gc_checkpoint, which probes the allocation budget
+            // and collects with them as extra roots when due - without it,
+            // native loops allocate through the Runtime-ABI bridges with
+            // no interpreter checkpoint anywhere and the GC starves for
+            // the whole call. Leaves the builder positioned in the
             // (terminated) hook block.
             let emit_backedge_edge = |b: &mut FunctionBuilder,
                                       vm: Value,
                                       hook: cranelift::codegen::ir::FuncRef,
+                                      gc_hook: cranelift::codegen::ir::FuncRef,
+                                      frame_vars: &[Variable],
                                       ip: usize,
                                       counter: Variable,
                                       target: Block,
@@ -1772,6 +1861,28 @@ impl CraneliftBackend {
                 let ip_w = b.ins().iconst(int32, ip as i64);
                 let delta_w = b.ins().iconst(int32, BACKEDGE_STRIDE as i64);
                 b.ins().call(hook, &[vm, ip_w, delta_w]);
+                // GC safe point: spill live values, then let the runtime
+                // probe (cheap common case) / collect with them as roots.
+                let n_roots = frame_vars.len() + stack.len();
+                let roots_slot =
+                    b.create_sized_stack_slot(cranelift::codegen::ir::StackSlotData::new(
+                        cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                        (n_roots.max(1) * 8) as u32,
+                        8,
+                    ));
+                let mut off: i32 = 0;
+                for v in frame_vars {
+                    let val = b.use_var(*v);
+                    b.ins().stack_store(val, roots_slot, off);
+                    off += 8;
+                }
+                for v in stack {
+                    b.ins().stack_store(*v, roots_slot, off);
+                    off += 8;
+                }
+                let roots_ptr = b.ins().stack_addr(pointer_ty, roots_slot, 0);
+                let count_w = b.ins().iconst(int32, n_roots as i64);
+                b.ins().call(gc_hook, &[vm, roots_ptr, count_w]);
                 b.ins().jump(target, &edge_args(stack));
             };
 
@@ -1954,6 +2065,8 @@ impl CraneliftBackend {
                                     &mut builder,
                                     vm,
                                     backedge_n_ref,
+                                    gc_checkpoint_ref,
+                                    &frame_root_vars,
                                     cur,
                                     counter,
                                     then_blk,
@@ -1988,6 +2101,8 @@ impl CraneliftBackend {
                                     &mut builder,
                                     vm,
                                     backedge_n_ref,
+                                    gc_checkpoint_ref,
+                                    &frame_root_vars,
                                     cur,
                                     counter,
                                     then_blk,
@@ -2036,6 +2151,8 @@ impl CraneliftBackend {
                                     &mut builder,
                                     vm,
                                     backedge_n_ref,
+                                    gc_checkpoint_ref,
+                                    &frame_root_vars,
                                     cur,
                                     counter,
                                     then_blk,
@@ -2068,6 +2185,8 @@ impl CraneliftBackend {
                                     &mut builder,
                                     vm,
                                     backedge_n_ref,
+                                    gc_checkpoint_ref,
+                                    &frame_root_vars,
                                     cur,
                                     counter,
                                     then_blk,
@@ -2102,6 +2221,8 @@ impl CraneliftBackend {
                                 &mut builder,
                                 vm,
                                 backedge_n_ref,
+                                gc_checkpoint_ref,
+                                &frame_root_vars,
                                 cur,
                                 counter,
                                 blk,
@@ -2616,6 +2737,11 @@ fn lookup_runtime_abi(name: &str) -> Option<*const u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The backedge/GC-checkpoint shims are global statics; tests that reset
+    // and assert them must not interleave with other tests whose compiled
+    // loops flush the same counters. Rust runs tests on parallel threads.
+    static SHIM_ASSERT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn int48_roundtrip() {
@@ -3551,6 +3677,7 @@ mod tests {
         // never reach the next stride and are not reported. The result
         // must still be exact: sum(0..200) = 19900.
         use std::sync::atomic::Ordering;
+        let _shims = SHIM_ASSERT_LOCK.lock().expect("shim test lock");
         crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.store(0, Ordering::SeqCst);
         let mut backend = CraneliftBackend::new().unwrap();
         let code: Vec<u32> = vec![
@@ -3615,6 +3742,7 @@ mod tests {
         // final fall-through must report nothing. Regression for the old
         // pre-branch hook placement, which counted fall-throughs too.
         use std::sync::atomic::Ordering;
+        let _shims = SHIM_ASSERT_LOCK.lock().expect("shim test lock");
         crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.store(0, Ordering::SeqCst);
         let mut backend = CraneliftBackend::new().unwrap();
         let code: Vec<u32> = vec![
@@ -3653,6 +3781,79 @@ mod tests {
             crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.load(Ordering::SeqCst),
             BACKEDGE_STRIDE as u64,
             "64 taken edges must flush exactly one hook; the fall-through exit must not count"
+        );
+    }
+
+    #[test]
+    fn gc_checkpoint_rides_stride_with_frame_roots() {
+        // The GC safe-point checkpoint fires in the same hook block as the
+        // batched backedge hook: 200 taken edges -> 3 checkpoint calls, in
+        // lockstep with the 3 backedge flushes. Each call carries the
+        // frame's roots: argument n (slot 0) plus locals s (1) and i (2);
+        // this while-loop backedge crosses with an empty operand stack, so
+        // 3 roots per call. Without the checkpoint, native loops have no
+        // GC safe point at all (the interpreter's 8192-instruction
+        // checkpoint lives in the dispatch loop they no longer run).
+        use std::sync::atomic::Ordering;
+        let _shims = SHIM_ASSERT_LOCK.lock().expect("shim test lock");
+        crate::SHIM_GC_CHECKPOINT_TOTAL.store(0, Ordering::SeqCst);
+        crate::SHIM_GC_CHECKPOINT_ROOTS.store(0, Ordering::SeqCst);
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0: 0
+            OP_STORE_VAR,
+            1, // 1: s = 0
+            OP_LOAD_CONST,
+            0, // 2: 0
+            OP_STORE_VAR,
+            2, // 3: i = 0
+            OP_LOAD_VAR,
+            2, // 4: loop head: i
+            OP_LOAD_VAR,
+            0, // 5: n
+            OP_LT,
+            0, // 6: i < n
+            OP_JUMP_IF_FALSE,
+            17, // 7: exit to 17 when false
+            OP_LOAD_VAR,
+            1, // 8: s
+            OP_LOAD_VAR,
+            2, // 9: i
+            OP_ADD,
+            0, // 10: s + i
+            OP_STORE_VAR,
+            1, // 11: s =
+            OP_LOAD_VAR,
+            2, // 12: i
+            OP_LOAD_CONST,
+            1, // 13: 1
+            OP_ADD,
+            0, // 14: i + 1
+            OP_STORE_VAR,
+            2, // 15: i =
+            OP_JUMP,
+            4, // 16: backward jump (unconditional: every edge taken)
+            OP_LOAD_VAR,
+            1, // 17: s
+            OP_RETURN,
+            0, // 18
+        ];
+        let constants = [pack_int48(0), pack_int48(1)];
+        let f = backend
+            .compile_function("gccheckpoint", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(200)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out), 19900, "sum(0..200) must be 19900");
+        assert_eq!(
+            crate::SHIM_GC_CHECKPOINT_TOTAL.load(Ordering::SeqCst),
+            3,
+            "checkpoint must fire once per stride flush (3 for 200 edges)"
+        );
+        assert_eq!(
+            crate::SHIM_GC_CHECKPOINT_ROOTS.load(Ordering::SeqCst),
+            9,
+            "3 roots per checkpoint: arg n + locals s, i (stack empty at this backedge)"
         );
     }
 }

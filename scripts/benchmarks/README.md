@@ -153,24 +153,51 @@ User time in tiered mode dropped 22-25% versus the call-then-select
 lowering. The remaining gap to theoretical is cost 2 (below) plus the sys
 time increase, which grows with the fix and is not yet profiled.
 
+## Current state (2026-10-08 evening, after GC safe points)
+
+Measured at loadavg ~6, fresh `~/.cache/havel` (see the measurement-
+validity note below), with the iterator result-reuse change that is in
+the working tree (uncommitted, concurrent session) plus the GC work:
+
+| bench | interpreter | tier-1 | tier-1/interp |
+|---|---|---|---|
+| tier_bench_calls | 0.43u + 0.43s | 0.40u + 0.35s | 0.88 |
+| tier_bench_loop | 2.02u + 0.36s | 1.13u + 0.34s | 0.62 |
+| tier_bench_two_fns | 10.99u + 0.41s | 5.87u + 0.43s | 0.55 |
+
+tier-1 now costs 55-88% of interpreter CPU (was 73-87% pre-rework), the
+tiered sys-time rise is GONE (two_fns: 0.43s tiered vs 0.41s interpreted
+- it was the page-fault storm of the starved-GC heap balloon, see cost 1
+and the 2026-10-08 sections), and a native allocating loop now runs GC
+checkpoints mid-loop via the backedge safe point
+(test_issue_cranelift_gc_checkpoint_loop.hv: 300k allocations collected
+in-flight, RSS flat, results intact).
+
+### Measurement-validity note (the shared-cache incident)
+
+Every number above this section was measured with whatever bytecode
+happened to be in `~/.cache/havel` - which is shared per-user across
+checkouts and did not, until the pipeline fingerprint gained the binary
+ELF build-id, distinguish binaries. Two concurrent sessions on this
+machine (two checkouts, one $HOME) poisoned each other's entries: a
+sibling binary re-stamped `tier_bench_loop`'s .hvc with bytecode its
+emitter produced, and this checkout's tier-1 wedged executing it while
+the interpreter ran it fine - costing hours of bisecting against source
+that was not the source actually running. Consequences for the tables
+above: cross-day absolute comparisons are unreliable not only because of
+machine load but because the executed bytecode differed. The committed
+fingerprint fix (build-id in computePipelineFingerprint) makes entries
+from any other binary reject as pipeline-fingerprint-drift and recompile;
+`HAVEL_STARTUP_TIMING=1` shows the rejects. Clear the cache when in doubt.
+
 ## Known costs eating the theoretical win (Phase B targets)
 
-The interpreter executes ~1780x more dispatch work on tier_bench_two_fns
-(306M vs 172k instructions) yet tier-1 only saves ~20% CPU. Measured
-isolation (tier-while probe: same loop as tier_bench_loop but a manual
-while-counter instead of `for j in 0 .. 1000`):
-
-| loop shape | interpreter | tier-1 |
-|---|---|---|
-| while-counter (no ITER opcodes) | 1.14u | **0.34u** |
-| range for-in (ITER_NEW/ITER_NEXT) | 5.67u | 3.45u |
-
-1. **The range iterator dominates tiered loop time**: identical work,
-   tiered while-counter 0.34s user vs tiered for-in 3.45s - 10x. The
-   iterator allocates per iteration (tiered for-in run: ~2M heap
-   allocations; tiered while-counter: ~3k) and crosses a bridge call per
-   ITER_NEXT. Fixing ITER_NEXT's per-iteration allocation/bridge is the
-   biggest remaining win for range-loop code.
+1. **The range iterator dominated tiered loop time** - RESOLVED IN THE
+   WORKING TREE (concurrent session, uncommitted): ITER_NEXT reuses the
+   iterator's result object instead of allocating {first, second, done}
+   per iteration (~2M -> ~3k allocations per tiered loop bench run;
+   bench allocations now 3k, was 2M). The remaining ITER_NEXT bridge call
+   per iteration is minor by comparison.
 2. **Every ADD/SUB/MUL/EQ emitted an unconditional bridge call** - FIXED
    (branch-based lowering, see above).
 3. **The per-iteration backedge hook** - FIXED (2026-10-08): the lowering
@@ -178,16 +205,27 @@ while-counter instead of `for j in 0 .. 1000`):
    per site with an exact delta, and the C++ past-threshold path no longer
    takes the mutex/string-hash/set-insert on every iteration (per-site
    one-shot event cache). See the 2026-10-08 section above.
-4. sys time rises under tiering (0.76s -> 1.6s); source not yet profiled.
+4. **sys time rises under tiering** - RESOLVED: it was the page-fault
+   storm of the starved-GC heap balloon (minor faults 13k -> 109k, peak
+   RSS 72MB -> 446MB on tier_bench_loop, GC balloons of 343k objects
+   between collections vs 11k interpreted - no GC checkpoint exists in
+   native code). The backedge GC checkpoint + iterator result reuse close
+   it: tiered sys now matches interpreted (0.43s vs 0.41s on two_fns).
+
+Historical isolation snapshot (2026-10-07, executed against cached
+bytecode - see the measurement-validity note; the 306M vs 172k
+instruction ratio held, absolute times below predate the rework):
+
+| loop shape | interpreter | tier-1 |
+|---|---|---|
+| while-counter (no ITER opcodes) | 1.14u | **0.34u** |
+| range for-in (ITER_NEW/ITER_NEXT) | 5.67u | 3.45u |
 
 Language-semantics note discovered while isolating: `for j in 0 .. 1000`
 is INCLUSIVE of the end (verified: `for j in 0 .. 5` counts 6). The
 while-counter probe therefore does 1000 iterations per call vs the for-in
 bench's 1001 - a 0.1% work difference, irrelevant to the comparison, but
 relevant to anyone writing benchmarks against these ranges.
-
-None of these were changed during the verification phase; they are recorded
-so the next change has a before/after to diff against.
 
 ## Fallback behavior (verified, by design)
 

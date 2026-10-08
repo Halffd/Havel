@@ -780,6 +780,17 @@ inline void periodicYieldCheck() {
   std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
     void maybeCollectGarbage();
+    // Collection with extra roots: JIT safe-point checkpoints (the tier-1
+    // backedge hook) spill the compiled frame's live values (locals +
+    // operand stack) as raw words and pass them here, so a mid-native-loop
+    // collection sees them. Same gating as maybeCollectGarbage.
+    void maybeCollectGarbageWithExtraRoots(
+        const std::vector<Value> &extra_roots);
+    // Cheap probe for JIT safe points: would a collection run right now?
+    // (budget exceeded or externally requested, and not suspended.)
+    bool gcCollectionPendingPublic() const {
+        return !gcSuspended() && heap_.shouldMaybeCollect();
+    }
     void collectGarbage();
     void stepGarbageCollection(size_t work_budget = 128);
     void drainFinalizers();

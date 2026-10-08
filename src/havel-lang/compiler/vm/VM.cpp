@@ -3930,7 +3930,10 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
   return closure_ids;
 }
 
-void VM::maybeCollectGarbage() {
+void VM::maybeCollectGarbage() { maybeCollectGarbageWithExtraRoots({}); }
+
+void VM::maybeCollectGarbageWithExtraRoots(
+    const std::vector<Value> &extra_roots) {
   if (gc_suspend_counter_ > 0)
     return;
   // Building the root snapshot is expensive (full operand-stack copy plus
@@ -3944,6 +3947,10 @@ void VM::maybeCollectGarbage() {
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
   }
+  // JIT safe-point roots (spilled native-frame values) ride the same
+  // extra-roots slot as the scheduler's.
+  scheduler_roots.insert(scheduler_roots.end(), extra_roots.begin(),
+                          extra_roots.end());
   heap_.maybeCollectGarbage(stackValuesForRoots(), locals, globals,
                             activeClosureIdsForRoots(),
                             [this](uint32_t index) -> std::optional<Value> {

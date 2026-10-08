@@ -454,7 +454,21 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
     uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
-    std::unordered_map<uint32_t, uint64_t> backedge_counters_;
+  // Per-site backedge accounting. `count` mirrors the interpreter's
+  // per-ip backedge counter; the function-pointer fields cache the
+  // per-(function, ip) one-shot events (hot-trace hook, tier-up attempt,
+  // tier-2 site dedup) so a hot loop pays them once instead of on every
+  // past-threshold iteration. Pointer identity is only a pre-filter: the
+  // authoritative dedup stays hot_trace_sites_/tier2_backedge_sites_ and
+  // maybeTierUp's name set, which the flags can never pre-suppress a
+  // would-fire event for (same fn + same ip = same site key).
+  struct BackedgeSiteState {
+    uint64_t count = 0;
+    const BytecodeFunction* tier1_fn = nullptr;  // tier-up attempted here
+    const BytecodeFunction* trace_fn = nullptr;   // hot-trace hook fired here
+    const BytecodeFunction* tier2_fn = nullptr;   // tier-2 site deduped here
+  };
+  std::unordered_map<uint32_t, BackedgeSiteState> backedge_counters_;
     // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
     // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
     RuntimeProfiler profiler_;
@@ -1010,14 +1024,25 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
+        recordBackedgeDeltaPublic(ip, 1);
+    }
+    // Batched form for JIT code: native loops report one call per
+    // BACKEDGE_STRIDE taken backedges with the exact stride delta so
+    // hotness, tier-up and profiler totals stay accurate at a fraction
+    // of the call rate.
+    void recordBackedgeDeltaPublic(uint32_t ip, uint32_t delta) {
         // Hot path: this runs on EVERY loop backedge (millions in the
-        // benchmarks). Keep the sub-threshold path to a counter bump:
-        // the site-key string hash, the hot-trace mutex, tier-2 site
-        // dedup and maybeTierUp only matter once the site is hot
-        // (>= tier1_threshold_ backedges at this ip).
-        auto count = ++backedge_counters_[ip];
-        trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
-        profiler_.recordBackedgeTotal();
+        // benchmarks). Sub-threshold stays a counter bump plus two
+        // relaxed atomics; everything else (frame lookup, per-function
+        // profiler stat, hot-trace hook, tier-up, tier-2 site dedup)
+        // only runs past the tier-1 threshold, and each one-shot event
+        // only once per (function, ip) via the per-site cache - the old
+        // shape re-hashed the function name and took hot_trace_mutex_
+        // on EVERY past-threshold iteration, which dominated hot loops.
+        auto& site = backedge_counters_[ip];
+        const uint64_t count = (site.count += delta);
+        trace_hot_count_.fetch_add(delta, std::memory_order_relaxed);
+        profiler_.recordBackedgeTotal(delta);
         if (count < tier1_threshold_) {
             return;
         }
@@ -1028,39 +1053,54 @@ Value lookupGlobalByKey(const std::string& key) {
         if (!frame.function) {
             return;
         }
+        const BytecodeFunction* fn = frame.function;
         if (frame.chunk) {
-            profiler_.recordBackedge(frame.chunk->getFunctionIndex(frame.function));
+            profiler_.recordBackedge(frame.chunk->getFunctionIndex(fn), delta);
         }
-        const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
+        // (fn, ip) site key: computed lazily - the string hash is only
+        // affordable on the one-shot event paths, never per iteration.
+        auto site_key_of = [&fn, ip]() {
+            return (static_cast<uint64_t>(std::hash<std::string>{}(fn->name)) << 32) ^ ip;
+        };
         // Trace callback fires once per site past the tier-1 threshold
         // (hot-trace hooks; separate from function tier-up).
-        {
+        if (site.trace_fn != fn) {
             bool should_fire = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                should_fire = hot_trace_sites_.insert(site_key).second;
+                should_fire = hot_trace_sites_.insert(site_key_of()).second;
             }
             if (should_fire) {
                 if (hot_trace_cb_) {
-                    hot_trace_cb_(*frame.function, ip, count);
+                    hot_trace_cb_(*fn, ip, count);
                 }
             }
+            site.trace_fn = fn;
         }
         // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
         // backedge count even without binop feedback at the loop head.
-        maybeTierUp(*frame.function, count, "backedge");
+        // maybeTierUp dedups by function name internally, so one attempt
+        // per site is enough; a debugger suppresses without deciding, so
+        // keep attempting while one is attached.
+        if (site.tier1_fn != fn || debugger_attached_) {
+            maybeTierUp(*fn, count, "backedge");
+            if (!debugger_attached_) {
+                site.tier1_fn = fn;
+            }
+        }
         // Tier-2 backedge hotness statistic: count each SITE once
         // (mirroring the site-key dedup above); actual tier-2 queueing is
         // the tier manager's job.
-        if (count >= tier2_threshold_) {
+        if (count >= tier2_threshold_ && site.tier2_fn != fn) {
             bool first_time = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                first_time = tier2_backedge_sites_.insert(site_key).second;
+                first_time = tier2_backedge_sites_.insert(site_key_of()).second;
             }
             if (first_time) {
                 tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
             }
+            site.tier2_fn = fn;
         }
     }
 

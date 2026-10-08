@@ -43,17 +43,18 @@ public:
     total_calls_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  void recordBackedge(uint32_t function_index) noexcept {
+  void recordBackedge(uint32_t function_index, uint64_t n = 1) noexcept {
     if (function_index < kMaxTrackedFunctions) {
-      backedges_[function_index].fetch_add(1, std::memory_order_relaxed);
+      backedges_[function_index].fetch_add(n, std::memory_order_relaxed);
     }
-    total_backedges_.fetch_add(1, std::memory_order_relaxed);
+    total_backedges_.fetch_add(n, std::memory_order_relaxed);
   }
 
   // Total-only backedge recording for sites without a resolved function
   // index (e.g. before the frame lookup); the total still feeds hotness.
-  void recordBackedgeTotal() noexcept {
-    total_backedges_.fetch_add(1, std::memory_order_relaxed);
+  // `n` batches strides of backedges reported by JIT code in one call.
+  void recordBackedgeTotal(uint64_t n = 1) noexcept {
+    total_backedges_.fetch_add(n, std::memory_order_relaxed);
   }
 
   void recordThrow() noexcept {

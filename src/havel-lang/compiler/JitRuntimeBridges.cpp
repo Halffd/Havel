@@ -898,6 +898,20 @@ void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
   }
 }
 
+void havel_vm_backedge_n(void* vm_ptr, uint32_t ip, uint32_t n) {
+  // Batched backedge hook for the Cranelift tier-1 lowering: native loops
+  // call this every BACKEDGE_STRIDE-th taken backedge with the exact
+  // stride delta, so hotness/tier-up accounting and the coroutine yield
+  // request keep working at a fraction of the per-iteration call rate.
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (n == 0) return;
+  vm->recordBackedgeDeltaPublic(ip, n);
+  if (vm->consumeJitYieldRequest()) {
+    throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
+  }
+}
+
 #include "runtime/HavelEngine.hpp"
 extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) {
     static ::havel::HavelEngine engine;

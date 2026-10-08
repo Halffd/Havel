@@ -4121,6 +4121,16 @@ case ast::NodeType::AtExpression: {
         // Class instance method: 'this' is in local slot 0
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
       }
+    } else if (current_function && current_function->has_self_upvalue) {
+      // Closure (interval/timeout/thread/update) compiled inside a class
+      // method: the instance is captured as an upvalue, second-to-last (the
+      // timer-id upvalue is last when present). @-prefixed names in class
+      // closures mean the INSTANCE, so @stop() is self.stop() - the timer's
+      // own stop (the timer-id upvalue below) stays for non-class closures
+      // (debounce-style @cancel).
+      emit(OpCode::LOAD_UPVALUE,
+           static_cast<uint32_t>(current_function->upvalues.size() -
+                                 (current_function->is_timer_closure ? 2 : 1)));
     } else if (isDirective && current_function->is_timer_closure) {
       // Inside interval/timeout closure: the timer ID is the LAST upvalue
       // (compileClosureBody appends it after the resolver-assigned ones)
@@ -4896,7 +4906,16 @@ case ast::NodeType::CastExpression: {
         uint32_t temp_key = next_local_index;
         reserveLocalSlot(temp_key);
         emit(OpCode::STORE_VAR, temp_key); // pop key
-        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // [self]
+        // [self] - instance method slot 0; closure compiled inside a class
+        // method has no receiver slot: the instance is the captured upvalue
+        // (second-to-last for timer closures, last otherwise).
+        if (current_function && current_function->has_self_upvalue) {
+          emit(OpCode::LOAD_UPVALUE,
+               static_cast<uint32_t>(current_function->upvalues.size() -
+                                     (current_function->is_timer_closure ? 2 : 1)));
+        } else {
+          emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+        }
         emit(OpCode::LOAD_VAR, temp_val); // [self, value]
         emit(OpCode::LOAD_VAR, temp_key); // [self, value, key]
         emit(OpCode::OBJECT_SET);
@@ -9298,6 +9317,18 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
 
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf(name, 0, 0);
+  // Closure inside a class method: these closures have no receiver slot,
+  // so `@field` reads/writes and @-method calls would hit the wrong slot
+  // (the timer-id local) and OBJECT_SET would throw "expects object
+  // container". Capture the enclosing method's receiver (its slot 0) as an
+  // upvalue - second-to-last, before the timer-id upvalue which must stay
+  // last for @stop/@cancel in non-class closures (debounce-style timer
+  // self-stop). Mirrors the lambda-inside-method self capture.
+  const bool in_class_method = !current_class_name_.empty();
+  if (in_class_method) {
+    upvalues.push_back({0, true});
+    bf.has_self_upvalue = true;
+  }
   if (capturedIntervalIdSlot.has_value()) {
     // Add the captured interval/timeout ID as the LAST upvalue. Identifier
     // upvalue indices in the body come from the LexicalResolver and must not

@@ -848,6 +848,12 @@ struct BytecodeFunction {
   uint32_t source_line = 0;              // Definition line number
   bool is_generator = false;             
   bool is_timer_closure = false;
+  // Closure compiled inside a class method: the instance receiver is
+  // captured as an upvalue (these closures have no receiver slot). For
+  // timer closures the receiver sits second-to-last; the timer-id upvalue
+  // stays last for non-class closures' @stop/@cancel (debounce-style
+  // timer self-stop).
+  bool has_self_upvalue = false;
   
   
   mutable std::vector<TypeFeedback> type_feedback;

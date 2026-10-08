@@ -42,6 +42,44 @@ NOT enable tiering.
 Compile latency: ~61ms first function (includes one-time backend init),
 ~1ms marginal per small function (tier_bench_two_fns debug timestamps).
 
+## After the iterator-result reuse (2026-10-08, GC change)
+
+Cost 1 above is fixed: the iterator now allocates its {first, second, done}
+result object once per ITER_NEW and only overwrites the fields (GC-rooted
+from the iterator; the field writes go through set() so the OBJECT_GET
+inline cache re-resolves - with operator[] the cached done=false was served
+forever and the compiled for-in loop never exited). The dead // DEBUG block
+in havel_vm_iter_next (iterator+range pointer fetches, discarded) is also
+gone - real per-call waste on the native path.
+
+Interpreter benefits directly (same heap code):
+
+| bench | interpreter (before) | interpreter (after) | allocations |
+|---|---|---|---|
+| tier_bench_loop | 3.6-4.1u | 2.18u | ~2M -> 2231 |
+| tier_bench_two_fns | 18.9-22.9u | 12.16u | ~6M -> 6236 |
+
+Tier-1:
+
+| bench | tier-1 (before) | tier-1 (after) | tier-1/interp |
+|---|---|---|---|
+| tier_bench_loop | 2.30-2.80u | 1.10u | 0.50 |
+| tier_bench_two_fns | 11.6-14.4u | 6.88u | 0.57 |
+| tier_while probe | 0.18u | 0.07u | 0.09 |
+
+Verified: iteration semantics identical (interpreter == tiered) for arrays,
+objects, strings, sets, nested loops and value capture; range inclusivity
+unchanged; full smoke gate 323 passed / 3 failed (the 3 known UI-backend
+tests) / 0 skipped | 326 files; cranelift_proto_driver exit 0; 30 Rust
+lowering tests.
+
+Commit 705822ac1 also carries a havel_vm_gc_checkpoint safe-point (from
+concurrent in-flight work staged with the same files): the tier-1 backedge
+hook now offers the GC a collection point with the native frame's live
+values as extra roots - without it the GC starves for the whole native
+call (343k objects / 446MB peak RSS on tier_bench_loop measured with
+per-iteration results, vs 11k / 72MB interpreted).
+
 ## After the backedge rework (2026-10-08, hot-path restructure + stride throttle)
 
 Cost 3 below is fixed, and with it the C++ hot path both execution modes

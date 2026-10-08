@@ -80,12 +80,25 @@ only paired same-conditions ratios are quoted):
 | tier_bench_loop | 3.33u + 0.53s | 2.30u + 0.94s | 0.69 |
 | tier_bench_two_fns | 18.25u + 0.76s | 11.60u + 2.06s | 0.64 |
 
-Versus the pre-rework pairs measured the same way (tier-1/interp 0.87 and
-0.73): tier-1 now costs 64-69% of interpreter CPU on loop-heavy benches,
-down from 73-87%. The interpreter itself dropped ~32% on tier_bench_two_fns
-(27.3u -> 18.25u) purely from the C++ hot-path restructure. A quiet-load
-confirmation pass is still owed - the machine stayed at loadavg 9-22
-throughout (a sibling checkout was building).
+Quiet-load confirmation (loadavg 1.4-1.6, two passes each, outputs
+identical in both modes, tier1=3 on two_fns):
+
+| bench | interpreter (A / B) | tier-1 (A / B) | tier-1/interp |
+|---|---|---|---|
+| tier_bench_calls | 0.91 / 0.88 | 0.85 / 0.88 | ~par |
+| tier_bench_loop | 3.62 / 3.64 | 2.68 / 2.80 | 0.74-0.77 |
+| tier_bench_two_fns | 18.94 / 22.86 | 14.24 / 13.16 | 0.57-0.75 |
+
+Under quiet conditions the tier-1 advantage narrows to 23-25% less CPU on
+loop-heavy benches (oversubscription inflates interpreter dispatch
+disproportionately, so loaded ratios overstate the win). Every mode is
+still faster than the 2026-10-07 post-binop records measured at load
+(loop 5.33u -> 3.3u interp, 3.11u -> 2.15u tiered; two_fns 29.8u ->
+18.6-22.9u interp, 18.9u -> 11.9-12.7u tiered). The interpreter-side win
+from the C++ hot-path restructure is confirmed structural, not
+load-flavored. The tiered sys-time rise persists under quiet load
+(interp ~0.3s vs tiered 0.3-1.6s) and remains unprofiled (cost 4 below).
+
 
 ## After the binop branch fix (2026-10-07, call-then-select -> branch)
 

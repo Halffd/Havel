@@ -156,8 +156,9 @@ time increase, which grows with the fix and is not yet profiled.
 ## Current state (2026-10-08 evening, after GC safe points)
 
 Measured at loadavg ~6, fresh `~/.cache/havel` (see the measurement-
-validity note below), with the iterator result-reuse change that is in
-the working tree (uncommitted, concurrent session) plus the GC work:
+validity note below), with the iterator result-reuse change (705822ac1,
+landed by a concurrent session while this work was in flight) plus the
+GC work:
 
 | bench | interpreter | tier-1 | tier-1/interp |
 |---|---|---|---|
@@ -192,8 +193,8 @@ from any other binary reject as pipeline-fingerprint-drift and recompile;
 
 ## Known costs eating the theoretical win (Phase B targets)
 
-1. **The range iterator dominated tiered loop time** - RESOLVED IN THE
-   WORKING TREE (concurrent session, uncommitted): ITER_NEXT reuses the
+1. **The range iterator dominated tiered loop time** - RESOLVED
+   (705822ac1, concurrent session): ITER_NEXT reuses the
    iterator's result object instead of allocating {first, second, done}
    per iteration (~2M -> ~3k allocations per tiered loop bench run;
    bench allocations now 3k, was 2M). The remaining ITER_NEXT bridge call

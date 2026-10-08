@@ -9,6 +9,7 @@
 #include "core/process/ProcessManager.hpp"
 #include <filesystem>
 #include <fstream>
+#include <csignal>
 #include <unistd.h>
 #else
 #include <windows.h>
@@ -235,6 +236,18 @@ bool ProcessService::sendSignal(int32_t pid, int signal) {
     CloseHandle(h);
     return ok != 0;
 #endif
+}
+
+std::optional<int> ProcessService::signalFromName(const std::string& name) {
+#ifndef _WIN32
+    if (name == "SIGKILL" || name == "kill") return SIGKILL;
+    if (name == "SIGTERM" || name == "term") return SIGTERM;
+    if (name == "SIGHUP" || name == "hangup") return SIGHUP;
+    if (name == "SIGINT" || name == "int") return SIGINT;
+    if (name == "SIGSTOP" || name == "stop") return SIGSTOP;
+    if (name == "SIGCONT" || name == "cont") return SIGCONT;
+#endif
+    return std::nullopt;
 }
 
 bool ProcessService::setNice(int32_t pid, int nice) {

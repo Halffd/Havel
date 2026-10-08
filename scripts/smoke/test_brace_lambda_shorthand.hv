@@ -1,0 +1,25 @@
+// Test: '{ expr }' is a zero-arg lambda (TODO #1) — lazy, callable.
+// Disambiguation: '{ key: value }' = object, '{ a, b }' = set,
+// '{}' = empty object, '(x,y) { ... }' = lambda with params.
+numbers = { 1 + 2 }
+assert(type(numbers) == "function", "brace lambda must be function")
+assert(numbers() == 3, "brace lambda call must be 3")
+
+lazy = { print("lazy ran") }
+assert(type(lazy) == "function", "lazy must be function")
+
+o = { x: 1, y: 2 }
+assert(type(o) == "object", "key:value must be object")
+assert(o.x == 1 && o.y == 2, "object fields")
+
+s = { 1, 2, 3 }
+assert(type(s) == "set", "comma form must be set")
+assert(#s == 3, "set size")
+
+e = {}
+assert(type(e) == "object", "empty braces must be object")
+
+vars = (x, y) { x + y }
+assert(vars(1, 2) == 3, "paren-brace lambda")
+
+println("PASS: brace lambda shorthand")

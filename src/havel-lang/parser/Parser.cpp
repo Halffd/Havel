@@ -944,15 +944,41 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
     left->length = start_token.length;
   }
 
+  return parsePrattExpression(rbp, std::move(left));
+}
+
+std::unique_ptr<ast::Expression>
+Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
+  DepthGuard depth_guard(recursion_depth_);
+
+  // The base operand already carries its own span; reuse it so the infix and
+  // implicit-call length arithmetic below has the same anchors it would have
+  // had if this operand had been produced by nud() in the caller.
+  Token start_token(std::string(), TokenType::Number, std::string(),
+                    left->line, left->column, left->length);
+
   // While the next token has higher binding power than our right binding power
   // Guard against infinite loops from malformed binding power tables
         int infixIterations = 0;
-        while (rbp < getBindingPower(at().type)) {
+        while (rbp < getBindingPower(at().type) ||
+               (at().type == TokenType::NewLine &&
+                (at(1).type == TokenType::Pipe ||
+                 at(1).type == TokenType::PipeRight) &&
+                rbp < getBindingPower(TokenType::Pipe))) {
             infixIterations++;
     if (infixIterations > 10000) {
       throw std::runtime_error("Pratt infix loop exceeded at token " + std::to_string(position) + ": " + at().toString() + " (rbp=" + std::to_string(rbp) + ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
     }
     Token op_token = at();
+    // Multi-line pipeline continuation: the spec's form puts each stage on
+    // its own line (`data\n  | transform`). The led loop would otherwise
+    // exit at the newline (BP 0) and the stage would parse as a separate
+    // statement ("Unexpected token in expression: |"). Skip the newline;
+    // the op is the pipe.
+    if (op_token.type == TokenType::NewLine) {
+      advance();
+      op_token = at();
+    }
     try {
       advance(); // consume the operator
       auto next = led(op_token, std::move(left));
@@ -1035,6 +1061,12 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   }
 
   switch (token.type) {
+    case TokenType::On:
+      // `on <event> { body }` in expression position (the lifetime syntax):
+      // `let w = on file.changed("./foo") { ... }` — the subscription id is
+      // the expression's value.
+      return parseOnEventExpression();
+
     case TokenType::Number:
         return makeNodeAt<ast::NumberLiteral>(token, parseNumberLiteral(token.value), hasDecimalPart(token.value));
 
@@ -1289,7 +1321,7 @@ t == havel::TokenType::Continue ||
       if (isObject) {
         return parseObjectLiteral();
       }
-      
+
       // Check if it looks like a set literal
       bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
 nextTok.type == havel::TokenType::String ||
@@ -1354,9 +1386,17 @@ nextTok.type == havel::TokenType::RegexString ||
         return makeNodeAt<ast::SetExpression>(token, std::move(elements));
         }
       }
-      
-      // Default to object literal
-      return parseObjectLiteral();
+
+      // TODO #1: '{ expr }' with no top-level key: and no comma is a
+      // zero-arg lambda (lazy, callable) — not an eagerly-evaluated object
+      // literal. '{ key: value }' stays an object literal; '{ a, b }' stays
+      // a set; '{}' stays an empty object.
+      {
+        auto lambdaBody = parseBlockStatement();
+        return makeNodeAt<ast::LambdaExpression>(token,
+            std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+            std::move(lambdaBody));
+      }
     }
 
     case TokenType::Fn:
@@ -2663,6 +2703,25 @@ Parser::produceAST(const std::string &sourceCode) {
       continue;
     }
 
+    // A closing delimiter with no construct open at top level used to become
+    // ExpressionStatement{nullptr}, which silently dropped it and kept
+    // compiling. Record it and resynchronize instead. Throwing here would
+    // escape produceAST entirely and callers swallow it silently.
+    if (at().type == havel::TokenType::CloseBrace ||
+        at().type == havel::TokenType::CloseParen ||
+        at().type == havel::TokenType::CloseBracket) {
+      const char *what =
+          at().type == havel::TokenType::CloseBrace
+              ? "'}' - no open block to close"
+              : (at().type == havel::TokenType::CloseParen
+                     ? "')' - no open parenthesis"
+                     : "']' - no open bracket");
+      errors.push_back(CompilerError(ErrorSeverity::Error, at().line, at().column,
+                                     std::string("Unmatched ") + what));
+      advance();
+      continue;
+    }
+
     // Error throttle - stop after too many errors
     if (errors.size() > 100) {
       std::string firstError = errors.empty() ? "" : ": " + errors[0].message;
@@ -2727,6 +2786,17 @@ Parser::parseStrict(const std::string &sourceCode) {
             continue;
         }
 
+        // Same top-level unmatched-delimiter guard as produceAST.
+        if (at().type == havel::TokenType::CloseBrace) {
+            failAt(at(), "Unmatched '}' - no open block to close");
+        }
+        if (at().type == havel::TokenType::CloseParen) {
+            failAt(at(), "Unmatched ')' - no open parenthesis");
+        }
+        if (at().type == havel::TokenType::CloseBracket) {
+            failAt(at(), "Unmatched ']' - no open bracket");
+        }
+
         size_t beforePos = position;
         try {
             auto stmt = parseStatement();
@@ -2759,10 +2829,28 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
 
   // Keywords that should NOT be parsed as statements in inline context
   // (they belong to parent constructs like if/else/while)
-  if (at().type == havel::TokenType::Else ||
-      at().type == havel::TokenType::Catch ||
-      at().type == havel::TokenType::Finally) {
+  if (at().type == havel::TokenType::Else) {
+    // Reaching here means the `else` has no `if` to attach to. That happens
+    // when the if-body was inline (unbraced) and the enclosing block's `}`
+    // came first -- `if c <stmt> } else { ... }`. Returning null silently
+    // mis-compiled this: the else body ran BEFORE the preceding statements.
+    // Report it instead.
+    failAt(at(), "'else' without a matching 'if'. If the if body is a single "
+                 "statement, wrap it in braces: 'if cond { ... } else { ... }'");
     return nullptr;
+  }
+  if (at().type == havel::TokenType::Catch ||
+      at().type == havel::TokenType::Finally) {
+    // parseTryStatement consumes `catch`/`finally` itself, so reaching either
+    // here means no `try` owns them. Returning null silently dropped the token
+    // and made the real mistake surface later as a confusing error such as
+    // "Expected '=' or ':' after key". The keyword switch in this function
+    // already carries this exact diagnostic; it was unreachable because this
+    // guard returned first.
+    failAt(at(), std::string("'") +
+                     (at().type == havel::TokenType::Catch ? "catch"
+                                                           : "finally") +
+                     "' can only appear within a 'try' statement");
   }
 
   // Parse based on current token
@@ -2853,10 +2941,57 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
   // Keywords that should NOT be parsed as statements
   // (they belong to parent constructs like if/else/while)
-  if (at().type == havel::TokenType::Else ||
-      at().type == havel::TokenType::Catch ||
-      at().type == havel::TokenType::Finally) {
+  if (at().type == havel::TokenType::Else) {
+    // Orphaned `else`: the matching `if` consumed an unbraced body and the
+    // enclosing `}` landed here first. Erroring is required -- returning null
+    // made the else body execute before the statements it should follow.
+    if (declined_else_if_column_ != 0 && declined_else_col_ == at().column) {
+      // This exact token was already offered to an `if` and rejected for being
+      // dedented below it. Report that instead of a phantom missing `if`.
+      size_t ifCol = declined_else_if_column_;
+      size_t elseCol = declined_else_col_;
+      declined_else_if_column_ = 0;
+      declined_else_col_ = 0;
+      failAt(at(), "'else' at column " + std::to_string(elseCol) +
+                       " is dedented below the 'if' at column " +
+                       std::to_string(ifCol) + " it belongs to, so no 'if' can "
+                       "claim it. Align the 'else' with its 'if', or indent the "
+                       "'if' body in braces so the pairing is unambiguous");
+    } else {
+      failAt(at(), "'else' without a matching 'if'. If the if body is a single "
+                   "statement, wrap it in braces: 'if cond { ... } else { ... }'");
+    }
     return nullptr;
+  }
+  if (at().type == havel::TokenType::Catch ||
+      at().type == havel::TokenType::Finally) {
+    // parseTryStatement consumes `catch`/`finally` itself, so reaching either
+    // here means no `try` owns them. Returning null silently dropped the token
+    // and made the real mistake surface later as a confusing error such as
+    // "Expected '=' or ':' after key". The keyword switch in this function
+    // already carries this exact diagnostic; it was unreachable because this
+    // guard returned first.
+    failAt(at(), std::string("'") +
+                     (at().type == havel::TokenType::Catch ? "catch"
+                                                           : "finally") +
+                     "' can only appear within a 'try' statement");
+  }
+
+  // Orphaned `elif`: `elif` is sugar for `else if` only when it directly
+  // follows an if body, which parseIfStatement already consumes. Elsewhere it
+  // stays a plain name, so only reject it when something expression-shaped
+  // follows -- `elif x > 3 {` is always a typo, while `elif = 5`, a bare
+  // `elif` and `elif.field` keep working. Without this the typo surfaced much
+  // later as the misleading "Unresolved identifier 'elif'".
+  if (at().type == havel::TokenType::Identifier && at().value == "elif" &&
+      at(1).type != havel::TokenType::Assign &&
+      at(1).type != havel::TokenType::Dot &&
+      at(1).type != havel::TokenType::NewLine &&
+      at(1).type != havel::TokenType::Semicolon &&
+      at(1).type != havel::TokenType::CloseBrace &&
+      at(1).type != havel::TokenType::EOF_TOKEN) {
+    failAt(at(), "'elif' without a matching 'if'. 'elif' is sugar for "
+                 "'else if' and must directly follow an if body");
   }
 
     // Context-sensitive decorator detection:
@@ -2992,15 +3127,7 @@ position = savePos; // restore position
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-    if (at().type == havel::TokenType::When) {
-      advance(); // consume 'when'
-      // Parse legacy when syntax (e.g., "when mode gaming")
-      // Stop at => so condition doesn't consume the arrow
-      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    } else if (at().type == havel::TokenType::If) {
-      advance(); // consume 'if'
-      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    }
+    prefixCondition = parseHotkeyPrefixCondition();
 
     if (at().type == havel::TokenType::Arrow) {
       advance(); // consume '=>'
@@ -3108,13 +3235,7 @@ position = savePos; // restore position
 
         // Check for prefix condition
         std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-        if (at().type == havel::TokenType::When) {
-          advance();
-          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-        } else if (at().type == havel::TokenType::If) {
-          advance();
-          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-        }
+        prefixCondition = parseHotkeyPrefixCondition();
 
         if (at().type != havel::TokenType::Arrow) {
           failAt(hotkeyToken, "Expected '=>' after hotkey in assignment");
@@ -3192,13 +3313,7 @@ position = savePos; // restore position
 
       // Check for prefix condition
       std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
-        advance();
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+      prefixCondition = parseHotkeyPrefixCondition();
 
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
@@ -3412,14 +3527,7 @@ at(1).type == havel::TokenType::Arrow) {
 
       // Check for prefix condition (before =>)
       std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-      if (at().type == havel::TokenType::When) {
-        advance(); // consume 'when'
-        // Stop at => (binding power 10) so condition doesn't consume the arrow
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      } else if (at().type == havel::TokenType::If) {
-        advance(); // consume 'if'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-      }
+      prefixCondition = parseHotkeyPrefixCondition();
 
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
@@ -3497,7 +3605,55 @@ at(1).type == havel::TokenType::Arrow) {
     }
 
     // Not a hotkey binding, parse as expression
+    // Peek: ident( ident... ) [if ...] => — an Erlang clause head. Suppress
+    // arrow-function parsing only for that shape, so the Pratt terminates at
+    // '=>' / 'if' and the clause dispatcher below can claim the statement.
+    auto isClauseHeadShape = [&]() -> bool {
+      if (at().type != havel::TokenType::Identifier ||
+          at(1).type != havel::TokenType::OpenParen) {
+        return false;
+      }
+      int depth = 0;
+      size_t k = 1;
+      for (; at(k).type != havel::TokenType::EOF_TOKEN && k < 256; ++k) {
+        if (at(k).type == havel::TokenType::OpenParen) {
+          ++depth;
+        } else if (at(k).type == havel::TokenType::CloseParen) {
+          if (--depth == 0) {
+            break;
+          }
+        }
+      }
+      auto next = at(k + 1).type;
+      return next == havel::TokenType::If || next == havel::TokenType::Arrow;
+    };
+    bool clauseShape = isClauseHeadShape();
+    bool prevMatchExpr = context.inMatchExpression;
+    if (clauseShape) {
+      context.inMatchExpression = true;
+    }
     auto expr = parseExpression();
+    if (clauseShape) {
+      context.inMatchExpression = prevMatchExpr;
+    }
+
+    // TODO #2: Erlang-style multi-clause function heads:
+    //   fib(N) if N < 2 => body1
+    //   fib(N) => body2
+    // Consecutive same-name clauses merge into one function dispatched by
+    // guard order. Also upgrades the previously-erroring
+    // `call(...) if cond { ... }` (call + if statement sharing the guard
+    // condition). Only fires for plain-name calls.
+    if (expr && expr->kind == ast::NodeType::CallExpression &&
+        (at().type == havel::TokenType::If ||
+         at().type == havel::TokenType::Arrow)) {
+      auto *callee =
+          dynamic_cast<ast::Identifier *>(
+              static_cast<ast::CallExpression *>(expr.get())->callee.get());
+      if (callee) {
+        return parseFunctionClauses(std::move(expr));
+      }
+    }
 
     // Require statement terminator: semicolon or newline
     // Prevents accidental expression chaining across lines:
@@ -3531,6 +3687,8 @@ at(1).type == havel::TokenType::Arrow) {
     return parseDoWhileStatement();
   case havel::TokenType::Switch:
     return parseSwitchStatement();
+  case havel::TokenType::Case:
+    return parseCaseOfStatement();
   case havel::TokenType::For:
     return parseForStatement();
   case havel::TokenType::Loop:
@@ -3541,6 +3699,19 @@ at(1).type == havel::TokenType::Arrow) {
     return parseContinueStatement();
   case havel::TokenType::On:
     return parseOnStatement();
+  case havel::TokenType::Emit:
+    // `emit <name> [payload]` is a statement; a bare `emit` followed by a
+    // terminator/operator is a soft-identifier reference (a param or
+    // variable named emit in a function body — `fn tagOf(emit) { emit }`).
+    // Without this peek the body's bare reference parsed as an emit
+    // statement with an empty/`}` name and the compiler threw
+    // "Unsupported statement: EmitStatement{event: }".
+    if (at(1).type == havel::TokenType::Identifier ||
+        at(1).type == havel::TokenType::String ||
+        at(1).type == havel::TokenType::MultilineString) {
+      return parseEmitStatement();
+    }
+    break; // fall through to expression: `emit` as a name
   case havel::TokenType::Off:
     return parseOffModeStatement();
  case havel::TokenType::Fn:
@@ -4692,6 +4863,197 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDslPrint() {
 
 // dsl.md sugar: '?; <cond> { body }' -> when block (self-hosted pratt
 // parseDslWhenStatement parity).
+// Erlang-style multi-clause function heads (TODO #2). The first call was
+// already parsed by the caller; clauses are collected from here on. Each
+// clause is `name(params) [if guard] => body`; consecutive same-name
+// clauses merge into one FunctionDeclaration whose body is an if-chain
+// dispatched by guard order (first matching guard wins; a guardless clause
+// is the catch-all). A `call(...) if cond { ... }` sequence — previously a
+// parse error — is upgraded to a real if statement sharing the condition.
+std::unique_ptr<havel::ast::Statement>
+Parser::parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall) {
+  struct Clause {
+    std::unique_ptr<ast::Expression> guard; // nullptr = catch-all
+    std::unique_ptr<ast::Statement> body;
+  };
+  std::vector<Clause> clauses;
+
+  std::string name;
+  std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+  size_t clauseLine = 0, clauseCol = 0;
+
+  // Extract name/params from a plain-name call; bail to an expression
+  // statement when the shape is not a clause head.
+  auto headFromCall =
+      [&](std::unique_ptr<ast::Expression> &callExpr) -> bool {
+    auto *call = static_cast<ast::CallExpression *>(callExpr.get());
+    auto *calleeIdent = dynamic_cast<ast::Identifier *>(call->callee.get());
+    if (!calleeIdent || call->args.empty()) {
+      return false;
+    }
+    for (auto &arg : call->args) {
+      if (!dynamic_cast<ast::Identifier *>(arg.get())) {
+        return false; // non-identifier args are not clause params
+      }
+    }
+    name = calleeIdent->symbol;
+    clauseLine = call->line;
+    clauseCol = call->column;
+    params.clear();
+    for (auto &arg : call->args) {
+      auto *argIdent = static_cast<ast::Identifier *>(arg.get());
+      params.push_back(makeNode<ast::FunctionParameter>(
+          makeNode<ast::Identifier>(argIdent->symbol)));
+    }
+    return true;
+  };
+
+  // Parse one clause's guard/body from the current position (after the head).
+  // Returns false when the shape is not a clause (caller bails out).
+  auto parseOneClause = [&](std::unique_ptr<ast::Expression> &guardOut,
+                            std::unique_ptr<ast::Statement> &bodyOut) -> bool {
+    guardOut = nullptr;
+    if (at().type == havel::TokenType::If) {
+      advance(); // consume "if"
+      // '=>' terminates the guard expression (Arrow returns binding power 0
+      // while inMatchExpression — same mechanism as switch case tests).
+      bool prevAllow = context.allowBraceSugar;
+      context.allowBraceSugar = false;
+      bool prevSuppress = context.suppressBraceLambda;
+      context.suppressBraceLambda = true;
+      bool prevMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
+      guardOut = parseExpression();
+      context.inMatchExpression = prevMatch;
+      context.suppressBraceLambda = prevSuppress;
+      context.allowBraceSugar = prevAllow;
+      // `call(...) if cond { ... }` — a real if statement, not a clause.
+      if (at().type == havel::TokenType::OpenBrace) {
+        auto body = parseBlockStatement();
+        bodyOut = makeNode<ast::IfStatement>(std::move(guardOut),
+                                             std::move(body));
+        return false;       // signals: not a clause, bodyOut is the statement
+      }
+    }
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after function clause guard");
+    }
+    advance(); // consume "=>"
+
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::OpenBrace ||
+        at().type == havel::TokenType::Colon) {
+      bodyOut = parseBlockStatement();
+    } else {
+      // Erlang-style comma-separated statement sequence: each expression
+      // except the last is an effectful statement; the last one's value is
+      // the clause's value. Newlines after a comma continue the sequence.
+      auto block = makeNode<ast::BlockStatement>();
+      while (true) {
+        auto expr = parseExpression();
+        block->body.push_back(
+            makeNode<ast::ExpressionStatement>(std::move(expr)));
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+          while (at().type == havel::TokenType::NewLine) {
+            advance();
+          }
+          continue;
+        }
+        break;
+      }
+      bodyOut = std::move(block);
+    }
+    return true;
+  };
+
+  if (!headFromCall(firstCall)) {
+    return makeNode<havel::ast::ExpressionStatement>(std::move(firstCall));
+  }
+
+  std::unique_ptr<ast::Statement> upgradedIf;
+  {
+    std::unique_ptr<ast::Expression> guard;
+    std::unique_ptr<ast::Statement> body;
+    bool isClause = parseOneClause(guard, body);
+    if (!isClause) {
+      // Upgraded `call if cond { ... }` — wrap the call + if as a block.
+      auto block = makeNode<ast::BlockStatement>();
+      block->body.push_back(
+          makeNode<ast::ExpressionStatement>(std::move(firstCall)));
+      block->body.push_back(std::move(body));
+      return block;
+    }
+    clauses.push_back(
+        Clause{std::move(guard), std::move(body)});
+  }
+
+  // Consecutive same-name clauses. Blank lines between clauses are skipped
+  // only when a matching clause head follows; otherwise the trailing newline
+  // stays so the statement dispatcher sees a proper terminator.
+  while (notEOF()) {
+    size_t look = 0;
+    while (at(look).type == havel::TokenType::NewLine) {
+      ++look;
+    }
+    if (at(look).type != havel::TokenType::Identifier ||
+        at(look).value != name ||
+        at(look + 1).type != havel::TokenType::OpenParen) {
+      break;
+    }
+    for (size_t k = 0; k < look; ++k) {
+      advance(); // consume skipped newlines between clauses
+    }
+    // Parse the head call manually (name(params)). '=>' terminates the
+    // head call (same inMatchExpression mechanism as the guard).
+    bool prevMatch = context.inMatchExpression;
+    context.inMatchExpression = true;
+    auto headExpr = parseExpression();
+    context.inMatchExpression = prevMatch;
+    if (!headExpr || headExpr->kind != ast::NodeType::CallExpression ||
+        !headFromCall(headExpr)) {
+      break;
+    }
+    std::unique_ptr<ast::Expression> guard;
+    std::unique_ptr<ast::Statement> body;
+    if (!parseOneClause(guard, body)) {
+      failAt(at(), "Mixed clause and statement forms for function '" + name + "'");
+    }
+    clauses.push_back(Clause{std::move(guard), std::move(body)});
+  }
+
+  // Build the if-chain from the clauses (first matching guard wins).
+  std::unique_ptr<ast::Statement> chain;
+  for (auto it = clauses.rbegin(); it != clauses.rend(); ++it) {
+    auto clauseBlock = makeNode<ast::BlockStatement>();
+    clauseBlock->body.push_back(std::move(it->body));
+    if (it->guard) {
+      chain = makeNode<ast::IfStatement>(std::move(it->guard),
+                                         std::move(clauseBlock),
+                                         std::move(chain));
+    } else if (chain) {
+      // Catch-all clause: the deepest if's else.
+      auto *deepest = static_cast<ast::IfStatement *>(chain.get());
+      while (deepest->alternative) {
+        deepest = static_cast<ast::IfStatement *>(deepest->alternative.get());
+      }
+      deepest->alternative = std::move(clauseBlock);
+    } else {
+      chain = std::move(clauseBlock); // only a catch-all clause
+    }
+  }
+
+  auto fnBody = makeNode<ast::BlockStatement>();
+  fnBody->body.push_back(std::move(chain));
+  auto decl = makeNodeAt<ast::FunctionDeclaration>(
+      Token(name, havel::TokenType::Identifier, name, clauseLine, clauseCol),
+      std::make_unique<ast::Identifier>(name), std::move(params),
+      std::move(fnBody));
+  return decl;
+}
+
 std::unique_ptr<havel::ast::Statement> Parser::parseDslWhenBlock() {
   advance(); // consume '?'
   advance(); // consume ';'
@@ -6466,6 +6828,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
   }
   auto tryBody = parseBlockStatement();
 
+  // Skip newlines between the try body's closing brace and the optional
+  // catch/finally — `try { x }\ncatch { ... }` must parse.
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
   std::unique_ptr<havel::ast::Identifier> catchVariable = nullptr;
   std::unique_ptr<havel::ast::Statement> catchBody = nullptr;
 
@@ -6511,11 +6879,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
         std::move(finallyBlock));
 }
 
-std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn) {
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn, size_t chainColumn, bool skipKeyword) {
   auto keyword = at();
   size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
   size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
-  advance(); // consume "if"
+  if (!skipKeyword) {
+    advance(); // consume "if"
+  }
 
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
@@ -6546,24 +6916,39 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
     }
 
 std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-  if (at().type == havel::TokenType::Else) {
+  // 'elif' is sugar for 'else if' (TODO #4). It lexes as an Identifier, so
+  // the dispatch must accept it alongside Else; expression-position elif
+  // (never adjacent to a closed if body) still parses as a plain name.
+  bool isElif = at().type == havel::TokenType::Identifier &&
+                at().value == "elif";
+  if (at().type == havel::TokenType::Else || isElif) {
     if (at().column >= originalIfColumn) {
     size_t elseCol = at().column;
-    advance(); // consume "else"
-
+    advance(); // consume "else" or "elif"
     // Skip newlines before else body
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
 
     if (at().type == havel::TokenType::If) {
+      // "else if ..." — the nested if starts with the If keyword
       alternative = parseIfStatement(elseCol, originalIfColumn);
+    } else if (isElif) {
+      // "elif <cond> ..." — the condition follows directly, no If keyword
+      alternative = parseIfStatement(elseCol, originalIfColumn, true);
     } else if (at().type == havel::TokenType::OpenBrace ||
                at().type == havel::TokenType::Colon) {
       alternative = parseBlockStatement();
     } else {
       alternative = parseInlineStatement();
     }
+    } else {
+      // The `else` is dedented below this `if`, so it cannot bind here. Record
+      // both columns: if it later surfaces in parseStatement() as an orphan it
+      // has lost its owner purely to indentation, and saying "no matching if"
+      // would send the reader hunting for a missing `if` that is right there.
+      declined_else_if_column_ = originalIfColumn;
+      declined_else_col_ = at().column;
     }
   }
 
@@ -6641,9 +7026,146 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
   context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
+  auto cases = parseSwitchCaseList();
+
+  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
+                                               std::move(cases));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseCaseOfStatement() {
+  advance(); // consume "case"
+
+  // Parse the subject expression — any expression, including a `~` match
+  // (`case txt ~ name of { ... }`): the subject is the match result.
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
+  auto expression = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
+
+  // 'of' has no keyword token — it lexes as an Identifier.
+  if (at().type != havel::TokenType::Identifier || at().value != "of") {
+    failAt(at(), "Expected 'of' after case expression");
+  }
+  advance(); // consume "of"
+
+  auto cases = parseSwitchCaseList();
+
+  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
+                                               std::move(cases));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseEmitStatement() {
+  advance(); // consume "emit"
+
+  // The event name token (an identifier or a string literal).
+  auto nameTok = advance();
+  std::string eventName = nameTok.value;
+
+  // Optional payload: emit "my.event" { foo: 123 } / emit mpv.paused
+  std::unique_ptr<havel::ast::Expression> payload;
+  if (at().type == havel::TokenType::OpenBrace) {
+    payload = parseExpression(); // object literal
+  }
+
+  auto stmt = makeNode<havel::ast::EmitStatement>(std::move(eventName),
+                                                  std::move(payload));
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnEventStatement() {
+  std::string eventName;
+  std::unique_ptr<havel::ast::Expression> eventArg;
+  std::unique_ptr<havel::ast::Expression> filter;
+  std::unique_ptr<havel::ast::Statement> body;
+  if (!parseOnEventParts(eventName, eventArg, filter, body)) {
+    return nullptr;
+  }
+  auto stmt = makeNode<havel::ast::OnEventStatement>(
+      std::move(eventName), std::move(eventArg), std::move(filter),
+      std::move(body));
+  return stmt;
+}
+
+bool Parser::parseOnEventParts(std::string &nameOut,
+                               std::unique_ptr<havel::ast::Expression> &argOut,
+                               std::unique_ptr<havel::ast::Expression> &filterOut,
+                               std::unique_ptr<havel::ast::Statement> &bodyOut) {
+  // The event name: a string literal, a dotted identifier chain
+  // (file.changed — the lexer has no dot-in-identifier, so the chain is
+  // assembled from Identifier Dot Identifier), or a plain identifier.
+  std::string name;
+  auto nameTok = at();
+  if (nameTok.type == havel::TokenType::String ||
+      nameTok.type == havel::TokenType::MultilineString) {
+    advance();
+    name = nameTok.value;
+  } else if (nameTok.type == havel::TokenType::Identifier) {
+    advance();
+    name = nameTok.value;
+    while (at().type == havel::TokenType::Dot &&
+           at(1).type == havel::TokenType::Identifier) {
+      advance(); // consume "."
+      auto member = advance();
+      name += "." + member.value;
+    }
+  } else {
+    failAt(nameTok, "Expected event name after 'on'");
+    return false;
+  }
+  nameOut = std::move(name);
+
+  // Optional argument: on file.changed("./config.hv") { ... }
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume "("
+    if (at().type != havel::TokenType::CloseParen) {
+      argOut = parseExpression();
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after event argument");
+      return false;
+    }
+    advance(); // consume ")"
+  }
+
+  // Optional filter: on window.focused where window.class == "Firefox" { }
+  if (at().type == havel::TokenType::Where ||
+      (at().type == havel::TokenType::Identifier && at().value == "where")) {
+    advance(); // consume "where"
+    filterOut = parseExpression();
+  }
+
+  // Handler body
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after event subscription");
+    return false;
+  }
+  bodyOut = parseBlockStatement();
+  return true;
+}
+
+std::unique_ptr<havel::ast::Expression>
+Parser::parseOnEventExpression() {
+  std::string eventName;
+  std::unique_ptr<havel::ast::Expression> eventArg;
+  std::unique_ptr<havel::ast::Expression> filter;
+  std::unique_ptr<havel::ast::Statement> body;
+  if (!parseOnEventParts(eventName, eventArg, filter, body)) {
+    return nullptr;
+  }
+  auto expr = makeNode<havel::ast::OnEventExpression>(
+      std::move(eventName), std::move(eventArg), std::move(filter),
+      std::move(body));
+  return expr;
+}
+
+std::vector<std::unique_ptr<havel::ast::SwitchCase>>
+Parser::parseSwitchCaseList() {
   // Expect opening brace
   if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after switch expression");
+    failAt(at(), "Expected '{' after case subject");
   }
   advance(); // consume "{"
 
@@ -6651,8 +7173,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
 
   // Parse switch cases
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    // Skip newlines
-    while (at().type == havel::TokenType::NewLine) {
+    // Skip newlines and semicolons between cases
+    while (at().type == havel::TokenType::NewLine ||
+           at().type == havel::TokenType::Semicolon) {
       advance();
     }
 
@@ -6660,21 +7183,50 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
       break;
     }
 
-    // Parse case test expression or 'else'
+    // Parse case test expression, or an 'else' / '_' wildcard, or a
+    // relational pattern (<0, >10, <=2, >=10).
     std::unique_ptr<havel::ast::Expression> test = nullptr;
 
-    if (at().type == havel::TokenType::Else) {
-      advance(); // consume "else"
+    if (at().type == havel::TokenType::Else ||
+        at().type == havel::TokenType::Underscore) {
+      advance(); // consume wildcard
+    } else if (at().type == havel::TokenType::Less ||
+               at().type == havel::TokenType::Greater ||
+               at().type == havel::TokenType::LessEquals ||
+               at().type == havel::TokenType::GreaterEquals) {
+      // Relational case pattern: compare the subject against the operand.
+      auto opTok = advance();
+      havel::ast::BinaryOperator op;
+      switch (opTok.type) {
+      case havel::TokenType::Less:          op = havel::ast::BinaryOperator::Less; break;
+      case havel::TokenType::Greater:       op = havel::ast::BinaryOperator::Greater; break;
+      case havel::TokenType::LessEquals:    op = havel::ast::BinaryOperator::LessEqual; break;
+      default:                              op = havel::ast::BinaryOperator::GreaterEqual; break;
+      }
+      bool savedInMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
+      auto operand = parseExpression();
+      context.inMatchExpression = savedInMatch;
+      test = makeNodeAt<havel::ast::RelationalCaseTest>(opTok, std::move(op),
+                                                        std::move(operand));
     } else {
+      // '=>' and '->' terminate the test expression (same mechanism as match
+      // arms: Arrow/ReturnType return binding power 0 so the Pratt loop
+      // exits). Scoped to the test only — case bodies may still contain
+      // real lambdas.
+      bool savedInMatch = context.inMatchExpression;
+      context.inMatchExpression = true;
       // Parse case test expression
       test = parseExpression();
+      context.inMatchExpression = savedInMatch;
     }
 
-    // Expect '=>'
-    if (at().type != havel::TokenType::Arrow) {
-      failAt(at(), "Expected '=>' after switch case test");
+    // Optional arrow: `pat => body` / `pat -> body`, or a bare
+    // `pat { body }` (the spec's switch form has no arrow).
+    if (at().type == havel::TokenType::Arrow ||
+        at().type == havel::TokenType::ReturnType) {
+      advance(); // consume the arrow
     }
-    advance(); // consume "=>"
 
     // Parse case body
     std::unique_ptr<havel::ast::Statement> caseBody;
@@ -6690,20 +7242,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
     cases.push_back(makeNode<havel::ast::SwitchCase>(
         std::move(test), std::move(caseBody)));
 
-    // Skip newlines after case
-    while (at().type == havel::TokenType::NewLine) {
+    // Skip newlines and semicolons after case
+    while (at().type == havel::TokenType::NewLine ||
+           at().type == havel::TokenType::Semicolon) {
       advance();
     }
   }
 
   // Expect closing brace
   if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close switch statement");
+    failAt(at(), "Expected '}' to close case list");
   }
   advance(); // consume "}"
 
-  return makeNode<havel::ast::SwitchStatement>(std::move(expression),
-                                                       std::move(cases));
+  return cases;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
@@ -6952,6 +7504,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
   if (at().type == havel::TokenType::Mode) {
     // on mode {name} { ... }
     return parseOnModeStatementBody();
+  } else if (at().type == havel::TokenType::String ||
+             (at().type == havel::TokenType::Identifier &&
+              at(1).type == havel::TokenType::Dot)) {
+    // String names or dotted chains (file.changed — the lexer has no
+    // dot-in-identifier, so the chain is assembled by the parts parser).
+    // A generic event subscription, not one of the fixed lifecycle forms
+    // below. `on <name> [(arg)] [where <expr>] { body }`.
+    // "my.event") — a generic event subscription, not one of the fixed
+    // lifecycle forms below. `on <name> [(arg)] [where <expr>] { body }`.
+    return parseOnEventStatement();
   } else if (at().type == havel::TokenType::Identifier) {
     std::string keyword = at().value;
     if (keyword == "reload") {
@@ -7378,13 +7940,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Toke
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-    if (at().type == havel::TokenType::When) {
-        advance(); // consume 'when'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    } else if (at().type == havel::TokenType::If) {
-        advance(); // consume 'if'
-        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-    }
+    prefixCondition = parseHotkeyPrefixCondition();
 
     if (at().type != havel::TokenType::Arrow) {
         failAt(hotkeyToken, "Expected '=>' after hotkey literal");
@@ -7540,6 +8096,66 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
   return binding;
 }
 
+bool Parser::isConditionShorthandWord(TokenType type) {
+  // A bare word in a condition is always the value being tested against the
+  // preceding operand (`when mode gaming`, `when title "genshin"`), so it is
+  // read as a string. `mode`, `title`, `class`, `process` and `group` all hold
+  // strings, and the spec spells the shorthand with both bare and quoted words.
+  return type == TokenType::Identifier || type == TokenType::String;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseConditionExpression() {
+  // `bp(Assignment)` is what keeps the caller's `=>` out of the condition; the
+  // logical operators bind looser than that and are still absorbed, so
+  // `when mode == "gaming" && title == "Game"` parses as one condition.
+  //
+  // Implicit-call sugar has to be off here. With it on, `when mode gaming` is
+  // read as `mode(gaming)`, and that call's argument is parsed at rbp 0, which
+  // then eats the binding's `=>` as an arrow lambda.
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+
+  auto left = parsePrattExpression(bp(BindingPower::Assignment));
+  if (!left) {
+    context.allowBraceSugar = prevAllow;
+    return nullptr;
+  }
+
+  // Bare-word shorthand: `when mode gaming` is `when mode == "gaming"`. More
+  // than one shorthand word keeps chaining (`when a b && c d`), because each
+  // equality is handed back to the Pratt loop for the infix tail that follows.
+  while (isConditionShorthandWord(at().type)) {
+    Token wordToken = advance();
+    auto right = makeNodeAt<ast::StringLiteral>(wordToken, wordToken.value, false);
+    auto eq = makeNodeAt<ast::BinaryExpression>(wordToken, std::move(left),
+                                               ast::BinaryOperator::Equal,
+                                               std::move(right));
+    left = parsePrattExpression(bp(BindingPower::Assignment), std::move(eq));
+    if (!left) {
+      context.allowBraceSugar = prevAllow;
+      return nullptr;
+    }
+  }
+
+  context.allowBraceSugar = prevAllow;
+  return left;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseHotkeyPrefixCondition() {
+  bool hasCondition = false;
+  if (at().type == TokenType::When) {
+    advance(); // consume 'when'
+    hasCondition = true;
+  } else if (at().type == TokenType::If) {
+    advance(); // consume 'if'
+    hasCondition = true;
+  }
+  if (!hasCondition) {
+    return nullptr;
+  }
+  return parseConditionExpression();
+}
+
 std::unique_ptr<ast::Expression>
 Parser::combineConditions(std::unique_ptr<ast::Expression> left,
                           std::unique_ptr<ast::Expression> right) {
@@ -7557,13 +8173,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
   advance(); // consume 'when'
 
   // Parse the condition
-  bool prevAllow = context.allowBraceSugar;
-  context.allowBraceSugar = false;
   bool prevSuppress = context.suppressBraceLambda;
   context.suppressBraceLambda = true;
-  auto condition = parseExpression();
+  auto condition = parseConditionExpression();
   context.suppressBraceLambda = prevSuppress;
-  context.allowBraceSugar = prevAllow;
 
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after when condition");
@@ -7834,10 +8447,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
     items.push_back({"*", "*"});
   }
   // Handle comma-separated identifiers: `import a, b, c from "module"`
+  // with optional `as` aliases: `import string as s`.
   else if (at().type == havel::TokenType::Identifier) {
     while (notEOF() && at().type == havel::TokenType::Identifier) {
       std::string name = advance().value;
-      items.push_back({name, name});
+      std::string alias = name;
+
+      if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected alias name after 'as'");
+        }
+        alias = advance().value;
+      }
+      items.push_back({name, alias});
 
       if (at().type == havel::TokenType::Comma) {
         advance();
@@ -8280,6 +8903,52 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
         alias = std::make_unique<havel::ast::Identifier>(tok.value);
         alias->line = tok.line;
         alias->column = tok.column;
+    }
+
+    // Comma-separated object list: `with io, mouse { ... }` desugars to
+    // nested with statements (With(io, With(mouse, body))) — the innermost
+    // owner resolves first at runtime.
+    if (at().type == havel::TokenType::Comma) {
+        std::vector<std::unique_ptr<havel::ast::Expression>> objects;
+        objects.push_back(std::move(object));
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            auto nextObj = parsePrattExpression(51);
+            objects.push_back(std::move(nextObj));
+        }
+        // Parse the shared body once.
+        if (at().type != havel::TokenType::OpenBrace) {
+            failAt(at(), "Expected '{' after with expression");
+        }
+        advance(); // consume '{'
+        std::vector<std::unique_ptr<havel::ast::Statement>> body;
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            auto stmt = parseStatement();
+            if (stmt) {
+                body.push_back(std::move(stmt));
+            }
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+        }
+        if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected '}' to close with block");
+        }
+        advance(); // consume '}'
+        // Nest from the innermost: With(objects[n-2], [With(objects[n-1], [body])]).
+        std::vector<std::unique_ptr<havel::ast::Statement>> innerBody;
+        innerBody.push_back(makeNode<havel::ast::WithStatement>(
+            std::move(objects.back()), nullptr, std::move(body)));
+        for (size_t i = objects.size() - 1; i > 0; i--) {
+            std::vector<std::unique_ptr<havel::ast::Statement>> wrapped;
+            wrapped.push_back(makeNode<havel::ast::WithStatement>(
+                std::move(objects[i - 1]), nullptr, std::move(innerBody)));
+            innerBody = std::move(wrapped);
+        }
+        return std::move(innerBody.front());
     }
 
     if (at().type != havel::TokenType::OpenBrace) {

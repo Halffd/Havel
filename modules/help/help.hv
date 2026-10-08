@@ -109,6 +109,8 @@ _moduleDocs = {
 }
 
 fn help(topic) {
+  // The spec's `help()` shows documentation (the bare call must print);
+  // the text is also returned for programmatic use.
   if topic == nil {
     lines = ["Havel Language Help", "===================", "", "Usage:",
       "  help() - Show this help",
@@ -121,7 +123,9 @@ fn help(topic) {
     }
     lines.push("")
     lines.push("Use help(\"module\") for detailed module documentation.")
-    lines.join("\n")
+    text = lines.join("\n")
+    print(text)
+    text
   } else {
     dotPos = str(topic).indexOf(".")
     if dotPos != -1 {
@@ -135,9 +139,13 @@ fn help(topic) {
             return "$modName.$funcName\nUsage: $funcSig\nDescription: ${mod.functions[funcSig]}"
           }
         }
-        "Function '$funcName' not found in module '$modName'"
+        text = "Function '$funcName' not found in module '$modName'"
+        print(text)
+        text
       } else {
-        "Module '$modName' not found"
+        text = "Module '$modName' not found"
+        print(text)
+        text
       }
     } else {
       mod = _moduleDocs[str(topic)]
@@ -146,10 +154,14 @@ fn help(topic) {
         for funcSig in mod.functions.keys() {
           lines.push("  $funcSig - ${mod.functions[funcSig]}")
         }
-        lines.join("\n")
+        text = lines.join("\n")
+        print(text)
+        text
       } else {
         available = _moduleDocs.keys().join(", ")
-        "Module '$topic' not found\nAvailable modules: $available"
+        text = "Module '$topic' not found\nAvailable modules: $available"
+        print(text)
+        text
       }
     }
   }

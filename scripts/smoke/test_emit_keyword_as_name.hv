@@ -1,0 +1,61 @@
+// Regression: `emit` is the keyword of the `emit <name> [payload]` statement,
+// but it must stay usable as an ordinary name -- a function, a class method and
+// a parameter. Commit 4c7ecf33f added TokenType::Emit; Lexer::isSoftIdentifier
+// did not list it, so `fn emit(...)` failed to parse with "Expected method name,
+// operator, or special syntax after 'fn'", which broke every module declaring
+// one (modules/app/mpv.hv, modules/app/libmpv.hv, modules/ui/events.hv) and
+// aborted the whole script.
+// Expected result: all three name positions parse and run, and the emit
+// statement still publishes to the event bus.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// Module-level function named `emit`: the declaration itself is the regression.
+// It is not called: a bare `emit(...)` at statement position is the emit
+// statement, so a module-level `emit` has to be reached through a member.
+fn emit(tag, value) {
+  tag + str(value)
+}
+
+// `emit` as a parameter name (parameter-list name check). The body reads the
+// other parameter: like every soft keyword (`on`, `off`, `when`) `emit` is a
+// declaration name only, not a bare value reference, so the assertion is that
+// the parameter list accepts it while the function still runs.
+fn tagOf(emit, other) {
+  other
+}
+assertEq(tagOf("p", "q"), "q", "emit as parameter name")
+
+// Class method named `emit`, called as a member and as a receiver call.
+class Bus {
+  @tag = "m"
+  fn emit(value) {
+    @tag + str(value)
+  }
+  fn twice(value) {
+    @emit(value) + @emit(value)
+  }
+}
+bus = Bus.new()
+assertEq(bus.emit(2), "m2", "class method emit")
+assertEq(bus.twice(3), "m3m3", "receiver call @emit")
+
+// The emit statement keeps working: statement position dispatches on the token
+// type, so the name being soft does not shadow it.
+fired = 0
+on "emit.name.event" {
+  fired = 1
+}
+emit "emit.name.event"
+t = 0
+while t < 5 {
+  sleep(100)
+  t = t + 1
+}
+assertEq(fired, 1, "emit statement still publishes")
+
+print("PASS emit-keyword-as-name")

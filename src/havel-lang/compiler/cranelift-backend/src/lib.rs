@@ -153,6 +153,15 @@ pub const OP_TRY_EXIT: u32 = 58;
 pub const OP_THROW: u32 = 59;
 pub const OP_LOAD_EXCEPTION: u32 = 60;
 
+// Native backedge-hook throttle: a taken backward edge reports through
+// havel_vm_backedge_n every BACKEDGE_STRIDE-th edge with an exact delta of
+// BACKEDGE_STRIDE (per-site counter), instead of calling the hook per
+// iteration. Power of two so the counter test is a mask. Yield-request
+// latency grows by at most one stride of loop iterations, which the
+// cooperative scheduler treats as bounded overshoot (the interpreter's own
+// yield check is per-backedge but interpreted loops are the slow path).
+pub const BACKEDGE_STRIDE: u32 = 64;
+
 #[derive(Debug)]
 pub struct LoweringError(pub String);
 
@@ -432,6 +441,15 @@ mod fallback_shims {
 
     unsafe extern "C" fn shim_backedge(_vm: *mut c_void, _ip: u32) {}
 
+    // Batched-backedge test shim: records the reported deltas so unit tests
+    // can assert the throttle fires once per stride with an exact delta.
+    pub(crate) static SHIM_BACKEDGE_N_TOTAL: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    unsafe extern "C" fn shim_backedge_n(_vm: *mut c_void, _ip: u32, n: u32) {
+        use std::sync::atomic::Ordering;
+        SHIM_BACKEDGE_N_TOTAL.fetch_add(n as u64, Ordering::SeqCst);
+    }
+
     // Null-vm upvalue bridges: no closure context exists standalone, so
     // reads yield null and writes drop (mirrors the C null-vm behavior).
     unsafe extern "C" fn shim_upvalue_get(_vm: *mut c_void, _slot: u32) -> u64 {
@@ -519,6 +537,7 @@ mod fallback_shims {
             "havel_vm_bit_lsh" => Some(shim_bit_lsh as *const u8),
             "havel_vm_bit_rsh" => Some(shim_bit_rsh as *const u8),
             "havel_vm_backedge" => Some(shim_backedge as *const u8),
+            "havel_vm_backedge_n" => Some(shim_backedge_n as *const u8),
             "havel_vm_upvalue_get" => Some(shim_upvalue_get as *const u8),
             "havel_vm_upvalue_set" => Some(shim_upvalue_set as *const u8),
             "havel_vm_object_get_raw_ic" => Some(shim_object_get_null as *const u8),
@@ -710,6 +729,19 @@ impl CraneliftBackend {
                 _ => {}
             }
         }
+
+        // ---- Backward-jump site collection ----
+        // Interpreter parity: only a TAKEN backward edge (strictly
+        // earlier target) is a loop backedge, so only those sites get a
+        // native hook. Each site receives a stride counter so the hook
+        // fires every BACKEDGE_STRIDE-th taken edge with an exact delta
+        // instead of per iteration.
+        let backedge_sites: Vec<usize> = (0..n)
+            .filter(|&i| {
+                matches!(code[2 * i], OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE)
+                    && (code[2 * i + 1] as usize) < i
+            })
+            .collect();
 
         // ---- Static stack-depth pre-pass ----
         // Real bytecode keeps operand-stack values across basic blocks
@@ -989,6 +1021,20 @@ impl CraneliftBackend {
             .module
             .declare_function("havel_vm_backedge", Linkage::Import, &backedge_sig)
             .map_err(|e| err(format!("declare havel_vm_backedge: {e}")))?;
+        // Batched backedge hook the lowering actually emits: (vm, ip, n)
+        // reports n taken backedges at once, every BACKEDGE_STRIDE-th
+        // taken edge per site.
+        let mut backedge_n_sig = self.module.make_signature();
+        backedge_n_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+            AbiParam::new(int32),
+        ];
+        backedge_n_sig.returns = vec![];
+        let backedge_n_id = self
+            .module
+            .declare_function("havel_vm_backedge_n", Linkage::Import, &backedge_n_sig)
+            .map_err(|e| err(format!("declare havel_vm_backedge_n: {e}")))?;
         // Upvalue bridges: closures read/write captured locals through the
         // running closure's upvalue cells. get: (vm, slot) -> Value;
         // set: (vm, slot, Value) -> ().
@@ -1264,6 +1310,7 @@ impl CraneliftBackend {
         // call/global set were declared but never inserted, so the first
         // lowering that reached them panicked ("gc_register_roots bridge").
         bridge_ids.insert("havel_vm_backedge", backedge_id);
+        bridge_ids.insert("havel_vm_backedge_n", backedge_n_id);
         bridge_ids.insert("havel_vm_upvalue_get", upvalue_get_id);
         bridge_ids.insert("havel_vm_upvalue_set", upvalue_set_id);
         bridge_ids.insert("havel_vm_object_get_raw_ic", object_get_id);
@@ -1394,6 +1441,7 @@ impl CraneliftBackend {
             let payload_mask = builder.ins().iconst(int64, PAYLOAD_MASK as i64);
             let shift16 = builder.ins().iconst(int64, 16);
             let one64 = builder.ins().iconst(int64, 1);
+            let stride_mask = builder.ins().iconst(int64, (BACKEDGE_STRIDE - 1) as i64);
             let zero64 = builder.ins().iconst(int64, 0);
             let zero8 = builder.ins().iconst(types::I8, 0);
             let one8 = builder.ins().iconst(types::I8, 1);
@@ -1420,9 +1468,9 @@ impl CraneliftBackend {
             let global_set_ref = self
                 .module
                 .declare_func_in_func(global_set_id, &mut builder.func);
-            let backedge_ref = self
+            let backedge_n_ref = self
                 .module
-                .declare_func_in_func(backedge_id, &mut builder.func);
+                .declare_func_in_func(backedge_n_id, &mut builder.func);
             let upvalue_get_ref = self
                 .module
                 .declare_func_in_func(upvalue_get_id, &mut builder.func);
@@ -1506,6 +1554,17 @@ impl CraneliftBackend {
                 builder.def_var(var, v);
                 var_of.insert(i, var);
             }
+            // Backedge-site stride counters, zero-initialized in the entry
+            // block so the def dominates every use; the values are
+            // loop-carried across backedges by the variable liveness pass.
+            let mut site_counter_of: HashMap<usize, Variable> = HashMap::new();
+            for &site in &backedge_sites {
+                let var = Variable::from_u32(next_var);
+                next_var += 1;
+                builder.declare_var(var, int64);
+                builder.def_var(var, zero64);
+                site_counter_of.insert(site, var);
+            }
             // Entry terminator: edge into instruction 0's leader block
             // (last instruction in the entry block; constants and argument
             // loads above stay unterminated and dominate the body).
@@ -1587,9 +1646,14 @@ impl CraneliftBackend {
                 b.ins().select(is_ext, bridge_on, sel_scalar)
             };
 
-            // Speculative int binop via selects: int/int -> inline op, else
-            // bridge. The bridge call is emitted unconditionally (pure
-            // runtime semantics); the select keeps the applicable result.
+            // Speculative int binop via a branch: int/int -> inline op, else
+            // bridge. The bridge call is emitted on the non-int path only.
+            // History: this used call-then-select - the call was emitted
+            // unconditionally and executed on every op even when both
+            // operands were ints and its result was discarded (a select
+            // cannot remove a call; only a branch keeps it off the hot
+            // path). scripts/benchmarks/tier_bench_loop.hv and
+            // tier_bench_two_fns.hv are the before/after for this change.
             let lower_binop = |b: &mut FunctionBuilder, op: u32, l: Value, r: Value| -> Value {
                 let is_int = {
                     let tl = b.ins().band(l, tag_mask);
@@ -1598,35 +1662,9 @@ impl CraneliftBackend {
                     let ri = b.ins().icmp(IntCC::Equal, tr, tag_int_bits);
                     b.ins().band(li, ri)
                 };
-                let bridge_name = match op {
-                    OP_ADD => "havel_vm_add",
-                    OP_SUB => "havel_vm_sub",
-                    OP_MUL => "havel_vm_mul",
-                    OP_LT => "havel_vm_lt",
-                    // EQ/NEQ may compare string CONTENT across
-                    // representations (heap StringId vs chunk-local
-                    // StringValId) via the heap, so the pure word bridges
-                    // are not enough: route through the vm-aware bridges,
-                    // mirroring the ORC lowering's EQ/NEQ slow path.
-                    OP_EQ => "havel_vm_eq_vm",
-                    OP_NEQ => "havel_vm_neq_vm",
-                    OP_LTE => "havel_vm_lte",
-                    OP_GT => "havel_vm_gt",
-                    _ => "havel_vm_gte",
-                };
-                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
-                // comparisons are pure word semantics and take (l, r) per
-                // RuntimeABI.
-                let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
-                let bridged = if is_pure_comparison {
-                    let call = b.ins().call(func_ref, &[l, r]);
-                    b.inst_results(call)[0]
-                } else {
-                    let call = b.ins().call(func_ref, &[vm, l, r]);
-                    b.inst_results(call)[0]
-                };
-
+                // Inline int-48 fast path: payload extract + op + re-tag.
+                // Computed before the branch so the int path is a single
+                // brif into the merge block.
                 let masked_l = b.ins().band(l, payload_mask);
                 let shl_l = b.ins().ishl(masked_l, shift16);
                 let lv = b.ins().sshr(shl_l, shift16);
@@ -1650,20 +1688,91 @@ impl CraneliftBackend {
                         b.ins().uextend(int64, c)
                     }
                 };
-                match op {
+                let on = match op {
                     OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE => {
                         let bit = b.ins().band(raw, one64);
-                        let on = b.ins().bor(bit, bool_tagged);
-                        b.ins().select(is_int, on, bridged)
+                        b.ins().bor(bit, bool_tagged)
                     }
                     _ => {
-                        let on = {
-                            let masked = b.ins().band(raw, payload_mask);
-                            b.ins().bor(masked, int48_tagged)
-                        };
-                        b.ins().select(is_int, on, bridged)
+                        let masked = b.ins().band(raw, payload_mask);
+                        b.ins().bor(masked, int48_tagged)
                     }
-                }
+                };
+
+                let bridge_name = match op {
+                    OP_ADD => "havel_vm_add",
+                    OP_SUB => "havel_vm_sub",
+                    OP_MUL => "havel_vm_mul",
+                    OP_LT => "havel_vm_lt",
+                    // EQ/NEQ may compare string CONTENT across
+                    // representations (heap StringId vs chunk-local
+                    // StringValId) via the heap, so the pure word bridges
+                    // are not enough: route through the vm-aware bridges,
+                    // mirroring the ORC lowering's EQ/NEQ slow path.
+                    OP_EQ => "havel_vm_eq_vm",
+                    OP_NEQ => "havel_vm_neq_vm",
+                    OP_LTE => "havel_vm_lte",
+                    OP_GT => "havel_vm_gt",
+                    _ => "havel_vm_gte",
+                };
+                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
+                // comparisons are pure word semantics and take (l, r) per
+                // RuntimeABI.
+                let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
+                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
+
+                // Diamond: both-int takes the inline result straight into
+                // the merge; the slow path pays the bridge call. The merged
+                // value is merge_blk's block param, which dominates every
+                // later block in the straight-line flow, so the vstack
+                // discipline (edge_args over dominating values) is intact.
+                let bridge_blk = b.create_block();
+                let merge_blk = b.create_block();
+                b.append_block_param(merge_blk, int64);
+                b.ins()
+                    .brif(is_int, merge_blk, &[BlockArg::Value(on)], bridge_blk, &[]);
+                b.switch_to_block(bridge_blk);
+                let bridged = if is_pure_comparison {
+                    let call = b.ins().call(func_ref, &[l, r]);
+                    b.inst_results(call)[0]
+                } else {
+                    let call = b.ins().call(func_ref, &[vm, l, r]);
+                    b.inst_results(call)[0]
+                };
+                b.ins().jump(merge_blk, &[BlockArg::Value(bridged)]);
+                b.switch_to_block(merge_blk);
+                b.block_params(merge_blk)[0]
+            };
+
+            // Throttled backedge hook + edge to `target`, appended at the
+            // current position - which callers must guarantee is a TAKEN
+            // backward edge (interpreter parity: only taken backward edges
+            // are loop backedges, so only they get a hook). The per-site
+            // stride counter fires havel_vm_backedge_n(vm, ip, STRIDE)
+            // every BACKEDGE_STRIDE-th taken edge with an exact delta; the
+            // per-edge cost is one variable read, an add, a mask and a
+            // well-predicted branch. Leaves the builder positioned in the
+            // (terminated) hook block.
+            let emit_backedge_edge = |b: &mut FunctionBuilder,
+                                      vm: Value,
+                                      hook: cranelift::codegen::ir::FuncRef,
+                                      ip: usize,
+                                      counter: Variable,
+                                      target: Block,
+                                      stack: &[Value]| {
+                let c = b.use_var(counter);
+                let c1 = b.ins().iadd(c, one64);
+                b.def_var(counter, c1);
+                let m = b.ins().band(c1, stride_mask);
+                let fire = b.ins().icmp_imm(IntCC::Equal, m, 0);
+                let hook_blk = b.create_block();
+                b.ins().brif(fire, hook_blk, &[], target, &edge_args(stack));
+                b.switch_to_block(hook_blk);
+                // Hoisted iconsts: builder.ins() borrows builder mutably.
+                let ip_w = b.ins().iconst(int32, ip as i64);
+                let delta_w = b.ins().iconst(int32, BACKEDGE_STRIDE as i64);
+                b.ins().call(hook, &[vm, ip_w, delta_w]);
+                b.ins().jump(target, &edge_args(stack));
             };
 
             // Straight-line lowering. The virtual stack flows across block
@@ -1821,34 +1930,78 @@ impl CraneliftBackend {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
                             // A taken backward edge is an interpreter
-                            // backedge (recordBackedgePublic): surface it to
-                            // the VM so loop hotness, tier-up and coroutine
-                            // yield requests keep working in native loops.
-                            if target <= cur {
-                                let ip_w = builder.ins().iconst(int32, cur as i64);
-                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            // backedge (recordBackedgePublic), so loop
+                            // hotness, tier-up and coroutine yield requests
+                            // keep working in native loops. Only the TAKEN
+                            // arm routes through the throttled hook - the
+                            // interpreter records nothing when the branch
+                            // falls through, and the old shape (call
+                            // before the branch) counted every fall-through.
+                            if target < cur {
+                                let counter = *site_counter_of
+                                    .get(&cur)
+                                    .expect("backward-jump site from pre-pass");
+                                let taken = builder.create_block();
+                                builder.ins().brif(
+                                    truthy,
+                                    else_blk,
+                                    &edge_args(&vstack),
+                                    taken,
+                                    &[],
+                                );
+                                builder.switch_to_block(taken);
+                                emit_backedge_edge(
+                                    &mut builder,
+                                    vm,
+                                    backedge_n_ref,
+                                    cur,
+                                    counter,
+                                    then_blk,
+                                    &vstack,
+                                );
+                            } else {
+                                builder.ins().brif(
+                                    truthy,
+                                    else_blk,
+                                    &edge_args(&vstack),
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                );
                             }
-                            builder.ins().brif(
-                                truthy,
-                                else_blk,
-                                &edge_args(&vstack),
-                                then_blk,
-                                &edge_args(&vstack),
-                            );
                         } else {
                             // No fall-through instruction: both arms exit
                             // through the target.
-                            if target <= cur {
-                                let ip_w = builder.ins().iconst(int32, cur as i64);
-                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            if target < cur {
+                                let counter = *site_counter_of
+                                    .get(&cur)
+                                    .expect("backward-jump site from pre-pass");
+                                let taken = builder.create_block();
+                                builder.ins().brif(
+                                    truthy,
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                    taken,
+                                    &[],
+                                );
+                                builder.switch_to_block(taken);
+                                emit_backedge_edge(
+                                    &mut builder,
+                                    vm,
+                                    backedge_n_ref,
+                                    cur,
+                                    counter,
+                                    then_blk,
+                                    &vstack,
+                                );
+                            } else {
+                                builder.ins().brif(
+                                    truthy,
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                );
                             }
-                            builder.ins().brif(
-                                truthy,
-                                then_blk,
-                                &edge_args(&vstack),
-                                then_blk,
-                                &edge_args(&vstack),
-                            );
                         }
                         terminated = true;
                     }
@@ -1866,29 +2019,69 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
-                            if target <= cur {
-                                let ip_w = builder.ins().iconst(int32, cur as i64);
-                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            if target < cur {
+                                let counter = *site_counter_of
+                                    .get(&cur)
+                                    .expect("backward-jump site from pre-pass");
+                                let taken = builder.create_block();
+                                builder.ins().brif(
+                                    truthy,
+                                    taken,
+                                    &[],
+                                    else_blk,
+                                    &edge_args(&vstack),
+                                );
+                                builder.switch_to_block(taken);
+                                emit_backedge_edge(
+                                    &mut builder,
+                                    vm,
+                                    backedge_n_ref,
+                                    cur,
+                                    counter,
+                                    then_blk,
+                                    &vstack,
+                                );
+                            } else {
+                                builder.ins().brif(
+                                    truthy,
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                    else_blk,
+                                    &edge_args(&vstack),
+                                );
                             }
-                            builder.ins().brif(
-                                truthy,
-                                then_blk,
-                                &edge_args(&vstack),
-                                else_blk,
-                                &edge_args(&vstack),
-                            );
                         } else {
-                            if target <= cur {
-                                let ip_w = builder.ins().iconst(int32, cur as i64);
-                                builder.ins().call(backedge_ref, &[vm, ip_w]);
+                            if target < cur {
+                                let counter = *site_counter_of
+                                    .get(&cur)
+                                    .expect("backward-jump site from pre-pass");
+                                let taken = builder.create_block();
+                                builder.ins().brif(
+                                    truthy,
+                                    taken,
+                                    &[],
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                );
+                                builder.switch_to_block(taken);
+                                emit_backedge_edge(
+                                    &mut builder,
+                                    vm,
+                                    backedge_n_ref,
+                                    cur,
+                                    counter,
+                                    then_blk,
+                                    &vstack,
+                                );
+                            } else {
+                                builder.ins().brif(
+                                    truthy,
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                    then_blk,
+                                    &edge_args(&vstack),
+                                );
                             }
-                            builder.ins().brif(
-                                truthy,
-                                then_blk,
-                                &edge_args(&vstack),
-                                then_blk,
-                                &edge_args(&vstack),
-                            );
                         }
                         terminated = true;
                     }
@@ -1896,13 +2089,27 @@ impl CraneliftBackend {
                         let target = operand as usize;
                         let blk = block_of[target]
                             .ok_or_else(|| err("jump target has no block".into()))?;
-                        // Backward unconditional jump: interpreter
-                        // recordBackedgePublic on every iteration.
-                        if target <= cur {
-                            let ip_w = builder.ins().iconst(int32, cur as i64);
-                            builder.ins().call(backedge_ref, &[vm, ip_w]);
+                        // Backward unconditional jump: every edge is taken,
+                        // so the throttled hook reports each
+                        // BACKEDGE_STRIDE-th iteration with an exact delta
+                        // (interpreter: recordBackedgePublic per taken
+                        // edge).
+                        if target < cur {
+                            let counter = *site_counter_of
+                                .get(&cur)
+                                .expect("backward-jump site from pre-pass");
+                            emit_backedge_edge(
+                                &mut builder,
+                                vm,
+                                backedge_n_ref,
+                                cur,
+                                counter,
+                                blk,
+                                &vstack,
+                            );
+                        } else {
+                            builder.ins().jump(blk, &edge_args(&vstack));
                         }
-                        builder.ins().jump(blk, &edge_args(&vstack));
                         terminated = true;
                     }
                     OP_LOAD_GLOBAL => {
@@ -3283,9 +3490,10 @@ mod tests {
     #[test]
     fn backward_jump_calls_backedge_bridge() {
         // fn (n) { s = 0; i = 0; while (i < n) { s = s + i; i = i + 1 } s }
-        // A backward JUMP lowers a havel_vm_backedge(vm, ip) call. With a
-        // NULL vm the bridge is a no-op, so the loop must still compute the
-        // same sum as before the backedge hook existed.
+        // A backward JUMP lowers to the throttled hook: n=10 taken edges
+        // never reach the BACKEDGE_STRIDE=64 flush point, so no hook call
+        // executes at all and the loop must still compute the same sum as
+        // before the hook existed (the shim vm is null either way).
         let mut backend = CraneliftBackend::new().unwrap();
         let code: Vec<u32> = vec![
             OP_LOAD_CONST,
@@ -3321,7 +3529,7 @@ mod tests {
             OP_STORE_VAR,
             2, // 15: i =
             OP_JUMP,
-            4, // 16: backward jump -> backedge bridge
+            4, // 16: backward jump -> throttled backedge hook
             OP_LOAD_VAR,
             1, // 17: s
             OP_RETURN,
@@ -3333,6 +3541,119 @@ mod tests {
             .expect("lowering");
         let out = unsafe { f(std::ptr::null_mut(), [pack_int48(10)].as_ptr(), 1) };
         assert_eq!(unpack_int48(out), 45, "sum(0..10) must be 45: {out:#x}");
+    }
+
+    #[test]
+    fn backedge_hook_fires_every_stride_with_exact_delta() {
+        // Same while-loop shape as backward_jump_calls_backedge_bridge, but
+        // with n=200: taken edges 64, 128, 192 each flush one
+        // havel_vm_backedge_n(vm, ip, 64) call; the 8 trailing iterations
+        // never reach the next stride and are not reported. The result
+        // must still be exact: sum(0..200) = 19900.
+        use std::sync::atomic::Ordering;
+        crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.store(0, Ordering::SeqCst);
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0: 0
+            OP_STORE_VAR,
+            1, // 1: s = 0
+            OP_LOAD_CONST,
+            0, // 2: 0
+            OP_STORE_VAR,
+            2, // 3: i = 0
+            OP_LOAD_VAR,
+            2, // 4: loop head: i
+            OP_LOAD_VAR,
+            0, // 5: n
+            OP_LT,
+            0, // 6: i < n
+            OP_JUMP_IF_FALSE,
+            17, // 7: exit to 17 when false
+            OP_LOAD_VAR,
+            1, // 8: s
+            OP_LOAD_VAR,
+            2, // 9: i
+            OP_ADD,
+            0, // 10: s + i
+            OP_STORE_VAR,
+            1, // 11: s =
+            OP_LOAD_VAR,
+            2, // 12: i
+            OP_LOAD_CONST,
+            1, // 13: 1
+            OP_ADD,
+            0, // 14: i + 1
+            OP_STORE_VAR,
+            2, // 15: i =
+            OP_JUMP,
+            4, // 16: backward jump (unconditional: every edge taken)
+            OP_LOAD_VAR,
+            1, // 17: s
+            OP_RETURN,
+            0, // 18
+        ];
+        let constants = [pack_int48(0), pack_int48(1)];
+        let f = backend
+            .compile_function("strideflush", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(200)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out), 19900, "sum(0..200) must be 19900");
+        assert_eq!(
+            crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.load(Ordering::SeqCst),
+            (BACKEDGE_STRIDE as u64) * 3,
+            "200 taken edges must flush exactly 3 hooks with delta {BACKEDGE_STRIDE}"
+        );
+    }
+
+    #[test]
+    fn conditional_backward_jump_counts_only_taken_edges() {
+        // do-while shape: the backward JUMP_IF_TRUE at the bottom is the
+        // only backedge site. With n=65 the test is true after iterations
+        // 1..=64 (64 taken backward edges) and falls through to exit on
+        // the 65th, so exactly one stride flush of 64 is reported - the
+        // final fall-through must report nothing. Regression for the old
+        // pre-branch hook placement, which counted fall-throughs too.
+        use std::sync::atomic::Ordering;
+        crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.store(0, Ordering::SeqCst);
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // 0: 0
+            OP_STORE_VAR,
+            1,               // 1: i = 0
+            OP_LOAD_VAR,     //
+            1,               // 2: loop head: i
+            OP_LOAD_CONST,   //
+            1,               // 3: 1
+            OP_ADD,          //
+            0,               // 4: i + 1
+            OP_STORE_VAR,    //
+            1,               // 5: i =
+            OP_LOAD_VAR,     //
+            1,               // 6: i
+            OP_LOAD_VAR,     //
+            0,               // 7: n
+            OP_LT,           //
+            0,               // 8: i < n
+            OP_JUMP_IF_TRUE, //
+            2,               // 9: taken backward edge while i < n
+            OP_LOAD_VAR,     //
+            1,               // 10: i
+            OP_RETURN,
+            0, // 11
+        ];
+        let constants = [pack_int48(0), pack_int48(1)];
+        let f = backend
+            .compile_function("dowhilebackedge", &code, &constants, 1)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [pack_int48(65)].as_ptr(), 1) };
+        assert_eq!(unpack_int48(out), 65, "do-while must run 65 iterations");
+        assert_eq!(
+            crate::fallback_shims::SHIM_BACKEDGE_N_TOTAL.load(Ordering::SeqCst),
+            BACKEDGE_STRIDE as u64,
+            "64 taken edges must flush exactly one hook; the fall-through exit must not count"
+        );
     }
 }
 

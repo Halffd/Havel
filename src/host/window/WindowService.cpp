@@ -59,6 +59,49 @@ uint64_t WindowService::getActiveWindow() const {
   return wm_->getActiveWindow();
 }
 
+uint64_t WindowService::getWindowParent(uint64_t id) const {
+  if (!wm_)
+    return 0;
+  return havel::WindowManager::GetWindowParent(static_cast<wID>(id));
+}
+
+std::vector<uint64_t> WindowService::getWindowChildren(uint64_t id) const {
+  if (!wm_)
+    return {};
+  std::vector<uint64_t> result;
+  for (wID child : havel::WindowManager::GetWindowChildren(static_cast<wID>(id))) {
+    result.push_back(static_cast<uint64_t>(child));
+  }
+  return result;
+}
+
+std::vector<std::pair<std::string, std::string>>
+WindowService::getWindowProperties(uint64_t id) const {
+  if (!wm_)
+    return {};
+  return havel::WindowManager::GetWindowProperties(static_cast<wID>(id));
+}
+
+std::vector<uint8_t> WindowService::getWindowIcon(uint64_t id, int &width,
+                                                  int &height) const {
+  if (!wm_) {
+    width = height = 0;
+    return {};
+  }
+  return havel::WindowManager::GetWindowIcon(static_cast<wID>(id), width,
+                                             height);
+}
+
+std::vector<uint8_t> WindowService::captureWindow(uint64_t id, int &width,
+                                                  int &height) const {
+  if (!wm_) {
+    width = height = 0;
+    return {};
+  }
+  return havel::WindowManager::CaptureWindow(static_cast<wID>(id), width,
+                                             height);
+}
+
 // =========================================================================
 // Window query functions
 // =========================================================================

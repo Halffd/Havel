@@ -7,13 +7,12 @@
 // and the middle is exactly half of it. The readback therefore returned half
 // the real value for every linear ramp.
 //
-// That is not cosmetic: brightness.increase() is read-then-write
-// (modules/app/brightness.hv: `let current = brightness.get()` then
-// `brightness.set(current + amount)`), so a halved readback made every
-// increase() step land below where it started and the screen dimmed on the
-// first keypress. getBrightnessGamma() already carries that fix in a comment
-// and uses the ramp top; this test pins the same invariant on the helper that
-// had been missed.
+// That is not cosmetic: brightness.increase() steps a monitor from its current
+// value (BrightnessManager::increaseBrightness, reached via the
+// brightness.increase host function), so a halved readback made every increase()
+// step land below where it started and the screen dimmed on the first keypress.
+// getBrightnessGamma() already carries that fix in a comment and uses the ramp
+// top; this test pins the same invariant on the helper that had been missed.
 //
 // Pure function of the caller-supplied ramp, so no X display is required --
 // which is what lets this run inside the headless ctest sandbox. The

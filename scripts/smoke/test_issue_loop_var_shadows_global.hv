@@ -1,0 +1,48 @@
+// Regression: a for-loop iterator shadowing a pre-existing script global
+// compiled inconsistently. LexicalResolver's __main__ early check returned
+// Global for every name in global_variables_ BEFORE searching local scopes,
+// so `v = 3; for v in vals { total = total + v }` bound the ITERATOR to a
+// local slot (STORE_VAR via declarationSlot) but the body's READS of v to
+// the stale global: the loop body saw v = 3 on every iteration and total
+// ended up 12 instead of 6 (see test_cooperative_async.hv's "sum mismatch").
+// The fix lets a nested-scope declaration shadow the global for reads.
+// Expected result: body reads see each iterated element; total == 6.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+v = 3
+vals = [0, 1, 2, 3]
+
+total = 0
+seen = []
+for v in vals {
+  total = total + v
+  seen.push(v)
+}
+
+assertEq(total, 6, "accumulator uses shadowed loop var")
+assertEq(seen, [0, 1, 2, 3], "body sees each element")
+
+// A closure created inside the loop and called within the same iteration
+// must see the current element (the early return also used to cut off
+// upvalue capture of the loop-local entirely).
+lastSeen = null
+for v in vals {
+  probe = fn() { return v }
+  lastSeen = probe()
+}
+assertEq(lastSeen, 3, "closure called in-iteration sees current value")
+
+// Plain globals assigned inside a loop body must keep resolving as globals
+// (no scope entry is created for them any more).
+w = 0
+for i in 0 .. 3 {
+  w = w + i
+}
+assertEq(w, 6, "plain global assigned in loop body accumulates")
+
+print("ok")

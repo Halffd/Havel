@@ -2,9 +2,11 @@
 #include "utils/Logger.hpp"
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <string>
 #include <thread>
 
 namespace havel {
@@ -514,6 +516,255 @@ wID X11Backend::findWindowByTitle(const std::string &title) {
     XFree(children);
   }
   return result;
+}
+
+wID X11Backend::getWindowParent(wID id) {
+  if (id == 0) return 0;
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return 0;
+
+  ::Window rootReturn, parentReturn = 0;
+  ::Window *childrenReturn = nullptr;
+  unsigned int nChildren = 0;
+  if (XQueryTree(display, id, &rootReturn, &parentReturn, &childrenReturn,
+                 &nChildren)) {
+    if (childrenReturn) XFree(childrenReturn);
+    return static_cast<wID>(parentReturn);
+  }
+  return 0;
+}
+
+std::vector<wID> X11Backend::getWindowChildren(wID id) {
+  std::vector<wID> result;
+  if (id == 0) return result;
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return result;
+
+  ::Window rootReturn, parentReturn;
+  ::Window *childrenReturn = nullptr;
+  unsigned int nChildren = 0;
+  if (XQueryTree(display, id, &rootReturn, &parentReturn, &childrenReturn,
+                 &nChildren)) {
+    result.reserve(nChildren);
+    for (unsigned int i = 0; i < nChildren; ++i) {
+      result.push_back(static_cast<wID>(childrenReturn[i]));
+    }
+  }
+  if (childrenReturn) XFree(childrenReturn);
+  return result;
+}
+
+std::vector<std::pair<std::string, std::string>>
+X11Backend::getWindowProperties(wID id) {
+  std::vector<std::pair<std::string, std::string>> result;
+  if (id == 0) return result;
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return result;
+
+  int nProps = 0;
+  Atom *propAtoms = XListProperties(display, id, &nProps);
+  if (!propAtoms) return result;
+  result.reserve(static_cast<size_t>(nProps));
+
+  const Atom stringAtom = XA_STRING;
+  const Atom utf8Atom = XInternAtom(display, "UTF8_STRING", x11::XFalse);
+  const Atom compoundAtom = XInternAtom(display, "COMPOUND_TEXT", x11::XFalse);
+
+  for (int p = 0; p < nProps; ++p) {
+    Atom actualType = x11::XNone;
+    int actualFormat = 0;
+    unsigned long nitems = 0, bytesAfter = 0;
+    unsigned char *prop = nullptr;
+    if (XGetWindowProperty(display, id, propAtoms[p], 0, 4096, x11::XFalse,
+                           AnyPropertyType, &actualType, &actualFormat,
+                           &nitems, &bytesAfter,
+                           &prop) != x11::XSuccess ||
+        !prop) {
+      continue;
+    }
+
+    char *name = XGetAtomName(display, propAtoms[p]);
+    if (!name) {
+      XFree(prop);
+      continue;
+    }
+
+    std::string value;
+    if (actualType == stringAtom || actualType == utf8Atom ||
+        actualType == compoundAtom) {
+      // Text property: bytes are the payload.
+      value.assign(reinterpret_cast<char *>(prop),
+                   reinterpret_cast<char *>(prop) + nitems);
+    } else if (actualType == XA_CARDINAL || actualType == XA_INTEGER) {
+      // Numeric property: render every item (atoms such as _NET_WM_STATE
+      // hold arrays of cardinals).
+      if (actualFormat == 32) {
+        const unsigned long *items =
+            reinterpret_cast<const unsigned long *>(prop);
+        for (unsigned long i = 0; i < nitems; ++i) {
+          if (!value.empty()) value += " ";
+          value += std::to_string(items[i]);
+        }
+      } else if (actualFormat == 16) {
+        const unsigned short *items =
+            reinterpret_cast<const unsigned short *>(prop);
+        for (unsigned long i = 0; i < nitems; ++i) {
+          if (!value.empty()) value += " ";
+          value += std::to_string(items[i]);
+        }
+      } else if (actualFormat == 8) {
+        const unsigned char *items = prop;
+        for (unsigned long i = 0; i < nitems; ++i) {
+          if (!value.empty()) value += " ";
+          value += std::to_string(static_cast<unsigned>(items[i]));
+        }
+      }
+    } else if (actualType == XA_ATOM) {
+      // Atom array: render each referenced atom's name.
+      const Atom *items = reinterpret_cast<const Atom *>(prop);
+      for (unsigned long i = 0; i < nitems; ++i) {
+        char *refName = XGetAtomName(display, items[i]);
+        if (refName) {
+          if (!value.empty()) value += " ";
+          value += refName;
+          XFree(refName);
+        }
+      }
+    } else {
+      // Binary/unknown type: report the type name so the key still shows up.
+      char *typeName = XGetAtomName(display, actualType);
+      value = typeName ? std::string("<") + typeName + std::string(">")
+                       : std::string("<binary>");
+      if (typeName) XFree(typeName);
+    }
+
+    result.emplace_back(name, value);
+    XFree(name);
+    XFree(prop);
+  }
+  XFree(propAtoms);
+  return result;
+}
+
+std::vector<uint8_t> X11Backend::getWindowIcon(wID id, int &width,
+                                                int &height) {
+  width = height = 0;
+  std::vector<uint8_t> rgba;
+  if (id == 0) return rgba;
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return rgba;
+
+  Atom iconAtom = XInternAtom(display, "_NET_WM_ICON", x11::XTrue);
+  if (iconAtom == x11::XNone) return rgba;
+
+  Atom actualType = x11::XNone;
+  int actualFormat = 0;
+  unsigned long nitems = 0, bytesAfter = 0;
+  unsigned char *prop = nullptr;
+  if (XGetWindowProperty(display, id, iconAtom, 0, 64 * 1024, x11::XFalse,
+                         XA_CARDINAL, &actualType, &actualFormat, &nitems,
+                         &bytesAfter, &prop) != x11::XSuccess ||
+      !prop || actualFormat != 32) {
+    if (prop) XFree(prop);
+    return rgba;
+  }
+
+  // _NET_WM_ICON packs one or more icons as [width, height, ARGB*w*h]
+  // cardinals back to back. Keep the largest (the first is not guaranteed
+  // to be the biggest).
+  const unsigned long *cardinals =
+      reinterpret_cast<const unsigned long *>(prop);
+  size_t offset = 0;
+  const unsigned long *best = nullptr;
+  unsigned long bestW = 0, bestH = 0;
+  while (offset + 2 <= nitems) {
+    unsigned long w = cardinals[offset];
+    unsigned long h = cardinals[offset + 1];
+    if (w == 0 || h == 0 || offset + 2 + w * h > nitems) {
+      break;
+    }
+    if (w * h > bestW * bestH) {
+      best = cardinals + offset;
+      bestW = w;
+      bestH = h;
+    }
+    offset += 2 + w * h;
+  }
+
+  if (best && bestW > 0 && bestH > 0 &&
+      bestW <= 512 && bestH <= 512) {
+    rgba.reserve(static_cast<size_t>(bestW * bestH) * 4);
+    for (unsigned long i = 0; i < bestW * bestH; ++i) {
+      // Pixels are 0xAARRGGBB cardinals; ZPixmap byte order is little-endian
+      // on every platform Havel targets, so bytes arrive as B,G,R,A.
+      unsigned long px = best[2 + i];
+      rgba.push_back(static_cast<uint8_t>((px >> 16) & 0xFF)); // R
+      rgba.push_back(static_cast<uint8_t>((px >> 8) & 0xFF));  // G
+      rgba.push_back(static_cast<uint8_t>(px & 0xFF));         // B
+      rgba.push_back(static_cast<uint8_t>((px >> 24) & 0xFF)); // A
+    }
+    width = static_cast<int>(bestW);
+    height = static_cast<int>(bestH);
+  }
+
+  XFree(prop);
+  return rgba;
+}
+
+std::vector<uint8_t> X11Backend::captureWindow(wID id, int &width,
+                                               int &height) {
+  width = height = 0;
+  std::vector<uint8_t> rgba;
+  if (id == 0) return rgba;
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return rgba;
+
+  ::Window rootReturn;
+  ::Window windowReturn = static_cast<::Window>(id);
+  int xReturn, yReturn;
+  unsigned int wReturn, hReturn, borderReturn, depthReturn;
+  if (!XGetGeometry(display, windowReturn, &rootReturn, &xReturn, &yReturn,
+                    &wReturn, &hReturn, &borderReturn, &depthReturn) ||
+      wReturn == 0 || hReturn == 0) {
+    return rgba;
+  }
+  // Guard absurd sizes (guard against capture budgets measured in GBs).
+  if (wReturn > 16384 || hReturn > 16384) return rgba;
+
+  XImage *image = XGetImage(display, windowReturn, 0, 0,
+                            static_cast<unsigned int>(wReturn),
+                            static_cast<unsigned int>(hReturn), AllPlanes,
+                            ZPixmap);
+  if (!image || !image->data) {
+    if (image) XDestroyImage(image);
+    return rgba;
+  }
+
+  rgba.reserve(static_cast<size_t>(wReturn) * hReturn * 4);
+  const int bpp = image->bits_per_pixel;
+  const bool hasAlpha = depthReturn == 32;
+  for (unsigned int y = 0; y < hReturn; ++y) {
+    const uint8_t *row =
+        reinterpret_cast<const uint8_t *>(image->data) +
+        static_cast<size_t>(y) * image->bytes_per_line;
+    for (unsigned int x = 0; x < wReturn; ++x) {
+      // ZPixmap little-endian: 24bpp = B,G,R,x; 32bpp = B,G,R,A.
+      const uint8_t b = row[static_cast<size_t>(x) * (bpp / 8) + 0];
+      const uint8_t g = row[static_cast<size_t>(x) * (bpp / 8) + 1];
+      const uint8_t r = row[static_cast<size_t>(x) * (bpp / 8) + 2];
+      const uint8_t a =
+          hasAlpha ? row[static_cast<size_t>(x) * (bpp / 8) + 3]
+                   : static_cast<uint8_t>(255);
+      rgba.push_back(r);
+      rgba.push_back(g);
+      rgba.push_back(b);
+      rgba.push_back(a);
+    }
+  }
+  XDestroyImage(image);
+  width = static_cast<int>(wReturn);
+  height = static_cast<int>(hReturn);
+  return rgba;
 }
 
 wID X11Backend::newWindow(const std::string &name, std::vector<int> *dimensions, bool hide) {

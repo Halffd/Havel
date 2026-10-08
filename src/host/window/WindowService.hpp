@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <string>
 #include <vector>
@@ -37,6 +38,17 @@ public:
     struct WindowInfo getWindowAbsolutePosition(uint64_t id) const;
     std::vector<WindowInfo> getAllWindows() const;
     uint64_t getActiveWindow() const;
+
+    // Hierarchy and introspection; backends that cannot provide them keep
+    // the inert defaults (0 / empty), surfaced as 0 / null / empty here.
+    uint64_t getWindowParent(uint64_t id) const;
+    std::vector<uint64_t> getWindowChildren(uint64_t id) const;
+    std::vector<std::pair<std::string, std::string>>
+    getWindowProperties(uint64_t id) const;
+    std::vector<uint8_t> getWindowIcon(uint64_t id, int &width,
+                                       int &height) const;
+    std::vector<uint8_t> captureWindow(uint64_t id, int &width,
+                                       int &height) const;
 
     bool anyWindow(const std::function<bool(const WindowInfo &)> &predicate) const;
     int countWindows(const std::function<bool(const WindowInfo &)> &predicate) const;

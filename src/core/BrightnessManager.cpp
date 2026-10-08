@@ -408,6 +408,13 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() const {
         XRRGetScreenResourcesCurrent(x11_display, x11_root);
     if (!screen_res) {
       error("Failed to get X11 screen resources");
+      // DIAG (all-monitors step): an empty list here means increaseBrightness
+      // / decreaseBrightness / setBrightness silently do nothing on the
+      // 1-arg path while the 2-arg path still works.
+      debug(std::string("getConnectedMonitors: XRRGetScreenResourcesCurrent "
+                        "failed (display=") +
+            (x11_display ? "set" : "null") +
+            " root=" + std::to_string(static_cast<uint64_t>(x11_root)) + ")");
       return {};
     }
 
@@ -1539,10 +1546,26 @@ bool BrightnessManager::increaseBrightness(double amount) {
   // getBrightness(monitor) falls back to gamma for monitors without a
   // stored value; brightness[monitor] (operator[]) would insert a bogus 0.
   bool success = false;
-  for (const auto &monitor : getConnectedMonitors()) {
-    double newBrightness = std::min(1.0, getBrightness(monitor) + amount);
-    if (setBrightness(monitor, newBrightness)) success = true;
+  auto connected = getConnectedMonitors();
+  // DIAG (all-monitors step): the 1-arg form reports no effect while the
+  // 2-arg form works, and the only difference is this loop. Log the inputs
+  // so a live run shows whether the monitor list is empty, the cache is
+  // stale, or setBrightness is failing per monitor.
+  debug("increaseBrightness(amount=" + std::to_string(amount) + "): " +
+        std::to_string(connected.size()) + " connected monitor(s)");
+  for (const auto &monitor : connected) {
+    double current = getBrightness(monitor);
+    double newBrightness = std::min(1.0, current + amount);
+    bool set = setBrightness(monitor, newBrightness);
+    debug("  " + monitor + ": current=" + std::to_string(current) +
+          " -> new=" + std::to_string(newBrightness) +
+          " set=" + (set ? "true" : "false"));
+    if (set) success = true;
   }
+  if (connected.empty())
+    debug("  no monitors: displayMethod=" + displayMethod +
+          " x11_display=" + (x11_display ? "set" : "null") +
+          " x11_root=" + std::to_string(x11_root));
   return success;
 }
 

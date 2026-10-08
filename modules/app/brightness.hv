@@ -7,8 +7,8 @@
 //   brightness.set(0.5)
 //
 // Per-monitor control:
-//   brightness.increase(amount, monitorName)   // name or numeric index
-//   brightness.decrease(amount, monitorName)   // name or numeric index
+//   brightness.increase(amount, monitorName)
+//   brightness.decrease(amount, monitorName)
 
 // Host functions are registered as global brightness.* functions
 // No need to import anything - they're available as brightness.get(), etc.
@@ -53,40 +53,54 @@ fn getMonitors() {
     brightness.getMonitors()
 }
 
-// Convenience functions. No monitor argument: step ALL monitors, each
-// from its own current value (host per-monitor increment, preserves
-// relative differences). With a monitor name or numeric index: step
-// only that monitor.
-fn increase(amount = 0.02, monitor = nil) {
-    if monitor != nil {
-        brightness.increase(amount, monitor)
-    } else {
+// Convenience functions.
+//
+// These delegate to the brightness.increase/decrease host functions rather than
+// reimplementing read-then-write here. The host functions already take
+// (amount, monitorName) and step each monitor from its OWN value; reimplementing
+// it in Havel silently dropped monitorName, so a per-monitor hotkey raised one
+// screen by writing the primary's value to all of them.
+//
+// The one-argument brightness.set() is the ALL-monitors overload -- it does not
+// mean "the primary", it overwrites every attached display. That is why the
+// step has to stay on the host side, where the monitor argument is honoured.
+fn increase(amount = 0.02, monitorName = null) {
+    if monitorName == null {
         brightness.increase(amount)
+    } else {
+        brightness.increase(amount, monitorName)
     }
 }
 
-fn decrease(amount = 0.02, monitor = nil) {
-    if monitor != nil {
-        brightness.decrease(amount, monitor)
-    } else {
+fn decrease(amount = 0.02, monitorName = null) {
+    if monitorName == null {
         brightness.decrease(amount)
+    } else {
+        brightness.decrease(amount, monitorName)
     }
 }
 
-// Per-monitor brightness control (delegates to the host functions):
-//   brightness.increase(0.1, "HDMI-0")   // by output name
-//   brightness.increase(0.1, 0)          // by monitor index
+// Per-monitor brightness control:
+// brightness.increase(amount, monitorName) / brightness.decrease(amount, monitorName)
+// Example:
 //   let monitors = brightness.getMonitors()
-//   let m0 = monitors[0]
-//   brightness.increase(0.1, m0)
-//   brightness.decrease(0.1, m0)
+//   brightness.increase(0.1, monitors[0].name)
+//   brightness.decrease(0.1, monitors[0].name)
 
-fn toggle() {
-    let current = brightness.get()
+fn toggle(monitorName = null) {
+    let current = monitorName == null ? brightness.get() : brightness.get(monitorName)
     if current > 0.5 {
-        brightness.set(0.0)
+        if monitorName == null {
+            brightness.set(0.0)
+        } else {
+            brightness.set(0.0, monitorName)
+        }
     } else {
-        brightness.set(1.0)
+        if monitorName == null {
+            brightness.set(1.0)
+        } else {
+            brightness.set(1.0, monitorName)
+        }
     }
 }
 

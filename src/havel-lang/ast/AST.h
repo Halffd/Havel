@@ -139,6 +139,10 @@ enum class NodeType {
   WildcardPattern, // _ for match statements
   SpreadPattern, // ..rest for array rest patterns
   ConstructorPattern, // Name(p1, p2) constructor destructuring in match
+  OnEventStatement, // generic on-event subscriptions (file.changed, "my.event")
+  OnEventExpression, // `let w = on file.changed("./x") { ... }` — subscription as a value
+  EmitStatement,    // emit "my.event" { payload } — sugar over event.publish
+  RelationalCaseTest, // <0, >10, <=2, >=10 relational case test in switch
   // Literals
   StringLiteral,                // "Hello"
   CharLiteral,                  // 'x' single char
@@ -1413,6 +1417,34 @@ struct CharLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Relational case test for switch/case: `<0`, `>10`, `<=2`, `>=10`.
+// Compares the switch subject against operand with op (the switch compile
+// emits LOAD subject, operand, LT/LTE/GT/GTE instead of EQ).
+struct RelationalCaseTest : public Expression {
+  BinaryOperator op;
+  std::unique_ptr<Expression> operand;
+
+  RelationalCaseTest(BinaryOperator o, std::unique_ptr<Expression> rhs)
+      : op(o), operand(std::move(rhs)) {
+    kind = NodeType::RelationalCaseTest;
+  }
+
+  std::string toString() const override {
+    std::string opStr;
+    switch (op) {
+    case BinaryOperator::Less: opStr = "<"; break;
+    case BinaryOperator::LessEqual: opStr = "<="; break;
+    case BinaryOperator::Greater: opStr = ">"; break;
+    case BinaryOperator::GreaterEqual: opStr = ">="; break;
+    default: opStr = "?"; break;
+    }
+    return "RelationalCaseTest{" + opStr + " " +
+           (operand ? operand->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Range Pattern - 'a'..='z' inclusive range
 struct RangePattern : public Expression {
   std::unique_ptr<Expression> start;
@@ -2064,6 +2096,85 @@ struct OnMessageStatement : public Statement {
   std::string toString() const override {
     return "OnMessageStatement{var: " + messageVar + ", body: " +
            (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Event Statement (on file.changed("path") { ... } / on window.created
+// { ... } / on "my.event" { ... }). Compiles to a generic subscription:
+// the body becomes a handler function and REGISTER_EVENT calls
+// event.subscribe(name, handler, [filter]). The runtime, not the parser,
+// assigns meaning to event names.
+struct OnEventStatement : public Statement {
+  std::string eventName;                    // dotted or plain name
+  std::unique_ptr<Expression> eventArg;     // optional argument (e.g. path)
+  std::unique_ptr<Expression> filter;       // optional `where` predicate
+  std::unique_ptr<Statement> body;
+
+  OnEventStatement(std::string name, std::unique_ptr<Expression> arg,
+                   std::unique_ptr<Expression> filt,
+                   std::unique_ptr<Statement> bd)
+      : eventName(std::move(name)), eventArg(std::move(arg)),
+        filter(std::move(filt)), body(std::move(bd)) {
+    kind = NodeType::OnEventStatement;
+  }
+
+  std::string toString() const override {
+    std::string s = "OnEventStatement{event: " + eventName;
+    if (eventArg) s += "(arg)";
+    if (filter) s += ", filter";
+    s += ", body: " + (body ? body->toString() : "nullptr") + "}";
+    return s;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Event Expression — the same subscription as OnEventStatement but in
+// expression position: `let w = on file.changed("./foo") { ... }` / `w =
+// on window.focused { ... }`. Compiles to event.subscribe whose return
+// (the subscription id) is the expression's value.
+struct OnEventExpression : public Expression {
+  std::string eventName;
+  std::unique_ptr<Expression> eventArg;
+  std::unique_ptr<Expression> filter;
+  std::unique_ptr<Statement> body;
+
+  OnEventExpression(std::string name, std::unique_ptr<Expression> arg,
+                    std::unique_ptr<Expression> filt,
+                    std::unique_ptr<Statement> bd)
+      : eventName(std::move(name)), eventArg(std::move(arg)),
+        filter(std::move(filt)), body(std::move(bd)) {
+    kind = NodeType::OnEventExpression;
+  }
+
+  std::string toString() const override {
+    std::string s = "OnEventExpression{event: " + eventName;
+    if (eventArg) s += "(arg)";
+    if (filter) s += ", filter";
+    s += ", body: " + (body ? body->toString() : "nullptr") + "}";
+    return s;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Emit Statement (emit "my.event" { foo: 123 } / emit mpv.paused) —
+// syntax sugar over the event.publish host function. Libraries build
+// their own event APIs without touching the compiler.
+struct EmitStatement : public Statement {
+  std::string eventName;
+  std::unique_ptr<Expression> payload; // optional object literal
+
+  EmitStatement(std::string name, std::unique_ptr<Expression> pl)
+      : eventName(std::move(name)), payload(std::move(pl)) {
+    kind = NodeType::EmitStatement;
+  }
+
+  std::string toString() const override {
+    return "EmitStatement{event: " + eventName +
+           (payload ? ", payload" : "") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3284,6 +3395,10 @@ public:
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
   virtual void visitCharLiteral(const CharLiteral &node) = 0;
   virtual void visitRangePattern(const RangePattern &node) = 0;
+  virtual void visitRelationalCaseTest(const RelationalCaseTest &node) = 0;
+  virtual void visitOnEventStatement(const OnEventStatement &node) = 0;
+  virtual void visitOnEventExpression(const OnEventExpression &node) = 0;
+  virtual void visitEmitStatement(const EmitStatement &node) = 0;
 
   virtual void visitInterpolatedStringExpression(
       const InterpolatedStringExpression &node) = 0;
@@ -3443,6 +3558,22 @@ inline void BlockExpression::accept(ASTVisitor &visitor) const {
 
 inline void HotkeyBinding::accept(ASTVisitor &visitor) const {
   visitor.visitHotkeyBinding(*this);
+}
+
+inline void RelationalCaseTest::accept(ASTVisitor &visitor) const {
+  visitor.visitRelationalCaseTest(*this);
+}
+
+inline void OnEventStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnEventStatement(*this);
+}
+
+inline void OnEventExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitOnEventExpression(*this);
+}
+
+inline void EmitStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitEmitStatement(*this);
 }
 
 inline void HotkeyExpression::accept(ASTVisitor &visitor) const {

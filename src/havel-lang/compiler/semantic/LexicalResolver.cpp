@@ -125,11 +125,40 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                 top_level_functions_.insert(fn.name->symbol);
             }
     }
+  } else if (statement->kind == ast::NodeType::ImportStatement) {
+    // `import math` / `import { item, item as alias } from "module"` /
+    // `import a, b from "module"` / `import * from "module"`.
+    const auto &import = static_cast<const ast::ImportStatement &>(*statement);
+    if (import.modulePath.empty()) {
+      // No 'from': the items are built-in module names (like `use`).
+      for (const auto &[name, alias] : import.importedItems) {
+        global_variables_.insert(alias);
+        if (name == "*") {
+          // `import * from "mod"`: the module members resolve bare.
+          wildcard_modules_.push_back(import.modulePath.empty() ? alias : import.modulePath);
+        }
+      }
+    } else {
+      // With 'from': the item aliases resolve as globals; the compile
+      // binds them to the module's members (LOAD_GLOBAL basename,
+      // OBJECT_GET item, STORE_GLOBAL alias).
+      for (const auto &[name, alias] : import.importedItems) {
+        global_variables_.insert(alias);
+        if (name == "*") {
+          // `import * from "mod"`: the module members resolve bare.
+          wildcard_modules_.push_back(import.modulePath);
+        }
+      }
+    }
   } else if (statement->kind == ast::NodeType::UseStatement) {
     const auto &use = static_cast<const ast::UseStatement &>(*statement);
     if (!use.isFileImport) {
       for (const auto &module : use.moduleNames) {
         global_variables_.insert(module);
+        if (use.isWildcard) {
+          // `use mod.*`: module members resolve bare (runtime OBJECT_GET).
+          wildcard_modules_.push_back(module);
+        }
       }
     } else {
       if (use.isNamedImport) {
@@ -139,8 +168,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                                   : use.importNames[i];
           global_variables_.insert(alias);
         }
-      } else if (!use.alias.empty()) {
-        global_variables_.insert(use.alias);
+      } else if (!use.alias.empty()) {        global_variables_.insert(use.alias);
       }
     }
   }
@@ -297,6 +325,19 @@ if (ctx.owner) {
 			auto *m = static_cast<const ast::TraitMethod *>(ctx.owner);
 			result_.trait_method_local_counts[m] = ctx.next_slot;
 			result_.trait_method_upvalues[m] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnStartStatement ||
+		           ctx.owner->kind == ast::NodeType::OnReloadStatement) {
+			// Lifecycle hook bodies compile as chunk-level functions; their
+			// upvalues must reach compileOnBlock.
+			result_.on_block_upvalues[ctx.owner] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnEventStatement) {
+			// `on <event> { ... }` handler functions; upvalues reach
+			// compileOnEventStatement.
+			result_.on_event_upvalues[ctx.owner] = ctx.upvalues;
+		} else if (ctx.owner->kind == ast::NodeType::OnEventExpression) {
+			// `let w = on <event> { ... }` handler functions (expression
+			// position); upvalues reach compileOnEventExpression.
+			result_.on_event_upvalues[ctx.owner] = ctx.upvalues;
 		}
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
@@ -764,6 +805,28 @@ auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     }
     if (while_stmt.body) {
       resolveStatement(*while_stmt.body);
+    }
+    break;
+  }
+
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt =
+        static_cast<const ast::SwitchStatement &>(statement);
+    if (switch_stmt.expression) {
+      resolveExpression(*switch_stmt.expression);
+    }
+    // Cases resolve in the enclosing scope (no new scope per case — the
+    // subject is compiled into a hidden local, tests compare against it).
+    for (const auto &case_node : switch_stmt.cases) {
+      if (!case_node) {
+        continue;
+      }
+      if (case_node->test) {
+        resolveExpression(*case_node->test);
+      }
+      if (case_node->body) {
+        resolveStatement(*case_node->body);
+      }
     }
     break;
   }
@@ -1253,6 +1316,55 @@ case ast::NodeType::UseStatement:
   // Global imports already handled in first pass of resolve()
   break;
 
+case ast::NodeType::ImportStatement:
+  // Global imports already handled in first pass of resolve()
+  break;
+
+case ast::NodeType::OnStartStatement:
+case ast::NodeType::OnReloadStatement: {
+  // Lifecycle hook bodies resolve like function bodies (own function
+  // context — the compile creates a chunk-level function per block).
+  const ast::Statement *onBase = &statement;
+  const ast::Statement *onBody = nullptr;
+  if (statement.kind == ast::NodeType::OnStartStatement) {
+    onBody = static_cast<const ast::OnStartStatement &>(statement).body.get();
+  } else {
+    onBody = static_cast<const ast::OnReloadStatement &>(statement).body.get();
+  }
+  beginFunction(onBase);
+  if (onBody) {
+    resolveStatement(*onBody);
+  }
+  endFunction();
+  break;
+}
+
+case ast::NodeType::OnEventStatement: {
+  // `on <event> { ... }` handler: own function context with one `event`
+  // parameter (the payload passed at dispatch time). The filter and the
+  // body both see `event`.
+  const auto &onEvent = static_cast<const ast::OnEventStatement &>(statement);
+  beginFunction(&onEvent);
+  declareLocal("event", nullptr, false);
+  if (onEvent.filter) {
+    resolveExpression(*onEvent.filter);
+  }
+  if (onEvent.body) {
+    resolveStatement(*onEvent.body);
+  }
+  endFunction();
+  break;
+}
+
+case ast::NodeType::EmitStatement: {
+  // `emit <name> [payload]` — resolve the payload object's fields.
+  const auto &emit = static_cast<const ast::EmitStatement &>(statement);
+  if (emit.payload) {
+    resolveExpression(*emit.payload);
+  }
+  break;
+}
+
 case ast::NodeType::DeferStatement: {
         const auto &defer_stmt = static_cast<const ast::DeferStatement &>(statement);
         if (defer_stmt.expression) resolveExpression(*defer_stmt.expression);
@@ -1264,6 +1376,22 @@ case ast::NodeType::DeferStatement: {
         if (withStmt.object) {
             resolveExpression(*withStmt.object);
         }
+        // Member flattening: track the with-object so bare identifiers in
+        // the body resolve via the owner at runtime. Only Identifier
+        // objects can be tracked; the object's resolution is known here.
+        bool pushedWith = false;
+        if (withStmt.object) {
+            if (auto *objIdent = dynamic_cast<const ast::Identifier *>(withStmt.object.get())) {
+                WithOwner owner;
+                owner.name = objIdent->symbol;
+                if (auto binding = resolveIdentifier(objIdent->symbol)) {
+                    owner.is_local = binding->kind == ResolvedBindingKind::Local;
+                    owner.slot = binding->slot;
+                }
+                with_stack_.push_back(owner);
+                pushedWith = true;
+            }
+        }
         beginScope();
         if (withStmt.alias) {
             declareLocal(withStmt.alias->symbol, withStmt.alias.get(), true);
@@ -1272,6 +1400,9 @@ case ast::NodeType::DeferStatement: {
             if (s) resolveStatement(*s);
         }
         endScope();
+        if (pushedWith) {
+            with_stack_.pop_back();
+        }
         break;
     }
 
@@ -1303,6 +1434,34 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         if (top_level_structs_.count(id.symbol)) {
             noteIdentifierBinding(
                 id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol, false});
+            break;
+        }
+    }
+    // Member flattening: inside a with-block (or after `use mod.*`), bare
+    // identifiers that are not REAL known globals resolve via the owners at
+    // runtime (OBJECT_GET per owner, first non-null wins; then a fallback
+    // LOAD_GLOBAL of the bare name so host functions like print still work).
+    // resolveIdentifier returns a lenient Global for unknown names at main
+    // scope, so a Global binding alone is not evidence of a real global.
+    bool isRealGlobal =
+        global_variables_.count(id.symbol) > 0 ||
+        known_globals_.count(id.symbol) > 0 ||
+        top_level_functions_.count(id.symbol) > 0 ||
+        top_level_structs_.count(id.symbol) > 0;
+    bool hasWithScope = !with_stack_.empty() || !wildcard_modules_.empty();
+    if (hasWithScope && (!binding || (binding->kind == ResolvedBindingKind::Global && !isRealGlobal))) {
+        ResolvedBinding withBinding;
+        withBinding.kind = ResolvedBindingKind::WithMember;
+        withBinding.member = id.symbol;
+        for (auto it = with_stack_.rbegin(); it != with_stack_.rend(); ++it) {
+            withBinding.owners.push_back(
+                WithMemberOwner{it->name, it->is_local, it->slot});
+        }
+        for (const auto &mod : wildcard_modules_) {
+            withBinding.owners.push_back(WithMemberOwner{mod, false, 0});
+        }
+        if (!withBinding.owners.empty()) {
+            noteIdentifierBinding(id, withBinding);
             break;
         }
     }
@@ -1444,8 +1603,13 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             bool isGlobalScope = !insideFunction;
 
             if (isGlobalScope) {
-          // At top-level program scope - declare as global variable
-          uint32_t slot = declareLocal(ident.symbol, &ident, false);
+          // At top-level program scope - declare as global variable.
+          // No declareLocal here: the binding is Global (stores go through
+          // STORE_GLOBAL), so a scope entry + local slot would be junk
+          // state. It misfired the nested-scope shadow check in
+          // resolveIdentifierInFunction: body reads of an implicit global
+          // assigned inside a loop resolved to the never-written local
+          // slot (nulls in test_cooperative_async) instead of the global.
           global_variables_.insert(ident.symbol);
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
@@ -1480,7 +1644,9 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
-              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              // Global binding: no declareLocal (see the plain-assignment
+              // isGlobalScope branch - a scope entry + slot here is junk
+              // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
@@ -1530,7 +1696,9 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
-              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              // Global binding: no declareLocal (see the plain-assignment
+              // isGlobalScope branch - a scope entry + slot here is junk
+              // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
@@ -1600,7 +1768,11 @@ case ast::NodeType::MultipleAssignment: {
                 // Implicit declaration at top level
                 bool isGlobalScope = (function_stack_.size() == 1);
                 if (isGlobalScope) {
-                    uint32_t slot = declareLocal(ident.symbol, &ident, false);
+                    // Global binding: no declareLocal (see the plain-assignment
+                    // isGlobalScope branch - a scope entry + slot here is junk
+                    // state that misfires the nested-scope shadow check: the
+                    // stub slot is never written because stores go through
+                    // STORE_GLOBAL, so a read resolving to it saw null).
                     global_variables_.insert(ident.symbol);
                     ResolvedBinding newBinding;
                     newBinding.kind = ResolvedBindingKind::Global;
@@ -1992,6 +2164,30 @@ case ast::NodeType::MemberExpression: {
         break;
     }
 
+    case ast::NodeType::RelationalCaseTest: {
+        // Relational case pattern (<0, >10, <=2, >=10): only the operand
+        // carries symbols to resolve.
+        const auto &rel = static_cast<const ast::RelationalCaseTest &>(expression);
+        if (rel.operand) resolveExpression(*rel.operand);
+        break;
+    }
+
+    case ast::NodeType::OnEventExpression: {
+        // `let w = on <event> { ... }` — own function context with one
+        // `event` parameter (same shape as the statement form).
+        const auto &onEvent = static_cast<const ast::OnEventExpression &>(expression);
+        beginFunction(&onEvent);
+        declareLocal("event", nullptr, false);
+        if (onEvent.filter) {
+          resolveExpression(*onEvent.filter);
+        }
+        if (onEvent.body) {
+          resolveStatement(*onEvent.body);
+        }
+        endFunction();
+        break;
+    }
+
     default:
         break;
     }
@@ -2016,8 +2212,30 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
 
   // Program-root bindings that are tracked as globals should always resolve
   // as globals in __main__, even though they also have declaration slots.
+  // A genuine inner-scope local (for-loop iterators, let/val declared inside
+  // a nested block or loop body) SHADOWS the root global: without this, a
+  // pre-existing root global with the same name captured every read of the
+  // loop variable (the loop machinery stored the element into the local
+  // slot via the declaration, but body reads resolved to the stale global).
+  // No name-based exemption: the root-level assignment paths no longer create
+  // scope entries for implicit globals (the isGlobalScope branches note a
+  // Global binding WITHOUT declareLocal), so any entry found in a nested scope
+  // is a genuine local - a loop iterator, a let in a block, a match pattern
+  // binding - and must win over the global. Exempting implicitly-declared
+  // names here broke for-each iterators that reused such a name: the iterator
+  // was stored into its local slot but body reads resolved to the stale
+  // root global (test_issue_async_global_accumulation: sum 12 instead of 6).
   if (function_index == 0 && global_variables_.count(name) > 0) {
-    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    bool shadowed_by_inner_local = false;
+    for (size_t sc = 1; sc < ctx.scopes.size(); ++sc) {
+      if (ctx.scopes[sc].count(name) > 0) {
+        shadowed_by_inner_local = true;
+        break;
+      }
+    }
+    if (!shadowed_by_inner_local) {
+      return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    }
   }
 
   // FIRST: Search local scopes (for loop vars, nested let declarations, etc.)

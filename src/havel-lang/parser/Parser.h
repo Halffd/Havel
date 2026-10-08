@@ -126,6 +126,14 @@ private:
   size_t tokens_consumed_ = 0;
   int recursion_depth_ = 0;
 
+  // Column of the most recent `if` that saw an `else` token but declined it
+  // because the token was dedented below that `if`, plus the column of that
+  // `else` itself. Columns are 0 when nothing was declined. Lets
+  // parseStatement() name the real cause instead of blaming a missing `if`
+  // when the `else` actually lost its owner to indentation.
+  size_t declined_else_if_column_ = 0;
+  size_t declined_else_col_ = 0;
+
   // Prevent copying/moving - Parser must not be copied or moved
   // to avoid memory corruption and invalid state
   Parser(const Parser &) = delete;
@@ -256,12 +264,33 @@ private:
 
   // Havel-specific parsers
   std::unique_ptr<ast::Statement> parseLetDeclaration();
-        std::unique_ptr<ast::Statement> parseIfStatement(size_t effectiveColumn = 0, size_t chainColumn = 0);
+        std::unique_ptr<ast::Statement> parseIfStatement(size_t effectiveColumn = 0, size_t chainColumn = 0, bool skipKeyword = false);
   std::unique_ptr<ast::Statement> parseWhileStatement();
   std::unique_ptr<ast::Statement> parseDoWhileStatement();
   std::unique_ptr<ast::Statement> parseForStatement();
   std::unique_ptr<ast::Statement> parseLoopStatement();
   std::unique_ptr<ast::Statement> parseSwitchStatement();
+  // `case <expr> of { <pat> -> <body> }` (TODO #3 Erlang variant) — same
+  // subject/case-list shape as switch; `of` is lexed as an Identifier (no
+  // Of keyword exists). Shares parseSwitchCaseList with switch.
+  std::unique_ptr<ast::Statement> parseCaseOfStatement();
+  // Shared brace-delimited case list: `pat -> body` / `pat => body` /
+  // `else` / `_` wildcard tests, newline-separated cases.
+  std::vector<std::unique_ptr<ast::SwitchCase>> parseSwitchCaseList();
+  // `on <dotted-name-or-string> [(arg)] [where <expr>] { body }` — a generic
+  // event subscription (architecture doc: `on` as syntax sugar over
+  // subscriptions).
+  std::unique_ptr<ast::Statement> parseOnEventStatement();
+  // `on <event> { body }` in expression position: `let w = on ... { ... }`.
+  // Shares parseOnEventParts with the statement form.
+  std::unique_ptr<ast::Expression> parseOnEventExpression();
+  // Shared: the event name, optional (arg), optional where-filter, body.
+  bool parseOnEventParts(std::string &nameOut,
+                         std::unique_ptr<ast::Expression> &argOut,
+                         std::unique_ptr<ast::Expression> &filterOut,
+                         std::unique_ptr<ast::Statement> &bodyOut);
+  // `emit <name-or-string> [payload]` — syntax sugar over event.publish.
+  std::unique_ptr<ast::Statement> parseEmitStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();
   std::unique_ptr<ast::Statement> parseRepeatStatement();
@@ -293,6 +322,14 @@ private:
   std::unique_ptr<ast::Statement> parseDslRepeatFor();
   std::unique_ptr<ast::Statement> parseDslPrint();
   std::unique_ptr<ast::Statement> parseDslWhenBlock();
+  // Erlang-style multi-clause function heads (TODO #2):
+  //   fib(N) if N < 2 => body1
+  //   fib(N) => body2
+  // Consecutive same-name clauses merge into one FunctionDeclaration whose
+  // body is an if-chain dispatched by guard order. Also upgrades the
+  // previously-erroring `call(...) if cond { ... }` to a real if statement.
+  std::unique_ptr<ast::Statement>
+  parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall);
   // Last input command batch built inside a dsl block, re-emitted by `!!`.
   std::vector<ast::InputCommand> lastDslInputCmds_;
   void rememberDslInputCmds(const std::vector<ast::InputCommand> &cmds);
@@ -395,6 +432,26 @@ private:
 
   // Main Pratt expression parser - parse with given right binding power
   std::unique_ptr<ast::Expression> parsePrattExpression(int rbp = 0);
+
+  // Continue Pratt parsing with `left` already parsed, so callers that build a
+  // node by hand can still absorb the infix/postfix tail of the expression.
+  std::unique_ptr<ast::Expression>
+  parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left);
+
+  // Condition of a hotkey prefix (`X when <cond> =>`) or of a `when` block.
+  // Stops before the caller's `=>` / `{` terminator, and understands the
+  // spec's bare-word shorthand: `when mode gaming` means `when mode ==
+  // "gaming"`.
+  std::unique_ptr<ast::Expression> parseConditionExpression();
+
+  // Consume a leading `when`/`if` (if present) and parse the condition that
+  // follows it. Used by every hotkey binding form so the condition grammar
+  // lives in exactly one place.
+  std::unique_ptr<ast::Expression> parseHotkeyPrefixCondition();
+
+  // True for a bare word that can stand in for the right-hand side of a
+  // shorthand condition (`when title Firefox`, `when title "genshin"`).
+  static bool isConditionShorthandWord(TokenType type);
 
   // Get left binding power for a token type - inline for performance
   inline int getBindingPower(TokenType type) const;

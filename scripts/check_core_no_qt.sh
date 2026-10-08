@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Qt leak guard for the embeddable core.
 #
-# libhavel_core.a and libhavel_lang.a are embedded by Qt-free hosts (havel-wm,
-# the cranelift AOT shim, the AOT runtime). Those archives must not need Qt to
-# link: a single Qt symbol reference in them forces every embedder to link the
-# whole Qt stack, and a single Qt header in their include closure couples the
-# core build to Qt being installed.
+# libhavel_core.a, libhavel_runtime.a and libhavel_compiler.a are embedded by
+# Qt-free hosts (havel-wm, the cranelift AOT shim, the AOT runtime). Those
+# archives must not need Qt to link: a single Qt symbol reference in them
+# forces every embedder to link the whole Qt stack, and a single Qt header in
+# their include closure couples the core build to Qt being installed.
 #
 # The bridge layer already reaches Qt exclusively through explicit
 # registration slots (src/host/module/BridgeSelection.hpp), so this guard has
@@ -13,8 +13,8 @@
 #
 #   1. Source gate: no core-facing bridge TU may include a Qt header, include
 #      qt.hpp, or branch on HAVE_QT_EXTENSION.
-#   2. Symbol gate: libhavel_lang_core.a and libhavel_lang.a must contain zero
-#      undefined Qt symbols.
+#   2. Symbol gate: libhavel_lang_core.a, libhavel_runtime.a and
+#      libhavel_compiler.a must contain zero undefined Qt symbols.
 #   3. Symbol gate with a known-leaks ledger for libhavel_core.a: the service
 #      layer has not been extracted yet, so the exact set of Qt-touching
 #      objects is pinned here. The ledger is drift-checked in both directions:
@@ -121,7 +121,8 @@ check_archive_zero() {
 echo "== part 2: language archives must be Qt-free =="
 if [ -f "${BUILD_DIR}/libhavel_lang_core.a" ]; then
     check_archive_zero "libhavel_lang_core.a" "libhavel_lang_core.a"
-    check_archive_zero "libhavel_lang.a" "libhavel_lang.a"
+    check_archive_zero "libhavel_runtime.a" "libhavel_runtime.a"
+    check_archive_zero "libhavel_compiler.a" "libhavel_compiler.a"
 else
     echo "SKIP: ${BUILD_DIR}/libhavel_lang_core.a not built"
 fi

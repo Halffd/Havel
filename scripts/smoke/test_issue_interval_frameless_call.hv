@@ -1,0 +1,35 @@
+// Regression: interval/every callbacks died with "No active call frame".
+// executePendingTimerCallbacks -> invokeCallback -> VM::call entered from C++
+// with frame_count_ == 0 (no caller frame); the interpreter's module-call
+// setup unconditionally did `uint32_t cid = currentFrame().closure_id` —
+// dead code (the closure lookup result was never used) whose only effect
+// was the throw, so async_mod.every's interval closure (a module closure)
+// never fired and the counter stayed 0 (scripts/tests/test_async.hv test 9).
+// The dead lookup is removed; module-closure calls from frameless C++
+// entries (timers, hotkeys, REPL) now run.
+// Expected result: the interval fires several times within the window and
+// stops after .stop().
+use async_mod
+
+fn assertTrue(cond, label) {
+  if !cond {
+    print("FAIL " + label)
+    process.exit(255)
+  }
+}
+
+counter = 0
+everyId = async_mod.every(fn() { counter += 1 }, 20)
+async_mod.sleep(200)
+everyId.stop()
+assertTrue(counter >= 2, "every fired at least twice, got " + str(counter))
+assertTrue(counter <= 40, "every rate sane, got " + str(counter))
+
+// After stop() the interval must not keep ticking at its rate. Under load
+// the scheduler may land a few already-queued ticks late, so allow a small
+// margin; a still-running interval would add ~15 over 300ms at 20ms.
+before = counter
+async_mod.sleep(300)
+assertTrue(counter - before <= 8, "every stopped, grew by " + str(counter - before))
+
+print("ok")

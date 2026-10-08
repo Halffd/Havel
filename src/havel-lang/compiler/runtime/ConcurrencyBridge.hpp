@@ -2,7 +2,7 @@
 
 #include "../../runtime/HostContext.hpp"
 #include "../core/BytecodeIR.hpp"
-#include "../core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "EventQueue.hpp"
 
 #include <functional>
@@ -130,6 +130,12 @@ private:
   Value threadJoin(const std::vector<Value> &args);
   Value threadSend(const std::vector<Value> &args);
   Value threadReceive(const std::vector<Value> &args);
+  // Spec's async module (docs/specs/Havel.md Async section): string-keyed
+  // channels shared across the host process. send pushes; receive blocks
+  // until a message arrives; tryReceive returns "" when empty.
+  Value asyncSend(const std::vector<Value> &args);
+  Value asyncReceive(const std::vector<Value> &args);
+  Value asyncTryReceive(const std::vector<Value> &args);
 
 Value intervalStart(const std::vector<Value> &args);
 Value intervalStop(const std::vector<Value> &args);

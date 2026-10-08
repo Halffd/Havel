@@ -1,0 +1,89 @@
+// Regression for "repl+script mode gets no hotkeys working and no repl
+// shown": three independent defects made every `havel --repl script.hv`
+// session unusable, and each one hangs or wedges the child process:
+//
+// 1. EOF spin: readline() returns NULL on EOF but the reader mapped it to
+//    "" and never set eofbit, so the producer looped forever re-printing
+//    the prompt (infinite "havel>" flood, 100% CPU) on any non-TTY stdin.
+// 2. `exit` was a documented no-op: handleCommand returned an "exit
+//    signal" the caller ignored, so the REPL never terminated.
+// 3. Minimal mode (-m) with a hotkey script never even reached the REPL:
+//    engine.execute() looped in the HotkeyWait keep-alive (designed for
+//    daemon-style script runs) and never returned.
+//
+// All three are covered headlessly by spawning child havel processes with
+// piped/closed stdin and asserting they terminate cleanly. Stdin is
+// /dev/null or a closed pipe, the F24 hotkey is never pressed, and no real
+// input or display is touched. Pre-fix, cases 1 and 3 hang until the
+// `timeout 25` wrapper kills them (exit 124) and case 2 ignores exit and
+// also hangs; post-fix every case exits 0.
+//
+// Three ASAN-instrumented child launches: budget generously for a loaded
+// machine so hvtest's 60s default cannot kill the test mid-child.
+//
+// smoke: timeout = 180
+// Expected: PASS, exit 0.
+
+use "fs"
+use "process"
+
+cwd = sys.cwd()
+candidates = ["${cwd}/build-debug/havel", "${cwd}/build-release/havel", "${cwd}/havel"]
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+}
+assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_repl_smoke_${sys.pid()}"
+CHILD = "${FIXTURE_DIR}/child.hv"
+fs.mkdir(FIXTURE_DIR)
+
+// Child script: a print marker plus one hotkey registration. The hotkey
+// exercises the minimal-mode keep-alive wedge (case 3); it is never
+// triggered, so no input device is touched.
+child_src = """
+print("CHILD_SCRIPT_RAN")
+fired = 0
+F24 => {
+    fired = fired + 1
+}
+"""
+fs.write(CHILD, child_src)
+
+// ---------------------------------------------------------------- case 1
+// Full mode, EOF'd stdin: REPL must start (banner + child marker) and
+// exit cleanly. Pre-fix: prompt flood, never exits -> timeout kills it.
+res1 = process.run("timeout 25 \"${havel_bin}\" --repl \"${CHILD}\" < /dev/null 2>&1")
+assert(res1.exitCode == 0, "full --repl with EOF stdin must exit 0, got ${res1.exitCode} (stdout: ${res1.stdout})")
+assert(res1.stdout.includes("CHILD_SCRIPT_RAN"), "child script must run before the REPL starts")
+assert(res1.stdout.includes("Havel REPL"), "REPL banner must appear; got: ${res1.stdout}")
+
+// ---------------------------------------------------------------- case 2
+// Full mode, piped lines + `exit`: every line must execute and the exit
+// command must terminate the REPL. Pre-fix: exit was a no-op and the
+// session hung -> timeout kills it.
+res2 = process.run("echo 'print(\"REPL_LINE_OK\")' | timeout 25 \"${havel_bin}\" --repl \"${CHILD}\" 2>&1")
+assert(res2.exitCode == 0, "full --repl with piped exit must exit 0, got ${res2.exitCode}")
+assert(res2.stdout.includes("REPL_LINE_OK"), "piped print line must execute in the REPL")
+
+// ---------------------------------------------------------------- case 3
+// Minimal mode with a hotkey-registering child: engine.execute() must
+// return so the REPL starts. Pre-fix: execute() wedged in the
+// HotkeyWait keep-alive loop and the banner never appeared.
+res3 = process.run("timeout 25 \"${havel_bin}\" -m --repl \"${CHILD}\" < /dev/null 2>&1")
+assert(res3.exitCode == 0, "minimal --repl with hotkey script must exit 0, got ${res3.exitCode} (stdout: ${res3.stdout})")
+assert(res3.stdout.includes("Havel REPL"), "minimal REPL banner must appear despite hotkey goroutine")
+assert(res3.stdout.includes("CHILD_SCRIPT_RAN"), "child script must run in minimal mode too")
+
+// Clean up.
+fs.remove(FIXTURE_DIR)
+
+print("OK repl-script-mode")
+process.exit(0)

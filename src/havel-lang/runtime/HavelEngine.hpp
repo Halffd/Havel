@@ -2,10 +2,15 @@
 
 #include "../core/Value.hpp"
 #include <cstdio>
+#include "compiler/vm/ModuleCompilerHook.hpp"
 #include "compiler/vm/VM.hpp"
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
+#include "events/EventRuntime.hpp"
+#include "../../host/platform/FileWatcher.hpp"
+#include "../../host/platform/WindowEventSource.hpp"
 #include "../compiler/core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../compiler/core/BytecodeIR.hpp"
 #include "../compiler/runtime/RuntimeSupport.hpp"
 #ifdef HAVEL_ENABLE_LLVM
@@ -33,6 +38,9 @@
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
 #include <filesystem>
+#include <thread>
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <cstdlib>
@@ -111,6 +119,8 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             vm_->setTraceExecution(true);
         }
         hostContext_->vm = vm_.get();
+        hostContext_->request_auto_reload = [this](bool on) { setAutoReload(on); };
+        hostContext_->auto_reload_state = [this]() { return isAutoReload(); };
         hostAPI->SetVM(vm_.get());
         vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals
   // Register traceBytecode as a host function so it's always available for self-hosted compiler
@@ -320,12 +330,34 @@ vm_->addIntervalResult(timer_id, result);
 ::havel::error("[HavelEngine] Timer callback exception: {}", e.what());
 }
 });
+
+                hostContext_->eventQueue->onEvent(compiler::EventType::FILE_READY,
+[this](const compiler::Event& event) {
+    // Auto-reload: the watched script file changed. Queue the reload —
+    // processGoroutines runs it OUTSIDE any fiber context.
+    (void)event;
+    reload_pending_.store(true);
+});
 }
 
         // Wire watcher registry for reactive when blocks
         watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
         vm_->setWatcherRegistry(watcher_registry_.get());
         havel::startup_timing_report("watcher-registry", t);
+
+        // Native event sources (architecture: the host supplies event
+        // sources; the core runtime and the language see none of their
+        // mechanics). Sources publish into the EventRuntime; the VM pump
+        // dispatches. Created here, wired into the HostContext so the
+        // EventBridge's subscriptions can start them.
+        file_watcher_ = std::make_unique<compiler::FileWatcher>();
+        window_event_source_ = std::make_unique<compiler::WindowEventSource>();
+        if (hostContext_) {
+            const_cast<HostContext &>(*hostContext_).fileWatcher = file_watcher_.get();
+            const_cast<HostContext &>(*hostContext_).windowEventSource =
+                window_event_source_.get();
+        }
+        havel::startup_timing_report("event-sources", t);
 
         // Synchronous reactive when evaluation: STORE_GLOBAL commits the new
         // value then calls emitVariableChanged, which invokes this callback
@@ -543,14 +575,27 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk (without executing)
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk (without executing). The compile goes through
+        // the compiler hook rather than compileToBytecodeChunk directly: this
+        // header is runtime, and a runtime-only embedder has no compiler
+        // archive to link against. The engine keeps running the VM itself
+        // (storeMainChunk + spawnGoroutine), so it wants a chunk, not a
+        // pipeline result.
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Spawn the entry function as a goroutine
@@ -560,6 +605,42 @@ vm_->addIntervalResult(timer_id, result);
         }
         uint32_t funcIndex = vm_->getMainChunk()->getFunctionIndex(entryFunc);
         compiler::Value entryCallable = compiler::Value::makeFunctionObjId(funcIndex);
+
+        // Lifecycle hook: `on start { }` runs once at script load, before
+        // the entry function. `on reload { }` bodies are compiled as
+        // __on_reload__ and await the reload path.
+        if (auto *onStartFn = vm_->getMainChunk()->getFunction("__on_start__")) {
+          uint32_t onStartIndex = vm_->getMainChunk()->getFunctionIndex(onStartFn);
+          vm_->callFunctionSync(
+              compiler::Value::makeFunctionObjId(onStartIndex), {});
+        }
+
+        // Remember for auto-reload: the watcher polls this file, and
+        // reloadScript() re-compiles this source.
+        reload_source_ = source;
+        reload_compile_unit_ = compileUnitName;
+        {
+            namespace fs = std::filesystem;
+            std::string name = compileUnitName;
+            auto plusPos = name.find(" + ");
+            if (plusPos != std::string::npos)
+                name = name.substr(0, plusPos);
+            fs::path p(name);
+            if (p.is_absolute() && fs::exists(p)) {
+                reload_watch_path_ = fs::weakly_canonical(p).string();
+            } else if (!p.is_absolute()) {
+                fs::path resolved = fs::current_path() / p;
+                if (fs::exists(resolved)) {
+                    reload_watch_path_ = fs::weakly_canonical(resolved).string();
+                }
+            }
+        }
+        // If auto-reload was requested before any script ran, start the
+        // watcher now that a path is known.
+        if (auto_reload_enabled_.load() && !reload_watch_path_.empty()) {
+            startReloadWatcher();
+        }
+
         vm_->spawnGoroutine(entryCallable, {});
 
         // Set the script directory for relative imports
@@ -616,14 +697,22 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        // Compile to bytecode chunk
-        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
-        if (!chunk) {
+        // Compile to bytecode chunk, through the compiler hook (see execute()).
+        auto compiled = compiler::ModuleCompilerHook::instance().compileSource(
+            source, compiler::SourceCompileMode::FullPipeline, &options);
+        if (compiled.status != compiler::SourceCompileStatus::Ok) {
+            throw std::runtime_error(
+                "Compilation failed: " +
+                (compiled.error.empty() ? std::string("no compiler available in this runtime")
+                                        : compiled.error));
+        }
+        if (!compiled.chunk) {
             throw std::runtime_error("Compilation returned null chunk");
         }
 
         // Store chunk in VM
-        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        auto shared_chunk =
+            std::shared_ptr<compiler::BytecodeChunk>(std::move(compiled.chunk));
         vm_->storeMainChunk(shared_chunk);
 
         // Get the entry function and call it SYNCHRONOUSLY (not as goroutine)
@@ -652,9 +741,18 @@ vm_->addIntervalResult(timer_id, result);
             }
         }
 
+        // Lifecycle hook: `on start { }` runs once at script load, before
+        // the entry function. `on reload { }` bodies are compiled as
+        // __on_reload__ and await the reload path.
+        if (auto *onStartFn = vm_->getMainChunk()->getFunction("__on_start__")) {
+          uint32_t onStartIndex = vm_->getMainChunk()->getFunctionIndex(onStartFn);
+          vm_->callFunctionSync(
+              compiler::Value::makeFunctionObjId(onStartIndex), {});
+        } else {
+        }
+
         // Call the entry function synchronously - it may spawn goroutines via host functions
         compiler::Value result = vm_->callFunctionSync(entryCallable, {});
-
         // NOTE: Does NOT call processGoroutines(). Caller must drive the scheduler
         // (e.g., via tickGoroutines() in an event loop) to run spawned goroutines.
         return result;
@@ -740,7 +838,6 @@ vm_->addIntervalResult(timer_id, result);
             processGoroutines();
         }
     }
-
     void tickGoroutines() {
         if (!initialized_) return;
     auto* sched = vm_->getScheduler();
@@ -762,14 +859,135 @@ vm_->addIntervalResult(timer_id, result);
         vm_->tickScheduler();
     }
 
+    // REPL runs disable the HotkeyWait keep-alive in processGoroutines so
+    // execute() returns and the REPL loop takes over pumping (see
+    // keepAliveForHotkeyWakes_).
+    void setKeepAliveForHotkeyWakes(bool keepAlive) {
+        keepAliveForHotkeyWakes_ = keepAlive;
+    }
+
     compiler::VM* vm() const { return vm_.get(); }
     Modules* modules() const { return modules_.get(); }
     bool isInitialized() const { return initialized_; }
 
+    // --- Auto-reload (spec: app.enableReload + `on reload { }`) ------------
+    void setAutoReload(bool on) {
+        if (on == auto_reload_enabled_.load()) return;
+        auto_reload_enabled_.store(on);
+        if (on) {
+            if (reload_watch_path_.empty()) {
+                ::havel::error("[HavelEngine] auto-reload enabled but no script "
+                               "path known yet; reload starts after execute()");
+                return;
+            }
+            startReloadWatcher();
+        } else {
+            stopReloadWatcher();
+        }
+    }
+
+    bool isAutoReload() const { return auto_reload_enabled_.load(); }
+
+  private:
+    // The mtime-poll watcher body, shared by setAutoReload and the
+    // deferred start in execute(). Polls every 250ms; on change pushes
+    // FILE_READY to the event queue.
+    void startReloadWatcher() {
+        if (reload_watcher_.joinable()) return; // already running
+        reload_watcher_stop_.store(false);
+        reload_watcher_ = std::thread([this]() {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            auto last = fs::last_write_time(reload_watch_path_, ec);
+            if (ec) return;
+            while (!reload_watcher_stop_.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                auto now = fs::last_write_time(reload_watch_path_, ec);
+                if (ec) continue;
+                if (now != last) {
+                    last = now;
+                    if (hostContext_ && hostContext_->eventQueue) {
+                        hostContext_->eventQueue->push(
+                            compiler::Event(compiler::EventType::FILE_READY));
+                    }
+                }
+            }
+        });
+    }
+
+    void stopReloadWatcher() {
+        reload_watcher_stop_.store(true);
+        if (reload_watcher_.joinable()) {
+            reload_watcher_.join();
+        }
+    }
+
+  public:
+    // Re-compile the last-executed source and swap the main chunk. Globals
+    // persist; the script's `on reload { }` body handles its own cleanup
+    // (e.g. hotkeys). Runs outside any fiber context (from processGoroutines).
+    void reloadScript() {
+        if (!vm_ || reload_source_.empty()) return;
+        if (!modules_) return;
+        try {
+            compiler::PipelineOptions options = modules_->options();
+            options.compile_unit_name = reload_compile_unit_;
+            options.vm_override = vm_.get();
+            for (const auto &[name, fn] : vm_->getHostFunctions()) {
+                options.host_functions[name] = fn;
+            }
+            options.debugBytecode = config_.debugBytecode;
+            options.debugEmitter = config_.debugEmitter;
+            options.optimizeBytecode = config_.optimizeBytecode;
+            auto chunk = compiler::compileToBytecodeChunk(reload_source_, "__main__",
+                                                          options);
+            if (!chunk) {
+                ::havel::error("[HavelEngine] reload: compilation failed");
+                return;
+            }
+            auto shared_chunk =
+                std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+            vm_->storeMainChunk(shared_chunk);
+            // Subscription lifetime (reload safety): drop every generic
+            // event subscription from the OLD compile before the script's
+            // `on reload { }` body runs — it re-subscribes against the new
+            // chunk. Without this, repeated reloads stack handlers forever.
+            if (hostContext_ && hostContext_->eventRuntime) {
+                hostContext_->eventRuntime->clearAll();
+            }
+            // The script's own cleanup/re-register hook.
+            if (auto *onReloadFn = vm_->getMainChunk()->getFunction("__on_reload__")) {
+                uint32_t idx = vm_->getMainChunk()->getFunctionIndex(onReloadFn);
+                vm_->callFunctionSync(
+                    compiler::Value::makeFunctionObjId(idx), {});
+            }
+        } catch (const std::exception &e) {
+            ::havel::error("[HavelEngine] reload exception: {}", e.what());
+        }
+    }
+
     void shutdown() {
         if (!initialized_) return;
+        // Stop the auto-reload watcher before tearing the VM down.
+        if (auto_reload_enabled_.load()) {
+            auto_reload_enabled_.store(false);
+        }
+        stopReloadWatcher();
+        // Stop the native event sources before tearing the VM down.
+        if (file_watcher_) {
+            file_watcher_->stop();
+        }
+        if (window_event_source_) {
+            window_event_source_->stop();
+        }
         if (modules_) {
             modules_->shutdown();
+        }
+        // Delete the generic event bus (created with raw new in
+        // Modules::initBridges; unique_ptr-style ownership lives here).
+        if (hostContext_ && hostContext_->eventRuntime) {
+            delete hostContext_->eventRuntime;
+            const_cast<HostContext &>(*hostContext_).eventRuntime = nullptr;
         }
         if (vm_) {
 #ifdef HAVEL_ENABLE_LLVM
@@ -803,11 +1021,33 @@ private:
     bool initialized_ = false;
     std::unique_ptr<compiler::Fiber> main_script_fiber_;
     bool inline_yield_active_ = false;
+    // When true (script-only runs), the processGoroutines loop keeps
+    // pumping while hotkey goroutines sit in HotkeyWait so daemon-style
+    // hotkey configs stay alive. REPL runs set this to false so
+    // execute() returns and the REPL loop takes over pumping.
+    bool keepAliveForHotkeyWakes_ = true;
     // Var names produced by emitVariableChanged from inside a goroutine's
     // dispatch loop. Drained by processGoroutines between scheduler ticks so
     // conditional hotkey re-evals happen outside any fiber context.
     std::vector<std::string> pending_var_changes_;
     std::mutex pending_var_changes_mutex_;
+
+    // Auto-reload (spec: app.enableReload + `on reload { }`): a watcher
+    // thread polls the script file's mtime; on change it pushes FILE_READY,
+    // whose handler sets reload_pending_; processGoroutines runs the reload
+    // outside any fiber context (re-compile, chunk swap, __on_reload__).
+    std::atomic<bool> auto_reload_enabled_{false};
+    std::atomic<bool> reload_watcher_stop_{false};
+    std::atomic<bool> reload_pending_{false};
+    // Native event sources (host/platform boundary) — publish into the
+    // EventRuntime; the VM pump dispatches. Wired into the HostContext so
+    // the EventBridge's subscriptions start them.
+    std::unique_ptr<compiler::FileWatcher> file_watcher_;
+    std::unique_ptr<compiler::WindowEventSource> window_event_source_;
+    std::thread reload_watcher_;
+    std::string reload_watch_path_;
+    std::string reload_source_;
+    std::string reload_compile_unit_;
 
   static compiler::Scheduler::SuspensionReason toSchedulerReasonPublic(uint8_t fiberReason) {
     using F = compiler::SuspensionReason;
@@ -1215,6 +1455,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();
             }
+            // Generic event bus: run queued events' matching subscriptions'
+            // handlers in VM context (never on backend threads — producers
+            // publish; the runtime dispatches; handlers execute here).
+            if (hostContext_->eventRuntime) {
+                hostContext_->eventRuntime->dispatch();
+            }
+            // Auto-reload: FILE_READY events set reload_pending_; run the
+            // reload OUTSIDE any fiber context (a nested callFunctionSync
+            // inside a goroutine frame wedges the pipeline, same as the
+            // conditional-hotkey re-eval arm).
+            if (reload_pending_.exchange(false)) {
+                reloadScript();
+            }
             sched->drainDeferredCallbacks(compiler::FiberPriority::NORMAL);
 
             sched->wakeSleepingGoroutines();
@@ -1243,8 +1496,19 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           }
         }
         if (sched->hasHotkeyWaitSuspended()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(2));
-          continue;
+          // Script-only runs (daemon-style hotkey configs) keep pumping so
+          // asynchronously-pressed hotkeys still fire; the app is meant to
+          // stay alive after the main script parks. REPL runs must NOT:
+          // engine.execute() has to return so the REPL loop can take over
+          // pumping (runMinimalReplLoop). With the keep-alive on, -m --repl
+          // wedged here forever right after the script's prints — REPL
+          // banner never appeared.
+          if (keepAliveForHotkeyWakes_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            continue;
+          }
+          // REPL mode: hotkey-wait goroutines never carry sleep deadlines,
+          // so the deadline check below breaks the loop for us.
         }
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();
@@ -1263,9 +1527,15 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-        std::cerr << "[DEBUG] pickNext Created gid=" << g->id << " name='" << g->name << "'\n";
-        auto result = vm_->startGoroutineCall(g->callable, g->locals);
-        std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
+        const bool traceStart = std::getenv("HAVEL_TRACE_HOTKEY_START") != nullptr;
+      if (traceStart) {
+        ::havel::debug("[HavelEngine] pickNext: gid={} name='{}' state=Created dispatch=start",
+                       g->id, g->name);
+      }
+      auto result = vm_->startGoroutineCall(g->callable, g->locals);
+        if (traceStart) {
+          ::havel::debug("[HavelEngine] startGoroutineCall: gid={} dispatch={}", g->id, result);
+        }
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           dispatchTick(g);

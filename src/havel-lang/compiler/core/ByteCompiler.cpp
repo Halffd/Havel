@@ -434,6 +434,9 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   // function objects.
   std::vector<const ast::FunctionDeclaration *> declared_functions;
   std::vector<const ast::LambdaExpression *> declared_lambdas;
+  std::vector<const ast::Statement *> declared_on_blocks;
+  std::vector<const ast::OnEventStatement *> declared_on_events;
+  std::vector<const ast::OnEventExpression *> declared_on_events_expr_scan;
   declared_functions.reserve(program.body.size());
 
   uint32_t next_function_index = 0;
@@ -522,6 +525,12 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     }
     collectFunctionDeclarations(*statement, declared_functions);
     collectLambdaExpressions(*statement, declared_lambdas);
+    collectOnEventStatements(*statement, declared_on_events);
+    // Lifecycle blocks compile as chunk-level functions too.
+    if (statement->kind == ast::NodeType::OnStartStatement ||
+        statement->kind == ast::NodeType::OnReloadStatement) {
+      declared_on_blocks.push_back(statement.get());
+    }
   }
 
   for (const auto *decl : declared_functions) {
@@ -545,6 +554,47 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     lambda_indices_by_node_[lambda] = next_function_index++;
   }
 
+  for (const auto *onBlock : declared_on_blocks) {
+    if (!onBlock) {
+      continue;
+    }
+    if (on_block_indices_by_node_.find(onBlock) !=
+        on_block_indices_by_node_.end()) {
+      continue;
+    }
+    on_block_indices_by_node_[onBlock] = next_function_index++;
+  }
+
+  for (const auto *onEvent : declared_on_events) {
+    if (!onEvent) {
+      continue;
+    }
+    if (on_event_indices_by_node_.find(onEvent) !=
+        on_event_indices_by_node_.end()) {
+      continue;
+    }
+    on_event_indices_by_node_[onEvent] = next_function_index++;
+  }
+
+  // `w = on <event> { ... }` (OnEventExpression) handlers too: the same
+  // walk descends into ExpressionStatements to catch assignment RHS values.
+  for (const auto &statement : program.body) {
+    if (!statement) {
+      continue;
+    }
+    collectOnEventExpressions(*statement, declared_on_events_expr_scan);
+  }
+  for (const auto *onExpr : declared_on_events_expr_scan) {
+    if (!onExpr) {
+      continue;
+    }
+    if (on_event_indices_by_node_.find(onExpr) !=
+        on_event_indices_by_node_.end()) {
+      continue;
+    }
+    on_event_indices_by_node_[onExpr] = next_function_index++;
+  }
+
   const uint32_t main_function_index = next_function_index++;
   compiled_functions.resize(main_function_index + 1);
 
@@ -556,6 +606,30 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     compileFunction(*decl);
   }
 
+  // Lifecycle blocks compile as chunk-level functions (before __main__):
+  // __on_start__ runs once at script load, __on_reload__ on reloads.
+  for (const auto *onBlock : declared_on_blocks) {
+    if (!onBlock) {
+      continue;
+    }
+    compileOnBlock(*onBlock);
+  }
+
+  // `on <event> { ... }` handlers compile as functions taking one `event`
+  // parameter (before __main__); REGISTER_EVENT bytecode in __main__ calls
+  // event.subscribe.
+  for (const auto *onEvent : declared_on_events) {
+    if (!onEvent) {
+      continue;
+    }
+    compileOnEventStatement(*onEvent);
+  }
+  for (const auto *onExpr : declared_on_events_expr_scan) {
+    if (!onExpr) {
+      continue;
+    }
+    compileOnEventExpression(*onExpr);
+  }
  // First pass: collect own (non-inherited) field/method names for every class.
  // This lets derived classes resolve bare members inherited from their ancestors.
  class_members_by_name_.clear();
@@ -700,7 +774,11 @@ for (const auto &statement : program.body) {
     // First pass: compile all non-function statements (variable assignments, use statements, etc.)
     // This ensures module-level variables are initialized before functions capture them.
     if (statement->kind != ast::NodeType::FunctionDeclaration &&
-        statement->kind != ast::NodeType::DecoratorStatement) {
+        statement->kind != ast::NodeType::DecoratorStatement &&
+        statement->kind != ast::NodeType::OnStartStatement &&
+        statement->kind != ast::NodeType::OnReloadStatement &&
+        statement->kind != ast::NodeType::OnEventStatement &&
+        statement->kind != ast::NodeType::EmitStatement) {
       if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
         enterTailPosition();
         clearTailCallFlag();
@@ -737,6 +815,65 @@ for (const auto &statement : program.body) {
 
         uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
         emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+        continue;
+    }
+
+    // Lifecycle blocks: register __on_start__ / __on_reload__ in globals
+    // (the function bodies compiled before __main__ in the function pass).
+    if (statement->kind == ast::NodeType::OnStartStatement ||
+        statement->kind == ast::NodeType::OnReloadStatement) {        auto on_index_it = on_block_indices_by_node_.find(statement.get());
+        if (on_index_it == on_block_indices_by_node_.end()) {
+            continue;
+        }
+        const char *onName =
+            statement->kind == ast::NodeType::OnStartStatement ? "__on_start__"
+                                                               : "__on_reload__";
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeFunctionObjId(on_index_it->second)));
+        uint32_t onNameStrId = addStringConstant(onName);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(onNameStrId));
+        continue;
+    }
+
+    // REGISTER_EVENT: `on <event> { ... }` — the handler fn was compiled
+    // before __main__; this calls event.subscribe(name, handler, [arg]).
+    if (statement->kind == ast::NodeType::OnEventStatement) {
+        const auto &onEvent =
+            static_cast<const ast::OnEventStatement &>(*statement);
+        auto ev_index_it = on_event_indices_by_node_.find(statement.get());
+        if (ev_index_it == on_event_indices_by_node_.end()) {
+            continue;
+        }
+        uint32_t subscribe_sid = addStringConstant("event.subscribe");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(subscribe_sid));
+        uint32_t name_sid = addStringConstant(onEvent.eventName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeFunctionObjId(ev_index_it->second)));
+        if (onEvent.eventArg) {
+            compileExpression(*onEvent.eventArg);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+        emit(OpCode::POP);
+        continue;
+    }
+
+    // `emit <name> [payload]` — sugar over the event.publish host function.
+    if (statement->kind == ast::NodeType::EmitStatement) {
+        const auto &emitStmt = static_cast<const ast::EmitStatement &>(*statement);
+        uint32_t publish_sid = addStringConstant("event.publish");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(publish_sid));
+        uint32_t name_sid = addStringConstant(emitStmt.eventName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        if (emitStmt.payload) {
+            compileExpression(*emitStmt.payload);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        emit(OpCode::POP);
         continue;
     }
 
@@ -915,6 +1052,270 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
     return id->symbol;
   }
   return "_";
+}
+
+// `on <event> { ... }` handler: the body (with the optional `where` filter
+// folded in as an if-guard) compiles as a function taking one `event`
+// parameter. Registration bytecode is emitted by the caller into __main__.
+void ByteCompiler::collectOnEventExpressions(
+    const ast::Statement &statement,
+    std::vector<const ast::OnEventExpression *> &out) const {
+  switch (statement.kind) {
+  case ast::NodeType::ExpressionStatement: {
+    const auto &exprStmt =
+        static_cast<const ast::ExpressionStatement &>(statement);
+    if (!exprStmt.expression) {
+      break;
+    }
+    if (exprStmt.expression->kind == ast::NodeType::OnEventExpression) {
+      out.push_back(
+          static_cast<const ast::OnEventExpression *>(exprStmt.expression.get()));
+    } else if (exprStmt.expression->kind == ast::NodeType::AssignmentExpression) {
+      const auto &assign =
+          static_cast<const ast::AssignmentExpression &>(*exprStmt.expression);
+      if (assign.value && assign.value->kind == ast::NodeType::OnEventExpression) {
+        out.push_back(static_cast<const ast::OnEventExpression *>(
+            assign.value.get()));
+      }
+    }
+    break;
+  }
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block.body) {
+      if (!nested) {
+        continue;
+      }
+      collectOnEventExpressions(*nested, out);
+    }
+    break;
+  }
+  case ast::NodeType::IfStatement: {
+    const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
+    if (if_statement.consequence) {
+      collectOnEventExpressions(*if_statement.consequence, out);
+    }
+    if (if_statement.alternative) {
+      collectOnEventExpressions(*if_statement.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::OnStartStatement:
+  case ast::NodeType::OnReloadStatement: {
+    const ast::Statement *body = nullptr;
+    if (statement.kind == ast::NodeType::OnStartStatement) {
+      body = static_cast<const ast::OnStartStatement &>(statement).body.get();
+    } else {
+      body = static_cast<const ast::OnReloadStatement &>(statement).body.get();
+    }
+    if (body) {
+      collectOnEventExpressions(*body, out);
+    }
+    break;
+  }
+  default:
+    break;
+  }
+}
+
+void ByteCompiler::compileOnEventExpression(
+    const ast::OnEventExpression &stmt) {
+  auto index_it = on_event_indices_by_node_.find(&stmt);
+  if (index_it == on_event_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for event handler: " +
+                   stmt.eventName);
+  }
+
+  BytecodeFunction bf("__on_event__", 1, 0); // params=1 (event), locals=0
+  bf.source_line = stmt.line;
+  bf.source_file = source_file_;
+  enterFunction(std::move(bf), index_it->second);
+  auto on_upvalues_it = lexical_resolution_.on_event_upvalues.find(&stmt);
+  if (on_upvalues_it != lexical_resolution_.on_event_upvalues.end()) {
+    current_function->upvalues = on_upvalues_it->second;
+  }
+
+  enterTailPosition();
+  clearTailCallFlag();
+  if (stmt.filter) {
+    enterTailPosition();
+    clearTailCallFlag();
+    compileExpression(*stmt.filter);
+    exitTailPosition();
+    uint32_t guardJump = emitJump(OpCode::JUMP_IF_FALSE);
+    if (stmt.body) {
+      compileStatement(*stmt.body);
+    }
+    patchJump(guardJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  } else if (stmt.body) {
+    compileStatement(*stmt.body);
+  }
+  exitTailPosition();
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  emit(OpCode::RETURN);
+
+  leaveFunction();
+}
+
+// `on <event> { ... }` in expression position: REGISTER_EVENT inline, the
+// subscription id is the value (no POP).
+void ByteCompiler::compileOnEventExprRegistration(
+    const ast::OnEventExpression &stmt) {
+  auto index_it = on_event_indices_by_node_.find(&stmt);
+  if (index_it == on_event_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for event handler: " +
+                   stmt.eventName);
+  }
+  uint32_t subscribe_sid = addStringConstant("event.subscribe");
+  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(subscribe_sid));
+  uint32_t name_sid = addStringConstant(stmt.eventName);
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+  emit(OpCode::LOAD_CONST,
+       addConstant(Value::makeFunctionObjId(index_it->second)));
+  if (stmt.eventArg) {
+    compileExpression(*stmt.eventArg);
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  }
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+}
+
+void ByteCompiler::compileOnEventStatement(const ast::OnEventStatement &stmt) {
+  auto index_it = on_event_indices_by_node_.find(&stmt);
+  if (index_it == on_event_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for event handler: " +
+                   stmt.eventName);
+  }
+
+  BytecodeFunction bf("__on_event__", 1, 0); // params=1 (event), locals=0
+  bf.source_line = stmt.line;
+  bf.source_file = source_file_;
+  enterFunction(std::move(bf), index_it->second);
+  auto on_upvalues_it = lexical_resolution_.on_event_upvalues.find(&stmt);
+  if (on_upvalues_it != lexical_resolution_.on_event_upvalues.end()) {
+    current_function->upvalues = on_upvalues_it->second;
+  }
+
+  enterTailPosition();
+  clearTailCallFlag();
+  if (stmt.filter) {
+    // The `where` predicate becomes the if-guard; the body is the
+    // consequence. Both see the `event` parameter.
+    enterTailPosition();
+    clearTailCallFlag();
+    compileExpression(*stmt.filter);
+    exitTailPosition();
+    uint32_t guardJump = emitJump(OpCode::JUMP_IF_FALSE);
+    if (stmt.body) {
+      compileStatement(*stmt.body);
+    }
+    // Guard failed: skip the body, return without running it.
+    patchJump(guardJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  } else if (stmt.body) {
+    compileStatement(*stmt.body);
+  }
+  exitTailPosition();
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  emit(OpCode::RETURN);
+
+  leaveFunction();
+}
+
+// `import math` / `import { item } from "module"` / `import * from "m"`.
+// Semantics mirror `use`: no 'from' means the items are module names
+// (IMPORT + STORE_GLOBAL); with 'from', the items bind to the module's
+// members (IMPORT the module, then LOAD_GLOBAL basename, OBJECT_GET item,
+// STORE_GLOBAL alias).
+void ByteCompiler::compileImportStatement(
+    const ast::ImportStatement &statement) {
+  if (statement.modulePath.empty()) {
+    for (const auto &[name, alias] : statement.importedItems) {
+      if (name == "*") {
+        // `import * from "mod"`: wildcard flatten of the module.
+        uint32_t mod_sid = addStringConstant(alias);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(mod_sid)));
+        emit(OpCode::IMPORT);
+        emit(OpCode::IMPORT_WILDCARD);
+      } else {
+        // Import the original name, store under the alias.
+        uint32_t name_sid = addStringConstant(name);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::IMPORT);
+        uint32_t store_sid = addStringConstant(alias);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
+      }
+    }
+    return;
+  }
+
+  // With 'from': import the module, store it under the path's basename,
+  // then bind each item to the module's member.
+  uint32_t path_sid = addStringConstant(statement.modulePath);
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+  emit(OpCode::IMPORT);
+
+  namespace fs = std::filesystem;
+  fs::path p(statement.modulePath);
+  std::string basename = p.stem().empty() ? statement.modulePath
+                                          : p.stem().string();
+  uint32_t base_sid = addStringConstant(basename);
+  emit(OpCode::STORE_GLOBAL, Value::makeStringValId(base_sid));
+
+  for (const auto &[name, alias] : statement.importedItems) {
+    if (name == "*") {
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(base_sid));
+      emit(OpCode::IMPORT_WILDCARD);
+      continue;
+    }
+    uint32_t item_sid = addStringConstant(name);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(base_sid));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(item_sid)));
+    emit(OpCode::OBJECT_GET);
+    uint32_t store_sid = addStringConstant(alias);
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
+  }
+}
+
+void ByteCompiler::compileOnBlock(const ast::Statement &stmt) {  auto index_it = on_block_indices_by_node_.find(&stmt);
+  if (index_it == on_block_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for lifecycle block");
+  }
+  const char *name = stmt.kind == ast::NodeType::OnStartStatement
+                         ? "__on_start__"
+                         : "__on_reload__";
+  const ast::Statement *body = nullptr;
+  if (stmt.kind == ast::NodeType::OnStartStatement) {
+    body = static_cast<const ast::OnStartStatement &>(stmt).body.get();
+  } else {
+    body = static_cast<const ast::OnReloadStatement &>(stmt).body.get();
+  }
+
+  BytecodeFunction bf(name, 0, 0);
+  bf.source_line = stmt.line;
+  bf.source_file = source_file_;
+  enterFunction(std::move(bf), index_it->second);
+  auto on_upvalues_it = lexical_resolution_.on_block_upvalues.find(&stmt);
+  if (on_upvalues_it != lexical_resolution_.on_block_upvalues.end()) {
+    current_function->upvalues = on_upvalues_it->second;
+  }
+
+// The body (a block or a single statement) compiles in tail position;
+  // the hook's return value is meaningless, so RETURN null afterwards
+  // (unreachable when the body's own implicit return fired).
+  enterTailPosition();
+  clearTailCallFlag();
+  compileStatement(body ? *body : stmt);
+  exitTailPosition();
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  emit(OpCode::RETURN);
+
+  leaveFunction();
 }
 
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
@@ -1119,6 +1520,10 @@ for (const auto &pending : pending_default_evals) {
                                    lastStmt->kind == ast::NodeType::WhileStatement ||
                                    lastStmt->kind == ast::NodeType::LoopStatement ||
                                    lastStmt->kind == ast::NodeType::DoWhileStatement);
+        // A switch in tail position propagates tail position to its case
+        // bodies (bare-expression case bodies are implicit returns).
+        bool isSwitchTail = lastStmt &&
+                            lastStmt->kind == ast::NodeType::SwitchStatement;
                                    
         if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
           const auto &exprStmt =
@@ -1139,7 +1544,7 @@ for (const auto &pending : pending_default_evals) {
           needsExplicitReturn = false;
         } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
                                  lastStmt->kind == ast::NodeType::BlockStatement ||
-                                 isLoop)) {
+                                 isLoop || isSwitchTail)) {
           // If/Match/Block/Loop in tail position
           enterTailPosition();
           compileStatement(*lastStmt);
@@ -3042,10 +3447,113 @@ case ast::NodeType::ImplDeclaration: {
 	break;
 }
 
-case ast::NodeType::UseStatement: {
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    // Subject stored in a hidden local; each case compares it
+    // (LOAD_VAR subject, test, EQ, JUMP_IF_FALSE next-case).
+    // The switch is like an if-chain: when in tail position, case bodies
+    // compile in tail position (implicit returns work).
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*switch_stmt.expression);
+    in_tail_position_ = saved_tail_cond;
+
+    uint32_t subjSlot = next_local_index++;
+    reserveLocalSlot(subjSlot);
+    emit(OpCode::STORE_VAR, subjSlot);
+
+    std::vector<uint32_t> endJumps;
+    const ast::SwitchCase *defaultCase = nullptr;
+    for (const auto &case_node : switch_stmt.cases) {
+      if (!case_node) {
+        continue;
+      }
+      if (!case_node->test) {
+        defaultCase = case_node.get();
+        continue;
+      }
+      emit(OpCode::LOAD_VAR, subjSlot);
+      in_tail_position_ = false; // test is an EQ operand, never TAIL_CALL
+      // Relational case pattern (<0, >10, <=2, >=10): compare the subject
+      // against the operand with the relational op instead of EQ.
+      OpCode testOp = OpCode::EQ;
+      const ast::RelationalCaseTest *relTest = nullptr;
+      if (case_node->test &&
+          case_node->test->kind == ast::NodeType::RelationalCaseTest) {
+        relTest = static_cast<const ast::RelationalCaseTest *>(case_node->test.get());
+        switch (relTest->op) {
+        case ast::BinaryOperator::Less:          testOp = OpCode::LT; break;
+        case ast::BinaryOperator::LessEqual:     testOp = OpCode::LTE; break;
+        case ast::BinaryOperator::Greater:       testOp = OpCode::GT; break;
+        case ast::BinaryOperator::GreaterEqual:  testOp = OpCode::GTE; break;
+        default:                                 testOp = OpCode::EQ; break;
+        }
+        compileExpression(*relTest->operand);
+      } else {
+        compileExpression(*case_node->test);
+      }
+      in_tail_position_ = saved_tail_cond;
+      emit(testOp);
+      uint32_t nextCaseJump = emitJump(OpCode::JUMP_IF_FALSE);
+
+      bool was_tail = in_tail_position_;
+      bool body_was_tail = false;
+      if (was_tail) {
+        clearTailCallFlag();
+        enterTailPosition();
+        if (case_node->body) {
+          compileStatement(*case_node->body);
+        }
+        body_was_tail = wasTailCall();
+        exitTailPosition();
+      } else if (case_node->body) {
+        compileStatement(*case_node->body);
+      }
+      // Case body didn't emit tail call — emit RETURN (implicit return)
+      if (was_tail && !body_was_tail) {
+        emit(OpCode::RETURN);
+      }
+
+      endJumps.push_back(emitJump(OpCode::JUMP));
+      patchJump(nextCaseJump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
+    if (defaultCase && defaultCase->body) {
+      // in_tail_position_ is false here (the last case's exitTailPosition
+      // cleared it); the switch's original tail state is saved_tail_cond.
+      bool was_tail = saved_tail_cond;
+      bool body_was_tail = false;
+      if (was_tail) {
+        clearTailCallFlag();
+        enterTailPosition();
+        compileStatement(*defaultCase->body);
+        body_was_tail = wasTailCall();
+        exitTailPosition();
+      } else {
+        compileStatement(*defaultCase->body);
+      }
+      if (was_tail && !body_was_tail) {
+        emit(OpCode::RETURN);
+      }
+    }
+    uint32_t switchEnd =
+        static_cast<uint32_t>(current_function->instructions.size());
+    for (uint32_t j : endJumps) {
+      patchJump(j, switchEnd);
+    }
+    break;
+  }
+
+  case ast::NodeType::UseStatement: {
         compileUseStatement(static_cast<const ast::UseStatement &>(statement));
         break;
     }
+
+  case ast::NodeType::ImportStatement: {
+    compileImportStatement(
+        static_cast<const ast::ImportStatement &>(statement));
+    break;
+  }
 
     case ast::NodeType::WithStatement: {
         compileWithStatement(static_cast<const ast::WithStatement &>(statement));
@@ -3057,6 +3565,13 @@ case ast::NodeType::UseStatement: {
         static_cast<const ast::ShellCommandStatement &>(statement));
     break;
   }
+
+  case ast::NodeType::OnStartStatement:
+  case ast::NodeType::OnReloadStatement:
+    // Lifecycle blocks compile as chunk-level functions (__on_start__ /
+    // __on_reload__); the index reservation happens in the pre-pass.
+    compileOnBlock(statement);
+    break;
 
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +
@@ -4065,6 +4580,13 @@ break;
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     break;
+  case ResolvedBindingKind::WithMember: {
+    // Bare identifier inside a with-block or after `use mod.*`: try each
+    // candidate owner (nearest first) with a runtime OBJECT_GET; the first
+    // non-null member value wins. Nullish-coalescing style chain.
+    compileWithMemberLookup(*binding);
+    break;
+  }
   }
     break;
   }
@@ -4500,9 +5022,16 @@ case ast::NodeType::CastExpression: {
       bool is_tap = false;
 
       if (stage->kind == ast::NodeType::LambdaExpression) {
-        compileExpression(*stage);
+        // Spec's pipeline semantics: the lambda acts as filter (bool
+        // result) or map (value result), applied PER ELEMENT via the
+        // array prototype's pipeApply. CALL_METHOD is receiver-first:
+        // LOAD_VAR then the lambda, matching the other stages.
         emit(OpCode::LOAD_VAR, pipe_temp);
-        emit(OpCode::CALL, 1);
+        compileExpression(*stage);
+        emit(OpCode::CALL_METHOD, std::vector<Value>{
+            Value::makeStringValId(addStringConstant("pipeApply")),
+            Value(static_cast<uint32_t>(1)),
+            Value::makeBool(true)});
       }
       else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);
@@ -4552,6 +5081,10 @@ case ast::NodeType::CastExpression: {
           emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
         } else {
           // Method call on piped value: value.trim(), value.len(), etc.
+          // The third operand marks this as a pipe stage: CALL_METHOD may
+          // then fall back to a same-named script-global function with the
+          // receiver as first argument (`data |> doubled` where doubled is a
+          // script fn — the array has no such method).
           emit(OpCode::LOAD_VAR, pipe_temp);
           uint32_t method_sid = addStringConstant(ident.symbol);
           emit(OpCode::CALL_METHOD, std::vector<Value>{
@@ -5667,6 +6200,14 @@ case ast::NodeType::UnaryExpression: {
     break;
   }
 
+  case ast::NodeType::OnEventExpression: {
+    // `let w = on <event> { ... }` — REGISTER_EVENT inline; the
+    // subscription id is the value.
+    compileOnEventExprRegistration(
+        static_cast<const ast::OnEventExpression &>(expression));
+    break;
+  }
+
   // Pattern types - should be compiled via compilePattern, not directly
   case ast::NodeType::OrPattern:
   case ast::NodeType::ArrayPattern:
@@ -5919,6 +6460,34 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             return;
         }
         bool isHostFunc = binding && binding->kind == ResolvedBindingKind::HostFunction;
+        if (binding && binding->kind == ResolvedBindingKind::WithMember) {
+          // Bare with/use member call: resolve the member via the owner
+          // chain (first non-null wins), then call it with the args.
+          compileWithMemberLookup(*binding);
+          for (const auto &arg : expression.args) {
+            if (!arg) {
+              emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+              continue;
+            }
+            compileExpression(*arg);
+          }
+          uint32_t withTotalArgs = arg_count;
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+              compileExpression(*kwarg.value);
+              { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+              emit(OpCode::OBJECT_SET);
+            }
+            withTotalArgs++;
+          }
+          emit(OpCode::CALL, Value(withTotalArgs));
+          in_tail_position_ = saved_tail_position;
+          return;
+        }
         if (isHostFunc) {
             uint32_t strId = addStringConstant(binding ? binding->name : callee_id.symbol);
             emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
@@ -7567,7 +8136,72 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
   if (stmts.back()) {
     compileStatement(*stmts.back());
   }
+  // In tail position, a block whose last statement is a plain expression
+  // leaves that value on the stack (ExpressionStatement skips its POP in
+  // tail position). Emit RETURN so callers (function bodies, clause bodies)
+  // return the value instead of null. Not after a tail call — the caller's
+  // wasTailCall() contract owns that path.
+  if (saved_tail && stmts.back() &&
+      stmts.back()->kind == ast::NodeType::ExpressionStatement &&
+      !wasTailCall()) {
+    emit(OpCode::RETURN);
+  }
   in_tail_position_ = saved_tail;
+}
+
+void ByteCompiler::collectOnEventStatements(
+    const ast::Statement &statement,
+    std::vector<const ast::OnEventStatement *> &out) const {
+  switch (statement.kind) {
+  case ast::NodeType::OnEventStatement: {
+    const auto &onEvent =
+        static_cast<const ast::OnEventStatement &>(statement);
+    out.push_back(&onEvent);
+    break;
+  }
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block.body) {
+      if (!nested) {
+        continue;
+      }
+      collectOnEventStatements(*nested, out);
+    }
+    break;
+  }
+  case ast::NodeType::IfStatement: {
+    const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
+    if (if_statement.consequence) {
+      collectOnEventStatements(*if_statement.consequence, out);
+    }
+    if (if_statement.alternative) {
+      collectOnEventStatements(*if_statement.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::ExpressionStatement:
+  case ast::NodeType::AssignmentExpression: {
+    // `w = on <event> { ... }` at statement level: the OnEventExpression
+    // inside is collected by collectOnEventExpressions (the second scan) —
+    // nothing for this vector here.
+    break;
+  }
+  case ast::NodeType::OnStartStatement:
+  case ast::NodeType::OnReloadStatement: {
+    const ast::Statement *body = nullptr;
+    if (statement.kind == ast::NodeType::OnStartStatement) {
+      body = static_cast<const ast::OnStartStatement &>(statement).body.get();
+    } else {
+      body = static_cast<const ast::OnReloadStatement &>(statement).body.get();
+    }
+    if (body) {
+      collectOnEventStatements(*body, out);
+    }
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 void ByteCompiler::collectFunctionDeclarations(
@@ -8515,6 +9149,47 @@ const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const
     return nullptr;
   }
   return &it->second;
+}
+
+void ByteCompiler::compileWithMemberLookup(const ResolvedBinding &binding) {
+  const uint32_t memberStrId = addStringConstant(binding.member);
+  const uint32_t memberConst = addConstant(Value::makeStringValId(memberStrId));
+  std::vector<uint32_t> foundJumps;
+  const size_t ownerCount = binding.owners.size();
+  for (size_t i = 0; i < ownerCount; ++i) {
+    const auto &owner = binding.owners[i];
+    if (owner.is_local) {
+      emit(OpCode::LOAD_VAR, owner.slot);
+    } else {
+      uint32_t ownerStrId = addStringConstant(owner.name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(ownerStrId));
+    }
+    emit(OpCode::LOAD_CONST, memberConst);
+    emit(OpCode::OBJECT_GET);
+    if (i + 1 < ownerCount) {
+      // Not the last owner: keep the value if non-null, else try the next.
+      emit(OpCode::DUP);
+      uint32_t tryNext = emitJump(OpCode::JUMP_IF_NULL);
+      foundJumps.push_back(emitJump(OpCode::JUMP));
+      patchJump(tryNext,
+                static_cast<uint32_t>(current_function->instructions.size()));
+      emit(OpCode::POP);
+    }
+  }
+  // After all owners: if the member was found, done. If null (missing on
+  // every owner), fall back to the bare name as a global — host functions
+  // (print, sleep, ...) live as globals and must keep working inside
+  // with-blocks; a truly unknown name still errors at runtime.
+  emit(OpCode::DUP);
+  uint32_t foundFinal = emitJump(OpCode::JUMP_IF_TRUE);
+  emit(OpCode::POP);
+  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(memberStrId));
+  uint32_t withEnd =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(foundFinal, withEnd);
+  for (uint32_t j : foundJumps) {
+    patchJump(j, withEnd);
+  }
 }
 
 uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {

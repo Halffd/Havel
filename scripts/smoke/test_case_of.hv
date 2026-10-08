@@ -1,0 +1,45 @@
+// smoke: case-of = 4
+// `case <expr> of { pat -> body }` (TODO #3 Erlang variant) and the `_`
+// wildcard case test in switch. Expected: literal/wildcard cases pick the
+// right branch, `~` match subjects work, semicolons separate cases.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// Literal pattern, no wildcard match (5 != 0, no default) — no branch runs.
+noMatch = 1
+
+// switch with `_` wildcard test.
+x = 5
+anyCase = 0
+switch x { _ => { anyCase = 1 } }
+assertEq(anyCase, 1, "switch underscore wildcard")
+
+// case ... of with `->` arrows: literal + wildcard.
+found = 0
+case 0 of { 0 -> { found = 1 }; _ -> { found = 2 } }
+assertEq(found, 1, "case literal match")
+
+wild = 0
+case 7 of { 0 -> { wild = 1 }; _ -> { wild = 2 } }
+assertEq(wild, 2, "case wildcard match")
+
+// `~` (substring) subject: "hello" in "hello world" -> wildcard branch.
+txt = "hello world"
+name = "hello"
+hit = 0
+case txt ~ name of {
+    0 -> { hit = 1 }
+    _ -> { hit = 2 }
+}
+assertEq(hit, 2, "case tilde subject wildcard")
+
+// Semicolon-separated cases.
+semi = 0
+case "abc" of { "xyz" -> { semi = 1 }; "abc" -> { semi = 2 } }
+assertEq(semi, 2, "case semicolon separated")
+
+print("PASS case-of")

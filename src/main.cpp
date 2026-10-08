@@ -5,6 +5,7 @@
 #include "utils/StartupTiming.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "havel_platform.h"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include <iostream>
 #include <string>
 #include <filesystem>
@@ -28,6 +29,9 @@ void installQtBridge(PipelineOptions &options, const HostContext *ctx);
 namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
+    // SDK host: install the parse+compile pipeline behind the VM's
+    // module compiler hook before any script (or imported module) runs.
+    havel::compiler::registerSourceModuleCompilerHook();
 #ifdef HAVEL_QT_BRIDGE
     // Select the optional Qt bridge before any pipeline is built. Hosts that
     // do not link havel_gui (havel-wm, the AOT runtime) never call this and

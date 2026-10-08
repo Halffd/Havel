@@ -9,9 +9,9 @@
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
-#include "../core/Pipeline.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
+#include "ModuleCompilerHook.hpp"
 #include "VM.hpp"
 #include "VMInternals.hpp"
 #include "stdlib/FsModule.hpp"
@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -1552,17 +1553,19 @@ void VM::registerDefaultHostFunctions() {
     if (code.empty())
       return Value::makeNull();
 
-    havel::compiler::PipelineOptions options;
-    options.compile_unit_name = "<eval>";
-    options.debugBytecode = false;
-    options.max_instructions = max_instructions_;
-
+    // FullPipeline mode: eval has always compiled through the whole SDK
+    // pipeline (use-statement module loading, type check, name resolution),
+    // not the bare ByteCompiler the module loads use. It goes through the
+    // hook so the runtime never links the compiler itself.
     std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
-    try {
-      chunk =
-          havel::compiler::compileToBytecodeChunk(code, "__main__", options);
-    } catch (const std::exception &e) {
-      COMPILER_THROW(std::string("eval(): ") + e.what());
+    {
+      auto compiled = ModuleCompilerHook::instance().compileSource(
+          code, SourceCompileMode::FullPipeline);
+      if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk)
+        COMPILER_THROW(std::string("eval(): ") +
+                       (compiled.error.empty() ? "compilation failed"
+                                               : compiled.error));
+      chunk = std::move(compiled.chunk);
     }
 
     // Execute using executePersistent which preserves globals/heap/state
@@ -1606,6 +1609,58 @@ void VM::registerDefaultHostFunctions() {
 
   registerHostFunction("num", 1, [this](const std::vector<Value> &args) {
     return Value(toFloat(args[0]));
+  });
+
+  // approx(a, b) / approx(a, b, eps) - fuzzy float comparison.
+  // Relative tolerance: |a - b| <= eps * max(1, |a|, |b|)
+  // Default eps is 1e-9. Finite identical values compare equal (difference is
+  // 0). NaN and infinite operands yield a NaN difference, which never
+  // satisfies <=, so they compare unequal.
+  registerHostFunction("approx", [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || args.size() > 3) {
+      COMPILER_THROW("approx() requires 2 or 3 arguments: approx(a, b) or approx(a, b, eps)");
+    }
+    const double a = toFloat(args[0]);
+    const double b = toFloat(args[1]);
+    const double eps = args.size() == 3 ? toFloat(args[2]) : 1e-9;
+    const double diff = std::fabs(a - b);
+    const double scale = std::fmax(1.0, std::fmax(std::fabs(a), std::fabs(b)));
+    return Value(diff <= eps * scale);
+  });
+
+  // min(a, b, ...) / max(a, b, ...) - variadic numeric extrema per the spec
+  // ("min(3, 1, 4, 2)    // Minimum: 1.0"). A single array argument keeps the
+  // std.array array-form semantics (min([5, 3, 1, 4]) == 1) by delegating to
+  // the array prototype host function - same dual-form contract as `sorted`.
+  // Without this canonical registration the bare name is taken by
+  // std.array's fn min(arr), so variadic scalar calls like min(5, maxSize)
+  // silently return null.
+  registerHostFunction("min", [this](const std::vector<Value> &args) {
+    if (args.size() == 1 && args[0].isArrayId())
+      return invokeHostFunctionDirect("array.min", args);
+    if (args.empty()) return Value::makeNull();
+    return invokeHostFunctionDirect("math.min", args);
+  });
+  registerHostFunction("max", [this](const std::vector<Value> &args) {
+    if (args.size() == 1 && args[0].isArrayId())
+      return invokeHostFunctionDirect("array.max", args);
+    if (args.empty()) return Value::makeNull();
+    return invokeHostFunctionDirect("math.max", args);
+  });
+
+  // hypot(a, b, ...) - multi-dimensional hypotenuse, sqrt of sum of squares.
+  // The spec documents 2- and 3-argument forms (hypot(1, 2, 2) == 3). The
+  // math sidecar's Havel fn hypot(a, b) silently drops extra args, so
+  // hypot(1, 2, 2) returned sqrt(5); MathModule's mergeExports guard keeps
+  // that closure from clobbering this canonical global.
+  registerHostFunction("hypot", [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeNull();
+    double sum = 0.0;
+    for (const auto &arg : args) {
+      const double v = toFloat(arg);
+      sum += v * v;
+    }
+    return Value(std::sqrt(sum));
   });
 
   // range([start], stop, [step]) - returns array of integers
@@ -1797,6 +1852,25 @@ void VM::registerDefaultHostFunctions() {
     }
     auto strRef = heap_.allocateString(s);
     return Value::makeStringId(strRef.id);
+  });
+
+  // sorted(collection[, comparator]) - bare-global dispatcher. The array and
+  // object stdlib modules each used to publish a bare `sorted` alias, so the
+  // global's meaning depended on module install order (bare sorted(a) resolved
+  // to object.sorted and returned null). Registering the canonical dispatcher
+  // here makes it a real host-function global; both modules' mirror loops then
+  // skip publishing their own aliases (guard: !isHostFunctionGlobal). The
+  // per-type work stays in the prototype host functions - this only routes.
+  registerHostFunction("sorted", [this](const std::vector<Value> &args) {
+    if (args.empty() || args.size() > 2)
+      return Value::makeNull();
+    if (args[0].isArrayId())
+      return invokeHostFunctionDirect("array.sorted", args);
+    if (args[0].isSetId())
+      return invokeHostFunctionDirect("set.sorted", args);
+    if (args[0].isObjectId())
+      return invokeHostFunctionDirect("object.sorted", args);
+    return Value::makeNull();
   });
 
   // type() builtin returns type name

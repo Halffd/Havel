@@ -96,6 +96,34 @@ std::string WindowManager::GetWindowClass(wID id) {
   return get().getBackend().getWindowClass(id);
 }
 
+wID WindowManager::GetWindowParent(wID id) {
+  get().ensureBackend();
+  return get().getBackend().getWindowParent(id);
+}
+
+std::vector<wID> WindowManager::GetWindowChildren(wID id) {
+  get().ensureBackend();
+  return get().getBackend().getWindowChildren(id);
+}
+
+std::vector<std::pair<std::string, std::string>>
+WindowManager::GetWindowProperties(wID id) {
+  get().ensureBackend();
+  return get().getBackend().getWindowProperties(id);
+}
+
+std::vector<uint8_t> WindowManager::GetWindowIcon(wID id, int &width,
+                                                 int &height) {
+  get().ensureBackend();
+  return get().getBackend().getWindowIcon(id, width, height);
+}
+
+std::vector<uint8_t> WindowManager::CaptureWindow(wID id, int &width,
+                                                  int &height) {
+  get().ensureBackend();
+  return get().getBackend().captureWindow(id, width, height);
+}
+
 wID WindowManager::GetwIDByPID(pID pid) {
   get().ensureBackend();
   return get().getBackend().findWindowByPID(pid);

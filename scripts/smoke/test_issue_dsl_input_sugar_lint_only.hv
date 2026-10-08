@@ -1,0 +1,102 @@
+// Regression test: dsl input sugar must be covered WITHOUT executing it.
+//
+// Previously scripts/smoke/dsl_repeat_if_sugar.hv covered the dsl input forms
+// (`lmb`, `{Home}`, `< mouse`, `m/r/w`, `click()`) by RUNNING them, on the
+// theory that io.* "degrades gracefully headless". It did not. Those forms
+// compile to real host input calls, so running them in an auto-collected
+// suite dispatched real key and mouse events to the developer's desktop.
+// The script was deleted in f8e603abf; this file restores that coverage the
+// safe way.
+//
+// How this test works:
+//   1. Writes a fixture containing ONLY dsl input sugar to a temp file.
+//   2. Runs `havel --lint <fixture>`, which parses, type-checks, and
+//      bytecode-compiles WITHOUT executing it. Verified: --lint on a script
+//      calling fs.write/mouse.move/keyboard.tap creates no side effects.
+//   3. Asserts lint succeeded (proves the sugar parses and compiles).
+//   4. Asserts the fixture was NOT executed, via a sentinel file the fixture
+//      would have written had it run.
+//
+// The negative control proves --lint is a real gate rather than a rubber
+// stamp: malformed sugar must fail lint with a non-zero exit. Without it,
+// step 3 could pass vacuously.
+//
+// Expected result: PASS, exit 0. Fails if the sugar stops parsing, if the
+// negative control wrongly passes, or if any fixture side effect appears.
+use "fs"
+use "process"
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_dsl_lint_${sys.pid()}"
+OK_FIXTURE = "${FIXTURE_DIR}/io_sugar.hv"
+BAD_FIXTURE = "${FIXTURE_DIR}/broken.hv"
+SENTINEL = "${FIXTURE_DIR}/SIDE_EFFECT.txt"
+
+fs.mkdir(FIXTURE_DIR)
+
+// Locate the havel binary. HAVEL_BINARY wins when set; otherwise probe the
+// layouts hvtest actually uses (cwd = repo root, or cwd = the build dir).
+// process.exists() does not work here — it reports false for these paths —
+// so use fs.exists.
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-debug/havel", "${cwd}/build-release/havel", "${cwd}/havel"]
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+// ---------------------------------------------------------------- fixture 1
+// Valid dsl input sugar. Every statement here would dispatch a real event if
+// the fixture were executed. The fs.write to SENTINEL is the tripwire: if
+// anything ever runs this file instead of linting it, the assertion below
+// fires and the suite tells us the coverage gap is still open.
+src = """
+use "fs"
+dsl {
+  lmb
+  !!
+  {Home}
+  < mouse
+  m(10, 20)
+  r(1, 2)
+  w(0, 3)
+  click()
+  click("right")
+}
+fs.write("SENTINEL_PATH", "executed")
+return 0
+"""
+src = src.replace("SENTINEL_PATH", SENTINEL)
+fs.write(OK_FIXTURE, src)
+
+res = process.run("\"${havel_bin}\" --lint \"${OK_FIXTURE}\" 2>&1")
+assert(res.exitCode == 0, "valid dsl input sugar must pass --lint, got exit ${res.exitCode}: ${res.stdout}")
+
+// The whole point: linting must not execute.
+assert(!fs.exists(SENTINEL), "--lint must NOT execute the fixture (sentinel created: ${SENTINEL})")
+
+// ---------------------------------------------------------------- fixture 2
+// Negative control. Note `m(10,` with a dropped `)` is NOT rejected by the
+// dsl sugar parser, so the fixture uses an unterminated call instead.
+bad = """
+dsl {
+  click(
+}
+return 0
+"""
+fs.write(BAD_FIXTURE, bad)
+
+res2 = process.run("\"${havel_bin}\" --lint \"${BAD_FIXTURE}\" 2>&1")
+assert(res2.exitCode != 0, "--lint must FAIL on malformed dsl sugar (got exit 0)")
+
+// ------------------------------------------------------------------ cleanup
+fs.remove(FIXTURE_DIR)
+
+print("PASS: dsl input sugar covered via --lint only; nothing executed")
+return 0

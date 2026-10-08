@@ -1,4 +1,5 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/core/SourceModuleCompilerHook.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
@@ -72,6 +73,10 @@ static void printHelp() {
 }
 
 int main(int argc, char* argv[]) {
+    // SDK host: the debugger evaluates expressions at runtime through
+    // the module compiler hook.
+    havel::compiler::registerSourceModuleCompilerHook();
+
     if (argc < 2) {
         std::cout << "Usage: hvdb <script.hv> [args...]" << std::endl;
         return 1;

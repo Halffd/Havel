@@ -1,0 +1,48 @@
+// Regression: a for-loop variable must shadow a same-named program-root
+// global. LexicalResolver::resolveIdentifierInFunction checked
+// global_variables_ BEFORE the local scopes, so any pre-existing root
+// global with the iterator's name captured every read of the loop
+// variable: the loop machinery stored the element into the loop's local
+// slot (STORE_VAR), but body reads resolved to the root global and saw
+// its stale value instead of the element (window ids iterated as a
+// constant garbage float; `for k in ...` broke whenever a `k` global
+// existed in the merged prelude/config).
+// This test creates the collision itself so it reproduces without any
+// particular user config.
+// Expected: the loop variable reads the elements; exit 0.
+
+k = 999
+h = 998
+w = 997
+
+total = 0
+seen = []
+for k in [10, 20, 30] {
+    assert(k == 10 || k == 20 || k == 30,
+           "loop var must read the element, got " + k)
+    total = total + k
+    seen.push(k)
+}
+assert(total == 60, "total must be 60, got " + total)
+assert(seen.length() == 3, "must have seen 3 elements")
+
+// The root global itself is untouched by the loop (the loop var shadows it
+// only inside the loop; the root binding keeps its own value).
+assert(k == 999, "root global k must still be 999 after the loop, got " + k)
+assert(h == 998, "root global h must be untouched")
+assert(w == 997, "root global w must be untouched")
+
+// Shadowing must also work for multi-var loops. `for i, v in arr` is
+// enumerate semantics in this VM (i = index, v = element): over
+// [1, 100, 2, 200] the pairs are (0,1),(1,100),(2,2),(3,200),
+// sum = 309. If the loop's `h` read the stale root global (1) instead of
+// the index, the sum would be 306.
+h = 1
+sum = 0
+for h, v in [1, 100, 2, 200] {
+    sum = sum + h + v
+}
+assert(sum == 309, "multi-var loop must read index+element, got " + sum)
+
+print("PASS: loop var shadows root global")
+exit(0)

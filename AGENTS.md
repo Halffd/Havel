@@ -89,16 +89,81 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals
   or the tiering system, run the full set deliberately.
-- **Brightness is live hardware, not a test binary.** The old `brightness_test`
-  binary was removed (see `CMakeLists.txt:1941`); brightness now lives in
-  `modules/app/brightness.hv`, which wraps the C++ `BrightnessManager` and
-  writes `/sys/class/backlight/*/brightness`
-  (`src/core/BrightnessManager.cpp:1369-1371`). Any script calling
-  `brightness.set/increase/decrease` mutates the real monitor.
-  **Never run brightness code headless/SSH** unless the user explicitly asks.
-- **`brightness_ramp_test` IS in ctest and is safe.** Despite the similar name
-  it is pure gamma-ramp math over a buffer (`tests/brightness_ramp_ut.cpp`) —
-  no `/dev`, DRM, ioctl, or sysfs writes. Do not exclude it from ctest.
+- **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
+  **Run manually only with visible monitor:**
+  ```bash
+  ./build-debug/brightness_test
+  ```
+  Requires interactive confirmation; restores state on exit. NEVER run headless/SSH.
+- **FORBIDDEN in smoke/integration tests: any script that performs real I/O,
+  brightness, or dsl input.** See "NEVER put hardware-touching scripts in
+  smoke or integration tests" below for the full rule and rationale.
+
+### NEVER put hardware-touching scripts in smoke or integration tests
+
+`scripts/smoke/` and `scripts/integration/` are collected automatically by
+`hvtest --smoke` / `hvtest --scripts` and run by the ctest gate
+`hvtest-smoke`. A test placed there is executed by everyone who runs the
+suite, on a real desktop, with no per-test confirmation. Do NOT add scripts
+that:
+
+- **Touch brightness** — anything calling `brightness.*` (get/set/increase/
+  decrease/toggle, temperature, gamma). `brightness.set()` with one argument
+  is the **ALL-monitors** overload: it rewrites the gamma ramp of every
+  attached display. `brightness_test` is already excluded from ctest for
+  exactly this reason.
+- **Perform real I/O** — `io.*`, `mouse.*` (`move`, `moveRel`, `click`,
+  `scroll`, `pos`), `keyboard.*` (`tap`, `send`, `typeText`, `keycode`),
+  `hotkey.trigger`, `window.*` (`raise`, `focus`, `move`, `close`).
+- **Use dsl input forms** — `lmb`, `{Home}`, `< mouse`, `m(x, y)`, `r(dx, dy)`,
+  `w(dx, dy)`, `click()`, or a bare string literal used as an implicit
+  "type this" inside a `dsl {}` / hotkey block. These compile to real host
+  input calls; the sugar hides them from a grep for `mouse.`/`keyboard.`,
+  which is how they slipped into the suite.
+
+The headless sandbox (`--headless`, `HAVEL_HEADLESS=1`, cleared `DISPLAY`/
+`WAYLAND_DISPLAY`/`XAUTHORITY`/`DBUS_SESSION_BUS_ADDRESS`) is a defence in
+depth, not a licence. Its effectiveness is **unverified**: an earlier attempt
+to measure it with `strace -e trace=openat,write` captured none of the
+syscalls X11 actually needs (`socket`, `connect`, `writev`, `ioctl` were all
+zero), so the apparent "0 X11 connections" was an artifact of the trace
+filter, not a result. The apparent 2990 `libX11.so.6` hits were `ld.so`
+probing its search path, all `ENOENT` — the loader looking, not a gate
+refusing. Additionally, dsl input reaches host functions whose gating is
+per-call-site rather than central, and `X11Adapter::Init()` has no headless
+guard of its own. Never add a script whose *worst case* is a user losing
+their brightness settings or getting a key/mouse event they did not ask for.
+
+If you need to test these features, the options are, in order:
+
+1. **Test the pure function**, not the hardware. `brightness_ramp_test`
+   (gtest) exercises gamma-ramp maths against a synthetic
+   `XRRCrtcGamma`, no display needed.
+2. **Assert on the module's source** when the defect is argument forwarding or
+   shadowing. Reading a file and checking its text is safe; calling the
+   function is not. See `scripts/smoke/test_issue_gutted_file_handlers.hv`,
+   which resolves the input globals `click` and `move` to prove they exist
+   but deliberately never invokes them.
+3. **Use `havel --lint FILE` for syntax/compile coverage.** It parses,
+   type-checks, and bytecode-compiles without executing the script, so IO
+   *syntax* can be covered with no side effects. Verified: `--lint` on a
+   script containing `fs.write`, `mouse.move`, and `keyboard.tap("Home")`
+   exits 0 and creates no file; malformed dsl sugar fails with a source
+   location and a non-zero error count. This is the correct way to keep
+   coverage of constructs like `lmb`, `{Home}`, `< mouse`, `m/r/w/click()`.
+   A smoke script may shell out to `--lint`; it may not run the linted file.
+4. **Put it in `scripts/tests/`** (not `smoke`/`integration`), so it is not
+   auto-collected, and run it by hand only with the user's screen in view.
+   Hardware-specific checks belong in `scripts/tests/io/`; scripts that
+   apply real display or input state belong in `scripts/hardware/`.
+
+There is no opt-in path into `smoke`/`integration`. A script in those
+directories executes on every contributor's machine with no per-test
+confirmation, so "explicitly gated" is not a mitigation — it only moves the
+blast radius to whoever passes the flag. If a test cannot be made
+side-effect-free, it does not belong there.
+
+If you are unsure whether a script is safe, treat it as unsafe.
 
 CI runs: CMake configure → build → hvtest smoke → ctest
 
@@ -353,22 +418,11 @@ Host functions are registered via `registerHostFunction()` and exist as globals.
 - If you see `host_global_names` in code → DELETE IT.
 - If you think you need `host_global_names` → YOU ARE WRONG.
 
-## modules/lang is frozen (bootstrap only)
+If  touching Parser.cpp, Lexer.cpp, ByteCompiler.cpp for NON-BOOTSTRAP reasons:
 
-`modules/lang/` is the self-hosted Havel compiler. It is FROZEN:
-
-- Do NOT add features to it.
-- Do NOT redirect new fixes there. Fix the default path in `src/havel-lang/`.
-- DO keep it working. `HavelLauncher.cpp` hard-depends on
-  `modules/lang/launcher.hv` and errors out with
-  `Cannot find modules/lang/launcher.hv` if it is missing.
-  `VM.cpp` puts `modules/lang` on the module search path, and sidecars such as
-  `modules/lang/math/math.hv` and `physics.hv` are part of the `math` module.
-- Bug fixes inside it are allowed only when the bootstrap itself is broken.
-  Keep those minimal.
-- When touching Parser.cpp, Lexer.cpp or ByteCompiler.cpp for a
-  NON-BOOTSTRAP reason, the change goes in the C++ pipeline. Do not mirror it
-  into `modules/lang`.
+STOP
+redirect to havel equivalent in modules/lang
+fix it there instead
 
 ## IO and UI
 NEVER run hotkey scripts, IO Scripts or scripts with event loops/UI or servers/sockets they will hang for user input or listen
@@ -377,7 +431,14 @@ Instead:
 - Mock if it needs real user input, but NEVER stub it or make a fake test
 
 ## Script execution pipeline
-Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). The Havel self-hosted mode is opt-in via `--self-hosted`. For anything in those files: do the change there, don't redirect to modules/lang.
+Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). For anything in those files: do the change there, don't redirect to modules/lang.
+
+**Self-hosted mode (`--self-hosted`) is DEPRECATED and retired.** The C++ pipeline is the only maintained path. `modules/lang/` is reference-only: it is not installed, not built, and it does not parse under the C++ pipeline (several files use method shorthand and other constructs the parser rejects). Do not:
+- add features to the self-hosted path
+- redirect C++ parser work into `modules/lang`
+- treat parse failures in `modules/lang/*.hv` as regressions of the C++ parser
+
+A stray-brace fix in `modules/lang/` is still acceptable housekeeping, but it is not required and not worth further effort.
 
 ONLY VM and existing host modules remain in C++ (until modules havel migration)
 

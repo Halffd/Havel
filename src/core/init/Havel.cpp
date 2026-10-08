@@ -1,6 +1,7 @@
 #include "core/init/Havel.hpp"
 #include <cstdio>
 #include "havel-lang/runtime/Modules.hpp"
+#include "havel-lang/runtime/events/EventRuntime.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
@@ -521,6 +522,19 @@ void Havel::cleanup() noexcept {
         if (modules_) {
             if (debugging::debug_io) debug("Havel::cleanup() - destroying Modules");
             modules_->shutdown();
+            // Delete the generic event bus (created with raw new in
+            // Modules::initBridges). The full-Havel path has no HavelEngine
+            // whose shutdown() would take that ownership (the minimal path's
+            // HavelEngine::shutdown does it), so delete it here, after the
+            // bridges that dispatch into it are gone and while the VM that
+            // could still reach it is already destroyed. Without this the
+            // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
+            // the report (~16s with llvm-symbolizer) and exits 1, which made
+            // every child-process REPL smoke test time out or fail.
+            if (hostContext && hostContext->eventRuntime) {
+                delete hostContext->eventRuntime;
+                hostContext->eventRuntime = nullptr;
+            }
             modules_.reset();
         }
 
@@ -600,6 +614,7 @@ void Havel::setupSignalHandling() {
                      : sig == SIGINT  ? ExitReason::SignalInt
                      : sig == SIGTERM ? ExitReason::SignalTerm
                      : sig == SIGQUIT ? ExitReason::SignalQuit
+                     : sig == SIGHUP  ? ExitReason::SignalHup
                      : ExitReason::Forced,
                     code);
       };
@@ -608,6 +623,7 @@ void Havel::setupSignalHandling() {
       sigaction(SIGABRT, &sa, nullptr);
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
+      sigaction(SIGHUP,  &sa, nullptr);
 
   if (debugging::debug_io) debug("Signal handling initialized - fallback handlers for REPL mode");
   } else {

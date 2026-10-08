@@ -1,0 +1,46 @@
+// Regression for the "hotkey does nothing" report: a script calling
+// process.getState(pid) / process.sendSignal(pid, process.SIGSTOP) silently
+// no-opped because the global `process` namespace object lacked those
+// fields (they existed only as __proc.* host functions), and a missing
+// method call returned null instead of erroring.
+// What this tests: the process namespace exposes a working pause/resume
+// cycle — SIGSTOP a spawned process via the SIGSTOP constant, read its
+// state via getState, resume it via the "SIGCONT" name, then clean up.
+// Expected: STOPPED after SIGSTOP, not STOPPED after SIGCONT, rc 0.
+
+pid = process.runDetached("sleep 55")
+if pid == nil || pid <= 0 {
+    print("FAIL process-toggle: runDetached did not return a pid")
+    process.exit(255)
+}
+
+// Pause via the numeric constant on the process object.
+okStop = process.sendSignal(pid, process.SIGSTOP)
+if okStop != true {
+    print("FAIL process-toggle: sendSignal(SIGSTOP) returned ${okStop}")
+    process.exit(255)
+}
+sleep(150)
+state = process.getState(pid)
+if state != "STOPPED" {
+    print("FAIL process-toggle: expected STOPPED, got ${state}")
+    process.exit(255)
+}
+
+// Resume via the signal NAME string (both spellings must work).
+okCont = process.sendSignal(pid, "SIGCONT")
+if okCont != true {
+    print("FAIL process-toggle: sendSignal(\"SIGCONT\") returned ${okCont}")
+    process.exit(255)
+}
+sleep(150)
+state2 = process.getState(pid)
+if state2 == "STOPPED" {
+    print("FAIL process-toggle: process still STOPPED after SIGCONT")
+    process.exit(255)
+}
+
+// Clean up the child.
+process.kill(pid, process.SIGKILL)
+print("OK process-toggle")
+process.exit(0)

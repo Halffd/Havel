@@ -17,7 +17,17 @@ enum class ResolvedBindingKind {
   Global,       // Global variable
   Function,     // User-defined function
   HostFunction, // Built-in host function (print, type, etc.)
-  ClassMember   // Bare identifier resolved to class field/method (implicit @)
+  ClassMember,  // Bare identifier resolved to class field/method (implicit @)
+  WithMember    // Bare identifier resolved via a with-object or a
+                // wildcard-used module's member (runtime OBJECT_GET)
+};
+
+// Owner candidate for WithMember resolution: a with-object or a
+// wildcard-used module. Either a runtime global name or a local slot.
+struct WithMemberOwner {
+  std::string name;      // owner's global name (empty when a local owner)
+  bool is_local = false;
+  uint32_t slot = 0;
 };
 
 struct ResolvedBinding {
@@ -26,6 +36,10 @@ struct ResolvedBinding {
   uint32_t scope_distance = 0;
   std::string name;
   bool is_const = false;
+  // WithMember: candidate owners nearest-first; the runtime member lookup
+  // tries each in order (OBJECT_GET), first non-null wins.
+  std::vector<WithMemberOwner> owners;
+  std::string member;
 };
 
 struct LexicalResolutionResult {
@@ -42,7 +56,12 @@ struct LexicalResolutionResult {
 	std::unordered_map<const ast::TraitMethod *, uint32_t> trait_method_local_counts;
   std::unordered_map<const ast::TraitMethod *, std::vector<UpvalueDescriptor>> trait_method_upvalues;
   std::unordered_map<const ast::HotkeyBinding *, std::vector<UpvalueDescriptor>> hotkey_binding_upvalues;
-  std::unordered_map<const ast::IntervalExpression *, std::vector<UpvalueDescriptor>> interval_expression_upvalues;
+  // `on start { }` / `on reload { }` lifecycle blocks compile as chunk-level
+  // functions; their upvalues are keyed by the block's ASTNode*.
+  std::unordered_map<const ast::ASTNode *, std::vector<UpvalueDescriptor>> on_block_upvalues;  std::unordered_map<const ast::IntervalExpression *, std::vector<UpvalueDescriptor>> interval_expression_upvalues;
+  // `on <event> { ... }` handler functions (one `event` parameter); their
+  // upvalues are keyed by the statement's ASTNode*.
+  std::unordered_map<const ast::ASTNode *, std::vector<UpvalueDescriptor>> on_event_upvalues;
   std::unordered_map<const ast::TimeoutExpression *, std::vector<UpvalueDescriptor>> timeout_expression_upvalues;
   std::unordered_map<const ast::ThreadExpression *, std::vector<UpvalueDescriptor>> thread_expression_upvalues;
   std::unordered_map<const ast::UpdateBlockExpression *, std::vector<UpvalueDescriptor>> update_block_expression_upvalues;
@@ -93,6 +112,19 @@ private:
     std::unordered_set<std::string> methods;
   };
   std::unordered_map<std::string, ClassMembers> class_members_;
+
+  // With-block member flattening: objects in scope for bare-identifier
+  // member lookup (nearest = last). Populated by the WithStatement visit;
+  // the object's own resolution is captured at that point.
+  struct WithOwner {
+    std::string name;
+    bool is_local = false;
+    uint32_t slot = 0;
+  };
+  std::vector<WithOwner> with_stack_;
+  // Wildcard-used modules (`use mod.*`): the module object is a runtime
+  // global; its members resolve bare anywhere in the file.
+  std::vector<std::string> wildcard_modules_;
 
   LexicalResolutionResult result_;
   std::vector<std::string> errors_;

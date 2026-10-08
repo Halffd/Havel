@@ -2,6 +2,7 @@
 
 #include "UIBackend.hpp"
 #include "dl/Loader.hpp"
+#include "havel-lang/common/Export.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,7 +11,11 @@ struct HavelToolkitABI;
 
 namespace havel::host {
 
-class UIManager {
+// HAVEL_EXPORT: the ui module plugin (havel_mod_ui.so) resolves these
+// methods from the main executable at dlopen time. Release builds compile
+// with -fvisibility=hidden, so without the explicit attribute the plugin
+// fails to load on undefined symbols.
+class HAVEL_EXPORT UIManager {
 public:
     static UIManager &instance();
 
@@ -26,6 +31,14 @@ public:
     bool isBackendAvailable(const std::string &apiName) const;
 
     UIBackend::Api detectBestBackend() const;
+
+    // Force backend choice for the next backend() creation ("qt", "gtk",
+    // "imgui", "auto"). Applied lazily: nothing loads until something asks
+    // for a backend. An unavailable request falls back to auto detection,
+    // so `--ui gtk` on a machine without the GTK toolkit/plugin degrades
+    // instead of dying.
+    static void setPreferredBackend(const std::string &apiName);
+    static std::string preferredBackend();
 
     void shutdown();
 

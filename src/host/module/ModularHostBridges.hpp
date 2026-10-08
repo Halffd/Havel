@@ -642,6 +642,16 @@ public:
                                   const HostContext *ctx);
     static Value handleWindowList(const std::vector<Value> &args,
                                    const HostContext *ctx);
+    static Value handleWindowParent(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleWindowChildren(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowProperties(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowIcon(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+    static Value handleWindowScreenshot(const std::vector<Value> &args,
+                                         const HostContext *ctx);
     static Value handleWindowTitle(const std::vector<Value> &args,
                                     const HostContext *ctx);
     static Value handleWindowClass(const std::vector<Value> &args,
@@ -1232,6 +1242,14 @@ public:
                                   const HostContext *ctx);
     static Value handleAppOpenUrl(const std::vector<Value> &args,
                                    const HostContext *ctx);
+private:
+    const HostContext *ctx_;
+};
+
+class EventBridge : public BridgeModule {
+public:
+    explicit EventBridge(const HostContext *ctx) : ctx_(ctx) {}
+    void install(compiler::PipelineOptions &options) override;
 private:
     const HostContext *ctx_;
 };

@@ -94,6 +94,32 @@ public:
   virtual WindowInfo getWindowInfo(wID id) = 0;
   virtual WindowInfo getActiveWindowInfo() = 0;
 
+  // Window hierarchy and introspection. Optional: backends that cannot
+  // provide them keep the inert defaults (0 / empty), which callers surface
+  // as 0 / null / empty rather than errors.
+  // Parent window id (XQueryTree); 0 when unknown/unsupported.
+  virtual wID getWindowParent(wID) { return 0; }
+  // Direct child window ids (XQueryTree); empty when unknown/unsupported.
+  virtual std::vector<wID> getWindowChildren(wID) { return {}; }
+  // X11 property list as name -> value pairs (string-decodable types only).
+  virtual std::vector<std::pair<std::string, std::string>>
+  getWindowProperties(wID) {
+    return {};
+  }
+  // Largest _NET_WM_ICON as RGBA bytes; width/height stay 0 and the vector
+  // is empty when the window has no icon or the backend cannot read it.
+  virtual std::vector<uint8_t> getWindowIcon(wID, int &width, int &height) {
+    width = height = 0;
+    return {};
+  }
+  // Window pixels as RGBA bytes; width/height stay 0 and the vector is
+  // empty when the backend cannot capture (unmapped window, no capture
+  // support). Reads the window's own content, not the occluding desktop.
+  virtual std::vector<uint8_t> captureWindow(wID, int &width, int &height) {
+    width = height = 0;
+    return {};
+  }
+
   virtual std::string getProcessName(pid_t pid) = 0;
   virtual std::string getProcessCmdline(pid_t pid) = 0;
 

@@ -1,7 +1,7 @@
 // havel_state.cpp - C API state management
 #include "havel.h"
+#include "../compiler/vm/ModuleCompilerHook.hpp"
 #include "../compiler/vm/VM.hpp"
-#include "../compiler/core/Pipeline.hpp"
 #include "core/Value.hpp"
 #ifdef HAVE_LIBFFI
 #include "../ffi/FFITypes.hpp"
@@ -550,16 +550,26 @@ int havel_loadstring(HavelState* H, const char* s, const char* name) {
     if (!H->vm) return HAVEL_ERR;
   try {
     std::string unitName = name ? name : "entry";
-    havel::compiler::PipelineOptions opts;
+
+    // Compile-and-execute goes through the compiler hook so the runtime
+    // archive keeps no dependency on the pipeline. A runtime-only build
+    // without the SDK reports NoCompiler here instead of failing to link.
+    havel::compiler::SourceExecuteOptions opts;
     opts.compile_unit_name = unitName;
     opts.vm_override = H->vm.get();
-    auto result = havel::compiler::runBytecodePipeline(s, "__main__", opts);
+
+    auto compiled = havel::compiler::ModuleCompilerHook::instance().compileAndExecute(s, "__main__", opts);
+    if (compiled.status != havel::compiler::SourceCompileStatus::Ok) {
+        H->last_error = compiled.error;
+        return HAVEL_ERR;
+    }
+
     for (const auto& kv : H->vm->globals) {
         if (H->globals.find(kv.first) == H->globals.end()) {
             H->globals[kv.first] = kv.second;
         }
     }
-    H->stack.push_back(result.return_value);
+    H->stack.push_back(compiled.return_value);
         return HAVEL_OK;
     } catch (const std::exception& e) {
         H->last_error = e.what();
@@ -974,6 +984,36 @@ int havel_call_named_function(HavelState* H, const char* name) {
         if (!chunk) { H->last_error = "no main chunk"; return HAVEL_ERR; }
         auto result = H->vm->execute(*chunk, name);
         H->stack.push_back(result);
+        return HAVEL_OK;
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        return HAVEL_ERR;
+    }
+}
+void* havel_pin_main_chunk(HavelState* H) {
+    if (!H || !H->vm) return nullptr;
+    auto* holder = new std::shared_ptr<havel::compiler::BytecodeChunk>(H->vm->getMainChunk());
+    return holder;
+}
+
+void havel_restore_chunk(HavelState* H, void* pin) {
+    if (!H || !H->vm || !pin) return;
+    auto* holder = (std::shared_ptr<havel::compiler::BytecodeChunk>*)pin;
+    // setMainChunkShared also resets current_chunk to the restored chunk,
+    // so later closure invocations resolve in the pinned chunk
+    H->vm->setMainChunkShared(*holder);
+    delete holder;
+}
+
+int havel_pin_callable(HavelState* H, int idx) {
+    if (!H || !H->vm) return HAVEL_ERR;
+    int t = havel_gettop(H);
+    int i = idx >= 0 ? idx : t + idx;
+    if (i < 0 || i >= t) return HAVEL_ERR;
+    try {
+        havel::core::Value pinned = H->vm->pinCallableAsClosure(H->stack[i]);
+        if (pinned.isNull()) return HAVEL_ERR;
+        H->stack[i] = pinned;
         return HAVEL_OK;
     } catch (const std::exception& e) {
         H->last_error = e.what();

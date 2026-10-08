@@ -1,0 +1,26 @@
+// smoke: on-start = 2
+// Spec (docs/specs/Havel.md "Lifecycle Hooks"): `on start { }` runs once at
+// script load, BEFORE the entry function (previously the compiler rejected
+// the block with "Unsupported statement: OnStartStatement"). `on reload { }`
+// compiles as __on_reload__ and stays dormant on a plain run.
+// Assertion via the _G host-global escape: main's top-level assignments run
+// AFTER the hook, so a script-level variable the hook sets would be clobbered
+// by main's own initialization; _G writes bypass that.
+on start {
+  _G["hookRan"] = 1
+}
+
+print("main")
+
+if _G["hookRan"] != 1 {
+  print("FAIL on-start: on start block did not run before main")
+  process.exit(255)
+}
+
+// on reload stays dormant on a plain run.
+on reload {
+  print("FAIL on-start: on reload ran on a plain run")
+  process.exit(255)
+}
+
+print("PASS on-start")

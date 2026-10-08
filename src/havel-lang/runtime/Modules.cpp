@@ -1,13 +1,14 @@
 #include "Modules.hpp"
 #include "../compiler/runtime/ConcurrencyBridge.hpp"
+#include "../runtime/events/EventRuntime.hpp"
 #include "../../host/module/ModularHostBridges.hpp"
 #include "../../host/module/ExecutionPolicy.hpp"
 #include "../../host/app/AppService.hpp"
 #include "../../host/media/MediaService.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../compiler/vm/VMApi.hpp"
-#include "../parser/Parser.h"
-#include "../compiler/core/ByteCompiler.hpp"
+#include "../compiler/module/HavelAPI.hpp"
+#include "../compiler/vm/ModuleCompilerHook.hpp"
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
@@ -18,11 +19,12 @@
 
 namespace havel {
 
-// getHavelAPI stub deleted: it returned a zero-initialized API table (the C
-// API host side, HavelAPI.cpp/HavelValue.cpp, is not compiled into the
-// binary), and handing it to havel_extension_init segfaulted on the first
-// api->register_function call. extension.load now prefers native module
-// plugins and loads C-ABI extensions without init.
+// The C API host side (HavelAPI.cpp/HavelValue.cpp) is compiled in again.
+// api_register_function fills the registry that
+// takeRegisteredExtensionFunctions (Modules::install) drains into the
+// host-function table; UIManager hands toolkit plugins (qt/gtk) the real
+// table at backend-creation time. extension.load still prefers native
+// module plugins and loads C-ABI extensions without init.
 
 using compiler::Value;
 using compiler::ObjectRef;
@@ -88,6 +90,7 @@ void Modules::shutdown() {
     automationBridge_.reset();
     browserBridge_.reset();
     toolsBridge_.reset();
+    eventBridge_.reset();
     extensionLoader_.reset();
 }
 
@@ -130,12 +133,19 @@ void Modules::initBridges() {
     appBridge_ = std::make_unique<compiler::AppBridge>(ctx_);
     concurrencyBridge_ = std::make_unique<compiler::ConcurrencyBridge>(*ctx_);
     const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
+    // Generic event bus: owned by the engine, created lazily here so the
+    // EventBridge's host functions and the VM pump's dispatch() can reach it.
+    // Engine's shutdown deletes it (unique_ptr-style ownership).
+    if (!ctx_->eventRuntime) {
+        const_cast<HostContext &>(*ctx_).eventRuntime = new compiler::EventRuntime();
+    }
     if (ctx_->hotkeyManager) {
         ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
     }
     automationBridge_ = std::make_unique<compiler::AutomationBridge>(ctx_);
     browserBridge_ = std::make_unique<compiler::BrowserBridge>(ctx_);
     toolsBridge_ = std::make_unique<compiler::ToolsBridge>(ctx_);
+    eventBridge_ = std::make_unique<compiler::EventBridge>(ctx_);
 }
 
 void Modules::installHostFunctions() {
@@ -155,38 +165,23 @@ void Modules::installHostFunctions() {
     return ctx_->vm->execLengthOp(args[0]);
   };
 
-    // Each bridge writes straight into the flat options_.host_functions map,
-    // so the module label is recovered from the keys the call adds rather than
-    // from a duplicated list of function names.
-    auto installBridge = [&](const char *module, auto install) {
-        std::unordered_set<std::string> before;
-        before.reserve(options_.host_functions.size());
-        for (auto &kv : options_.host_functions) before.insert(kv.first);
-        install();
-        for (auto &kv : options_.host_functions)
-            if (!before.count(kv.first))
-                host_function_modules_[kv.first] = module;
-    };
-
-    host_function_modules_["type"] = "modules";
-    host_function_modules_["len"] = "modules";
-
-    installBridge("io", [&] { ioBridge_->install(options_); });
-    installBridge("system", [&] { systemBridge_->install(options_); });
-    installBridge("ui", [&] { uiBridge_->install(options_); });
-    installBridge("input", [&] { inputBridge_->install(options_); });
-    installBridge("media", [&] { mediaBridge_->install(options_); });
-    installBridge("audio", [&] { audioBridge_->install(options_); });
-    installBridge("display", [&] { displayBridge_->install(options_); });
-    installBridge("brightness", [&] { brightnessBridge_->install(options_); });
-    installBridge("mode", [&] { modeBridge_->install(options_); });
-    installBridge("timer", [&] { timerBridge_->install(options_); });
-    installBridge("app", [&] { appBridge_->install(options_); });
-    installBridge("concurrency", [&] { concurrencyBridge_->install(options_); });
-    installBridge("automation", [&] { automationBridge_->install(options_); });
-    installBridge("browser", [&] { browserBridge_->install(options_); });
-    installBridge("config", [&] { configBridge_->install(options_); });
-    installBridge("tools", [&] { toolsBridge_->install(options_); });
+    ioBridge_->install(options_);
+    systemBridge_->install(options_);
+    uiBridge_->install(options_);
+    inputBridge_->install(options_);
+    mediaBridge_->install(options_);
+    audioBridge_->install(options_);
+    displayBridge_->install(options_);
+    brightnessBridge_->install(options_);
+    modeBridge_->install(options_);
+    timerBridge_->install(options_);
+    appBridge_->install(options_);
+    concurrencyBridge_->install(options_);
+    automationBridge_->install(options_);
+    browserBridge_->install(options_);
+    configBridge_->install(options_);
+    toolsBridge_->install(options_);
+    eventBridge_->install(options_);
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
@@ -334,13 +329,12 @@ void Modules::installHostFunctions() {
         std::string code = ctx_->vm->resolveStringKey(args[0]);
         if (code.empty()) return Value::makeNull();
         try {
-            parser::Parser parser;
-            auto program = parser.produceAST(code);
-            if (!program || parser.hasErrors()) return Value::makeNull();
-            compiler::ByteCompiler byteCompiler;
-            auto chunk = byteCompiler.compile(*program);
-            if (!chunk) return Value::makeNull();
-            return ctx_->vm->execute(*chunk, "__main__");
+            auto compiled =
+                compiler::ModuleCompilerHook::instance().compileSource(code);
+            if (compiled.status != compiler::SourceCompileStatus::Ok ||
+                !compiled.chunk)
+                return Value::makeNull();
+            return ctx_->vm->execute(*compiled.chunk, "__main__");
         } catch (...) {
             return Value::makeNull();
         }
@@ -472,16 +466,11 @@ void Modules::installStdLib() {
         if (mod.eager) {
             auto plugin = extensionLoader_->loadModulePlugin(mod.name);
             if (plugin) {
-                // Everything this plugin registers belongs to the module the
-                // scanner reported, which is the only authoritative owner.
-                compiler::VM::HostModuleScope scope(vm, mod.name);
                 plugin->register_fn(static_cast<void *>(&api));
             }
         } else {
             std::string modName = mod.name;
-            auto *vmPtr = &vm;
-            vm.registerLazyModule(modName, [this, modName, vmPtr](compiler::VMApi &a) {
-                compiler::VM::HostModuleScope scope(*vmPtr, modName);
+            vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
                 auto plugin = extensionLoader_->loadModulePlugin(modName);
                 if (plugin) {
                     plugin->register_fn(static_cast<void *>(&a));
@@ -498,6 +487,18 @@ void Modules::installStdLib() {
     installStdLib();
     installHostFunctions();
 
+    // Drain extension functions registered through the C ABI
+    // (havel_toolkit_qt/gtk plugins register via the global HavelAPI table
+    // at backend-creation time). Without this drain the registry contents
+    // never reach the VM and the qt.*/gtk.* namespaces stay empty.
+    for (auto &[name, fn] : compiler::takeRegisteredExtensionFunctions(
+             ctx_ ? ctx_->vm : nullptr)) {
+      if (options_.host_functions.find(name) ==
+          options_.host_functions.end()) {
+        options_.host_functions[name] = std::move(fn);
+      }
+    }
+
     // Register host functions on the VM before vm_setup_callbacks run.
     // vm_setup_callbacks (e.g. hotkey object wiring) call getHostFunctionIndex
     // to resolve function names to indices — this requires the functions to
@@ -505,11 +506,6 @@ void Modules::installStdLib() {
     // never set on the hotkey global object.
     for (const auto &[name, fn] : options_.host_functions) {
         ctx_->vm->registerHostFunction(name, fn);
-        // The bridges contributed these into a flat map, so the owner recorded
-        // during installHostFunctions() is applied here, after registration.
-        auto mod = host_function_modules_.find(name);
-        if (mod != host_function_modules_.end())
-            ctx_->vm->setHostFunctionModule(name, mod->second);
     }
     ctx_->vm->buildNamespaceGlobals();
     // Bridge initializer: shapes namespace objects (io/keyboard/devices/mouse).

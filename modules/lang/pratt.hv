@@ -2062,6 +2062,11 @@ fn parseMatchExpr() {
             elseBranch = BlockStatement([], l, c)
         }
     }
+ } else if current().tid == TID.Identifier && current().value == "elif" {
+    // 'elif' is sugar for 'else if' — the condition follows directly
+    advance()
+    skipNewlines()
+    elseBranch = parseIfExpr()
  }
  return IfStatement(condition, thenBranch, elseBranch, l, c)
 
@@ -2852,6 +2857,11 @@ fn parseIfStatement() {
       elseBranch = parseStatement()
       if elseBranch == null: elseBranch = BlockStatement([], l, c)
 }
+} else if current().tid == TID.Identifier && current().value == "elif" {
+    // 'elif' is sugar for 'else if' — the condition follows directly
+    advance()
+    skipNewlines()
+    elseBranch = parseIfStatement()
 }
 return IfStatement(condition, thenBranch, elseBranch, l, c)
 
@@ -3354,8 +3364,13 @@ skipNewlines()
                 test = null
             }
             else {
-                // expression as case
+                # '=>' terminates the test expression (same mechanism as
+                # match arms: Arrow BP is 0 while inMatchExpr). Scoped to
+                # the test only — case bodies may still contain lambdas.
+                prevMatch = inMatchExpr
+                inMatchExpr = true
                 test = parseExpr(0)
+                inMatchExpr = prevMatch
 
             }
             skipNewlines()

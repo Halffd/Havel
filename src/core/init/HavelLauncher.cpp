@@ -532,12 +532,14 @@ static void installMinimalSignalHandlers() {
     ExitReason reason = ExitReason::SignalInt;
     if (sig == SIGTERM) reason = ExitReason::SignalTerm;
     else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
+    else if (sig == SIGHUP) reason = ExitReason::SignalHup;
     else if (sig == SIGSEGV) reason = ExitReason::SignalCrash;
     havel::exit(reason, 0);
   };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
   sigaction(SIGQUIT, &sa, nullptr);
+  sigaction(SIGHUP,  &sa, nullptr);
   sigaction(SIGSEGV, &sa, nullptr);
 }
 
@@ -1066,8 +1068,24 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
+  auto *sched = bytecodeVM ? bytecodeVM->getScheduler() : nullptr;
+  if (io || sched) {
+    // Pump both halves every loop tick (50ms):
+    //  - io->PumpOnce(): EventListener/hotkey key events
+    //  - tickScheduler(): run woken hotkey/event goroutines
+    // The old pump only did PumpOnce, so a hotkey press marked its fiber
+    // runnable and nothing ever executed it — hotkeys silently did nothing
+    // for the whole REPL session (the reported failure). Minimal mode
+    // already pumps goroutines via HavelEngine::tickGoroutines; this is
+    // the full-mode equivalent, guarded by the same idle probe.
+    repl.setPumpCallback([io, bytecodeVM, sched]() {
+      if (io) io->PumpOnce();
+      if (bytecodeVM && sched && sched->hasPendingWork()) {
+        bytecodeVM->tickScheduler();
+      }
+    });
+  }
   if (io) {
-    repl.setPumpCallback([io]() { io->PumpOnce(); });
     repl.setUngrabCallback([io, hkManager]() {
       if (hkManager)
         hkManager->suspendGrabs();
@@ -1097,6 +1115,10 @@ public:
         }
         info("Running scripts and starting REPL in minimal mode...");
         havel::HavelEngine engine(makeEngineConfig(cfg));
+        // execute() must return so runMinimalReplLoop can take over
+        // pumping; the default HotkeyWait keep-alive would wedge here
+        // forever right after a hotkey-registering script.
+        engine.setKeepAliveForHotkeyWakes(false);
         engine.initializeMinimal();
         info("Executing script code...");
         try {
@@ -1170,6 +1192,9 @@ public:
         auto [combinedCode, combinedNames] = *result;
 
         havel::HavelEngine engine(makeEngineConfig(cfg));
+        // REPL takes over pumping after execute() returns (see
+        // ScriptAndReplStrategy's minimal branch).
+        engine.setKeepAliveForHotkeyWakes(false);
         engine.initializeMinimal();
 
         if (!combinedCode.empty()) {
@@ -1212,6 +1237,12 @@ public:
 
 class SelfHostedStrategy : public RunStrategy {
 public:
+  // DEPRECATED: the self-hosted engine path is retired. The C++ pipeline in
+  // src/havel-lang/ (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp) is
+  // authoritative, and modules/lang/ is reference-only and not installed.
+  // Reached only through the explicit --self-hosted flag. Do not extend this
+  // path, and do not chase parse failures in modules/lang/ source: those files
+  // use constructs the C++ parser does not accept and are not built.
   int execute(const havel::init::LaunchConfig &cfg_in, int argc, char *argv[]) override {
     // Mutable copy: the precompiled handoff replaces scriptFiles with .hvc paths.
     havel::init::LaunchConfig cfg = cfg_in;
@@ -1339,7 +1370,8 @@ public:
             *unit.chunk, canonical,
             havel::compiler::computePipelineFingerprint(
                 havel::ModuleLoader::getDefaultCacheDir()),
-            options.strictSemantics, options.optimizeBytecode);
+            options.strictSemantics, options.optimizeBytecode,
+            content);
         std::ofstream out(cacheDir + "/" + cacheName + ".hvc", std::ios::binary);
         if (!out.is_open()) {
           error("Cannot write precompiled chunk for {}", f);
@@ -1740,7 +1772,6 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return diffPipeline(cfg);
     }
 
-    fprintf(stderr, "[DEBUG] Creating strategy for mode=%d\n", (int)cfg.mode);
     auto strategy = createStrategy(cfg);
     return strategy->execute(cfg, argc, argv);
   } catch (const std::exception &e) {
@@ -2020,6 +2051,21 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.strictSemantics = true;
     } else if (arg == "--no-strict-semantics") {
       cfg.strictSemantics = false;
+    } else if (arg == "--ui") {
+      if (i + 1 < argc) {
+        std::string uiName = argv[++i];
+        if (uiName == "qt" || uiName == "gtk" || uiName == "imgui" ||
+            uiName == "auto") {
+          // Applies lazily at first backend creation; an unavailable
+          // backend falls back to auto detection inside UIManager.
+          host::UIManager::instance().setPreferredBackend(uiName);
+        } else {
+          warning("--ui expects qt, gtk, imgui or auto; ignoring '{}'",
+                  uiName);
+        }
+      } else {
+        warning("--ui requires an argument (qt, gtk, imgui, auto)");
+      }
     } else if (arg == "--convert" && i + 1 < argc) {
       cfg.mode = LaunchConfig::Mode::CLI;
       cfg.buildOnly = true;
@@ -2281,9 +2327,10 @@ Options:
   -t, --trace         Trace bytecode execution (show each instruction)
   -dgc, --debug-gc    Enable GC debugging
   -de, --debug-engine Enable engine debugging
-  -dio, --debug-io    Enable IO debugging
-  -dhk, --debug-hotkeys Enable hotkey debugging
-  -e, --error         Stop on first error/warning
+   -dio, --debug-io    Enable IO debugging
+   -dhk, --debug-hotkeys Enable hotkey debugging
+   --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
+   -e, --error         Stop on first error/warning
   -E, --eval CODE     Run inline Havel code
   -m, --minimal       Minimal mode (no IO/hotkeys/GUI)
   --headless            Headless mode (skip X11/BrightnessManager/EventListener)
@@ -2489,7 +2536,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             *chunk, f,
             havel::compiler::computePipelineFingerprint(
                 havel::ModuleLoader::getDefaultCacheDir()),
-            cfg.strictSemantics, false);
+            cfg.strictSemantics, false, content);
         std::error_code writeDirEc;
         std::filesystem::create_directories(
             std::filesystem::path(fileCachePath).parent_path(), writeDirEc);

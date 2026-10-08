@@ -168,6 +168,15 @@ void optimizeJumps();  // Jump threading optimization
   void collectLambdaExpressions(
       const ast::Statement &statement,
       std::vector<const ast::LambdaExpression *> &out) const;
+  // Collect `on <event> { ... }` statements (top-level + nested) for
+  // handler-fn index reservation and compilation. Also descends into
+  // assignments to catch `w = on ... { ... }` (OnEventExpression).
+  void collectOnEventStatements(
+      const ast::Statement &statement,
+      std::vector<const ast::OnEventStatement *> &out) const;
+  void collectOnEventExpressions(
+      const ast::Statement &statement,
+      std::vector<const ast::OnEventExpression *> &out) const;
   void collectLambdaExpressions(
       const ast::Expression &expression,
       std::vector<const ast::LambdaExpression *> &out) const;
@@ -228,6 +237,10 @@ void emitNullableTypeAssertionForLocal(const std::string &inner_type,
     uint32_t slot,
     const std::string &label);
 const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
+  // WithMember: try each candidate owner (nearest first) with a runtime
+  // OBJECT_GET; first non-null member value wins. Leaves the value on the
+  // stack.
+  void compileWithMemberLookup(const ResolvedBinding &binding);
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
 
@@ -262,6 +275,22 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   std::vector<uint32_t> saved_next_local_index_;
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
       function_indices_by_node_;
+  // `on start { }` / `on reload { }` lifecycle blocks compile as chunk-level
+  // functions named __on_start__ / __on_reload__; the engine calls
+  // __on_start__ once before the entry function.
+  std::unordered_map<const ast::ASTNode *, uint32_t> on_block_indices_by_node_;
+  // `on <event> { ... }` handler functions: the body compiles as a function
+  // taking one `event` parameter; REGISTER_EVENT calls event.subscribe.
+  std::unordered_map<const ast::ASTNode *, uint32_t>
+      on_event_indices_by_node_;
+  // Lifecycle blocks (`on start { }` / `on reload { }`). Despite the similar
+  // name this is unrelated to compileWhenBlock; the index map is keyed by
+  // ASTNode*, so it takes the base Statement and dispatches on kind.
+  void compileOnBlock(const ast::Statement &stmt);
+  void compileOnEventStatement(const ast::OnEventStatement &stmt);
+  void compileImportStatement(const ast::ImportStatement &statement);
+  void compileOnEventExpression(const ast::OnEventExpression &stmt);
+  void compileOnEventExprRegistration(const ast::OnEventExpression &stmt);
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>
   class_method_indices_by_node_;
 	std::unordered_map<const ast::StructMethodDef *, uint32_t>

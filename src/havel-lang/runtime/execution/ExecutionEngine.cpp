@@ -81,6 +81,14 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
                     onChannelSend(channel_id);
                 }, FiberPriority::NORMAL);
             });
+
+        event_queue_->onEvent(EventType::FILE_READY,
+            [this](const Event& event) {
+                if (!file_ready_cb_) return;
+                scheduler_->schedule([this]() {
+                    file_ready_cb_();
+                }, FiberPriority::NORMAL);
+            });
     }
 }
 
@@ -591,6 +599,10 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
+  // Hotkey/event callbacks run as goroutines: without this line their
+  // exceptions vanish entirely (reported as "hotkey does nothing" with no
+  // diagnostics anywhere). Always log; debug_mode_ adds the cerr echo.
+  ::havel::error("[ExecutionEngine] Goroutine error: {}", msg);
   if (debug_mode_) {
     std::cerr << "[ExecutionEngine] Goroutine error: " << msg << "\n";
   }

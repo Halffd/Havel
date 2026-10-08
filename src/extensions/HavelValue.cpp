@@ -246,13 +246,25 @@ void havel_object_set(HavelValue* obj, const char* key, HavelValue* v) {
 HavelValue* havel_object_get(const HavelValue* obj, const char* key) {
     if (!obj || obj->type != HAVEL_OBJECT || !key) return nullptr;
     HavelObject* o = obj->data.object;
-    
+
     for (size_t i = 0; i < o->count; i++) {
         if (strcmp(o->keys[i], key) == 0) {
             return o->values[i];
         }
     }
     return nullptr;
+}
+
+size_t havel_object_count(const HavelValue* obj) {
+    if (!obj || obj->type != HAVEL_OBJECT) return 0;
+    return obj->data.object->count;
+}
+
+const char* havel_object_key(const HavelValue* obj, size_t index) {
+    if (!obj || obj->type != HAVEL_OBJECT) return nullptr;
+    HavelObject* o = obj->data.object;
+    if (index >= o->count) return nullptr;
+    return o->keys[index];
 }
 
 /* ==========================================================================

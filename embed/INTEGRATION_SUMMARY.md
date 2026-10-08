@@ -37,7 +37,8 @@ Successfully embedded the Havel language into the game engine (`game-gl`).
 
 ### 1. Fix Library Linking
 The main issue is linking against the pre-built Havel libraries:
-- `libhavel_lang.a`
+- `libhavel_runtime.a`
+- `libhavel_compiler.a`
 - `libhavel_core.a`
 - `libhavel_modules.a`
 

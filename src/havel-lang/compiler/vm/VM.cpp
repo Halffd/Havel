@@ -13,7 +13,7 @@
 #define HAVE_COMPUTED_GOTO 0
 #endif
 #include "../../../utils/Logger.hpp"
-#include "../../parser/Parser.h"
+#include "../../../utils/DebugFlags.hpp"
 #include "../../runtime/Modules.hpp"
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
@@ -24,9 +24,8 @@
 #include "../runtime/EventQueue.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "c/ModulePlugin.h"
-#include "compiler/core/ByteCompiler.hpp"
+#include "compiler/vm/ModuleCompilerHook.hpp"
 #include "dl/Loader.hpp"
-#include "lexer/Lexer.hpp"
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -542,6 +541,18 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
   frame_count_++;
   locals.resize(entry->local_count);
+
+  // Lifecycle hook: `on start { }` runs once at script load, before the
+  // entry function. Compiled as __on_start__; callFunctionSync saves and
+  // restores this frame, so the entry frame below is untouched.
+  if (function_name != "__on_start__") {
+    if (const auto *onStartFn = chunk.getFunction("__on_start__")) {
+      callFunctionSync(
+          Value::makeFunctionObjId(chunk.getFunctionIndex(onStartFn)), {});
+      current_chunk = &chunk;
+    } else {
+    }
+  }
 
   if (!args.empty()) {
     if (entry->variadic_param_index != UINT32_MAX) {
@@ -1491,7 +1502,14 @@ void VM::loadFiberState(Fiber *fiber) {
       auto &live_frame = globals_stack_[gsi];
       auto &saved_frame = fiber->saved_globals_stack[gsi];
       if (live_frame.first.empty()) {
-        live_frame = saved_frame;
+        // Wholesale install of a saved (suspension-time) copy. Tag it:
+        // popGlobals' stale-frame guard needs to know this frame's content
+        // can be older than live ambient writes made while the fiber was
+        // parked (main-fiber accumulators, goroutine globals churn).
+        live_frame.first = std::move(saved_frame.first);
+        live_frame.second = std::move(saved_frame.second);
+        live_frame.fiber_restored = true;
+        live_frame.owner = fiber;
         continue;
       }
       if (!live_frame.second && saved_frame.second) {
@@ -1620,7 +1638,13 @@ void VM::saveFiberState(Fiber *fiber) {
   // tick_in=5 survives a GC-churned ambient that lost it) without
   // breaking shared-write semantics (ambient stays the primary map).
   fiber->saved_globals = globals;
-  fiber->saved_globals_stack = globals_stack_;
+  // SavedGlobalsFrame (Fiber.hpp) is a plain pair; GlobalsFrame carries the
+  // fiber_restored tag, which is live-stack bookkeeping only — drop it here.
+  fiber->saved_globals_stack.clear();
+  fiber->saved_globals_stack.reserve(globals_stack_.size());
+  for (const auto &gf : globals_stack_) {
+    fiber->saved_globals_stack.emplace_back(gf.first, gf.second);
+  }
   fiber->saved_globals_mirror_id = globals_mirror_object_id_;
   fiber->has_saved_globals = true;
 
@@ -3387,8 +3411,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
   bool frame_owns_globals = false;
   if (closure_globals) {
-    uint32_t cid = currentFrame().closure_id;
-    auto *c = heap_.closure(cid);
     if (closure_globals != globals_identity_) {
       pushGlobalsMove();
       globals = *closure_globals;
@@ -6485,45 +6507,43 @@ load_from_source:
     current_script_dir_ =
         std::filesystem::path(resolved->canonicalPath).parent_path().string();
 
-    // Compile the module source using the real parser + ByteCompiler pipeline
-    // (CompilationPipeline is a stub — we must use the same path as
-    // runBytecodePipeline)
-    parser::Parser parser{{}};
-    std::unique_ptr<ast::Program> program;
-    try {
-      program = parser.produceAST(source);
-    } catch (const ::havel::LexError &e) {
+    // Compile through the module compiler hook: the SDK registers the
+    // parse + ByteCompiler pipeline, runtime-only builds degrade with a
+    // clean error instead of linking the compiler.
+    auto compiled = ModuleCompilerHook::instance().compileSource(source);
+    switch (compiled.status) {
+    case SourceCompileStatus::Ok:
+      chunk = std::move(compiled.chunk);
+      break;
+    case SourceCompileStatus::LexError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " lexer error: " + e.what());
-    } catch (const ::havel::parser::ParseError &e) {
+      COMPILER_THROW("Module " + path + " lexer error: " + compiled.error);
+    case SourceCompileStatus::ParseError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " parse error: " + e.what());
-    }
-    if (!program || parser.hasErrors()) {
+      COMPILER_THROW("Module " + path + " parse error: " + compiled.error);
+    case SourceCompileStatus::ParseFailed:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      std::string errors;
-      if (parser.hasErrors()) {
-        for (const auto &err : parser.getErrors())
-          errors += err.message + "\n";
-      }
-      COMPILER_THROW("Module " + path + " failed to parse: " + errors);
-    }
-
-    ByteCompiler compiler;
-
-    try {
-      chunk =
-          std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
-    } catch (const std::exception &e) {
+      COMPILER_THROW("Module " + path + " failed to parse: " + compiled.error);
+    case SourceCompileStatus::CompileError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path +
-                     " compilation error: " + std::string(e.what()));
+                     " compilation error: " + compiled.error);
+    case SourceCompileStatus::NullChunk:
+      moduleLoadDone(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " compiler returned null chunk");
+    case SourceCompileStatus::NoCompiler:
+      moduleLoadDone(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path +
+                     " cannot be compiled: " + compiled.error);
     }
     if (!chunk) {
+      // Defensive: hook reported Ok without a chunk.
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
@@ -7665,81 +7685,54 @@ Value VM::loadScript(const std::string &path) {
   current_script_dir_ =
       std::filesystem::path(resolved->canonicalPath).parent_path().string();
 
-  parser::Parser parser{{}};
-  std::unique_ptr<ast::Program> program;
-  try {
-    program = parser.produceAST(source);
-  } catch (const ::havel::LexError &e) {
+  auto compiled = ModuleCompilerHook::instance().compileSource(source);
+  switch (compiled.status) {
+  case SourceCompileStatus::Ok:
+    chunk = std::move(compiled.chunk);
+    break;
+  case SourceCompileStatus::LexError:
     moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
-    COMPILER_THROW("load: lexer error in " + path + ": " + e.what());
-  } catch (const ::havel::parser::ParseError &e) {
+    COMPILER_THROW("load: lexer error in " + path + ": " + compiled.error);
+  case SourceCompileStatus::ParseError:
     moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
-    COMPILER_THROW("load: parse error in " + path + ": " + e.what());
-  }
-  if (!program || parser.hasErrors()) {
+    COMPILER_THROW("load: parse error in " + path + ": " + compiled.error);
+  case SourceCompileStatus::ParseFailed:
     moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
-    std::string errors;
-    if (parser.hasErrors()) {
-      for (const auto &err : parser.getErrors())
-        errors += err.message + "\n";
-    }
-    COMPILER_THROW("load: failed to parse " + path + ": " + errors);
-  }
-
-  ByteCompiler compiler;
-  try {
-    chunk =
-        std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
-  } catch (const std::exception &e) {
+    COMPILER_THROW("load: failed to parse " + path + ": " + compiled.error);
+  case SourceCompileStatus::CompileError:
     moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: compilation error in " + path + ": " +
-                   std::string(e.what()));
+                   compiled.error);
+  case SourceCompileStatus::NullChunk:
+    moduleLoadDone(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: compiler returned null chunk for " + path);
+  case SourceCompileStatus::NoCompiler:
+    moduleLoadDone(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: cannot compile " + path + ": " + compiled.error);
   }
   if (!chunk) {
+    // Defensive: hook reported Ok without a chunk.
     moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: compiler returned null chunk for " + path);
   }
 
-  // Register protocol/impl info from AST with VM
-  for (const auto &stmt : program->body) {
-    if (!stmt)
-      continue;
-    if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
-      const auto &protDecl =
-          static_cast<const ast::ProtocolDeclaration &>(*stmt);
-      std::unordered_set<std::string> methodNames;
-      for (const auto &method : protDecl.methods) {
-        if (method && method->name)
-          methodNames.insert(method->name->symbol);
-      }
-      if (protDecl.name)
-        registerProtocol(protDecl.name->symbol, methodNames);
-    }
-    if (stmt->kind == ast::NodeType::TraitDeclaration) {
-      const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(*stmt);
-      std::unordered_set<std::string> methodNames;
-      for (const auto &method : traitDecl.methods) {
-        if (method && method->name)
-          methodNames.insert(method->name->symbol);
-      }
-      if (traitDecl.name)
-        registerProtocol(traitDecl.name->symbol, methodNames);
-    }
-    if (stmt->kind == ast::NodeType::ImplDeclaration) {
-      const auto &implDecl = static_cast<const ast::ImplDeclaration &>(*stmt);
-      std::string traitName =
-          implDecl.traitName ? implDecl.traitName->symbol : "";
-      std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
-      if (!traitName.empty() && !typeName.empty()) {
-        registerProtocolImpl(traitName, typeName);
-      }
-    }
+  // Register protocol/impl info with the VM. The compiler hook
+  // translated the AST declarations into plain descriptors so the
+  // runtime never sees AST types.
+  for (const auto &protocol : compiled.protocols) {
+    std::unordered_set<std::string> methodNames(protocol.methods.begin(),
+                                                 protocol.methods.end());
+    registerProtocol(protocol.name, methodNames);
   }
+  for (const auto &impl : compiled.impls)
+    registerProtocolImpl(impl.traitName, impl.typeName);
 
   // Keep the chunk alive so closures/functions from this script remain valid
   module_chunks_[canonicalKey] = chunk;
@@ -7874,45 +7867,16 @@ Value VM::runInContext(const std::string &source, Value context) {
     return Value::makeNull();
   }
 
-  parser::Parser parser{{}};
-  std::unique_ptr<ast::Program> program;
-  try {
-    program = parser.produceAST(source);
-  } catch (const ::havel::LexError &) {
-    popGlobals();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
-  } catch (const ::havel::parser::ParseError &) {
-    popGlobals();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
-  }
-  if (!program || parser.hasErrors()) {
-    popGlobals();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
-  }
-
-  ByteCompiler compiler;
-
   std::shared_ptr<BytecodeChunk> chunk;
-  try {
-    chunk =
-        std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
-  } catch (const std::exception &) {
-    popGlobals();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
-  }
-  if (!chunk) {
-    popGlobals();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
+  {
+    auto compiled = ModuleCompilerHook::instance().compileSource(source);
+    if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk) {
+      popGlobals();
+      globals["_G"] = old_g;
+      globals_mirror_object_id_ = old_mirror_id;
+      return Value::makeNull();
+    }
+    chunk = std::move(compiled.chunk);
   }
 
   Value exec_result = execute(*chunk, "__main__");

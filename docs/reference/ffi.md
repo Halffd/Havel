@@ -270,7 +270,7 @@ FFIAccessors.hpp       -- inline typed pointer read/write
 
 All FFI code is gated behind `#ifdef HAVE_LIBFFI`. When libffi is not available at build time, `registerFFIModule` is a no-op and none of the FFI functions are registered.
 
-CMake sets `HAVE_LIBFFI` via `pkg_check_modules(LIBFFI)` and propagates it to both the `havel_lang` static library and the `havel` executable target via generator expressions:
+CMake sets `HAVE_LIBFFI` via `pkg_check_modules(LIBFFI)` and propagates it to the language archives (`havel_runtime`, `havel_compiler`) and the `havel` executable target via generator expressions:
 
 ```cmake
 target_compile_definitions(havel PRIVATE

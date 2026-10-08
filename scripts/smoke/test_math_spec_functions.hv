@@ -1,0 +1,56 @@
+// Regression: spec-documented math/array functions that were silently broken.
+// docs/specs/Havel.md documents:
+//   min(3, 1, 4, 2)   // Minimum: 1.0   (variadic)
+//   hypot(3, 4)       // 5.0
+//   hypot(1, 2, 2)    // Multi-dimensional hypotenuse: sqrt(1+4+4) = 3
+//   LN2, LN10         // ln(2), ln(10)
+//   arr.sortByKey("age") / ("name", cmp)  in "Object Sorting with sortByKey()"
+// Before the fix: bare min/max were taken by std.array's fn min(arr), so the
+// variadic scalar form returned null (min(5, maxSize) in std/coroutine was
+// broken); the math sidecar's fn hypot(a, b) silently dropped the third arg
+// (hypot(1,2,2) returned sqrt(5)); LN2/LN10 did not exist; sortByKey did not
+// exist. The min/max/hypot dispatchers delegate per-type like `sorted`;
+// sortByKey returns a NEW array (non-mutating) and its comparator receives
+// the two field values. Note: sortByKey("name", (a, b) => b > a) sorts
+// ASCENDING (b > a means a < b); the spec comment "descending" there is a
+// doc error - use (a, b) => a > b for descending.
+// Expected result: all assertions pass, exit 0.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// Variadic bare min/max (spec Utility functions)
+assertEq(min(3, 1, 4, 2), 1, "min variadic")
+assertEq(max(3, 1, 4, 2), 4, "max variadic")
+assertEq(min(5, 7), 5, "min two args")
+assertEq(max(5, 7), 7, "max two args")
+// Array forms preserved (std.array contract)
+assertEq(min([5, 3, 1, 4]), 1, "min array")
+assertEq(max([5, 3, 1, 4]), 5, "max array")
+
+// Multi-dimensional hypot (spec Geometry functions)
+assertEq(hypot(3, 4), 5, "hypot 2d")
+assertEq(hypot(1, 2, 2), 3, "hypot 3d")
+assertEq(hypot(-3, 4), 5, "hypot negative")
+
+// Constants (spec Mathematical constants)
+assertEq(approx(LN2, 0.6931471805599453), true, "LN2")
+assertEq(approx(LN10, 2.302585092994046), true, "LN10")
+
+// sortByKey (spec Object Sorting)
+people = [{name: "Bob", age: 30}, {name: "Alice", age: 25}, {name: "Charlie", age: 35}]
+by_age = people.sortByKey("age")
+assertEq(by_age[0].name, "Alice", "sortByKey age ascending first")
+assertEq(by_age[2].name, "Charlie", "sortByKey age ascending last")
+assertEq(people[0].name, "Bob", "sortByKey does not mutate")
+by_name = people.sortByKey("name", (a, b) => b > a)
+assertEq(by_name[0].name, "Alice", "sortByKey name b>a ascending first")
+assertEq(by_name[2].name, "Charlie", "sortByKey name b>a ascending last")
+by_desc = people.sortByKey("age", (a, b) => b - a)
+assertEq(by_desc[0].name, "Charlie", "sortByKey age descending first")
+assertEq(by_desc[2].name, "Alice", "sortByKey age descending last")
+
+print("ok")

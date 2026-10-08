@@ -2,6 +2,7 @@
 #include "UIBackendFactory.hpp"
 #include "c/ToolkitPlugin.h"
 #include "dl/Loader.h"
+#include "extensions/HavelCAPI.h"
 #include "../screenshot/ScreenshotService.hpp"
 #include "../window/AltTabService.hpp"
 #include "../clipboard/Clipboard.hpp"
@@ -22,6 +23,17 @@ namespace havel::host {
 UIManager& UIManager::instance() {
     static UIManager inst;
     return inst;
+}
+
+// Preferred backend requested via --ui (see setPreferredBackend).
+static std::string g_preferred_backend;
+
+void UIManager::setPreferredBackend(const std::string &apiName) {
+    g_preferred_backend = apiName;
+}
+
+std::string UIManager::preferredBackend() {
+    return g_preferred_backend;
 }
 
 void UIManager::destroyBackend() {
@@ -136,6 +148,18 @@ bool UIManager::isBackendAvailable(const std::string& apiName) const {
 }
 
 UIBackend::Api UIManager::detectBestBackend() const {
+    const std::string preferred = preferredBackend();
+    if (!preferred.empty() && preferred != "auto") {
+        UIBackend::Api api = UIBackend::Api::AUTO;
+        if (preferred == "qt") api = UIBackend::Api::QT;
+        else if (preferred == "gtk") api = UIBackend::Api::GTK;
+        else if (preferred == "imgui") api = UIBackend::Api::IMGUI;
+        if (api != UIBackend::Api::AUTO && isBackendAvailable(api)) {
+            return api;
+        }
+        // Requested but unavailable: fall back to the auto order below so
+        // a bad --ui value degrades instead of killing the app.
+    }
     if (isBackendAvailable(UIBackend::Api::QT)) {
         return UIBackend::Api::QT;
     }
@@ -186,7 +210,12 @@ std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const
 
 void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
     if (!toolkit.abi || !toolkit.abi->register_extension_functions) return;
-    toolkit.abi->register_extension_functions(nullptr);
+    // Pass the real global C-API table: it is a static dispatch struct that
+    // exists before any engine or VM, and registration only fills the
+    // extension-function registry (drained by Modules::install). The old
+    // nullptr call crashed toolkit plugins that dereferenced it and left
+    // qt.* permanently unregistered.
+    toolkit.abi->register_extension_functions(havel_get_global_c_api());
 }
 
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {

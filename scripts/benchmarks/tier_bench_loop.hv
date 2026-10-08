@@ -1,0 +1,31 @@
+// tiering benchmark 2: loop-heavy function.
+// 2000 calls, each running a 1000-iteration inner loop of subset opcodes.
+// After tier-up the inner loop executes as native code: the profiler's
+// interpreted-instruction count collapses (from ~4M to ~65k) while the
+// backedge count stays, which is how you verify the loop really went
+// native rather than falling back.
+//
+// run: havel --tiering tier_bench_loop.hv --minimal
+//      havel tier_bench_loop.hv --minimal
+//
+// Baseline (build-crane-nollvm-hl, release, headless, no LLVM, CPU time):
+//   interpreter 5.72u + 0.52s
+//   tier-1       3.99u + 1.16s   (~18% less CPU)
+// Wall clock is NOT a valid metric on a shared machine; see README.
+
+fn hot(a) {
+    acc = a
+    for j in 0 .. 1000 {
+        acc = acc + j * 2
+        if acc > 100000 {
+            acc = acc - 100000
+        }
+    }
+    return acc
+}
+
+total = 0
+for i in 0 .. 2000 {
+    total = hot(i)
+}
+print("total $total")

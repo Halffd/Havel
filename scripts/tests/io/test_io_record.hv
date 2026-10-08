@@ -8,7 +8,7 @@ f2 => {
 }
 coords = []
 ~LButton => {
-    if io.getKey("lctrl") {
+    if keyboard.getKey("lctrl") {
         coords.push("pin")
     }
     coords.push(mouse.pos())

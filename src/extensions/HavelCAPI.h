@@ -110,6 +110,17 @@ typedef struct HavelExtensionInfo {
 #define HAVEL_API_VERSION 1
 
 /**
+ * Global HavelAPI instance used for toolkit-plugin registrations.
+ *
+ * The API struct is a static dispatch table (HavelAPI.cpp); it exists
+ * before any engine or VM does, so hosts can pass it to
+ * register_extension_functions at backend-creation time. Registration only
+ * fills the extension-function registry; the VM drains it later
+ * (havel::compiler::takeRegisteredExtensionFunctions).
+ */
+void* havel_get_global_c_api(void);
+
+/**
  * Helper macro for defining extension entry point
  *
  * Usage:

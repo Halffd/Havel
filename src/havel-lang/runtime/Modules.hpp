@@ -2,7 +2,7 @@
 
 #include "HostContext.hpp"
 #include "dl/Loader.hpp"
-#include "../compiler/core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../compiler/vm/VM.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
@@ -31,6 +31,7 @@ class AppBridge;
 class AutomationBridge;
 class BrowserBridge;
 class ToolsBridge;
+class EventBridge;
 class BrightnessBridge;
 }
 
@@ -92,6 +93,7 @@ private:
     std::unique_ptr<compiler::AutomationBridge> automationBridge_;
     std::unique_ptr<compiler::BrowserBridge> browserBridge_;
     std::unique_ptr<compiler::ToolsBridge> toolsBridge_;
+    std::unique_ptr<compiler::EventBridge> eventBridge_;
 
     std::vector<std::function<void(compiler::VM &)>> vm_setup_callbacks_;
 

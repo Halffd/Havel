@@ -5,7 +5,7 @@
 #include "../../../host/module/ExecutionPolicy.hpp"
 #include "../../../host/module/ModuleLoader.hpp"
 #include "../../runtime/HostContext.hpp"
-#include "../core/Pipeline.hpp"
+#include "havel-lang/core/PipelineOptions.hpp"
 #include "../vm/VM.hpp"
 
 #include <algorithm>

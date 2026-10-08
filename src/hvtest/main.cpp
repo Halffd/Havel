@@ -138,6 +138,17 @@ int main(int argc, char **argv) {
 		if (havel_bin.empty()) havel_bin = find_havel_binary();
 	if (scripts_root.empty()) scripts_root = find_scripts_root();
 
+	// Some scripts under test shell out to the havel binary (--lint, --repl).
+	// Left to themselves they probe `${cwd}/build-debug/havel` first, which is
+	// a *different build* from the one hvtest was compiled in: the suite then
+	// validates a stale binary and reports failures unrelated to the code under
+	// test (a stale ASAN build dies before main with "Shadow memory range
+	// interleaves with an existing memory mapping"). Hand them the binary
+	// resolved above, which is by construction the one built from current
+	// sources. An explicit HAVEL_BINARY in the environment still wins.
+	if (!std::getenv("HAVEL_BINARY") || std::getenv("HAVEL_BINARY")[0] == '\0')
+		setenv("HAVEL_BINARY", havel_bin.c_str(), 1);
+
     // A positional name next to a suite mode (--smoke/--hvmoke) is a
     // name FILTER, not a script path: running `hvtest --smoke NAME`
     // used to push NAME into single_files, where it executed as a

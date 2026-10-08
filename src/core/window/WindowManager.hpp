@@ -7,12 +7,15 @@
 #include "core/config/ConfigManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "types.hpp"
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 #include <vector>
 
 namespace havel {
@@ -45,6 +48,12 @@ public:
   static pID GetWindowPID(wID id);
   static std::string GetWindowTitle(wID id);
   static std::string GetWindowClass(wID id);
+  static wID GetWindowParent(wID id);
+  static std::vector<wID> GetWindowChildren(wID id);
+  static std::vector<std::pair<std::string, std::string>>
+  GetWindowProperties(wID id);
+  static std::vector<uint8_t> GetWindowIcon(wID id, int &width, int &height);
+  static std::vector<uint8_t> CaptureWindow(wID id, int &width, int &height);
   static wID GetwIDByPID(pID pid);
   static wID GetwIDByProcessName(cstr processName);
   static wID FindByClass(cstr className);

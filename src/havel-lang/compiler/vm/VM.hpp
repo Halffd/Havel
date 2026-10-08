@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <format>
+#include <string_view>
 #include <functional>
 #include <memory>
 #include <cstdio>
@@ -433,9 +435,17 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     // A frame on the globals stack: the map that was swapped out plus the
     // module-globals identity that was active at swap time. Identity lets
     // call sites skip the full-map copy when a call stays inside one module.
-    using GlobalsFrame =
-        std::pair<std::unordered_map<std::string, Value>,
-                  std::shared_ptr<std::unordered_map<std::string, Value>>>;
+    // Fields keep the pair names (.first/.second) so existing access sites
+    // read unchanged. fiber_restored marks frames (re)installed wholesale
+    // by loadFiberState's globals_stack_ repair: such frames hold deep
+    // copies taken at suspension time and can be OLDER than live ambient
+    // writes (see popGlobals' stale-frame guard).
+    struct GlobalsFrame {
+      std::unordered_map<std::string, Value> first;
+      std::shared_ptr<std::unordered_map<std::string, Value>> second;
+      bool fiber_restored = false;
+      Fiber* owner = nullptr;
+    };
     std::vector<GlobalsFrame> globals_stack_;
     // Identity (which module_globals shared_ptr) of the map currently
     // installed as `globals` — null for the engine-main map. Restored from
@@ -445,15 +455,50 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     // Swap `globals` + identity onto the stack as one unit (moving the
     // map). Restores via popGlobals().
     void pushGlobalsMove() {
-      globals_stack_.push_back({std::move(globals), globals_identity_});
+      globals_stack_.push_back({std::move(globals), globals_identity_, false, current_executing_fiber_});
     }
     // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
     void pushGlobalsCopy() {
-      globals_stack_.push_back({globals, globals_identity_});
+      globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
     }
     void popGlobals() {
-      globals = std::move(globals_stack_.back().first);
-      globals_identity_ = std::move(globals_stack_.back().second);
+      auto &frame = globals_stack_.back();
+      // Stale-frame guard: loadFiberState's globals_stack_ repair can
+      // (re)install suspension-time copies of the engine-main scope into
+      // the live globals stack (tagged fiber_restored). Such a frame can be
+      // OLDER than writes the main fiber made while a goroutine was parked
+      // (loop accumulators, counters); restoring it wholesale clobbers
+      // those writes back to spawn-time values and scatters later writes
+      // across orphaned copies. When a fiber-restored frame and the current
+      // ambient are BOTH engine-main lineage (null identity), merge the
+      // fresher current writes into the frame before restoring. Frames
+      // pushed by real module/loader calls are never tagged, so their pops
+      // behave exactly as before - module sandboxes stay untouched.
+      const bool engine_main_both = (!frame.second && !globals_identity_);
+      const bool foreign_pop = engine_main_both &&
+                               frame.owner &&
+                               current_executing_fiber_ &&
+                               frame.owner != current_executing_fiber_;
+      if (foreign_pop) {
+        for (const auto &[k, v] : frame.first) {
+          if (!globals.count(k)) {
+            globals.emplace(k, v);
+          }
+        }
+        globals_stack_.pop_back();
+        return;
+      }
+      bool should_merge_into_frame = false;
+      if (engine_main_both && frame.fiber_restored) {
+        should_merge_into_frame = true;
+      }
+      if (should_merge_into_frame) {
+        for (const auto &[k, v] : globals) {
+          frame.first[k] = v;
+        }
+      }
+      globals = std::move(frame.first);
+      globals_identity_ = std::move(frame.second);
       globals_stack_.pop_back();
     }
  std::unordered_map<std::string, Value> rootGlobals_;
@@ -462,7 +507,21 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
     uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
-    std::unordered_map<uint32_t, uint64_t> backedge_counters_;
+  // Per-site backedge accounting. `count` mirrors the interpreter's
+  // per-ip backedge counter; the function-pointer fields cache the
+  // per-(function, ip) one-shot events (hot-trace hook, tier-up attempt,
+  // tier-2 site dedup) so a hot loop pays them once instead of on every
+  // past-threshold iteration. Pointer identity is only a pre-filter: the
+  // authoritative dedup stays hot_trace_sites_/tier2_backedge_sites_ and
+  // maybeTierUp's name set, which the flags can never pre-suppress a
+  // would-fire event for (same fn + same ip = same site key).
+  struct BackedgeSiteState {
+    uint64_t count = 0;
+    const BytecodeFunction* tier1_fn = nullptr;  // tier-up attempted here
+    const BytecodeFunction* trace_fn = nullptr;   // hot-trace hook fired here
+    const BytecodeFunction* tier2_fn = nullptr;   // tier-2 site deduped here
+  };
+  std::unordered_map<uint32_t, BackedgeSiteState> backedge_counters_;
     // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
     // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
     RuntimeProfiler profiler_;
@@ -1018,14 +1077,25 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
+        recordBackedgeDeltaPublic(ip, 1);
+    }
+    // Batched form for JIT code: native loops report one call per
+    // BACKEDGE_STRIDE taken backedges with the exact stride delta so
+    // hotness, tier-up and profiler totals stay accurate at a fraction
+    // of the call rate.
+    void recordBackedgeDeltaPublic(uint32_t ip, uint32_t delta) {
         // Hot path: this runs on EVERY loop backedge (millions in the
-        // benchmarks). Keep the sub-threshold path to a counter bump:
-        // the site-key string hash, the hot-trace mutex, tier-2 site
-        // dedup and maybeTierUp only matter once the site is hot
-        // (>= tier1_threshold_ backedges at this ip).
-        auto count = ++backedge_counters_[ip];
-        trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
-        profiler_.recordBackedgeTotal();
+        // benchmarks). Sub-threshold stays a counter bump plus two
+        // relaxed atomics; everything else (frame lookup, per-function
+        // profiler stat, hot-trace hook, tier-up, tier-2 site dedup)
+        // only runs past the tier-1 threshold, and each one-shot event
+        // only once per (function, ip) via the per-site cache - the old
+        // shape re-hashed the function name and took hot_trace_mutex_
+        // on EVERY past-threshold iteration, which dominated hot loops.
+        auto& site = backedge_counters_[ip];
+        const uint64_t count = (site.count += delta);
+        trace_hot_count_.fetch_add(delta, std::memory_order_relaxed);
+        profiler_.recordBackedgeTotal(delta);
         if (count < tier1_threshold_) {
             return;
         }
@@ -1036,39 +1106,54 @@ Value lookupGlobalByKey(const std::string& key) {
         if (!frame.function) {
             return;
         }
+        const BytecodeFunction* fn = frame.function;
         if (frame.chunk) {
-            profiler_.recordBackedge(frame.chunk->getFunctionIndex(frame.function));
+            profiler_.recordBackedge(frame.chunk->getFunctionIndex(fn), delta);
         }
-        const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
+        // (fn, ip) site key: computed lazily - the string hash is only
+        // affordable on the one-shot event paths, never per iteration.
+        auto site_key_of = [&fn, ip]() {
+            return (static_cast<uint64_t>(std::hash<std::string>{}(fn->name)) << 32) ^ ip;
+        };
         // Trace callback fires once per site past the tier-1 threshold
         // (hot-trace hooks; separate from function tier-up).
-        {
+        if (site.trace_fn != fn) {
             bool should_fire = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                should_fire = hot_trace_sites_.insert(site_key).second;
+                should_fire = hot_trace_sites_.insert(site_key_of()).second;
             }
             if (should_fire) {
                 if (hot_trace_cb_) {
-                    hot_trace_cb_(*frame.function, ip, count);
+                    hot_trace_cb_(*fn, ip, count);
                 }
             }
+            site.trace_fn = fn;
         }
         // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
         // backedge count even without binop feedback at the loop head.
-        maybeTierUp(*frame.function, count, "backedge");
+        // maybeTierUp dedups by function name internally, so one attempt
+        // per site is enough; a debugger suppresses without deciding, so
+        // keep attempting while one is attached.
+        if (site.tier1_fn != fn || debugger_attached_) {
+            maybeTierUp(*fn, count, "backedge");
+            if (!debugger_attached_) {
+                site.tier1_fn = fn;
+            }
+        }
         // Tier-2 backedge hotness statistic: count each SITE once
         // (mirroring the site-key dedup above); actual tier-2 queueing is
         // the tier manager's job.
-        if (count >= tier2_threshold_) {
+        if (count >= tier2_threshold_ && site.tier2_fn != fn) {
             bool first_time = false;
             {
                 std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                first_time = tier2_backedge_sites_.insert(site_key).second;
+                first_time = tier2_backedge_sites_.insert(site_key_of()).second;
             }
             if (first_time) {
                 tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
             }
+            site.tier2_fn = fn;
         }
     }
 
@@ -1390,42 +1475,28 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
-    // Module-function gate: module functions do NOT tier yet. The JIT
-    // execute path pushes no interpreter frame, so a compiled module
-    // function's Runtime-ABI global writes persist against the CALLER's
-    // frame (closure_id 0 when called from __main__), never reaching the
-    // module's sidecar - module-level caches then diverge depending on
+    // Module-function tiering: LIFTED (previously gated behind
+    // HAVEL_TIER1_MODULES). The gate existed because the JIT execute path
+    // pushed no interpreter frame, so a compiled module function's
+    // Runtime-ABI global writes persisted against the CALLER's frame
+    // (closure_id 0 when called from __main__), never reaching the
+    // module's sidecar - module-level caches then diverged depending on
     // which path touched them last (the self-hosted parser's BP_TABLE
-    // broke exactly this way; isolating via HAVEL_TIER1_ONLY showed the
-    // compiled function itself returns correct values). doCall's JIT
-    // branch now performs the module-globals snapshot swap for ClosureId
-    // calls (matching the interpreter), which fixes that half; lifting
-    // this gate additionally requires the JIT path to establish the
-    // callee's frame context (closure_id/module_globals) for the bridges.
-    // HAVEL_TIER1_MODULES=1 opts into module tiering for testing.
-    // Status 2026-09-12: the doCall JIT branch now establishes callee
-    // frame context (synthetic CallFrame with closure_id/chunk, globals
-    // sidecar swap, current_chunk swap - see VM.cpp doCall jit path), and
-    // module tiering passed a correctness sweep with it: 16 real smoke
-    // tests (an initial 5 "failures" were nonexistent filenames, caught
-    // and rerun), full --lint parse+typecheck+emit, and an 80-fn
-    // parse-verification script (AST stmt count exact) all pass with
-    // tier1=5 parser functions compiled. An earlier note claiming
-    // divergence was a flawed test (missing --lint flag + load-confounded
-    // timings), not a real repro. Gate remains until the remaining risk
-    // is covered by the full suite: tiered module functions still bypass
-    // interpreter frame management (coroutine/suspension opcodes route
-    // through the JitCoroutineSignal fallback) and the old BP_TABLE
-    // divergence class deserves a targeted regression test before
-    // lifting by default.
-    static const bool allow_module_tiering =
-        std::getenv("HAVEL_TIER1_MODULES") != nullptr;
-    if (!allow_module_tiering && frame_count_ > 0) {
-      const auto& cf = currentFrame();
-      if (cf.chunk && cf.chunk != main_chunk_.get()) {
-        return;
-      }
-    }
+    // broke exactly this way). Both prerequisites the gate's lift
+    // demanded are now in place: doCall's JIT branch performs the
+    // module-globals snapshot swap for ClosureId calls AND establishes
+    // the callee's frame context (synthetic CallFrame with
+    // closure_id/chunk, globals sidecar swap, current_chunk swap - see
+    // VM.cpp doCall jit path), passing a correctness sweep (16 real smoke
+    // tests, full --lint parse+typecheck+emit, an 80-fn
+    // parse-verification script with tier1=5 parser functions compiled).
+    // The BP_TABLE-divergence class the old comment demanded a regression
+    // test for is covered by scripts/smoke/test_issue_mod_lazy_cache_tiering.hv
+    // (drives module functions past tier-up, asserts the module cache is
+    // built exactly once and correct through the tiered path; slow-tier,
+    // so the full pre-merge gate runs it). Coroutine/suspension opcodes
+    // in tiered module functions route through the JitCoroutineSignal
+    // fallback. HAVEL_TIERING=0 remains the global opt-out.
     const size_t size = func.instructions.size();
     if (size == 0 || size > tier1_max_instructions_) {
       return;  // never worth compiling (empty or above the tier-1 cap)
@@ -2559,3 +2630,32 @@ public:
 };
 
 } // namespace havel::compiler
+
+// std::formatter for GoroutineCallResult so havel::debug() can log it.
+// GCC 16's libstdc++ statically asserts that every format-arg type has a
+// formatter; enums have none by default. Defined at global scope: a
+// `namespace std` block nested inside havel::compiler does not reopen ::std
+// under clang + GCC 16 headers.
+namespace std {
+template <>
+struct formatter<havel::compiler::VM::GoroutineCallResult, char>
+    : formatter<string_view, char> {
+  template <typename FormatContext>
+  auto format(const havel::compiler::VM::GoroutineCallResult &r,
+              FormatContext &ctx) const {
+    string_view name = "Failed";
+    switch (r) {
+    case havel::compiler::VM::GoroutineCallResult::Interpreter:
+      name = "Interpreter";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::JITExecuted:
+      name = "JITExecuted";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::Failed:
+      name = "Failed";
+      break;
+    }
+    return formatter<string_view, char>::format(name, ctx);
+  }
+};
+} // namespace std

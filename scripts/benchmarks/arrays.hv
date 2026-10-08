@@ -1,0 +1,60 @@
+// Benchmark: Array operations
+// Tests array creation, indexing, and iteration
+
+fn benchmark_array_creation() {
+    count = 0
+    i = 0
+    while i < 50000 {
+        arr = []
+        count = count + 1
+        i = i + 1
+    }
+    return count
+}
+
+fn benchmark_array_push() {
+    arr = []
+    i = 0
+    while i < 100000 {
+        arr.push(i)
+        i = i + 1
+    }
+    return arr.length()
+}
+
+fn benchmark_array_iteration() {
+    arr = []
+    i = 0
+    while i < 10000 {
+        arr.push(i)
+        i = i + 1
+    }
+    
+    sum = 0
+    for item in arr {
+        sum = sum + item
+    }
+    return sum
+}
+
+fn benchmark_array_indexing() {
+    arr = []
+    i = 0
+    while i < 100000 {
+        arr.push(i % 100)
+        i = i + 1
+    }
+    
+    sum = 0
+    i = 0
+    while i < arr.length() {
+        sum = sum + arr[i]
+        i = i + 1
+    }
+    return sum
+}
+
+print("arrays/array_creation=" + str(benchmark_array_creation()))
+print("arrays/array_push=" + str(benchmark_array_push()))
+print("arrays/array_iteration=" + str(benchmark_array_iteration()))
+print("arrays/array_indexing=" + str(benchmark_array_indexing()))

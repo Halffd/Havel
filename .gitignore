@@ -5,6 +5,7 @@ src/file
 .idea
 .vscode
 .codex
+.env
 .claude
 havel_crash*
 cmake-build-debug

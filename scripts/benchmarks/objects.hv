@@ -1,0 +1,55 @@
+// Benchmark: Object operations
+// Tests object creation, property access, and method calls
+
+fn benchmark_object_creation() {
+    count = 0
+    i = 0
+    while i < 50000 {
+        obj = { x: 10, y: 20 }
+        count = count + 1
+        i = i + 1
+    }
+    return count
+}
+
+fn benchmark_object_access() {
+    obj = { x: 10, y: 20, z: 30 }
+    sum = 0
+    i = 0
+    while i < 1000000 {
+        sum = sum + obj.x + obj.y + obj.z
+        i = i + 1
+    }
+    return sum
+}
+
+fn benchmark_object_modification() {
+    obj = { x: 0, y: 0 }
+    i = 0
+    while i < 500000 {
+        obj.x = obj.x + 1
+        obj.y = obj.y - 1
+        i = i + 1
+    }
+    return obj.x
+}
+
+fn benchmark_nested_objects() {
+    count = 0
+    i = 0
+    while i < 100000 {
+        obj = {
+            a: { x: 1, y: 2 },
+            b: { x: 3, y: 4 }
+        }
+        sum = obj.a.x + obj.b.y
+        count = count + 1
+        i = i + 1
+    }
+    return count
+}
+
+print("objects/object_creation=" + str(benchmark_object_creation()))
+print("objects/object_access=" + str(benchmark_object_access()))
+print("objects/object_modification=" + str(benchmark_object_modification()))
+print("objects/nested_objects=" + str(benchmark_nested_objects()))

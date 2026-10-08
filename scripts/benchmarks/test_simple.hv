@@ -1,0 +1,6 @@
+fn simple_add() {
+    1 + 2
+}
+
+result = simple_add()
+print(result)

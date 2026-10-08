@@ -1,0 +1,40 @@
+// Benchmark: Garbage collection pressure
+// Tests allocation patterns that stress the GC
+
+fn benchmark_temp_allocations() {
+    count = 0
+    i = 0
+    while i < 100000 {
+        temp1 = [1, 2, 3, 4, 5]
+        temp2 = "temporary string"
+        temp3 = { x: 1, y: 2 }
+        count = count + 1
+        i = i + 1
+    }
+    return count
+}
+
+fn benchmark_growing_array() {
+    arr = []
+    i = 0
+    while i < 100000 {
+        arr.push({ value: i, name: "item_" + i })
+        i = i + 1
+    }
+    return arr.length()
+}
+
+fn benchmark_string_accumulation() {
+    result = ""
+    i = 0
+    while i < 10000 {
+        item = { id: i, data: "item_" + i }
+        result = result + item.data + ","
+        i = i + 1
+    }
+    return result.length()
+}
+
+print("gc/temp_allocations=" + str(benchmark_temp_allocations()))
+print("gc/growing_array=" + str(benchmark_growing_array()))
+print("gc/string_accumulation=" + str(benchmark_string_accumulation()))

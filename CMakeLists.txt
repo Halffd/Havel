@@ -1727,7 +1727,7 @@ add_executable(havel
 
 target_link_libraries(havel PRIVATE
 -Wl,--start-group
-$<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
+$<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_runtime havel_compiler>
 havel_modules
 $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
@@ -1881,7 +1881,7 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 target_link_libraries(hvtest PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1951,7 +1951,7 @@ target_include_directories(hpp_proto_test PRIVATE
 )
 target_link_libraries(hpp_proto_test PRIVATE
   GTest::gtest GTest::gtest_main
-  -Wl,--start-group havel_lang havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  -Wl,--start-group havel_runtime havel_compiler havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
   -Wl,--start-group
   ${COMMON_LIBS}
   $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1986,7 +1986,7 @@ set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
 target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
 endif()
 target_link_libraries(havel_api_test PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2089,13 +2089,13 @@ target_include_directories(hvdump PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(hvdb PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
   )
 target_link_libraries(hvdump PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2141,7 +2141,7 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 target_link_libraries(havel-dap PRIVATE
     nlohmann_json::nlohmann_json
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2399,8 +2399,16 @@ $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 #   havel_compiler  the SDK. Lexer-driven frontend, parser, AST, semantic
 #                   passes, bytecode compilation, JIT backends, incremental
 #                   driver and developer tools.
-#   havel_lang      compatibility umbrella (INTERFACE) so every pre-split
-#                   consumer keeps linking the one name it linked before.
+#   havel_lang      compatibility umbrella (INTERFACE) left in place for the
+#                   LSP/embedded/AOT paths that link a single language
+#                   archive. Executable consumers that group havel_core
+#                   together with the language archives list
+#                   havel_runtime havel_compiler directly: CMake appends an
+#                   interface library's expansion *after* a literal
+#                   -Wl,--end-group, so `havel_lang` inside a group left
+#                   runtime/compiler outside it and the core<->language
+#                   symbol cycle (EventListener -> ExecutionEngine and back)
+#                   failed to resolve at link time.
 #
 # The partition below is derived from the real source list, so a new file
 # cannot silently fall out of the build: anything that matches no runtime
@@ -3070,7 +3078,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     # binary links them.
     target_link_libraries(capi_value_conversion_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group)
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group)
     add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
@@ -3094,7 +3102,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # src/havel-lang/tools/HppCompiler.cpp, which defines its own main, and
         # with the archives first the linker resolves main from that instead.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3127,7 +3135,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # -O3 -flto=thin -Wl,--gc-sections; an -O0 build does not, so the link
         # fails there. Link havel_gui under the same condition the executables
         # use (_LIBS) so the dependency is satisfied in every configuration.
-        -Wl,--start-group havel_lang havel_core
+        -Wl,--start-group havel_runtime havel_compiler havel_core
         $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
         -Wl,--end-group
         -Wl,--start-group
@@ -3155,7 +3163,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test above.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3178,7 +3186,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     target_link_libraries(clipboard_backend_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3258,16 +3266,17 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
             # the ORC JIT in havel_lang) or the prototype driver cannot link.
             # Explicit order matters for the single-pass archive scan:
             # referents (lang_core, havel_core) must precede the archives
-            # that define what they need (havel_lang, havel_gui). CMake
-            # dedups repeats, so these explicit positions also win over the
-            # shim's transitive expansion.
+            # that define what they need (havel_runtime, havel_compiler,
+            # havel_gui). CMake dedups repeats, so these explicit positions
+            # also win over the shim's transitive expansion.
             # havel_gui exists only in Qt UI backend builds — headless crane
             # configs must not ask the linker for it (same guard as
             # hpp_proto_test below).
             havel_aot_core_shim
             havel_lang_core
             havel_core
-            havel_lang
+            havel_runtime
+            havel_compiler
             $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
             ${COMMON_LIBS}
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

@@ -1611,7 +1611,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           // assigned inside a loop resolved to the never-written local
           // slot (nulls in test_cooperative_async) instead of the global.
           global_variables_.insert(ident.symbol);
-          implicit_scope_globals_.insert(ident.symbol);
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
           newBinding.slot = 0;
@@ -1649,7 +1648,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               // isGlobalScope branch - a scope entry + slot here is junk
               // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
-              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1702,7 +1700,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               // isGlobalScope branch - a scope entry + slot here is junk
               // state that misfires the nested-scope shadow check).
               global_variables_.insert(ident.symbol);
-              implicit_scope_globals_.insert(ident.symbol);
               ResolvedBinding newBinding;
               newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
@@ -1771,9 +1768,12 @@ case ast::NodeType::MultipleAssignment: {
                 // Implicit declaration at top level
                 bool isGlobalScope = (function_stack_.size() == 1);
                 if (isGlobalScope) {
-                    uint32_t slot = declareLocal(ident.symbol, &ident, false);
+                    // Global binding: no declareLocal (see the plain-assignment
+                    // isGlobalScope branch - a scope entry + slot here is junk
+                    // state that misfires the nested-scope shadow check: the
+                    // stub slot is never written because stores go through
+                    // STORE_GLOBAL, so a read resolving to it saw null).
                     global_variables_.insert(ident.symbol);
-                    implicit_scope_globals_.insert(ident.symbol);
                     ResolvedBinding newBinding;
                     newBinding.kind = ResolvedBindingKind::Global;
                     newBinding.slot = 0;
@@ -2217,15 +2217,18 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   // pre-existing root global with the same name captured every read of the
   // loop variable (the loop machinery stored the element into the local
   // slot via the declaration, but body reads resolved to the stale global).
-  // implicit_scope_globals_ names are exempt: the implicit-global assignment
-  // path registers them in a scope slot for bookkeeping but notes a Global
-  // binding (STORE_GLOBAL) - reads must stay Global or they diverge from
-  // their own writes (reads saw a never-stored local slot, i.e. null).
+  // No name-based exemption: the root-level assignment paths no longer create
+  // scope entries for implicit globals (the isGlobalScope branches note a
+  // Global binding WITHOUT declareLocal), so any entry found in a nested scope
+  // is a genuine local - a loop iterator, a let in a block, a match pattern
+  // binding - and must win over the global. Exempting implicitly-declared
+  // names here broke for-each iterators that reused such a name: the iterator
+  // was stored into its local slot but body reads resolved to the stale
+  // root global (test_issue_async_global_accumulation: sum 12 instead of 6).
   if (function_index == 0 && global_variables_.count(name) > 0) {
     bool shadowed_by_inner_local = false;
     for (size_t sc = 1; sc < ctx.scopes.size(); ++sc) {
-      if (ctx.scopes[sc].count(name) > 0 &&
-          implicit_scope_globals_.count(name) == 0) {
+      if (ctx.scopes[sc].count(name) > 0) {
         shadowed_by_inner_local = true;
         break;
       }

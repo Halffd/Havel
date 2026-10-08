@@ -23,6 +23,21 @@ use "process"
 
 cwd = sys.cwd()
 candidates = ["${cwd}/build-debug", "${cwd}/build-release", "${cwd}"]
+// The suite's own binary wins: hvtest exports HAVEL_BINARY, and the child
+// under test must be the binary this suite runs. The classic candidates can
+// hold a stale sibling build (observed: case 1 asserted against an old
+// build-debug/havel that still leaked EventRuntime, so the child died with
+// LeakSanitizer's exit 1 while build-verify was green).
+suite_bin = sys.env("HAVEL_BINARY")
+if suite_bin && suite_bin != "" && fs.exists(suite_bin) {
+    dir_q = process.run("dirname -- \"${suite_bin}\"")
+    if dir_q.exitCode == 0 {
+        suite_dir = dir_q.stdout.trim()
+        if suite_dir != "" && fs.exists("${suite_dir}/havel") {
+            candidates = [suite_dir, "${cwd}/build-debug", "${cwd}/build-release", "${cwd}"]
+        }
+    }
+}
 build_dir = ""
 for c in candidates {
     if fs.exists("${c}/havel") && fs.exists("${c}/toolkits/havel_toolkit_qt.so") {

@@ -464,6 +464,10 @@ uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) 
 uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
   auto* vm = static_cast<VM*>(vm_ptr);
+  // op_index overloads re-enter the interpreter below this JIT frame;
+  // defer GC while the caller's raw values are unrooted (see
+  // VM::GCSuspendDeferGuard).
+  auto gc_guard = vm->gcDeferGuardPublic();
   Value container, key_val;
   std::memcpy(&container, &container_bits, sizeof(uint64_t));
   std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
@@ -1403,7 +1407,10 @@ uint64_t havel_vm_fiber_sleep(void* vm_ptr, uint64_t ms_bits) {
 uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uint32_t count) {
     if (!vm_ptr) return 0x7FF8000000000003ULL;
     auto* vm = static_cast<VM*>(vm_ptr);
-    
+    // Host functions may re-enter the interpreter (module wrappers,
+    // callbacks). The JIT caller's raw values are unrooted meanwhile.
+    auto gc_guard = vm->gcDeferGuardPublic();
+
     std::vector<Value> valArgs;
     for (uint32_t i = 0; i < count; ++i) {
         Value v;
@@ -1418,6 +1425,10 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                               uint64_t* args, uint32_t arg_count) {
     if (!vm_ptr) return Value::makeNull().rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
+    // Method bodies run interpreted/re-entered below this JIT frame while
+    // the caller's raw values (receiver staged by the lowering, live
+    // vstack temps) are unrooted.
+    auto gc_guard = vm->gcDeferGuardPublic();
     auto* chunk = vm->getCurrentChunk();
     if (!chunk) return Value::makeNull().rawBits();
 
@@ -2610,6 +2621,9 @@ uint64_t havel_vm_load_class_proto(void* vm_ptr, uint32_t type_id) {
 uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id, uint64_t* args, uint32_t arg_count) {
   if (!vm_ptr) return Value::makeNull().rawBits();
   auto* vm = static_cast<VM*>(vm_ptr);
+  // Super-method bodies re-enter below this JIT frame; the caller's raw
+  // values are unrooted meanwhile.
+  auto gc_guard = vm->gcDeferGuardPublic();
   auto* chunk = vm->getCurrentChunk();
   if (!chunk) return Value::makeNull().rawBits();
 

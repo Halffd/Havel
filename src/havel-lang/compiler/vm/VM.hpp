@@ -2507,6 +2507,32 @@ bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire)
 
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
 
+public:
+    // GC deferral for Runtime-ABI re-entry bridges (havel_vm_call* and
+    // friends): while a JIT-compiled (or AOT) frame holds raw values in
+    // native registers/spill slots above this C++ stack, no collection may
+    // run - those values are not in any interpreter root set, so a
+    // dispatch-checkpoint collection inside the nested call could free
+    // them prematurely. Unlike resumeGC(), release does NOT attempt a
+    // collection (the native frame is still live at that point); the
+    // pending budget is picked up by the next dispatch-loop checkpoint
+    // (no native frames) or the JIT backedge GC checkpoint (which spills
+    // its frame's live values as extra roots).
+    struct GCSuspendDeferGuard {
+        VM* vm_;
+        explicit GCSuspendDeferGuard(VM* v) : vm_(v) {
+            if (vm_) vm_->gc_suspend_counter_++;
+        }
+        ~GCSuspendDeferGuard() {
+            if (vm_ && --vm_->gc_suspend_counter_ < 0) {
+                vm_->gc_suspend_counter_ = 0;
+            }
+        }
+        GCSuspendDeferGuard(const GCSuspendDeferGuard&) = delete;
+        GCSuspendDeferGuard& operator=(const GCSuspendDeferGuard&) = delete;
+    };
+    GCSuspendDeferGuard gcDeferGuardPublic() { return GCSuspendDeferGuard(this); }
+
     void suspendGC() { gc_suspend_counter_++; }
     void resumeGC() {
         if (--gc_suspend_counter_ <= 0) {

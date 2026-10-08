@@ -137,6 +137,8 @@ public:
         reinterpret_cast<const void*>(&havel_vm_bit_rsh));
     add("havel_vm_backedge",
         reinterpret_cast<const void*>(&havel_vm_backedge));
+    add("havel_vm_backedge_n",
+        reinterpret_cast<const void*>(&havel_vm_backedge_n));
     add("havel_vm_upvalue_get",
         reinterpret_cast<const void*>(&havel_vm_upvalue_get));
     add("havel_vm_upvalue_set",

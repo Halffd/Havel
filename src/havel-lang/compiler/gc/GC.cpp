@@ -393,6 +393,28 @@ Value GCHeap::iteratorNext(uint32_t id) {
         return Value::makeObjectId(resultObj.id);
     }
 
+    // Reuse the iterator's result object across next() calls: allocate it
+    // once on the first next(), then only overwrite its fields. The old
+    // shape allocated a fresh heap object with three keyed map inserts on
+    // every iteration - the dominant cost of range/string/array loops.
+    // The result object is never script-visible (the compiled loop
+    // destructures .first/.second into loop variables), so reuse is
+    // unobservable. See the Iterator struct comment in GC.hpp for the GC
+    // rooting and the measurement behind this.
+    if (iter->result_id == UINT32_MAX) {
+        auto resultObj = allocateObject();
+        iter->result_id = resultObj.id;
+        auto *obj = object(resultObj.id);
+        obj->set("first", Value::makeNull());
+        obj->set("second", Value::makeNull());
+        obj->set("done", Value::makeBool(true));
+    }
+    // Recompute the id: the object table can rehash on allocateObject, but
+    // ids are stable; fetch the object pointer AFTER any allocation below
+    // (string/object paths allocate) so the pointer is never stale.
+    auto result_id = iter->result_id;
+    ObjectEntry *result_obj_ptr = object(result_id);
+
     bool done = false;
     Value first;
     Value second;
@@ -491,12 +513,32 @@ Value GCHeap::iteratorNext(uint32_t id) {
         second = Value::makeNull();
     }
 
-    auto resultObj = allocateObject();
-    auto *obj = object(resultObj.id);
-    (*obj)["first"] = first;
-    (*obj)["second"] = second;
-    (*obj)["done"] = Value::makeBool(done);
-    return Value::makeObjectId(resultObj.id);
+    // Overwrite the reused object's fields with set(), NOT operator[]:
+    // set() bumps shape_version, which is what the JIT'd OBJECT_GET inline
+    // cache keys on (obj_id, shape_version, key, gc_epoch). With operator[]
+    // the shape stayed constant while the values changed, so the first
+    // iteration's cached done=false was served on every later iteration and
+    // the compiled for-in loop never exited (observed: tiered tier_heavy
+    // hang, stack spinning in havel_vm_object_get_raw_ic's lookup). The
+    // per-iteration shape bump makes the IC re-resolve - the allocation is
+    // still gone, which was the dominant cost.
+    result_obj_ptr = object(result_id);
+    auto *obj = result_obj_ptr ? result_obj_ptr : [&] () -> ObjectEntry * {
+        // The result object was collected or never allocated (should not
+        // happen: markReference roots it from the iterator). Allocate a
+        // fresh one rather than crash - correctness first.
+        auto fresh = allocateObject();
+        iter->result_id = fresh.id;
+        auto *o = object(fresh.id);
+        o->set("first", Value::makeNull());
+        o->set("second", Value::makeNull());
+        o->set("done", Value::makeBool(true));
+        return o;
+    }();
+    obj->set("first", first);
+    obj->set("second", second);
+    obj->set("done", Value::makeBool(done));
+    return Value::makeObjectId(iter->result_id);
 }
 
 void GCHeap::setAllocationBudget(size_t value) {
@@ -915,6 +957,12 @@ void GCHeap::markReference(const Value &value) {
         auto it = iterators_.find(value.asIteratorId());
         if (it != iterators_.end()) {
             markReference(it->second.iterable);
+            // Trace the iterator's reused result object: between iterations
+            // no stack slot holds it (the loop's result temp is overwritten
+            // each round), so the iterator is its only root.
+            if (it->second.result_id != UINT32_MAX) {
+                markReference(Value::makeObjectId(it->second.result_id));
+            }
         }
         return;
     }

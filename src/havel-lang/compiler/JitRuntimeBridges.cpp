@@ -916,6 +916,31 @@ void havel_vm_backedge_n(void* vm_ptr, uint32_t ip, uint32_t n) {
   }
 }
 
+void havel_vm_gc_checkpoint(void* vm_ptr, const uint64_t* roots,
+                            uint32_t count) {
+  // JIT safe-point GC check (called from the tier-1 backedge hook, i.e.
+  // every BACKEDGE_STRIDE-th taken edge): native loops allocate through
+  // the Runtime-ABI bridges without any interpreter dispatch checkpoint,
+  // so without this hook the GC starves for the whole native call and
+  // garbage accumulates (measured with per-iteration iterator results:
+  // 343k objects / 446MB peak RSS on tier_bench_loop vs 11k / 72MB
+  // interpreted). The caller spills its frame's live values (locals +
+  // operand stack) into `roots` immediately before this call, so the
+  // collection sees them as extra roots. Common path is one probe
+  // (budget not due) - no snapshot, no copy.
+  if (!vm_ptr || !roots) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm->gcCollectionPendingPublic()) return;
+  std::vector<Value> extra;
+  extra.reserve(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    Value v;
+    std::memcpy(&v, &roots[i], sizeof(uint64_t));
+    extra.push_back(v);
+  }
+  vm->maybeCollectGarbageWithExtraRoots(extra);
+}
+
 #include "runtime/HavelEngine.hpp"
 extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) {
     static ::havel::HavelEngine engine;

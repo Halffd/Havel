@@ -2967,6 +2967,34 @@ if(ENABLE_TESTS AND GTest_FOUND)
         -Wl,--start-group havel_lang havel_core -Wl,--end-group)
     add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
+    # IO::ParseKeyString - the pure tokenizer behind io.send's key syntax.
+    # Regression cover for the unknown-{word} literal fallback: unknown
+    # {word} in a sent string used to be silently swallowed (the token was
+    # dropped, reading back as the string having been "interpolated");
+    # fromBraces now marks brace-form tokens so the sender types the literal
+    # text when the name resolves to no known key.
+    add_executable(io_key_parse_test
+        tests/io_key_parse_ut.cpp
+    )
+    target_include_directories(io_key_parse_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_key_parse_test PRIVATE cxx_std_23)
+    target_link_libraries(io_key_parse_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test below.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

@@ -21,7 +21,7 @@
 use ffi
 use json
 use shell
-use { compositor } from "compositor"
+use compositor
 
 Nearest = 0
 Bilinear = 1

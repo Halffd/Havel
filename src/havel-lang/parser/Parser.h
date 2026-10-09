@@ -419,6 +419,12 @@ private:
   std::unique_ptr<ast::Expression> parseParenthesizedExpression();
   std::unique_ptr<ast::Expression> parseLambdaExpression();
   std::unique_ptr<ast::Expression> parseExpressionFromString(const std::string &expr);
+  // Split an InterpolatedString token's \x01...\x02 markers into segments
+  // (literal parts + parsed expressions). Shared by the expression path and
+  // the DSL implicit-input path so a hotkey body's bare interpolated string
+  // compiles identically before going to io.send.
+  std::unique_ptr<ast::InterpolatedStringExpression>
+  buildInterpolatedStringExpression(const Token &token);
 
 public:
   explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}

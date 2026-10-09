@@ -9005,12 +9005,26 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
  for (const auto &cmd : statement.commands) {
  switch (cmd.type) {
  case ast::InputCommand::SendText:
- // io.send(cmd.text)
+ // io.send(cmd.text) — or io.send(<interpolated>) when the string was an
+ // InterpolatedString: the DSL form `=> "hi ${name}"` must type the
+ // interpolated text, not the raw \x01/\x02 marker form the lexer puts
+ // in cmd.text. The concatenation chain is the same shape the normal
+ // InterpolatedStringExpression path builds.
  {
  uint32_t strId = addStringConstant("io.send");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
  }
- { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ if (cmd.textExpr) {
+   // Interpolation segments are never tail positions: the string still
+   // has to be assembled after they evaluate, and the io.send call must
+   // run on the assembled result.
+   bool saved_tail = in_tail_position_;
+   in_tail_position_ = false;
+   compileExpression(*cmd.textExpr);
+   in_tail_position_ = saved_tail;
+ } else {
+   { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ }
  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
  break;
  case ast::InputCommand::SendKey:

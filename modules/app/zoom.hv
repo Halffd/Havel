@@ -1,51 +1,44 @@
 // zoom.hv — desktop magnification for the compositors that actually expose it.
 //
-// Every transport below was verified against upstream sources. What used to
-// live here did not exist and never ran:
-//   - a Cinnamon magnifier libc IPC socket at /tmp/cinnamon-magnifier-ipc
-//     speaking '{"params":[1.1],"method":"ZoomIn"}' — muffin has no such
-//     socket and no magnifier IPC of any kind.
-//   - org.cinnamon.Muffin.Zoom DBus calls (ZoomIn/ZoomOut/SetZoomLevel/
-//     GetZoomLevel/SetLensShapeForMonitor) — muffin exports no Zoom service;
-//     `gdbus introspect --dest org.cinnamon.Muffin.Zoom` answers
-//     ServiceUnknown.
-//   - org.gnome.Magnifier DBus calls — the service existed, but gnome-shell
-//     removed it in 2020 (MR !1523, "magnifier: Stop exposing D-Bus
-//     interface"). The magnifier is driven by GSettings since.
-//   - org.kde.KWin.Effect.Zoom.{zoomInDBus,zoomOutDBus,getZoomLevelDBus,
-//     zoomToValueDBus,zoomTo140DBus,resetZoomDBus} — kwin exposes no zoom
-//     DBus method; its zoom is reached through kglobalaccel shortcuts.
+// Transports, by backend:
+//   cinnamon   modules/app/cinmagnifier.hv — this fork's magnifier IPC
+//              socket (fire-and-forget write() per tick). Not an upstream
+//              Cinnamon API; the module documents the latency history.
+//   gnome      gsettings org.gnome.desktop.a11y.magnifier mag-factor
+//              (double, 0.1-32) + ...a11y.applications
+//              screen-magnifier-enabled (bool). The org.gnome.Magnifier
+//              D-Bus service that older code used was removed upstream in
+//              2020 (gnome-shell MR !1523).
+//   kde        qdbus org.kde.kglobalaccel /component/kwin invokeShortcut
+//              view_zoom_in | view_zoom_out. KWin exposes no zoom D-Bus
+//              method at all (no zoomInDBus/getZoomLevelDBus/…); its zoom
+//              is reached through kglobalaccel shortcuts. KWin also has no
+//              zoom getter, so level() there is our tracked estimate and
+//              step-based to()/reset() need the step from kwinrc
+//              [Effect-Zoom] TargetZoom, failing loudly without it.
+//   hyprland   hyprctl keyword cursor:zoom_factor, read back with
+//              hyprctl getoption cursor:zoom_factor.
+//   generic    no drivable magnifier: the old config's key sends.
 //
-// The verified transports:
-//   cinnamon / gnome   gsettings <prefix>.magnifier mag-factor (double,
-//                      0.1-32) + <prefix>.applications
-//                      screen-magnifier-enabled (bool), where <prefix> is
-//                      org.cinnamon.desktop.a11y or org.gnome.desktop.a11y
-//                      (linuxmint/cinnamon's cs_accessibility.py uses
-//                      exactly these two schema ids).
-//   hyprland           hyprctl keyword cursor:zoom_factor <float>,
-//                      read back with hyprctl getoption cursor:zoom_factor
-//                      ("float 2.000000").
-//   kde                qdbus org.kde.kglobalaccel /component/kwin
-//                      invokeShortcut view_zoom_in | view_zoom_out. KWin has
-//                      no zoom getter, so level() on kde is our own tracked
-//                      estimate and step-based to()/reset() need the step from
-//                      kwinrc [Effect-Zoom] TargetZoom; without it they
-//                      report failure instead of guessing.
+// Backend selection is overridable — see setCompositor() — because
+// detection reads the environment, which is wrong under nested sessions,
+// remote shells and XDG_CURRENT_DESKTOP lying about the running session.
+//
+// Note on step(): setStep() drives gnome/hyprland. On cinnamon the magnifier
+// owns its own step (1.1 per ZoomIn/ZoomOut tick), so setStep() does not
+// apply there — the scroll path stays on the precomputed payloads.
 //
 // Usage:
 //   use "app/zoom" as zoom
-//   zoom.down()         // step out
-//   zoom.up()
-//   zoom.reset()
-//   zoom.to(1.9)
+//   zoom.down() / zoom.up() / zoom.reset() / zoom.to(1.9)
 //   zoom.toggle()       // off -> presetHigh, on -> reset
 //   zoom.toggleLast()   // remember/restore level
-//   zoom.presetHigh()   // 1.9 mutter / 1.7 hyprland
-//   zoom.presetLow()    // 1.6 mutter / 2.0 hyprland
+//   zoom.setCompositor("cinnamon")   // force a backend, skip detection
+//   zoom.clearCompositor()           // back to auto-detect
 
 use shell
 use compositor
+use "app/cinmagnifier" as cinmag
 
 // Magnification filter modes (gnome-mag magnification framework enum).
 Nearest = 0
@@ -53,21 +46,21 @@ Bilinear = 1
 Sharpen = 2
 Lanczos = 3
 
-// Local policy, not a platform constant: what this module considers the
-// usable zoom range. Both stay inside every backend's own limits.
+// Local policy, not a platform constant: the range this module will drive.
 MIN_LEVEL = 1.0
 MAX_LEVEL = 8.0
 
 _state = {
-    level: 1.0,       // tracked zoom factor. Authoritative for
-                      // cinnamon/gnome (read back) and hyprland (read back);
-                      // an estimate for kde (no getter) and generic.
+    level: 1.0,       // tracked zoom factor. Read back on cinnamon/gnome/
+                      // hyprland; a tracked estimate on kde (no getter) and
+                      // generic (no magnifier).
     lastToggle: 1.0,  // toggleLast() memory
     step: 0.25,
     presetHigh: 1.9,
     presetLow: 1.6,
     backend: "none",
     checked: false,
+    forced: null,     // forced backend name, or null for auto-detect
     debug: false
 }
 
@@ -82,19 +75,33 @@ fn _log(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Backend detection
+// Backend selection
 // ---------------------------------------------------------------------------
 
 fn _has(tool) {
     shell.exec("command -v $tool >/dev/null 2>&1").exitCode == 0
 }
 
+// The backends this module can actually drive. "generic" is always
+// available: it is the key-send fallback, and it is also how an explicitly
+// unsupported name resolves.
+fn _known(name) {
+    n = name.lower().trim()
+    n == "cinnamon" || n == "gnome" || n == "kde" || n == "hyprland" || n == "generic"
+}
+
 fn _detectBackend() {
     if _state.checked { return }
     _state.checked = true
+
+    if _state.forced != null {
+        _state.backend = _state.forced
+        return
+    }
+
     c = compositor.detect()
 
-    if c == "cinnamon" && _has("gsettings") {
+    if c == "cinnamon" && cinmag.available() {
         _state.backend = "cinnamon"
         return
     }
@@ -121,19 +128,39 @@ fn _backend() {
 
 fn backend() { _backend() }
 
-fn _isMutter(b) { b == "cinnamon" || b == "gnome" }
-
-// ---------------------------------------------------------------------------
-// mutter family (cinnamon / gnome): GSettings
-// ---------------------------------------------------------------------------
-
-fn _a11yPrefix(b) {
-    if b == "cinnamon" { return "org.cinnamon.desktop.a11y" }
-    "org.gnome.desktop.a11y"
+// Force a backend regardless of what the environment claims. Returns false
+// (leaving the current selection untouched) for a name this module cannot
+// drive, so a typo cannot silently strand you on the key-send fallback.
+fn setCompositor(name) {
+    n = name.lower().trim()
+    if !_known(n) {
+        _log("setCompositor: unsupported backend '" + n + "'; unchanged")
+        return false
+    }
+    _state.forced = n
+    _state.checked = false
+    _state.backend = "none"
+    // Re-resolve immediately so a failed force is visible right away.
+    _detectBackend()
+    _state.backend == n
 }
 
-fn _mutterSet(level) {
-    p = _a11yPrefix(_backend())
+// Back to auto-detection.
+fn clearCompositor() {
+    _state.forced = null
+    _state.checked = false
+    _state.backend = "none"
+    true
+}
+
+fn forcedCompositor() { _state.forced }
+
+// ---------------------------------------------------------------------------
+// gnome: GSettings
+// ---------------------------------------------------------------------------
+
+fn _gnomeSet(level) {
+    p = "org.gnome.desktop.a11y"
     if level <= MIN_LEVEL {
         // Turning the magnifier off is what actually resets the view; the
         // factor alone only changes the zoom of a disabled magnifier.
@@ -145,8 +172,8 @@ fn _mutterSet(level) {
     shell.exec("gsettings set $p.applications screen-magnifier-enabled true")
 }
 
-fn _mutterGet() {
-    p = _a11yPrefix(_backend())
+fn _gnomeGet() {
+    p = "org.gnome.desktop.a11y"
     // A disabled magnifier shows nothing no matter what mag-factor says, and
     // the factor survives across disable/enable. Reporting the factor alone
     // would make toggle() think a disabled magnifier is zoomed in and call
@@ -176,7 +203,7 @@ fn _hyprGet() {
 }
 
 // ---------------------------------------------------------------------------
-// kde: kglobalaccel shortcuts (kwin has no zoom DBus method)
+// kde: kglobalaccel shortcuts (kwin has no zoom D-Bus method)
 // ---------------------------------------------------------------------------
 
 fn _kdeStep() {
@@ -226,18 +253,10 @@ fn down() {
     b = _backend()
     _log("down backend=$b level=" + str(_state.level))
 
-    if _isMutter(b) {
-        _mutterSet(_clamp(_state.level - _state.step))
-        return
-    }
-    if b == "hyprland" {
-        _hyprSet(_clamp(_state.level - _state.step))
-        return
-    }
-    if b == "kde" {
-        if _state.level > MIN_LEVEL { _kdeShortcut(-1) }
-        return
-    }
+    if b == "cinnamon" { cinmag.zoomOut(); return }
+    if b == "gnome" { _gnomeSet(_clamp(_state.level - _state.step)); return }
+    if b == "hyprland" { _hyprSet(_clamp(_state.level - _state.step)); return }
+    if b == "kde" { if _state.level > MIN_LEVEL { _kdeShortcut(-1) }; return }
     // No compositor magnifier to drive: keep the old config's behaviour.
     send("^{Down}")
 }
@@ -246,18 +265,10 @@ fn up() {
     b = _backend()
     _log("up backend=$b level=" + str(_state.level))
 
-    if _isMutter(b) {
-        _mutterSet(_clamp(_state.level + _state.step))
-        return
-    }
-    if b == "hyprland" {
-        _hyprSet(_clamp(_state.level + _state.step))
-        return
-    }
-    if b == "kde" {
-        if _state.level < MAX_LEVEL { _kdeShortcut(1) }
-        return
-    }
+    if b == "cinnamon" { cinmag.zoomIn(); return }
+    if b == "gnome" { _gnomeSet(_clamp(_state.level + _state.step)); return }
+    if b == "hyprland" { _hyprSet(_clamp(_state.level + _state.step)); return }
+    if b == "kde" { if _state.level < MAX_LEVEL { _kdeShortcut(1) }; return }
     send("^{Up}")
 }
 
@@ -265,7 +276,8 @@ fn reset() {
     b = _backend()
     _log("reset backend=$b")
 
-    if _isMutter(b) { _mutterSet(MIN_LEVEL); _state.level = MIN_LEVEL; return }
+    if b == "cinnamon" { cinmag.reset(); _state.level = MIN_LEVEL; return }
+    if b == "gnome" { _gnomeSet(MIN_LEVEL); _state.level = MIN_LEVEL; return }
     if b == "hyprland" { _hyprSet(MIN_LEVEL); _state.level = MIN_LEVEL; return }
     if b == "kde" { _kdeToLevel(MIN_LEVEL); return }
     send("^/")
@@ -277,7 +289,8 @@ fn to(level) {
     b = _backend()
     _log("to backend=$b level=" + str(level))
 
-    if _isMutter(b) { _mutterSet(level); _state.level = level; return }
+    if b == "cinnamon" { cinmag.setLevel(level); _state.level = level; return }
+    if b == "gnome" { _gnomeSet(level); _state.level = level; return }
     if b == "hyprland" { _hyprSet(level); _state.level = level; return }
     if b == "kde" { _kdeToLevel(level); return }
     // generic: no absolute level exists to set
@@ -286,7 +299,8 @@ fn to(level) {
 
 fn presetHigh() {
     b = _backend()
-    if _isMutter(b) { to(_state.presetHigh); return }
+    if b == "cinnamon" { to(_state.presetHigh); return }
+    if b == "gnome" { to(_state.presetHigh); return }
     if b == "hyprland" { to(1.7); return }
     if b == "kde" { to(1.9); return }
     send("^+/")
@@ -296,7 +310,8 @@ fn presetHigh() {
 
 fn presetLow() {
     b = _backend()
-    if _isMutter(b) { to(_state.presetLow); return }
+    if b == "cinnamon" { to(_state.presetLow); return }
+    if b == "gnome" { to(_state.presetLow); return }
     if b == "hyprland" { to(2.0); return }
     if b == "kde" { to(1.6); return }
     send("^+/")
@@ -324,6 +339,30 @@ fn toggle() {
     }
 }
 
+// Cinnamon lens shape / zoom mode cyclers. The magnifier's kc89 bindings
+// call these. Other backends have no equivalent surface, so they report
+// failure instead of pretending.
+fn cycleLens() {
+    if _backend() != "cinnamon" {
+        _log("cycleLens: cinnamon only")
+        return false
+    }
+    cinmag.cycleLens()
+    true
+}
+
+fn cycleMode() {
+    if _backend() != "cinnamon" {
+        _log("cycleMode: cinnamon only")
+        return false
+    }
+    cinmag.cycleMode()
+    true
+}
+
+fn lensShape() { cinmag.lensShape() }
+fn zoomMode() { cinmag.zoomMode() }
+
 // ---------------------------------------------------------------------------
 // Introspection
 // ---------------------------------------------------------------------------
@@ -332,8 +371,13 @@ fn level() { _state.level }
 
 fn getLevel() {
     b = _backend()
-    if _isMutter(b) {
-        v = _mutterGet()
+    if b == "cinnamon" {
+        v = cinmag.getLevel()
+        if v != null { _state.level = _clamp(v) }
+        return _state.level
+    }
+    if b == "gnome" {
+        v = _gnomeGet()
         if v != null && v >= MIN_LEVEL { _state.level = v }
         return _state.level
     }

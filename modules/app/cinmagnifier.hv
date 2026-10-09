@@ -1,0 +1,291 @@
+// cinmagnifier.hv — Cinnamon magnifier IPC transport.
+//
+// The magnifier is driven over a persistent libc unix socket: ONE write()
+// per zoom tick, no read(), no spawn, connection cached and reconnected
+// lazily on write failure. This is the fork's interface (not an upstream
+// Cinnamon API), factored out of hotkeys0.3.hv so the transport lives in
+// one place and the hotkeys file only talks to zoom.up()/down()/… .
+//
+// Design constraint, carried over verbatim from the original hotkeys file —
+// do not re-learn this the expensive way:
+//   1. shell send()/run() per tick — rejected: spawn overhead is perceptible
+//      on scroll.
+//   2. socat bridging to the magnifier socket — rejected: extra hop, same
+//      spawn tax, fragile plumbing.
+//   3. custom FFI socket module — rejected while the reply was read
+//      synchronously (up to 20ms SO_RCVTIMEO, plus teardown+reconnect
+//      whenever the magnifier was slow/stale).
+//   4. this architecture (KEEP): fire-and-forget write() over a cached
+//      socket. Do NOT add IPC hops, round-trips or synchronous reads to the
+//      scroll path.
+//
+// ipcSend() with the blocking read is for calls that genuinely need data
+// back (currently only getLevel()); never on a scroll tick.
+//
+// libffi/libc resolution and the socket connect are LAZY: importing this
+// module must stay side-effect free so zoom.hv can pull it in on any
+// desktop (gnome/hyprland/kde) where the magnifier socket does not exist.
+
+use ffi
+use json
+
+IPC_PATH = "/tmp/cinnamon-magnifier-ipc"
+
+STEP = 0.1
+
+// ---------------------------------------------------------------------------
+// Payloads
+//
+// Derived from json.stringify once, at load, instead of being hand-written
+// as string literals. The bytes are unchanged: json.stringify emits object
+// keys in REVERSE of source order (verified: {a,b,c} -> {"c":..,"b":..,
+// "a":..}), so `{method, params}` serializes params-first — exactly the
+// '{"params": [1.1],"method": "ZoomIn"}' form the previous hand-written
+// constants encoded. Deriving them keeps the constants and the dynamic path
+// (ipcSendMethod, which also assigns method then params) in lockstep instead
+// of relying on two hand-maintained copies agreeing.
+// ---------------------------------------------------------------------------
+
+P_ZOOM_IN = json.stringify({ method: "ZoomIn", params: [1.1] }) + "\n"
+P_ZOOM_OUT = json.stringify({ method: "ZoomOut", params: [1.1] }) + "\n"
+P_RESET = json.stringify({ method: "SetZoomLevel", params: [1] }) + "\n"
+P_PRESET_HIGH = json.stringify({ method: "SetZoomLevel", params: [1.9] }) + "\n"
+P_PRESET_LOW = json.stringify({ method: "SetZoomLevel", params: [1.6] }) + "\n"
+
+_level = 1.0
+_lens = 3
+_mode = 1
+_verbose = false
+
+// ---------------------------------------------------------------------------
+// Lazy libc + socket state
+// ---------------------------------------------------------------------------
+
+_libc = null
+_symSocket = 0
+_symConnect = 0
+_symWrite = 0
+_symRead = 0
+_symClose = 0
+_symSetsockopt = 0
+_sockfd = null
+_addr = null
+_buf = null
+
+// sockaddr_un: 2 bytes sa_family (AF_UNIX=1) + null-terminated sun_path.
+// Built into a real FFI byte buffer (passing Havel arrays as pointers is
+// broken).
+fn _packSockaddrUn(path) {
+    addr = ffi.allocBytes(110)
+    ffi.memset(addr, 0, 110)
+    ffi.set_i16(addr, 1)
+    for i in 0 .. #path {
+        if i < #path {
+            ffi.set_u8(ffi.ptr_add(addr, 2 + i), path.codePointAt(i))
+        }
+    }
+    addr
+}
+
+fn _resolve() {
+    if _libc != null { return true }
+    _libc = ffi.open("libc.so.6")
+    if _libc == 0 { _libc = ffi.open("libc.so") }
+    if _libc == 0 { return false }
+    _symSocket = ffi.sym(_libc, "socket")
+    _symConnect = ffi.sym(_libc, "connect")
+    _symWrite = ffi.sym(_libc, "write")
+    _symRead = ffi.sym(_libc, "read")
+    _symClose = ffi.sym(_libc, "close")
+    _symSetsockopt = ffi.sym(_libc, "setsockopt")
+    if _symSocket == 0 || _symConnect == 0 || _symWrite == 0 || _symRead == 0 || _symClose == 0 {
+        return false
+    }
+    true
+}
+
+fn _connect() {
+    if !_resolve() { return false }
+    fd = ffi.call(_symSocket, "int32", ["int32", "int32", "int32"], 1, 1, 0)
+    if fd < 0 { return false }
+    if _addr == null { _addr = _packSockaddrUn(IPC_PATH) }
+    res = ffi.call(_symConnect, "int32", ["int32", "pointer", "int32"], fd, _addr, 110)
+    if res < 0 {
+        ffi.call(_symClose, "int32", ["int32"], fd)
+        return false
+    }
+    _buf = ffi.allocBytes(4096)
+    // Bound the blocking read in ipcSend(): timeval {tv_sec, tv_usec} = 20ms.
+    _tv = ffi.allocBytes(16)
+    ffi.set_i64(_tv, 0)
+    ffi.set_i64(ffi.ptr_add(_tv, 8), 20000)
+    ffi.call(_symSetsockopt, "int32", ["int32", "int32", "int32", "pointer", "int32"], _sockfd, 1, 20, _tv, 16)
+    ffi.free(_tv)
+    _sockfd = fd
+    true
+}
+
+fn _dropSocket() {
+    if _sockfd != null {
+        ffi.call(_symClose, "int32", ["int32"], _sockfd)
+        _sockfd = null
+    }
+}
+
+fn available() {
+    if !fs.exists(IPC_PATH) { return false }
+    if _sockfd == null && !_connect() { return false }
+    true
+}
+
+fn _log(msg) {
+    if _verbose { print("cinmagnifier: $msg") }
+}
+
+fn setVerbose(v) { _verbose = v }
+
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+
+// Round-trip: write, then one bounded read. Only for calls that need data
+// back; never on a scroll tick.
+fn ipcSend(method, params) {
+    if _sockfd == null && !_connect() { return "" }
+    if params == null { params = [] }
+    // Never name a local "json" here — it shadows the imported module and
+    // json.stringify would resolve against the local and return null.
+    obj = { method: method }
+    obj.params = params
+    payload = json.stringify(obj) + "\n"
+
+    written = ffi.call(_symWrite, "int64", ["int32", "string", "int64"], _sockfd, payload, payload.len())
+    if written < 0 { _dropSocket(); return "" }
+
+    n = ffi.call(_symRead, "int64", ["int32", "pointer", "int32"], _sockfd, _buf, 4096)
+    if n <= 0 {
+        // timeout / EAGAIN / stale socket. Reconnect on the next call and
+        // return empty rather than wedging the hotkey block.
+        _dropSocket()
+        return ""
+    }
+    ffi.string(_buf, n)
+}
+
+// Fire-and-forget: write() only. This is the ONLY acceptable transport for
+// the scroll path (see the design constraint at the top of this file).
+fn ipcSendMethod(method, params) {
+    if _sockfd == null && !_connect() { return false }
+    if params == null { params = [] }
+    obj = { method: method }
+    obj.params = params
+    payload = json.stringify(obj) + "\n"
+    written = ffi.call(_symWrite, "int64", ["int32", "string", "int64"], _sockfd, payload, payload.len())
+    if written < 0 { _dropSocket(); return false }
+    true
+}
+
+// Raw-payload variant: skips stringify + object build + concat per tick.
+// The scroll path only sends constant payloads (built from json.stringify at
+// load), so a tick costs one len() + one write(). Nothing else.
+fn ipcSendRaw(payload) {
+    if _sockfd == null && !_connect() { return false }
+    written = ffi.call(_symWrite, "int64", ["int32", "string", "int64"], _sockfd, payload, payload.len())
+    if written < 0 { _dropSocket(); return false }
+    true
+}
+
+fn cleanup() { _dropSocket() }
+
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+fn _clamp(level) {
+    if level < 1.0 { return 1.0 }
+    if level > 8.0 { return 8.0 }
+    level
+}
+
+fn _bump(delta) {
+    _level = _clamp(_level + delta)
+    _level
+}
+
+fn zoomIn() {
+    if !ipcSendRaw(P_ZOOM_IN) { return false }
+    _bump(STEP)
+    true
+}
+
+fn zoomOut() {
+    if !ipcSendRaw(P_ZOOM_OUT) { return false }
+    _bump(-STEP)
+    true
+}
+
+fn reset() {
+    if !ipcSendRaw(P_RESET) { return false }
+    _level = 1.0
+    true
+}
+
+fn presetHigh() {
+    if !ipcSendRaw(P_PRESET_HIGH) { return false }
+    _level = 1.9
+    true
+}
+
+fn presetLow() {
+    if !ipcSendRaw(P_PRESET_LOW) { return false }
+    _level = 1.6
+    true
+}
+
+fn setLevel(level) {
+    level = _clamp(level)
+    if !ipcSendMethod("SetZoomLevel", [level]) { return false }
+    _level = level
+    true
+}
+
+// The magnifier is authoritative on level; this is the one call that wants
+// data back (bounded read, see ipcSend). Returns the tracked level when the
+// magnifier has nothing to say.
+fn getLevel() {
+    reply = ipcSend("GetZoomLevel", [])
+    if reply == "" { return _level }
+    parsed = json.parse(reply)
+    if parsed == null { return _level }
+    v = num(parsed)
+    if v == null { return _level }
+    _level = _clamp(v)
+    _level
+}
+
+// Local mirror only: the magnifier is the authority, but getLevel() costs a
+// round-trip and the scroll path must not pay it.
+fn level() { _level }
+fn setLevelMirror(level) { _level = _clamp(level) }
+
+fn cycleLens() {
+    _lens = _lens + 1
+    if _lens > 4 { _lens = 0 }
+    _log("lens " + str(_lens))
+    ipcSendMethod("SetLensShapeForMonitor", [0, _lens])
+    _lens
+}
+
+fn cycleMode() {
+    _mode = _mode + 1
+    if _mode > 5 { _mode = 0 }
+    _log("mode " + str(_mode))
+    ipcSendMethod("SetZoomModeForMonitor", [0, _mode])
+    _mode
+}
+
+fn lensShape() { _lens }
+fn zoomMode() { _mode }
+
+fn setLens(v) { _lens = v }
+fn setMode(v) { _mode = v }

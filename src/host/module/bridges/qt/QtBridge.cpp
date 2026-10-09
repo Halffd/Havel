@@ -25,6 +25,8 @@
 #include "extensions/qt/QtClipboardBackend.hpp"
 #include "extensions/qt/QtScreenshotBackend.hpp"
 #include "host/clipboard/ClipboardBackendFactory.hpp"
+#include "host/automation/PixelAutomationFactory.hpp"
+#include "host/automation/PixelAutomationService.hpp"
 #include "host/ui/QtBackend.hpp"
 #include "host/ui/UIBackendFactory.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
@@ -157,6 +159,15 @@ void installQtClipboardBackend() {
   });
 }
 
+void installQtPixelAutomationFactory() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    setPixelAutomationFactory([]() -> std::shared_ptr<IPixelAutomation> {
+      return std::make_shared<PixelAutomationService>();
+    });
+  });
+}
+
 } // namespace havel::host
 
 // The Qt UI backend has to be constructible before any host code calls
@@ -178,6 +189,7 @@ namespace {
 const bool g_qt_ui_backends_registered = [] {
   havel::host::installQtUIBackendFactories();
   havel::host::installQtClipboardBackend();
+  havel::host::installQtPixelAutomationFactory();
   havel::qt::installQtScreenCapture();
   return true;
 }();
@@ -192,6 +204,7 @@ namespace havel::compiler {
 void installQtBridge(PipelineOptions &options, const HostContext *ctx) {
   havel::host::installQtUIBackendFactories();
   havel::host::installQtClipboardBackend();
+  havel::host::installQtPixelAutomationFactory();
   havel::qt::installQtScreenCapture();
   options.host_functions["clipboard.get"] = [ctx](const auto &args) {
     return clipboardBridgeGet(args, ctx);

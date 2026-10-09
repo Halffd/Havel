@@ -708,6 +708,11 @@ list(APPEND CORE_SOURCES
 "src/Havel.cpp"
  "src/c/Config.c"
 "src/modules/HostModules.cpp"
+# Qt-free pixel service surface: the IPixelAutomation interface's value-type
+# methods, plus the registration slot the Qt side fills with the concrete
+# (havel_gui) implementation. Neither may name the Qt-using service class.
+"src/host/automation/IPixelAutomation.cpp"
+"src/host/automation/PixelAutomationFactory.cpp"
 )
 
 # ScreenshotService/AltTabService: NOT Qt-dependent despite their old

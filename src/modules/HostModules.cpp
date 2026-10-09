@@ -13,9 +13,7 @@
 #endif
 #include "../host/audio/AudioService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "../host/automation/PixelAutomationService.hpp"
-#endif
+#include "../host/automation/PixelAutomationFactory.hpp"
 #include "../host/automation/AutomationService.hpp"
 
 #include "../host/io/MapManagerService.hpp"
@@ -48,9 +46,7 @@ void declareAllServices() {
   registry.declareService<host::MediaService>("media", "util");
   registry.declareService<host::AppService>("app", "util");
   registry.declareService<host::ScreenshotService>("screenshot", "util");
-#ifdef HAVE_QT_EXTENSION
-  registry.declareService<host::PixelAutomationService>("pixel", "util");
-#endif
+  registry.declareService<host::IPixelAutomation>("pixel", "util");
 }
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
@@ -160,14 +156,18 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 	}
 
 	if (registry.shouldRegister("pixel", includes, excludes)) {
-#ifdef HAVE_QT_EXTENSION
 		try {
-			auto pixelService = std::make_shared<host::PixelAutomationService>();
-			registry.registerService<host::PixelAutomationService>(pixelService);
+			// The concrete service uses Qt, so it is constructed by the side
+			// that owns it (havel_gui) through the factory slot. A Qt-free host
+			// registers no factory and gets no pixel service, which is the same
+			// state the old HAVE_QT_EXTENSION-less build reached.
+			auto pixelService = host::createPixelAutomation();
+			if (pixelService) {
+				registry.registerService<host::IPixelAutomation>(pixelService);
+			}
 		} catch (const std::exception& e) {
 			debug("initializeServiceRegistry: PixelAutomationService failed: {}", e.what());
 		}
-#endif
 	}
 
 

@@ -20,7 +20,7 @@
 #include "PixelModule.hpp"
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
-#include "host/automation/PixelAutomationService.hpp"
+#include "host/automation/IPixelAutomation.hpp"
 #include "core/io/IO.hpp"
 #include "utils/Logger.hpp"
 
@@ -28,7 +28,7 @@ namespace havel::modules {
 
 using compiler::Value;
 using compiler::VMApi;
-using host::PixelAutomationService;
+using host::IPixelAutomation;
 
 static std::pair<int, int> currentMousePos() {
     auto io = host::ServiceRegistry::instance().get<IO>();
@@ -51,9 +51,9 @@ static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Valu
     return args;
 }
 
-static std::shared_ptr<PixelAutomationService> getPixelService() {
+static std::shared_ptr<IPixelAutomation> getPixelService() {
     auto& registry = host::ServiceRegistry::instance();
-    auto svc = registry.get<PixelAutomationService>();
+    auto svc = registry.get<IPixelAutomation>();
     if (!svc) {
         ::havel::error("PixelModule: PixelAutomationService not available in registry");
     }

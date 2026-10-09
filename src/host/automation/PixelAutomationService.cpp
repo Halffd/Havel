@@ -12,9 +12,8 @@
 #include "utils/HeadlessRuntime.hpp"
 #include <cstring>
 #include <QApplication>
-#include <QGuiApplication>
-#include <QScreen>
 #include <QImage>
+#include <QString>
 
 namespace havel::host {
 
@@ -34,42 +33,8 @@ static void ensureApp() {
     }
 }
 
-// ============================================================================
-// Color implementation
-// ============================================================================
-
-Color Color::fromHex(const std::string& hex) {
-    havel::Color c = havel::Color::fromHex(hex);
-    return Color(c.r, c.g, c.b, c.a);
-}
-
-std::string Color::toHex() const {
-    havel::Color c(r, g, b, a);
-    return c.toHex();
-}
-
-bool Color::near(const Color& other, int tolerance) const {
-    havel::Color c1(r, g, b, a);
-    havel::Color c2(other.r, other.g, other.b, other.a);
-    return c1.near(c2, tolerance);
-}
-
-// ============================================================================
-// Region implementation
-// ============================================================================
-
-Region Region::fullScreen() {
-    // Get actual screen size from Qt
-    auto* app = QApplication::instance();
-    if (app) {
-        auto* screen = QGuiApplication::primaryScreen();
-        if (screen) {
-            QRect geo = screen->geometry();
-            return Region(geo.x(), geo.y(), geo.width(), geo.height());
-        }
-    }
-    return Region(0, 0, 1920, 1080);
-}
+// Color and Region value-type methods are Qt-free and live in IPixelAutomation.cpp
+// in the core archive, so the pixel module can use them without linking havel_gui.
 
 // ============================================================================
 // PixelAutomationService implementation

@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 0.3.4 LANGUAGES C CXX)
 
+# Resolve shared libraries that live in the build tree (havel_ffi_types.so)
+# relative to the binary rather than through the absolute path CMake bakes
+# into RUNPATH. Must be set before any target is created.
+set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+
 # -- build source identity ---------------------------------------------------
 # Stamps the binary with the exact git commit it was built from so
 # regression reports can name the commit ("havel --version" shows it).
@@ -2277,6 +2282,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     string(REPLACE ";" "," SANITIZE_FLAGS_JOINED "${SANITIZE_FLAGS}")
     target_compile_options(havel PRIVATE -fsanitize=${SANITIZE_FLAGS_JOINED} -fno-omit-frame-pointer -g)
     target_link_options(havel PRIVATE -fsanitize=${SANITIZE_FLAGS_JOINED})
+    # ASan's fixed shadow [0x7fff8000, 0x10007fff7fff] overlaps where
+    # hardened kernels (linux-hardened with vm.mmap_rnd_bits=32) map large
+    # PIE images (observed at 0x100000000), so the runtime aborts at
+    # startup: "Shadow memory range interleaves with an existing memory
+    # mapping". Linking non-PIE puts the binary at 0x400000, outside the
+    # shadow, and keeps ASan usable on those kernels.
+    if(ENABLE_ASAN)
+      target_link_options(havel PRIVATE -no-pie)
+    endif()
   endif()
 endif()
 
@@ -2703,6 +2717,14 @@ target_include_directories(havel_ffi_types PUBLIC
   ${CMAKE_SOURCE_DIR}/include
 )
 target_link_libraries(havel_ffi_types PRIVATE ${LIBFFI_LIBRARIES})
+# This is a SHARED library but havel links it directly (DT_NEEDED), so it
+# has to travel with the binary: install it next to the other runtime
+# artifacts. Without this rule an installed `bin/havel` starts with
+# "error while loading shared libraries: libhavel_ffi_types.so".
+install(TARGETS havel_ffi_types
+    LIBRARY DESTINATION lib COMPONENT Runtime
+    RUNTIME DESTINATION bin COMPONENT Runtime
+)
 # Link into main binary (via havel_runtime, which owns ffi/)
 target_link_libraries(havel_runtime PRIVATE havel_ffi_types)
 
@@ -3219,6 +3241,14 @@ endif()
 install(TARGETS havel
   RUNTIME DESTINATION bin
   COMPONENT Runtime
+)
+# Resolve build-tree/install-tree shared libraries relative to the binary
+# instead of via the absolute path CMake bakes into RUNPATH. Without
+# $ORIGIN the binary only starts from the exact directory it was linked
+# in: move or sync the build tree and every DT_NEEDED lookup fails
+# ("error while loading shared libraries: libhavel_ffi_types.so").
+set_target_properties(havel PROPERTIES
+  INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
 )
 
 if(TARGET havel-lsp)

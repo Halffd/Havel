@@ -153,6 +153,52 @@ User time in tiered mode dropped 22-25% versus the call-then-select
 lowering. The remaining gap to theoretical is cost 2 (below) plus the sys
 time increase, which grows with the fix and is not yet profiled.
 
+## Phase C: self-hosted compiler measurement (2026-10-09)
+
+Workload: 1927-line generated script (functions/classes/loops/interp),
+run through the pure self-hosted pipeline
+(`havel --run modules/lang/launcher.hv -- --run wl.hv`; fresh
+`~/.cache/havel`, loadavg noted per run - this machine is shared).
+
+| stage | quiet-ish (loadavg 1.6-2.5) | loaded (5-9) |
+|---|---|---|
+| parse: tokenize | 42-66 ms | - |
+| parse: parseAST | ~30 s | 36-70 s |
+| typecheck | 0.7-1.1 s | - |
+| emit | 0.9-1.9 s | - |
+
+parseAST is ~93% of the pipeline. Where the time is NOT:
+
+- not the module-call wrappers' globals install: the whole run makes
+  only ~8-12k wrapped calls; the goroutine pump is not involved (an ops
+  probe executed through the launcher runs at the same ~0.3us/op as the
+  plain fast loop); host calls total ~2 s (type() 34k calls, scope
+  helpers); slow-path dispatch < 1M iterations.
+- pratt.hv's own entry/exit timestamps confirm the ~39 s elapses inside
+  parseTokens itself: ordinary interpreted bytecode, roughly 100M+ ops
+  at fast-loop cost (~0.3us/op).
+
+Diagnosis: the parse is ordinary Havel code paying ordinary dispatch -
+and tier-1 today only removes ~9% of it because can_lower declines the
+parser's hot functions (object/closure-heavy shapes). The Phase C work
+is exactly what the architecture plan predicted: extend the lowering
+subset to cover the parser's hot op shapes so tier-1 can compile them,
+not rewrite the parser.
+
+Bug found and fixed on the way (see the next commit): the interpreter's
+instruction count is a ~60x undercount for parse-shaped code -
+`recordInstructions(8192)` exists in only 19 of the 48 computed-goto
+re-dispatch tails in VMDispatch.cpp, so most of the parse's ops never
+advance the profiler's instructions= figure. The 1.76M "instructions"
+reported for a 30 s parse is why the time looked impossible to
+reconcile. Fixing the accounting (checkpoint in every tail, or a shared
+helper) is queued with the Phase C work.
+
+Also fixed on the way: intra-module wrapper calls re-copied the module
+globals map (~1600-1968 merged entries, ~94us) on every call.
+Identity-gated now (see commit); a module fn calling a wrapped sibling
+200k times went 18.8 s -> 144 ms.
+
 ## Current state (2026-10-08 evening, after GC safe points)
 
 Measured at loadavg ~6, fresh `~/.cache/havel` (see the measurement-

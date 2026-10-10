@@ -365,6 +365,15 @@ if (!parsed) return Value::makeNull();
 interval_ms = *parsed;
 
 Value callback = args[1];
+// Close the closure's open upvalues NOW: the interval fires LATER, after
+// the creating method has returned and its locals region has been recycled
+// (the same bug registerCallback closes for - VMCb.cpp). Open cells would
+// read recycled locals as garbage: @field writes in class-method interval
+// bodies threw "OBJECT_SET expects object container" nondeterministically,
+// depending on what reused the frame's slots before the first fire.
+if (callback.isClosureId()) {
+  vm_->closeOpenUpvaluesForSpawn(callback.asClosureId());
+}
 auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
   auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {

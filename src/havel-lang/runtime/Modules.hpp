@@ -97,6 +97,12 @@ private:
 
     std::vector<std::function<void(compiler::VM &)>> vm_setup_callbacks_;
 
+    // Which bridge contributed each entry of options_.host_functions. Bridges
+    // write straight into the flat map, so the owner is recorded here as they
+    // run and applied to the VM when the map is registered. Derived from the
+    // keys each install() adds, never a hand-written name list.
+    std::unordered_map<std::string, std::string> host_function_modules_;
+
     void initBridges();
     void installHostFunctions();
     void installStdLib();

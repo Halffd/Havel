@@ -16,13 +16,14 @@ static Loader &sharedLoader() {
 }
 
 void registerLazyFromPlugin(compiler::VM &vm, const std::string &name,
- const std::vector<std::string> &aliases = {}) {
- vm.registerLazyModule(name, [name](compiler::VMApi &a) {
- auto plugin = sharedLoader().loadModulePlugin(name);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&a));
- }
- }, aliases);
+  const std::vector<std::string> &aliases = {}) {
+  vm.registerLazyModule(name, [name](compiler::VMApi &a) {
+  auto plugin = sharedLoader().loadModulePlugin(name);
+  if (plugin) {
+  compiler::VM::HostModuleScope scope(a.vm(), name);
+  plugin->register_fn(static_cast<void *>(&a));
+  }
+  }, aliases);
 }
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
@@ -40,6 +41,7 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     // module load) the sidecar loads cleanly.
     {
         compiler::VMApi mathApi(vm);
+        compiler::VM::HostModuleScope mathScope(vm, "math");
         havel::stdlib::registerMathModule(mathApi);
     }
 
@@ -49,12 +51,13 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
         // math already registered above; re-registering from the plugin
         // would re-run the sidecar load and can re-enter mid-load.
         if (mod.name == "math") continue;
- if (mod.eager) {
- auto plugin = sharedLoader().loadModulePlugin(mod.name);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&api));
- }
- } else if (!coreOnly) {
+if (mod.eager) {
+  auto plugin = sharedLoader().loadModulePlugin(mod.name);
+  if (plugin) {
+    compiler::VM::HostModuleScope scope(vm, mod.name);
+  plugin->register_fn(static_cast<void *>(&api));
+  }
+  } else if (!coreOnly) {
  registerLazyFromPlugin(vm, mod.name, mod.aliases);
  }
     }

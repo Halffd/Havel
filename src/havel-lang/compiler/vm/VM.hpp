@@ -353,6 +353,14 @@ struct CallFrame {
     std::unordered_set<std::string> immutable_globals_; // val-declared globals
     std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
+  // Registration metadata keyed by the same name as host_functions. The
+  // std::function cannot carry arity or an owner, so they are recorded here at
+  // registration time and read back by the debugger.
+  utils::RobinHoodHashMap<std::string, HostFunctionMeta> host_function_meta_;
+  // Module label stamped onto every host function registered while this is set.
+  // The runtime dispatch sites set it around each module/plugin/bridge
+  // registration, which is the only place the owner is actually known.
+  std::string host_module_scope_ = "vm";
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_set<uint32_t> host_function_wants_self_; // Host function indices whose first param is "self"
 utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
@@ -1988,6 +1996,45 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
     return host_function_names_;
   }
   std::optional<std::string> getHostFunctionName(uint32_t index) const;
+
+  // --- Host function introspection (hvdb) ---
+  //
+  // Derived entirely from the live registry; nothing here is a hand-kept list.
+  // Rows come out in host-function-index order.
+  std::vector<HostFunctionInfo> getHostFunctionInfo() const;
+  std::optional<HostFunctionInfo> getHostFunctionInfoByName(
+      const std::string &name) const;
+
+  void setHostModuleScope(std::string scope) {
+    host_module_scope_ = std::move(scope);
+  }
+  const std::string &hostModuleScope() const { return host_module_scope_; }
+
+  // Overrides the scope-derived module label. Used where the owner is known
+  // only outside registerHostFunction, e.g. a bridge that writes into the
+  // flat host-function map and is applied when that map is registered.
+  void setHostFunctionModule(const std::string &name, std::string module) {
+    auto &meta = host_function_meta_[name];
+    meta.module = std::move(module);
+    meta.module_explicit = true;
+  }
+
+  // Restores the previous module label on scope exit, so a nested or early
+  // return cannot leave registrations attributed to the wrong module.
+  class HostModuleScope {
+  public:
+    HostModuleScope(VM &vm, std::string scope)
+        : vm_(vm), previous_(vm.hostModuleScope()) {
+      vm_.setHostModuleScope(std::move(scope));
+    }
+    ~HostModuleScope() { vm_.setHostModuleScope(previous_); }
+    HostModuleScope(const HostModuleScope &) = delete;
+    HostModuleScope &operator=(const HostModuleScope &) = delete;
+
+  private:
+    VM &vm_;
+    std::string previous_;
+  };
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);

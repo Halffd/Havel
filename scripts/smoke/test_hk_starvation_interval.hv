@@ -1,0 +1,36 @@
+// Regression: hotkey starvation under interval load (high-priority hotkeys).
+// The yield pump's stale-suspension poison made a hotkey goroutine picked
+// after a busy sibling's dispatch consume zero instructions (the fast
+// path's first-opcode guard saw the leftover last_suspension_reason_) and
+// park it with reason None and no wake path, so hotkeys never fired while
+// any interval/poll loop ran. Fixed: the consumed reason is cleared after
+// each dispatch outcome, and a not-really-suspended fiber is requeued
+// instead of being bricked.
+// Expected: fired==1 within 1s of trigger; rc 0. Headless-safe: F24 is a
+// persistent goroutine fired via hotkey.trigger (no OS input needed).
+fired = 0
+F24 => {
+    fired = fired + 1
+}
+
+ticks = 0
+iv = interval 5 {
+    i = 0
+    while i < 400000 {
+        i = i + 1
+    }
+    ticks = ticks + 1
+}
+
+sleep(300)
+t0 = time.millis()
+hotkey.trigger("F24")
+while fired == 0 && time.millis() - t0 < 1000 {
+    sleep(5)
+}
+print("fired:", fired, " latency_ms:", time.millis() - t0, " ticks:", ticks)
+if fired != 1 {
+    print("FAIL hk-starvation-interval: hotkey never fired under load")
+    process.exit(255)
+}
+process.exit(0)

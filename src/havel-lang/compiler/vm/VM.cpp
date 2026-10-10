@@ -4967,8 +4967,22 @@ Value VM::deepWrapModuleFunctions(
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
           bool isVariadic = preCheckCallee &&
                             preCheckCallee->variadic_param_index != UINT32_MAX;
+          // The erase drops a prepended RECEIVER that is not the function's
+          // self (e.g. the module object pushed by the member-call path for
+          // plain module fns). For CLASS METHODS called through a class
+          // instance the first arg IS self - the instance carries __class/
+          // __is_class/__struct; erasing it left slot 0 null and every
+          // @field access in the method's interval/timeout closures threw
+          // "OBJECT_SET expects object container".
+          bool firstArgIsSelfInstance = false;
+          if (!callArgs.empty() && callArgs[0].isObjectId()) {
+            auto *o0 = heap_.object(callArgs[0].asObjectId());
+            firstArgIsSelfInstance = o0 && (o0->get("__class") != nullptr ||
+                                            o0->get("__is_class") != nullptr ||
+                                            o0->get("__struct") != nullptr);
+          }
           if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 &&
-              wantsSelf) {
+              wantsSelf && !firstArgIsSelfInstance) {
             callArgs.erase(callArgs.begin());
           }
           auto *savedChunk = current_chunk;

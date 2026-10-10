@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define HAVEL_TOOLKIT_ABI_VERSION 1
+#define HAVEL_TOOLKIT_ABI_VERSION 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +31,14 @@ void (*destroy_clipboard_manager_backend)(void *backend);
 
 void (*register_extension_functions)(void *api);
 
-void *reserved[4];
+void *reserved[3];
+
+// v2: called by the host right after dlopen, before any backend is created.
+// Registers the in-process factories the executable used to get from
+// havel_gui's static initializers (UI/screenshot/clipboard backends, pixel
+// service, screen provider). A v1-only plugin leaves it null and the host
+// skips it.
+void (*install_factories)(void);
 } HavelToolkitABI;
 
 typedef const HavelToolkitABI *(*havel_toolkit_info_fn)(void);
@@ -71,7 +78,8 @@ nullptr, nullptr, \
 nullptr, nullptr, \
 nullptr, nullptr, \
 nullptr, \
-{nullptr, nullptr, nullptr, nullptr} \
+{nullptr, nullptr, nullptr}, \
+nullptr \
 }; \
 static HavelToolkitABI *havel_toolkit_abi_ptr = &havel_toolkit_abi_##name; \
 extern "C" const HavelToolkitABI *havel_toolkit_info(void) { \
@@ -100,5 +108,8 @@ havel_toolkit_abi_ptr->destroy_clipboard_manager_backend = (void (*)(void *))(de
 
 #define HAVEL_TOOLKIT_SET_EXT_FUNCTIONS(fn) \
 havel_toolkit_abi_ptr->register_extension_functions = (void (*)(void *))(fn);
+
+#define HAVEL_TOOLKIT_SET_FACTORIES(fn) \
+havel_toolkit_abi_ptr->install_factories = (void (*)(void))(fn);
 
 #endif

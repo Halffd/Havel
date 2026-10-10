@@ -25,10 +25,9 @@
 #include <unistd.h>
 #include <vector>
 
-// Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
-#ifdef HAVE_QT_EXTENSION
-#include "qt.hpp"
-#endif
+// No Qt in this TU: including qt.hpp pulls QtCore headers, which emit an
+// undefined qt_version_tag reference in every object — forcing every consumer
+// (the Qt-free executable, havel-lsp, embedders) to link libQt6Core.
 
 namespace havel {
 

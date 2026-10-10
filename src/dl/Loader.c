@@ -288,8 +288,10 @@ void *havel_loader_open(HavelLoader *loader, const char *path) {
 
  void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  if (!handle) {
+  // Capture once: the first dlerror() call consumes the error message.
+  const char *derr = dlerror();
   HAVEL_LOGF_ERROR("dlopen failed for %s: %s", path,
-     dlerror() ? dlerror() : "unknown");
+     derr ? derr : "unknown");
  }
  return handle;
 }
@@ -482,8 +484,9 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
   HAVEL_LOGF_INFO("havel_loader_load_module: dlopen %s for %s", path, name);
   void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   if (!handle) {
+   const char *derr = dlerror();
    HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
-      dlerror() ? dlerror() : "unknown");
+      derr ? derr : "unknown");
    free(path);
    return NULL;
   }
@@ -582,8 +585,9 @@ const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char
 
  void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
  if (!handle) {
+  const char *derr = dlerror();
   HAVEL_LOGF_ERROR("dlopen failed for toolkit '%s': %s", name,
-     dlerror() ? dlerror() : "unknown");
+     derr ? derr : "unknown");
   free(path);
   return NULL;
  }

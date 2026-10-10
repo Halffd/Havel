@@ -50,6 +50,13 @@ static void destroy_qt_clipboard_mgr_backend(void *p) {
 
 HAVEL_TOOLKIT_PLUGIN_IMPL(qt, "1.0.0", "Qt6 UI toolkit backend")
 
+// Declared in qt_toolkit_factories.cpp (same plugin): installs the in-process
+// UI/screenshot/clipboard factories, the pixel service and the screen
+// provider the executable used to get from havel_gui.
+namespace havel::host {
+void qt_toolkit_install_factories();
+} // namespace havel::host
+
 namespace {
 struct QtToolkitInit {
     QtToolkitInit() {
@@ -59,6 +66,10 @@ struct QtToolkitInit {
         HAVEL_TOOLKIT_SET_CLIPBOARD_BACKEND(create_qt_clipboard_backend, destroy_qt_clipboard_backend)
         HAVEL_TOOLKIT_SET_CLIPBOARD_MGR_BACKEND(create_qt_clipboard_mgr_backend, destroy_qt_clipboard_mgr_backend)
         HAVEL_TOOLKIT_SET_EXT_FUNCTIONS(qt_toolkit_register_functions)
+        // The executable no longer links havel_gui, so none of the in-process
+        // registrations run anywhere else. install_factories is called by the
+        // host right after this plugin is dlopen'd.
+        HAVEL_TOOLKIT_SET_FACTORIES(havel::host::qt_toolkit_install_factories)
     }
 } init;
 }

@@ -15,6 +15,7 @@
 
 #include "IClipboardBackend.hpp"
 
+#include "havel-lang/common/Export.hpp"
 #include <memory>
 
 namespace havel::host {
@@ -25,7 +26,7 @@ using ClipboardBackendFactoryFn = std::unique_ptr<IClipboardBackend> (*)();
 
 // Registration happens once, from the Qt side, before first use. Passing
 // nullptr removes the factory.
-void registerClipboardBackendFactory(ClipboardBackendFactoryFn fn);
+HAVEL_EXPORT void registerClipboardBackendFactory(ClipboardBackendFactoryFn fn);
 
 // Returns nullptr when no factory is registered, which is what Clipboard must
 // treat as "no registered backend" instead of a compile-time macro.
@@ -33,12 +34,13 @@ std::unique_ptr<IClipboardBackend> createRegisteredClipboardBackend();
 
 bool hasClipboardBackendFactory();
 
-// Entry point defined in havel_gui (src/host/module/bridges/qt/QtBridge.cpp).
-// It has to be called explicitly: the implementation shares no symbol with
-// anything else, so a static initialiser inside it would never be extracted
-// from the static archive and the factory would silently never register. The
-// Qt bridge initialiser calls it. Safe to call more than once. Declared here
-// so the declaration stays Qt-free.
-void installQtClipboardBackend();
+// Entry point defined by the Qt toolkit plugin
+// (src/extensions/qt/qt_toolkit_factories.cpp); havel_gui keeps a copy for
+// legacy consumers. It has to be called explicitly: the implementation shares
+// no symbol with anything else, so a static initialiser inside it would never
+// be extracted from the static archive and the factory would silently never
+// register. The toolkit's install_factories slot calls it. Safe to call more
+// than once. Declared here so the declaration stays Qt-free.
+HAVEL_EXPORT void installQtClipboardBackend();
 
 } // namespace havel::host

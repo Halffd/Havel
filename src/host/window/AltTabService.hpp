@@ -1,10 +1,11 @@
 #pragma once
 #include "IAltTabBackend.hpp"
+#include "havel-lang/common/Export.hpp"
 #include <memory>
 
 namespace havel {
 
-class AltTabService {
+class HAVEL_EXPORT AltTabService {
 public:
     AltTabService();
     ~AltTabService();

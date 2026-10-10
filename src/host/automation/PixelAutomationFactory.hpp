@@ -14,6 +14,7 @@
 #pragma once
 
 #include "IPixelAutomation.hpp"
+#include "havel-lang/common/Export.hpp"
 
 #include <memory>
 
@@ -23,7 +24,7 @@ using PixelAutomationFactory = std::shared_ptr<IPixelAutomation> (*)();
 
 // Registration happens once, from the side that owns the implementation, before
 // the first service registry initialisation. Passing nullptr clears it.
-void setPixelAutomationFactory(PixelAutomationFactory factory);
+HAVEL_EXPORT void setPixelAutomationFactory(PixelAutomationFactory factory);
 
 // The registered factory, or nullptr when the host has no Qt pixel backend.
 PixelAutomationFactory pixelAutomationFactory();

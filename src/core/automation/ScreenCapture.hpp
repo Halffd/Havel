@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
 #include <vector>
 
 namespace havel {
@@ -45,19 +46,20 @@ struct ScreenProvider {
 
 // Registration happens once, from the Qt side, before first use. Passing
 // nullptr removes the provider.
-void setScreenProvider(const ScreenProvider *provider);
-const ScreenProvider *screenProvider();
+HAVEL_EXPORT void setScreenProvider(const ScreenProvider *provider);
+HAVEL_EXPORT const ScreenProvider *screenProvider();
 
 namespace qt {
 
-// Defined in havel_gui (src/extensions/qt/QtScreenCapture.cpp). It has to be
-// called explicitly: the implementation shares no symbol with anything else, so
-// a static initialiser inside it would never be extracted from the static
-// archive and the provider would silently never register. The Qt bridge
-// initialiser calls it, which is also early enough for the language host's
-// pixel calls. Safe to call more than once. Declared here so the declaration
-// stays Qt-free.
-void installQtScreenCapture();
+// Defined by the Qt toolkit plugin (src/extensions/qt/QtScreenCapture.cpp,
+// compiled in from qt_toolkit_factories.cpp); havel_gui keeps a copy for
+// legacy consumers. It has to be called explicitly: the implementation shares
+// no symbol with anything else, so a static initialiser inside it would never
+// be extracted from a static archive and the provider would silently never
+// register. The toolkit's install_factories slot calls it, which is also
+// early enough for the language host's pixel calls. Safe to call more than
+// once. Declared here so the declaration stays Qt-free.
+HAVEL_EXPORT void installQtScreenCapture();
 
 } // namespace qt
 

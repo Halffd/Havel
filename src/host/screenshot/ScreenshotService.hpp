@@ -1,13 +1,14 @@
 #pragma once
 
 #include "IScreenshotBackend.hpp"
+#include "havel-lang/common/Export.hpp"
 #include <vector>
 #include <string>
 #include <memory>
 
 namespace havel::host {
 
-class ScreenshotService {
+class HAVEL_EXPORT ScreenshotService {
 public:
     static ScreenshotService& getInstance();
 

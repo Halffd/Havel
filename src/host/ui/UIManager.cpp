@@ -6,6 +6,9 @@
 #include "../screenshot/ScreenshotService.hpp"
 #include "../window/AltTabService.hpp"
 #include "../clipboard/Clipboard.hpp"
+#include "../utils/Logger.hpp"
+
+#include <mutex>
 
 // GTK and ImGui are not Qt, so they stay constructed here: they compile into
 // libhavel_core.a and their headers drag in no Qt symbol. Only the Qt backend
@@ -208,6 +211,27 @@ std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const
     return loader.loadToolkitPlugin(name);
 }
 
+const HavelToolkitABI *UIManager::ensureQtToolkit() {
+    // dlopen at most once per process: havel_gui's static initializer also
+    // ran exactly once, before main(). On failure the loader already logged
+    // the dlopen error; the in-process factory slots simply stay empty and
+    // the Qt-backed features degrade instead of the binary failing to boot.
+    static std::once_flag once;
+    static const HavelToolkitABI *abi = nullptr;
+    std::call_once(once, [] {
+        auto toolkit = UIManager::instance().tryLoadToolkit(UIBackend::Api::QT);
+        if (!toolkit || !toolkit->abi) return;
+        abi = toolkit->abi;
+        UIManager::instance().loadedToolkitAbi_ = abi;
+        if (abi->install_factories) {
+            abi->install_factories();
+        }
+        havel::info("Qt toolkit loaded: {} {}", abi->name ? abi->name : "qt",
+                    abi->version ? abi->version : "");
+    });
+    return abi;
+}
+
 void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
     if (!toolkit.abi || !toolkit.abi->register_extension_functions) return;
     // Pass the real global C-API table: it is a static dispatch struct that
@@ -229,6 +253,15 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
         backend->setDestroyFn(destroy_fn);
 
         registerToolkitExtensions(*toolkit);
+
+        // The plugin is the Qt half of the process now: the executable no
+        // longer links havel_gui, so nothing else registers the in-process
+        // UI/screenshot/clipboard factories, the pixel service or the screen
+        // provider. install_factories is idempotent.
+        loadedToolkitAbi_ = toolkit->abi;
+        if (toolkit->abi->install_factories) {
+            toolkit->abi->install_factories();
+        }
 
         return std::unique_ptr<UIBackend>(backend);
     }

@@ -713,6 +713,10 @@ list(APPEND CORE_SOURCES
 # (havel_gui) implementation. Neither may name the Qt-using service class.
 "src/host/automation/IPixelAutomation.cpp"
 "src/host/automation/PixelAutomationFactory.cpp"
+# Qt-free toolkit bridge installer: loads the havel_toolkit plugin at runtime
+# and installs the clipboard/gui.notify pipeline functions. Replaces the
+# QtBridge.cpp installer that havel_gui used to provide to the executable.
+"src/host/module/bridges/ToolkitBridge.cpp"
 )
 
 # ScreenshotService/AltTabService: NOT Qt-dependent despite their old
@@ -1188,16 +1192,19 @@ if(LINUX)
     find_library(XCOMPOSITE_LIB Xcomposite QUIET)
     find_library(XDAMAGE_LIB Xdamage QUIET)
     find_library(XKBCOMMON_LIB xkbcommon QUIET)
-    list(APPEND COMMON_LIBS ${X11_LIBRARIES})
+    set(_HAVEL_X11_LIBS ${X11_LIBRARIES})
     foreach(_xlib XI_LIB XTST_LIB XRANDR_LIB2 XINERAMA_LIB2 XCOMPOSITE_LIB XDAMAGE_LIB XKBCOMMON_LIB)
         if(${_xlib})
-            list(APPEND COMMON_LIBS ${${_xlib}})
+            list(APPEND _HAVEL_X11_LIBS ${${_xlib}})
         endif()
     endforeach()
     find_library(XFIXES_LIB Xfixes QUIET)
     if(XFIXES_LIB)
-        list(APPEND COMMON_LIBS ${XFIXES_LIB})
+        list(APPEND _HAVEL_X11_LIBS ${XFIXES_LIB})
     endif()
+    list(APPEND COMMON_LIBS ${_HAVEL_X11_LIBS})
+else()
+    set(_HAVEL_X11_LIBS "")
 endif()
 list(APPEND COMMON_LIBS
     OpenGL::GL
@@ -1244,6 +1251,17 @@ endif()
 
 # Append backend libs to common libs
 list(APPEND COMMON_LIBS ${BACKEND_LIBS})
+
+# Qt-free view of COMMON_LIBS. The executable, havel_core's link interface and
+# the language archives (havel_runtime, havel_compiler, havel_lang_core) must
+# not link Qt at all: Qt enters those processes at runtime through the toolkit
+# plugin (UIManager::ensureQtToolkit), so a Qt version skew degrades to a log
+# line instead of an unbootable binary. Targets that still need Qt at link
+# time (tests, tools that link havel_gui) use COMMON_LIBS unchanged. In
+# non-Qt builds the removal is a no-op; GTK/ImGui backend libs stay because
+# those backends are compiled into havel_core.
+set(_HAVEL_NON_QT_COMMON_LIBS ${COMMON_LIBS})
+list(REMOVE_ITEM _HAVEL_NON_QT_COMMON_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
 
 # ==============================================================================
 # NATIVE EXTENSIONS (MODULE libraries loaded via dlopen)
@@ -1400,6 +1418,28 @@ if(QT_BACKEND_AVAILABLE)
 add_library(havel_toolkit_qt MODULE
 src/extensions/qt/havel_toolkit_qt.cpp
 src/extensions/qt/qt_extension.cpp
+# The executable no longer links havel_gui: Qt enters the process exclusively
+# through this plugin, so everything havel_gui used to provide in-process has
+# to be compiled here — the UI backend + its service glue, the pixel
+# automation service, the screen pixel provider, and the factory installers.
+src/extensions/qt/qt_toolkit_factories.cpp
+src/host/ui/QtBackend.cpp
+src/host/ui/UIService.cpp
+src/host/automation/PixelAutomationService.cpp
+src/extensions/qt/QtScreenCapture.cpp
+# Host-side classes the plugin constructs or calls. The executable no longer
+# links havel_gui (GUI window classes) and never extracts the pixel automation
+# objects (nothing in the exe references them), so with RTLD_NOW the plugin
+# must define its own copies: the GUI window classes it creates, and the
+# Qt-free pixel trio (service implementation, value types, screen-provider
+# slot — only the plugin writes and reads that slot now).
+src/core/automation/PixelAutomation.cpp
+src/core/automation/ScreenCapture.cpp
+src/host/automation/IPixelAutomation.cpp
+src/extensions/gui/alt_tab/AltTab.cpp
+src/extensions/gui/clipboard_manager/ClipboardManager.cpp
+src/extensions/gui/screenshot_manager/ScreenshotManager.cpp
+src/extensions/gui/screenshot_manager/ScreenRegionSelector.cpp
 src/extensions/qt/QtScreenshotBackend.hpp
 src/extensions/qt/QtAltTabBackend.hpp
 src/extensions/qt/QtClipboardBackend.hpp
@@ -1417,6 +1457,9 @@ target_link_libraries(havel_toolkit_qt PRIVATE
 Qt6::Core Qt6::Widgets Qt6::Gui
 fmt::fmt
 havel_extension_runtime
+# The GUI window classes and pixel capture sources this plugin owns call
+# Xlib directly (same set havel_gui's consumers always linked).
+${_HAVEL_X11_LIBS}
 dl
 )
 target_compile_definitions(havel_toolkit_qt PRIVATE
@@ -1662,7 +1705,14 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${COMMON_LIBS})
+# havel_core's link interface must not carry Qt: Qt-free embedders (havel-wm,
+# the cranelift AOT shim, the AOT runtime, havel-lsp) link this archive and
+# must not be forced to link Qt. Strip just the Qt trio from the shared
+# COMMON_LIBS — the GTK/ImGui backend libs stay, because GtkBackend.cpp and
+# ImGuiBackend.cpp live in this archive and their consumers need them. Qt
+# enters the process at runtime through the toolkit plugin
+# (UIManager::ensureQtToolkit).
+target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${_HAVEL_NON_QT_COMMON_LIBS})
 target_include_directories(havel_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src/include
@@ -1734,17 +1784,16 @@ target_link_libraries(havel PRIVATE
 -Wl,--start-group
 $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_runtime havel_compiler>
 havel_modules
-$<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
 -Wl,--end-group
 )
 
-# The app selects the optional Qt bridge explicitly (src/main.cpp). The define
-# is what keeps main.cpp free of a reference to installQtGuiBridge in builds
-# where havel_gui does not exist.
-if(ENABLE_QT_UI_BACKEND)
-  target_compile_definitions(havel PRIVATE HAVEL_QT_BRIDGE)
-endif()
+# The Qt UI/toolkit side is not linked at all: the executable loads
+# havel_toolkit_qt.so at runtime through UIManager::ensureQtToolkit, so a Qt
+# version skew degrades to a log line instead of an unbootable binary. The
+# core's Qt-free bridge installer (ToolkitBridge.cpp) is registered in
+# src/main.cpp unconditionally — it only adds null-guarded pipeline functions
+# when no toolkit is present.
 
 
 # ==============================================================================
@@ -2359,11 +2408,13 @@ ${CURL_INCLUDE_DIRS}
 )
 
 # Link libraries
+# The executable must not link Qt at all: Qt enters the process at runtime
+# through the havel_toolkit plugin (UIManager::ensureQtToolkit), so a Qt
+# version skew degrades to a log line instead of an unbootable binary.
+# COMMON_LIBS carries BACKEND_LIBS (Qt6::Core/Widgets/Gui) for the targets
+# that still link havel_gui; the Qt-free view strips them.
 target_link_libraries(havel PRIVATE
-    ${COMMON_LIBS}
-    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Gui>
-    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Widgets>
-    $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_FFMPEG_WORKAROUND}>
+    ${_HAVEL_NON_QT_COMMON_LIBS}
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     $<$<BOOL:${HAVE_LIBFFI}>:ffi>
@@ -2560,8 +2611,12 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
             # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
         )
 
+        # Qt-free view: these archives' objects reference no Qt symbol, and
+        # PRIVATE link libs of a static archive propagate into every
+        # consumer's link line — with COMMON_LIBS that made the executable,
+        # havel-lsp and every embedder link Qt.
         target_link_libraries(${_lang_target} PRIVATE
-${COMMON_LIBS}
+${_HAVEL_NON_QT_COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 dl

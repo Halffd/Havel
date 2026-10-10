@@ -1,5 +1,6 @@
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -58,7 +59,7 @@ struct PixelMatch {
         : matched(m), color(c), x(x), y(y) {}
 };
 
-class PixelAutomation {
+class HAVEL_EXPORT PixelAutomation {
 public:
     PixelAutomation();
     ~PixelAutomation();

@@ -20,6 +20,7 @@
 #include "UIBackend.hpp"
 #include "../screenshot/IScreenshotBackend.hpp"
 
+#include "havel-lang/common/Export.hpp"
 #include <memory>
 #include <string>
 
@@ -31,11 +32,11 @@ using ScreenshotBackendFactoryFn = std::unique_ptr<IScreenshotBackend> (*)();
 // Registers the in-process factory for one backend kind. A later call for the
 // same api replaces the earlier one; registering nullptr clears it, which is
 // how a host shuts a backend down again.
-void registerUIBackendFactory(UIBackend::Api api, UIBackendFactoryFn fn);
+HAVEL_EXPORT void registerUIBackendFactory(UIBackend::Api api, UIBackendFactoryFn fn);
 
 // The in-process screenshot backend (as opposed to the plugin/ABI one) is
 // selected by toolkit name, because only the Qt toolkit has one today.
-void registerInProcessScreenshotBackendFactory(const std::string &toolkit,
+HAVEL_EXPORT void registerInProcessScreenshotBackendFactory(const std::string &toolkit,
                                               ScreenshotBackendFactoryFn fn);
 
 bool hasUIBackendFactory(UIBackend::Api api);
@@ -46,12 +47,13 @@ std::unique_ptr<UIBackend> createRegisteredUIBackend(UIBackend::Api api);
 std::unique_ptr<IScreenshotBackend>
 createRegisteredScreenshotBackend(const std::string &toolkit);
 
-// Entry point defined in havel_gui (src/host/module/bridges/qt/QtBridge.cpp).
-// A Qt-capable host that does not go through installQtBridge — havel-wm, the
-// cranelift AOT shim — calls this to get the same in-process Qt UI backend it
-// used to construct implicitly from libhavel_core.a. It is safe to call more
-// than once. Declared here so the declaration stays Qt-free.
-void installQtUIBackendFactories();
+// Entry point defined by the Qt toolkit plugin
+// (src/extensions/qt/qt_toolkit_factories.cpp); havel_gui keeps a copy for
+// legacy consumers. A Qt-capable host that does not load the toolkit plugin —
+// havel-wm, the cranelift AOT shim — calls this to get the same in-process Qt
+// UI backend it used to construct implicitly from libhavel_core.a. It is safe
+// to call more than once. Declared here so the declaration stays Qt-free.
+HAVEL_EXPORT void installQtUIBackendFactories();
 
 } // namespace havel::host
 

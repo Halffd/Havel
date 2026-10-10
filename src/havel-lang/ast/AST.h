@@ -1551,6 +1551,14 @@ struct InputCommand {
 
   CommandType type;
   std::string text; // For SendText
+  // For SendText: the parsed interpolation when the string is an
+  // InterpolatedString. The raw `text` carries the lexer's \x01/\x02
+  // markers, which must never reach io.send - the compiled form is the
+  // concatenation chain built from this expression instead. Null for
+  // plain (non-interpolated) strings. shared_ptr, not unique_ptr:
+  // InputCommand is copied by value into the command vector, and the
+  // parsed node is immutable after parsing.
+  std::shared_ptr<Expression> textExpr;
   std::string key;  // For SendKey
   std::string
       xExprStr; // For MouseMove, MouseRelative, MouseWheel, MouseClickAt

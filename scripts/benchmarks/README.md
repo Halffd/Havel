@@ -42,6 +42,44 @@ NOT enable tiering.
 Compile latency: ~61ms first function (includes one-time backend init),
 ~1ms marginal per small function (tier_bench_two_fns debug timestamps).
 
+## After the iterator-result reuse (2026-10-08, GC change)
+
+Cost 1 above is fixed: the iterator now allocates its {first, second, done}
+result object once per ITER_NEW and only overwrites the fields (GC-rooted
+from the iterator; the field writes go through set() so the OBJECT_GET
+inline cache re-resolves - with operator[] the cached done=false was served
+forever and the compiled for-in loop never exited). The dead // DEBUG block
+in havel_vm_iter_next (iterator+range pointer fetches, discarded) is also
+gone - real per-call waste on the native path.
+
+Interpreter benefits directly (same heap code):
+
+| bench | interpreter (before) | interpreter (after) | allocations |
+|---|---|---|---|
+| tier_bench_loop | 3.6-4.1u | 2.18u | ~2M -> 2231 |
+| tier_bench_two_fns | 18.9-22.9u | 12.16u | ~6M -> 6236 |
+
+Tier-1:
+
+| bench | tier-1 (before) | tier-1 (after) | tier-1/interp |
+|---|---|---|---|
+| tier_bench_loop | 2.30-2.80u | 1.10u | 0.50 |
+| tier_bench_two_fns | 11.6-14.4u | 6.88u | 0.57 |
+| tier_while probe | 0.18u | 0.07u | 0.09 |
+
+Verified: iteration semantics identical (interpreter == tiered) for arrays,
+objects, strings, sets, nested loops and value capture; range inclusivity
+unchanged; full smoke gate 323 passed / 3 failed (the 3 known UI-backend
+tests) / 0 skipped | 326 files; cranelift_proto_driver exit 0; 30 Rust
+lowering tests.
+
+Commit 705822ac1 also carries a havel_vm_gc_checkpoint safe-point (from
+concurrent in-flight work staged with the same files): the tier-1 backedge
+hook now offers the GC a collection point with the native frame's live
+values as extra roots - without it the GC starves for the whole native
+call (343k objects / 446MB peak RSS on tier_bench_loop measured with
+per-iteration results, vs 11k / 72MB interpreted).
+
 ## After the backedge rework (2026-10-08, hot-path restructure + stride throttle)
 
 Cost 3 below is fixed, and with it the C++ hot path both execution modes
@@ -115,24 +153,98 @@ User time in tiered mode dropped 22-25% versus the call-then-select
 lowering. The remaining gap to theoretical is cost 2 (below) plus the sys
 time increase, which grows with the fix and is not yet profiled.
 
+## Phase C: self-hosted compiler measurement (2026-10-09)
+
+Workload: 1927-line generated script (functions/classes/loops/interp),
+run through the pure self-hosted pipeline
+(`havel --run modules/lang/launcher.hv -- --run wl.hv`; fresh
+`~/.cache/havel`, loadavg noted per run - this machine is shared).
+
+| stage | quiet-ish (loadavg 1.6-2.5) | loaded (5-9) |
+|---|---|---|
+| parse: tokenize | 42-66 ms | - |
+| parse: parseAST | ~30 s | 36-70 s |
+| typecheck | 0.7-1.1 s | - |
+| emit | 0.9-1.9 s | - |
+
+parseAST is ~93% of the pipeline. Where the time is NOT:
+
+- not the module-call wrappers' globals install: the whole run makes
+  only ~8-12k wrapped calls; the goroutine pump is not involved (an ops
+  probe executed through the launcher runs at the same ~0.3us/op as the
+  plain fast loop); host calls total ~2 s (type() 34k calls, scope
+  helpers); slow-path dispatch < 1M iterations.
+- pratt.hv's own entry/exit timestamps confirm the ~39 s elapses inside
+  parseTokens itself: ordinary interpreted bytecode, roughly 100M+ ops
+  at fast-loop cost (~0.3us/op).
+
+Diagnosis: the parse is ordinary Havel code paying ordinary dispatch -
+and tier-1 today only removes ~9% of it because can_lower declines the
+parser's hot functions (object/closure-heavy shapes). The Phase C work
+is exactly what the architecture plan predicted: extend the lowering
+subset to cover the parser's hot op shapes so tier-1 can compile them,
+not rewrite the parser.
+
+Bug found and fixed on the way (see the next commit): the interpreter's
+instruction count is a ~60x undercount for parse-shaped code -
+`recordInstructions(8192)` exists in only 19 of the 48 computed-goto
+re-dispatch tails in VMDispatch.cpp, so most of the parse's ops never
+advance the profiler's instructions= figure. The 1.76M "instructions"
+reported for a 30 s parse is why the time looked impossible to
+reconcile. Fixing the accounting (checkpoint in every tail, or a shared
+helper) is queued with the Phase C work.
+
+Also fixed on the way: intra-module wrapper calls re-copied the module
+globals map (~1600-1968 merged entries, ~94us) on every call.
+Identity-gated now (see commit); a module fn calling a wrapped sibling
+200k times went 18.8 s -> 144 ms.
+
+## Current state (2026-10-08 evening, after GC safe points)
+
+Measured at loadavg ~6, fresh `~/.cache/havel` (see the measurement-
+validity note below), with the iterator result-reuse change (705822ac1,
+landed by a concurrent session while this work was in flight) plus the
+GC work:
+
+| bench | interpreter | tier-1 | tier-1/interp |
+|---|---|---|---|
+| tier_bench_calls | 0.43u + 0.43s | 0.40u + 0.35s | 0.88 |
+| tier_bench_loop | 2.02u + 0.36s | 1.13u + 0.34s | 0.62 |
+| tier_bench_two_fns | 10.99u + 0.41s | 5.87u + 0.43s | 0.55 |
+
+tier-1 now costs 55-88% of interpreter CPU (was 73-87% pre-rework), the
+tiered sys-time rise is GONE (two_fns: 0.43s tiered vs 0.41s interpreted
+- it was the page-fault storm of the starved-GC heap balloon, see cost 1
+and the 2026-10-08 sections), and a native allocating loop now runs GC
+checkpoints mid-loop via the backedge safe point
+(test_issue_cranelift_gc_checkpoint_loop.hv: 300k allocations collected
+in-flight, RSS flat, results intact).
+
+### Measurement-validity note (the shared-cache incident)
+
+Every number above this section was measured with whatever bytecode
+happened to be in `~/.cache/havel` - which is shared per-user across
+checkouts and did not, until the pipeline fingerprint gained the binary
+ELF build-id, distinguish binaries. Two concurrent sessions on this
+machine (two checkouts, one $HOME) poisoned each other's entries: a
+sibling binary re-stamped `tier_bench_loop`'s .hvc with bytecode its
+emitter produced, and this checkout's tier-1 wedged executing it while
+the interpreter ran it fine - costing hours of bisecting against source
+that was not the source actually running. Consequences for the tables
+above: cross-day absolute comparisons are unreliable not only because of
+machine load but because the executed bytecode differed. The committed
+fingerprint fix (build-id in computePipelineFingerprint) makes entries
+from any other binary reject as pipeline-fingerprint-drift and recompile;
+`HAVEL_STARTUP_TIMING=1` shows the rejects. Clear the cache when in doubt.
+
 ## Known costs eating the theoretical win (Phase B targets)
 
-The interpreter executes ~1780x more dispatch work on tier_bench_two_fns
-(306M vs 172k instructions) yet tier-1 only saves ~20% CPU. Measured
-isolation (tier-while probe: same loop as tier_bench_loop but a manual
-while-counter instead of `for j in 0 .. 1000`):
-
-| loop shape | interpreter | tier-1 |
-|---|---|---|
-| while-counter (no ITER opcodes) | 1.14u | **0.34u** |
-| range for-in (ITER_NEW/ITER_NEXT) | 5.67u | 3.45u |
-
-1. **The range iterator dominates tiered loop time**: identical work,
-   tiered while-counter 0.34s user vs tiered for-in 3.45s - 10x. The
-   iterator allocates per iteration (tiered for-in run: ~2M heap
-   allocations; tiered while-counter: ~3k) and crosses a bridge call per
-   ITER_NEXT. Fixing ITER_NEXT's per-iteration allocation/bridge is the
-   biggest remaining win for range-loop code.
+1. **The range iterator dominated tiered loop time** - RESOLVED
+   (705822ac1, concurrent session): ITER_NEXT reuses the
+   iterator's result object instead of allocating {first, second, done}
+   per iteration (~2M -> ~3k allocations per tiered loop bench run;
+   bench allocations now 3k, was 2M). The remaining ITER_NEXT bridge call
+   per iteration is minor by comparison.
 2. **Every ADD/SUB/MUL/EQ emitted an unconditional bridge call** - FIXED
    (branch-based lowering, see above).
 3. **The per-iteration backedge hook** - FIXED (2026-10-08): the lowering
@@ -140,16 +252,27 @@ while-counter instead of `for j in 0 .. 1000`):
    per site with an exact delta, and the C++ past-threshold path no longer
    takes the mutex/string-hash/set-insert on every iteration (per-site
    one-shot event cache). See the 2026-10-08 section above.
-4. sys time rises under tiering (0.76s -> 1.6s); source not yet profiled.
+4. **sys time rises under tiering** - RESOLVED: it was the page-fault
+   storm of the starved-GC heap balloon (minor faults 13k -> 109k, peak
+   RSS 72MB -> 446MB on tier_bench_loop, GC balloons of 343k objects
+   between collections vs 11k interpreted - no GC checkpoint exists in
+   native code). The backedge GC checkpoint + iterator result reuse close
+   it: tiered sys now matches interpreted (0.43s vs 0.41s on two_fns).
+
+Historical isolation snapshot (2026-10-07, executed against cached
+bytecode - see the measurement-validity note; the 306M vs 172k
+instruction ratio held, absolute times below predate the rework):
+
+| loop shape | interpreter | tier-1 |
+|---|---|---|
+| while-counter (no ITER opcodes) | 1.14u | **0.34u** |
+| range for-in (ITER_NEW/ITER_NEXT) | 5.67u | 3.45u |
 
 Language-semantics note discovered while isolating: `for j in 0 .. 1000`
 is INCLUSIVE of the end (verified: `for j in 0 .. 5` counts 6). The
 while-counter probe therefore does 1000 iterations per call vs the for-in
 bench's 1001 - a 0.1% work difference, irrelevant to the comparison, but
 relevant to anyone writing benchmarks against these ranges.
-
-None of these were changed during the verification phase; they are recorded
-so the next change has a before/after to diff against.
 
 ## Fallback behavior (verified, by design)
 

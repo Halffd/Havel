@@ -1,0 +1,41 @@
+// smoke: flags = --tiering
+// smoke: timeout = 300
+// smoke: tier = slow
+// Regression: GC starvation in JIT-compiled loops. Before the backedge GC
+// checkpoint (havel_vm_gc_checkpoint at the throttled backedge hook), no
+// collection could run while native code was executing - GC checkpoints
+// live only in the interpreter's 8192-instruction dispatch loop - so a
+// native loop that allocates per iteration accumulated all its garbage
+// for the whole call (measured on the pre-iterator-reuse tier bench:
+// 343k objects / 446MB peak RSS vs 11k / 72MB interpreted, the source of
+// the old "tiered sys-time rise"). churny() tiers up (plain while loop +
+// array ops, all in the lowering subset) and allocates one array per
+// iteration for 300k iterations: the checkpoint must fire collections
+// mid-loop with the frame's spilled roots keeping each live array
+// intact. A root set that misses the frame's values shows up as box[0]/[1]
+// reading a freed/reused slot; a missing checkpoint shows up as heap
+// growth instead. In a build without a JIT backend this degrades to an
+// interpreter-only check and still passes.
+// Expected: last == 299999, no mismatch, rc 0.
+
+fn churny(n) {
+    last = 0
+    k = 0
+    while k < n {
+        box = [k, k + 1]
+        if box[0] != k || box[1] != k + 1 {
+            return -1
+        }
+        last = box[1]
+        k = k + 1
+    }
+    return last
+}
+
+r = churny(300000)
+if r == 300000 {
+    print("PASS cranelift_gc_checkpoint_loop")
+} else {
+    print("FAIL cranelift_gc_checkpoint_loop r=$r")
+    process.exit(255)
+}

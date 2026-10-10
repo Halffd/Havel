@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <elf.h>
 
 // SHA-256 implementation (simplified, no external deps)
 namespace {
@@ -194,6 +195,74 @@ static const char* kFingerprintInputs[] = {
     "lang.scope.hvc",
 };
 
+// ELF GNU build-id of the running executable, hex-encoded. The build-id
+// changes exactly when the link inputs change, so two different binaries
+// (a different checkout, a sibling working tree, a rebuilt compiler with
+// different objects) never produce the same value - which is what the
+// bytecode cache needs: entries written by binary A must not serve under
+// binary B when B's compiler emits different bytecode from the same
+// source. Observed failure this closes: two checkouts sharing one
+// ~/.cache/havel accepted each other's entries because the lang-caches
+// half of the fingerprint matched; the tiered execution of the foreign
+// bytecode wedged. Byte-identical rebuilds keep the same build-id, so
+// no-op rebuilds do not invalidate the cache. Fallback when no note is
+// found: the executable's byte size.
+static std::string binaryBuildIdHex() {
+    static const std::string memo = []() -> std::string {
+        std::ifstream self("/proc/self/exe", std::ifstream::binary);
+        if (!self) {
+            return {};
+        }
+        std::string bytes((std::istreambuf_iterator<char>(self)),
+                          std::istreambuf_iterator<char>());
+        if (bytes.size() < sizeof(Elf64_Ehdr)) {
+            return {};
+        }
+        const auto* ehdr = reinterpret_cast<const Elf64_Ehdr*>(bytes.data());
+        if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0) {
+            return {};
+        }
+        for (int i = 0; i < ehdr->e_phnum; ++i) {
+            const size_t off = ehdr->e_phoff + i * sizeof(Elf64_Phdr);
+            if (off + sizeof(Elf64_Phdr) > bytes.size()) {
+                break;
+            }
+            const auto* phdr =
+                reinterpret_cast<const Elf64_Phdr*>(bytes.data() + off);
+            if (phdr->p_type != PT_NOTE) {
+                continue;
+            }
+            size_t pos = phdr->p_offset;
+            const size_t end = phdr->p_offset + phdr->p_filesz;
+            while (pos + 12 <= end && pos + 12 <= bytes.size()) {
+                const auto* note = reinterpret_cast<const Elf64_Nhdr*>(
+                    bytes.data() + pos);
+                const size_t nameOff = pos + sizeof(Elf64_Nhdr);
+                const size_t descOff = nameOff + ((note->n_namesz + 3) & ~3u);
+                const size_t next = descOff + ((note->n_descsz + 3) & ~3u);
+                if (descOff + note->n_descsz > end ||
+                    next > end || next <= pos) {
+                    break;
+                }
+                if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz >= 4 &&
+                    memcmp(bytes.data() + nameOff, "GNU", 3) == 0) {
+                    std::ostringstream hex;
+                    hex << std::hex << std::setfill('0');
+                    for (size_t b = 0; b < note->n_descsz; ++b) {
+                        hex << std::setw(2)
+                            << static_cast<unsigned>(
+                                   static_cast<uint8_t>(bytes[descOff + b]));
+                    }
+                    return hex.str();
+                }
+                pos = next;
+            }
+        }
+        return "size:" + std::to_string(bytes.size());
+    }();
+    return memo;
+}
+
 std::string computePipelineFingerprint(const std::string& cacheDir) {
     // Identity of the self-hosted compiler: the bytecode caches of the
     // modules that ARE the compiler. Order is fixed so the hash is stable.
@@ -222,7 +291,13 @@ std::string computePipelineFingerprint(const std::string& cacheDir) {
                                          ? std::string(input)
                                          : cacheDir + "/" + input;
             if (!std::filesystem::exists(path, ec) || ec) {
-                return std::string();
+                // No self-hosted compiler caches in this environment:
+                // C++-pipeline-only. The binary's build-id alone is the
+                // compiler identity - still stamped, never empty, so
+                // entries written by a different binary are rejected
+                // instead of silently served.
+                const std::string buildId = binaryBuildIdHex();
+                return buildId.empty() ? std::string() : "bin:" + buildId;
             }
             key.totalSize += std::filesystem::file_size(path, ec);
             if (ec) return std::string();
@@ -245,12 +320,12 @@ std::string computePipelineFingerprint(const std::string& cacheDir) {
         }
     }
 
-    // Any missing input makes the fingerprint unusable (half a compiler):
-    // return empty so writers fall back to the legacy header and readers
-    // treat entries as unstamped. (Existence was verified above; the reads
-    // below can still race with re-emits, in which case the entry simply
-    // serializes unstamped this run and gets stamped on the next.)
-    std::string combined;
+    // A missing/unreadable input falls back to the binary-only identity
+    // above or, when even that is unavailable, an unstamped legacy entry.
+    // (Existence was verified above; the reads below can still race with
+    // re-emits, in which case the entry simply serializes unstamped this
+    // run and gets stamped on the next.)
+    std::string combined = "bin:" + binaryBuildIdHex() + ";";
     for (const char* input : kFingerprintInputs) {
         const std::string path = cacheDir.empty()
                                      ? std::string(input)

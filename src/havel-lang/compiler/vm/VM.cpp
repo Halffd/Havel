@@ -3953,7 +3953,10 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
   return closure_ids;
 }
 
-void VM::maybeCollectGarbage() {
+void VM::maybeCollectGarbage() { maybeCollectGarbageWithExtraRoots({}); }
+
+void VM::maybeCollectGarbageWithExtraRoots(
+    const std::vector<Value> &extra_roots) {
   if (gc_suspend_counter_ > 0)
     return;
   // Building the root snapshot is expensive (full operand-stack copy plus
@@ -3967,6 +3970,10 @@ void VM::maybeCollectGarbage() {
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
   }
+  // JIT safe-point roots (spilled native-frame values) ride the same
+  // extra-roots slot as the scheduler's.
+  scheduler_roots.insert(scheduler_roots.end(), extra_roots.begin(),
+                          extra_roots.end());
   heap_.maybeCollectGarbage(stackValuesForRoots(), locals, globals,
                             activeClosureIdsForRoots(),
                             [this](uint32_t index) -> std::optional<Value> {
@@ -4972,18 +4979,32 @@ Value VM::deepWrapModuleFunctions(
           // module fn (throttle's `func` argument) could not see script
           // globals: LOAD_GLOBAL 'counter' failed with "Undefined variable"
           // (the LOAD_GLOBAL globals_stack_ fallback had nothing to find).
-          bool wrapper_owns_globals = true;
-          pushGlobalsMove();
-          globals = *moduleGlobals;
-          globals_identity_ = moduleGlobals;
+          // Nested intra-module calls: the same module map is already
+          // ambient (identity matches) when this wrapper is invoked from
+          // module code. Installing a fresh copy of the shared map cost
+          // ~94us per call - module maps carry the full merged stdlib
+          // (1600+ entries at self-hosted startup) - and hid in-flight
+          // same-module global writes from sibling functions until the
+          // nested completion wrote back. The outer frame owns the
+          // install and the completion sync; this call shares its
+          // ambient. Cross-context calls (identity differs, e.g.
+          // launcher -> module) still install. Same discipline as the
+          // doCall module-closure path's identity check.
+          bool wrapper_pushed_globals = moduleGlobals != globals_identity_;
+          if (wrapper_pushed_globals) {
+            pushGlobalsMove();
+            globals = *moduleGlobals;
+            globals_identity_ = moduleGlobals;
+          }
           auto savedMirrorId = globals_mirror_object_id_;
-          Value savedG = globals_stack_.back().first["_G"];
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);
           if (!callee) {
-    popGlobals();
-    globals_mirror_object_id_ = savedMirrorId;
-    current_chunk = savedChunk;
+            if (wrapper_pushed_globals) {
+              popGlobals();
+            }
+            globals_mirror_object_id_ = savedMirrorId;
+            current_chunk = savedChunk;
             return Value::makeNull();
           }
           size_t base = locals.size();
@@ -5080,7 +5101,10 @@ Value VM::deepWrapModuleFunctions(
               // Mark the WRAPPED frame as the owner so its eventual RET pops
               // that push and restores the caller's scope. Ambient stays the
               // module map — exactly what the resumed module function sees.
-              if (wrapped_frame_depth < frame_count_) {
+              // No-push nested calls (same module map already ambient) leave
+              // nothing to pop: the outer frame's completion restores.
+              if (wrapper_pushed_globals &&
+                  wrapped_frame_depth < frame_count_) {
                 frame_arena_[wrapped_frame_depth].owns_globals = true;
               }
               if (tickBudgetExhausted() && !suspension_requested_ &&
@@ -5102,9 +5126,11 @@ Value VM::deepWrapModuleFunctions(
             if (locals.size() > savedLocalsSize) {
               locals.resize(savedLocalsSize);
             }
-    popGlobals();
-    globals_mirror_object_id_ = savedMirrorId;
-    current_chunk = savedChunk;
+            if (wrapper_pushed_globals) {
+              popGlobals();
+            }
+            globals_mirror_object_id_ = savedMirrorId;
+            current_chunk = savedChunk;
             throw;
           }
           Value result = popStack();
@@ -5116,8 +5142,13 @@ Value VM::deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
                 moduleGlobals, fnCapturedKey, fnCapturedField + "_ret", depth + 1, visited);
           }
-          *moduleGlobals = std::move(globals);
-          popGlobals();
+          if (wrapper_pushed_globals) {
+            // Sync the module sidecar with writes made through the
+            // installed ambient, then restore the caller's map. No-push
+            // nested calls leave both to the outer frame's completion.
+            *moduleGlobals = std::move(globals);
+            popGlobals();
+          }
           globals_mirror_object_id_ = savedMirrorId;
           current_chunk = savedChunk;
           return result;
@@ -5172,17 +5203,25 @@ Value VM::deepWrapModuleFunctions(
           // there for rationale). Script closures invoked from the module
           // closure (async_mod.throttle's `func`) need the script map
           // reachable via globals_stack_ or LOAD_GLOBAL 'counter' fails.
-          pushGlobalsMove();
-          globals = *closureGlobals;
-          globals_identity_ = closureGlobals;
+          // Same-identity nested calls skip the install (see the
+          // $module_fn_ wrapper: ~94us per copy of the 1600+-entry merged
+          // module map, and in-flight same-module writes stay visible).
+          bool closure_pushed_globals = closureGlobals != globals_identity_;
+          if (closure_pushed_globals) {
+            pushGlobalsMove();
+            globals = *closureGlobals;
+            globals_identity_ = closureGlobals;
+          }
           auto savedMirrorId = globals_mirror_object_id_;
           current_chunk = moduleChunk.get();
 
           const auto *callee = moduleChunk->getFunction(funcIdx);
           if (!callee) {
-    popGlobals();
-    globals_mirror_object_id_ = savedMirrorId;
-    current_chunk = savedChunk;
+            if (closure_pushed_globals) {
+              popGlobals();
+            }
+            globals_mirror_object_id_ = savedMirrorId;
+            current_chunk = savedChunk;
             return Value::makeNull();
           }
 
@@ -5275,8 +5314,11 @@ Value VM::deepWrapModuleFunctions(
               // globals/current_chunk, or the fiber resume would run module
               // code against the caller's globals. The caller's map is already
               // on globals_stack_ (pushed at entry); mark the WRAPPED frame as
-              // its owner so its RET pops it.
-              if (wrapped_frame_depth < frame_count_) {
+              // its owner so its RET pops it. No-push nested calls (same
+              // module map already ambient) leave nothing to pop: the outer
+              // frame's completion restores.
+              if (closure_pushed_globals &&
+                  wrapped_frame_depth < frame_count_) {
                 frame_arena_[wrapped_frame_depth].owns_globals = true;
               }
               if (tickBudgetExhausted() && !suspension_requested_ &&
@@ -5296,7 +5338,9 @@ Value VM::deepWrapModuleFunctions(
             if (locals.size() > base) {
               locals.resize(base);
             }
-    popGlobals();
+    if (closure_pushed_globals) {
+      popGlobals();
+    }
     globals_mirror_object_id_ = savedMirrorId;
     current_chunk = savedChunk;
             throw;
@@ -5307,7 +5351,9 @@ Value VM::deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
                 closureGlobals, capturedKey, capturedField + "_ret", depth + 1, visited);
           }
-          popGlobals();
+          if (closure_pushed_globals) {
+            popGlobals();
+          }
           globals_mirror_object_id_ = savedMirrorId;
           current_chunk = savedChunk;
           return result;

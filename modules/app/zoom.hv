@@ -1,188 +1,123 @@
-// zoom.hv — screen magnification via compositor IPC/D-Bus.
+// zoom.hv — desktop magnification for the compositors that actually expose it.
 //
-// Cinnamon transport constraint (from the config this module replaces):
-// the magnifier IPC is a persistent libc socket and zoom calls are
-// fire-and-forget — ONE write() syscall per scroll tick, no spawn, no
-// IPC hop, no read back. Queries (getLevel) use the same socket with a
-// bounded 20ms read and must never appear on a scroll-tick path.
+// Transports, by backend:
+//   cinnamon   modules/app/cinmagnifier.hv — this fork's magnifier IPC
+//              socket (fire-and-forget write() per tick). Not an upstream
+//              Cinnamon API; the module documents the latency history.
+//   gnome      gsettings org.gnome.desktop.a11y.magnifier mag-factor
+//              (double, 0.1-32) + ...a11y.applications
+//              screen-magnifier-enabled (bool). The org.gnome.Magnifier
+//              D-Bus service that older code used was removed upstream in
+//              2020 (gnome-shell MR !1523).
+//   kde        qdbus org.kde.kglobalaccel /component/kwin invokeShortcut
+//              view_zoom_in | view_zoom_out. KWin exposes no zoom D-Bus
+//              method at all (no zoomInDBus/getZoomLevelDBus/…); its zoom
+//              is reached through kglobalaccel shortcuts. KWin also has no
+//              zoom getter, so level() there is our tracked estimate and
+//              step-based to()/reset() need the step from kwinrc
+//              [Effect-Zoom] TargetZoom, failing loudly without it.
+//   hyprland   hyprctl keyword cursor:zoom_factor, read back with
+//              hyprctl getoption cursor:zoom_factor.
+//   generic    no drivable magnifier: the old config's key sends.
+//
+// Backend selection is overridable — see setCompositor() — because
+// detection reads the environment, which is wrong under nested sessions,
+// remote shells and XDG_CURRENT_DESKTOP lying about the running session.
+//
+// Note on step(): setStep() drives gnome/hyprland. On cinnamon the magnifier
+// owns its own step (1.1 per ZoomIn/ZoomOut tick), so setStep() does not
+// apply there — the scroll path stays on the precomputed payloads.
 //
 // Usage:
 //   use "app/zoom" as zoom
-//   zoom.down()         // wheel-down tick (zoom out)
-//   zoom.up()
-//   zoom.reset()
-//   zoom.to(1.9)
-//   zoom.toggle()       // off -> presetHigh, on -> reset   (was: zoomToggle)
-//   zoom.toggleLast()   // remember/restore level            (was: zoom(5))
-//   zoom.presetHigh()   // 1.9 cinnamon / 1.4 kde / 1.7 hypr (was: zoom(3))
-//   zoom.presetLow()    // 1.6 cinnamon / 2.0 kde  / 2.0 hypr (was: zoom(4))
-//   zoom.cycleMode() / zoom.cycleLens()   (cinnamon only, kc89 cyclers)
+//   zoom.down() / zoom.up() / zoom.reset() / zoom.to(1.9)
+//   zoom.toggle()       // off -> presetHigh, on -> reset
+//   zoom.toggleLast()   // remember/restore level
+//   zoom.setCompositor("cinnamon")   // force a backend, skip detection
+//   zoom.clearCompositor()           // back to auto-detect
 
-use ffi
-use json
 use shell
-use { compositor } from "compositor"
+use compositor
+use "app/cinmagnifier" as cinmag
 
+// Magnification filter modes (gnome-mag magnification framework enum).
 Nearest = 0
 Bilinear = 1
 Sharpen = 2
 Lanczos = 3
 
-CIN_IPC_PATH = "/tmp/cinnamon-magnifier-ipc"
-
-// Precomputed payloads: byte-identical to json.stringify output (params
-// FIRST; integral zoom serializes without ".0"). Key order and number
-// formatting verified against the live serializer — do not hand-edit.
-_pZoomIn  = '{"params": [1.1],"method": "ZoomIn"}\n'
-_pZoomOut = '{"params": [1.1],"method": "ZoomOut"}\n'
-_pSetZ10  = '{"params": [1],"method": "SetZoomLevel"}\n'
-_pSetZ16  = '{"params": [1.6],"method": "SetZoomLevel"}\n'
-_pSetZ19  = '{"params": [1.9],"method": "SetZoomLevel"}\n'
+// Local policy, not a platform constant: the range this module will drive.
+MIN_LEVEL = 1.0
+MAX_LEVEL = 8.0
 
 _state = {
-    level: 1.0,       // tracked zoom factor (compositor is authoritative on
-                      // cinnamon-ipc; this mirrors it for kde/hypr/generic)
+    level: 1.0,       // tracked zoom factor. Read back on cinnamon/gnome/
+                      // hyprland; a tracked estimate on kde (no getter) and
+                      // generic (no magnifier).
     lastToggle: 1.0,  // toggleLast() memory
-    lens: 3,          // Cinnamon lens shape (cycled 0..4 by cycleLens)
-    mode: 1,          // Cinnamon zoom mode (cycled 0..5 by cycleMode)
-    step: 0.25,       // hypr/generic step; cinnamon tracks 0.1 locally
+    step: 0.25,
     presetHigh: 1.9,
     presetLow: 1.6,
     backend: "none",
     checked: false,
+    forced: null,     // forced backend name, or null for auto-detect
     debug: false
 }
 
-// libc socket state
-_libc = null
-_symSocket = 0
-_symConnect = 0
-_symWrite = 0
-_symRead = 0
-_symClose = 0
-_symSetsockopt = 0
-_sockfd = null
-_addr = null
-_buf = null
-
-// ---------------------------------------------------------------------------
-// Cinnamon IPC transport
-// ---------------------------------------------------------------------------
-
-fn _packSockaddrUn(path) {
-    // sockaddr_un: 2 bytes family (AF_UNIX=1) + null-terminated sun_path.
-    addr = ffi.allocBytes(110)
-    ffi.memset(addr, 0, 110)
-    ffi.set_i16(addr, 1)
-    for i in 0 .. #path {
-        if i < #path {
-            ffi.set_u8(ffi.ptr_add(addr, 2 + i), path.codePointAt(i))
-        }
-    }
-    addr
+fn _clamp(level) {
+    if level < MIN_LEVEL { return MIN_LEVEL }
+    if level > MAX_LEVEL { return MAX_LEVEL }
+    level
 }
 
-fn _ipcInit() {
-    if _sockfd != null { return true }
-    if _libc == null {
-        _libc = ffi.open("libc.so.6")
-        if _libc == 0 { _libc = ffi.open("libc.so") }
-        if _libc == 0 { return false }
-        _symSocket = ffi.sym(_libc, "socket")
-        _symConnect = ffi.sym(_libc, "connect")
-        _symWrite = ffi.sym(_libc, "write")
-        _symRead = ffi.sym(_libc, "read")
-        _symClose = ffi.sym(_libc, "close")
-        _symSetsockopt = ffi.sym(_libc, "setsockopt")
-        if _symSocket == 0 || _symConnect == 0 || _symWrite == 0 || _symRead == 0 || _symClose == 0 {
-            return false
-        }
-    }
-    fd = ffi.call(_symSocket, "int32", ["int32", "int32", "int32"], 1, 1, 0)
-    if fd < 0 { return false }
-    if _addr == null { _addr = _packSockaddrUn(CIN_IPC_PATH) }
-    res = ffi.call(_symConnect, "int32", ["int32", "pointer", "int32"], fd, _addr, 110)
-    if res < 0 {
-        ffi.call(_symClose, "int32", ["int32"], fd)
-        return false
-    }
-    if _buf == null { _buf = ffi.allocBytes(4096) }
-    _sockfd = fd
-    true
-}
-
-fn _ipcReset() {
-    if _sockfd != null {
-        ffi.call(_symClose, "int32", ["int32"], _sockfd)
-        _sockfd = null
-    }
-}
-
-// ONE write() per call, lazily reconnecting. This is the scroll path.
-fn _ipcWrite(payload) {
-    if _sockfd == null && !_ipcInit() { return false }
-    written = ffi.call(_symWrite, "int64", ["int32", "string", "int64"], _sockfd, payload, #payload)
-    if written < 0 {
-        _ipcReset()
-        return false
-    }
-    true
-}
-
-fn _ipcSend(method, params) {
-    // Never name a local "json" here — it shadows the imported module and
-    // json.stringify would resolve against the local and return null.
-    obj = { "method": method }
-    obj.params = params
-    _ipcWrite(json.stringify(obj) + "\n")
-}
-
-// Blocking round-trip for state queries only. Never on a scroll tick.
-fn _ipcQuery(method, params) {
-    if _sockfd == null && !_ipcInit() { return null }
-    if params == null { params = [] }
-    if !_ipcWrite(json.stringify({ method: method, params: params }) + "\n") { return null }
-
-    // Bound the blocking read: timeval {tv_sec, tv_usec} = 20ms.
-    _tv = ffi.allocBytes(16)
-    ffi.set_i64(_tv, 0)
-    ffi.set_i64(ffi.ptr_add(_tv, 8), 20000)
-    ffi.call(_symSetsockopt, "int32", ["int32", "int32", "int32", "pointer", "int32"], _sockfd, 1, 20, _tv, 16)
-    ffi.free(_tv)
-
-    n = ffi.call(_symRead, "int64", ["int32", "pointer", "int32"], _sockfd, _buf, 4096)
-    if n <= 0 {
-        _ipcReset()
-        return null
-    }
-    json.parse(ffi.string(_buf, n))
+fn _log(msg) {
+    if _state.debug { print("zoom: $msg") }
 }
 
 // ---------------------------------------------------------------------------
-// Backend detection
+// Backend selection
 // ---------------------------------------------------------------------------
+
+fn _has(tool) {
+    shell.exec("command -v $tool >/dev/null 2>&1").exitCode == 0
+}
+
+// The backends this module can actually drive. "generic" is always
+// available: it is the key-send fallback, and it is also how an explicitly
+// unsupported name resolves.
+fn _known(name) {
+    n = name.lower().trim()
+    n == "cinnamon" || n == "gnome" || n == "kde" || n == "hyprland" || n == "generic"
+}
 
 fn _detectBackend() {
     if _state.checked { return }
     _state.checked = true
-    c = compositor.detect()
-    if c == "cinnamon" && fs.exists(CIN_IPC_PATH) && _ipcInit() {
-        _state.backend = "cinnamon-ipc"
+
+    if _state.forced != null {
+        _state.backend = _state.forced
         return
     }
-    if c == "cinnamon" {
-        _r = shell.exec("gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method org.cinnamon.Muffin.Zoom.GetZoomActive 2>/dev/null")
-        if _r.exitCode == 0 { _state.backend = "cinnamon"; return }
+
+    c = compositor.detect()
+
+    if c == "cinnamon" && cinmag.available() {
+        _state.backend = "cinnamon"
+        return
     }
-    if c == "kde" {
-        _r = shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus 2>/dev/null")
-        if _r.exitCode == 0 { _state.backend = "kwin"; return }
+    if c == "gnome" && _has("gsettings") {
+        _state.backend = "gnome"
+        return
     }
-    if c == "hyprland" { _state.backend = "hyprland"; return }
-    if c == "gnome" {
-        _r = shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.isActive 2>/dev/null")
-        if _r.exitCode == 0 { _state.backend = "gnome"; return }
+    if c == "kde" && _has("qdbus") {
+        _state.backend = "kde"
+        return
     }
+    if c == "hyprland" && _has("hyprctl") {
+        _state.backend = "hyprland"
+        return
+    }
+    // sway / x11 / unknown / a desktop whose magnifier we cannot drive.
     _state.backend = "generic"
 }
 
@@ -193,254 +128,274 @@ fn _backend() {
 
 fn backend() { _backend() }
 
+// Force a backend regardless of what the environment claims. Returns false
+// (leaving the current selection untouched) for a name this module cannot
+// drive, so a typo cannot silently strand you on the key-send fallback.
+fn setCompositor(name) {
+    n = name.lower().trim()
+    if !_known(n) {
+        _log("setCompositor: unsupported backend '" + n + "'; unchanged")
+        return false
+    }
+    _state.forced = n
+    _state.checked = false
+    _state.backend = "none"
+    // Re-resolve immediately so a failed force is visible right away.
+    _detectBackend()
+    _state.backend == n
+}
+
+// Back to auto-detection.
+fn clearCompositor() {
+    _state.forced = null
+    _state.checked = false
+    _state.backend = "none"
+    true
+}
+
+fn forcedCompositor() { _state.forced }
+
+// ---------------------------------------------------------------------------
+// gnome: GSettings
+// ---------------------------------------------------------------------------
+
+fn _gnomeSet(level) {
+    p = "org.gnome.desktop.a11y"
+    if level <= MIN_LEVEL {
+        // Turning the magnifier off is what actually resets the view; the
+        // factor alone only changes the zoom of a disabled magnifier.
+        shell.exec("gsettings set $p.applications screen-magnifier-enabled false")
+        shell.exec("gsettings set $p.magnifier mag-factor " + str(MIN_LEVEL))
+        return
+    }
+    shell.exec("gsettings set $p.magnifier mag-factor " + str(level))
+    shell.exec("gsettings set $p.applications screen-magnifier-enabled true")
+}
+
+fn _gnomeGet() {
+    p = "org.gnome.desktop.a11y"
+    // A disabled magnifier shows nothing no matter what mag-factor says, and
+    // the factor survives across disable/enable. Reporting the factor alone
+    // would make toggle() think a disabled magnifier is zoomed in and call
+    // reset() instead of zooming.
+    _e = shell.exec("gsettings get $p.applications screen-magnifier-enabled")
+    if _e.exitCode == 0 && _e.stdout.trim() == "false" { return MIN_LEVEL }
+    _r = shell.exec("gsettings get $p.magnifier mag-factor")
+    if _r.exitCode != 0 { return null }
+    num(_r.stdout.trim())
+}
+
+// ---------------------------------------------------------------------------
+// hyprland: hyprctl
+// ---------------------------------------------------------------------------
+
+fn _hyprSet(level) {
+    shell.exec("hyprctl keyword cursor:zoom_factor " + str(level))
+}
+
+fn _hyprGet() {
+    _r = shell.exec("hyprctl getoption cursor:zoom_factor")
+    if _r.exitCode != 0 { return null }
+    // "float 2.000000"
+    _parts = _r.stdout.trim().split(" ")
+    if _parts.len() < 2 { return null }
+    num(_parts[1])
+}
+
+// ---------------------------------------------------------------------------
+// kde: kglobalaccel shortcuts (kwin has no zoom D-Bus method)
+// ---------------------------------------------------------------------------
+
+fn _kdeStep() {
+    _r = shell.exec("kreadconfig5 --file kwinrc --group Effect-Zoom --key TargetZoom")
+    if _r.exitCode != 0 { return null }
+    _s = _r.stdout.trim()
+    if _s == "" { return null }
+    _v = num(_s)
+    if _v == null || _v <= 1.0 { return null }
+    _v
+}
+
+fn _kdeShortcut(dir) {
+    if dir > 0 {
+        shell.exec("qdbus org.kde.kglobalaccel /component/kwin invokeShortcut view_zoom_in")
+    } else {
+        shell.exec("qdbus org.kde.kglobalaccel /component/kwin invokeShortcut view_zoom_out")
+    }
+}
+
+// KWin exposes no zoom getter, so the level is only reachable by counting
+// steps. Without a known step this refuses rather than sending N blind
+// shortcut invocations.
+fn _kdeToLevel(target) {
+    step = _kwinStep()
+    if step == null {
+        _log("kde: no kwinrc [Effect-Zoom] TargetZoom; cannot set an absolute level")
+        return false
+    }
+    delta = target - _state.level
+    if delta > 0 {
+        n = int(delta / step + 0.5)
+        for i in 0 .. n { _kdeShortcut(1) }
+    } else if delta < 0 {
+        n = int(-delta / step + 0.5)
+        for i in 0 .. n { _kdeShortcut(-1) }
+    }
+    _state.level = target
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Core operations
 // ---------------------------------------------------------------------------
 
 fn down() {
     b = _backend()
-    if _state.debug { print("zoom.down backend=$b level=" + _state.level) }
-    if b == "cinnamon-ipc" {
-        _ipcWrite(_pZoomOut)
-        _state.level = _state.level - 0.1
-        if _state.level < 1.0 { _state.level = 1.0 }
-        return
-    }
-    if b == "cinnamon" {
-        _r = _gdbusCall("org.cinnamon.Muffin.Zoom.ZoomOut", "1.1")
-        if _r.exitCode == 0 { _state.level = _state.level - 0.1 }
-        if _state.level < 1.0 { _state.level = 1.0 }
-        return
-    }
-    if b == "kwin" {
-        shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
-        syncLevel()
-        return
-    }
-    if b == "hyprland" {
-        _state.level = _state.level - _state.step
-        if _state.level < 1.0 { _state.level = 1.0 }
-        shell.exec("hyprctl keyword cursor:zoom_factor ${_state.level}")
-        return
-    }
-    if b == "gnome" {
-        _state.level = _state.level - _state.step
-        if _state.level < 1.0 { _state.level = 1.0 }
-        _gnomeSetFactor(_state.level)
-        return
-    }
+    _log("down backend=$b level=" + str(_state.level))
+
+    if b == "cinnamon" { cinmag.zoomOut(); return }
+    if b == "gnome" { _gnomeSet(_clamp(_state.level - _state.step)); return }
+    if b == "hyprland" { _hyprSet(_clamp(_state.level - _state.step)); return }
+    if b == "kde" { if _state.level > MIN_LEVEL { _kdeShortcut(-1) }; return }
+    // No compositor magnifier to drive: keep the old config's behaviour.
     send("^{Down}")
-    _state.level = _state.level - 0.1
-    if _state.level < 1.0 { _state.level = 1.0 }
 }
 
 fn up() {
     b = _backend()
-    if _state.debug { print("zoom.up backend=$b level=" + _state.level) }
-    if b == "cinnamon-ipc" {
-        _ipcWrite(_pZoomIn)
-        _state.level = _state.level + 0.1
-        if _state.level > 8.0 { _state.level = 8.0 }
-        return
-    }
-    if b == "cinnamon" {
-        _r = _gdbusCall("org.cinnamon.Muffin.Zoom.ZoomIn", "1.1")
-        if _r.exitCode == 0 { _state.level = _state.level + 0.1 }
-        if _state.level > 8.0 { _state.level = 8.0 }
-        return
-    }
-    if b == "kwin" {
-        shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
-        syncLevel()
-        return
-    }
-    if b == "hyprland" {
-        _state.level = _state.level + _state.step
-        if _state.level > 8.0 { _state.level = 8.0 }
-        shell.exec("hyprctl keyword cursor:zoom_factor ${_state.level}")
-        return
-    }
-    if b == "gnome" {
-        _state.level = _state.level + _state.step
-        if _state.level > 15.0 { _state.level = 15.0 }
-        _gnomeSetFactor(_state.level)
-        return
-    }
+    _log("up backend=$b level=" + str(_state.level))
+
+    if b == "cinnamon" { cinmag.zoomIn(); return }
+    if b == "gnome" { _gnomeSet(_clamp(_state.level + _state.step)); return }
+    if b == "hyprland" { _hyprSet(_clamp(_state.level + _state.step)); return }
+    if b == "kde" { if _state.level < MAX_LEVEL { _kdeShortcut(1) }; return }
     send("^{Up}")
-    _state.level = _state.level + 0.1
-    if _state.level > 8.0 { _state.level = 8.0 }
 }
 
 fn reset() {
     b = _backend()
-    if b == "cinnamon-ipc" { _state.level = 1.0; _ipcWrite(_pSetZ10); return }
-    if b == "cinnamon" { _r = _gdbusCall("org.cinnamon.Muffin.Zoom.ResetZoom", ""); _state.level = 1.0; return }
-    if b == "kwin" { shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus"); _state.level = 1.0; return }
-    if b == "hyprland" { _state.level = 1.0; shell.exec("hyprctl keyword cursor:zoom_factor 1.0"); return }
-    if b == "gnome" { shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setActive false"); _state.level = 1.0; return }
+    _log("reset backend=$b")
+
+    if b == "cinnamon" { cinmag.reset(); _state.level = MIN_LEVEL; return }
+    if b == "gnome" { _gnomeSet(MIN_LEVEL); _state.level = MIN_LEVEL; return }
+    if b == "hyprland" { _hyprSet(MIN_LEVEL); _state.level = MIN_LEVEL; return }
+    if b == "kde" { _kdeToLevel(MIN_LEVEL); return }
     send("^/")
-    _state.level = 1.0
+    _state.level = MIN_LEVEL
 }
 
 fn to(level) {
-    if level < 1.0 { level = 1.0 }
-    if level > 8.0 { level = 8.0 }
+    level = _clamp(level)
     b = _backend()
-    if b == "cinnamon-ipc" { _cinSet(level); return }
-    if b == "cinnamon" { _r = _gdbusCall("org.cinnamon.Muffin.Zoom.SetZoomLevel", str(level)); _state.level = level; return }
-    if b == "kwin" { shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + str(level)); _state.level = level; return }
-    if b == "hyprland" { _state.level = level; shell.exec("hyprctl keyword cursor:zoom_factor $level"); return }
-    if b == "gnome" { _gnomeSetFactor(level); return }
+    _log("to backend=$b level=" + str(level))
+
+    if b == "cinnamon" { cinmag.setLevel(level); _state.level = level; return }
+    if b == "gnome" { _gnomeSet(level); _state.level = level; return }
+    if b == "hyprland" { _hyprSet(level); _state.level = level; return }
+    if b == "kde" { _kdeToLevel(level); return }
+    // generic: no absolute level exists to set
     _state.level = level
 }
 
-// zoom(3) in the old config: preset high.
 fn presetHigh() {
     b = _backend()
-    if b == "cinnamon-ipc" { _state.level = _state.presetHigh; _ipcWrite(_pSetZ19); return }
-    if b == "cinnamon" { _state.level = _state.presetHigh; _gdbusCall("org.cinnamon.Muffin.Zoom.SetZoomLevel", str(_state.presetHigh)); return }
-    if b == "kwin" { shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus"); _state.level = 1.4; return }
-    if b == "hyprland" { _state.level = 1.7; shell.exec("hyprctl keyword cursor:zoom_factor 1.7"); return }
+    if b == "cinnamon" { to(_state.presetHigh); return }
+    if b == "gnome" { to(_state.presetHigh); return }
+    if b == "hyprland" { to(1.7); return }
+    if b == "kde" { to(1.9); return }
     send("^+/")
     send("^Up")
     send("^Up")
 }
 
-// zoom(4) in the old config: preset low.
 fn presetLow() {
     b = _backend()
-    if b == "cinnamon-ipc" { _state.level = _state.presetLow; _ipcWrite(_pSetZ16); return }
-    if b == "cinnamon" { _state.level = _state.presetLow; _gdbusCall("org.cinnamon.Muffin.Zoom.SetZoomLevel", str(_state.presetLow)); return }
-    if b == "kwin" { shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus 2.0"); _state.level = 2.0; return }
-    if b == "hyprland" { _state.level = 2.0; shell.exec("hyprctl keyword cursor:zoom_factor 2.0"); return }
+    if b == "cinnamon" { to(_state.presetLow); return }
+    if b == "gnome" { to(_state.presetLow); return }
+    if b == "hyprland" { to(2.0); return }
+    if b == "kde" { to(1.6); return }
     send("^+/")
     _state.level = 1.5
 }
 
-// zoom(5) in the old config: swap current level with 1.0.
+// Swap the current level with 1.0.
 fn toggleLast() {
-    if _state.level != 1.0 {
+    if _state.level != MIN_LEVEL {
         _state.lastToggle = _state.level
-        _applyLevel(1.0)
-    } else if _state.level == _state.lastToggle {
-        _applyLevel(1.0)
+        reset()
+    } else if _state.lastToggle != MIN_LEVEL {
+        to(_state.lastToggle)
     } else {
-        _applyLevel(_state.lastToggle)
+        _log("toggleLast: never zoomed, nothing to restore")
     }
 }
 
-// zoomToggle() in the old config: preset-high when off, reset when on.
+// preset-high when off, reset when on.
 fn toggle() {
-    if _state.level <= 1.0 {
+    if _state.level <= MIN_LEVEL {
         presetHigh()
     } else {
         reset()
     }
 }
 
-fn _internalSetLevel(level) {
-    _state.level = level
-    b = _backend()
-    if b == "cinnamon-ipc" { _cinSet(level); return }
-    if b == "cinnamon" { _gdbusCall("org.cinnamon.Muffin.Zoom.SetZoomLevel", str(level)); return }
-    if b == "kwin" { shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + str(level)); return }
-    if b == "hyprland" { shell.exec("hyprctl keyword cursor:zoom_factor " + str(level)); return }
-    if b == "gnome" { _gnomeSetFactor(level); return }
-}
-
-fn _applyLevel(level) { _internalSetLevel(level) }
-
-// ---------------------------------------------------------------------------
-// Cinnamon lens / mode cyclers (no-op elsewhere)
-// ---------------------------------------------------------------------------
-
+// Cinnamon lens shape / zoom mode cyclers. The magnifier's kc89 bindings
+// call these. Other backends have no equivalent surface, so they report
+// failure instead of pretending.
 fn cycleLens() {
-    _state.lens = _state.lens + 1
-    if _state.lens > 4 { _state.lens = 0 }
-    b = _backend()
-    if b == "cinnamon-ipc" { _ipcSend("SetLensShapeForMonitor", [0, _state.lens]) }
-    else if b == "cinnamon" { _gdbusCall("org.cinnamon.Muffin.Zoom.SetLensShapeForMonitor", "0 " + str(_state.lens)) }
+    if _backend() != "cinnamon" {
+        _log("cycleLens: cinnamon only")
+        return false
+    }
+    cinmag.cycleLens()
+    true
 }
 
 fn cycleMode() {
-    _state.mode = _state.mode + 1
-    if _state.mode > 5 { _state.mode = 0 }
-    b = _backend()
-    if b == "cinnamon-ipc" { _ipcSend("SetZoomModeForMonitor", [0, _state.mode]) }
-    else if b == "cinnamon" { _gdbusCall("org.cinnamon.Muffin.Zoom.SetZoomModeForMonitor", "0 " + str(_state.mode)) }
+    if _backend() != "cinnamon" {
+        _log("cycleMode: cinnamon only")
+        return false
+    }
+    cinmag.cycleMode()
+    true
 }
 
+fn lensShape() { cinmag.lensShape() }
+fn zoomMode() { cinmag.zoomMode() }
+
 // ---------------------------------------------------------------------------
-// Introspection / helpers
+// Introspection
 // ---------------------------------------------------------------------------
 
 fn level() { _state.level }
 
 fn getLevel() {
     b = _backend()
-    if b == "cinnamon-ipc" {
-        r = _ipcQuery("GetZoomLevel", null)
-        if r != null && r.level != null { _state.level = r.level; return r.level }
+    if b == "cinnamon" {
+        v = cinmag.getLevel()
+        if v != null { _state.level = _clamp(v) }
         return _state.level
     }
-    if b == "cinnamon" {
-        _r = shell.exec("gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method org.cinnamon.Muffin.Zoom.GetZoomLevel 2>/dev/null")
-        if _r.exitCode == 0 && _r.stdout != "" {
-            _v = num(_r.stdout.trim())
-            if _v != null { _state.level = _v; return _v }
-        }
+    if b == "gnome" {
+        v = _gnomeGet()
+        if v != null && v >= MIN_LEVEL { _state.level = v }
+        return _state.level
     }
-    if b == "kwin" { return syncLevel() }
+    if b == "hyprland" {
+        v = _hyprGet()
+        if v != null && v >= MIN_LEVEL { _state.level = v }
+        return _state.level
+    }
+    // kde has no zoom getter; generic has no magnifier at all.
     _state.level
 }
 
-// Read the compositor's live zoom into the module state (old config did
-// this after every kde zoom because KWin owns the real factor).
-fn syncLevel() {
-    b = _backend()
-    if b == "kwin" {
-        _r = shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus 2>/dev/null")
-        if _r.exitCode == 0 && _r.stdout != "" {
-            _v = num(_r.stdout.trim())
-            if _v != null { _state.level = _v; return _v }
-        }
-        return _state.level
-    }
-    if b == "cinnamon-ipc" { return getLevel() }
-    _state.level
-}
+fn syncLevel() { getLevel() }
 
 fn setStep(s) { _state.step = s }
 fn step() { _state.step }
 
 fn setPresetHigh(v) { _state.presetHigh = v }
 fn setPresetLow(v) { _state.presetLow = v }
-
-fn zoomMode() { _state.mode }
-fn lensShape() { _state.lens }
-
-fn _gdbusCall(method, args) {
-    cmdline = "gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method " + method
-    if args != "" { cmdline = cmdline + " " + args }
-    shell.exec(cmdline)
-}
-
-fn _gnomeSetFactor(level) {
-    if level < 1.0 { level = 1.0 }
-    if level > 15.0 { level = 15.0 }
-    if level <= 1.0 { return reset() }
-    shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setActive true")
-    shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setMagFactor " + str(level) + " " + str(level))
-    _state.level = level
-    true
-}
-
-fn _cinSet(level) {
-    _state.level = level
-    _ipcWrite('{"params": [$level],"method": "SetZoomLevel"}\n')
-}
-
-// close() releases the cached socket. Optional — the kernel reaps it on exit.
-fn close() { _ipcReset() }
 
 fn setDebug(enabled) { _state.debug = enabled }

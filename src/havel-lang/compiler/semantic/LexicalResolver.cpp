@@ -1253,6 +1253,13 @@ case ast::NodeType::BlockStatement: {
   case ast::NodeType::InputStatement: {
     const auto &inputStmt = static_cast<const ast::InputStatement &>(statement);
     for (const auto &cmd : inputStmt.commands) {
+      // The parsed interpolation of a DSL send string: its expressions are
+      // real AST nodes and need lexical bindings like any other expression.
+      // Without this, a hotkey body's bare "hi ${name}" threw "Missing
+      // lexical binding for identifier: name" at compile time.
+      if (cmd.textExpr) {
+        resolveExpression(*cmd.textExpr);
+      }
       if (!cmd.xExprStr.empty()) {
         // TODO: resolve xExprStr if it's a parsed expression
       }

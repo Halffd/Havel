@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 0.3.4 LANGUAGES C CXX)
 
+# Resolve shared libraries that live in the build tree (havel_ffi_types.so)
+# relative to the binary rather than through the absolute path CMake bakes
+# into RUNPATH. Must be set before any target is created.
+set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+
 # -- build source identity ---------------------------------------------------
 # Stamps the binary with the exact git commit it was built from so
 # regression reports can name the commit ("havel --version" shows it).
@@ -2831,6 +2836,14 @@ target_include_directories(havel_ffi_types PUBLIC
   ${CMAKE_SOURCE_DIR}/include
 )
 target_link_libraries(havel_ffi_types PRIVATE ${LIBFFI_LIBRARIES})
+# This is a SHARED library but havel links it directly (DT_NEEDED), so it
+# has to travel with the binary: install it next to the other runtime
+# artifacts. Without this rule an installed `bin/havel` starts with
+# "error while loading shared libraries: libhavel_ffi_types.so".
+install(TARGETS havel_ffi_types
+    LIBRARY DESTINATION lib COMPONENT Runtime
+    RUNTIME DESTINATION bin COMPONENT Runtime
+)
 # Link into main binary (via havel_runtime, which owns ffi/)
 target_link_libraries(havel_runtime PRIVATE havel_ffi_types)
 
@@ -3141,6 +3154,34 @@ if(ENABLE_TESTS AND GTest_FOUND)
         -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group)
     add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
+    # IO::ParseKeyString - the pure tokenizer behind io.send's key syntax.
+    # Regression cover for the unknown-{word} literal fallback: unknown
+    # {word} in a sent string used to be silently swallowed (the token was
+    # dropped, reading back as the string having been "interpolated");
+    # fromBraces now marks brace-form tokens so the sender types the literal
+    # text when the name resolves to no known key.
+    add_executable(io_key_parse_test
+        tests/io_key_parse_ut.cpp
+    )
+    target_include_directories(io_key_parse_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_key_parse_test PRIVATE cxx_std_23)
+    target_link_libraries(io_key_parse_test PRIVATE
+        # gtest_main has to precede the havel archives, same reason as
+        # pixel_provider_test below.
+        GTest::gtest GTest::gtest_main
+        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        -Wl,--end-group
+    )
+    add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.
@@ -3375,6 +3416,14 @@ endif()
 install(TARGETS havel
   RUNTIME DESTINATION bin
   COMPONENT Runtime
+)
+# Resolve build-tree/install-tree shared libraries relative to the binary
+# instead of via the absolute path CMake bakes into RUNPATH. Without
+# $ORIGIN the binary only starts from the exact directory it was linked
+# in: move or sync the build tree and every DT_NEEDED lookup fails
+# ("error while loading shared libraries: libhavel_ffi_types.so").
+set_target_properties(havel PROPERTIES
+  INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
 )
 
 if(TARGET havel-lsp)

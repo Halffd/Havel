@@ -135,6 +135,12 @@ struct KeyToken {
   } type;
   std::string value;
   bool down = true;
+  // True when the token came from a {word} brace form. The sender falls
+  // back to typing the literal "{word}" text when the name resolves to no
+  // known key - otherwise any braces in a sent string (e.g. "{string}")
+  // are silently swallowed, which reads back as the string having been
+  // "interpolated". Known keys ({home}, {enter}, ...) are unaffected.
+  bool fromBraces = false;
 };
 
 // Helper to create input_event structs efficiently

@@ -1,0 +1,53 @@
+// smoke: flags = --tiering
+// smoke: timeout = 300
+// smoke: tier = slow
+// Regression: GC re-entry safety of JIT-compiled frames. holder() creates
+// an array, calls the INTERPRETED churner() (kept out of the lowering
+// subset by the % opcode on purpose), then reads the array back. A
+// collection triggered by churner's dispatch-loop checkpoint runs while
+// the tier-1 frame's values are unrooted: the Cranelift lowering
+// registers no GC roots (havel_gc_register_roots placeholder) and keeps
+// locals in native registers, so before the re-entry bridges deferred GC
+// (VM::GCSuspendDeferGuard in havel_vm_call/_method/_host/_super and the
+// CoreRuntimeExports call family), a mid-call collection could free the
+// holder's live array out from under it and box.len()/box[0] would read a
+// dead/reused heap slot. The churner allocates per call so collections
+// fire during the callee throughout the run.
+// Expected: 5000 holder calls, no mismatch, rc 0. In a build without a
+// JIT backend this degrades to an interpreter-only check and still passes.
+
+fn churner(v) {
+    junk = []
+    j = 0
+    while j < 60 {
+        junk.push((j % 7) + v)
+        j = j + 1
+    }
+    return junk.len()
+}
+
+fn holder(i) {
+    box = [i, i + 1]
+    n = churner(i)
+    if box.len() != 2 || box[0] != i || box[1] != i + 1 {
+        return -1
+    }
+    return n
+}
+
+k = 0
+bad = -1
+while k < 5000 {
+    r = holder(k % 97)
+    if r == -1 {
+        if bad == -1 { bad = k }
+    }
+    k = k + 1
+}
+
+if bad == -1 {
+    print("PASS cranelift_jit_gc_reentry")
+} else {
+    print("FAIL cranelift_jit_gc_reentry k=${bad}")
+    process.exit(255)
+}

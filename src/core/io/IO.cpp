@@ -34,10 +34,9 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include <future>
 #include <linux/input.h>
 #include <mutex>
-// Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
-#ifdef HAVE_QT_EXTENSION
-#include "qt.hpp"
-#endif
+// No Qt in this TU: including qt.hpp pulls QtCore headers, which emit an
+// undefined qt_version_tag reference in every object — forcing every consumer
+// (the Qt-free executable, havel-lsp, embedders) to link libQt6Core.
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/select.h>
@@ -128,6 +127,7 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string &keys) {
           token.type = KeyToken::Key;
           token.value = seq;
           token.down = true;
+          token.fromBraces = true;
         }
 
         tokens.push_back(token);
@@ -1364,6 +1364,16 @@ void IO::Send(cstr keys) {
           if (virtualKey) {
             keybd_event(virtualKey, 0, 0, 0);
             keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
+          } else {
+            // Unknown {word}: type the literal text instead of dropping it
+            // (same fallback as the POSIX ParseKeyString path below).
+            for (char wc : sequence) {
+              int charKey = StringToVirtualKey(std::string(1, wc));
+              if (charKey) {
+                keybd_event(charKey, 0, 0, 0);
+                keybd_event(charKey, 0, KEYEVENTF_KEYUP, 0);
+              }
+            }
           }
         }
         i = end;
@@ -1485,6 +1495,26 @@ void IO::Send(cstr keys) {
 
     case KeyToken::Key: {
       debug("Sending key: " + token.value);
+      // Unknown {word} from a brace form: type the literal text instead of
+      // silently dropping the token. Known keys ({home}, {enter}, ...) hit
+      // the normal key path; a literal "{string}" in a sent string arrives
+      // as-is.
+      if (token.fromBraces && GetKeyCacheLookup(token.value) == -1) {
+        for (char c : token.value) {
+          SendKey(std::string(1, c), true);
+          SendKey(std::string(1, c), false);
+          if (shouldSleep) {
+            if (eventListener) {
+              eventListener->EndUinputBatch();
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            if (eventListener) {
+              eventListener->BeginUinputBatch();
+            }
+          }
+        }
+        break;
+      }
       SendKey(token.value, true);
       if (shouldSleep) {
         if (eventListener) {

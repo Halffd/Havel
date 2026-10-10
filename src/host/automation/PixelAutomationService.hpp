@@ -1,136 +1,90 @@
-#include "havel-lang/common/Export.hpp"
 /*
  * PixelAutomationService.hpp
  *
  * Pixel and image automation service.
  * Provides screen capture, pixel operations, image search, and OCR.
- * 
+ *
  * Uses Qt internally for screenshot capture, but doesn't leak types to VM.
+ * The Qt-free value types and the IPixelAutomation interface live in
+ * IPixelAutomation.hpp; this header only adds the concrete implementation.
+ * Core-facing callers must use IPixelAutomation, not this class.
  */
 #pragma once
 
+#include "IPixelAutomation.hpp"
+
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include <cstdint>
 
 namespace havel { class PixelAutomation; class ScreenshotManager; }
 
 namespace havel::host {
 
 /**
- * Color - RGB(A) color representation
- */
-struct HAVEL_EXPORT Color {
-    int r = 0, g = 0, b = 0, a = 255;
-    
-    Color() = default;
-    Color(int r, int g, int b, int a = 255) : r(r), g(g), b(b), a(a) {}
-    
-    // Parse from hex string (#RRGGBB or #RRGGBBAA)
-    static Color fromHex(const std::string& hex);
-    
-    // Convert to hex string
-    std::string toHex() const;
-    
-    // Check if color is near another color with tolerance
-    bool near(const Color& other, int tolerance = 0) const;
-};
-
-/**
- * Screen region for bounded operations
- */
-struct HAVEL_EXPORT Region {
-    int x = 0, y = 0, w = 0, h = 0;
-    
-    Region() = default;
-    Region(int x, int y, int w, int h) : x(x), y(y), w(w), h(h) {}
-    
-    // Full screen region
-    static Region fullScreen();
-};
-
-/**
- * Image match result
- */
-struct HAVEL_EXPORT ImageMatch {
-    bool found = false;
-    int x = 0, y = 0, w = 0, h = 0;
-    float confidence = 0.0f;
-    
-    ImageMatch() = default;
-    ImageMatch(bool found, int x, int y, int w, int h, float conf = 1.0f)
-    : found(found), x(x), y(y), w(w), h(h), confidence(conf) {}
-    
-    // Center point of match
-    int centerX() const { return x + w / 2; }
-    int centerY() const { return y + h / 2; }
-};
-
-/**
  * PixelAutomationService - Pixel and image automation
- * 
+ *
  * Uses Qt and OpenCV internally for screen capture and image processing.
  * Returns plain C++ types that HostBridge translates to VM types.
  */
-class HAVEL_EXPORT PixelAutomationService {
+class HAVEL_EXPORT PixelAutomationService : public IPixelAutomation {
 public:
     PixelAutomationService();
-    ~PixelAutomationService();
+    ~PixelAutomationService() override;
 
     // =========================================================================
     // Pixel operations
     // =========================================================================
 
     /// Get pixel color at position
-    Color getPixel(int x, int y);
+    Color getPixel(int x, int y) override;
 
     /// Check if pixel matches color with tolerance
-    bool pixelMatch(int x, int y, const Color& expectedColor, int tolerance = 0);
-    bool pixelMatch(int x, int y, const std::string& hexColor, int tolerance = 0);
+    bool pixelMatch(int x, int y, const Color& expectedColor, int tolerance = 0) override;
+    bool pixelMatch(int x, int y, const std::string& hexColor, int tolerance = 0) override;
 
     /// Wait for pixel to match color
-    bool waitPixel(int x, int y, const Color& expectedColor, int tolerance = 0, int timeout = 5000);
-    bool waitPixel(int x, int y, const std::string& hexColor, int tolerance = 0, int timeout = 5000);
+    bool waitPixel(int x, int y, const Color& expectedColor, int tolerance = 0, int timeout = 5000) override;
+    bool waitPixel(int x, int y, const std::string& hexColor, int tolerance = 0, int timeout = 5000) override;
 
     // =========================================================================
     // Image search
     // =========================================================================
 
     /// Find image on screen
-    ImageMatch findImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
+    ImageMatch findImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f) override;
 
     /// Find all occurrences of image on screen
-    std::vector<ImageMatch> findAllImages(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
+    std::vector<ImageMatch> findAllImages(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f) override;
 
     /// Check if image exists on screen
-    bool existsImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
+    bool existsImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f) override;
 
     /// Count occurrences of image on screen
-    int countImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
+    int countImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f) override;
 
     /// Wait for image to appear on screen
-    ImageMatch waitImage(const std::string& imagePath, const Region& region = Region(), int timeout = 5000, float threshold = 0.9f);
+    ImageMatch waitImage(const std::string& imagePath, const Region& region = Region(), int timeout = 5000, float threshold = 0.9f) override;
 
     // =========================================================================
     // OCR (Optical Character Recognition)
     // =========================================================================
 
     /// Read text from screen region
-    std::string readText(const Region& region = Region());
+    std::string readText(const Region& region = Region()) override;
 
     /// Read text from screen region with OCR engine
-    std::string readText(const Region& region, const std::string& ocrEngine);
+    std::string readText(const Region& region, const std::string& ocrEngine) override;
 
     // =========================================================================
     // Screenshot operations
     // =========================================================================
 
     /// Capture full screen and save to file
-    bool captureScreen(const std::string& filePath);
+    bool captureScreen(const std::string& filePath) override;
 
     /// Capture region and save to file
-    bool captureRegion(const Region& region, const std::string& filePath);
+    bool captureRegion(const Region& region, const std::string& filePath) override;
 
 private:
     std::shared_ptr<PixelAutomation> m_automation;

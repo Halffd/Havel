@@ -464,6 +464,10 @@ uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) 
 uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
   auto* vm = static_cast<VM*>(vm_ptr);
+  // op_index overloads re-enter the interpreter below this JIT frame;
+  // defer GC while the caller's raw values are unrooted (see
+  // VM::GCSuspendDeferGuard).
+  auto gc_guard = vm->gcDeferGuardPublic();
   Value container, key_val;
   std::memcpy(&container, &container_bits, sizeof(uint64_t));
   std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
@@ -910,6 +914,31 @@ void havel_vm_backedge_n(void* vm_ptr, uint32_t ip, uint32_t n) {
   if (vm->consumeJitYieldRequest()) {
     throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
   }
+}
+
+void havel_vm_gc_checkpoint(void* vm_ptr, const uint64_t* roots,
+                            uint32_t count) {
+  // JIT safe-point GC check (called from the tier-1 backedge hook, i.e.
+  // every BACKEDGE_STRIDE-th taken edge): native loops allocate through
+  // the Runtime-ABI bridges without any interpreter dispatch checkpoint,
+  // so without this hook the GC starves for the whole native call and
+  // garbage accumulates (measured with per-iteration iterator results:
+  // 343k objects / 446MB peak RSS on tier_bench_loop vs 11k / 72MB
+  // interpreted). The caller spills its frame's live values (locals +
+  // operand stack) into `roots` immediately before this call, so the
+  // collection sees them as extra roots. Common path is one probe
+  // (budget not due) - no snapshot, no copy.
+  if (!vm_ptr || !roots) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm->gcCollectionPendingPublic()) return;
+  std::vector<Value> extra;
+  extra.reserve(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    Value v;
+    std::memcpy(&v, &roots[i], sizeof(uint64_t));
+    extra.push_back(v);
+  }
+  vm->maybeCollectGarbageWithExtraRoots(extra);
 }
 
 #include "runtime/HavelEngine.hpp"
@@ -1403,7 +1432,10 @@ uint64_t havel_vm_fiber_sleep(void* vm_ptr, uint64_t ms_bits) {
 uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uint32_t count) {
     if (!vm_ptr) return 0x7FF8000000000003ULL;
     auto* vm = static_cast<VM*>(vm_ptr);
-    
+    // Host functions may re-enter the interpreter (module wrappers,
+    // callbacks). The JIT caller's raw values are unrooted meanwhile.
+    auto gc_guard = vm->gcDeferGuardPublic();
+
     std::vector<Value> valArgs;
     for (uint32_t i = 0; i < count; ++i) {
         Value v;
@@ -1418,6 +1450,10 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                               uint64_t* args, uint32_t arg_count) {
     if (!vm_ptr) return Value::makeNull().rawBits();
     auto* vm = static_cast<VM*>(vm_ptr);
+    // Method bodies run interpreted/re-entered below this JIT frame while
+    // the caller's raw values (receiver staged by the lowering, live
+    // vstack temps) are unrooted.
+    auto gc_guard = vm->gcDeferGuardPublic();
     auto* chunk = vm->getCurrentChunk();
     if (!chunk) return Value::makeNull().rawBits();
 
@@ -2610,6 +2646,9 @@ uint64_t havel_vm_load_class_proto(void* vm_ptr, uint32_t type_id) {
 uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id, uint64_t* args, uint32_t arg_count) {
   if (!vm_ptr) return Value::makeNull().rawBits();
   auto* vm = static_cast<VM*>(vm_ptr);
+  // Super-method bodies re-enter below this JIT frame; the caller's raw
+  // values are unrooted meanwhile.
+  auto gc_guard = vm->gcDeferGuardPublic();
   auto* chunk = vm->getCurrentChunk();
   if (!chunk) return Value::makeNull().rawBits();
 

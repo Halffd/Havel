@@ -31,6 +31,10 @@ extern "C" uint64_t havel_vm_call(void *vm_ptr, uint64_t *args, uint32_t count) 
   if (!vm || !args || count == 0) {
     return Value::makeNull().rawBits();
   }
+  // The callee runs below a JIT/AOT frame whose raw values are not in any
+  // GC root set; defer collection until the next safe point (dispatch
+  // checkpoint with no native frames, or the JIT backedge GC checkpoint).
+  auto gc_guard = vm->gcDeferGuardPublic();
   Value callee = Value::fromRawBits(args[0]);
   std::vector<Value> call_args;
   for (uint32_t i = 1; i < count; ++i) {
@@ -46,6 +50,7 @@ extern "C" uint64_t havel_vm_tail_call(void *vm_ptr, uint64_t *args, uint32_t co
 extern "C" uint64_t havel_vm_call_dyn(void *vm_ptr, uint32_t arg_count) {
   auto *vm = static_cast<VM *>(vm_ptr);
   if (!vm) return Value::makeNull().rawBits();
+  auto gc_guard = vm->gcDeferGuardPublic();
   
   if (vm->getStackSizePublic() < static_cast<size_t>(arg_count) + 1) {
     return Value::makeNull().rawBits();
@@ -65,6 +70,7 @@ extern "C" uint64_t havel_vm_call_spread(void *vm_ptr, uint64_t callee_raw,
                                          uint64_t array_raw) {
   auto *vm = static_cast<VM *>(vm_ptr);
   if (!vm) return Value::makeNull().rawBits();
+  auto gc_guard = vm->gcDeferGuardPublic();
   
   Value callee_val = Value::fromRawBits(callee_raw);
   Value array_val = Value::fromRawBits(array_raw);
@@ -108,6 +114,7 @@ extern "C" uint64_t havel_vm_call_method_spread(void *vm_ptr, uint64_t receiver_
                                                  uint64_t array_raw) {
   auto *vm = static_cast<VM *>(vm_ptr);
   if (!vm) return Value::makeNull().rawBits();
+  auto gc_guard = vm->gcDeferGuardPublic();
   
   Value array_val = Value::fromRawBits(array_raw);
   std::vector<Value> spread_elements;
@@ -150,6 +157,7 @@ extern "C" uint64_t havel_vm_call_method_spread(void *vm_ptr, uint64_t receiver_
 extern "C" uint64_t havel_vm_call_if_function(void *vm_ptr, uint64_t val_raw) {
   auto *vm = static_cast<VM *>(vm_ptr);
   if (!vm) return Value::makeNull().rawBits();
+  auto gc_guard = vm->gcDeferGuardPublic();
   
   Value val = Value::fromRawBits(val_raw);
   if (val.isHostFuncId() || val.isFunctionObjId() || 

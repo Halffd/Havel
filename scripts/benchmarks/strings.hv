@@ -1,0 +1,39 @@
+// Benchmark: String operations
+// Tests string construction, concatenation, and manipulation
+
+fn benchmark_string_concat() {
+    s = ""
+    i = 0
+    while i < 10000 {
+        s = s + "x"
+        i = i + 1
+    }
+    return s.length()
+}
+
+fn benchmark_string_creation() {
+    i = 0
+    count = 0
+    while i < 50000 {
+        s = "hello world string test"
+        count = count + 1
+        i = i + 1
+    }
+    return count
+}
+
+fn benchmark_string_methods() {
+    s = "The quick brown fox jumps over the lazy dog"
+    i = 0
+    while i < 100000 {
+        s.contains("quick")
+        s.length()
+        s.starts_with("The")
+        i = i + 1
+    }
+    return i
+}
+
+print("strings/string_concat=" + str(benchmark_string_concat()))
+print("strings/string_creation=" + str(benchmark_string_creation()))
+print("strings/string_methods=" + str(benchmark_string_methods()))

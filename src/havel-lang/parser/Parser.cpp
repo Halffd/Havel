@@ -1082,52 +1082,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
         return makeNodeAt<ast::CharLiteral>(token, token.value[0]);
 
     case TokenType::InterpolatedString: {
-      // Parse interpolated string into segments
-      std::vector<ast::InterpolatedStringExpression::Segment> segments;
-      const std::string &value = token.value;
-      size_t pos = 0;
-      std::string currentLiteral;
-      
-      while (pos < value.length()) {
-        // Check for \x01...\x02 pattern (interpolation marker)
-        if (value[pos] == '\x01') {
-          // Found interpolation start
-          if (!currentLiteral.empty()) {
-            segments.emplace_back(currentLiteral);
-            currentLiteral.clear();
-          }
-          pos += 1; // skip \x01
-          
-          // Find matching \x02 (accounting for nested markers)
-          size_t markerDepth = 1;
-          size_t exprStart = pos;
-          while (pos < value.length() && markerDepth > 0) {
-            if (value[pos] == '\x01') markerDepth++;
-            else if (value[pos] == '\x02') markerDepth--;
-            if (markerDepth > 0) pos++;
-          }
-          
-          if (markerDepth == 0) {
-            std::string exprStr = value.substr(exprStart, pos - exprStart);
-            auto expr = parseExpressionFromString(exprStr);
-            if (expr) {
-              segments.emplace_back(std::move(expr));
-            }
-            pos++; // skip \x02
-          } else {
-            currentLiteral += value.substr(exprStart - 1);
-            break;
-          }
-        } else {
-          currentLiteral += value[pos++];
-        }
-      }
-      
-      if (!currentLiteral.empty()) {
-        segments.emplace_back(currentLiteral);
-      }
-      
-    return makeNodeAt<ast::InterpolatedStringExpression>(token, std::move(segments));
+      // Parse interpolated string into segments (shared with the DSL
+      // implicit-input path)
+      return buildInterpolatedStringExpression(token);
   }
 
   case TokenType::InterpolatedBacktick: {
@@ -2673,6 +2630,59 @@ std::unique_ptr<ast::Expression> Parser::parseExpressionFromString(const std::st
   return result;
 }
 
+std::unique_ptr<ast::InterpolatedStringExpression>
+Parser::buildInterpolatedStringExpression(const Token &token) {
+  // Split the lexer's \x01...\x02 interpolation markers into segments
+  // (literal parts + parsed expressions). Shared by the expression path
+  // and the DSL implicit-input path: a hotkey body's bare interpolated
+  // string compiles the same way, then goes to io.send.
+  std::vector<ast::InterpolatedStringExpression::Segment> segments;
+  const std::string &value = token.value;
+  size_t pos = 0;
+  std::string currentLiteral;
+
+  while (pos < value.length()) {
+    // Check for \x01...\x02 pattern (interpolation marker)
+    if (value[pos] == '\x01') {
+      // Found interpolation start
+      if (!currentLiteral.empty()) {
+        segments.emplace_back(currentLiteral);
+        currentLiteral.clear();
+      }
+      pos += 1; // skip \x01
+
+      // Find matching \x02 (accounting for nested markers)
+      size_t markerDepth = 1;
+      size_t exprStart = pos;
+      while (pos < value.length() && markerDepth > 0) {
+        if (value[pos] == '\x01') markerDepth++;
+        else if (value[pos] == '\x02') markerDepth--;
+        if (markerDepth > 0) pos++;
+      }
+
+      if (markerDepth == 0) {
+        std::string exprStr = value.substr(exprStart, pos - exprStart);
+        auto expr = parseExpressionFromString(exprStr);
+        if (expr) {
+          segments.emplace_back(std::move(expr));
+        }
+        pos++; // skip \x02
+      } else {
+        currentLiteral += value.substr(exprStart - 1);
+        break;
+      }
+    } else {
+      currentLiteral += value[pos++];
+    }
+  }
+
+  if (!currentLiteral.empty()) {
+    segments.emplace_back(currentLiteral);
+  }
+
+  return makeNodeAt<ast::InterpolatedStringExpression>(token, std::move(segments));
+}
+
 std::unique_ptr<havel::ast::Program>
 Parser::produceAST(const std::string &sourceCode) {
   // Tokenize source code
@@ -4037,6 +4047,7 @@ at().type == havel::TokenType::RegexString) {
       if (context.inInputContext) {
         if (at().type == havel::TokenType::String ||
             at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::InterpolatedString ||
             at().type == havel::TokenType::Number ||
             at().type == havel::TokenType::OpenBrace ||
             (at().type == havel::TokenType::Identifier &&
@@ -4072,6 +4083,7 @@ at().type == havel::TokenType::RegexString) {
               at().value == "key" || at().value == "keys" || at().value == "send")) ||
             at().type == havel::TokenType::String ||
             at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::InterpolatedString ||
             at().type == havel::TokenType::OpenBrace;         // {Key}
         
         if (isDslNext) {
@@ -4364,11 +4376,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
       continue;
     }
 
-    // Check for string: "text"
+    // Check for string: "text" — including interpolated strings: their
+    // interpolation must compile and the result must be SENT. The statement
+    // dispatcher's input-context check missed InterpolatedString, so a
+    // hotkey body's bare "hi ${name}" evaluated as a discarded expression
+    // statement and nothing was sent at all.
     if (at().type == havel::TokenType::String ||
-        at().type == havel::TokenType::MultilineString) {
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
       cmd.type = havel::ast::InputCommand::SendText;
-      cmd.text = advance().value;
+      Token strToken = advance();
+      cmd.text = strToken.value;
+      if (strToken.type == havel::TokenType::InterpolatedString) {
+        cmd.textExpr = buildInterpolatedStringExpression(strToken);
+      }
       commands.push_back(cmd);
       continue;
     }
@@ -4535,11 +4556,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseMoreInputCommands(
       continue;
     }
 
-    // Check for string: "text"
+    // Check for string: "text" — including interpolated strings: their
+    // interpolation must compile and the result must be SENT. The statement
+    // dispatcher's input-context check missed InterpolatedString, so a
+    // hotkey body's bare "hi ${name}" evaluated as a discarded expression
+    // statement and nothing was sent at all.
     if (at().type == havel::TokenType::String ||
-        at().type == havel::TokenType::MultilineString) {
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
       cmd.type = havel::ast::InputCommand::SendText;
-      cmd.text = advance().value;
+      Token strToken = advance();
+      cmd.text = strToken.value;
+      if (strToken.type == havel::TokenType::InterpolatedString) {
+        cmd.textExpr = buildInterpolatedStringExpression(strToken);
+      }
       commands.push_back(cmd);
       continue;
     }
@@ -4634,11 +4664,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
       continue;
     }
 
-    // Check for string: "text"
+    // Check for string: "text" — including interpolated strings: their
+    // interpolation must compile and the result must be SENT. The statement
+    // dispatcher's input-context check missed InterpolatedString, so a
+    // hotkey body's bare "hi ${name}" evaluated as a discarded expression
+    // statement and nothing was sent at all.
     if (at().type == havel::TokenType::String ||
-        at().type == havel::TokenType::MultilineString) {
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
       cmd.type = havel::ast::InputCommand::SendText;
-      cmd.text = advance().value;
+      Token strToken = advance();
+      cmd.text = strToken.value;
+      if (strToken.type == havel::TokenType::InterpolatedString) {
+        cmd.textExpr = buildInterpolatedStringExpression(strToken);
+      }
       commands.push_back(cmd);
       continue;
     }

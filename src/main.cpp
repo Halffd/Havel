@@ -1,5 +1,6 @@
 #include "core/init/HavelLauncher.hpp"
 #include "host/module/BridgeSelection.hpp"
+#include "host/ui/UIManager.hpp"
 #include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
 #include "utils/StartupTiming.hpp"
@@ -10,17 +11,14 @@
 #include <string>
 #include <filesystem>
 
-#ifdef HAVEL_QT_BRIDGE
-// Definition of the optional Qt bridge installer, in
-// src/host/module/bridges/qt/QtBridge.cpp (compiled into havel_gui).
-// Referencing it here — from the application's own translation unit, not from
-// the core — is what forces the linker to pull that object out of the
-// havel_gui archive. A weak reference would not: ld does not extract an
-// archive member to satisfy one.
+// The toolkit bridge installer lives in the core (src/host/module/bridges/
+// ToolkitBridge.cpp), Qt-free. It loads the Qt toolkit plugin at runtime and
+// installs the clipboard/gui.notify pipeline functions. The executable no
+// longer links havel_gui at all; a Qt version skew degrades to a log line
+// here instead of a binary that refuses to boot.
 namespace havel::compiler {
-void installQtBridge(PipelineOptions &options, const HostContext *ctx);
+void installToolkitBridge(PipelineOptions &options, const HostContext *ctx);
 } // namespace havel::compiler
-#endif
 
 #if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
 #include <X11/Xlib.h>
@@ -32,12 +30,18 @@ int main(int argc, char* argv[]) {
     // SDK host: install the parse+compile pipeline behind the VM's
     // module compiler hook before any script (or imported module) runs.
     havel::compiler::registerSourceModuleCompilerHook();
-#ifdef HAVEL_QT_BRIDGE
-    // Select the optional Qt bridge before any pipeline is built. Hosts that
-    // do not link havel_gui (havel-wm, the AOT runtime) never call this and
-    // stay Qt-free.
-    havel::setQtBridgeInstaller(&havel::compiler::installQtBridge);
-#endif
+    // Select the toolkit bridge before any pipeline is built. It is the core's
+    // Qt-free bridge installer (installs clipboard.get/set/clear,
+    // io.getClipboard, gui.notify). Embedders that want no bridge (havel-wm,
+    // the AOT runtime) never call setQtBridgeInstaller and stay Qt-free.
+    havel::setQtBridgeInstaller(&havel::compiler::installToolkitBridge);
+    // Load the Qt toolkit plugin eagerly so its in-process factories (UI/
+    // screenshot/clipboard backends, pixel service, screen provider) are
+    // registered before the host or the language host can ask for them —
+    // the same ordering havel_gui's static initializer used to guarantee.
+    // If the plugin cannot load (Qt version skew), this logs once and the
+    // features degrade instead of the binary failing to boot.
+    havel::host::UIManager::instance().ensureQtToolkit();
 #if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
     XInitThreads();
 #endif

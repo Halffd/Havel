@@ -1,0 +1,31 @@
+// smoke: string interpolation - ${expr}/$var interpolate, plain {..} stays
+// literal (io.send key syntax like {Home} must survive a plain string).
+// Regression lock for: "${x} and $x" not interpolating and "{x}" being
+// treated as an interpolation (both observed in the wild as broken
+// hotkey sends). Pure string processing - no I/O.
+
+x = "abc"
+o = {a: "v"}
+
+t1 = "${x} and $x"
+t2 = "{x}"
+t3 = "{Home}"
+t4 = "${x}"
+t5 = "$x"
+t6 = '${x}'
+t7 = "pre ${x} post"
+t8 = "${o.a}"
+t9 = "^{Up}"
+
+fails = 0
+if t1 != "abc and abc" { print("FAIL t1 mixed-forms: got [" + t1 + "]"); fails = fails + 1 }
+if t2 != "{x}" { print("FAIL t2 plain-brace: got [" + t2 + "]"); fails = fails + 1 }
+if t3 != "{Home}" { print("FAIL t3 io-key-shape: got [" + t3 + "]"); fails = fails + 1 }
+if t4 != "abc" { print("FAIL t4 braced: got [" + t4 + "]"); fails = fails + 1 }
+if t5 != "abc" { print("FAIL t5 dollar: got [" + t5 + "]"); fails = fails + 1 }
+if t6 != "abc" { print("FAIL t6 single-quote: got [" + t6 + "]"); fails = fails + 1 }
+if t7 != "pre abc post" { print("FAIL t7 segments: got [" + t7 + "]"); fails = fails + 1 }
+if t8 != "v" { print("FAIL t8 obj-field: got [" + t8 + "]"); fails = fails + 1 }
+if t9 != "^{Up}" { print("FAIL t9 modifier-key-shape: got [" + t9 + "]"); fails = fails + 1 }
+if fails > 0 { process.exit(255) }
+print("PASS string-interpolation: 9 forms")

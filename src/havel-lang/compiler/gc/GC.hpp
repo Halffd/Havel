@@ -242,6 +242,19 @@ public:
     size_t index = 0;
     size_t codepoint_index = 0;
     std::vector<std::string> keys;
+    // The iterator-result object ({first, second, done}) this iterator
+    // reuses across next() calls. ITER_NEXT used to allocate a fresh heap
+    // object with three keyed map writes on EVERY iteration - the dominant
+    // cost of range/string/array loops (measured: tiered for-in 3.05s user
+    // vs 0.18s for an identical while-counter loop with no ITER opcodes;
+    // ~2M heap allocations per bench run). The result object is never
+    // script-visible: the compiled loop destructures into .first/.second
+    // VALUES and the temp holding the object id has no script-visible name,
+    // so reuse is unobservable. UINT32_MAX = not allocated yet (first
+    // next() allocates it once). Traced from markReference like the
+    // iterable, so it stays a GC root while the iterator lives - between
+    // iterations no stack slot holds it.
+    uint32_t result_id = UINT32_MAX;
   };
 
   struct BoundMethod {

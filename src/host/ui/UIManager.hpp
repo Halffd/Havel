@@ -44,6 +44,14 @@ public:
 
     bool isInitialized() const;
 
+    // Load the Qt toolkit plugin and run its install_factories slot
+    // (in-process UI/screenshot/clipboard factories, pixel service, screen
+    // provider). Safe to call any number of times: the plugin is dlopen'd at
+    // most once per process. Returns the loaded ABI, or nullptr when it is
+    // unavailable — the Qt version-skew case, which degrades to a logged
+    // message instead of an unbootable binary.
+    const HavelToolkitABI *ensureQtToolkit();
+
     void registerToolkitExtensions(const ToolkitPlugin &toolkit) const;
 
   // Toolkit plugin backend installation

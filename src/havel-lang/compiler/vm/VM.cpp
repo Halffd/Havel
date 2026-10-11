@@ -3109,48 +3109,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
           instrInfo += "\n";
         }
       }
-      if (!recovered) {
-        // Dump call stack for debugging
-        std::string frameInfo;
-        for (int fi = static_cast<int>(frame_count_) - 1;
-             fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
-          auto &fr = frame_arena_[fi];
-          std::string fname = fr.function ? fr.function->name : "<anon>";
-          frameInfo += "  frame[" + std::to_string(fi) + "] " + fname +
-                       " ip=" + std::to_string(fr.ip) + "\n";
-        }
-        // Dump instructions around the failing IP
-        std::string instrInfo;
-        auto &cf = currentFrame();
-        if (cf.function && cf.ip < cf.function->instructions.size()) {
-          uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
-          uint32_t end = std::min(cf.function->instructions.size(),
-                                  static_cast<size_t>(cf.ip + 5));
-          for (uint32_t ii = start; ii < end; ++ii) {
-            auto &inst = cf.function->instructions[ii];
-            std::string marker = (ii == cf.ip) ? " >>> " : "     ";
-            instrInfo += marker + std::to_string(ii) + ": op=" +
-                         std::to_string(static_cast<int>(inst.opcode));
-            for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
-              instrInfo += " op" + std::to_string(oi) + "=";
-              if (inst.operands[oi].isStringValId() && resolve_chunk) {
-                instrInfo += "'" +
-                             resolve_chunk->getString(
-                                 inst.operands[oi].asStringValId()) +
-                             "'";
-              } else {
-                instrInfo += inst.operands[oi].toString();
-              }
-            }
-            instrInfo += "\n";
-          }
-        }
-        COMPILER_THROW(
-            "CALL expects function or closure as callee (got " + typeInfo +
-            ") [callee_bits=" + std::to_string(callee_value.rawBits()) +
-            ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" +
-            frameInfo + "Instructions:\n" + instrInfo);
-      }
+      COMPILER_THROW(
+          "CALL expects function or closure as callee (got " + typeInfo +
+          ") [callee_bits=" + std::to_string(callee_value.rawBits()) +
+          ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" +
+          frameInfo + "Instructions:\n" + instrInfo);
     }
   }
 

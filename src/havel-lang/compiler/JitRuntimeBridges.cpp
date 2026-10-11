@@ -121,11 +121,18 @@ uint64_t havel_vm_load_exception(void* vm_ptr) {
 }
 
 void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
+    // Marking write barrier, mirroring the interpreter's store sites
+    // (VMDispatch.cpp: heap_.writeBarrier(Value::makeNull(), value)).
+    // No-ops while incremental GC is idle; during marking it keeps the
+    // stored value live. The old body pinned every stored value as an
+    // external root and never unpinned it, which leaked one registry
+    // entry per store through tiered code (149k pins over one parse,
+    // each scanned by every subsequent collection).
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
     ::havel::core::Value val;
     std::memcpy(&val, &new_value_bits, sizeof(uint64_t));
-    vm->pinExternalRoot(val);
+    vm->getHeap().writeBarrierPublic(Value::makeNull(), val);
 }
 
 
@@ -270,6 +277,32 @@ uint64_t havel_vm_is(uint64_t l, uint64_t r) {
 
 uint64_t havel_vm_not(uint64_t v) {
     return Value::makeBool(!valueIsTruthy(v)).rawBits();
+}
+
+uint64_t havel_vm_negate(void* vm_ptr, uint64_t val_bits) {
+  // Unary minus (Phase C: NEGATE gates the parser's emitExpr/inferExpr).
+  // Stage the operand on the VM stack and run the interpreter's own
+  // execNegate, so int/double/op_negate semantics stay single-sourced.
+  // A throw (non-numeric without op_negate) surfaces to the caller like
+  // any other bridge throw; the null-vm harness path handles ints only.
+  if (!vm_ptr) {
+    Value v;
+    std::memcpy(&v, &val_bits, sizeof(uint64_t));
+    if (v.isInt()) return Value(-v.asInt()).rawBits();
+    return Value::makeNull().rawBits();
+  }
+  auto* vm = static_cast<VM*>(vm_ptr);
+  const size_t depth_before = vm->stackDepthPublic();
+  vm->pushStackPublic(Value::fromRawBits(val_bits));
+  try {
+    vm->execNegatePublic();
+    Value result = vm->popStackPublic();
+    vm->truncateStackPublic(depth_before);
+    return result.rawBits();
+  } catch (...) {
+    vm->truncateStackPublic(depth_before);
+    throw;
+  }
 }
 
 uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {

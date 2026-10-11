@@ -185,6 +185,75 @@ is exactly what the architecture plan predicted: extend the lowering
 subset to cover the parser's hot op shapes so tier-1 can compile them,
 not rewrite the parser.
 
+## Phase C: lowering the parser's blocker opcodes (2026-10-11)
+
+Extended the tier-1 (Cranelift) lowering subset with the four opcodes
+the refusal histogram showed blocking the parser's hot functions
+(10 refusals -> 0; every refusal name - parseStatement, parseExpr,
+parseBlock, nud, led, inferStmt, inferExpr, emitExpr, ... - now tiers):
+
+- **DIV/MOD** route through the generic `havel_vm_binop(vm, op, l, r)`
+  bridge; the adapter carries the C++ OpCode in the instruction operand
+  (16/20), so the Rust lowering embeds no enum values (hclb ops 61/62).
+- **NEGATE** gets a unary `havel_vm_negate(vm, v)` bridge that stages the
+  operand and runs the interpreter's own `execNegate` (single-sourced
+  semantics: int/double/op_negate).
+- **TAIL_CALL** lowers as call-then-return: stage [callee, args...] like
+  CALL, return the bridge's result. No native frame reuse - interpreter
+  TCO semantics stay with the interpreter's own TAIL_CALL arm.
+
+Parity verified end to end (interp vs --tiering, identical results):
+int/float division (`/` is float division - 7/2 == 3.5), mod sign
+semantics, double negation, tail-call recursion depth 20k, mixed
+arith loops. Rust side: 34 cargo tests (4 new, one per opcode shape,
+operand-forwarding disambiguated - MOD uses 40/6 so a mis-carried DIV
+opcode cannot pass). C++ side: proto driver now asserts SET-lowering
+refusal on STORE_IMMUT_VAR (MOD was the old refusal case) plus MOD
+can_lower/compile acceptance.
+
+### The write-barrier root leak (found via this work)
+
+Tiering the parser made the self-hosted parse *slower* in CPU time
+(pre-fix: tiered {147, 130, 148, 168}s vs interp {136, 129, 133}s) and
+left `149019 external roots still pinned at VM shutdown` in every
+tiered run (interp: none). Root cause: `havel_gc_write_barrier` -
+emitted at every OBJECT_SET/ARRAY_SET/global store in tier-1 code -
+pinned the stored value via `pinExternalRoot` and nothing ever
+unpinned it. The parser builds its AST through OBJECT_SET, so tiering
+it converted every AST field store into a permanent root: 149k registry
+entries, all scanned by every subsequent GC collection, cost growing
+with GC timing - which is why tiered CPU time was both higher AND
+wildly variable.
+
+Fix: the bridge now mirrors the interpreter's store-site barrier
+exactly (`heap_.writeBarrierPublic(makeNull(), value)` - a marking
+no-op while incremental GC is idle, via a new public GCHeap forwarder).
+Post-fix tiered runs pin zero external roots. Regression smoke:
+`scripts/smoke/test_issue_cranelift_write_barrier_store.hv` (30k
+objects stored from tiered code under allocation pressure, all
+values read back and asserted).
+
+### Post-fix measurement state: within machine noise
+
+Post-fix wl200 CPU-time pairs: interp {141, 157} vs tiered {131, 176};
+wl40 medians interp 45.9 vs tiered 49.0. Every cluster overlaps in both
+directions - on this shared 4-core box (loadavg 7-35 across the runs,
+sibling full builds running), run-to-run CPU-time spread is +-8-17%,
+larger than any tier1-vs-interp delta measurable right now. What IS
+deterministic: the leak is gone (0 external roots vs 149k), parity
+holds, and the pre-fix tiered-overhead component it explains is
+eliminated. A clean quiet-machine pass over the paired rusage harness
+(`scripts/benchmarks/rusage_run.py`, workload regenerable via
+`scripts/benchmarks/gen_parse_workload.py`) is the way to get the final
+Phase C number.
+
+Measurement note: CPU time (rusage), not wall time, is the honest
+metric here - wall time is scheduler noise at these loads. But CPU
+time also inflates ~1.5-2x when the box is cache/SMT-thrashing (one
+interp run measured 288s CPU in a thrash window vs its own 131-157s
+cluster), so pairs must come from the same load window.
+
+
 Bug found and fixed on the way (see the next commit): the interpreter's
 instruction count is a ~60x undercount for parse-shaped code -
 `recordInstructions(8192)` exists in only 19 of the 48 computed-goto

@@ -1828,6 +1828,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     size_t getHostArrayLength(ArrayRef array_ref);
     Value execLengthOp(Value v);
  Value execLengthOpPublic(Value v) { return execLengthOp(v); }
+  void execNegatePublic() { execNegate(); }
   Value getHostArrayValue(ArrayRef array_ref, size_t index);
   void setHostArrayValue(ArrayRef array_ref, size_t index, Value value);
     Value popHostArrayValue(ArrayRef array_ref);

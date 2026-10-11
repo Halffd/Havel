@@ -424,11 +424,38 @@ STOP
 redirect to havel equivalent in modules/lang
 fix it there instead
 
-## IO and UI
-NEVER run hotkey scripts, IO Scripts or scripts with event loops/UI or servers/sockets they will hang for user input or listen
-Instead:
-- Make a deticated test for the feature/bug in hvtest or a scripts/tests
-- Mock if it needs real user input, but NEVER stub it or make a fake test
+## IO, UI, and Event-Loop Testing
+
+### General rules
+
+* NEVER run user-facing hotkey scripts, interactive IO scripts, persistent event loops, UI applications, or servers/sockets directly as tests if they can block waiting for user input or remain running indefinitely.
+* Before testing, inspect the entry point and determine whether the process is interactive, persistent, or capable of affecting real user input, audio, displays, or other devices.
+* Prefer a dedicated, reproducible test in `hvtest` or `scripts/tests` that exercises the actual feature under test.
+* Tests MUST have explicit timeouts, bounded waits, and cleanup for child processes and temporary resources.
+* Do not start duplicate builds, test processes, or background jobs while an earlier equivalent job is still running.
+* Do not treat successful compilation, process startup, mocked return values, or the existence of output files as proof that the feature works.
+
+### Test fidelity
+
+* Exercise real implementation logic wherever practical.
+* Use mocks or controlled input injection only for external dependencies that cannot safely or reliably be exercised in the test environment.
+* Do not replace the behavior being tested with a fake implementation or write tests that pass without exercising the relevant production code.
+* Clearly distinguish unit tests, integration tests, and environment-dependent tests.
+
+### VM and desktop integration
+
+* If running inside a VM, first verify that it is isolated and identify the available virtual hardware and input/display interfaces, such as virtio, virtual video, shared folders, and input devices.
+* Use isolated virtual input injection, such as `uinput` or X11 automation, only when supported and safe. Do not inject input into the host or an unrelated user session.
+* If Xorg is unavailable, start a minimal isolated X session only when required and feasible.
+* If Wayland is active, use compatible automation and accessibility interfaces; do not assume X11 automation will control native Wayland windows.
+* For UI tests, capture screenshots when useful and verify expected text, visual regions, and interaction outcomes. Use accessibility/UI inspection or pixel checks when appropriate.
+* Do not claim visual or interactive correctness based on a screenshot alone.
+
+### Reporting
+
+* Report the exact test commands, exit status, timeout status, and relevant failures.
+* Identify tests that could not run because of missing display, input, permissions, VM support, or other environmental constraints.
+* Clean up only processes and resources created by the test. Never terminate unrelated user processes or modify user configuration without authorization.
 
 ## Script execution pipeline
 Default parse/compile path is the C++ pipeline in `src/havel-lang/` (Lexer.cpp -> Parser.cpp -> ByteCompiler.cpp). For anything in those files: do the change there, don't redirect to modules/lang.
@@ -1078,57 +1105,50 @@ Only produce a completion conclusion after the completion gate has been satisfie
 
 If the evidence does not establish completion, continue investigating or report exactly what remains unverified.
 
-<!-- BEGIN opencode-rag -->
-## Code Navigation
+## Build and command execution policy
 
-ALWAYS use OpenCodeRAG tools before reading or editing:
-- **Search first** — `search_semantic(query)` instead of grep/glob
-- **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
-- **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
-- **Recall quirks** — `recall_quirks(query)` when you hit a known pitfall
-- **Add quirks** — `add_quirk(content)` when you discover a non-obvious fact
-- **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
+* Run builds, tests, and other long-running commands in the foreground whenever possible.
+* Never background a build using `&`, `nohup`, `setsid`, or similar mechanisms unless explicitly requested.
+* Never start duplicate builds while an earlier build is still running.
+* Do not repeatedly poll commands using `sleep` loops. Prefer waiting for the original command to return its exit status.
+* Do not use repeated sleep-and-grep cycles to monitor build progress.
+* For commands that exceed the available foreground timeout, use a persistent terminal or a supported wait mechanism rather than launching another build.
+* Report the actual exit status and relevant final output. Do not claim success merely because an executable exists.
+* Preserve existing build processes and artifacts unless explicitly instructed to terminate or clean them.
 
-If no results, run `opencode-rag index`.
+## Multi-agent coordination
 
-### Decision tree — ALWAYS follow this order
-1. User mentions code behavior/architecture → `search_semantic(query)`
-2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
-3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`
-4. User asks a code question → `search_semantic` to gather context before answering
-5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code
-6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`
-7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions
-8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies
+Multiple OpenCode sessions may work on this repository in separate Git worktrees.
 
-### Proactive triggers — you MUST call these tools when
-- User asks about code behavior, architecture, or implementation details
-- User asks to edit, refactor, or fix code — call `find_usages` first
-- User references files or functions you haven't read yet
-- User says "find", "search", "look up", "where is", "how does"
-- User refers to an image, screenshot, diagram, or visual asset
-- Before answering ANY code-related question, retrieve context first
-- Before reading ANY file, call `get_file_skeleton` to orient first
+- Read the shared coordination state at session start before choosing or modifying a task.
+- Check for relevant new messages before making changes that could conflict with another agent's work.
+- Before editing shared interfaces, build configuration, public APIs, or files owned by another task, communicate with the affected agent.
+- Record discoveries that materially affect other agents, including root causes, failed approaches, changed assumptions, and breaking changes.
+- Maintain task ownership and status. Do not independently implement a task already owned by another agent unless explicitly coordinating with its owner.
+- Send concise handoffs containing the outcome, relevant files, commit hash when applicable, test results, and remaining work.
+- Append messages; do not rewrite or truncate the shared message history.
+- Use unique message IDs and safe concurrent writes. Do not assume a multi-line append is atomic.
+- Do not use repeated sleep loops to poll for messages. Check at defined workflow milestones or use an actual notification mechanism.
+- Never assume that a change in one worktree is visible in another. Identify the relevant commit and coordinate integration explicitly.
+- Keep messages concise and actionable. Do not dump full logs or entire conversations into shared state.
+- Location: /tmp/opencode/shared-coordination
 
-### Anti-patterns — NEVER do these
-- Reading full files without calling `get_file_skeleton` first (wastes tokens)
-- Editing a function without calling `find_usages` first (breaks call sites)
-- Answering code questions without calling `search_semantic` first (you guess at behavior)
-- Using `grep`/`glob` when `search_semantic` would find the answer faster
-- Treating image files as text — use `describe_image` instead of reading raw bytes
-- Using `npx opencode-rag quirk` shell commands instead of the built-in quirk tools (`add_quirk` / `recall_quirks` / `update_quirk` / `delete_quirk`) (the tools are faster, already loaded in-process, and go through the trust monitor)
+### Scratch markdown
 
-### MANDATORY quirk capture rules — you MUST call `add_quirk` when
-- A build, test, or type-check command fails and you resolve it
-- You discover an undocumented library constraint, peer dep, or workaround
-- You learn an environment-specific requirement (OS, tool version, etc.)
-- You make a design decision that future sessions should remember
-- You resolve a gotcha that cost more than one attempt
+- Agent scratch notes live under /tmp (e.g. /tmp/opencode/notes/ or a session
+  worktree's /tmp/opencode/). Scratch is never committed and never merged.
+- Promote to docs/ only when the notes are worth keeping: a verified root cause,
+  an API decision, a migration guide — not transcripts of what was tried.
+- Promote by writing a new doc, not copying the scratch file. Link the original
+  in the commit message, not the doc body.
+- Delete scratch when the task ends.
 
-### MANDATORY quirk hygiene — you MUST call `update_quirk` or `delete_quirk` when
-- A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
-- NEVER finish a coding session without adding quirks for resolved errors.
-<!-- END opencode-rag -->
+### Merging across worktrees
 
-# Never run any script in scripts/tests/io or brightness scripts touching real hardware
+- Before merging a worktree's branch into main, broadcast a short merge proposal
+  (`agent broadcast "PROPOSE <branch>" "<files touched, reason>"`).
+- Wait for any objection before merging. An objection is a message containing
+  "BLOCK <branch>" with a reason. No objection in your own unread inbox -> merge.
+- After merging, handoff with `agent handoff <merge-task> "merged <branch>" --commit <hash>`.
+- Cherry-pick rules: cherry-picking into another worktree is merging small. Same
+  broadcast rule applies.

@@ -445,7 +445,19 @@ scheduler = &compiler::Scheduler::instance();
     if (WindowManagerDetector::IsX11()) {
         Display *display = DisplayManager::GetDisplay();
         if (!display) {
-            throw std::runtime_error("Failed to open X11 display");
+            // The session declares X11 but the server is unreachable (stale
+            // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
+            // Throwing here killed REPL, script+repl and the daemon outright
+            // — while the Wayland-session path (IsX11() false) already runs
+            // full initialization with a null display as a supported state.
+            // Degrade the same way: X11-bound features (window management,
+            // X11 hotkey grabs, brightness) fail at their use sites; evdev
+            // input and everything display-independent keep working.
+            const char *declared = std::getenv("DISPLAY");
+            warning("X11 display '{}' is unreachable — continuing without "
+                    "X11 (window management and X11 hotkey grabs disabled; "
+                    "unset DISPLAY or start Xorg to enable them)",
+                    declared ? declared : ":0");
         }
     }
     // Guard with the live singleton: main() runs runExitCleanups() after the

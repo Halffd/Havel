@@ -1,0 +1,75 @@
+// smoke: kymap-key-table = 3
+//
+// Regression test for the key table now living in modules/app/kymap.hv
+// (converted out of src/core/io/KeyMap.cpp). Fails if the table loses keys,
+// aliases stop resolving to their primary's codes, or the reverse lookups drift.
+//
+// Pure data: touches no hardware, no IO, no display. Safe for the smoke gate.
+
+use kymap
+
+fn _has(list, want) {
+  _i = 0
+  _len = #list
+  while _i < _len {
+    if list[_i] == want { return true }
+    _i = _i + 1
+  }
+  false
+}
+
+fn _fail(msg) {
+  print("FAIL kymap: " + msg)
+  process.exit(255)
+}
+
+// --- counts -------------------------------------------------------------
+// 325 = 262 primary keys + 63 aliases registered as names.
+// 262  = rows in the key table itself (keys only).
+if kymap.keyCount() != 325 { _fail("keyCount expected 325, got " + str(kymap.keyCount())) }
+if #kymap.allEntries() != 262 { _fail("allEntries expected 262, got " + str(#kymap.allEntries())) }
+
+// --- codes, taken from the real system headers -------------------------
+//       name      evdev  x11keysym  winVK
+_codes = [
+  ["a", 30, 97, 65],
+  ["esc", 1, 65307, 27],
+  ["f1", 59, 65470, 112],
+  ["volumeup", 115, 269025043, 175],
+  ["lbutton", 272, 1, 0],
+  ["b", 48, 98, 66],
+]
+for _row in _codes {
+  _n = _row[0]
+  if kymap.fromString(_n) != _row[1] { _fail("evdev " + _n + " expected " + str(_row[1]) + ", got " + str(kymap.fromString(_n))) }
+  if kymap.toX11(_n) != _row[2] { _fail("x11 " + _n + " expected " + str(_row[2]) + ", got " + str(kymap.toX11(_n))) }
+  if kymap.toWindows(_n) != _row[3] { _fail("win " + _n + " expected " + str(_row[3]) + ", got " + str(kymap.toWindows(_n))) }
+}
+
+// --- aliases resolve to their primary's codes --------------------------
+if kymap.fromString("escape") != kymap.fromString("esc") { _fail("alias escape != esc") }
+if kymap.fromString("numpadplus") != kymap.fromString("numpadadd") { _fail("alias numpadplus != numpadadd") }
+if kymap.fromString("pagedown") != kymap.fromString("pgdn") { _fail("alias pagedown != pgdn") }
+
+// --- alias is listed on the primary ------------------------------------
+if !_has(kymap.getAliases("esc"), "escape") { _fail("getAliases(esc) missing escape") }
+if !_has(kymap.getAliases("win"), "super") { _fail("getAliases(win) missing super") }
+
+// --- reverse lookups ----------------------------------------------------
+if kymap.evdevToString(30) != "a" { _fail("evdevToString(30) != a") }
+if kymap.x11ToString(97) != "a" { _fail("x11ToString(97) != a") }
+if kymap.windowsToString(65) != "a" { _fail("windowsToString(65) != a") }
+
+// --- predicates (values mirror KeyMap::IsModifier / IsMouseButton) ------
+if !kymap.isModifier(29) { _fail("isModifier(29) should be true") }
+if !kymap.isModifier(54) { _fail("isModifier(54) rightshift should be true") }
+if kymap.isModifier(30) { _fail("isModifier(30) should be false") }
+if !kymap.isMouseButton(272) { _fail("isMouseButton(272) should be true") }
+if !kymap.isJoystickButton(288) { _fail("isJoystickButton(288) should be true") }
+
+// --- unknown names are empty, never null and never a stray code --------
+if kymap.fromString("definitely_not_a_key") != 0 { _fail("unknown name should be 0") }
+if kymap.evdevToString(999999) != "" { _fail("unknown evdev should be empty string") }
+if kymap.getAliases("definitely_not_a_key").len != 0 { _fail("unknown name aliases should be empty") }
+
+return 3

@@ -24,6 +24,7 @@
 #endif
 #include "../stdlib/BytecodeBuilderModule.hpp"
 #include "../../host/ServiceRegistry.hpp"
+#include "../../core/io/KeyMapModule.hpp"
 #include "../../core/util/Env.hpp"
 #include "../../utils/InstallPaths.hpp"
 #include "../runtime/concurrency/WatcherRegistry.hpp"
@@ -281,6 +282,13 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             !leanStartup);
         havel::startup_timing_report("modules-install", t);
         t = havel::startup_now();
+
+        // The key table lives in modules/app/kymap.hv. Load it now: the VM is
+        // built, modules are installed, and we are still on the startup thread,
+        // so the rows can be snapshotted into plain C++ maps. Later lookups
+        // (KeyMap::EvdevToString runs on the IO event thread) are then lock-free
+        // reads that never touch the VM.
+        havel::loadKeyMapFromHavelModule(*vm_);
 
         // NOTE: Modules::install() already flushes options_.host_functions
         // onto the same VM (hostContext_->vm === vm_) before returning, so

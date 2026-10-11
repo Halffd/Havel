@@ -1,0 +1,513 @@
+// kymap.hv — key table and alias bindings.
+// Generated from src/core/io/KeyMap.cpp. Single source of truth for
+// evdev / X11 / Windows key codes and their aliases. The C++ KeyMap
+// loader consumes this module via the host bridge.
+//
+// Each entry is [name, evdev, x11keysym, windowsVK]. A code of 0 means
+// the key has no mapping on that platform.
+
+_KEY_TABLE = [
+  ["a", 30, 97, 65],
+  ["b", 48, 98, 66],
+  ["c", 46, 99, 67],
+  ["d", 32, 100, 68],
+  ["e", 18, 101, 69],
+  ["f", 33, 102, 70],
+  ["g", 34, 103, 71],
+  ["h", 35, 104, 72],
+  ["i", 23, 105, 73],
+  ["j", 36, 106, 74],
+  ["k", 37, 107, 75],
+  ["l", 38, 108, 76],
+  ["m", 50, 109, 77],
+  ["n", 49, 110, 78],
+  ["o", 24, 111, 79],
+  ["p", 25, 112, 80],
+  ["q", 16, 113, 81],
+  ["r", 19, 114, 82],
+  ["s", 31, 115, 83],
+  ["t", 20, 116, 84],
+  ["u", 22, 117, 85],
+  ["v", 47, 118, 86],
+  ["w", 17, 119, 87],
+  ["x", 45, 120, 88],
+  ["y", 21, 121, 89],
+  ["z", 44, 122, 90],
+  ["0", 11, 48, 48],
+  ["1", 2, 49, 49],
+  ["2", 3, 50, 50],
+  ["3", 4, 51, 51],
+  ["4", 5, 52, 52],
+  ["5", 6, 53, 53],
+  ["6", 7, 54, 54],
+  ["7", 8, 55, 55],
+  ["8", 9, 56, 56],
+  ["9", 10, 57, 57],
+  ["esc", 1, 65307, 27],
+  ["enter", 28, 65293, 13],
+  ["space", 57, 32, 32],
+  ["tab", 15, 65289, 9],
+  ["backspace", 14, 65288, 8],
+  ["delete", 111, 65535, 46],
+  ["ctrl", 29, 65507, 17],
+  ["lctrl", 29, 65507, 162],
+  ["rctrl", 97, 65508, 163],
+  ["shift", 42, 65505, 16],
+  ["lshift", 42, 65505, 160],
+  ["rshift", 54, 65506, 161],
+  ["alt", 56, 65513, 18],
+  ["lalt", 56, 65513, 164],
+  ["ralt", 100, 65514, 165],
+  ["win", 125, 65515, 91],
+  ["rwin", 126, 65516, 92],
+  ["home", 102, 65360, 36],
+  ["end", 107, 65367, 35],
+  ["pgup", 104, 65365, 33],
+  ["pgdn", 109, 65366, 34],
+  ["insert", 110, 65379, 45],
+  ["left", 105, 65361, 37],
+  ["right", 106, 65363, 39],
+  ["up", 103, 65362, 38],
+  ["down", 108, 65364, 40],
+  ["capslock", 58, 65509, 20],
+  ["numlock", 69, 65407, 144],
+  ["scrolllock", 70, 65300, 145],
+  ["f1", 59, 65470, 112],
+  ["f2", 60, 65471, 113],
+  ["f3", 61, 65472, 114],
+  ["f4", 62, 65473, 115],
+  ["f5", 63, 65474, 116],
+  ["f6", 64, 65475, 117],
+  ["f7", 65, 65476, 118],
+  ["f8", 66, 65477, 119],
+  ["f9", 67, 65478, 120],
+  ["f10", 68, 65479, 121],
+  ["f11", 87, 65480, 122],
+  ["f12", 88, 65481, 123],
+  ["f13", 183, 65482, 124],
+  ["f14", 184, 65483, 125],
+  ["f15", 185, 65484, 126],
+  ["f16", 186, 65485, 127],
+  ["f17", 187, 65486, 128],
+  ["f18", 188, 65487, 129],
+  ["f19", 189, 65488, 130],
+  ["f20", 190, 65489, 131],
+  ["f21", 191, 65490, 132],
+  ["f22", 192, 65491, 133],
+  ["f23", 193, 65492, 134],
+  ["f24", 194, 65493, 135],
+  ["numpad0", 82, 65456, 96],
+  ["numpad1", 79, 65457, 97],
+  ["numpad2", 80, 65458, 98],
+  ["numpad3", 81, 65459, 99],
+  ["numpad4", 75, 65460, 100],
+  ["numpad5", 76, 65461, 101],
+  ["numpad6", 77, 65462, 102],
+  ["numpad7", 71, 65463, 103],
+  ["numpad8", 72, 65464, 104],
+  ["numpad9", 73, 65465, 105],
+  ["numpadadd", 78, 65451, 107],
+  ["numpadsub", 74, 65453, 109],
+  ["numpadmul", 55, 65450, 106],
+  ["numpaddiv", 98, 65455, 111],
+  ["numpaddec", 83, 65454, 110],
+  ["numpadenter", 96, 65421, 13],
+  ["numpadequal", 117, 65469, 0],
+  ["numpadcomma", 121, 65452, 108],
+  ["numpadleftparen", 179, 0, 0],
+  ["numpadrightparen", 180, 0, 0],
+  ["minus", 12, 45, 189],
+  ["equal", 13, 61, 187],
+  ["leftbrace", 26, 91, 219],
+  ["rightbrace", 27, 93, 221],
+  ["semicolon", 39, 59, 186],
+  ["apostrophe", 40, 39, 222],
+  ["grave", 41, 96, 192],
+  ["backslash", 43, 92, 220],
+  ["comma", 51, 44, 188],
+  ["dot", 52, 46, 190],
+  ["slash", 53, 47, 191],
+  ["less", 86, 0, 226],
+  ["playpause", 164, 269025044, 179],
+  ["play", 207, 269025044, 250],
+  ["pause", 119, 65299, 19],
+  ["stop", 128, 0, 0],
+  ["stopcd", 166, 269025045, 178],
+  ["record", 167, 269025052, 0],
+  ["rewind", 168, 0, 0],
+  ["fastforward", 208, 0, 0],
+  ["ejectcd", 161, 269025068, 0],
+  ["nextsong", 163, 269025047, 176],
+  ["previoussong", 165, 269025046, 177],
+  ["volumeup", 115, 269025043, 175],
+  ["volumedown", 114, 269025041, 174],
+  ["mute", 113, 269025042, 173],
+  ["micmute", 248, 269025202, 0],
+  ["homepage", 172, 269025048, 172],
+  ["back", 158, 269025062, 166],
+  ["forward", 159, 269025063, 167],
+  ["search", 217, 269025051, 170],
+  ["bookmarks", 156, 269025072, 171],
+  ["refresh", 173, 269025065, 168],
+  ["stopbrowser", 128, 269025064, 169],
+  ["favorites", 364, 269025072, 171],
+  ["mail", 155, 269025049, 180],
+  ["calc", 140, 269025053, 183],
+  ["computer", 157, 269025075, 0],
+  ["media", 226, 0, 181],
+  ["www", 150, 269025070, 0],
+  ["finance", 219, 269025084, 0],
+  ["shop", 221, 269025078, 0],
+  ["coffee", 152, 0, 0],
+  ["chat", 216, 0, 0],
+  ["messenger", 430, 269025166, 0],
+  ["calendar", 397, 0, 0],
+  ["power", 116, 269025066, 0],
+  ["sleep", 142, 269025071, 95],
+  ["wakeup", 143, 269025067, 0],
+  ["suspend", 205, 0, 0],
+  ["brightnessup", 225, 269025026, 0],
+  ["brightnessdown", 224, 269025027, 0],
+  ["brightness", 244, 0, 0],
+  ["displayoff", 245, 0, 0],
+  ["switchvideomode", 227, 0, 0],
+  ["kbdillumup", 230, 269025029, 0],
+  ["kbdillumdown", 229, 269025030, 0],
+  ["kbdillumtoggle", 228, 0, 0],
+  ["wlan", 238, 269025173, 0],
+  ["bluetooth", 237, 269025172, 0],
+  ["rfkill", 247, 0, 0],
+  ["battery", 236, 269025171, 0],
+  ["zoomin", 418, 269025163, 0],
+  ["zoomout", 419, 269025164, 0],
+  ["zoomreset", 420, 0, 0],
+  ["cyclewindows", 154, 0, 0],
+  ["scale", 120, 0, 0],
+  ["dashboard", 204, 0, 0],
+  ["file", 144, 269025115, 0],
+  ["open", 134, 269025131, 0],
+  ["close", 206, 269025110, 0],
+  ["save", 234, 269025143, 0],
+  ["print", 210, 65377, 42],
+  ["cut", 137, 0, 0],
+  ["copy", 133, 269025111, 0],
+  ["paste", 135, 269025133, 0],
+  ["find", 136, 0, 0],
+  ["undo", 131, 0, 0],
+  ["redo", 182, 0, 0],
+  ["again", 129, 0, 0],
+  ["props", 130, 0, 0],
+  ["front", 132, 0, 0],
+  ["help", 138, 65386, 47],
+  ["menu", 139, 65383, 93],
+  ["select", 353, 0, 41],
+  ["cancel", 223, 0, 3],
+  ["ro", 89, 0, 0],
+  ["katakanahiragana", 93, 0, 0],
+  ["yen", 124, 0, 0],
+  ["henkan", 92, 0, 0],
+  ["muhenkan", 94, 0, 0],
+  ["kpjpcomma", 95, 0, 0],
+  ["hangeul", 122, 0, 0],
+  ["hanja", 123, 0, 0],
+  ["katakana", 90, 0, 0],
+  ["hiragana", 91, 0, 0],
+  ["zenkakuhankaku", 85, 0, 0],
+  ["sysrq", 99, 65301, 0],
+  ["printscreen", 99, 65377, 44],
+  ["pausebreak", 119, 65299, 19],
+  ["scrollup", 177, 0, 0],
+  ["scrolldown", 178, 0, 0],
+  ["prog1", 148, 0, 0],
+  ["prog2", 149, 0, 0],
+  ["prog3", 202, 0, 0],
+  ["prog4", 203, 0, 0],
+  ["macro", 112, 0, 0],
+  ["fn", 464, 0, 0],
+  ["fnesc", 465, 0, 0],
+  ["lbutton", 272, 1, 0],
+  ["rbutton", 273, 3, 0],
+  ["mbutton", 274, 2, 0],
+  ["xbutton1", 275, 4, 0],
+  ["xbutton2", 276, 5, 0],
+  ["xbutton3", 277, 7, 0],
+  ["xbutton4", 278, 6, 0],
+  ["wheelup", 0, 4, 0],
+  ["wheeldown", 0, 5, 0],
+  ["mouseleft", 10001, 0, 0],
+  ["mouseright", 10002, 0, 0],
+  ["mouseup", 10003, 0, 0],
+  ["mousedown", 10004, 0, 0],
+  ["joya", 304, 0, 0],
+  ["joyb", 305, 0, 0],
+  ["joyx", 308, 0, 0],
+  ["joyy", 307, 0, 0],
+  ["joylb", 310, 0, 0],
+  ["joyrb", 311, 0, 0],
+  ["joylt", 312, 0, 0],
+  ["joyrt", 313, 0, 0],
+  ["joyback", 314, 0, 0],
+  ["joystart", 315, 0, 0],
+  ["joyguide", 316, 0, 0],
+  ["joylstick", 317, 0, 0],
+  ["joyrstick", 318, 0, 0],
+  ["joydpadup", 544, 0, 0],
+  ["joydpaddown", 545, 0, 0],
+  ["joydpadleft", 546, 0, 0],
+  ["joydpadright", 547, 0, 0],
+  ["reserved", 0, 0, 0],
+  ["unknown", 240, 0, 0],
+  ["fnf1", 466, 0, 0],
+  ["fnf2", 467, 0, 0],
+  ["fnf3", 468, 0, 0],
+  ["fnf4", 469, 0, 0],
+  ["fnf5", 470, 0, 0],
+  ["fnf6", 471, 0, 0],
+  ["fnf7", 472, 0, 0],
+  ["fnf8", 473, 0, 0],
+  ["fnf9", 474, 0, 0],
+  ["fnf10", 475, 0, 0],
+  ["fnf11", 476, 0, 0],
+  ["fnf12", 477, 0, 0],
+]
+
+// Aliases map an alternate name to a primary name already present in
+// _KEY_TABLE. Each entry is [alias, primary].
+_ALIAS_TABLE = [
+  ["escape", "esc"],
+  ["return", "enter"],
+  ["meta", "win"],
+  ["lwin", "win"],
+  ["lmeta", "win"],
+  ["super", "win"],
+  ["rmeta", "rwin"],
+  ["pageup", "pgup"],
+  ["pagedown", "pgdn"],
+  ["numpadplus", "numpadadd"],
+  ["numpadminus", "numpadsub"],
+  ["numpadmult", "numpadmul"],
+  ["numpadasterisk", "numpadmul"],
+  ["numpaddot", "numpaddec"],
+  ["numpaddel", "numpaddec"],
+  ["numpadperiod", "numpaddec"],
+  ["numpaddelete", "numpaddec"],
+  ["numpaddecimal", "numpaddec"],
+  ["-", "minus"],
+  ["equals", "equal"],
+  ["=", "equal"],
+  ["[", "leftbrace"],
+  ["]", "rightbrace"],
+  [";", "semicolon"],
+  ["'", "apostrophe"],
+  ["`", "grave"],
+  ["\\", "backslash"],
+  [",", "comma"],
+  ["period", "dot"],
+  [".", "dot"],
+  ["/", "slash"],
+  ["<", "less"],
+  ["102nd", "less"],
+  ["iso", "less"],
+  ["mediaplay", "playpause"],
+  ["mediastop", "stopcd"],
+  ["mediarecord", "record"],
+  ["mediarewind", "rewind"],
+  ["mediaforward", "fastforward"],
+  ["eject", "ejectcd"],
+  ["mediaeject", "ejectcd"],
+  ["next", "nextsong"],
+  ["medianext", "nextsong"],
+  ["prev", "previoussong"],
+  ["previous", "previoussong"],
+  ["mediaprev", "previoussong"],
+  ["volumemute", "mute"],
+  ["Browser_Home", "homepage"],
+  ["Browser_Back", "back"],
+  ["Browser_Forward", "forward"],
+  ["calculator", "calc"],
+  ["brightnessauto", "brightness"],
+  ["wifi", "wlan"],
+  ["apps", "menu"],
+  ["print", "printscreen"],
+  ["pause", "pausebreak"],
+  ["side1", "xbutton1"],
+  ["side2", "xbutton2"],
+  ["side3", "xbutton3"],
+  ["buttonforward", "xbutton3"],
+  ["mouse5", "xbutton3"],
+  ["side4", "xbutton4"],
+  ["mouse4", "xbutton4"],
+  ["button4", "xbutton4"],
+  ["scrollup", "wheelup"],
+  ["scrolldown", "wheeldown"],
+  ["nosymbol", "unknown"],
+]
+
+_name_to_key = {}
+_evdev_to_name = {}
+_x11_to_name = {}
+_win_to_name = {}
+
+fn _addKey(name, evdev, x11, win) {
+  _name_to_key[name] = {evdev: evdev, x11: x11, win: win, aliases: []}
+  if evdev != 0 { _evdev_to_name[evdev] = name }
+  if x11 != 0 { _x11_to_name[x11] = name }
+  if win != 0 { _win_to_name[win] = name }
+}
+
+fn _addAlias(alias, primary) {
+  _entry = _name_to_key[primary]
+  if _entry == null { return }
+  _entry.aliases.push(alias)
+  // Mirrors the C++ struct copy: the alias entry carries the primary's codes
+  // and a snapshot of its alias list taken at this point.
+  _name_to_key[alias] = {
+    evdev: _entry.evdev,
+    x11: _entry.x11,
+    win: _entry.win,
+    aliases: _entry.aliases.copy(),
+  }
+}
+
+fn _init() {
+  _i = 0
+  _len = #_KEY_TABLE
+  while _i < _len {
+    _row = _KEY_TABLE[_i]
+    _addKey(_row[0], _row[1], _row[2], _row[3])
+    _i = _i + 1
+  }
+  _i = 0
+  _len = #_ALIAS_TABLE
+  while _i < _len {
+    _row = _ALIAS_TABLE[_i]
+    _addAlias(_row[0], _row[1])
+    _i = _i + 1
+  }
+}
+
+_init()
+
+fn fromString(name) {
+  _e = _name_to_key[name]
+  if _e == null { return 0 }
+  _e.evdev
+}
+
+fn toX11(name) {
+  _e = _name_to_key[name]
+  if _e == null { return 0 }
+  _e.x11
+}
+
+fn toWindows(name) {
+  _e = _name_to_key[name]
+  if _e == null { return 0 }
+  _e.win
+}
+
+fn evdevToString(code) {
+  _n = _evdev_to_name[code]
+  if _n == null { return "" }
+  _n
+}
+
+fn x11ToString(keysym) {
+  _n = _x11_to_name[keysym]
+  if _n == null { return "" }
+  _n
+}
+
+fn windowsToString(vk) {
+  _n = _win_to_name[vk]
+  if _n == null { return "" }
+  _n
+}
+
+fn evdevToX11(evdev) {
+  _n = _evdev_to_name[evdev]
+  if _n == null { return 0 }
+  toX11(_n)
+}
+
+fn x11ToEvdev(keysym) {
+  _n = _x11_to_name[keysym]
+  if _n == null { return 0 }
+  fromString(_n)
+}
+
+fn evdevToWindows(evdev) {
+  _n = _evdev_to_name[evdev]
+  if _n == null { return 0 }
+  toWindows(_n)
+}
+
+fn windowsToEvdev(vk) {
+  _n = _win_to_name[vk]
+  if _n == null { return 0 }
+  fromString(_n)
+}
+
+fn getAliases(name) {
+  _e = _name_to_key[name]
+  if _e == null { return [] }
+  _e.aliases
+}
+
+fn keyNames() {
+  _out = []
+  _i = 0
+  _len = #_KEY_TABLE
+  while _i < _len {
+    _out.push(_KEY_TABLE[_i][0])
+    _i = _i + 1
+  }
+  _out
+}
+
+fn keyCount() {
+  #_name_to_key
+}
+
+// Bulk export for the C++ loader: rows of [name, evdev, x11, win, aliases].
+fn allEntries() {
+  _out = []
+  _i = 0
+  _len = #_KEY_TABLE
+  while _i < _len {
+    _name = _KEY_TABLE[_i][0]
+    _e = _name_to_key[_name]
+    _out.push({
+      name: _name,
+      evdev: _e.evdev,
+      x11: _e.x11,
+      win: _e.win,
+      aliases: _e.aliases,
+    })
+    _i = _i + 1
+  }
+  _out
+}
+
+// Modifier evdev codes, used by the C++ event loop.
+_MODIFIER_EVDEV = [29, 97, 42, 54, 56, 100, 125, 126]
+
+fn isModifier(evdev) {
+  _i = 0
+  _len = #_MODIFIER_EVDEV
+  while _i < _len {
+    if _MODIFIER_EVDEV[_i] == evdev { return true }
+    _i = _i + 1
+  }
+  false
+}
+
+// C++ IsMouseButton: BTN_LEFT .. BTN_TASK inclusive.
+fn isMouseButton(evdev) {
+  evdev >= 272 && evdev <= 279
+}
+
+// C++ IsJoystickButton: BTN_JOYSTICK .. BTN_THUMBR inclusive.
+fn isJoystickButton(evdev) {
+  evdev >= 288 && evdev <= 318
+}

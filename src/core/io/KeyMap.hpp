@@ -6,12 +6,6 @@
 
 #if HAVEL_PLATFORM_LINUX
 #  include <linux/input-event-codes.h>
-#  if defined(HAVE_X11)
-#    include <X11/keysym.h>
-#    include <X11/X.h>
-#  endif
-#else
-typedef unsigned long KeySym;
 #endif
 
 #if HAVEL_PLATFORM_WINDOWS
@@ -23,11 +17,29 @@ namespace havel {
 // Universal key code that works across all platforms
 using UniversalKey = int;
 
-// Key mapping class - converts between different key code systems
+// One resolved key entry as produced by modules/app/kymap.hv. Alias rows
+// carry the same codes as their primary and repeat its alias list, matching
+// the snapshot semantics the module applies.
+struct KeyRow {
+    std::string name;
+    int evdevCode = 0;
+    unsigned long x11KeySym = 0;
+    int windowsVK = 0;
+    std::vector<std::string> aliases;
+};
+
+// Key mapping class - converts between different key code systems.
+// The tables are declared in modules/app/kymap.hv and installed at runtime.
 class KeyMap {
 public:
     // Initialize the key mappings
     static void Initialize();
+
+    // Populate the maps from the kymap Havel module (modules/app/kymap.hv).
+    // Called once by the kymap host module while the VM is alive; the rows are
+    // snapshotted into plain C++ maps so later lookups are lock-free reads and
+    // safe to call from the IO event thread.
+    static void HydrateFromModule(const std::vector<KeyRow> &rows);
     
     // Convert from string name to evdev code
     static int FromString(const std::string& name);
@@ -79,9 +91,6 @@ private:
         unsigned long x11KeySym;
         int windowsVK;
     };
-    
-    static void AddKey(const std::string& name, int evdev, unsigned long x11, int windows);
-    static void AddAlias(const std::string& alias, const std::string& primaryName);
     
     static bool initialized;
     static std::unordered_map<std::string, KeyEntry> nameToKey;

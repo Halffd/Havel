@@ -1006,6 +1006,15 @@ public:
   void setJitTailCall(bool occurred) { jit_tail_call_occurred_ = occurred; }
   bool hasJitTailCall() const { return jit_tail_call_occurred_; }
 
+  // Conditional-hotkey gate, evaluated on EVERY trigger of a persistent
+  // hotkey goroutine (not only on its first run). When the condition is false
+  // the goroutine is re-parked Suspended+HotkeyWait and false is returned, so
+  // its body must not run. Every scheduler loop (VM::execute, ExecutionEngine,
+  // HavelEngine) calls this before dispatching a goroutine, so the loops
+  // cannot drift — a missed call made a `when` hotkey fire regardless of its
+  // condition, and two `when` branches on one key then both ran.
+  bool hotkeyConditionAllows(compiler::Scheduler::Goroutine *g);
+
   const BytecodeFunction* currentFunction() const {
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }

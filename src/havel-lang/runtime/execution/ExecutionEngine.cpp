@@ -166,43 +166,14 @@ return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
   }
 
 
- if (g->persistent && g->state == Scheduler::GoroutineState::Created
-    && g->hotkey_condition_callback_id != 0) {
-    auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-    // Print watched global variables for debugging conditional hotkeys
-    if (!g->hotkey_condition_deps.empty()) {
-        for (const auto& dep : g->hotkey_condition_deps) {
-            auto val = vm_->getGlobalThreadSafe(dep);
-            if (val.has_value()) {
-            } else {
-            }
-        }
-    }
-    if (condVal) {
-        bool conditionMet = false;
-        try {
-            // Use callFunctionSync instead of call() because current_chunk
-            // may be null at this point (VM::execute() restores it to null
-            // on return, and this path runs before any goroutine has set it).
-            // callFunctionSync has a null-chunk fallback via main_chunk_.
-            Value result = vm_->callFunctionSync(*condVal, {});
-            conditionMet = vm_->toBool(result);
-        } catch (const std::exception &e) {
-            if (debug_mode_) {
-                ::havel::debug("[ExecutionEngine] Condition callback exception: {}", e.what());
-            }
-            conditionMet = false;
-        }
-        if (!conditionMet) {
-            g->state = Scheduler::GoroutineState::Suspended;
-            g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
-            if (g->fiber) {
-                g->fiber->state = FiberState::SUSPENDED;
-                g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
-            }
-            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-        }
-    }
+ // Conditional hotkey gate. Delegates to VM::hotkeyConditionAllows so this
+ // loop and VM::execute share one implementation. Evaluated on EVERY
+ // trigger, not just the first: the goroutine is Suspended+HotkeyWait between
+ // presses, so a Created-only check let a hotkey whose condition had gone
+ // false fire anyway — and with two `when` branches on the same key, both
+ // callbacks ran.
+ if (!vm_->hotkeyConditionAllows(g)) {
+    return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 }
 
 // STEP 3: Load fiber state into VM's global execution state
@@ -711,7 +682,9 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
         struct DepthGuard { ~DepthGuard() { --hk_reeval_depth; } } dg;
         ++hk_reeval_depth;
         struct HotkeyAction {
+            std::string hotkeyId;
             std::string alias;
+            int osId;
             bool grab;
             uint32_t gid;
         };
@@ -776,13 +749,20 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 // Edge-triggered: only act on transition
                 if (prev == conditionMet) return;
 
-                pendingActions.push_back({g->hotkey_condition_alias, conditionMet, g->id});
+                pendingActions.push_back({g->hotkey_id, g->hotkey_condition_alias, g->hotkey_os_id, conditionMet, g->id});
             }
         );
         for (auto& act : pendingActions) {
-            if (!act.alias.empty()) {
-                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+            auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+            // By id: several hotkeys can share one alias (one per `when`
+            // branch). Grab state must follow the hotkey that changed.
+            if (hm) {
+                if (act.osId > 0) hm->SetHotkeyGrabById(act.osId, act.grab);
+                else if (!act.alias.empty()) hm->SetHotkeyGrab(act.alias, act.grab);
+            }
+            if (!act.hotkeyId.empty()) {
+                ::havel::stdlib::HotkeyModule::setGrabById(*vm_, act.hotkeyId, act.grab);
+            } else if (!act.alias.empty()) {
                 ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
             auto* g = scheduler_->get(act.gid);
@@ -849,8 +829,9 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
   return result;
 }
 
-void ExecutionEngine::onTimerFire(uint32_t timer_id, Value closure, bool is_timeout) {
+void ExecutionEngine::onTimerFire(const TimerFirePayload& fire, bool is_timeout) {
     if (!vm_) return;
+    const uint32_t timer_id = fire.timer_id;
 
     if (scheduler_) {
         Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(

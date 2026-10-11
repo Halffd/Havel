@@ -1922,7 +1922,7 @@ void IO::KeyCombo(const std::string &key, std::function<void()> comboAction) {
 }
 
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
-                     int id) {
+                     int id, bool allowDuplicateAlias) {
   // Assign ID before creating callback so it's available in wrapper
   if (id <= 0) {
     id = ++hotkeyCount;
@@ -2157,7 +2157,8 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     // registration
     std::string normalizedAlias = toLower(rawInput);
     for (const auto &[existingId, existingHotkey] : hotkeys) {
-      if (toLower(existingHotkey.alias) == normalizedAlias) {
+      if (!allowDuplicateAlias &&
+          toLower(existingHotkey.alias) == normalizedAlias) {
         warn("Duplicate hotkey alias detected: '{}' (registered as '{}'). "
              "Skipping duplicate registration.",
              rawInput, existingHotkey.alias);

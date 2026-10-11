@@ -1,0 +1,83 @@
+// Regression: two `when` blocks binding the SAME key must stay independent.
+// Two failures are covered:
+//   1. The condition was only evaluated for a goroutine in state Created, so
+//      after the first trigger (which parks it Suspended+HotkeyWait) every
+//      later press ran the body with no condition check at all — both
+//      callbacks fired.
+//   2. Grab state was applied by alias, and alias is shared between the two
+//      registrations, so the second `when` block's condition flipped the
+//      FIRST hotkey's grab state.
+// Expectation: with only the second branch's condition true, pressing F24
+// runs only the second body. Uses F24 + hotkey.trigger: no OS input is
+// injected.
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+mode = "off"
+alt_mode = "on"
+
+first_hits = 0
+second_hits = 0
+
+when mode == "on" {
+    F24 => {
+        first_hits = first_hits + 1
+    }
+}
+
+when alt_mode == "on" {
+    F24 => {
+        second_hits = second_hits + 1
+    }
+}
+
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while (first_hits + second_hits) == 0 && time.millis() < waited {
+    sleep(5)
+}
+
+check("exactly one callback ran", first_hits + second_hits == 1)
+check("second branch fired", second_hits == 1)
+check("first branch stayed silent", first_hits == 0)
+
+// Second press: the branch that already fired must not fire again, and the
+// dormant one must still not run.
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while second_hits < 2 && time.millis() < waited {
+    sleep(5)
+}
+
+check("no extra callback on repeat press", first_hits == 0 && second_hits == 2)
+
+// Flip the conditions: the first branch becomes the live one.
+mode = "on"
+alt_mode = "off"
+sleep(200)
+
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while first_hits == 0 && time.millis() < waited {
+    sleep(5)
+}
+
+check("first branch fires after flip", first_hits == 1)
+check("second branch silent after flip", second_hits == 2)
+
+if failures > 0 {
+    print("FAIL conditional_hotkey_same_key: " + failures + " check(s) failed")
+    exit(1)
+}
+print("PASS conditional_hotkey_same_key")
+// Persistent hotkey goroutines keep the process alive; exit explicitly.
+exit(0)

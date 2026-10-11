@@ -489,7 +489,9 @@ vm_->addIntervalResult(timer_id, result);
         auto* sched = vm_ ? vm_->getScheduler() : nullptr;
         if (!sched) return;
         struct HotkeyAction {
+            std::string hotkeyId;
             std::string alias;
+            int osId;
             bool grab;
         };
         std::vector<HotkeyAction> pendingActions;
@@ -523,13 +525,21 @@ vm_->addIntervalResult(timer_id, result);
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
                 if (prev == conditionMet) return;
-                pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
+                pendingActions.push_back({g->hotkey_id, g->hotkey_condition_alias, g->hotkey_os_id, conditionMet});
             });
         for (auto& act : pendingActions) {
-            if (act.alias.empty()) continue;
             auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-            if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
-            ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
+            // Id-based: aliases are shared between duplicate registrations of
+            // the same key, so alias lookup would update the wrong hotkey.
+            if (hm) {
+                if (act.osId > 0) hm->SetHotkeyGrabById(act.osId, act.grab);
+                else if (!act.alias.empty()) hm->SetHotkeyGrab(act.alias, act.grab);
+            }
+            if (!act.hotkeyId.empty()) {
+                ::havel::stdlib::HotkeyModule::setGrabById(*vm_, act.hotkeyId, act.grab);
+            } else if (!act.alias.empty()) {
+                ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
+            }
         }
     }
 
@@ -1185,6 +1195,13 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       }
       failing_g = g;
 
+      // Conditional `when` hotkey: re-check the condition on every trigger
+      // and re-park when false, so its body never runs for this press.
+      if (!vm_->hotkeyConditionAllows(g)) {
+        held.push_back(g);
+        continue;
+      }
+
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
         if (_sleep_trace_inl) {
@@ -1532,6 +1549,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);
+      // Conditional `when` hotkey gate — see VM::hotkeyConditionAllows.
+      if (!vm_->hotkeyConditionAllows(g)) {
+        continue;
+      }
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {

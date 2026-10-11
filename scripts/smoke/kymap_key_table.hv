@@ -25,9 +25,11 @@ fn _fail(msg) {
 
 // --- counts -------------------------------------------------------------
 // 325 = 262 primary keys + 63 aliases registered as names.
-// 262  = rows in the key table itself (keys only).
+// allEntries must carry every one of those names, aliases included: the C++
+// loader keys its maps off `name`, so an alias missing from this export means
+// the alias silently stops resolving in C++.
 if kymap.keyCount() != 325 { _fail("keyCount expected 325, got " + str(kymap.keyCount())) }
-if #kymap.allEntries() != 262 { _fail("allEntries expected 262, got " + str(#kymap.allEntries())) }
+if #kymap.allEntries() != 325 { _fail("allEntries expected 325, got " + str(#kymap.allEntries())) }
 
 // --- codes, taken from the real system headers -------------------------
 //       name      evdev  x11keysym  winVK
@@ -50,6 +52,69 @@ for _row in _codes {
 if kymap.fromString("escape") != kymap.fromString("esc") { _fail("alias escape != esc") }
 if kymap.fromString("numpadplus") != kymap.fromString("numpadadd") { _fail("alias numpadplus != numpadadd") }
 if kymap.fromString("pagedown") != kymap.fromString("pgdn") { _fail("alias pagedown != pgdn") }
+
+// --- every alias must be exported AND flagged isAlias -------------------
+// Regression: allEntries() used to walk _KEY_TABLE and emit only the 262
+// primary rows, so no alias ever reached the C++ side and FromString("lwin")
+// returned 0 there.
+_rows = kymap.allEntries()
+_names = []
+_aliases = []
+for _r in _rows {
+  _names.push(_r.name)
+  if _r.isAlias { _aliases.push(_r.name) }
+}
+// 67 alias rows, 258 key rows = 325. The 67 (not 63) is because print,
+// pause, scrollup and scrolldown are first added as keys and then redefined
+// as aliases later in the source; the later AddAlias wins, exactly as in the
+// original C++.
+if #_aliases != 67 { _fail("expected 67 isAlias rows, got " + str(#_aliases)) }
+
+// Spot-check the alias families the user relies on for hotkeys: win/modifier
+// aliases, pagination, and every single-character symbol alias.
+_expected_aliases = [
+  "meta", "lwin", "lmeta", "super", "rmeta", "escape", "return",
+  "pageup", "pagedown",
+  "-", "=", "[", "]", ";", "'", "`", "\\", ",", ".", "/", "<",
+  "lwin", "numpadplus", "numpadminus", "numpadmult", "numpadasterisk",
+  "numpaddot", "numpaddel", "numpadperiod", "numpaddelete", "numpaddecimal",
+  "period", "equals", "102nd", "iso", "nosymbol", "mouse4", "mouse5",
+  "side1", "side2", "side3", "side4", "button4", "buttonforward",
+  "apps", "brightnessauto", "calculator", "wifi", "volumemute",
+]
+for _a in _expected_aliases {
+  if !_has(_aliases, _a) { _fail("alias " + _a + " missing or not flagged isAlias") }
+  if !_has(_names, _a) { _fail("alias " + _a + " absent from allEntries") }
+}
+
+// --- symbols must resolve (hotkey sugar like `0 => {}`, `/ => {}`) -----
+// "<" (less / KEY_102ND) has no X11 keysym in the original table, so it is
+// excluded from the keysym check; it does carry evdev 86 and VK_OEM_102.
+_symbols = ["-", "=", "[", "]", ";", "'", "`", "\\", ",", ".", "/"]
+for _s in _symbols {
+  if kymap.fromString(_s) == 0 { _fail("symbol " + _s + " does not resolve") }
+  if kymap.toX11(_s) == 0 { _fail("symbol " + _s + " has no X11 keysym") }
+}
+if kymap.fromString("<") != 86 { _fail("symbol < expected evdev 86, got " + str(kymap.fromString("<"))) }
+if kymap.toX11("<") != 0 { _fail("symbol < should have no X11 keysym in the original table") }
+
+// --- reverse maps must still name the PRIMARY, never the alias ----------
+// Every alias shares its primary's codes, so an alias entering the reverse
+// maps would displace the primary. These are the codes the C++ AddAlias path
+// never wrote.
+_reverse = [
+  [12, "minus"], [13, "equal"], [26, "leftbrace"], [27, "rightbrace"],
+  [39, "semicolon"], [40, "apostrophe"], [41, "grave"], [43, "backslash"],
+  [51, "comma"], [52, "dot"], [53, "slash"], [86, "less"],
+  [125, "win"], [126, "rwin"], [1, "esc"], [28, "enter"],
+  [104, "pgup"], [109, "pgdn"], [99, "printscreen"], [119, "pausebreak"],
+  [113, "mute"], [238, "wlan"], [139, "menu"],
+]
+for _rv in _reverse {
+  if kymap.evdevToString(_rv[0]) != _rv[1] {
+    _fail("evdevToString(" + str(_rv[0]) + ") expected " + _rv[1] + ", got " + kymap.evdevToString(_rv[0]))
+  }
+}
 
 // --- alias is listed on the primary ------------------------------------
 if !_has(kymap.getAliases("esc"), "escape") { _fail("getAliases(esc) missing escape") }

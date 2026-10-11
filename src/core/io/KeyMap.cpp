@@ -128,9 +128,9 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
 // Install the rows exported by modules/app/kymap.hv.
 //
 // The module has already resolved aliases to their primary codes, so a row
-// carries its codes directly; only the alias list still needs attaching. Rows
-// are inserted in table order so the last-writer-wins behaviour of the reverse
-// maps (e.g. ctrl/lctrl, playpause/play) matches the module exactly.
+// carries its codes directly. Rows flagged isAlias populate only nameToKey;
+// keys additionally populate the reverse maps. That reproduces the original
+// AddKey/AddAlias split exactly.
 void KeyMap::HydrateFromModule(const std::vector<KeyRow> &rows) {
     if (initialized) {
         if (debugging::debug_io)
@@ -144,6 +144,13 @@ void KeyMap::HydrateFromModule(const std::vector<KeyRow> &rows) {
     for (const auto &row : rows) {
         KeyEntry entry = {row.name, row.aliases, row.evdevCode, row.x11KeySym, row.windowsVK};
         nameToKey[row.name] = std::move(entry);
+
+        // Only real keys populate the reverse maps. An alias shares its
+        // primary's codes, so letting it in here would displace the primary:
+        // evdev 12 would come back as "-" rather than "minus", 125 as "super"
+        // rather than "win". This is what AddAlias did not do.
+        if (row.isAlias) continue;
+
         if (row.evdevCode != 0) evdevToName[row.evdevCode] = row.name;
         if (row.x11KeySym != 0) x11ToName[row.x11KeySym] = row.name;
         if (row.windowsVK != 0) windowsToName[row.windowsVK] = row.name;

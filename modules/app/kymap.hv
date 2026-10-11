@@ -347,9 +347,14 @@ _name_to_key = {}
 _evdev_to_name = {}
 _x11_to_name = {}
 _win_to_name = {}
+// Names introduced by AddAlias rather than AddKey. The C++ original kept this
+// distinction implicit in which function wrote the entry; here it is explicit
+// so allEntries() can hand the C++ side enough information to reproduce it.
+_alias_names = {}
 
 fn _addKey(name, evdev, x11, win) {
   _name_to_key[name] = {evdev: evdev, x11: x11, win: win, aliases: []}
+  _alias_names[name] = false
   if evdev != 0 { _evdev_to_name[evdev] = name }
   if x11 != 0 { _x11_to_name[x11] = name }
   if win != 0 { _win_to_name[win] = name }
@@ -367,6 +372,9 @@ fn _addAlias(alias, primary) {
     win: _entry.win,
     aliases: _entry.aliases.copy(),
   }
+  // Marked as an alias so the loader keeps it out of the reverse maps, exactly
+  // as AddAlias did.
+  _alias_names[alias] = true
 }
 
 fn _init() {
@@ -470,12 +478,25 @@ fn keyCount() {
 }
 
 // Bulk export for the C++ loader: rows of [name, evdev, x11, win, aliases].
+// Bulk export for the C++ loader: one row per resolved name, aliases
+// included. Iterates _name_to_key rather than _KEY_TABLE so aliases (lwin,
+// escape, pagedown, ...) reach C++ too; the C++ side keys its own maps off
+// the `name` field, so an alias must appear as its own row to resolve.
+// Bulk export for the C++ loader: one row per resolved name, aliases
+// included. Iterates _name_to_key rather than _KEY_TABLE so aliases (lwin,
+// escape, pagedown, ...) reach C++ too; the C++ side keys its own maps off
+// the `name` field, so an alias must appear as its own row to resolve.
+//
+// Each row carries `isAlias`, mirroring the original C++ split:
+//   AddKey   -> wrote nameToKey AND all three reverse maps
+//   AddAlias -> wrote nameToKey ONLY, never the reverse maps
+// That distinction matters: every alias shares its primary's codes, so if an
+// alias were allowed into the reverse maps it would displace the primary and
+// break evdevToString/x11ToString/windowsToString (evdev 12 would come back as
+// "-" instead of "minus", 125 as "super" instead of "win", and so on).
 fn allEntries() {
   _out = []
-  _i = 0
-  _len = #_KEY_TABLE
-  while _i < _len {
-    _name = _KEY_TABLE[_i][0]
+  for _name in _name_to_key {
     _e = _name_to_key[_name]
     _out.push({
       name: _name,
@@ -483,8 +504,8 @@ fn allEntries() {
       x11: _e.x11,
       win: _e.win,
       aliases: _e.aliases,
+      isAlias: _alias_names[_name],
     })
-    _i = _i + 1
   }
   _out
 }

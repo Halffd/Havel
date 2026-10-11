@@ -20,12 +20,17 @@ using UniversalKey = int;
 // One resolved key entry as produced by modules/app/kymap.hv. Alias rows
 // carry the same codes as their primary and repeat its alias list, matching
 // the snapshot semantics the module applies.
+//
+// isAlias records which rows came from AddAlias rather than AddKey. An alias
+// shares its primary's codes, so only real keys may populate the reverse
+// (code -> name) maps; otherwise evdev 12 would resolve to "-" not "minus".
 struct KeyRow {
     std::string name;
     int evdevCode = 0;
     unsigned long x11KeySym = 0;
     int windowsVK = 0;
     std::vector<std::string> aliases;
+    bool isAlias = false;
 };
 
 // Key mapping class - converts between different key code systems.

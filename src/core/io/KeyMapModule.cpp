@@ -82,6 +82,11 @@ void loadKeyMapFromHavelModule(VM &vm) {
     out.x11KeySym = static_cast<unsigned long>(api.getField(row, "x11").asInt());
     out.windowsVK = static_cast<int>(api.getField(row, "win").asInt());
 
+    // Distinguishes an AddAlias row from an AddKey row. Missing/null means
+    // false, so an older module without the field still loads as all-keys.
+    Value isAlias = api.getField(row, "isAlias");
+    out.isAlias = isAlias.isBool() ? isAlias.asBool() : false;
+
     Value aliases = api.getField(row, "aliases");
     if (aliases.isArrayId()) {
       ArrayRef aliasRef{aliases.asArrayId()};

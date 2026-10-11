@@ -255,13 +255,59 @@ cluster), so pairs must come from the same load window.
 
 
 Bug found and fixed on the way (see the next commit): the interpreter's
-instruction count is a ~60x undercount for parse-shaped code -
-`recordInstructions(8192)` exists in only 19 of the 48 computed-goto
-re-dispatch tails in VMDispatch.cpp, so most of the parse's ops never
-advance the profiler's instructions= figure. The 1.76M "instructions"
-reported for a 30 s parse is why the time looked impossible to
-reconcile. Fixing the accounting (checkpoint in every tail, or a shared
-helper) is queued with the Phase C work.
+instruction count was a large undercount for parse-shaped code. TWO
+mechanisms stacked:
+
+1. `recordInstructions(8192)` existed in only 19 of the 48 computed-goto
+   re-dispatch tails in VMDispatch.cpp, so ops dispatched from the other
+   29 tails (jumps, NOT, DUP/SWAP, string-cursor ops, ...) never advanced
+   the profiler's instructions= figure. Fixed: every tail now runs the
+   same periodic checkpoint (counter++; batch record; tick/exit/GC/yield/
+   suspension checks), and runDispatchLoop's slow_path (where
+   slow_dispatch_fallback redirects land) plus the non-computed-goto
+   fallback loop record their own batches.
+2. The dispatch counter was a per-entry local. A module-heavy run
+   re-enters the dispatch loop per wrapped/closure call (thousands of
+   entries per parse), and each entry's ops below one 8192 batch were
+   lost on the next entry. Fixed: the counter is now a VM member
+   (dispatch_instr_counter_) that accumulates across entries;
+   beginFastTick() resets it where a tick budget demands a fresh count.
+
+With honest counting (verified against a hand-computed calibration loop:
+2.88M expected, 2,883,584 reported), the self-hosted parse of the 567-line
+wl40 workload executes ~4.8M ops - not the ~100M+ once estimated from the
+undercount. The "time looked impossible to reconcile" mystery inverted:
+ops are NOT where the parse spends its time.
+
+## Where the self-hosted parse actually spends its CPU (2026-10-11)
+
+Phase-C diagnosis, wl40 (567 lines) through the self-hosted pipeline,
+~53 s of user CPU in the parse phase (verified by /proc jiffie sampling:
+utime 52.8 s, stime 2.9 s - rusage agrees; the in-container
+CLOCK_THREAD/PROCESS_CPUTIME_ID reads ~2-4x inflated and must not be
+used for attribution on this box):
+
+| consumer | evidence (probe, count-based where possible) |
+|---|---|
+| **cross-module closure calls: ~41.5 s (~80%)** | 94,794 closure calls at 437.4 us/call average (steady-clock, max 508 ms): each identity-mismatched call copies the callee's module-globals map into the ambient (`globals = *closure_globals`, ~1600-2000 merged entries) inside doCall, and the module-wrapper epilogue move-assigns the whole ambient back. pratt<->ast<->lexer alternation defeats the identity gate on every AST-constructor/helper call. |
+| module-wrapper machinery (host-fn wrappers): ~4.8 s | 6,598 wrapped calls: prologue 2.5 s (globals install + arg bind) + epilogue 1.5 s (result materialize + sidecar write-back) + dispatch 1.0 s |
+| emit: containsYield O(n^2) walk | 65% of the emit window's periodic samples (110/169); `containsYield(fnDecl.body)` deep-walks the whole body AST per compiled function |
+| everything else | dispatch of ~4.8M ops: ~1 s (200 ns/op, matching the calibration loops); GC: 1 collection; pump yields: 217 x ~0.5 us; fiber saves: 71; host-fn direct funnel: 0 calls |
+
+Implications for the tiering work (the original Phase C premise):
+
+- tier-1 compiling the parser's hot functions cannot fix the parse,
+  because most of the parse's CPU is C++ map copying in the call path,
+  not bytecode dispatch. That is why the lowering extensions moved the
+  refusal count 10 -> 0 yet the parse stayed flat (see the 2026-10-11
+  tiering section above: paired CPU runs overlap within noise).
+- The two real targets, in order: (1) make the ambient-globals install
+  O(1) for cross-module calls (pointer/shared-ambient or a swap-cache -
+  touches GC-visible dual-write semantics, so it is its own task), and
+  (2) cache or hoist containsYield (mark generator/coroutine bodies at
+  parse time instead of re-walking per compiled function).
+- The 9%-win tier-1 measurements on the small benches stand; they bench
+  dispatch-bound loops, which is what tier-1 actually optimizes.
 
 Also fixed on the way: intra-module wrapper calls re-copied the module
 globals map (~1600-1968 merged entries, ~94us) on every call.

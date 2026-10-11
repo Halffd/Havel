@@ -2061,10 +2061,16 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     current_executing_fiber_ = saved_fiber_flag;
     return;
 #else
-    size_t counter = 0;
+    // Persistent cross-entry counter (see runDispatchFast): a per-entry
+    // reset loses the ops of entries that never cross a batch boundary.
+    uint64_t &counter = dispatch_instr_counter_;
     while (frame_count_ > stop_frame_depth) {
       counter++;
       if ((counter & 8191) == 0) {
+        // Same instruction accounting as the fast dispatch loop's
+        // checkpoints (see slow_path below for why this matters for
+        // redirect-heavy code).
+        profiler_.recordInstructions(8192);
         // Same scheduler time-slice contract as the fast dispatch loop's
         // checkpoints: honor an armed tick budget so a long-running
         // goroutine hands control back to the driver (processGoroutines /
@@ -2213,10 +2219,19 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
 slow_path:
   // Full dispatch loop with all checks (for
   // timer/profiling/tracing/scheduler/fiber modes)
-  size_t fast_path_counter = 0;
+  // Persistent cross-entry counter (see runDispatchFast): a per-entry
+  // reset loses the ops of entries that never cross a batch boundary.
+  uint64_t &fast_path_counter = dispatch_instr_counter_;
   while (frame_count_ > stop_frame_depth) {
     fast_path_counter++;
     if ((fast_path_counter & 4095) == 0) {
+      // Instruction accounting: every op that lands here (via the
+      // fast loop's slow_dispatch_fallback redirect, or because
+      // profiling/tracing/timer mode never entered the fast loop) is
+      // invisible to the profiler without this batch. Object-heavy code
+      // (the self-hosted parser) redirects constantly, which is why the
+      // profiler used to report ~1% of a parse's executed instructions.
+      profiler_.recordInstructions(4096);
       // Honor an armed tick budget (same contract as the fast loop): a
       // goroutine that entered this path via the fast-loop redirect must
       // still be time-sliced, otherwise a long-running body (busy

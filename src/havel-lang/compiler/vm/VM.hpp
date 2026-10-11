@@ -604,6 +604,9 @@ int32_t pending_call_return_ip_ = -1;
     // execution.
     uint64_t fast_tick_budget_ = 0;
     uint64_t fast_tick_consumed_ = 0;
+    // Cross-entry instruction counter for the dispatch loops' periodic
+    // accounting (see runDispatchFast). beginFastTick resets it per tick.
+    uint64_t dispatch_instr_counter_ = 0;
     // Set by a module-function wrapper when it unwinds because the tick budget
     // expired (rather than completing). doCall/doTailCall read it to suppress
     // the usual result push: the wrapped frame is still live and will push its
@@ -625,6 +628,10 @@ int32_t pending_call_return_ip_ = -1;
       fast_tick_budget_ = budget;
       fast_tick_consumed_ = 0;
       budget_unwind_no_result_ = false;
+      // Tick budgets compare against the dispatch loop's instruction
+      // counter, which must start fresh per tick (the pump reads the
+      // consumed count to time-slice goroutines).
+      dispatch_instr_counter_ = 0;
     }
     void endFastTick() { fast_tick_budget_ = 0; }
 

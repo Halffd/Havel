@@ -864,7 +864,14 @@ __attribute__((hot,
     dispatch_initialized = true;
   }
 
-  size_t counter = 0;
+  // Instruction accounting must survive across dispatch-loop entries:
+  // a module-heavy run re-enters the loop per wrapped call (thousands of
+  // entries per parse), and a per-entry counter reset loses every entry
+  // whose op count never crosses an 8192 batch boundary - the
+  // self-hosted parse undercounted most of its executed ops this way.
+  // beginFastTick() resets this where a tick budget demands a fresh
+  // count; everywhere else it accumulates for the run's lifetime.
+  uint64_t &counter = dispatch_instr_counter_;
 
   // Fetch first instruction
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
@@ -1105,6 +1112,23 @@ op_PUSH_NULL: {
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
   pushStack(Value::makeNull());
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -1317,6 +1341,23 @@ op_RETURN: {
     ::havel::stdlib::notifyRuntimeError(e.what());
     throw std::runtime_error(e.what());
   }
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -1402,6 +1443,23 @@ op_YIELD: {
 }
 
 dispatch_next:
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -1737,6 +1795,23 @@ op_DUP: {
   Value value = popStack();
   pushStack(value);
   pushStack(value);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -1761,6 +1836,23 @@ op_SWAP: {
   Value next = popStack();
   pushStack(top);
   pushStack(next);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2142,6 +2234,22 @@ op_ADD_INT: {
     execBinaryOp(inst);
     counter++;
   }
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2165,6 +2273,23 @@ op_OR: {
   const auto &inst = frm.function->instructions[frm.ip];
   frm.ip++;
   execLogicalOp(inst.opcode);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2187,6 +2312,23 @@ op_NOT: {
   frm.ip++;
   Value v = popStack();
   pushStack(!isTruthy(v));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2214,6 +2356,23 @@ op_BIT_NOT: {
     pushStack(~static_cast<int64_t>(v.asDouble()));
   else
     COMPILER_THROW("Bitwise NOT requires integer operand");
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2235,6 +2394,23 @@ op_NEGATE: {
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
   execNegate();
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2342,6 +2518,23 @@ op_STRING_GET_FAST: {
       }
       auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
       pushStack(Value::makeStringId(ref.id));
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
@@ -2469,6 +2662,23 @@ op_STRING_SET_FAST: {
       str->replace(targetByte, cpLen, new_char);
     }
     heap_.bumpArrayVersion(string_id);
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
     {
@@ -2491,6 +2701,23 @@ op_LENGTH: {
   auto &frm = frame_arena_[frame_count_ - 1];
   frm.ip++;
   pushStack(execLengthOp(popStack()));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2518,6 +2745,23 @@ op_STRING_CURSOR_NEW: {
   uint32_t string_id = inst.operands[0].asInt();
   auto cursorRef = heap_.allocateStringCursor(string_id);
   pushStack(Value::makeStringCursorId(cursorRef.id));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2570,6 +2814,23 @@ op_STRING_CURSOR_CURRENT: {
     }
     auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
     pushStack(Value::makeStringId(ref.id));
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
   }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
@@ -2625,6 +2886,23 @@ op_STRING_CURSOR_ADVANCE: {
     cursor->codepoint_index++;
     pushStack(Value::makeBool(true));
   }
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2678,6 +2956,23 @@ op_STRING_CURSOR_PEEK: {
     auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
     pushStack(Value::makeStringId(ref.id));
   }
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2710,6 +3005,23 @@ op_STRING_CURSOR_RESET: {
   cursor->byte_pos = 0;
   cursor->codepoint_index = 0;
   pushStack(Value::makeNull());
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2740,6 +3052,23 @@ op_STRING_CURSOR_GET_POS: {
     COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
   }
   pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2804,6 +3133,23 @@ op_STRING_CURSOR_SET_POS: {
     cursor->codepoint_index++;
   }
   pushStack(Value::makeNull());
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2828,6 +3174,23 @@ op_STRING_CONCAT: {
   Value left = popStack();
   auto str_ref = heap_.allocateString(toString(left) + toString(right));
   pushStack(Value::makeStringId(str_ref.id));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2853,6 +3216,23 @@ op_JUMP: {
     recordBackedgePublic(frm.ip);
   }
   execJump(inst);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2879,6 +3259,23 @@ op_JUMP_IF_FALSE: {
     recordBackedgePublic(frm.ip);
   }
   execJumpIfFalse(inst);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2905,6 +3302,23 @@ op_JUMP_IF_TRUE: {
     recordBackedgePublic(frm.ip);
   }
   execJumpIfTrue(inst);
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2927,6 +3341,23 @@ op_IS_NULL: {
   frm.ip++;
   Value value = popStack();
   pushStack(Value::makeBool(value.isNull()));
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
+  }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
   {
@@ -2956,6 +3387,23 @@ op_JUMP_IF_NULL: {
     frm.ip = target;
   } else {
     frm.ip++;
+  }
+  counter++;
+  if ((counter & 8191) == 0) {
+    if (fast_tick_budget_ != 0) {
+      fast_tick_consumed_ = counter;
+      if (counter >= fast_tick_budget_) {
+        return;
+      }
+    }
+    profiler_.recordInstructions(8192);
+    if (exit_requested_.load())
+      return;
+    maybeCollectGarbage();
+    periodicYieldCheck();
+    if (suspension_requested_) {
+      return;
+    }
   }
   if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;

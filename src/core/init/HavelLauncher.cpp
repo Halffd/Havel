@@ -595,6 +595,11 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
           [jit](const havel::compiler::BytecodeFunction &func,
                 uint32_t start_ip,
                 uint64_t hot_count) {
+            if (std::getenv("HAVEL_ORC_TRACE") == nullptr) {
+              // ORC hot-trace disabled by default (LLVM 23 codegen crash in
+              // the trace compile path; see Havel.cpp's registration).
+              return;
+            }
             if (jit) {
               jit->compileTrace(func, start_ip, hot_count);
             }

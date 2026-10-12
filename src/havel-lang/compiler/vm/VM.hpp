@@ -430,92 +430,90 @@ public:
   // init functions are called on first use (import/access)
   std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
-    // A frame on the globals stack: the map that was swapped out plus the
-    // module-globals identity that was active at swap time. Identity lets
-    // call sites skip the full-map copy when a call stays inside one module.
-    // Fields keep the pair names (.first/.second) so existing access sites
-    // read unchanged. fiber_restored marks frames (re)installed wholesale
-    // by loadFiberState's globals_stack_ repair: such frames hold deep
-    // copies taken at suspension time and can be OLDER than live ambient
-    // writes (see popGlobals' stale-frame guard).
-    struct GlobalsFrame {
-      std::unordered_map<std::string, Value> first;
-      std::shared_ptr<std::unordered_map<std::string, Value>> second;
-      bool fiber_restored = false;
-      Fiber* owner = nullptr;
-    };
-    std::vector<GlobalsFrame> globals_stack_;
-    // Identity (which module_globals shared_ptr) of the map currently
-    // installed as `globals` — null for the engine-main map. Restored from
-    // globals_stack_ frames on pop.
-    std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
+  // A frame on the globals stack: the map that was swapped out plus the
+  // module-globals identity that was active at swap time. Identity lets
+  // call sites skip the full-map copy when a call stays inside one module.
+  // Fields keep the pair names (.first/.second) so existing access sites
+  // read unchanged. fiber_restored marks frames (re)installed wholesale
+  // by loadFiberState's globals_stack_ repair: such frames hold deep
+  // copies taken at suspension time and can be OLDER than live ambient
+  // writes (see popGlobals' stale-frame guard).
+  struct GlobalsFrame {
+    std::unordered_map<std::string, Value> first;
+    std::shared_ptr<std::unordered_map<std::string, Value>> second;
+    bool fiber_restored = false;
+    Fiber *owner = nullptr;
+  };
+  std::vector<GlobalsFrame> globals_stack_;
+  // Identity (which module_globals shared_ptr) of the map currently
+  // installed as `globals` — null for the engine-main map. Restored from
+  // globals_stack_ frames on pop.
+  std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
 
-    // Shared, lazily-built base layer every module context can read: the
-    // object-typed namespace entries of the engine-main map (fs, sys,
-    // math, ...). Module sidecar maps hold only their OWN names; global
-    // reads resolve host functions through host_function_globals_ (already
-    // in the chain) and these namespace objects through the base - with no
-    // per-module seeding. The old seeding copied ~1200 host fns + objects
-    // into every module map, bloating sidecars to ~1600-2000 entries so
-    // every identity-mismatched cross-module call copied the whole map
-    // into the ambient (~100-400us per call; ~80% of the self-hosted
-    // parse's CPU - see scripts/benchmarks/README.md).
-    std::shared_ptr<const std::unordered_map<std::string, Value>>
-        baseModuleGlobals_;
-    const std::unordered_map<std::string, Value> *baseModuleGlobals() const {
-      return baseModuleGlobals_.get();
-    }
+  // Shared, lazily-built base layer every module context can read: the
+  // object-typed namespace entries of the engine-main map (fs, sys,
+  // math, ...). Module sidecar maps hold only their OWN names; global
+  // reads resolve host functions through host_function_globals_ (already
+  // in the chain) and these namespace objects through the base - with no
+  // per-module seeding. The old seeding copied ~1200 host fns + objects
+  // into every module map, bloating sidecars to ~1600-2000 entries so
+  // every identity-mismatched cross-module call copied the whole map
+  // into the ambient (~100-400us per call; ~80% of the self-hosted
+  // parse's CPU - see scripts/benchmarks/README.md).
+  std::shared_ptr<const std::unordered_map<std::string, Value>> baseModuleGlobals_;
+  const std::unordered_map<std::string, Value> *baseModuleGlobals() const {
+    return baseModuleGlobals_.get();
+  }
 
-    // Swap `globals` + identity onto the stack as one unit (moving the
-    // map). Restores via popGlobals().
-    void pushGlobalsMove() {
-      globals_stack_.push_back({std::move(globals), globals_identity_, false, current_executing_fiber_});
-    }
-    // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
-    void pushGlobalsCopy() {
-      globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
-    }
-    void popGlobals() {
-      auto &frame = globals_stack_.back();
-      // Stale-frame guard: loadFiberState's globals_stack_ repair can
-      // (re)install suspension-time copies of the engine-main scope into
-      // the live globals stack (tagged fiber_restored). Such a frame can be
-      // OLDER than writes the main fiber made while a goroutine was parked
-      // (loop accumulators, counters); restoring it wholesale clobbers
-      // those writes back to spawn-time values and scatters later writes
-      // across orphaned copies. When a fiber-restored frame and the current
-      // ambient are BOTH engine-main lineage (null identity), merge the
-      // fresher current writes into the frame before restoring. Frames
-      // pushed by real module/loader calls are never tagged, so their pops
-      // behave exactly as before - module sandboxes stay untouched.
-      const bool engine_main_both = (!frame.second && !globals_identity_);
-      const bool foreign_pop = engine_main_both &&
-                               frame.owner &&
-                               current_executing_fiber_ &&
-                               frame.owner != current_executing_fiber_;
-      if (foreign_pop) {
-        for (const auto &[k, v] : frame.first) {
-          if (!globals.count(k)) {
-            globals.emplace(k, v);
-          }
-        }
-        globals_stack_.pop_back();
-        return;
-      }
-      bool should_merge_into_frame = false;
-      if (engine_main_both && frame.fiber_restored) {
-        should_merge_into_frame = true;
-      }
-      if (should_merge_into_frame) {
-        for (const auto &[k, v] : globals) {
-          frame.first[k] = v;
+  // Swap `globals` + identity onto the stack as one unit (moving the
+  // map). Restores via popGlobals().
+  void pushGlobalsMove() {
+    globals_stack_.push_back(
+        {std::move(globals), globals_identity_, false, current_executing_fiber_});
+  }
+  // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
+  void pushGlobalsCopy() {
+    globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
+  }
+  void popGlobals() {
+    auto &frame = globals_stack_.back();
+    // Stale-frame guard: loadFiberState's globals_stack_ repair can
+    // (re)install suspension-time copies of the engine-main scope into
+    // the live globals stack (tagged fiber_restored). Such a frame can be
+    // OLDER than writes the main fiber made while a goroutine was parked
+    // (loop accumulators, counters); restoring it wholesale clobbers
+    // those writes back to spawn-time values and scatters later writes
+    // across orphaned copies. When a fiber-restored frame and the current
+    // ambient are BOTH engine-main lineage (null identity), merge the
+    // fresher current writes into the frame before restoring. Frames
+    // pushed by real module/loader calls are never tagged, so their pops
+    // behave exactly as before - module sandboxes stay untouched.
+    const bool engine_main_both = (!frame.second && !globals_identity_);
+    const bool foreign_pop = engine_main_both && frame.owner && current_executing_fiber_ &&
+                             frame.owner != current_executing_fiber_;
+    if (foreign_pop) {
+      for (const auto &[k, v] : frame.first) {
+        if (!globals.count(k)) {
+          globals.emplace(k, v);
         }
       }
-      globals = std::move(frame.first);
-      globals_identity_ = std::move(frame.second);
       globals_stack_.pop_back();
+      return;
     }
- std::unordered_map<std::string, Value> rootGlobals_;
+    bool should_merge_into_frame = false;
+    if (engine_main_both && frame.fiber_restored) {
+      should_merge_into_frame = true;
+    }
+    if (should_merge_into_frame) {
+      for (const auto &[k, v] : globals) {
+        frame.first[k] = v;
+      }
+    }
+    globals = std::move(frame.first);
+    globals_identity_ = std::move(frame.second);
+    globals_stack_.pop_back();
+  }
+  std::unordered_map<std::string, Value> rootGlobals_;
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
@@ -1619,10 +1617,21 @@ public:
             }
           }
           if (fn.has_value() && backend_) {
-            backend_->compile_tier(*fn, 2);
-            tier2_compile_count_.fetch_add(1);
-            profiler_.recordTier2Compile(fn->name);
-            ::havel::debug("[tiering] {} -> tier2", fn->name);
+            // ORC-on-LLVM-23 gate: the optimizing tier routes to the ORC
+            // JIT, whose compile crashes inside LLVM 23's codegen passes
+            // (DominatorTreeWrapperPass via SimpleCompiler; same root cause
+            // as the hot-trace gate in Havel.cpp's registration).
+            // BytecodeOrcJitLowering's IR/instruction API needs the LLVM-23
+            // fix before any ORC compile path is safe, so tier-2 defaults
+            // OFF on LLVM builds; HAVEL_ORC_TRACE=1 re-enables it for the
+            // backend owner's debugging. Remove both gates when fixed.
+            static const bool orc_compiles_enabled = std::getenv("HAVEL_ORC_TRACE") != nullptr;
+            if (orc_compiles_enabled) {
+              backend_->compile_tier(*fn, 2);
+              tier2_compile_count_.fetch_add(1);
+              profiler_.recordTier2Compile(fn->name);
+              ::havel::debug("[tiering] {} -> tier2", fn->name);
+            }
             std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
             tier2_queued_or_compiling_.erase(fn->name);
           } else {
@@ -2095,12 +2104,9 @@ public:
   // Derived entirely from the live registry; nothing here is a hand-kept list.
   // Rows come out in host-function-index order.
   std::vector<HostFunctionInfo> getHostFunctionInfo() const;
-  std::optional<HostFunctionInfo> getHostFunctionInfoByName(
-      const std::string &name) const;
+  std::optional<HostFunctionInfo> getHostFunctionInfoByName(const std::string &name) const;
 
-  void setHostModuleScope(std::string scope) {
-    host_module_scope_ = std::move(scope);
-  }
+  void setHostModuleScope(std::string scope) { host_module_scope_ = std::move(scope); }
   const std::string &hostModuleScope() const { return host_module_scope_; }
 
   // Overrides the scope-derived module label. Used where the owner is known
@@ -2116,8 +2122,7 @@ public:
   // return cannot leave registrations attributed to the wrong module.
   class HostModuleScope {
   public:
-    HostModuleScope(VM &vm, std::string scope)
-        : vm_(vm), previous_(vm.hostModuleScope()) {
+    HostModuleScope(VM &vm, std::string scope) : vm_(vm), previous_(vm.hostModuleScope()) {
       vm_.setHostModuleScope(std::move(scope));
     }
     ~HostModuleScope() { vm_.setHostModuleScope(previous_); }
@@ -2758,11 +2763,9 @@ public:
 // under clang + GCC 16 headers.
 namespace std {
 template <>
-struct formatter<havel::compiler::VM::GoroutineCallResult, char>
-    : formatter<string_view, char> {
+struct formatter<havel::compiler::VM::GoroutineCallResult, char> : formatter<string_view, char> {
   template <typename FormatContext>
-  auto format(const havel::compiler::VM::GoroutineCallResult &r,
-              FormatContext &ctx) const {
+  auto format(const havel::compiler::VM::GoroutineCallResult &r, FormatContext &ctx) const {
     string_view name = "Failed";
     switch (r) {
     case havel::compiler::VM::GoroutineCallResult::Interpreter:

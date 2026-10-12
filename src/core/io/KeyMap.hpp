@@ -87,6 +87,11 @@ public:
     
     // Get all alternative names for a key
     static std::vector<std::string> GetAliases(const std::string& name);
+
+    // Has the table been installed from modules/app/kymap.hv yet? The lexer
+    // runs during early parse passes that happen before the VM exists, so
+    // callers must handle a not-yet-hydrated table.
+    static bool IsHydrated();
     
 private:
     struct KeyEntry {

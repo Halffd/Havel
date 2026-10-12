@@ -125,6 +125,10 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
     return {};
 }
 
+bool KeyMap::IsHydrated() {
+    return initialized;
+}
+
 // Install the rows exported by modules/app/kymap.hv.
 //
 // The module has already resolved aliases to their primary codes, so a row

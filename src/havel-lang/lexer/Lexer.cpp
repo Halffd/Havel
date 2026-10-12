@@ -183,10 +183,164 @@ bool Lexer::isSkippable(char c) const {
     return c == ' ' || c == '\t' || c == '\r';
 }
 
+// Characters that introduce a modifier prefix rather than a key name.
+// They are valid in the middle of a combo string (for the & separator) but
+// must not be swallowed into the key name itself.
+bool Lexer::isModifierSigil(char c) const {
+    return c == '+' || c == '^' || c == '!' || c == '#' || c == '@' ||
+           c == '|' || c == '*' || c == '&' || c == ':' || c == '~' ||
+           c == '$';
+}
+
 bool Lexer::isHotkeyChar(char c) const {
-    return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' ||
-           c == '#' || c == '@' || c == '|' || c == '*' || c == '&' || c == ':' ||
-           c == '~' || c == '$' || c == '.' || c == ',' || c == '/';
+    if (isAlphaNumeric(c) || c == '_') return true;
+    // Modifier sigils and combo separators.
+    if (c == '+' || c == '^' || c == '!' || c == '#' || c == '@' ||
+        c == '|' || c == '*' || c == '&' || c == ':' || c == '~' || c == '$')
+        return true;
+    // Symbols that are keys in their own right. These are the aliases the
+    // keymap registers for the punctuation row: - = [ ] ; ' ` \ , . / <
+    // Matching a real key name is what separates `; => {}` (hotkey) from a
+    // stray `;` (syntax error), so the set is deliberately kept in sync with
+    // KeyMap's symbol aliases.
+    //
+    // '>' is excluded on purpose: it is not a key, and accepting it here would
+    // let the key-name scanner swallow the `=>` trigger as a key name.
+    switch (c) {
+    case '-': case '=': case '[': case ']': case ';': case '\'':
+    case '`':  case '\\': case ',': case '.': case '/': case '<':
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Is `name` a key the keymap knows?
+//
+// The keymap is the source of truth for valid keys. Lookup is case-insensitive
+// because IO lowercases before resolving (IO::removeSpecialCharacters is
+// followed by ToLower), so `Escape` and `escape` are the same key. Aliases are
+// included: they resolve through the same map, which is why `lwin` and the
+// symbol aliases are accepted here too.
+bool Lexer::isKnownHotkeyName(const std::string& name) const {
+    if (name.empty()) return false;
+
+    // Once the table is installed, the keymap is the source of truth and
+    // aliases resolve here too (so `lwin`, `;` and `pagedown` all pass).
+    if (KeyMap::IsHydrated()) {
+        if (KeyMap::FromString(name) != 0) return true;
+        std::string lower;
+        lower.reserve(name.size());
+        for (char c : name)
+            lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lower != name && KeyMap::FromString(lower) != 0) return true;
+        return false;
+    }
+
+    // Early parse passes run before the VM exists and therefore before
+    // hydration (HavelLauncher parses a script before constructing Havel), so
+    // the table is empty and cannot answer. Fall back to shape: a name made
+    // only of hotkey characters. This stays safe because
+    // isHotkeyBindingAhead() additionally requires the `=>` trigger, which no
+    // ordinary expression in the language produces after a bare name.
+    for (char c : name) {
+        if (!isHotkeyChar(c)) return false;
+    }
+    return true;
+}
+
+// Peek-only recognition of a hotkey binding.
+//
+// The grammar is `[modifiers] <key> => { ... }` (or `if <cond> =>` after the
+// key). This walks the source from `pos` without consuming anything and
+// reports whether the WHOLE construct is present: a leading modifier sigil,
+// then a key name the keymap recognises, then the trigger.
+//
+// Recognising the complete construct is what lets `;`, `,`, `.`, `-` and the
+// digits be keys without becoming special characters everywhere else. A
+// statement like `a, b` never reaches the trigger, so it fails here and
+// tokenization proceeds exactly as it would have without this check. Nothing
+// is consumed on either path, so there is no rewind to get wrong.
+bool Lexer::isHotkeyBindingAhead(size_t pos) const {
+    const size_t len = source.size();
+    if (pos >= len) return false;
+
+    // A quote is ambiguous: it opens a string/char literal, and `'` is also a key
+    // in its own right. The two are told apart by the closing quote. If the
+    // character right after the opening quote is another quote (`' =>`), the
+    // construct is the apostrophe key, not a literal. Otherwise a matching
+    // quote on the same line means a literal, and any `=>` after it belongs to
+    // the enclosing construct (`match` arm), not to a hotkey.
+    if (source[pos] == '\'' ) {
+        if (pos + 1 >= len) return false;
+        char nxt = source[pos + 1];
+        if (nxt == '\'' || nxt == ' ' || nxt == '\t') {
+            // `' =>` / `'x' =>` — fall through to the key scan below.
+        } else if (nxt == '=' && pos + 2 < len && source[pos + 2] == '>') {
+            // Already handled by the key scan; nothing to do.
+        } else {
+            // A literal like '0' or 'ab': not a hotkey.
+            for (size_t i = pos + 1; i < len; ++i) {
+                char c = source[i];
+                if (c == '\n' || c == '\r') break;
+                if (c == '\'') return false;  // properly closed literal
+                if (c == '=' && i + 1 < len && source[i + 1] == '>') break;
+            }
+        }
+    }
+
+    // Skip any leading modifier sigil (^ ! # @ ~ $ +).
+    size_t look = pos;
+    while (look < len && isModifierSigil(source[look])) look++;
+
+    // Scan the key name. This mirrors scanHotkey()'s loop: it stops at `=>`
+    // so the trigger is never eaten, and at anything that is not a hotkey
+    // character.
+    const size_t keyStart = look;
+    while (look < len) {
+        char c = source[look];
+        // Do not consume the `=` that begins `=>`.
+        if (c == '=' && look + 1 < len && source[look + 1] == '>') break;
+        if (!isHotkeyChar(c)) break;
+        look++;
+    }
+    if (look == keyStart) return false;
+
+    // A modifier sigil may separate modifier groups (Ctrl+Shift+F1); scan past
+    // those so the whole combination is validated as one key name.
+    while (look < len && (source[look] == '+' || source[look] == '-')) {
+        size_t afterSig = look;
+        while (afterSig < len && isModifierSigil(source[afterSig])) afterSig++;
+        size_t afterKey = afterSig;
+        while (afterKey < len) {
+            char c = source[afterKey];
+            if (c == '=' && afterKey + 1 < len && source[afterKey + 1] == '>') break;
+            if (!isHotkeyChar(c)) break;
+            afterKey++;
+        }
+        if (afterKey == afterSig) break;
+        look = afterKey;
+    }
+
+    std::string keyName = source.substr(keyStart, look - keyStart);
+    if (!isKnownHotkeyName(keyName)) return false;
+
+    // The trigger must follow: `=>`, or a condition before it (`if`, `when`).
+    while (look < len && (source[look] == ' ' || source[look] == '\t')) look++;
+    if (look + 1 < len && source[look] == '=' && source[look + 1] == '>') return true;
+
+    // `if <cond> =>` / `when <cond> =>`: scan forward on this line for the
+    // arrow. Bounded by the line so a stray `if` cannot run away.
+    if (look + 1 < len &&
+        ((source[look] == 'i' && source[look + 1] == 'f') ||
+         (look + 3 < len && source.compare(look, 4, "when") == 0))) {
+        while (look < len && source[look] != '\n' && source[look] != '\r') {
+            if (look + 1 < len && source[look] == '=' && source[look + 1] == '>') return true;
+            look++;
+        }
+    }
+
+    return false;
 }
 
 // UTF-8 decoding support
@@ -1173,15 +1327,19 @@ std::optional<Token> Lexer::tryParseHotkeyBinding() {
         advance();
     }
 
-    // Parse key name (alphanumeric + some special chars)
+    // Parse the key name. Symbols count, so `; => {}`, `\` => {} and the
+    // digit keys (`0 => {}`) lex as hotkey bindings rather than falling
+    // through to the expression parser. The result is validated against
+    // KeyMap below, so an unrecognised token here still reverts cleanly.
     std::string keyName;
     while (!isAtEnd()) {
         char c = peek();
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
-            keyName += advance();
-        } else {
-            break;
-        }
+        if (!isHotkeyChar(c)) break;
+        // Modifier sigils never belong to a key name: in `^+a` the leading `+`
+        // is a modifier, not part of the name. The modifier prefix was already
+        // consumed above, so anything sigil-like here starts the trigger.
+        if (isModifierSigil(c)) break;
+        keyName += advance();
     }
 
     if (keyName.empty()) {
@@ -1232,11 +1390,9 @@ std::optional<Token> Lexer::tryParseHotkeyBinding() {
             std::string nextKey;
             while (!isAtEnd()) {
                 char c = peek();
-                if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
-                    nextKey += advance();
-                } else {
-                    break;
-                }
+                if (!isHotkeyChar(c)) break;
+                if (isModifierSigil(c)) break;
+                nextKey += advance();
             }
             if (nextKey.empty()) {
                 return std::nullopt;
@@ -1346,6 +1502,33 @@ std::vector<Token> Lexer::tokenize() {
       break;
     }
 
+    // At statement start, recognise a complete hotkey binding before any
+    // character is consumed. isHotkeyBindingAhead() is peek-only: it requires a
+    // keymap-known key followed by the `=>` trigger, so `; => {}` becomes a
+    // hotkey while `a, b` or `x - 1` fall through untouched. Because nothing is
+    // consumed here, the failure path is byte-identical to normal tokenizing.
+    {
+      bool atStmtStart = currentTokens.empty();
+      if (!atStmtStart) {
+        TokenType prev = currentTokens.back().type;
+        atStmtStart = (prev == TokenType::NewLine ||
+                       prev == TokenType::Semicolon ||
+                       prev == TokenType::Arrow ||
+                       prev == TokenType::OpenBrace ||
+                       prev == TokenType::CloseBrace);
+      }
+      if (atStmtStart && isHotkeyBindingAhead(position)) {
+        // Re-enter tokenize at the binding start so scanHotkey() sees its
+        // first character consumed, exactly as the other hotkey call sites.
+        advance();
+        currentTokens.push_back(scanHotkey());
+        if (debug_lexer) {
+          havel::debug("LEX: hotkey binding {}", currentTokens.back().toString());
+        }
+        continue;
+      }
+    }
+
     char c = advance();
 
     // Handle comments BEFORE other tokens (especially '/' and '#')
@@ -1378,7 +1561,9 @@ std::vector<Token> Lexer::tokenize() {
       }
 
       bool hasModifierPrefix = (!isAtEnd() && (peek() == '!' || peek() == '&' || peek() == '^'));
-      bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
+      // Digits are keys too: `0 => {}` must reach the hotkey path. Symbol
+      // keys are handled by isHotkeyLookahead() in the statement-start arm.
+      bool hasKeyName = (!isAtEnd() && (isAlpha(peek()) || std::isdigit(static_cast<unsigned char>(peek()))));
       bool afterAssign = (prevType == TokenType::Assign && hasKeyName && isHotkeyLookahead());
 
       if ((isStatementStart && isHotkeyLookahead()) || afterAssign || (hasModifierPrefix && hasKeyName && isHotkeyLookahead())) {

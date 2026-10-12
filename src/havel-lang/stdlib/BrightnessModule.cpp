@@ -118,31 +118,42 @@ void registerBrightnessModule(const VMApi &api) {
     return Value(g_brightnessManager->setShadowLift(monitor, lift));
   });
 
+  // Resolve the monitor argument of a 2-arg call, mirroring the host bridge
+  // (BrightnessBridge.cpp getMonitorFromArgs): a number selects a connected
+  // monitor by index via getMonitorByIndex, a string selects by output name.
+  // Empty result falls back to all-monitor stepping, like the bridge.
+  static std::string monitorFromArg(const Value &arg) {
+    if (!g_brightnessManager) return "";
+    if (arg.isNumber()) {
+      return g_brightnessManager->getMonitorByIndex(
+          static_cast<size_t>(arg.asInt()));
+    }
+    return arg.toString();
+  }
+
   api.registerFunction("brightness.increase",
                        [](const std::vector<Value> &args) -> Value {
     if (!g_brightnessManager) return Value::makeBool(false);
-    double amount = 0.02;
-    if (!args.empty()) amount = args[0].asDouble();
-    if (args.size() <= 1) {
-      // 0 args: default step; 1 arg: explicit amount. The old
-      // `args.size() == 1` check fell through to args[1] on an empty
-      // vector (OOB read -> garbage monitor -> false, brightness stuck).
-      return Value(g_brightnessManager->increaseBrightness(amount));
-    }
-    std::string monitor = args[1].toString();
-    return Value(g_brightnessManager->increaseBrightness(monitor, amount));
+    // 0 args means the default step (0.02), matching the host bridge and
+    // DEFAULT_BRIGHTNESS_AMOUNT. The old `args.size() == 1` check fell
+    // through to args[1] on an empty vector (OOB read -> garbage monitor).
+    double amount = args.empty() ? 0.02 : args[0].asDouble();
+    std::string monitor;
+    if (args.size() >= 2) monitor = monitorFromArg(args[1]);
+    if (!monitor.empty())
+      return Value(g_brightnessManager->increaseBrightness(monitor, amount));
+    return Value(g_brightnessManager->increaseBrightness(amount));
   });
 
   api.registerFunction("brightness.decrease",
                        [](const std::vector<Value> &args) -> Value {
     if (!g_brightnessManager) return Value::makeBool(false);
-    double amount = 0.02;
-    if (!args.empty()) amount = args[0].asDouble();
-    if (args.size() <= 1) {
-      return Value(g_brightnessManager->decreaseBrightness(amount));
-    }
-    std::string monitor = args[1].toString();
-    return Value(g_brightnessManager->decreaseBrightness(monitor, amount));
+    double amount = args.empty() ? 0.02 : args[0].asDouble();
+    std::string monitor;
+    if (args.size() >= 2) monitor = monitorFromArg(args[1]);
+    if (!monitor.empty())
+      return Value(g_brightnessManager->decreaseBrightness(monitor, amount));
+    return Value(g_brightnessManager->decreaseBrightness(amount));
   });
 
   api.registerFunction("brightness.increaseTemperature",

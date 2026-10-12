@@ -452,8 +452,16 @@ void REPL::replInputThreadEntry() {
         // Push to queue for VM thread to process
         inputQueue_.push(line);
     }
-    
-    replThreadRunning_.store(false);
+
+    // Do NOT store(false) here. replThreadRunning_ is the CONSUMER's loop
+    // condition: on the EOF path the producer pushes __EOF__ and returns,
+    // and if it also cleared the flag the main loop's while-check could
+    // observe false before draining the queue — every line pushed just
+    // before EOF (the normal piped session: stdin is fully buffered while
+    // the REPL initializes) was dropped unexecuted (observed: piped
+    // `print(...)`/`:globals` lines echoed by readline but never evaluated,
+    // profiler calls=0). The consumer's __EOF__ handler is what stops the
+    // loop, after the queue in front of the marker is processed.
 }
 
 std::string REPL::readLineNoPump(const std::string& prompt) {

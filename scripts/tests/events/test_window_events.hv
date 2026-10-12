@@ -1,0 +1,45 @@
+// smoke: window-events = 3
+// Native event sources (architecture doc): `on window.*` subscriptions start
+// the X11 WindowEventSource; the events dispatch via the VM pump with the
+// payload as the handler's `event` argument.
+//
+// HARDWARE NOTE: this test watches real X11 window events (read-only —
+// no input injection, no display state changes). It needs a DISPLAY:
+// XOpenDisplay fails in a headless session and the source disables
+// gracefully (the script continues; the handler just never fires).
+// Run by hand with the user's screen in view. Not in the auto-collected
+// smoke suite.
+//
+// Manual verification: run this, then focus/open/move a window; the
+// handler prints the event name and the window id.
+
+val events = 0
+
+on window.focused {
+  events = events + 1
+  print("focused: " + event.window)
+}
+
+on window.created {
+  events = events + 1
+  print("created: " + event.window)
+}
+
+on window.moved {
+  events = events + 1
+  print("moved: " + event.window + " at " + event.x + "," + event.y)
+}
+
+print("main done — focus or move a window now")
+
+t = 0
+while t < 150 {
+  sleep(100)
+  t = t + 1
+}
+
+if events == 0 {
+  print("NOTE: no window events seen in 15s — is a WM running?")
+} else {
+  print("PASS window-events: " + str(events) + " events seen")
+}

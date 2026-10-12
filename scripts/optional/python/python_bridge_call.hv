@@ -1,0 +1,13 @@
+// smoke: python-bridge-call
+// Tests py.call into the json module with a Havel array argument, and that
+// the returned string arrives as a Havel string.
+// Expected: [1, 2, 3]
+// Fails if Havel array -> Python list conversion is wrong, or if the
+// Python string result is not converted back.
+
+result = py.call("json", "dumps", [1, 2, 3])
+if result != "[1, 2, 3]" {
+  print("FAIL python-bridge-call: expected [1, 2, 3], got " + str(result))
+  process.exit(255)
+}
+return result

@@ -444,6 +444,38 @@ struct ChannelRef {
 using BytecodeHostFunction =
     std::function<Value(const std::vector<Value> &)>;
 
+// Registration metadata for a host function.
+//
+// The registry itself is a flat name -> std::function map, so arity and the
+// owning module have nowhere to live unless they are recorded here. Arity is
+// only knowable when the caller passed one to registerHostFunction(name,
+// arity, fn); the two-argument overload accepts any argument count, so it
+// leaves arity empty. Module comes from the registration scope the caller was
+// in, which is what the runtime dispatch sites actually know.
+struct HostFunctionMeta {
+  std::optional<size_t> arity;
+  std::string module;
+  // True when the owner was stated outright rather than read from the
+  // registration scope. An explicit owner outlives later re-registration:
+  // Modules::install() attributes each bridge's functions, and the pipeline
+  // then re-registers the same flat map through registerHostFunction, which
+  // would otherwise stamp the scope default over the real bridge.
+  bool module_explicit = false;
+};
+
+// One row of getHostFunctionInfo(): everything the runtime can say about a
+// host function without guessing. `namespace_prefix` is the dotted prefix the
+// VM itself groups on in buildNamespaceGlobals, empty for an undotted name.
+struct HostFunctionInfo {
+  std::string name;
+  uint32_t index = 0;
+  std::optional<size_t> arity;
+  std::string module;
+  std::string namespace_prefix;
+  bool callable = false;
+  bool bound_as_global = false;
+};
+
 struct SourceLocation {
   std::string filename;
   uint32_t line = 0;
@@ -816,6 +848,12 @@ struct BytecodeFunction {
   uint32_t source_line = 0;              // Definition line number
   bool is_generator = false;             
   bool is_timer_closure = false;
+  // Closure compiled inside a class method: the instance receiver is
+  // captured as an upvalue (these closures have no receiver slot). For
+  // timer closures the receiver sits second-to-last; the timer-id upvalue
+  // stays last for non-class closures' @stop/@cancel (debounce-style
+  // timer self-stop).
+  bool has_self_upvalue = false;
   
   
   mutable std::vector<TypeFeedback> type_feedback;

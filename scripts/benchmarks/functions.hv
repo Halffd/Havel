@@ -1,0 +1,51 @@
+// Benchmark: Function calls
+// Tests function call overhead and recursion
+
+fn simple_function() {
+    return 42
+}
+
+fn benchmark_simple_calls() {
+    i = 0
+    while i < 1000000 {
+        simple_function()
+        i = i + 1
+    }
+    return i
+}
+
+fn add_numbers(a, b) {
+    return a + b
+}
+
+fn benchmark_parameterized_calls() {
+    i = 0
+    sum = 0
+    while i < 500000 {
+        sum = add_numbers(i, i + 1)
+        i = i + 1
+    }
+    return sum
+}
+
+fn fibonacci(n) {
+    if n <= 1 {
+        return n
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+fn benchmark_recursion() {
+    sum = 0
+    i = 0
+    while i < 20 {
+        sum = sum + fibonacci(i)
+        i = i + 1
+    }
+    return sum
+}
+
+print("functions/simple_calls=" + str(benchmark_simple_calls()))
+print("functions/parameterized_calls=" + str(benchmark_parameterized_calls()))
+print("functions/recursion=" + str(benchmark_recursion()))

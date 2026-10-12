@@ -202,6 +202,25 @@ void havel_loader_add_module_paths(HavelLoader *loader) {
 void havel_loader_add_toolkit_paths(HavelLoader *loader) {
  if (!loader) return;
  havel_loader_add_search_path(loader, "toolkits");
+
+ // Exe-relative: build-debug/toolkits resolves whether or not the user's CWD
+ // is the build directory. Mirrors the modules lookup in
+ // havel_loader_add_module_paths.
+ {
+  char exe_path[512];
+  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+  if (len > 0) {
+   exe_path[len] = '\0';
+   char *last_slash = strrchr(exe_path, '/');
+   if (last_slash) {
+    *last_slash = '\0';
+    char buf[768];
+    snprintf(buf, sizeof(buf), "%s/toolkits", exe_path);
+    havel_loader_add_search_path(loader, buf);
+   }
+  }
+ }
+
  havel_loader_add_search_path(loader, "/usr/lib/havel/toolkits");
  havel_loader_add_search_path(loader, "/usr/local/lib/havel/toolkits");
 
@@ -269,8 +288,10 @@ void *havel_loader_open(HavelLoader *loader, const char *path) {
 
  void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  if (!handle) {
+  // Capture once: the first dlerror() call consumes the error message.
+  const char *derr = dlerror();
   HAVEL_LOGF_ERROR("dlopen failed for %s: %s", path,
-     dlerror() ? dlerror() : "unknown");
+     derr ? derr : "unknown");
  }
  return handle;
 }
@@ -444,7 +465,12 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     }
     const char *canonical = alias_map_lookup(loader, name);
     if (!canonical) {
-      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      /* Miss is a normal return here, not a failure: callers probe for a
+       * native plugin before falling back to a Havel/C++ module, and every
+       * one of them handles NULL. Logging at ERROR produced a false alarm
+       * for scripts using no modules at all (e.g. print("hi") reported
+       * "library not found for ffi"). Keep it at DEBUG. */
+      HAVEL_LOGF_DEBUG("havel_loader_load_module: no native plugin for %s", name);
       return NULL;
     }
     snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", canonical);
@@ -455,7 +481,7 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     }
     path = find_library(loader, lib_name);
     if (!path) {
-      HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+      HAVEL_LOGF_DEBUG("havel_loader_load_module: no native plugin for %s (alias %s)", name, canonical);
       return NULL;
     }
   }
@@ -463,8 +489,9 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
   HAVEL_LOGF_INFO("havel_loader_load_module: dlopen %s for %s", path, name);
   void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   if (!handle) {
+   const char *derr = dlerror();
    HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
-      dlerror() ? dlerror() : "unknown");
+      derr ? derr : "unknown");
    free(path);
    return NULL;
   }
@@ -563,8 +590,9 @@ const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char
 
  void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
  if (!handle) {
+  const char *derr = dlerror();
   HAVEL_LOGF_ERROR("dlopen failed for toolkit '%s': %s", name,
-     dlerror() ? dlerror() : "unknown");
+     derr ? derr : "unknown");
   free(path);
   return NULL;
  }

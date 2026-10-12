@@ -264,8 +264,18 @@ void registerObjectModule(const VMApi &api) {
           // the math/set namespace AND the set-type name — scripts then
           // resolve `set` to <fn object.set> and set()/set([..]) break.
           if (name == "set") continue;
-          api.setField(objVal, name, value);
-          api.setGlobal(name, value);
+          // Mirror the ArrayModule rule: never clobber a name that is already
+          // a registered host-function global. Bare `sorted`, `len`, `map`
+          // are now provided by the VM as canonical builtins; without this
+          // guard the object module's copies overwrite them and the winner
+          // depends on module install order (bare sorted(a) resolved to
+          // object.sorted and returned null).
+          if (!vm.isHostFunctionGlobal(name)) {
+            api.setField(objVal, name, value);
+            api.setGlobal(name, value);
+          } else {
+            api.setField(objVal, name, value);
+          }
         }
       }
     }

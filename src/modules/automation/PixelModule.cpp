@@ -20,16 +20,7 @@
 #include "PixelModule.hpp"
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
-// PixelAutomationService's implementation TU is compiled only with the Qt
-// UI backend (CMakeLists GUI_SOURCES); without it the module still
-// registers but every pixel.* call returns null (call sites null-check).
-#ifdef HAVE_QT_EXTENSION
-#include "host/automation/PixelAutomationService.hpp"
-#else
-namespace havel::host {
-class PixelAutomationService; // fwd: null-service builds never deref it
-}
-#endif
+#include "host/automation/IPixelAutomation.hpp"
 #include "core/io/IO.hpp"
 #include "utils/Logger.hpp"
 
@@ -37,7 +28,7 @@ namespace havel::modules {
 
 using compiler::Value;
 using compiler::VMApi;
-using host::PixelAutomationService;
+using host::IPixelAutomation;
 
 static std::pair<int, int> currentMousePos() {
   auto io = host::ServiceRegistry::instance().get<IO>();
@@ -62,17 +53,13 @@ static std::vector<Value> stripReceiver(const VMApi &api, const std::vector<Valu
   return args;
 }
 
-static std::shared_ptr<PixelAutomationService> getPixelService() {
-#ifdef HAVE_QT_EXTENSION
-  auto &registry = host::ServiceRegistry::instance();
-  auto svc = registry.get<PixelAutomationService>();
-  if (!svc) {
-    ::havel::error("PixelModule: PixelAutomationService not available in registry");
-  }
-  return svc;
-#else
-  return nullptr; // no Qt UI backend in this build config
-#endif
+static std::shared_ptr<IPixelAutomation> getPixelService() {
+    auto& registry = host::ServiceRegistry::instance();
+    auto svc = registry.get<IPixelAutomation>();
+    if (!svc) {
+        ::havel::error("PixelModule: PixelAutomationService not available in registry");
+    }
+    return svc;
 }
 
 static host::Region parseRegion(const VMApi &api, const Value &v) {

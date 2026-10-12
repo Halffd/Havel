@@ -1,0 +1,13 @@
+// smoke: python-bridge-namespace
+// Tests that py.run binds a name in a namespace that a later py.eval reads.
+// Expected: 42
+// Fails if py.run does not execute, or if run and eval use separate
+// namespaces (the namespace must persist across calls).
+
+py.run("bridge_namespace_probe = 6 * 7")
+result = py.eval("bridge_namespace_probe")
+if result != 42 {
+  print("FAIL python-bridge-namespace: expected 42, got " + str(result))
+  process.exit(255)
+}
+return result

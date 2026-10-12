@@ -1,0 +1,29 @@
+// Regression: hotkey latency under a high-usage busy goroutine (no sleeps).
+// The HOTKEY-priority goroutine must preempt a CPU-saturating sibling at
+// its 65536-instruction tick boundary instead of starving behind it.
+// Expected: fired==1 within 1s of trigger; rc 0. Headless-safe: F24 is a
+// persistent goroutine fired via hotkey.trigger (no OS input needed).
+fired = 0
+F24 => {
+    fired = fired + 1
+}
+
+go fn burner() {
+    i = 0
+    while i < 5000000 {
+        i = i + 1
+    }
+}
+
+sleep(50)
+t0 = time.millis()
+hotkey.trigger("F24")
+while fired == 0 && time.millis() - t0 < 1000 {
+    sleep(5)
+}
+print("fired:", fired, " latency_ms:", time.millis() - t0)
+if fired != 1 {
+    print("FAIL hk-starvation-busy: hotkey never fired under busy load")
+    process.exit(255)
+}
+process.exit(0)

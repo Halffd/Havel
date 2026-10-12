@@ -162,6 +162,32 @@ if(NOT PORTABLE_BUILD)
 endif()
 
 # Compiler-specific flags
+# -fuse-ld=lld is applied only when the system lld actually runs. A distro
+# upgrade can orphan it: /usr/bin/ld.lld linked against libLLVM.so.22.1 while
+# the box now ships only libLLVM.so.21.1/23.1, so every link dies with
+# "error while loading shared libraries" plus "clang++: error: unable to
+# execute command". Probe the binary clang would actually invoke and fall
+# back to the compiler default rather than hard-failing the whole build.
+set(HAVEL_LLD_LINK_FLAG "")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=ld.lld
+        OUTPUT_VARIABLE _havel_lld_path
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(_havel_lld_path)
+        execute_process(
+            COMMAND ${_havel_lld_path} --version
+            RESULT_VARIABLE _havel_lld_status
+            OUTPUT_QUIET ERROR_QUIET)
+        if(_havel_lld_status EQUAL 0)
+            set(HAVEL_LLD_LINK_FLAG "-fuse-ld=lld")
+        else()
+            message(STATUS "lld unusable (${_havel_lld_path}, status ${_havel_lld_status}); using default linker")
+        endif()
+    endif()
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     # No -ffast-math: core::Value is NaN-boxed (QNAN = 0x7ff8... is the
@@ -171,7 +197,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # (EventListener::Stop -> backend_->Shutdown); -fno-fast-math is clean,
     # with and without -g.
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${HAVEL_LLD_LINK_FLAG} -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
@@ -501,7 +527,13 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
 
-    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
+    # Charts is deliberately absent. Nothing links Qt6::Charts --
+    # Qt Charts dependency removed; dead stubs cleaned up.
+    # Asking for the component anyway made Qt6_FOUND false wherever
+    # libqt6charts is not installed, which turned a missing, unused charting
+    # library into a hard "Qt6 backend requested but Qt6 not found" configure
+    # failure for the whole build.
+    find_package(Qt6 COMPONENTS Core Widgets Gui Test QUIET)
 
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC
@@ -659,6 +691,7 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/BrowserBridge.cpp"
 "src/host/module/bridges/ConfigBridge.cpp"
 "src/host/module/bridges/DisplayBridge.cpp"
+"src/host/module/bridges/EventBridge.cpp"
 "src/host/module/bridges/IOBridge.cpp"
 "src/host/module/bridges/InputBridge.cpp"
 "src/host/module/bridges/MediaBridge.cpp"
@@ -667,6 +700,10 @@ list(APPEND CORE_SOURCES
 "src/host/module/bridges/SystemBridge.cpp"
 "src/host/module/bridges/TimerBridge.cpp"
 "src/host/module/bridges/ToolsBridge.cpp"
+# Native event sources (platform boundary): inotify file watching + X11
+# window events publish into the EventRuntime; the VM pump dispatches.
+"src/host/platform/FileWatcher.cpp"
+"src/host/platform/WindowEventSource.cpp"
 "src/host/module/bridges/UIBridge.cpp"
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"
@@ -676,11 +713,24 @@ list(APPEND CORE_SOURCES
 "src/Havel.cpp"
  "src/c/Config.c"
 "src/modules/HostModules.cpp"
+# Qt-free pixel service surface: the IPixelAutomation interface's value-type
+# methods, plus the registration slot the Qt side fills with the concrete
+# (havel_gui) implementation. Neither may name the Qt-using service class.
+"src/host/automation/IPixelAutomation.cpp"
+"src/host/automation/PixelAutomationFactory.cpp"
+# Qt-free toolkit bridge installer: loads the havel_toolkit plugin at runtime
+# and installs the clipboard/gui.notify pipeline functions. Replaces the
+# QtBridge.cpp installer that havel_gui used to provide to the executable.
+"src/host/module/bridges/ToolkitBridge.cpp"
 )
 
-# ScreenshotService is OpenCV-based (HAVE_OPENCV), not Qt-dependent, and
-# UIBridge.cpp references it unconditionally, so it must always build.
-# (AltTabService.cpp is already in the unconditional list above.)
+# ScreenshotService/AltTabService: NOT Qt-dependent despite their old
+# placement (ScreenshotService.cpp includes only OpenCV + cstring;
+# AltTabService.cpp only <memory>). Both are referenced unconditionally by
+# core TUs (UIBridge, UIManager, HostModules), so they must build always --
+# a Qt-UI-less configure (build.sh's headless modes) failed to link with
+# undefined references to ScreenshotService otherwise. AltTabService.cpp is
+# already in the unconditional glob above.
 list(APPEND CORE_SOURCES "src/host/screenshot/ScreenshotService.cpp")
 
 # Clipboard sources (always built, no Qt dependency)
@@ -1147,16 +1197,19 @@ if(LINUX)
     find_library(XCOMPOSITE_LIB Xcomposite QUIET)
     find_library(XDAMAGE_LIB Xdamage QUIET)
     find_library(XKBCOMMON_LIB xkbcommon QUIET)
-    list(APPEND COMMON_LIBS ${X11_LIBRARIES})
+    set(_HAVEL_X11_LIBS ${X11_LIBRARIES})
     foreach(_xlib XI_LIB XTST_LIB XRANDR_LIB2 XINERAMA_LIB2 XCOMPOSITE_LIB XDAMAGE_LIB XKBCOMMON_LIB)
         if(${_xlib})
-            list(APPEND COMMON_LIBS ${${_xlib}})
+            list(APPEND _HAVEL_X11_LIBS ${${_xlib}})
         endif()
     endforeach()
     find_library(XFIXES_LIB Xfixes QUIET)
     if(XFIXES_LIB)
-        list(APPEND COMMON_LIBS ${XFIXES_LIB})
+        list(APPEND _HAVEL_X11_LIBS ${XFIXES_LIB})
     endif()
+    list(APPEND COMMON_LIBS ${_HAVEL_X11_LIBS})
+else()
+    set(_HAVEL_X11_LIBS "")
 endif()
 list(APPEND COMMON_LIBS
     OpenGL::GL
@@ -1203,6 +1256,17 @@ endif()
 
 # Append backend libs to common libs
 list(APPEND COMMON_LIBS ${BACKEND_LIBS})
+
+# Qt-free view of COMMON_LIBS. The executable, havel_core's link interface and
+# the language archives (havel_runtime, havel_compiler, havel_lang_core) must
+# not link Qt at all: Qt enters those processes at runtime through the toolkit
+# plugin (UIManager::ensureQtToolkit), so a Qt version skew degrades to a log
+# line instead of an unbootable binary. Targets that still need Qt at link
+# time (tests, tools that link havel_gui) use COMMON_LIBS unchanged. In
+# non-Qt builds the removal is a no-op; GTK/ImGui backend libs stay because
+# those backends are compiled into havel_core.
+set(_HAVEL_NON_QT_COMMON_LIBS ${COMMON_LIBS})
+list(REMOVE_ITEM _HAVEL_NON_QT_COMMON_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
 
 # ==============================================================================
 # NATIVE EXTENSIONS (MODULE libraries loaded via dlopen)
@@ -1359,6 +1423,28 @@ if(QT_BACKEND_AVAILABLE)
 add_library(havel_toolkit_qt MODULE
 src/extensions/qt/havel_toolkit_qt.cpp
 src/extensions/qt/qt_extension.cpp
+# The executable no longer links havel_gui: Qt enters the process exclusively
+# through this plugin, so everything havel_gui used to provide in-process has
+# to be compiled here — the UI backend + its service glue, the pixel
+# automation service, the screen pixel provider, and the factory installers.
+src/extensions/qt/qt_toolkit_factories.cpp
+src/host/ui/QtBackend.cpp
+src/host/ui/UIService.cpp
+src/host/automation/PixelAutomationService.cpp
+src/extensions/qt/QtScreenCapture.cpp
+# Host-side classes the plugin constructs or calls. The executable no longer
+# links havel_gui (GUI window classes) and never extracts the pixel automation
+# objects (nothing in the exe references them), so with RTLD_NOW the plugin
+# must define its own copies: the GUI window classes it creates, and the
+# Qt-free pixel trio (service implementation, value types, screen-provider
+# slot — only the plugin writes and reads that slot now).
+src/core/automation/PixelAutomation.cpp
+src/core/automation/ScreenCapture.cpp
+src/host/automation/IPixelAutomation.cpp
+src/extensions/gui/alt_tab/AltTab.cpp
+src/extensions/gui/clipboard_manager/ClipboardManager.cpp
+src/extensions/gui/screenshot_manager/ScreenshotManager.cpp
+src/extensions/gui/screenshot_manager/ScreenRegionSelector.cpp
 src/extensions/qt/QtScreenshotBackend.hpp
 src/extensions/qt/QtAltTabBackend.hpp
 src/extensions/qt/QtClipboardBackend.hpp
@@ -1376,6 +1462,9 @@ target_link_libraries(havel_toolkit_qt PRIVATE
 Qt6::Core Qt6::Widgets Qt6::Gui
 fmt::fmt
 havel_extension_runtime
+# The GUI window classes and pixel capture sources this plugin owns call
+# Xlib directly (same set havel_gui's consumers always linked).
+${_HAVEL_X11_LIBS}
 dl
 )
 target_compile_definitions(havel_toolkit_qt PRIVATE
@@ -1621,7 +1710,14 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${COMMON_LIBS})
+# havel_core's link interface must not carry Qt: Qt-free embedders (havel-wm,
+# the cranelift AOT shim, the AOT runtime, havel-lsp) link this archive and
+# must not be forced to link Qt. Strip just the Qt trio from the shared
+# COMMON_LIBS — the GTK/ImGui backend libs stay, because GtkBackend.cpp and
+# ImGuiBackend.cpp live in this archive and their consumers need them. Qt
+# enters the process at runtime through the toolkit plugin
+# (UIManager::ensureQtToolkit).
+target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${_HAVEL_NON_QT_COMMON_LIBS})
 target_include_directories(havel_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src/include
@@ -1691,19 +1787,18 @@ add_executable(havel
 
 target_link_libraries(havel PRIVATE
 -Wl,--start-group
-$<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
+$<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_runtime havel_compiler>
 havel_modules
-$<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
 -Wl,--end-group
 )
 
-# The app selects the optional Qt bridge explicitly (src/main.cpp). The define
-# is what keeps main.cpp free of a reference to installQtGuiBridge in builds
-# where havel_gui does not exist.
-if(ENABLE_QT_UI_BACKEND)
-  target_compile_definitions(havel PRIVATE HAVEL_QT_BRIDGE)
-endif()
+# The Qt UI/toolkit side is not linked at all: the executable loads
+# havel_toolkit_qt.so at runtime through UIManager::ensureQtToolkit, so a Qt
+# version skew degrades to a log line instead of an unbootable binary. The
+# core's Qt-free bridge installer (ToolkitBridge.cpp) is registered in
+# src/main.cpp unconditionally — it only adds null-guarded pipeline functions
+# when no toolkit is present.
 
 
 # ==============================================================================
@@ -1845,7 +1940,7 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 target_link_libraries(hvtest PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1915,7 +2010,7 @@ target_include_directories(hpp_proto_test PRIVATE
 )
 target_link_libraries(hpp_proto_test PRIVATE
   GTest::gtest GTest::gtest_main
-  -Wl,--start-group havel_lang havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  -Wl,--start-group havel_runtime havel_compiler havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
   -Wl,--start-group
   ${COMMON_LIBS}
   $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1950,7 +2045,7 @@ set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
 target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
 endif()
 target_link_libraries(havel_api_test PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2053,13 +2148,13 @@ target_include_directories(hvdump PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(hvdb PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
   )
 target_link_libraries(hvdump PRIVATE
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2105,7 +2200,7 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 target_link_libraries(havel-dap PRIVATE
     nlohmann_json::nlohmann_json
-    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     -Wl,--start-group
     ${COMMON_LIBS}
     -Wl,--end-group
@@ -2318,11 +2413,13 @@ ${CURL_INCLUDE_DIRS}
 )
 
 # Link libraries
+# The executable must not link Qt at all: Qt enters the process at runtime
+# through the havel_toolkit plugin (UIManager::ensureQtToolkit), so a Qt
+# version skew degrades to a log line instead of an unbootable binary.
+# COMMON_LIBS carries BACKEND_LIBS (Qt6::Core/Widgets/Gui) for the targets
+# that still link havel_gui; the Qt-free view strips them.
 target_link_libraries(havel PRIVATE
-    ${COMMON_LIBS}
-    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Gui>
-    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Widgets>
-    $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_FFMPEG_WORKAROUND}>
+    ${_HAVEL_NON_QT_COMMON_LIBS}
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     $<$<BOOL:${HAVE_LIBFFI}>:ffi>
@@ -2363,8 +2460,16 @@ $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 #   havel_compiler  the SDK. Lexer-driven frontend, parser, AST, semantic
 #                   passes, bytecode compilation, JIT backends, incremental
 #                   driver and developer tools.
-#   havel_lang      compatibility umbrella (INTERFACE) so every pre-split
-#                   consumer keeps linking the one name it linked before.
+#   havel_lang      compatibility umbrella (INTERFACE) left in place for the
+#                   LSP/embedded/AOT paths that link a single language
+#                   archive. Executable consumers that group havel_core
+#                   together with the language archives list
+#                   havel_runtime havel_compiler directly: CMake appends an
+#                   interface library's expansion *after* a literal
+#                   -Wl,--end-group, so `havel_lang` inside a group left
+#                   runtime/compiler outside it and the core<->language
+#                   symbol cycle (EventListener -> ExecutionEngine and back)
+#                   failed to resolve at link time.
 #
 # The partition below is derived from the real source list, so a new file
 # cannot silently fall out of the build: anything that matches no runtime
@@ -2511,8 +2616,12 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
             # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
         )
 
+        # Qt-free view: these archives' objects reference no Qt symbol, and
+        # PRIVATE link libs of a static archive propagate into every
+        # consumer's link line — with COMMON_LIBS that made the executable,
+        # havel-lsp and every embedder link Qt.
         target_link_libraries(${_lang_target} PRIVATE
-${COMMON_LIBS}
+${_HAVEL_NON_QT_COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 dl
@@ -2569,19 +2678,21 @@ HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
 endif()
 
 # ==============================================================================
-# MODULE PLUGINS (conditional .so modules loaded via dlopen)
+# MODULE PLUGIN BUILD IDENTITY (whenever the havel lang is on)
 # ==============================================================================
-if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
-set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
-file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
-
-# -- module plugin build identity --------------------------------------------
 # Module plugins (.so) inline host VM code (VMApi -> VM::setGlobal etc.), so
 # a plugin compiled against a different VM layout crashes the host (observed:
 # stale havel_mod_math.so SIGFPE in _Mod_range_hashing after VM.hpp gained
 # new fields). Hash the ABI-critical headers at configure time and stamp the
 # value into both the host binary and every plugin; the loader rejects
 # plugins whose build id does not match the host's.
+#
+# Computed whenever ENABLE_HAVEL_LANG is on, NOT gated on
+# ENABLE_MODULE_PLUGINS: a configure without the plugins flag must still give
+# the host the same build id the existing plugin .so files carry, or every
+# module load fails with a spurious build-id mismatch ("host 0") until the
+# next full reconfigure. Drift happened twice; this removes the trigger.
+if(ENABLE_HAVEL_LANG)
 set(HAVEL_ABI_HEADERS
   ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VM.hpp
   ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/vm/VMApi.hpp
@@ -2600,6 +2711,14 @@ string(MD5 HAVEL_MODULE_BUILD_ID_MD5 "${HAVEL_MODULE_BUILD_ID_SRC}")
 string(SUBSTRING "${HAVEL_MODULE_BUILD_ID_MD5}" 0 8 HAVEL_MODULE_BUILD_ID)
 add_compile_definitions(HAVEL_MODULE_BUILD_ID=0x${HAVEL_MODULE_BUILD_ID})
 message(STATUS "Module plugin build id: 0x${HAVEL_MODULE_BUILD_ID}")
+endif()
+
+# ==============================================================================
+# MODULE PLUGINS (conditional .so modules loaded via dlopen)
+# ==============================================================================
+if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
+set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
+file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 
 # Helper function to define a module plugin .so target
 # Usage: add_havel_module_plugin(name source [EXTRA_DEFS def1 def2 ...])
@@ -2966,6 +3085,52 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(sleep_until_parser_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME sleep_until_parser_test COMMAND sleep_until_parser_test)
 
+# Orphaned `else` after an unbraced if-body must be a parse error, not a
+    # silently mis-ordered else body. Parser-only: compiles the same
+    # lexer+parser source set as the LSP target, so it links neither app core
+    # nor VM.
+    add_executable(parser_orphan_else_test
+        tests/parser_orphan_else_ut.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/core/io/KeyMap.cpp
+        src/c/LoggerC.c
+        src/c/Config.c
+        src/dl/Loader.c
+    )
+    target_include_directories(parser_orphan_else_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(parser_orphan_else_test PRIVATE cxx_std_23)
+    target_link_libraries(parser_orphan_else_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
+    add_test(NAME parser_orphan_else_test COMMAND parser_orphan_else_test)
+
+    # Companion to parser_orphan_else_test: covers the other silent
+    # ExpressionStatement{nullptr} family -- top-level closing delimiters.
+    add_executable(parser_unmatched_delimiter_test
+        tests/parser_unmatched_delimiter_ut.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/core/io/KeyMap.cpp
+        src/c/LoggerC.c
+        src/c/Config.c
+        src/dl/Loader.c
+    )
+    target_include_directories(parser_unmatched_delimiter_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(parser_unmatched_delimiter_test PRIVATE cxx_std_23)
+    target_link_libraries(parser_unmatched_delimiter_test PRIVATE GTest::gtest GTest::gtest_main fmt::fmt nlohmann_json::nlohmann_json)
+    add_test(NAME parser_unmatched_delimiter_test COMMAND parser_unmatched_delimiter_test)
+
     # C-ABI value conversion round-trips (HavelValue <-> VM Value). The
     # qt.*/gtk.* extension wrappers depend on these; before the C-API
     # restoration strings/handles/arrays/objects silently degraded to null.
@@ -2986,7 +3151,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     # binary links them.
     target_link_libraries(capi_value_conversion_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group)
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group)
     add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
     # IO::ParseKeyString - the pure tokenizer behind io.send's key syntax.
@@ -3007,9 +3172,12 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(io_key_parse_test PRIVATE cxx_std_23)
     target_link_libraries(io_key_parse_test PRIVATE
         # gtest_main has to precede the havel archives, same reason as
-        # pixel_provider_test below.
+        # pixel_provider_test below. The three havel archives reference each
+        # other cyclically (havel_core's EventBridge/FileWatcher call into
+        # havel_runtime's EventRuntime), so all three must be in one group;
+        # havel_lang alone leaves those unresolved when core is scanned last.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3038,7 +3206,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # src/havel-lang/tools/HppCompiler.cpp, which defines its own main, and
         # with the archives first the linker resolves main from that instead.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3064,7 +3232,16 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test above.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        # This test drives DisplayManager and IO::ensureBackend(), which reach
+        # UIBridge and from there HostModules.cpp.o. That member constructs
+        # PixelAutomationService under HAVE_QT_EXTENSION, and the class lives in
+        # havel_gui. Release hides the resulting undefined reference behind
+        # -O3 -flto=thin -Wl,--gc-sections; an -O0 build does not, so the link
+        # fails there. Link havel_gui under the same condition the executables
+        # use (_LIBS) so the dependency is satisfied in every configuration.
+        -Wl,--start-group havel_runtime havel_compiler havel_core
+        $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
+        -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3090,7 +3267,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test above.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3113,7 +3290,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     target_link_libraries(clipboard_backend_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -3193,16 +3370,17 @@ if(ENABLE_CRANELIFT AND ENABLE_HAVEL_LANG)
             # the ORC JIT in havel_lang) or the prototype driver cannot link.
             # Explicit order matters for the single-pass archive scan:
             # referents (lang_core, havel_core) must precede the archives
-            # that define what they need (havel_lang, havel_gui). CMake
-            # dedups repeats, so these explicit positions also win over the
-            # shim's transitive expansion.
+            # that define what they need (havel_runtime, havel_compiler,
+            # havel_gui). CMake dedups repeats, so these explicit positions
+            # also win over the shim's transitive expansion.
             # havel_gui exists only in Qt UI backend builds — headless crane
             # configs must not ask the linker for it (same guard as
             # hpp_proto_test below).
             havel_aot_core_shim
             havel_lang_core
             havel_core
-            havel_lang
+            havel_runtime
+            havel_compiler
             $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
             ${COMMON_LIBS}
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

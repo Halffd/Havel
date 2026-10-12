@@ -1,0 +1,40 @@
+// smoke: with-flatten = 4
+// Spec (docs/specs/Havel.md "Ergonomic Syntax Features"): with-block and
+// wildcard-use member flattening. Expected: bare identifiers inside a
+// with-block resolve via the with-objects (nearest first), after
+// `use mod.*` via the module, and host functions (print) keep working.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// With-block member flattening (single object).
+r1 = 0
+with math {
+  r1 = sqrt(16)
+}
+assertEq(r1, 4, "with math sqrt(16)")
+
+// Multi-object with: comma-separated list desugars to nested withs.
+r2 = 0
+with math, string {
+  r2 = sqrt(25)
+}
+assertEq(r2, 5, "with math, string sqrt(25)")
+
+// Host functions keep working inside with-blocks (null -> global fallback).
+r3 = 0
+with math {
+  r3 = abs(-7)
+}
+assertEq(r3, 7, "with math abs(-7)")
+
+// Wildcard-use flattening: module members resolve bare.
+use math.*
+r4 = 0
+r4 = sqrt(36)
+assertEq(r4, 6, "use math.* sqrt(36)")
+
+print("PASS with-flatten")

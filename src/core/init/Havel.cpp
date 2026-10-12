@@ -1,6 +1,7 @@
 #include "core/init/Havel.hpp"
 #include <cstdio>
 #include "havel-lang/runtime/Modules.hpp"
+#include "havel-lang/runtime/events/EventRuntime.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
@@ -444,7 +445,19 @@ scheduler = &compiler::Scheduler::instance();
     if (WindowManagerDetector::IsX11()) {
         Display *display = DisplayManager::GetDisplay();
         if (!display) {
-            throw std::runtime_error("Failed to open X11 display");
+            // The session declares X11 but the server is unreachable (stale
+            // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
+            // Throwing here killed REPL, script+repl and the daemon outright
+            // — while the Wayland-session path (IsX11() false) already runs
+            // full initialization with a null display as a supported state.
+            // Degrade the same way: X11-bound features (window management,
+            // X11 hotkey grabs, brightness) fail at their use sites; evdev
+            // input and everything display-independent keep working.
+            const char *declared = std::getenv("DISPLAY");
+            warning("X11 display '{}' is unreachable — continuing without "
+                    "X11 (window management and X11 hotkey grabs disabled; "
+                    "unset DISPLAY or start Xorg to enable them)",
+                    declared ? declared : ":0");
         }
     }
     // Guard with the live singleton: main() runs runExitCleanups() after the
@@ -521,6 +534,19 @@ void Havel::cleanup() noexcept {
         if (modules_) {
             if (debugging::debug_io) debug("Havel::cleanup() - destroying Modules");
             modules_->shutdown();
+            // Delete the generic event bus (created with raw new in
+            // Modules::initBridges). The full-Havel path has no HavelEngine
+            // whose shutdown() would take that ownership (the minimal path's
+            // HavelEngine::shutdown does it), so delete it here, after the
+            // bridges that dispatch into it are gone and while the VM that
+            // could still reach it is already destroyed. Without this the
+            // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
+            // the report (~16s with llvm-symbolizer) and exits 1, which made
+            // every child-process REPL smoke test time out or fail.
+            if (hostContext && hostContext->eventRuntime) {
+                delete hostContext->eventRuntime;
+                hostContext->eventRuntime = nullptr;
+            }
             modules_.reset();
         }
 

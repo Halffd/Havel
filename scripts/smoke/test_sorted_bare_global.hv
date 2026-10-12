@@ -1,0 +1,35 @@
+// Regression: bare `sorted` must be the canonical array sorter. The array and
+// object stdlib modules both published a bare `sorted` alias, so the global's
+// meaning depended on module install order: `sorted([3,1,2])` resolved to
+// <fn object.sorted> and returned null, and `sorted(a, cmp)` threw
+// "Host function 'object.sorted' expects 1 arguments, got 2". The fix
+// registers a single type-dispatching bare `sorted` host function in the VM
+// (delegating to array.sorted / set.sorted / object.sorted) and makes the
+// object module respect the isHostFunctionGlobal mirror guard, like the array
+// module already did.
+// Expected result: sorted(arr), sorted(arr, cmp), sorted(set) work and the
+// method forms and object behavior are unchanged.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+a = [3, 1, 2]
+assertEq(sorted(a), [1, 2, 3], "bare sorted ascending")
+assertEq(sorted(a, (x, y) => y - x), [3, 2, 1], "bare sorted comparator")
+assertEq(a, [3, 1, 2], "sorted does not mutate")
+
+assertEq(a.sorted(), [1, 2, 3], "method sorted ascending")
+assertEq(a.sorted((x, y) => y - x), [3, 2, 1], "method sorted comparator")
+
+assertEq(sorted({3, 1, 2}), [1, 2, 3], "bare sorted set")
+
+// Object behavior must keep matching the method form after the dispatcher.
+obj = {b: 2, a: 1}
+assertEq(sorted(obj).keys(), obj.sorted().keys(), "object parity")
+
+// Nearby bare globals that share the mirroring path stay intact.
+assertEq(len("abcd"), 4, "bare len string")
+assertEq(len([1, 2, 3]), 3, "bare len array")

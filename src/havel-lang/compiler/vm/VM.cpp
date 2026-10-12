@@ -565,6 +565,18 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   frame_count_++;
   locals.resize(entry->local_count);
 
+  // Lifecycle hook: `on start { }` runs once at script load, before the
+  // entry function. Compiled as __on_start__; callFunctionSync saves and
+  // restores this frame, so the entry frame below is untouched.
+  if (function_name != "__on_start__") {
+    if (const auto *onStartFn = chunk.getFunction("__on_start__")) {
+      callFunctionSync(
+          Value::makeFunctionObjId(chunk.getFunctionIndex(onStartFn)), {});
+      current_chunk = &chunk;
+    } else {
+    }
+  }
+
   if (!args.empty()) {
     if (entry->variadic_param_index != UINT32_MAX) {
       // Variadic function: allow >= variadic_param_index args
@@ -1519,7 +1531,14 @@ void VM::loadFiberState(Fiber *fiber) {
       auto &live_frame = globals_stack_[gsi];
       auto &saved_frame = fiber->saved_globals_stack[gsi];
       if (live_frame.first.empty()) {
-        live_frame = saved_frame;
+        // Wholesale install of a saved (suspension-time) copy. Tag it:
+        // popGlobals' stale-frame guard needs to know this frame's content
+        // can be older than live ambient writes made while the fiber was
+        // parked (main-fiber accumulators, goroutine globals churn).
+        live_frame.first = std::move(saved_frame.first);
+        live_frame.second = std::move(saved_frame.second);
+        live_frame.fiber_restored = true;
+        live_frame.owner = fiber;
         continue;
       }
       if (!live_frame.second && saved_frame.second) {
@@ -1645,7 +1664,13 @@ void VM::saveFiberState(Fiber *fiber) {
   // tick_in=5 survives a GC-churned ambient that lost it) without
   // breaking shared-write semantics (ambient stays the primary map).
   fiber->saved_globals = globals;
-  fiber->saved_globals_stack = globals_stack_;
+  // SavedGlobalsFrame (Fiber.hpp) is a plain pair; GlobalsFrame carries the
+  // fiber_restored tag, which is live-stack bookkeeping only — drop it here.
+  fiber->saved_globals_stack.clear();
+  fiber->saved_globals_stack.reserve(globals_stack_.size());
+  for (const auto &gf : globals_stack_) {
+    fiber->saved_globals_stack.emplace_back(gf.first, gf.second);
+  }
   fiber->saved_globals_mirror_id = globals_mirror_object_id_;
   fiber->has_saved_globals = true;
 
@@ -3345,8 +3370,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
   bool frame_owns_globals = false;
   if (closure_globals) {
-    uint32_t cid = currentFrame().closure_id;
-    auto *c = heap_.closure(cid);
     if (closure_globals != globals_identity_) {
       pushGlobalsMove();
       globals = *closure_globals;
@@ -4929,8 +4952,24 @@ Value VM::deepWrapModuleFunctions(
          fnCapturedField, wantsSelf, depth, visited](const std::vector<Value> &args) -> Value {
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
-          bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
-          if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 && wantsSelf) {
+          bool isVariadic = preCheckCallee &&
+                            preCheckCallee->variadic_param_index != UINT32_MAX;
+          // The erase drops a prepended RECEIVER that is not the function's
+          // self (e.g. the module object pushed by the member-call path for
+          // plain module fns). For CLASS METHODS called through a class
+          // instance the first arg IS self - the instance carries __class/
+          // __is_class/__struct; erasing it left slot 0 null and every
+          // @field access in the method's interval/timeout closures threw
+          // "OBJECT_SET expects object container".
+          bool firstArgIsSelfInstance = false;
+          if (!callArgs.empty() && callArgs[0].isObjectId()) {
+            auto *o0 = heap_.object(callArgs[0].asObjectId());
+            firstArgIsSelfInstance = o0 && (o0->get("__class") != nullptr ||
+                                            o0->get("__is_class") != nullptr ||
+                                            o0->get("__struct") != nullptr);
+          }
+          if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 &&
+              wantsSelf && !firstArgIsSelfInstance) {
             callArgs.erase(callArgs.begin());
           }
           auto *savedChunk = current_chunk;

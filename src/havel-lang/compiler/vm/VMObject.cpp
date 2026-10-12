@@ -10,6 +10,14 @@ namespace havel::compiler {
 
 void VM::registerHostFunction(const std::string &name,
     BytecodeHostFunction function) {
+    // Stamp metadata before any early return: the two-argument overload takes
+    // any argument count, so it clears a stale arity left by a previous
+    // arity-checked registration of the same name.
+    auto &meta = host_function_meta_[name];
+    meta.arity.reset();
+    if (!host_module_scope_.empty() && !meta.module_explicit)
+      meta.module = host_module_scope_;
+
     auto it = host_functions.find(name);
     if (it != host_functions.end()) {
         // Duplicate registration: the winner is whichever registration runs
@@ -49,6 +57,48 @@ BytecodeHostFunction function) {
             }
             return function(args);
         });
+  // The two-argument overload above clears arity, since it accepts any
+  // argument count; record the checked arity after it has stamped the module.
+  host_function_meta_[name].arity = arity;
+}
+
+std::vector<HostFunctionInfo> VM::getHostFunctionInfo() const {
+  std::vector<HostFunctionInfo> rows;
+  rows.reserve(host_function_names_.size());
+  for (uint32_t i = 0; i < host_function_names_.size(); ++i) {
+    const std::string &name = host_function_names_[i];
+
+    HostFunctionInfo info;
+    info.name = name;
+    info.index = i;
+
+    if (auto meta = host_function_meta_.find(name);
+        meta != host_function_meta_.end()) {
+      info.arity = meta->second.arity;
+      info.module = meta->second.module;
+    }
+
+    // Same rule buildNamespaceGlobals uses to group dotted names, so the
+    // debugger and the VM agree on what a namespace prefix is.
+    auto dot = name.find('.');
+    if (dot != std::string::npos && dot > 0 && dot + 1 < name.size())
+      info.namespace_prefix = name.substr(0, dot);
+
+    auto fn = host_functions.find(name);
+    info.callable = fn != host_functions.end() && static_cast<bool>(fn->second);
+    info.bound_as_global = host_function_globals_.find(name) !=
+                           host_function_globals_.end();
+
+    rows.push_back(std::move(info));
+  }
+  return rows;
+}
+
+std::optional<HostFunctionInfo> VM::getHostFunctionInfoByName(
+    const std::string &name) const {
+  for (auto &row : getHostFunctionInfo())
+    if (row.name == name) return row;
+  return std::nullopt;
 }
 
 bool VM::hasHostFunction(const std::string &name) const {

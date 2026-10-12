@@ -32,8 +32,8 @@ enum class EventType : uint8_t {
     HOTKEY_TRIGGER = 5,     // Hotkey triggered (data1 = hotkey_id)
     ASYNC_HOST_COMPLETE = 6, // Blocking host call finished on a worker.
                             // data1 = pending token. ptr = AsyncCxxResult*
+    FILE_READY = 7,        // Watched script file changed (auto-reload)
     LEGACY_CALLBACK = 255,  // Backward compat: callback in ptr field
-    // Future: FILE_READY, NETWORK_RECV, etc.
 };
 
 // Type-erased C++ result cell crossing worker -> VM thread. shared_ptr

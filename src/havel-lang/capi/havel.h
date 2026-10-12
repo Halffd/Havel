@@ -105,6 +105,27 @@ void havel_arrayappend(HavelState* H, int idx);
 int  havel_arraylen(HavelState* H, int idx);
 
 void havel_call(HavelState* H, int nargs, int nresults);
+
+// Pin/restore the main chunk. loadstring/loadfile REPLACE the VM's main
+// chunk on every load; closures stored by earlier scripts are
+// chunk-relative FUNCTION_OBJ_ID indexes, which then re-resolve against
+// the new chunk's function table - the wrong function (a havel_run
+// snippet calling io.injectKey re-resolved into itself and spun).
+// Pin the config chunk before a load, restore after: keybinding
+// closures keep resolving in the chunk they were compiled in.
+void* havel_pin_main_chunk(HavelState* H);
+void havel_restore_chunk(HavelState* H, void* pin);
+
+// Normalize the callable at stack index idx into a closure pinned to its
+// owning chunk (VM::pinCallableAsClosure). Values stored for later
+// invocation (hotkeys, timers, persistent callbacks) MUST be pinned:
+// raw FUNCTION_OBJ_ID values are chunk-relative indexes that re-resolve
+// against whatever chunk is current when they are finally called - a
+// later loadstring replacing the main chunk makes them resolve to the
+// wrong function. Returns HAVEL_OK and rewrites the stack slot in
+// place, or HAVEL_ERR if the value is not a pin-able callable.
+int havel_pin_callable(HavelState* H, int idx);
+
 int  havel_pcall(HavelState* H, int nargs, int nresults, int msgh);
 
 int  havel_resume(HavelState* H, HavelState* thread, int nargs);

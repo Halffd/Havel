@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <format>
+#include <string_view>
 #include <functional>
 #include <memory>
 #include <cstdio>
@@ -343,6 +345,14 @@ public:
   std::unordered_set<std::string> immutable_globals_; // val-declared globals
   std::unordered_set<uint32_t> immutable_locals_;     // val-declared local indices (per-frame)
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
+  // Registration metadata keyed by the same name as host_functions. The
+  // std::function cannot carry arity or an owner, so they are recorded here at
+  // registration time and read back by the debugger.
+  utils::RobinHoodHashMap<std::string, HostFunctionMeta> host_function_meta_;
+  // Module label stamped onto every host function registered while this is set.
+  // The runtime dispatch sites set it around each module/plugin/bridge
+  // registration, which is the only place the owner is actually known.
+  std::string host_module_scope_ = "vm";
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_set<uint32_t>
       host_function_wants_self_; // Host function indices whose first param is "self"
@@ -420,43 +430,92 @@ public:
   // init functions are called on first use (import/access)
   std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
-  // A frame on the globals stack: the map that was swapped out plus the
-  // module-globals identity that was active at swap time. Identity lets
-  // call sites skip the full-map copy when a call stays inside one module.
-  using GlobalsFrame = std::pair<std::unordered_map<std::string, Value>,
-                                 std::shared_ptr<std::unordered_map<std::string, Value>>>;
-  std::vector<GlobalsFrame> globals_stack_;
-  // Identity (which module_globals shared_ptr) of the map currently
-  // installed as `globals` — null for the engine-main map. Restored from
-  // globals_stack_ frames on pop.
-  std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
+    // A frame on the globals stack: the map that was swapped out plus the
+    // module-globals identity that was active at swap time. Identity lets
+    // call sites skip the full-map copy when a call stays inside one module.
+    // Fields keep the pair names (.first/.second) so existing access sites
+    // read unchanged. fiber_restored marks frames (re)installed wholesale
+    // by loadFiberState's globals_stack_ repair: such frames hold deep
+    // copies taken at suspension time and can be OLDER than live ambient
+    // writes (see popGlobals' stale-frame guard).
+    struct GlobalsFrame {
+      std::unordered_map<std::string, Value> first;
+      std::shared_ptr<std::unordered_map<std::string, Value>> second;
+      bool fiber_restored = false;
+      Fiber* owner = nullptr;
+    };
+    std::vector<GlobalsFrame> globals_stack_;
+    // Identity (which module_globals shared_ptr) of the map currently
+    // installed as `globals` — null for the engine-main map. Restored from
+    // globals_stack_ frames on pop.
+    std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
 
-  // Shared, lazily-built base layer every module context can read: the
-  // object-typed namespace entries of the engine-main map (fs, sys,
-  // math, ...). Module sidecar maps hold only their OWN names; global
-  // reads resolve host functions through host_function_globals_ (already
-  // in the chain) and these namespace objects through the base — with no
-  // per-module seeding. The old seeding copied ~1200 host fns + objects
-  // into every module map, bloating sidecars to ~1600-2000 entries so
-  // every identity-mismatched cross-module call copied the whole map
-  // into the ambient (~100-400us per call; ~80% of the self-hosted
-  // parse's CPU — see scripts/benchmarks/README.md).
-  std::shared_ptr<const std::unordered_map<std::string, Value>> baseModuleGlobals_;
-  const std::unordered_map<std::string, Value> *baseModuleGlobals() const {
-    return baseModuleGlobals_.get();
-  }
+    // Shared, lazily-built base layer every module context can read: the
+    // object-typed namespace entries of the engine-main map (fs, sys,
+    // math, ...). Module sidecar maps hold only their OWN names; global
+    // reads resolve host functions through host_function_globals_ (already
+    // in the chain) and these namespace objects through the base - with no
+    // per-module seeding. The old seeding copied ~1200 host fns + objects
+    // into every module map, bloating sidecars to ~1600-2000 entries so
+    // every identity-mismatched cross-module call copied the whole map
+    // into the ambient (~100-400us per call; ~80% of the self-hosted
+    // parse's CPU - see scripts/benchmarks/README.md).
+    std::shared_ptr<const std::unordered_map<std::string, Value>>
+        baseModuleGlobals_;
+    const std::unordered_map<std::string, Value> *baseModuleGlobals() const {
+      return baseModuleGlobals_.get();
+    }
 
-  // Swap `globals` + identity onto the stack as one unit (moving the
-  // map). Restores via popGlobals().
-  void pushGlobalsMove() { globals_stack_.push_back({std::move(globals), globals_identity_}); }
-  // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
-  void pushGlobalsCopy() { globals_stack_.push_back({globals, globals_identity_}); }
-  void popGlobals() {
-    globals = std::move(globals_stack_.back().first);
-    globals_identity_ = std::move(globals_stack_.back().second);
-    globals_stack_.pop_back();
-  }
-  std::unordered_map<std::string, Value> rootGlobals_;
+    // Swap `globals` + identity onto the stack as one unit (moving the
+    // map). Restores via popGlobals().
+    void pushGlobalsMove() {
+      globals_stack_.push_back({std::move(globals), globals_identity_, false, current_executing_fiber_});
+    }
+    // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
+    void pushGlobalsCopy() {
+      globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
+    }
+    void popGlobals() {
+      auto &frame = globals_stack_.back();
+      // Stale-frame guard: loadFiberState's globals_stack_ repair can
+      // (re)install suspension-time copies of the engine-main scope into
+      // the live globals stack (tagged fiber_restored). Such a frame can be
+      // OLDER than writes the main fiber made while a goroutine was parked
+      // (loop accumulators, counters); restoring it wholesale clobbers
+      // those writes back to spawn-time values and scatters later writes
+      // across orphaned copies. When a fiber-restored frame and the current
+      // ambient are BOTH engine-main lineage (null identity), merge the
+      // fresher current writes into the frame before restoring. Frames
+      // pushed by real module/loader calls are never tagged, so their pops
+      // behave exactly as before - module sandboxes stay untouched.
+      const bool engine_main_both = (!frame.second && !globals_identity_);
+      const bool foreign_pop = engine_main_both &&
+                               frame.owner &&
+                               current_executing_fiber_ &&
+                               frame.owner != current_executing_fiber_;
+      if (foreign_pop) {
+        for (const auto &[k, v] : frame.first) {
+          if (!globals.count(k)) {
+            globals.emplace(k, v);
+          }
+        }
+        globals_stack_.pop_back();
+        return;
+      }
+      bool should_merge_into_frame = false;
+      if (engine_main_both && frame.fiber_restored) {
+        should_merge_into_frame = true;
+      }
+      if (should_merge_into_frame) {
+        for (const auto &[k, v] : globals) {
+          frame.first[k] = v;
+        }
+      }
+      globals = std::move(frame.first);
+      globals_identity_ = std::move(frame.second);
+      globals_stack_.pop_back();
+    }
+ std::unordered_map<std::string, Value> rootGlobals_;
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
@@ -2031,6 +2090,45 @@ public:
   const std::vector<std::string> &getHostFunctionNames() const { return host_function_names_; }
   std::optional<std::string> getHostFunctionName(uint32_t index) const;
 
+  // --- Host function introspection (hvdb) ---
+  //
+  // Derived entirely from the live registry; nothing here is a hand-kept list.
+  // Rows come out in host-function-index order.
+  std::vector<HostFunctionInfo> getHostFunctionInfo() const;
+  std::optional<HostFunctionInfo> getHostFunctionInfoByName(
+      const std::string &name) const;
+
+  void setHostModuleScope(std::string scope) {
+    host_module_scope_ = std::move(scope);
+  }
+  const std::string &hostModuleScope() const { return host_module_scope_; }
+
+  // Overrides the scope-derived module label. Used where the owner is known
+  // only outside registerHostFunction, e.g. a bridge that writes into the
+  // flat host-function map and is applied when that map is registered.
+  void setHostFunctionModule(const std::string &name, std::string module) {
+    auto &meta = host_function_meta_[name];
+    meta.module = std::move(module);
+    meta.module_explicit = true;
+  }
+
+  // Restores the previous module label on scope exit, so a nested or early
+  // return cannot leave registrations attributed to the wrong module.
+  class HostModuleScope {
+  public:
+    HostModuleScope(VM &vm, std::string scope)
+        : vm_(vm), previous_(vm.hostModuleScope()) {
+      vm_.setHostModuleScope(std::move(scope));
+    }
+    ~HostModuleScope() { vm_.setHostModuleScope(previous_); }
+    HostModuleScope(const HostModuleScope &) = delete;
+    HostModuleScope &operator=(const HostModuleScope &) = delete;
+
+  private:
+    VM &vm_;
+    std::string previous_;
+  };
+
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
 
@@ -2652,3 +2750,32 @@ public:
 };
 
 } // namespace havel::compiler
+
+// std::formatter for GoroutineCallResult so havel::debug() can log it.
+// GCC 16's libstdc++ statically asserts that every format-arg type has a
+// formatter; enums have none by default. Defined at global scope: a
+// `namespace std` block nested inside havel::compiler does not reopen ::std
+// under clang + GCC 16 headers.
+namespace std {
+template <>
+struct formatter<havel::compiler::VM::GoroutineCallResult, char>
+    : formatter<string_view, char> {
+  template <typename FormatContext>
+  auto format(const havel::compiler::VM::GoroutineCallResult &r,
+              FormatContext &ctx) const {
+    string_view name = "Failed";
+    switch (r) {
+    case havel::compiler::VM::GoroutineCallResult::Interpreter:
+      name = "Interpreter";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::JITExecuted:
+      name = "JITExecuted";
+      break;
+    case havel::compiler::VM::GoroutineCallResult::Failed:
+      name = "Failed";
+      break;
+    }
+    return formatter<string_view, char>::format(name, ctx);
+  }
+};
+} // namespace std

@@ -8,6 +8,8 @@
 
 TAU = 6.28318530717958647692
 SQRT2 = 1.41421356237309504880
+LN2 = 0.69314718055994530942
+LN10 = 2.30258509299404568402
 // INF and NAN are set by C++ MathModule (no way to produce
 // them in pure Havel without triggering division-by-zero error)
 

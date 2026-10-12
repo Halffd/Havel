@@ -216,7 +216,6 @@ fn CompoundAssignment(target, oper, value, line, col) {
     {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value}
 }
 
-}
 fn ArrayLiteral(elements, line, col) {
     {kind: "ArrayLiteral", line: line, col: col, elements: elements}
 

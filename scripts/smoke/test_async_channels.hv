@@ -1,0 +1,30 @@
+// smoke: async-channels = 2
+// Spec (docs/specs/Havel.md Async section): string-keyed channels. send
+// pushes, receive blocks until a message arrives, tryReceive returns ""
+// when empty. State persists for the host process.
+fn assertEq(got, want, label) {
+  if got != want {
+    print("FAIL " + label + ": expected " + str(want) + ", got " + str(got))
+    process.exit(255)
+  }
+}
+
+// send then receive: no blocking needed, message already queued.
+async.send("chan-a", "hello")
+got = async.receive("chan-a")
+assertEq(got, "hello", "send then receive")
+
+// FIFO order across multiple sends.
+async.send("chan-b", "first")
+async.send("chan-b", "second")
+first = async.tryReceive("chan-b")
+second = async.tryReceive("chan-b")
+assertEq(first, "first", "FIFO first")
+assertEq(second, "second", "FIFO second")
+
+// Empty channel: tryReceive returns "", receive would block forever
+// (never called bare here).
+empty = async.tryReceive("chan-empty")
+assertEq(empty, "", "tryReceive empty channel")
+
+print("PASS async-channels")

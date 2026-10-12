@@ -1,0 +1,13 @@
+// smoke: python-bridge-eval
+// Tests that py.eval runs a Python expression in the shared namespace and
+// converts the resulting int back into a Havel int.
+// Expected: 42
+// Fails if the bridge is absent, the GIL wrapper is wrong, or the
+// Python->Havel int conversion is broken.
+
+result = py.eval("6 * 7")
+if result != 42 {
+  print("FAIL python-bridge-eval: expected 42, got " + str(result))
+  process.exit(255)
+}
+return result

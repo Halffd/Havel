@@ -81,6 +81,14 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
                     onChannelSend(channel_id);
                 }, FiberPriority::NORMAL);
             });
+
+        event_queue_->onEvent(EventType::FILE_READY,
+            [this](const Event& event) {
+                if (!file_ready_cb_) return;
+                scheduler_->schedule([this]() {
+                    file_ready_cb_();
+                }, FiberPriority::NORMAL);
+            });
     }
 }
 

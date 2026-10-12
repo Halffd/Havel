@@ -22,6 +22,12 @@
 #      Qt also fails (so the ledger cannot rot into a blanket allowlist).
 #      Each entry shrinks as the extraction lands; the file should end with an
 #      empty ledger and no part 3.
+#   4. Link gate: no core archive may reference a symbol that only havel_gui
+#      provides. Part 3 cannot see this: the pixel automation service leak was
+#      not Qt-mangled, so a core TU could name havel_gui's class and stay
+#      invisible to the Qt-symbol regex. This part is the one the whole guard
+#      exists for -- if any core archive needs havel_gui, the embeddable core
+#      is not actually stand-alone.
 
 set -u
 
@@ -82,6 +88,39 @@ archive_undefined_qt_symbols() {
     # Undefined (referenced, not provided) Qt symbols in a static archive.
     nm -C --undefined-only "$1" 2>/dev/null | sed 's/^ *U //' | sort -u \
         | grep -E "${QT_SYM_RE}" || true
+}
+
+# All undefined symbols of an archive, mangled, one per line. Weak undefined
+# symbols (nm type 'w'/'v') are excluded: they are the explicit optional-hook
+# pattern (e.g. EventListener.cpp guards the Qt event-loop exit with
+# `__attribute__((weak))` + `if (&fn)`), which resolves to null and does NOT
+# force the provider archive onto the link line. Only a strong 'U' reference is
+# a hard dependency.
+archive_undefined() {
+    nm --undefined-only "$1" 2>/dev/null \
+        | awk '$1 == "U" { $1=""; sub(/^ +/, ""); print }' | sort -u
+}
+
+# All defined symbols of an archive (global and weak), mangled, one per line.
+archive_defined() {
+    nm --defined-only "$1" 2>/dev/null | awk '{ $1=""; $2=""; sub(/^ ++/, ""); print }' \
+        | grep -v '^$' | sort -u
+}
+
+# Symbols archive A needs that only archive B can provide. Returns 2 when either
+# side produced no symbols, so the caller can fail instead of passing vacuously.
+leaks_between() {
+    local needing="$1" provider="$2" tmp_need tmp_prov
+    tmp_need="$(mktemp)"
+    tmp_prov="$(mktemp)"
+    archive_undefined "${needing}" > "${tmp_need}"
+    archive_defined "${provider}" > "${tmp_prov}"
+    if [ ! -s "${tmp_need}" ] || [ ! -s "${tmp_prov}" ]; then
+        rm -f "${tmp_need}" "${tmp_prov}"
+        return 2
+    fi
+    comm -12 "${tmp_need}" "${tmp_prov}"
+    rm -f "${tmp_need}" "${tmp_prov}"
 }
 
 objects_with_qt() {
@@ -146,6 +185,35 @@ else
         comm -23 <(printf '%s\n' "${CORE_KNOWN_QT_LEAKS}") \
                  <(printf '%s\n' "${actual}") | sed 's/^/    - /'
         fail=1
+    fi
+fi
+
+echo "== part 4: core archives must not need havel_gui =="
+GUI_ARCHIVE="${BUILD_DIR}/libhavel_gui.a"
+CORE_ARCHIVES="libhavel_core.a libhavel_lang_core.a libhavel_runtime.a libhavel_compiler.a"
+
+if [ ! -f "${GUI_ARCHIVE}" ]; then
+    echo "SKIP: ${GUI_ARCHIVE} not built (no Qt UI backend in this configuration)"
+else
+    checked=0
+    for arch in ${CORE_ARCHIVES}; do
+        full="${BUILD_DIR}/${arch}"
+        [ -f "${full}" ] || continue
+        leaks="$(leaks_between "${full}" "${GUI_ARCHIVE}")"
+        rc=$?
+        checked=$((checked + 1))
+        if [ "${rc}" -ne 0 ]; then
+            echo "FAIL: could not compare ${arch} against havel_gui (nm produced no symbols)"
+            fail=1
+        elif [ -n "${leaks}" ]; then
+            echo "FAIL: ${arch} references symbols only havel_gui provides:"
+            printf '%s\n' "${leaks}" | head -20 | sed 's/^/  /'
+            echo "  (route it through a Qt-free registration slot, or move it into havel_gui)"
+            fail=1
+        fi
+    done
+    if [ "${fail}" -eq 0 ]; then
+        echo "ok: ${checked} core archives resolve without havel_gui"
     fi
 fi
 

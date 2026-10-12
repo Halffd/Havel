@@ -72,6 +72,7 @@ enum class TokenType {
   Impl, // impl
   This,   // this - current object reference
   On,
+  Emit,           // emit — publish a generic event
   Off,
   When,
   Mode,

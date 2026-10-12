@@ -1,0 +1,35 @@
+// Test: switch statement (docs "Pattern matching") — subject/test/else arms
+// Covers: matching case, else arm, no-match fallthrough, switch in a
+// function with implicit returns (tail position), print bodies.
+x = 2
+switch x {
+    1 => { print("one") }
+    2 => { print("two") }
+    else => { print("other") }
+}
+
+y = 9
+switch y {
+    1 => { assert(false, "wrong arm: one") }
+    2 => { assert(false, "wrong arm: two") }
+    else => { print("other arm hit") }
+}
+
+z = 5
+switch z {
+    1 => { assert(false, "wrong arm: one") }
+    2 => { assert(false, "wrong arm: two") }
+}
+
+fn cat(n) {
+    switch n {
+        1 => { "one" }
+        2 => { "two" }
+        else => { "many" }
+    }
+}
+assert(cat(1) == "one", "cat(1) must be one")
+assert(cat(2) == "two", "cat(2) must be two")
+assert(cat(9) == "many", "cat(9) must be many")
+
+println("PASS: switch statement")

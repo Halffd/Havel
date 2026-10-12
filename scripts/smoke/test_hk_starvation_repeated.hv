@@ -1,0 +1,85 @@
+// Regression: repeated hotkey triggers under sustained autoclicker/high-usage
+// load. Two starvation bugs are covered:
+// 1. The yield pump picked the hotkey goroutine after a busy sibling's
+//    dispatch and consumed zero instructions (stale last_suspension_reason_
+//    at the fast path's first-opcode guard), then parked it with reason
+//    None and no wake path - permanently bricked.
+// 2. The yield pump's 512-dispatch budget let ONE busy sibling goroutine
+//    re-queue and eat every dispatch in a single pump invocation
+//    (~512 x tick_duration ~ 10s), freezing the caller whose yield invoked
+//    the pump: the hotkey body ran in ~1ms but nothing could observe it.
+// A single-trigger test can miss re-brick regressions (persistent
+// goroutines marked Done after one body run make wakeHotkey refuse every
+// later trigger); this test fires the hotkey repeatedly while load keeps
+// the VM thread busy and asserts EVERY trigger fires within its deadline.
+// Load shape, two sources:
+//   - interval 10ms (autoclicker shape): interval callbacks pile up while
+//     the main goroutine sleep-polls, so their drain adds bursty pressure
+//   - a busy goroutine (high-usage task shape): a long instruction loop
+//     that yields every 65536-instruction tick - continuous pressure
+// Expected: 10/10 triggers fire, each within 500ms (observed 3-54ms); rc 0.
+// Headless-safe: F24 is a persistent goroutine fired via hotkey.trigger
+// (no OS input needed).
+
+fired = 0
+F24 => {
+    fired = fired + 1
+}
+
+clicks = 0
+ac = interval 10 {
+    j = 0
+    while j < 5000 {
+        j = j + 1
+    }
+    clicks = clicks + 1
+}
+
+// Burner sized to outlast the trigger loop: ~8M iterations of ~2
+// instructions each = ~16M instructions = ~240 scheduler ticks.
+go fn burner() {
+    b = 0
+    while b < 8000000 {
+        b = b + 1
+    }
+}
+
+// 10 triggers, each awaited before the next, so the Drop policy cannot
+// coalesce and every trigger must produce its own callback run.
+TRIGGERS = 10
+DEADLINE_MS = 500
+failures = 0
+worst = 0
+i = 0
+while i < TRIGGERS {
+    before = fired
+    hotkey.trigger("F24")
+    t0 = time.millis()
+    while fired == before && time.millis() - t0 < DEADLINE_MS {
+        sleep(2)
+    }
+    took = time.millis() - t0
+    if took > worst { worst = took }
+    if fired == before {
+        failures = failures + 1
+        print("FAIL hk-starvation-repeated: trigger ", i, " did not fire in ", DEADLINE_MS, "ms")
+    } else if took > DEADLINE_MS {
+        // Fired but the sleep-poll chunk overshot the deadline: the caller
+        // was frozen behind sibling dispatches (starvation signature 2).
+        failures = failures + 1
+        print("FAIL hk-starvation-repeated: trigger ", i, " fired but took ", took, "ms")
+    }
+    i = i + 1
+}
+
+print("fired:", fired, " clicks:", clicks, " failures:", failures, " worst_ms:", worst)
+if failures != 0 {
+    print("FAIL hk-starvation-repeated: ", failures, " of ", TRIGGERS, " triggers starved")
+    process.exit(255)
+}
+if fired != TRIGGERS {
+    print("FAIL hk-starvation-repeated: expected ", TRIGGERS, " fires, got ", fired)
+    process.exit(255)
+}
+print("PASS hk-starvation-repeated: all ", TRIGGERS, " triggers fired, worst_ms=", worst)
+process.exit(0)

@@ -33,6 +33,41 @@ void AppBridge::install(PipelineOptions &options) {
   options.host_functions["app.setEnv"] = [ctx = ctx_](const auto &args) {
     return handleAppSetEnv(args, ctx);
   };
+  // Auto-reload API (spec: app.enableReload/disableReload/toggleReload +
+  // app.reload). The engine wires request_auto_reload/auto_reload_state into
+  // the HostContext at setup; missing callbacks mean no reload support.
+  options.host_functions["app.enableReload"] = [ctx = ctx_](const auto &args) {
+    (void)args;
+    if (ctx && ctx->request_auto_reload) {
+      ctx->request_auto_reload(true);
+      return Value::makeBool(true);
+    }
+    return Value::makeBool(false);
+  };
+  options.host_functions["app.disableReload"] = [ctx = ctx_](const auto &args) {
+    (void)args;
+    if (ctx && ctx->request_auto_reload) {
+      ctx->request_auto_reload(false);
+      return Value::makeBool(true);
+    }
+    return Value::makeBool(false);
+  };
+  options.host_functions["app.toggleReload"] = [ctx = ctx_](const auto &args) {
+    (void)args;
+    if (ctx && ctx->request_auto_reload && ctx->auto_reload_state) {
+      bool next = !ctx->auto_reload_state();
+      ctx->request_auto_reload(next);
+      return Value::makeBool(next);
+    }
+    return Value::makeBool(false);
+  };
+  options.host_functions["app.reload"] = [ctx = ctx_](const auto &args) {
+    (void)args;
+    if (ctx && ctx->auto_reload_state) {
+      return Value::makeBool(ctx->auto_reload_state());
+    }
+    return Value::makeBool(false);
+  };
   options.host_functions["app.openUrl"] = [ctx = ctx_](const auto &args) {
     return handleAppOpenUrl(args, ctx);
   };

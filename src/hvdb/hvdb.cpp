@@ -51,6 +51,8 @@ static void printHelp() {
       "  globals                   Show global variables\n"
       "  heap                      Show GC/heap stats\n"
       "  help                      Show this help\n"
+      "  hostfuncs [filter]        List host functions (index, module, arity)\n"
+      "  hostfunc <name>           Show one host function in detail\n"
       "  hotkeys                   Show registered hotkeys\n"
       "  info [b/funcs/watches]    Info display\n"
       "  list [n]                  Show source lines\n"
@@ -500,6 +502,53 @@ int main(int argc, char* argv[]) {
                 auto cachedList = loader.list();
                 std::cout << "  Cached modules: " << cachedList.size() << "\n";
                 for (auto& c : cachedList) std::cout << "    " << c << "\n";
+            }
+            // --- Host functions ---
+            else if (cmd == "hostfuncs" || cmd == "hostfn" || cmd == "hostfunc") {
+                // Every field comes from the live registry via
+                // getHostFunctionInfo(); nothing is a hand-kept name list.
+                auto info = vm.getHostFunctionInfo();
+                std::string arg; std::getline(iss >> std::ws, arg);
+
+                if (arg.empty()) {
+                    std::cout << "  " << info.size() << " host functions registered\n";
+                    for (auto& row : info) {
+                        std::cout << "  [" << row.index << "] " << row.name;
+                        if (!row.module.empty()) std::cout << "  module=" << row.module;
+                        if (row.arity) std::cout << "  arity=" << *row.arity;
+                        else std::cout << "  arity=any";
+                        if (!row.callable) std::cout << "  (no implementation)";
+                        std::cout << "\n";
+                    }
+                } else {
+                    // Exact match first: a name containing a dot is meaningful,
+                    // so do not silently fall back to a substring hit.
+                    if (auto exact = vm.getHostFunctionInfoByName(arg)) {
+                        std::cout << "  name:        " << exact->name << "\n"
+                                  << "  index:       " << exact->index << "\n"
+                                  << "  module:      "
+                                  << (exact->module.empty() ? "(unattributed)" : exact->module) << "\n"
+                                  << "  arity:       ";
+                        if (exact->arity) std::cout << *exact->arity << " (checked)\n";
+                        else std::cout << "any (no arity check)\n";
+                        std::cout << "  namespace:   "
+                                  << (exact->namespace_prefix.empty() ? "(none)" : exact->namespace_prefix)
+                                  << "\n"
+                                  << "  callable:    " << (exact->callable ? "yes" : "no") << "\n"
+                                  << "  global:      " << (exact->bound_as_global ? "bound" : "not bound") << "\n";
+                        continue;
+                    }
+                    size_t hits = 0;
+                    for (auto& row : info) {
+                        if (row.name.find(arg) == std::string::npos) continue;
+                        hits++;
+                        std::cout << "  [" << row.index << "] " << row.name;
+                        if (!row.module.empty()) std::cout << "  module=" << row.module;
+                        std::cout << "\n";
+                    }
+                    if (!hits) std::cout << "  No host function matching '" << arg << "'\n";
+                    else if (hits > 1) std::cout << "  " << hits << " matches; use 'hostfunc <name>' for detail\n";
+                }
             } else {
                 std::cout << "Unknown command. Type 'help'.\n";
             }

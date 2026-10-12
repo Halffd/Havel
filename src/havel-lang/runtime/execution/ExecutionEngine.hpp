@@ -102,6 +102,12 @@ public:
   void setScriptReady(bool ready) { script_ready_.store(ready, std::memory_order_release); }
   bool isScriptReady() const { return script_ready_.load(std::memory_order_acquire); }
 
+  // Auto-reload: invoked when a FILE_READY event fires (the watched script
+  // file changed). The engine owns the reload logic (re-compile, chunk
+  // swap, __on_reload__); the handler is set after construction.
+  using FileReadyCallback = std::function<void()>;
+  void setFileReadyCallback(FileReadyCallback cb) { file_ready_cb_ = std::move(cb); }
+
   // Yield-period pump from the main VM dispatch loop. Drains pending
   // goroutines so a goroutine spawned inside a hotkey script gets a
   // chance to run while the main script fiber is blocking inside the
@@ -109,6 +115,7 @@ public:
   void processGoroutinesInline();
 
 private:
+  FileReadyCallback file_ready_cb_;
   // ========== CORE COMPONENTS ==========
   VM* vm_;                    // Bytecode virtual machine
   Scheduler* scheduler_;      // Goroutine scheduler

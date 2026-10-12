@@ -1409,9 +1409,14 @@ if (container.isSetId()) {
         // Then check for prototype methods
         auto key = resolveKey(key_value);
         if (key) {
-            if (*key == "len" && array) {
+            // "length" is a property, not a method: the spec reads
+            // `windows.length > 0` and `names.sort((a, b) => a.length - b.length)`.
+            // Only "len" resolves through the prototype table to `array.len`,
+            // which is what keeps `arr.length()` (a method call, compiled to
+            // CALL_METHOD and never routed through here) working.
+            if ((*key == "len" || *key == "length") && array) {
                 pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
-                trackFieldAccess("@A" + std::to_string(object.asArrayId()) + ":length");
+                trackFieldAccess("@A" + std::to_string(object.asArrayId()) + ":" + *key);
                 break;
             }
             auto method = getPrototypeMethod(object, *key);
@@ -1440,7 +1445,7 @@ if (container.isSetId()) {
         }
         auto key = resolveKey(key_value);
         if (key) {
-            if (*key == "len") {
+            if (*key == "len" || *key == "length") {
                 pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
                 break;
             }
@@ -1874,7 +1879,11 @@ if (!modName.empty()) {
     }
 
 	if (!object.isObjectId()) {
-		COMPILER_THROW("OBJECT_SET expects object container");
+		// Diagnose the common @-in-closure failure: a container that is not
+		// an object usually means a captured receiver resolved to null.
+		const char *tname = object.isNull() ? "null" : object.isInt() ? "int"
+		                   : object.isDouble() ? "double" : "other";
+		COMPILER_THROW(std::string("OBJECT_SET expects object container, got ") + tname);
 	}
 
         // _G globals mirror: writing to _G also updates the globals map

@@ -592,13 +592,9 @@ if (instanceObj) {
                         bool isClassProto = instanceObj->get("__class") != nullptr ||
                                           instanceObj->get("__struct") != nullptr ||
                                           instanceObj->get("__is_class") != nullptr;
-                        if (!isClassProto && !wantsSelf) {
-                            for (const auto &g : globals) {
-                                if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                                    found_via_module = true;
-                                    break;
-                                }
-                            }
+                        if (!isClassProto && !wantsSelf &&
+                            isNamespaceObjectGlobal(receiver.asObjectId())) {
+                            found_via_module = true;
                         }
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
             vm_func = it->second;
@@ -640,13 +636,9 @@ if (instanceObj) {
               }
               // Module function detection: if receiver is a module object in globals,
               // don't pass receiver as self (module functions don't expect self)
-              if (!wantsSelf) {
-                for (const auto &g : globals) {
-                  if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                    found_via_module = true;
-                    break;
-                  }
-                }
+              if (!wantsSelf &&
+                  isNamespaceObjectGlobal(receiver.asObjectId())) {
+                found_via_module = true;
               }
               isInstanceFunc = !wantsSelf;
             }
@@ -1035,13 +1027,9 @@ if (found_host) {
                         bool isClassProto = instanceObj->get("__class") != nullptr ||
                                             instanceObj->get("__struct") != nullptr ||
                                             instanceObj->get("__is_class") != nullptr;
-                        if (!isClassProto) {
-                            for (const auto &g : globals) {
-                                if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                                    found_via_module = true;
-                                    break;
-                                }
-                            }
+                        if (!isClassProto &&
+                            isNamespaceObjectGlobal(receiver.asObjectId())) {
+                            found_via_module = true;
                         }
                     } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
                         vm_func = it->second;

@@ -193,6 +193,76 @@ delta. What is deterministic: the leak is gone (0 vs 149k external
 roots), parity holds. The final Phase C number needs a clean
 quiet-machine pass over the paired rusage harness.
 
+## Phase D: the module-globals fix (2026-10-11 evening)
+
+The Phase C diagnosis below was acted on the same day. Root cause of the
+bloat: `VM::loadModule` seeded EVERY module sidecar map with the full
+`host_function_globals_` table (~1,200 names) plus the caller's
+namespace objects, so each module map carried ~1,600-2,000 entries and
+every identity-mismatched call copied all of it. The seeding was
+redundant for reads: LOAD_GLOBAL already falls back to
+`host_function_globals_` (and resolveGlobalPublic mirrors that for JIT
+code).
+
+Fix (commit follows this README update):
+
+- module sidecar maps now hold ONLY module-own names — the seeding loops
+  and the inherited-globals exports filter are gone
+- a lazily-built shared base layer (`VM::baseModuleGlobals_`, captured
+  once from the engine-main map at first module load) carries the
+  object-typed namespace entries (fs, sys, math, bit, ...); LOAD_GLOBAL
+  and resolveGlobalPublic consult it AFTER the closure-sidecar step, so
+  a module's own value for a shared name still wins
+- the CALL_METHOD module-vs-instance classification (three interpreter
+  sites + the `havel_vm_call_method` bridge) previously scanned the
+  whole ambient for the receiver's id; it now goes through one shared
+  `VM::isNamespaceObjectGlobal` helper that checks ambient + base +
+  pushed frames — de-seeded module maps no longer hide the namespace
+  objects from it, and the O(entries) ambient scans shrank with the maps
+- the module loader's circular-dependency escape hatch and the
+  shadowing-module lookup now search the same layers
+  (`findGlobalValueByName`) instead of only the ambient
+
+Measured (`scripts/benchmarks/module_globals_bench.hv`, N=20k per
+shape, wall ms under loadavg ~10-15):
+
+| shape | before | after |
+|---|---|---|
+| direct (main -> module wrapper) | 2,107 ms (~105 us/call) | 42 ms (~2 us) |
+| cross (module A -> module B closure) | 4,620 ms (~231 us/call) | 61 ms (~3 us) |
+| self (same-module control) | 2,055 ms (~103 us/call) | 61 ms (~3 us) |
+
+Self-hosted parse of the 567-line wl40 workload, same machine:
+
+| metric | before (load ~10-17) | after (load ~3-5) |
+|---|---|---|
+| parse: parseAST | 44-65 s | **2.3-3.1 s** |
+| whole-run CPU (rusage) | 17-56 s depending on window | **3.3-3.9 s** |
+
+Verification: full smoke gate 322/329 — the 3 known UI-backend-absent
+baseline failures plus 4 `test_issue_orc_*` tiering tests that fail
+identically on a clean HEAD build without this diff (proven by stash
+A/B; `orc_object_get_autocall` fails deterministically at k=829 with
+no tiering, so it is a pre-existing latent GC/timing bug on HEAD,
+likely exposed earlier by the already-committed dispatch-accounting
+change shifting allocation cadence — see the next section). Cargo 34/34,
+ctest 10/10, the three Cranelift GC smokes pass interpreted and tiered.
+
+## Known open issue surfaced by this work: the orc quartet
+
+`test_issue_orc_{object_get_autocall, object_subscript, classnew_field,
+array_hof_gc_safe}` are flaky on current HEAD: `object_get_autocall`
+fails deterministically at k=829 in a plain interpreted run on a clean
+tree (stash-verified), the other three pass 3/3 in quiet direct runs
+and fail under gate timing. Suspected area: incremental-GC mark/sweep
+interaction with the tiered inline caches or the write-barrier shape
+(f51c99b8d marks only the stored VALUE where the interpreter's
+OBJECT_SET site marks the container too) — allocation-cadence changes
+(a09c032f4's honest instruction counting changed tier-up timing) move
+the failure onset around. This is its own investigation; the globals
+work is not the cause (clean-tree A/B) but the gate result above
+records it.
+
 ## Measurement-validity note (the shared-cache incident)
 
 Numbers from before 2026-10-09 were measured with whatever bytecode

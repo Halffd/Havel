@@ -42,8 +42,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::LOAD_GLOBAL: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
+    if (instruction.operands.empty() || !instruction.operands[0].isStringValId()) {
       COMPILER_THROW("LOAD_GLOBAL expects string operand");
     }
     uint32_t strIndex = instruction.operands[0].asStringValId();
@@ -133,6 +132,22 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
 
+    // Module base layer (see VM::baseModuleGlobals_): the object-typed
+    // namespace entries (fs, sys, math, ...) every module context can
+    // read. Module sidecar maps carry only their own names — this
+    // resolves the rest without seeding every module map with the full
+    // stdlib (the old seeding is what made cross-module ambient installs
+    // copy ~1600-2000 entries per call). Checked AFTER the sidecar step:
+    // a module's own value for a shared name must win over the base.
+    if (baseModuleGlobals_) {
+      auto baseIt = baseModuleGlobals_->find(name);
+      if (baseIt != baseModuleGlobals_->end()) {
+        trackGlobalAccess(name);
+        pushStack(baseIt->second);
+        break;
+      }
+    }
+
     // Last resort: the pushed globals maps on globals_stack_. A call into
     // a module-scope closure (e.g. a timer callback executing a <timeout>
     // closure created inside async_mod.debounce) swaps ambient globals for
@@ -140,8 +155,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // (debounce's `func` argument, a script closure) must still see the
     // script globals — they live on globals_stack_ for the duration of the
     // swap. Read (never write) through them so module sandboxes stay intact.
-    for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
-         ++git) {
+    for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend(); ++git) {
       auto pushedIt = git->first.find(name);
       if (pushedIt != git->first.end()) {
         trackGlobalAccess(name);
@@ -159,8 +173,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::STORE_GLOBAL: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
+    if (instruction.operands.empty() || !instruction.operands[0].isStringValId()) {
       COMPILER_THROW("STORE_GLOBAL expects string operand");
     }
     uint32_t strIndex = instruction.operands[0].asStringValId();
@@ -181,8 +194,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Materialize StringValId to heap StringId so cross-chunk reads work
     if (value.isStringValId() || value.isRegexValId()) {
       const BytecodeChunk *matChunk =
-          current_chunk ? current_chunk
-                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+          current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
       if (matChunk) {
         std::string s;
         if (value.isStringValId())
@@ -224,8 +236,8 @@ void VM::executeInstruction(const Instruction &instruction) {
         // stale globals copy cheaply (per-key, not full map).
         if (!frame_arena_.empty() && frame_count_ > 0) {
           auto &wf = frame_arena_[frame_count_ - 1];
-          if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
-                        name) == wf.written_globals.end()) {
+          if (std::find(wf.written_globals.begin(), wf.written_globals.end(), name) ==
+              wf.written_globals.end()) {
             wf.written_globals.push_back(name);
           }
         }
@@ -247,14 +259,13 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (cf_store.closure_id != 0) {
       auto *closure = heap_.closure(cf_store.closure_id);
       if (closure && !closure->module_globals) {
-        for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
-             ++git) {
+        for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend(); ++git) {
           auto pushedIt = git->first.find(name);
-        if (pushedIt != git->first.end()) {
-          pushedIt->second = value;
-          break;
+          if (pushedIt != git->first.end()) {
+            pushedIt->second = value;
+            break;
+          }
         }
-      }
       }
     }
 
@@ -264,14 +275,12 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::STORE_IMMUT_GLOBAL: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
+    if (instruction.operands.empty() || !instruction.operands[0].isStringValId()) {
       COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
     }
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto &cf_imut = currentFrame();
-    const BytecodeChunk *resolveChunkImut =
-        cf_imut.chunk ? cf_imut.chunk : current_chunk;
+    const BytecodeChunk *resolveChunkImut = cf_imut.chunk ? cf_imut.chunk : current_chunk;
     std::string name;
     if (resolveChunkImut) {
       name = resolveChunkImut->getString(strIndex);
@@ -283,8 +292,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Materialize StringValId to heap StringId so cross-chunk reads work
     if (value.isStringValId() || value.isRegexValId()) {
       const BytecodeChunk *matChunk =
-          current_chunk ? current_chunk
-                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+          current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
       if (matChunk) {
         std::string s;
         if (value.isStringValId())
@@ -301,8 +309,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Materialize StringValId to heap StringId so cross-chunk reads work
     if (value.isStringValId() || value.isRegexValId()) {
       const BytecodeChunk *matChunk =
-          current_chunk ? current_chunk
-                        : (main_chunk_ ? main_chunk_.get() : nullptr);
+          current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
       if (matChunk) {
         std::string s;
         if (value.isStringValId())
@@ -328,8 +335,8 @@ void VM::executeInstruction(const Instruction &instruction) {
         // stale globals copy cheaply (per-key, not full map).
         if (!frame_arena_.empty() && frame_count_ > 0) {
           auto &wf = frame_arena_[frame_count_ - 1];
-          if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
-                        name) == wf.written_globals.end()) {
+          if (std::find(wf.written_globals.begin(), wf.written_globals.end(), name) ==
+              wf.written_globals.end()) {
             wf.written_globals.push_back(name);
           }
         }
@@ -370,8 +377,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     Value value = popStack();
 
     if (immutable_locals_.count(abs)) {
-      COMPILER_THROW("Cannot reassign val local at index " +
-                     std::to_string(var_index));
+      COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
     }
 
     if (hot_func_cb_) {
@@ -527,16 +533,14 @@ void VM::executeInstruction(const Instruction &instruction) {
       ::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 "
                      "upvalue_idx={} frame_count={} func='{}'",
                      upvalue_index, frame_count_,
-                     currentFrame().function ? currentFrame().function->name
-                                             : "?");
+                     currentFrame().function ? currentFrame().function->name : "?");
       COMPILER_THROW("LOAD_UPVALUE used without active closure");
     }
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
       COMPILER_THROW("Closure not found for LOAD_UPVALUE");
     }
-    if (upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
       COMPILER_THROW("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
@@ -562,8 +566,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!closure) {
       COMPILER_THROW("Closure not found for STORE_UPVALUE");
     }
-    if (upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
       COMPILER_THROW("STORE_UPVALUE index out of range");
     }
     auto &cell = closure->upvalues[upvalue_index];
@@ -643,11 +646,9 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::NOT: {
     Value v = popStack();
     if (v.isObjectId()) {
-      Value opMethod =
-          getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_not");
+      Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_not");
       if (!opMethod.isNull() &&
-          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
-           opMethod.isHostFuncId())) {
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
         pushStack(callFunction(opMethod, {v}));
       } else {
         pushStack(!isTruthy(v));
@@ -665,15 +666,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else if (v.isDouble()) {
       pushStack(~static_cast<int64_t>(v.asDouble()));
     } else if (v.isObjectId()) {
-      Value opMethod =
-          getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_bit_not");
+      Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_bit_not");
       if (!opMethod.isNull() &&
-          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
-           opMethod.isHostFuncId())) {
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
         pushStack(callFunction(opMethod, {v}));
       } else {
-        COMPILER_THROW(
-            "Bitwise NOT requires integer operand or op_bit_not method");
+        COMPILER_THROW("Bitwise NOT requires integer operand or op_bit_not method");
       }
     } else {
       COMPILER_THROW("Bitwise NOT requires integer operand");
@@ -728,8 +726,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     if (execBuiltinOp(instruction))
       break;
-    COMPILER_THROW("Unknown opcode: " +
-                   std::to_string(static_cast<int>(instruction.opcode)));
+    COMPILER_THROW("Unknown opcode: " + std::to_string(static_cast<int>(instruction.opcode)));
   }
 }
 
@@ -741,51 +738,43 @@ void VM::executeInstruction(const Instruction &instruction) {
 
 #if HAVE_COMPUTED_GOTO
 
-#define DISPATCH_NEXT()                                                        \
-  do {                                                                         \
-    if (frame_count_ > stop_frame_depth) {                                     \
-      auto &frm = frame_arena_[frame_count_ - 1];                              \
-      if (frm.ip == saved_ip)                                                  \
-        frm.ip++;                                                              \
-      goto *dispatch_table[static_cast<uint8_t>(                               \
-          frm.function->instructions[frm.ip].opcode)];                         \
-    }                                                                          \
-    return;                                                                    \
+#define DISPATCH_NEXT()                                                                            \
+  do {                                                                                             \
+    if (frame_count_ > stop_frame_depth) {                                                         \
+      auto &frm = frame_arena_[frame_count_ - 1];                                                  \
+      if (frm.ip == saved_ip)                                                                      \
+        frm.ip++;                                                                                  \
+      goto *dispatch_table[static_cast<uint8_t>(frm.function->instructions[frm.ip].opcode)];       \
+    }                                                                                              \
+    return;                                                                                        \
   } while (0)
 
-#define DISPATCH_OP(op)                                                        \
-  do {                                                                         \
-    if (frame_count_ > stop_frame_depth) {                                     \
-      auto &frm = frame_arena_[frame_count_ - 1];                              \
-      if (frm.ip == saved_ip)                                                  \
-        frm.ip++;                                                              \
-      goto *dispatch_table[static_cast<uint8_t>(OpCode::op)];                  \
-    }                                                                          \
-    return;                                                                    \
+#define DISPATCH_OP(op)                                                                            \
+  do {                                                                                             \
+    if (frame_count_ > stop_frame_depth) {                                                         \
+      auto &frm = frame_arena_[frame_count_ - 1];                                                  \
+      if (frm.ip == saved_ip)                                                                      \
+        frm.ip++;                                                                                  \
+      goto *dispatch_table[static_cast<uint8_t>(OpCode::op)];                                      \
+    }                                                                                              \
+    return;                                                                                        \
   } while (0)
 
-__attribute__((hot,
-               noinline)) void VM::runDispatchFast(size_t stop_frame_depth) {
+__attribute__((hot, noinline)) void VM::runDispatchFast(size_t stop_frame_depth) {
   static void *dispatch_table[256];
   static bool dispatch_initialized = false;
   if (!dispatch_initialized) {
     for (int i = 0; i < 256; ++i)
       dispatch_table[i] = &&op_default;
     dispatch_table[static_cast<uint8_t>(OpCode::LOAD_CONST)] = &&op_LOAD_CONST;
-    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_GLOBAL)] =
-        &&op_LOAD_GLOBAL;
-    dispatch_table[static_cast<uint8_t>(OpCode::STORE_GLOBAL)] =
-        &&op_STORE_GLOBAL;
-    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_GLOBAL)] =
-        &&op_STORE_IMMUT_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_GLOBAL)] = &&op_LOAD_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_GLOBAL)] = &&op_STORE_GLOBAL;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_GLOBAL)] = &&op_STORE_IMMUT_GLOBAL;
     dispatch_table[static_cast<uint8_t>(OpCode::LOAD_VAR)] = &&op_LOAD_VAR;
     dispatch_table[static_cast<uint8_t>(OpCode::STORE_VAR)] = &&op_STORE_VAR;
-    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_VAR)] =
-        &&op_STORE_IMMUT_VAR;
-    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_UPVALUE)] =
-        &&op_LOAD_UPVALUE;
-    dispatch_table[static_cast<uint8_t>(OpCode::STORE_UPVALUE)] =
-        &&op_STORE_UPVALUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_IMMUT_VAR)] = &&op_STORE_IMMUT_VAR;
+    dispatch_table[static_cast<uint8_t>(OpCode::LOAD_UPVALUE)] = &&op_LOAD_UPVALUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::STORE_UPVALUE)] = &&op_STORE_UPVALUE;
     dispatch_table[static_cast<uint8_t>(OpCode::POP)] = &&op_POP;
     dispatch_table[static_cast<uint8_t>(OpCode::DUP)] = &&op_DUP;
     dispatch_table[static_cast<uint8_t>(OpCode::SWAP)] = &&op_SWAP;
@@ -806,10 +795,8 @@ __attribute__((hot,
     dispatch_table[static_cast<uint8_t>(OpCode::POW)] = &&op_POW;
     dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL)] = &&op_INCLOCAL;
     dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL)] = &&op_DECLOCAL;
-    dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL_POST)] =
-        &&op_INCLOCAL_POST;
-    dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL_POST)] =
-        &&op_DECLOCAL_POST;
+    dispatch_table[static_cast<uint8_t>(OpCode::INCLOCAL_POST)] = &&op_INCLOCAL_POST;
+    dispatch_table[static_cast<uint8_t>(OpCode::DECLOCAL_POST)] = &&op_DECLOCAL_POST;
     dispatch_table[static_cast<uint8_t>(OpCode::EQ)] = &&op_EQ;
     dispatch_table[static_cast<uint8_t>(OpCode::NEQ)] = &&op_NEQ;
     dispatch_table[static_cast<uint8_t>(OpCode::IS)] = &&op_IS;
@@ -829,33 +816,24 @@ __attribute__((hot,
     dispatch_table[static_cast<uint8_t>(OpCode::BIT_RSH)] = &&op_BIT_RSH;
     dispatch_table[static_cast<uint8_t>(OpCode::BIT_NOT)] = &&op_BIT_NOT;
     dispatch_table[static_cast<uint8_t>(OpCode::LENGTH)] = &&op_LENGTH;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_GET_FAST)] =
-        &&op_STRING_GET_FAST;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_SET_FAST)] =
-        &&op_STRING_SET_FAST;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_NEW)] =
-        &&op_STRING_CURSOR_NEW;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_GET_FAST)] = &&op_STRING_GET_FAST;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_SET_FAST)] = &&op_STRING_SET_FAST;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_NEW)] = &&op_STRING_CURSOR_NEW;
     dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_CURRENT)] =
         &&op_STRING_CURSOR_CURRENT;
     dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_ADVANCE)] =
         &&op_STRING_CURSOR_ADVANCE;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_PEEK)] =
-        &&op_STRING_CURSOR_PEEK;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] =
-        &&op_STRING_CURSOR_RESET;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_PEEK)] = &&op_STRING_CURSOR_PEEK;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_RESET)] = &&op_STRING_CURSOR_RESET;
     dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_GET_POS)] =
         &&op_STRING_CURSOR_GET_POS;
     dispatch_table[static_cast<uint8_t>(OpCode::STRING_CURSOR_SET_POS)] =
         &&op_STRING_CURSOR_SET_POS;
-    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CONCAT)] =
-        &&op_STRING_CONCAT;
+    dispatch_table[static_cast<uint8_t>(OpCode::STRING_CONCAT)] = &&op_STRING_CONCAT;
     dispatch_table[static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP;
-    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] =
-        &&op_JUMP_IF_FALSE;
-    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] =
-        &&op_JUMP_IF_TRUE;
-    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] =
-        &&op_JUMP_IF_NULL;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] = &&op_JUMP_IF_FALSE;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE;
+    dispatch_table[static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] = &&op_JUMP_IF_NULL;
     dispatch_table[static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL;
     dispatch_table[static_cast<uint8_t>(OpCode::CALL_DYN)] = &&op_CALL;
     dispatch_table[static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL;
@@ -884,300 +862,449 @@ __attribute__((hot,
       return;
     }
     if (trace_execution_) {
-      traceInstruction(frm.function->instructions[frm.ip], frm.function,
-                       frame_count_ - 1, frm.ip);
+      traceInstruction(frm.function->instructions[frm.ip], frm.function, frame_count_ - 1, frm.ip);
     }
-    goto *dispatch_table[static_cast<uint8_t>(
-        frm.function->instructions[frm.ip].opcode)];
+    goto *dispatch_table[static_cast<uint8_t>(frm.function->instructions[frm.ip].opcode)];
   }
 
   // --- Hot opcodes (most frequent in self-hosted compilation) ---
 
-op_LOAD_CONST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t saved_ip = frm.ip;
-  frm.ip++;
-  pushStack(getConstant(inst.operands[0].asInt()));
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
+op_LOAD_CONST:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t saved_ip = frm.ip;
+    frm.ip++;
+    pushStack(getConstant(inst.operands[0].asInt()));
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
       }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      // Transfer suspension info to last_suspension_* so caller can handle it
-      last_suspension_reason_ = suspension_reason_;
-      last_suspension_context_ = suspension_context_;
-      suspension_requested_ = false;
-      suspension_context_ = nullptr;
-      return;
-    }
-    // Check for suspension request (e.g., channel receive, thread join)
-    if (suspension_requested_) {
-      last_suspension_reason_ = suspension_reason_;
-      last_suspension_context_ = suspension_context_;
-      suspension_requested_ = false;
-      suspension_context_ = nullptr;
-      return;
-    }
-    if (!pending_calls.empty()) {
-      processPendingCalls();
+      profiler_.recordInstructions(8192);
       if (exit_requested_.load())
         return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      Instruction retInst{OpCode::RETURN};
-      try {
-        executeInstruction(retInst);
-      } catch (...) {
-        throw;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        // Transfer suspension info to last_suspension_* so caller can handle it
+        last_suspension_reason_ = suspension_reason_;
+        last_suspension_context_ = suspension_context_;
+        suspension_requested_ = false;
+        suspension_context_ = nullptr;
+        return;
       }
-      return;
+      // Check for suspension request (e.g., channel receive, thread join)
+      if (suspension_requested_) {
+        last_suspension_reason_ = suspension_reason_;
+        last_suspension_context_ = suspension_context_;
+        suspension_requested_ = false;
+        suspension_context_ = nullptr;
+        return;
+      }
+      if (!pending_calls.empty()) {
+        processPendingCalls();
+        if (exit_requested_.load())
+          return;
+      }
     }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        Instruction retInst{OpCode::RETURN};
+        try {
+          executeInstruction(retInst);
+        } catch (...) {
+          throw;
+        }
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
   }
-}
 
-op_LOAD_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t saved_ip = frm.ip;
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  pushStack(locals[abs]);
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
+op_LOAD_VAR:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t saved_ip = frm.ip;
+    frm.ip++;
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    pushStack(locals[abs]);
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
         return;
       }
     }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
 
-op_STORE_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t saved_ip = frm.ip;
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  Value value = popStack();
-  if (immutable_locals_.count(abs)) {
-    COMPILER_THROW("Cannot reassign val local at index " +
-                   std::to_string(var_index));
-  }
-  locals[abs] = value;
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
+op_STORE_VAR:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t saved_ip = frm.ip;
+    frm.ip++;
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = popStack();
+    if (immutable_locals_.count(abs)) {
+      COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+    }
+    locals[abs] = value;
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
         return;
       }
     }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
 
-op_POP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  popStack();
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
+op_POP:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    popStack();
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
         return;
       }
     }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
 
-op_PUSH_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  pushStack(Value::makeNull());
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
+op_PUSH_NULL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    pushStack(Value::makeNull());
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
         return;
       }
     }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
 
-op_CALL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  // CALL_SPREAD shares this label but has different operand semantics
-  // (lit_before/lit_after, array expansion) - fast path only for plain
-  // CALL/CALL_DYN. CALL_DYN pops arg_count from the stack, not operands.
-  const uint32_t call_arg_count =
-      (inst.opcode == OpCode::CALL && !inst.operands.empty() &&
-               inst.operands[0].isInt()
-           ? static_cast<uint32_t>(inst.operands[0].asInt())
-           : UINT32_MAX);
-  // Common-case inline: closure/function/host callee with no exotic
-  // dispatch. ip is advanced BEFORE doCall (frame_arena_ may reallocate
-  // inside the callee - incrementing through the frm reference after
-  // would be a dangling-reference write). Rejoins the shared tail after.
-  // Falls through to the full executeInstruction path for anything else
-  // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
-  if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
-    // A module-wrapper callee can consume the remaining tick budget inside
-    // doCall and unwind with NO result pushed (budget_unwind_no_result_): its
-    // wrapped frame stays live on the fiber and supplies the result on resume.
-    // Return to the driver now; falling through would dispatch the next opcode
-    // with the budget already spent.
+op_CALL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    // CALL_SPREAD shares this label but has different operand semantics
+    // (lit_before/lit_after, array expansion) - fast path only for plain
+    // CALL/CALL_DYN. CALL_DYN pops arg_count from the stack, not operands.
+    const uint32_t call_arg_count =
+        (inst.opcode == OpCode::CALL && !inst.operands.empty() && inst.operands[0].isInt()
+             ? static_cast<uint32_t>(inst.operands[0].asInt())
+             : UINT32_MAX);
+    // Common-case inline: closure/function/host callee with no exotic
+    // dispatch. ip is advanced BEFORE doCall (frame_arena_ may reallocate
+    // inside the callee - incrementing through the frm reference after
+    // would be a dangling-reference write). Rejoins the shared tail after.
+    // Falls through to the full executeInstruction path for anything else
+    // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
+    if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+      // A module-wrapper callee can consume the remaining tick budget inside
+      // doCall and unwind with NO result pushed (budget_unwind_no_result_): its
+      // wrapped frame stays live on the fiber and supplies the result on resume.
+      // Return to the driver now; falling through would dispatch the next opcode
+      // with the budget already spent.
+      if (tickBudgetExhausted())
+        return;
+      // Fiber-suspending host call on the inline fast path: the callee left a
+      // Pending marker on the stack. Park the goroutine on the pending token
+      // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
+      // resume it with the lifted value.
+      if (!stack.empty() && stack.back().isPending()) {
+        if (parkIfPendingCallResult())
+          return;
+      }
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (suspension_requested_ || last_suspension_reason_ != 0)
+        goto slow_dispatch_fallback;
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+    frm.ip++;
+    // ip now points at the instruction AFTER this CALL — the exact address
+    // a coroutine yield must return to. Stash it for doCall's resume path.
+    pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
+    try {
+      executeInstruction(inst);
+    } catch (const ScriptThrow &thrown) {
+      ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+      if (!handleScriptThrow(thrown.value)) {
+        throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
+      }
+    } catch (const std::runtime_error &e) {
+      Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+      ::havel::stdlib::notifyRuntimeError(e.what());
+      if (handleScriptThrow(exceptionValue)) {
+        // caught
+      } else {
+        throw std::runtime_error(e.what());
+      }
+    }
+    // IMMEDIATE check for suspension after CALL - host functions may request
+    // suspension
+    if (suspension_requested_ || last_suspension_reason_ != 0) {
+      // static init: getenv on every CALL was 3.5% of a closure-call
+      // benchmark profile
+      static const bool _sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+      if (_sleep_trace) {
+        // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d
+        // executing_fiber=%d\n", (int)suspension_reason_,
+        // (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
+      }
+      // If it's a SLEEP suspension, handle it immediately like the periodic check
+      // does Only when this is a FRESH request: a module-fn wrapper's dispatch
+      // loop already transferred suspension_reason_/context_ into
+      // last_suspension_* (VM.cpp ~2032) and cleared suspension_context_;
+      // re-copying suspension_context_ here would overwrite the real
+      // deadline-ms (transferred intact) with nullptr -> the goroutine
+      // parks with ms=0 and wakes immediately (async_mod.sleep(50)
+      // measured ~4ms).
+      if (suspension_requested_ &&
+          suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+        if (scheduler_ && current_executing_fiber_) {
+          // For SLEEP, the IP was already advanced before the CALL (at start of
+          // op_CALL) No need to adjust IP further
+          last_suspension_reason_ = suspension_reason_;
+          last_suspension_context_ = suspension_context_;
+          suspension_requested_ = false;
+          suspension_context_ = nullptr;
+          return;
+        }
+      }
+      goto slow_dispatch_fallback;
+    }
+
+    // Fiber-suspending host call: the CALL left a Pending marker; park
+    // the current goroutine on the pending token and suspend.
+    if (parkIfPendingCallResult())
+      return;
+
+    // A slow-dispatched module-wrapper callee can consume the remaining tick
+    // budget and unwind with no result pushed. Hand control back to the driver
+    // now instead of running more of this goroutine past its slice.
     if (tickBudgetExhausted())
       return;
-    // Fiber-suspending host call on the inline fast path: the callee left a
-    // Pending marker on the stack. Park the goroutine on the pending token
-    // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
-    // resume it with the lifted value.
-    if (!stack.empty() && stack.back().isPending()) {
-      if (parkIfPendingCallResult())
+
+    // exit() may have been called by this CALL (host functions set
+    // exit_requested_/exit_code_). Stop executing immediately so the
+    // launcher can report the requested code instead of running the
+    // rest of the script.
+    if (exit_requested_.load())
+      return;
+
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
         return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_ || last_suspension_reason_ != 0) {
+        return;
+      }
+      if (!pending_calls.empty()) {
+        processPendingCalls();
+        if (exit_requested_.load())
+          return;
+      }
+    }
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_RETURN:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    try {
+      executeInstruction(inst);
+    } catch (const ScriptThrow &thrown) {
+      ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+      if (!handleScriptThrow(thrown.value)) {
+        throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
+      }
+    } catch (const std::runtime_error &e) {
+      ::havel::stdlib::notifyRuntimeError(e.what());
+      throw std::runtime_error(e.what());
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -1196,251 +1323,87 @@ op_CALL: {
         return;
       }
     }
-    if (suspension_requested_ || last_suspension_reason_ != 0)
-      goto slow_dispatch_fallback;
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
       return;
     {
       auto &f2 = frame_arena_[frame_count_ - 1];
       if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
         return;
       }
-      goto *dispatch_table[static_cast<uint8_t>(
-          f2.function->instructions[f2.ip].opcode)];
+      if (trace_execution_) {
+        traceInstruction(f2.function->instructions[f2.ip], f2.function, frame_count_ - 1, f2.ip);
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
-  frm.ip++;
-  // ip now points at the instruction AFTER this CALL — the exact address
-  // a coroutine yield must return to. Stash it for doCall's resume path.
-  pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
-  try {
-    executeInstruction(inst);
-  } catch (const ScriptThrow &thrown) {
-    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-    if (!handleScriptThrow(thrown.value)) {
-      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-    }
-  } catch (const std::runtime_error &e) {
-    Value exceptionValue =
-        Value::makeStringId(heap_.allocateString(e.what()).id);
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    if (handleScriptThrow(exceptionValue)) {
-      // caught
+
+op_YIELD:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+
+    // Check if there's a value on the stack to yield
+    Value yieldValue;
+    if (!stack.empty()) {
+      yieldValue = popStack();
     } else {
-      throw std::runtime_error(e.what());
+      yieldValue = Value::makeNull();
     }
-  }
-  // IMMEDIATE check for suspension after CALL - host functions may request
-  // suspension
-  if (suspension_requested_ || last_suspension_reason_ != 0) {
-    // static init: getenv on every CALL was 3.5% of a closure-call
-    // benchmark profile
-    static const bool _sleep_trace = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
-    if (_sleep_trace) {
-      // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d
-      // executing_fiber=%d\n", (int)suspension_reason_,
-      // (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
-    }
-    // If it's a SLEEP suspension, handle it immediately like the periodic check
-    // does Only when this is a FRESH request: a module-fn wrapper's dispatch
-    // loop already transferred suspension_reason_/context_ into
-    // last_suspension_* (VM.cpp ~2032) and cleared suspension_context_;
-    // re-copying suspension_context_ here would overwrite the real
-    // deadline-ms (transferred intact) with nullptr -> the goroutine
-    // parks with ms=0 and wakes immediately (async_mod.sleep(50)
-    // measured ~4ms).
-    if (suspension_requested_ &&
-        suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-      if (scheduler_ && current_executing_fiber_) {
-        // For SLEEP, the IP was already advanced before the CALL (at start of
-        // op_CALL) No need to adjust IP further
-        last_suspension_reason_ = suspension_reason_;
-        last_suspension_context_ = suspension_context_;
-        suspension_requested_ = false;
-        suspension_context_ = nullptr;
-        return;
-      }
-    }
-    goto slow_dispatch_fallback;
-  }
 
-  // Fiber-suspending host call: the CALL left a Pending marker; park
-  // the current goroutine on the pending token and suspend.
-  if (parkIfPendingCallResult())
-    return;
+    // Coroutine context: save the coroutine's state, pop the caller frame
+    // and hand the yielded value back to the caller without suspending the
+    // goroutine (mirrors the slow-path YIELD handler in VMConcurrency.cpp).
+    if (current_coroutine_id_ != UINT32_MAX) {
+      auto *co = heap_.coroutine(current_coroutine_id_);
+      if (co) {
+        auto saved_ip = frm.ip;
+        co->ip = saved_ip;
+        co->locals = locals;
 
-  // A slow-dispatched module-wrapper callee can consume the remaining tick
-  // budget and unwind with no result pushed. Hand control back to the driver
-  // now instead of running more of this goroutine past its slice.
-  if (tickBudgetExhausted())
-    return;
-
-  // exit() may have been called by this CALL (host functions set
-  // exit_requested_/exit_code_). Stop executing immediately so the
-  // launcher can report the requested code instead of running the
-  // rest of the script.
-  if (exit_requested_.load())
-    return;
-
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_ || last_suspension_reason_ != 0) {
-      return;
-    }
-    if (!pending_calls.empty()) {
-      processPendingCalls();
-      if (exit_requested_.load())
-        return;
-    }
-  }
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_RETURN: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  try {
-    executeInstruction(inst);
-  } catch (const ScriptThrow &thrown) {
-    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-    if (!handleScriptThrow(thrown.value)) {
-      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-    }
-  } catch (const std::runtime_error &e) {
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    throw std::runtime_error(e.what());
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    if (trace_execution_) {
-      traceInstruction(f2.function->instructions[f2.ip], f2.function,
-                       frame_count_ - 1, f2.ip);
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_YIELD: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-
-  // Check if there's a value on the stack to yield
-  Value yieldValue;
-  if (!stack.empty()) {
-    yieldValue = popStack();
-  } else {
-    yieldValue = Value::makeNull();
-  }
-
-  // Coroutine context: save the coroutine's state, pop the caller frame
-  // and hand the yielded value back to the caller without suspending the
-  // goroutine (mirrors the slow-path YIELD handler in VMConcurrency.cpp).
-  if (current_coroutine_id_ != UINT32_MAX) {
-    auto *co = heap_.coroutine(current_coroutine_id_);
-    if (co) {
-      auto saved_ip = frm.ip;
-      co->ip = saved_ip;
-      co->locals = locals;
-
-      co->stack.clear();
-      {
-        std::vector<Value> tmp;
-        while (!stack.empty()) {
-          tmp.push_back(stack.back());
-          stack.pop_back();
-        }
-        for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-          co->stack.push_back(*it);
-        }
-      }
-
-      co->state = GCHeap::Coroutine::Waiting;
-
-      if (!co->caller_stack.empty()) {
-        auto &caller = co->caller_stack.back();
-        frame_count_ = caller.frame_count;
-        locals = caller.locals;
-        current_coroutine_id_ = caller.coroutine_id;
-
-        frame_arena_[frame_count_ - 1].ip = caller.ip;
-
-        stack.clear();
-        for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
-          stack.push_back(*it);
+        co->stack.clear();
+        {
+          std::vector<Value> tmp;
+          while (!stack.empty()) {
+            tmp.push_back(stack.back());
+            stack.pop_back();
+          }
+          for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+            co->stack.push_back(*it);
+          }
         }
 
-        co->caller_stack.pop_back();
+        co->state = GCHeap::Coroutine::Waiting;
+
+        if (!co->caller_stack.empty()) {
+          auto &caller = co->caller_stack.back();
+          frame_count_ = caller.frame_count;
+          locals = caller.locals;
+          current_coroutine_id_ = caller.coroutine_id;
+
+          frame_arena_[frame_count_ - 1].ip = caller.ip;
+
+          stack.clear();
+          for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+            stack.push_back(*it);
+          }
+
+          co->caller_stack.pop_back();
+        }
+
+        pushStack(yieldValue);
+        goto dispatch_next;
       }
-
-      pushStack(yieldValue);
-      goto dispatch_next;
     }
-  }
 
-  // Non-coroutine yield: keep the value on the stack and continue
-  pushStack(yieldValue);
-  goto dispatch_next;
-}
+    // Non-coroutine yield: keep the value on the stack and continue
+    pushStack(yieldValue);
+    goto dispatch_next;
+  }
 
 dispatch_next:
   counter++;
@@ -1469,1056 +1432,322 @@ dispatch_next:
       executeInstruction(Instruction{OpCode::RETURN});
       return;
     }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
+    goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
   }
 
   // --- Remaining opcodes: delegate to executeInstruction ---
 
-op_LOAD_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  try {
-    executeInstruction(inst);
-  } catch (const ScriptThrow &thrown) {
-    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-    if (!handleScriptThrow(thrown.value)) {
-      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-    }
-  } catch (const std::runtime_error &e) {
-    Value exceptionValue =
-        Value::makeStringId(heap_.allocateString(e.what()).id);
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    if (handleScriptThrow(exceptionValue)) {
-      // caught - continue
-    } else {
-      throw std::runtime_error(e.what());
-    }
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
+op_LOAD_GLOBAL:
   {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STORE_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  try {
-    executeInstruction(inst);
-  } catch (const std::runtime_error &e) {
-    Value exceptionValue =
-        Value::makeStringId(heap_.allocateString(e.what()).id);
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    if (handleScriptThrow(exceptionValue)) {
-      // caught
-    } else {
-      throw std::runtime_error(e.what());
-    }
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STORE_IMMUT_GLOBAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  try {
-    executeInstruction(inst);
-  } catch (const std::runtime_error &e) {
-    Value exceptionValue =
-        Value::makeStringId(heap_.allocateString(e.what()).id);
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    if (handleScriptThrow(exceptionValue)) {
-    } else {
-      throw std::runtime_error(e.what());
-    }
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STORE_IMMUT_VAR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  try {
-    executeInstruction(inst);
-  } catch (const std::runtime_error &e) {
-    throw std::runtime_error(e.what());
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_LOAD_UPVALUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  try {
-    executeInstruction(frm.function->instructions[frm.ip - 1]);
-  } catch (const std::runtime_error &e) {
-    throw std::runtime_error(e.what());
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STORE_UPVALUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  try {
-    executeInstruction(frm.function->instructions[frm.ip - 1]);
-  } catch (const std::runtime_error &e) {
-    throw std::runtime_error(e.what());
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_DUP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value value = popStack();
-  pushStack(value);
-  pushStack(value);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_SWAP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value top = popStack();
-  Value next = popStack();
-  pushStack(top);
-  pushStack(next);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_INCLOCAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  Value &val = locals[abs];
-  if (val.isInt()) {
-    val = Value::makeInt(val.asInt() + 1);
-    pushStack(val);
-  } else if (val.isDouble()) {
-    val = Value::makeDouble(val.asDouble() + 1.0);
-    pushStack(val);
-  } else {
-    COMPILER_THROW("Cannot increment non-numeric value");
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_DECLOCAL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  Value &val = locals[abs];
-  if (val.isInt()) {
-    val = Value::makeInt(val.asInt() - 1);
-    pushStack(val);
-  } else if (val.isDouble()) {
-    val = Value::makeDouble(val.asDouble() - 1.0);
-    pushStack(val);
-  } else {
-    COMPILER_THROW("Cannot decrement non-numeric value");
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_INCLOCAL_POST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  Value old = locals[abs];
-  pushStack(old);
-  if (old.isInt()) {
-    locals[abs] = Value::makeInt(old.asInt() + 1);
-  } else if (old.isDouble()) {
-    locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_DECLOCAL_POST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  uint32_t var_index = inst.operands[0].asInt();
-  uint32_t abs = this->toAbsoluteLocal(var_index);
-  this->ensureLocalIndex(abs);
-  Value old = locals[abs];
-  pushStack(old);
-  if (old.isInt()) {
-    locals[abs] = Value::makeInt(old.asInt() - 1);
-  } else if (old.isDouble()) {
-    locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_ADD:
-op_SUB:
-op_MUL:
-op_DIV:
-op_INT_DIV:
-op_MOD:
-op_DIVMOD:
-op_REMAINDER:
-op_POW:
-op_EQ:
-op_NEQ:
-op_IS:
-op_LT:
-op_LTE:
-op_GT:
-op_GTE:
-op_BIT_AND:
-op_BIT_OR:
-op_BIT_XOR:
-op_BIT_LSH:
-op_BIT_RSH: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  execBinaryOp(inst);
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-// Fast integer arithmetic: the optimizer's FastIntegerLowering pass rewrites
-// ADD/SUB/MUL (and INT_DIV/REMAINDER) to these opcodes when TypePropagation
-// proves both operands are ints, and the emitter already emits them for
-// statically typed int expressions. Operate directly on the unboxed int48
-// payload; a non-int operand means the type proof was wrong or the bytecode
-// was hand-built, so bail to the generic slow path rather than corrupting
-// the stack.
-op_ADD_INT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  {
-    Value r = popStack();
-    Value l = popStack();
-    if (r.isInt() && l.isInt()) {
-      const int64_t li = l.asInt();
-      const int64_t ri = r.asInt();
-      int64_t result;
-      switch (inst.opcode) {
-      case OpCode::ADD_INT:
-        result = li + ri;
-        break;
-      case OpCode::SUB_INT:
-        result = li - ri;
-        break;
-      case OpCode::MUL_INT:
-        result = li * ri;
-        break;
-      case OpCode::DIV_INT:
-        if (ri == 0)
-          COMPILER_THROW_AT("Division by zero", inst);
-        result = li / ri;
-        break;
-      case OpCode::MOD_INT:
-        if (ri == 0)
-          COMPILER_THROW_AT("Modulo by zero", inst);
-        result = li % ri;
-        break;
-      default:
-        result = 0;
-        break;
-      }
-      pushStack(result);
-      counter++;
-      if ((counter & 8191) == 0) {
-        // Scheduler time-slice checkpoint (see the unindented twin above).
-        if (fast_tick_budget_ != 0) {
-          fast_tick_consumed_ = counter;
-          if (counter >= fast_tick_budget_) {
-            return;
-          }
-        }
-        profiler_.recordInstructions(8192);
-        if (exit_requested_.load())
-          return;
-        maybeCollectGarbage();
-        periodicYieldCheck();
-        if (suspension_requested_) {
-          return;
-        }
-      }
-      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-        return;
-      {
-        auto &f2 = frame_arena_[frame_count_ - 1];
-        if (f2.ip >= f2.function->instructions.size()) {
-          stack.push_back(nullptr);
-          executeInstruction(Instruction{OpCode::RETURN});
-          return;
-        }
-        goto *dispatch_table[static_cast<uint8_t>(
-            f2.function->instructions[f2.ip].opcode)];
-      }
-    }
-    // Not proven ints: the optimizer's proof was wrong or the bytecode
-    // was hand-built. Restore the operands and let the generic path
-    // handle every shape, including method dispatch on objects.
-    pushStack(std::move(l));
-    pushStack(std::move(r));
-    execBinaryOp(inst);
-    counter++;
-  }
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_AND:
-op_OR: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  execLogicalOp(inst.opcode);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_NOT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value v = popStack();
-  pushStack(!isTruthy(v));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_BIT_NOT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value v = popStack();
-  if (v.isInt())
-    pushStack(~v.asInt());
-  else if (v.isDouble())
-    pushStack(~static_cast<int64_t>(v.asDouble()));
-  else
-    COMPILER_THROW("Bitwise NOT requires integer operand");
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_NEGATE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  execNegate();
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_GET_FAST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
-    // STRING_GET_FAST expects operands: [string_id (int), instruction_ip (int)]
-    // Stack: index
-    if (inst.operands.size() != 2 || !inst.operands[0].isInt() ||
-        !inst.operands[1].isInt()) {
-      COMPILER_THROW(
-          "STRING_GET_FAST expects operands: <string_id, instruction_ip>");
-    }
-    uint32_t string_id = inst.operands[0].asInt();
-
-    Value index_val = popStack();
-    auto index = indexFromValue(index_val);
-    if (!index) {
-      COMPILER_THROW("STRING_GET_FAST expects integer index");
-    }
-    int64_t idx = *index;
-
-    const std::string *str = heap_.string(string_id);
-    if (!str) {
-      COMPILER_THROW("STRING_GET_FAST unknown string id");
-    }
-
-    int64_t numCodepoints = 0;
-    size_t bytePos = 0;
-    while (bytePos < str->size()) {
-      unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
-      size_t cpLen = 1;
-      if (c < 0x80) {
-        cpLen = 1;
-      } else if ((c & 0xE0) == 0xC0) {
-        cpLen = 2;
-      } else if ((c & 0xF0) == 0xE0) {
-        cpLen = 3;
-      } else if ((c & 0xF8) == 0xF0) {
-        cpLen = 4;
+    try {
+      executeInstruction(inst);
+    } catch (const ScriptThrow &thrown) {
+      ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+      if (!handleScriptThrow(thrown.value)) {
+        throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
       }
-      if (bytePos + cpLen > str->size()) {
-        cpLen = 1;
+    } catch (const std::runtime_error &e) {
+      Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+      ::havel::stdlib::notifyRuntimeError(e.what());
+      if (handleScriptThrow(exceptionValue)) {
+        // caught - continue
+      } else {
+        throw std::runtime_error(e.what());
       }
-      numCodepoints++;
-      bytePos += cpLen;
     }
-
-    if (idx < 0)
-      idx = numCodepoints + idx;
-    if (idx < 0 || idx >= numCodepoints) {
-      pushStack(Value::makeNull());
-    } else {
-      size_t targetByte = 0;
-      int64_t cpIdx = 0;
-      while (cpIdx < idx && targetByte < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-        size_t cpLen = 1;
-        if (c < 0x80) {
-          cpLen = 1;
-        } else if ((c & 0xE0) == 0xC0) {
-          cpLen = 2;
-        } else if ((c & 0xF0) == 0xE0) {
-          cpLen = 3;
-        } else if ((c & 0xF8) == 0xF0) {
-          cpLen = 4;
-        }
-        if (targetByte + cpLen > str->size()) {
-          cpLen = 1;
-        }
-        targetByte += cpLen;
-        cpIdx++;
-      }
-      size_t cpLen = 1;
-      if (targetByte < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-        if (c < 0x80) {
-          cpLen = 1;
-        } else if ((c & 0xE0) == 0xC0) {
-          cpLen = 2;
-        } else if ((c & 0xF0) == 0xE0) {
-          cpLen = 3;
-        } else if ((c & 0xF8) == 0xF0) {
-          cpLen = 4;
-        }
-        if (targetByte + cpLen > str->size()) {
-          cpLen = 1;
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
         }
       }
-      auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
-      pushStack(Value::makeStringId(ref.id));
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
     }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_STORE_GLOBAL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    try {
+      executeInstruction(inst);
+    } catch (const std::runtime_error &e) {
+      Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+      ::havel::stdlib::notifyRuntimeError(e.what());
+      if (handleScriptThrow(exceptionValue)) {
+        // caught
+      } else {
+        throw std::runtime_error(e.what());
+      }
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_STORE_IMMUT_GLOBAL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    try {
+      executeInstruction(inst);
+    } catch (const std::runtime_error &e) {
+      Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+      ::havel::stdlib::notifyRuntimeError(e.what());
+      if (handleScriptThrow(exceptionValue)) {
+      } else {
+        throw std::runtime_error(e.what());
+      }
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_STORE_IMMUT_VAR:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    try {
+      executeInstruction(inst);
+    } catch (const std::runtime_error &e) {
+      throw std::runtime_error(e.what());
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_LOAD_UPVALUE:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    try {
+      executeInstruction(frm.function->instructions[frm.ip - 1]);
+    } catch (const std::runtime_error &e) {
+      throw std::runtime_error(e.what());
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_STORE_UPVALUE:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    try {
+      executeInstruction(frm.function->instructions[frm.ip - 1]);
+    } catch (const std::runtime_error &e) {
+      throw std::runtime_error(e.what());
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_DUP:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value value = popStack();
+    pushStack(value);
+    pushStack(value);
     counter++;
     if ((counter & 8191) == 0) {
       if (fast_tick_budget_ != 0) {
@@ -2545,54 +1774,622 @@ op_STRING_GET_FAST: {
         executeInstruction(Instruction{OpCode::RETURN});
         return;
       }
-      goto *dispatch_table[static_cast<uint8_t>(
-          f2.function->instructions[f2.ip].opcode)];
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
   }
 
-op_STRING_SET_FAST: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
+op_SWAP:
   {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value top = popStack();
+    Value next = popStack();
+    pushStack(top);
+    pushStack(next);
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_INCLOCAL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
-    // STRING_SET_FAST expects operands: [string_id (int), instruction_ip (int)]
-    // Stack: value, index
-    if (inst.operands.size() != 2 || !inst.operands[0].isInt() ||
-        !inst.operands[1].isInt()) {
-      COMPILER_THROW(
-          "STRING_SET_FAST expects operands: <string_id, instruction_ip>");
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value &val = locals[abs];
+    if (val.isInt()) {
+      val = Value::makeInt(val.asInt() + 1);
+      pushStack(val);
+    } else if (val.isDouble()) {
+      val = Value::makeDouble(val.asDouble() + 1.0);
+      pushStack(val);
+    } else {
+      COMPILER_THROW("Cannot increment non-numeric value");
     }
-    uint32_t string_id = inst.operands[0].asInt();
-
-    Value value = popStack();
-    Value index_val = popStack();
-    auto index = indexFromValue(index_val);
-    if (!index) {
-      COMPILER_THROW("STRING_SET_FAST expects integer index");
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
     }
-    int64_t idx = *index;
-
-    auto *str_obj = heap_.object(string_id);
-    if (!str_obj) {
-      COMPILER_THROW("STRING_SET_FAST unknown string id");
-    }
-    auto *val = str_obj->get("__string_value");
-    if (!val || !val->isStringId()) {
-      COMPILER_THROW("STRING_SET_FAST invalid string object");
-    }
-    std::string *str = heap_.string(val->asStringId());
-    if (!str) {
-      COMPILER_THROW("STRING_SET_FAST string not found in heap");
-    }
-
-    // Use a block to limit scope of new_char for goto compatibility
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
     {
-      std::string new_char = toString(value);
-      if (new_char.size() != 1) {
-        COMPILER_THROW("STRING_SET_FAST value must be a single character");
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_DECLOCAL:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value &val = locals[abs];
+    if (val.isInt()) {
+      val = Value::makeInt(val.asInt() - 1);
+      pushStack(val);
+    } else if (val.isDouble()) {
+      val = Value::makeDouble(val.asDouble() - 1.0);
+      pushStack(val);
+    } else {
+      COMPILER_THROW("Cannot decrement non-numeric value");
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_INCLOCAL_POST:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value old = locals[abs];
+    pushStack(old);
+    if (old.isInt()) {
+      locals[abs] = Value::makeInt(old.asInt() + 1);
+    } else if (old.isDouble()) {
+      locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_DECLOCAL_POST:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    uint32_t var_index = inst.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value old = locals[abs];
+    pushStack(old);
+    if (old.isInt()) {
+      locals[abs] = Value::makeInt(old.asInt() - 1);
+    } else if (old.isDouble()) {
+      locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+    }
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_ADD:
+op_SUB:
+op_MUL:
+op_DIV:
+op_INT_DIV:
+op_MOD:
+op_DIVMOD:
+op_REMAINDER:
+op_POW:
+op_EQ:
+op_NEQ:
+op_IS:
+op_LT:
+op_LTE:
+op_GT:
+op_GTE:
+op_BIT_AND:
+op_BIT_OR:
+op_BIT_XOR:
+op_BIT_LSH:
+op_BIT_RSH:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    execBinaryOp(inst);
+    counter++;
+    if ((counter & 8191) == 0) {
+      // Scheduler time-slice: when a tick budget is armed, return at this
+      // periodic checkpoint so the driving loop (processGoroutinesInline /
+      // ExecutionEngine) can run other goroutines. counter granularity
+      // means a tick may overshoot by up to 8191 instructions; drivers
+      // treat the budget as approximate, not exact.
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+// Fast integer arithmetic: the optimizer's FastIntegerLowering pass rewrites
+// ADD/SUB/MUL (and INT_DIV/REMAINDER) to these opcodes when TypePropagation
+// proves both operands are ints, and the emitter already emits them for
+// statically typed int expressions. Operate directly on the unboxed int48
+// payload; a non-int operand means the type proof was wrong or the bytecode
+// was hand-built, so bail to the generic slow path rather than corrupting
+// the stack.
+op_ADD_INT:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    {
+      Value r = popStack();
+      Value l = popStack();
+      if (r.isInt() && l.isInt()) {
+        const int64_t li = l.asInt();
+        const int64_t ri = r.asInt();
+        int64_t result;
+        switch (inst.opcode) {
+        case OpCode::ADD_INT:
+          result = li + ri;
+          break;
+        case OpCode::SUB_INT:
+          result = li - ri;
+          break;
+        case OpCode::MUL_INT:
+          result = li * ri;
+          break;
+        case OpCode::DIV_INT:
+          if (ri == 0)
+            COMPILER_THROW_AT("Division by zero", inst);
+          result = li / ri;
+          break;
+        case OpCode::MOD_INT:
+          if (ri == 0)
+            COMPILER_THROW_AT("Modulo by zero", inst);
+          result = li % ri;
+          break;
+        default:
+          result = 0;
+          break;
+        }
+        pushStack(result);
+        counter++;
+        if ((counter & 8191) == 0) {
+          // Scheduler time-slice checkpoint (see the unindented twin above).
+          if (fast_tick_budget_ != 0) {
+            fast_tick_consumed_ = counter;
+            if (counter >= fast_tick_budget_) {
+              return;
+            }
+          }
+          profiler_.recordInstructions(8192);
+          if (exit_requested_.load())
+            return;
+          maybeCollectGarbage();
+          periodicYieldCheck();
+          if (suspension_requested_) {
+            return;
+          }
+        }
+        if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+          return;
+        {
+          auto &f2 = frame_arena_[frame_count_ - 1];
+          if (f2.ip >= f2.function->instructions.size()) {
+            stack.push_back(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+          }
+          goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+        }
+      }
+      // Not proven ints: the optimizer's proof was wrong or the bytecode
+      // was hand-built. Restore the operands and let the generic path
+      // handle every shape, including method dispatch on objects.
+      pushStack(std::move(l));
+      pushStack(std::move(r));
+      execBinaryOp(inst);
+      counter++;
+    }
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_AND:
+op_OR:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    execLogicalOp(inst.opcode);
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_NOT:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value v = popStack();
+    pushStack(!isTruthy(v));
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_BIT_NOT:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    Value v = popStack();
+    if (v.isInt())
+      pushStack(~v.asInt());
+    else if (v.isDouble())
+      pushStack(~static_cast<int64_t>(v.asDouble()));
+    else
+      COMPILER_THROW("Bitwise NOT requires integer operand");
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_NEGATE:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    auto &frm = frame_arena_[frame_count_ - 1];
+    frm.ip++;
+    execNegate();
+    counter++;
+    if ((counter & 8191) == 0) {
+      if (fast_tick_budget_ != 0) {
+        fast_tick_consumed_ = counter;
+        if (counter >= fast_tick_budget_) {
+          return;
+        }
+      }
+      profiler_.recordInstructions(8192);
+      if (exit_requested_.load())
+        return;
+      maybeCollectGarbage();
+      periodicYieldCheck();
+      if (suspension_requested_) {
+        return;
+      }
+    }
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+      return;
+    {
+      auto &f2 = frame_arena_[frame_count_ - 1];
+      if (f2.ip >= f2.function->instructions.size()) {
+        stack.push_back(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        return;
+      }
+      goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+    }
+  }
+
+op_STRING_GET_FAST:
+  {
+    if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      goto slow_dispatch_fallback;
+    {
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      frm.ip++;
+      // STRING_GET_FAST expects operands: [string_id (int), instruction_ip (int)]
+      // Stack: index
+      if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
+        COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
+      }
+      uint32_t string_id = inst.operands[0].asInt();
+
+      Value index_val = popStack();
+      auto index = indexFromValue(index_val);
+      if (!index) {
+        COMPILER_THROW("STRING_GET_FAST expects integer index");
+      }
+      int64_t idx = *index;
+
+      const std::string *str = heap_.string(string_id);
+      if (!str) {
+        COMPILER_THROW("STRING_GET_FAST unknown string id");
       }
 
       int64_t numCodepoints = 0;
@@ -2619,13 +2416,321 @@ op_STRING_SET_FAST: {
       if (idx < 0)
         idx = numCodepoints + idx;
       if (idx < 0 || idx >= numCodepoints) {
-        COMPILER_THROW("STRING_SET_FAST index out of bounds");
+        pushStack(Value::makeNull());
+      } else {
+        size_t targetByte = 0;
+        int64_t cpIdx = 0;
+        while (cpIdx < idx && targetByte < str->size()) {
+          unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+          size_t cpLen = 1;
+          if (c < 0x80) {
+            cpLen = 1;
+          } else if ((c & 0xE0) == 0xC0) {
+            cpLen = 2;
+          } else if ((c & 0xF0) == 0xE0) {
+            cpLen = 3;
+          } else if ((c & 0xF8) == 0xF0) {
+            cpLen = 4;
+          }
+          if (targetByte + cpLen > str->size()) {
+            cpLen = 1;
+          }
+          targetByte += cpLen;
+          cpIdx++;
+        }
+        size_t cpLen = 1;
+        if (targetByte < str->size()) {
+          unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+          if (c < 0x80) {
+            cpLen = 1;
+          } else if ((c & 0xE0) == 0xC0) {
+            cpLen = 2;
+          } else if ((c & 0xF0) == 0xE0) {
+            cpLen = 3;
+          } else if ((c & 0xF8) == 0xF0) {
+            cpLen = 4;
+          }
+          if (targetByte + cpLen > str->size()) {
+            cpLen = 1;
+          }
+        }
+        auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
+        pushStack(Value::makeStringId(ref.id));
       }
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
 
-      size_t targetByte = 0;
-      int64_t cpIdx = 0;
-      while (cpIdx < idx && targetByte < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+  op_STRING_SET_FAST:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      {
+        auto &frm = frame_arena_[frame_count_ - 1];
+        const auto &inst = frm.function->instructions[frm.ip];
+        frm.ip++;
+        // STRING_SET_FAST expects operands: [string_id (int), instruction_ip (int)]
+        // Stack: value, index
+        if (inst.operands.size() != 2 || !inst.operands[0].isInt() || !inst.operands[1].isInt()) {
+          COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
+        }
+        uint32_t string_id = inst.operands[0].asInt();
+
+        Value value = popStack();
+        Value index_val = popStack();
+        auto index = indexFromValue(index_val);
+        if (!index) {
+          COMPILER_THROW("STRING_SET_FAST expects integer index");
+        }
+        int64_t idx = *index;
+
+        auto *str_obj = heap_.object(string_id);
+        if (!str_obj) {
+          COMPILER_THROW("STRING_SET_FAST unknown string id");
+        }
+        auto *val = str_obj->get("__string_value");
+        if (!val || !val->isStringId()) {
+          COMPILER_THROW("STRING_SET_FAST invalid string object");
+        }
+        std::string *str = heap_.string(val->asStringId());
+        if (!str) {
+          COMPILER_THROW("STRING_SET_FAST string not found in heap");
+        }
+
+        // Use a block to limit scope of new_char for goto compatibility
+        {
+          std::string new_char = toString(value);
+          if (new_char.size() != 1) {
+            COMPILER_THROW("STRING_SET_FAST value must be a single character");
+          }
+
+          int64_t numCodepoints = 0;
+          size_t bytePos = 0;
+          while (bytePos < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+            size_t cpLen = 1;
+            if (c < 0x80) {
+              cpLen = 1;
+            } else if ((c & 0xE0) == 0xC0) {
+              cpLen = 2;
+            } else if ((c & 0xF0) == 0xE0) {
+              cpLen = 3;
+            } else if ((c & 0xF8) == 0xF0) {
+              cpLen = 4;
+            }
+            if (bytePos + cpLen > str->size()) {
+              cpLen = 1;
+            }
+            numCodepoints++;
+            bytePos += cpLen;
+          }
+
+          if (idx < 0)
+            idx = numCodepoints + idx;
+          if (idx < 0 || idx >= numCodepoints) {
+            COMPILER_THROW("STRING_SET_FAST index out of bounds");
+          }
+
+          size_t targetByte = 0;
+          int64_t cpIdx = 0;
+          while (cpIdx < idx && targetByte < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+            size_t cpLen = 1;
+            if (c < 0x80) {
+              cpLen = 1;
+            } else if ((c & 0xE0) == 0xC0) {
+              cpLen = 2;
+            } else if ((c & 0xF0) == 0xE0) {
+              cpLen = 3;
+            } else if ((c & 0xF8) == 0xF0) {
+              cpLen = 4;
+            }
+            if (targetByte + cpLen > str->size()) {
+              cpLen = 1;
+            }
+            targetByte += cpLen;
+            cpIdx++;
+          }
+          size_t cpLen = 1;
+          if (targetByte < str->size()) {
+            unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+            if (c < 0x80) {
+              cpLen = 1;
+            } else if ((c & 0xE0) == 0xC0) {
+              cpLen = 2;
+            } else if ((c & 0xF0) == 0xE0) {
+              cpLen = 3;
+            } else if ((c & 0xF8) == 0xF0) {
+              cpLen = 4;
+            }
+            if (targetByte + cpLen > str->size()) {
+              cpLen = 1;
+            }
+          }
+
+          str->replace(targetByte, cpLen, new_char);
+        }
+        heap_.bumpArrayVersion(string_id);
+        counter++;
+        if ((counter & 8191) == 0) {
+          if (fast_tick_budget_ != 0) {
+            fast_tick_consumed_ = counter;
+            if (counter >= fast_tick_budget_) {
+              return;
+            }
+          }
+          profiler_.recordInstructions(8192);
+          if (exit_requested_.load())
+            return;
+          maybeCollectGarbage();
+          periodicYieldCheck();
+          if (suspension_requested_) {
+            return;
+          }
+        }
+        if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+          return;
+        {
+          auto &f2 = frame_arena_[frame_count_ - 1];
+          if (f2.ip >= f2.function->instructions.size()) {
+            stack.push_back(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            return;
+          }
+          goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+        }
+      }
+    }
+
+  op_LENGTH:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      pushStack(execLengthOp(popStack()));
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_STRING_CURSOR_NEW:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      frm.ip++;
+      if (inst.operands.size() != 1 || !inst.operands[0].isInt()) {
+        COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
+      }
+      uint32_t string_id = inst.operands[0].asInt();
+      auto cursorRef = heap_.allocateStringCursor(string_id);
+      pushStack(Value::makeStringCursorId(cursorRef.id));
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_STRING_CURSOR_CURRENT:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
+      }
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
+      }
+      const std::string *str = heap_.string(cursor->string_id);
+      if (!str) {
+        COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
+      }
+      if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeNull());
+      } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
         size_t cpLen = 1;
         if (c < 0x80) {
           cpLen = 1;
@@ -2636,15 +2741,66 @@ op_STRING_SET_FAST: {
         } else if ((c & 0xF8) == 0xF0) {
           cpLen = 4;
         }
-        if (targetByte + cpLen > str->size()) {
+        if (cursor->byte_pos + cpLen > str->size()) {
           cpLen = 1;
         }
-        targetByte += cpLen;
-        cpIdx++;
+        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+        pushStack(Value::makeStringId(ref.id));
       }
-      size_t cpLen = 1;
-      if (targetByte < str->size()) {
-        unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_STRING_CURSOR_ADVANCE:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
+      }
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
+      }
+      const std::string *str = heap_.string(cursor->string_id);
+      if (!str) {
+        COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
+      }
+      if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeBool(false));
+      } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
         if (c < 0x80) {
           cpLen = 1;
         } else if ((c & 0xE0) == 0xC0) {
@@ -2654,871 +2810,632 @@ op_STRING_SET_FAST: {
         } else if ((c & 0xF8) == 0xF0) {
           cpLen = 4;
         }
-        if (targetByte + cpLen > str->size()) {
+        if (cursor->byte_pos + cpLen > str->size()) {
           cpLen = 1;
         }
+        cursor->byte_pos += cpLen;
+        cursor->codepoint_index++;
+        pushStack(Value::makeBool(true));
       }
-
-      str->replace(targetByte, cpLen, new_char);
-    }
-    heap_.bumpArrayVersion(string_id);
-    counter++;
-    if ((counter & 8191) == 0) {
-      if (fast_tick_budget_ != 0) {
-        fast_tick_consumed_ = counter;
-        if (counter >= fast_tick_budget_) {
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
           return;
         }
       }
-      profiler_.recordInstructions(8192);
-      if (exit_requested_.load())
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
         return;
-      maybeCollectGarbage();
-      periodicYieldCheck();
-      if (suspension_requested_) {
-        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
       }
     }
-    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-      return;
+
+  op_STRING_CURSOR_PEEK:
     {
-      auto &f2 = frame_arena_[frame_count_ - 1];
-      if (f2.ip >= f2.function->instructions.size()) {
-        stack.push_back(nullptr);
-        executeInstruction(Instruction{OpCode::RETURN});
-        return;
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
       }
-      goto *dispatch_table[static_cast<uint8_t>(
-          f2.function->instructions[f2.ip].opcode)];
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
+      }
+      const std::string *str = heap_.string(cursor->string_id);
+      if (!str) {
+        COMPILER_THROW("STRING_CURSOR_PEEK string not found");
+      }
+      if (cursor->byte_pos >= str->size()) {
+        pushStack(Value::makeNull());
+      } else {
+        unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
+        size_t cpLen = 1;
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (cursor->byte_pos + cpLen > str->size()) {
+          cpLen = 1;
+        }
+        auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
+        pushStack(Value::makeStringId(ref.id));
+      }
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
     }
-  }
-}
 
-op_LENGTH: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  pushStack(execLengthOp(popStack()));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
+  op_STRING_CURSOR_RESET:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
+      }
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
+      }
+      cursor->byte_pos = 0;
+      cursor->codepoint_index = 0;
+      pushStack(Value::makeNull());
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
         return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
       }
     }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
+
+  op_STRING_CURSOR_GET_POS:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
+      }
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
+      }
+      pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_STRING_CURSOR_SET_POS:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value pos_val = popStack();
+      Value cursor_val = popStack();
+      if (!cursor_val.isStringCursorId()) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
+      }
+      auto pos = indexFromValue(pos_val);
+      if (!pos) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
+      }
+      uint32_t cursor_id = cursor_val.asStringCursorId();
+      auto *cursor = heap_.stringCursor(cursor_id);
+      if (!cursor) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
+      }
+      const std::string *str = heap_.string(cursor->string_id);
+      if (!str) {
+        COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
+      }
+      size_t new_pos = static_cast<size_t>(*pos);
+      if (new_pos > str->size()) {
+        new_pos = str->size();
+      }
+      cursor->byte_pos = new_pos;
+      cursor->codepoint_index = 0;
+      size_t bytePos = 0;
+      while (bytePos < new_pos && bytePos < str->size()) {
+        unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
+        size_t cpLen = 1;
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (bytePos + cpLen > str->size()) {
+          cpLen = 1;
+        }
+        bytePos += cpLen;
+        cursor->codepoint_index++;
+      }
+      pushStack(Value::makeNull());
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_STRING_CONCAT:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value right = popStack();
+      Value left = popStack();
+      auto str_ref = heap_.allocateString(toString(left) + toString(right));
+      pushStack(Value::makeStringId(str_ref.id));
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_JUMP:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      uint32_t target = inst.operands[0].asInt();
+      if (target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+      }
+      execJump(inst);
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_JUMP_IF_FALSE:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      uint32_t target = inst.operands[0].asInt();
+      Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
+      if (!isTruthy(cond_peek) && target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+      }
+      execJumpIfFalse(inst);
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_JUMP_IF_TRUE:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      uint32_t target = inst.operands[0].asInt();
+      Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
+      if (isTruthy(cond_peek) && target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+      }
+      execJumpIfTrue(inst);
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_IS_NULL:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      frm.ip++;
+      Value value = popStack();
+      pushStack(Value::makeBool(value.isNull()));
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  op_JUMP_IF_NULL:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      uint32_t target = inst.operands[0].asInt();
+      Value value = popStack();
+      if (value.isNull()) {
+        if (target < frm.ip) {
+          recordBackedgePublic(frm.ip);
+        }
+        frm.ip = target;
+      } else {
+        frm.ip++;
+      }
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_) {
+          return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
+    }
+
+  slow_dispatch_fallback:
+    // Suspension or complex opcode encountered — return to caller's slow path
+    // static init: getenv on every slow-path return was 3.5% of a closure
+    // call benchmark profile
+    static const bool _sleep_trace_fb = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
+    if (_sleep_trace_fb) {
+      // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d
+      // last_before=%d exec_fiber=%d\n", (int)suspension_requested_,
+      // (int)suspension_reason_, (int)last_suspension_reason_,
+      // (int)(current_executing_fiber_!=nullptr));
+    }
     if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_NEW: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  if (inst.operands.size() != 1 || !inst.operands[0].isInt()) {
-    COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
-  }
-  uint32_t string_id = inst.operands[0].asInt();
-  auto cursorRef = heap_.allocateStringCursor(string_id);
-  pushStack(Value::makeStringCursorId(cursorRef.id));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_CURRENT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
-  }
-  const std::string *str = heap_.string(cursor->string_id);
-  if (!str) {
-    COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
-  }
-  if (cursor->byte_pos >= str->size()) {
-    pushStack(Value::makeNull());
-  } else {
-    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-    size_t cpLen = 1;
-    if (c < 0x80) {
-      cpLen = 1;
-    } else if ((c & 0xE0) == 0xC0) {
-      cpLen = 2;
-    } else if ((c & 0xF0) == 0xE0) {
-      cpLen = 3;
-    } else if ((c & 0xF8) == 0xF0) {
-      cpLen = 4;
-    }
-    if (cursor->byte_pos + cpLen > str->size()) {
-      cpLen = 1;
-    }
-    auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
-    pushStack(Value::makeStringId(ref.id));
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_ADVANCE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
-  }
-  const std::string *str = heap_.string(cursor->string_id);
-  if (!str) {
-    COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
-  }
-  if (cursor->byte_pos >= str->size()) {
-    pushStack(Value::makeBool(false));
-  } else {
-    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-    size_t cpLen = 1;
-    if (c < 0x80) {
-      cpLen = 1;
-    } else if ((c & 0xE0) == 0xC0) {
-      cpLen = 2;
-    } else if ((c & 0xF0) == 0xE0) {
-      cpLen = 3;
-    } else if ((c & 0xF8) == 0xF0) {
-      cpLen = 4;
-    }
-    if (cursor->byte_pos + cpLen > str->size()) {
-      cpLen = 1;
-    }
-    cursor->byte_pos += cpLen;
-    cursor->codepoint_index++;
-    pushStack(Value::makeBool(true));
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_PEEK: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
-  }
-  const std::string *str = heap_.string(cursor->string_id);
-  if (!str) {
-    COMPILER_THROW("STRING_CURSOR_PEEK string not found");
-  }
-  if (cursor->byte_pos >= str->size()) {
-    pushStack(Value::makeNull());
-  } else {
-    unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
-    size_t cpLen = 1;
-    if (c < 0x80) {
-      cpLen = 1;
-    } else if ((c & 0xE0) == 0xC0) {
-      cpLen = 2;
-    } else if ((c & 0xF0) == 0xE0) {
-      cpLen = 3;
-    } else if ((c & 0xF8) == 0xF0) {
-      cpLen = 4;
-    }
-    if (cursor->byte_pos + cpLen > str->size()) {
-      cpLen = 1;
-    }
-    auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
-    pushStack(Value::makeStringId(ref.id));
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_RESET: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
-  }
-  cursor->byte_pos = 0;
-  cursor->codepoint_index = 0;
-  pushStack(Value::makeNull());
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_GET_POS: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
-  }
-  pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CURSOR_SET_POS: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value pos_val = popStack();
-  Value cursor_val = popStack();
-  if (!cursor_val.isStringCursorId()) {
-    COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
-  }
-  auto pos = indexFromValue(pos_val);
-  if (!pos) {
-    COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
-  }
-  uint32_t cursor_id = cursor_val.asStringCursorId();
-  auto *cursor = heap_.stringCursor(cursor_id);
-  if (!cursor) {
-    COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
-  }
-  const std::string *str = heap_.string(cursor->string_id);
-  if (!str) {
-    COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
-  }
-  size_t new_pos = static_cast<size_t>(*pos);
-  if (new_pos > str->size()) {
-    new_pos = str->size();
-  }
-  cursor->byte_pos = new_pos;
-  cursor->codepoint_index = 0;
-  size_t bytePos = 0;
-  while (bytePos < new_pos && bytePos < str->size()) {
-    unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
-    size_t cpLen = 1;
-    if (c < 0x80) {
-      cpLen = 1;
-    } else if ((c & 0xE0) == 0xC0) {
-      cpLen = 2;
-    } else if ((c & 0xF0) == 0xE0) {
-      cpLen = 3;
-    } else if ((c & 0xF8) == 0xF0) {
-      cpLen = 4;
-    }
-    if (bytePos + cpLen > str->size()) {
-      cpLen = 1;
-    }
-    bytePos += cpLen;
-    cursor->codepoint_index++;
-  }
-  pushStack(Value::makeNull());
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_STRING_CONCAT: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value right = popStack();
-  Value left = popStack();
-  auto str_ref = heap_.allocateString(toString(left) + toString(right));
-  pushStack(Value::makeStringId(str_ref.id));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_JUMP: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t target = inst.operands[0].asInt();
-  if (target < frm.ip) {
-    recordBackedgePublic(frm.ip);
-  }
-  execJump(inst);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_JUMP_IF_FALSE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t target = inst.operands[0].asInt();
-  Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
-  if (!isTruthy(cond_peek) && target < frm.ip) {
-    recordBackedgePublic(frm.ip);
-  }
-  execJumpIfFalse(inst);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_JUMP_IF_TRUE: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t target = inst.operands[0].asInt();
-  Value cond_peek = stack.empty() ? Value::makeNull() : stack.back();
-  if (isTruthy(cond_peek) && target < frm.ip) {
-    recordBackedgePublic(frm.ip);
-  }
-  execJumpIfTrue(inst);
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_IS_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  frm.ip++;
-  Value value = popStack();
-  pushStack(Value::makeBool(value.isNull()));
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-op_JUMP_IF_NULL: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  uint32_t target = inst.operands[0].asInt();
-  Value value = popStack();
-  if (value.isNull()) {
-    if (target < frm.ip) {
-      recordBackedgePublic(frm.ip);
-    }
-    frm.ip = target;
-  } else {
-    frm.ip++;
-  }
-  counter++;
-  if ((counter & 8191) == 0) {
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_) {
-      return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
-    return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
-    }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
-  }
-}
-
-slow_dispatch_fallback:
-  // Suspension or complex opcode encountered — return to caller's slow path
-  // static init: getenv on every slow-path return was 3.5% of a closure
-  // call benchmark profile
-  static const bool _sleep_trace_fb = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;
-  if (_sleep_trace_fb) {
-    // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d
-    // last_before=%d exec_fiber=%d\n", (int)suspension_requested_,
-    // (int)suspension_reason_, (int)last_suspension_reason_,
-    // (int)(current_executing_fiber_!=nullptr));
-  }
-  if (suspension_requested_) {
-    // Transfer suspension info to last_suspension_* so caller can handle it
-    last_suspension_reason_ = suspension_reason_;
-    last_suspension_context_ = suspension_context_;
-    suspension_requested_ = false;
-    suspension_context_ = nullptr;
-  }
-  return;
-
-op_default: {
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  auto &frm = frame_arena_[frame_count_ - 1];
-  const auto &inst = frm.function->instructions[frm.ip];
-  frm.ip++;
-  // Stash post-increment ip as the return address for coroutine resumes
-  // triggered inside this instruction (e.g. YIELD_RESUME). See VM.hpp.
-  pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
-  try {
-    executeInstruction(inst);
-  } catch (const ScriptThrow &thrown) {
-    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
-    if (!handleScriptThrow(thrown.value)) {
-      throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
-    }
-  } catch (const std::runtime_error &e) {
-    Value exceptionValue =
-        Value::makeStringId(heap_.allocateString(e.what()).id);
-    ::havel::stdlib::notifyRuntimeError(e.what());
-    if (handleScriptThrow(exceptionValue)) {
-    } else {
-      throw std::runtime_error(e.what());
-    }
-  }
-  if (suspension_requested_ || last_suspension_reason_ != 0 ||
-      tickBudgetExhausted())
-    goto slow_dispatch_fallback;
-  // Fiber-suspending host call via CALL_METHOD or another complex
-  // opcode: executeInstruction pushed a Pending marker; park the
-  // goroutine on the pending token (see parkIfPendingCallResult).
-  if (parkIfPendingCallResult())
-    return;
-  counter++;
-  if ((counter & 8191) == 0) {
-    // Scheduler time-slice: when a tick budget is armed, return at this
-    // periodic checkpoint so the driving loop (processGoroutinesInline /
-    // ExecutionEngine) can run other goroutines. counter granularity
-    // means a tick may overshoot by up to 8191 instructions; drivers
-    // treat the budget as approximate, not exact.
-    if (fast_tick_budget_ != 0) {
-      fast_tick_consumed_ = counter;
-      if (counter >= fast_tick_budget_) {
-        return;
-      }
-    }
-    profiler_.recordInstructions(8192);
-    if (exit_requested_.load())
-      return;
-    maybeCollectGarbage();
-    periodicYieldCheck();
-    if (suspension_requested_ || last_suspension_reason_ != 0) {
       // Transfer suspension info to last_suspension_* so caller can handle it
       last_suspension_reason_ = suspension_reason_;
       last_suspension_context_ = suspension_context_;
       suspension_requested_ = false;
       suspension_context_ = nullptr;
-      return;
     }
-    if (!pending_calls.empty()) {
-      processPendingCalls();
-      if (exit_requested_.load())
-        return;
-    }
-  }
-  if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
     return;
-  {
-    auto &f2 = frame_arena_[frame_count_ - 1];
-    if (f2.ip >= f2.function->instructions.size()) {
-      stack.push_back(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      return;
+
+  op_default:
+    {
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      auto &frm = frame_arena_[frame_count_ - 1];
+      const auto &inst = frm.function->instructions[frm.ip];
+      frm.ip++;
+      // Stash post-increment ip as the return address for coroutine resumes
+      // triggered inside this instruction (e.g. YIELD_RESUME). See VM.hpp.
+      pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
+      try {
+        executeInstruction(inst);
+      } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
+        if (!handleScriptThrow(thrown.value)) {
+          throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
+        }
+      } catch (const std::runtime_error &e) {
+        Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
+        if (handleScriptThrow(exceptionValue)) {
+        } else {
+          throw std::runtime_error(e.what());
+        }
+      }
+      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+        goto slow_dispatch_fallback;
+      // Fiber-suspending host call via CALL_METHOD or another complex
+      // opcode: executeInstruction pushed a Pending marker; park the
+      // goroutine on the pending token (see parkIfPendingCallResult).
+      if (parkIfPendingCallResult())
+        return;
+      counter++;
+      if ((counter & 8191) == 0) {
+        // Scheduler time-slice: when a tick budget is armed, return at this
+        // periodic checkpoint so the driving loop (processGoroutinesInline /
+        // ExecutionEngine) can run other goroutines. counter granularity
+        // means a tick may overshoot by up to 8191 instructions; drivers
+        // treat the budget as approximate, not exact.
+        if (fast_tick_budget_ != 0) {
+          fast_tick_consumed_ = counter;
+          if (counter >= fast_tick_budget_) {
+            return;
+          }
+        }
+        profiler_.recordInstructions(8192);
+        if (exit_requested_.load())
+          return;
+        maybeCollectGarbage();
+        periodicYieldCheck();
+        if (suspension_requested_ || last_suspension_reason_ != 0) {
+          // Transfer suspension info to last_suspension_* so caller can handle it
+          last_suspension_reason_ = suspension_reason_;
+          last_suspension_context_ = suspension_context_;
+          suspension_requested_ = false;
+          suspension_context_ = nullptr;
+          return;
+        }
+        if (!pending_calls.empty()) {
+          processPendingCalls();
+          if (exit_requested_.load())
+            return;
+        }
+      }
+      if (frame_count_ == 0 || frame_count_ <= stop_frame_depth)
+        return;
+      {
+        auto &f2 = frame_arena_[frame_count_ - 1];
+        if (f2.ip >= f2.function->instructions.size()) {
+          stack.push_back(nullptr);
+          executeInstruction(Instruction{OpCode::RETURN});
+          return;
+        }
+        goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+      }
     }
-    goto *dispatch_table[static_cast<uint8_t>(
-        f2.function->instructions[f2.ip].opcode)];
   }
-}
-}
 
 #undef DISPATCH_NEXT
 #undef DISPATCH_OP

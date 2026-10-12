@@ -24,7 +24,6 @@ namespace havel::compiler {
 
 using havel::core::Value;
 
-
 // Value-boxing constants: JitBridgesCommon.hpp (shared with the lowering).
 
 // ============================================================================
@@ -35,157 +34,172 @@ using havel::core::Value;
 #endif
 extern "C" {
 
-void havel_vm_throw_error(void* vm_ptr, const char* msg) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    vm->throwError(msg);
+void havel_vm_throw_error(void *vm_ptr, const char *msg) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  vm->throwError(msg);
 }
 
-void havel_vm_throw_value(void* vm_ptr, uint64_t value_bits) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &value_bits, sizeof(uint64_t));
-    vm->setCurrentExceptionPublic(v);
-    throw ScriptThrow{v};
+void havel_vm_throw_value(void *vm_ptr, uint64_t value_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value v;
+  std::memcpy(&v, &value_bits, sizeof(uint64_t));
+  vm->setCurrentExceptionPublic(v);
+  throw ScriptThrow{v};
 }
 
 // JIT throw bridge with explicit intent: this always raises into VM exception
 // handling and never returns normally.
-void havel_vm_throw_from_jit(void* vm_ptr, uint64_t value_bits) {
-    havel_vm_throw_value(vm_ptr, value_bits);
+void havel_vm_throw_from_jit(void *vm_ptr, uint64_t value_bits) {
+  havel_vm_throw_value(vm_ptr, value_bits);
 }
 
-void havel_vm_try_enter(JITStackFrame* frame, uint32_t catch_ip,
-                        uint32_t finally_ip, uint32_t stack_depth) {
-    if (!frame) return;
-    if (frame->handler_count >= JITStackFrame::MAX_EXCEPTION_HANDLERS) return;
-    const uint32_t idx = frame->handler_count++;
-    frame->handler_catch_ip[idx] = catch_ip;
-    frame->handler_finally_ip[idx] = finally_ip;
-    frame->handler_stack_depth[idx] = stack_depth;
+void havel_vm_try_enter(JITStackFrame *frame, uint32_t catch_ip, uint32_t finally_ip,
+                        uint32_t stack_depth) {
+  if (!frame)
+    return;
+  if (frame->handler_count >= JITStackFrame::MAX_EXCEPTION_HANDLERS)
+    return;
+  const uint32_t idx = frame->handler_count++;
+  frame->handler_catch_ip[idx] = catch_ip;
+  frame->handler_finally_ip[idx] = finally_ip;
+  frame->handler_stack_depth[idx] = stack_depth;
 }
 
-void havel_vm_try_exit(JITStackFrame* frame) {
-    if (!frame || frame->handler_count == 0) return;
-    --frame->handler_count;
+void havel_vm_try_exit(JITStackFrame *frame) {
+  if (!frame || frame->handler_count == 0)
+    return;
+  --frame->handler_count;
 }
 
-uint32_t havel_vm_try_find_throw_target(JITStackFrame* frame,
-                                        uint32_t* stack_depth_out,
-                                        uint32_t* popped_count_out) {
-    if (stack_depth_out) *stack_depth_out = 0;
-    if (popped_count_out) *popped_count_out = 0;
-    if (!frame || frame->handler_count == 0) return UINT32_MAX;
-
-    uint32_t popped = 0;
-    while (frame->handler_count > 0) {
-        const uint32_t idx = frame->handler_count - 1;
-        const uint32_t catch_ip = frame->handler_catch_ip[idx];
-        const uint32_t finally_ip = frame->handler_finally_ip[idx];
-        const uint32_t depth = frame->handler_stack_depth[idx];
-        frame->handler_count = idx;
-        ++popped;
-
-        // Prefer catch target; fall back to finally target if catch is absent.
-        // Bytecode currently patches catch_ip for try/catch and try/finally,
-        // so this keeps compatibility while honoring finally metadata.
-        uint32_t target_ip = catch_ip;
-        if (target_ip == 0 && finally_ip != 0) {
-            target_ip = finally_ip;
-        }
-
-        if (target_ip != UINT32_MAX && target_ip != 0) {
-            if (stack_depth_out) *stack_depth_out = depth;
-            if (popped_count_out) *popped_count_out = popped;
-            return target_ip;
-        }
-    }
-
-    if (popped_count_out) *popped_count_out = popped;
+uint32_t havel_vm_try_find_throw_target(JITStackFrame *frame, uint32_t *stack_depth_out,
+                                        uint32_t *popped_count_out) {
+  if (stack_depth_out)
+    *stack_depth_out = 0;
+  if (popped_count_out)
+    *popped_count_out = 0;
+  if (!frame || frame->handler_count == 0)
     return UINT32_MAX;
-}
 
-void havel_vm_set_exception(void* vm_ptr, uint64_t value_bits) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &value_bits, sizeof(uint64_t));
-    vm->setCurrentExceptionPublic(v);
-}
+  uint32_t popped = 0;
+  while (frame->handler_count > 0) {
+    const uint32_t idx = frame->handler_count - 1;
+    const uint32_t catch_ip = frame->handler_catch_ip[idx];
+    const uint32_t finally_ip = frame->handler_finally_ip[idx];
+    const uint32_t depth = frame->handler_stack_depth[idx];
+    frame->handler_count = idx;
+    ++popped;
 
-uint64_t havel_vm_load_exception(void* vm_ptr) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->currentExceptionPublic().rawBits();
-}
-
-void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
-    // Marking write barrier, mirroring the interpreter's store sites
-    // (VMDispatch.cpp: heap_.writeBarrier(Value::makeNull(), value)).
-    // No-ops while incremental GC is idle; during marking it keeps the
-    // stored value live. The old body pinned every stored value as an
-    // external root and never unpinned it, which leaked one registry
-    // entry per store through tiered code (149k pins over one parse,
-    // each scanned by every subsequent collection).
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    ::havel::core::Value val;
-    std::memcpy(&val, &new_value_bits, sizeof(uint64_t));
-    vm->getHeap().writeBarrierPublic(Value::makeNull(), val);
-}
-
-
-extern "C" void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
-                              uint64_t* slot_bits, uint32_t count);
-extern "C" void havel_gc_unregister_roots(JITStackFrame* frame);
-extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count);
-extern "C" uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count);
-extern "C" uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id);
-extern "C" void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value);
-
-uint64_t havel_vm_upvalue_get(void* vm_ptr, uint32_t slot) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    auto* closure = vm->currentClosurePublic();
-    if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
-        return Value::makeNull().rawBits();
-    const auto& cell = closure->upvalues[slot];
-    if (cell->is_open) {
-        uint32_t abs_index = cell->locals_base + cell->open_index;
-        return vm->readLocalPublic(abs_index).rawBits();
+    // Prefer catch target; fall back to finally target if catch is absent.
+    // Bytecode currently patches catch_ip for try/catch and try/finally,
+    // so this keeps compatibility while honoring finally metadata.
+    uint32_t target_ip = catch_ip;
+    if (target_ip == 0 && finally_ip != 0) {
+      target_ip = finally_ip;
     }
-    return cell->closed_value.rawBits();
-}
 
-void havel_vm_upvalue_set(void* vm_ptr, uint32_t slot, uint64_t value) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    auto* closure = vm->currentClosurePublic();
-    if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
-        return;
-    auto& cell = closure->upvalues[slot];
-    Value v;
-    std::memcpy(&v, &value, sizeof(uint64_t));
-    if (cell->is_open) {
-        uint32_t abs_index = cell->locals_base + cell->open_index;
-        vm->writeLocalPublic(abs_index, v);
-    } else {
-        cell->closed_value = v;
+    if (target_ip != UINT32_MAX && target_ip != 0) {
+      if (stack_depth_out)
+        *stack_depth_out = depth;
+      if (popped_count_out)
+        *popped_count_out = popped;
+      return target_ip;
     }
+  }
+
+  if (popped_count_out)
+    *popped_count_out = popped;
+  return UINT32_MAX;
 }
 
-void havel_vm_close_upvalues(void* vm_ptr, uint32_t locals_base) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    vm->closeFrameUpvaluesPublic(locals_base,
-        static_cast<uint32_t>(vm->currentLocalsSizePublic()));
+void havel_vm_set_exception(void *vm_ptr, uint64_t value_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value v;
+  std::memcpy(&v, &value_bits, sizeof(uint64_t));
+  vm->setCurrentExceptionPublic(v);
 }
 
-uint32_t havel_vm_locals_base(void* vm_ptr) {
-    if (!vm_ptr) return 0;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return static_cast<uint32_t>(vm->currentLocalsBasePublic());
+uint64_t havel_vm_load_exception(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  return vm->currentExceptionPublic().rawBits();
+}
+
+void havel_gc_write_barrier(void *vm_ptr, uint64_t new_value_bits) {
+  // Marking write barrier, mirroring the interpreter's store sites
+  // (VMDispatch.cpp: heap_.writeBarrier(Value::makeNull(), value)).
+  // No-ops while incremental GC is idle; during marking it keeps the
+  // stored value live. The old body pinned every stored value as an
+  // external root and never unpinned it, which leaked one registry
+  // entry per store through tiered code (149k pins over one parse,
+  // each scanned by every subsequent collection).
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  ::havel::core::Value val;
+  std::memcpy(&val, &new_value_bits, sizeof(uint64_t));
+  vm->getHeap().writeBarrierPublic(Value::makeNull(), val);
+}
+
+extern "C" void havel_gc_register_roots(void *vm_ptr, JITStackFrame *frame, uint64_t *slot_bits,
+                                        uint32_t count);
+extern "C" void havel_gc_unregister_roots(JITStackFrame *frame);
+extern "C" uint64_t havel_vm_call(void *vm_ptr, uint64_t *args, uint32_t count);
+extern "C" uint64_t havel_vm_tail_call(void *vm_ptr, uint64_t *args, uint32_t count);
+extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id);
+extern "C" void havel_vm_global_set(void *vm_ptr, uint32_t name_id, uint64_t value);
+
+uint64_t havel_vm_upvalue_get(void *vm_ptr, uint32_t slot) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *closure = vm->currentClosurePublic();
+  if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
+    return Value::makeNull().rawBits();
+  const auto &cell = closure->upvalues[slot];
+  if (cell->is_open) {
+    uint32_t abs_index = cell->locals_base + cell->open_index;
+    return vm->readLocalPublic(abs_index).rawBits();
+  }
+  return cell->closed_value.rawBits();
+}
+
+void havel_vm_upvalue_set(void *vm_ptr, uint32_t slot, uint64_t value) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *closure = vm->currentClosurePublic();
+  if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
+    return;
+  auto &cell = closure->upvalues[slot];
+  Value v;
+  std::memcpy(&v, &value, sizeof(uint64_t));
+  if (cell->is_open) {
+    uint32_t abs_index = cell->locals_base + cell->open_index;
+    vm->writeLocalPublic(abs_index, v);
+  } else {
+    cell->closed_value = v;
+  }
+}
+
+void havel_vm_close_upvalues(void *vm_ptr, uint32_t locals_base) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  vm->closeFrameUpvaluesPublic(locals_base, static_cast<uint32_t>(vm->currentLocalsSizePublic()));
+}
+
+uint32_t havel_vm_locals_base(void *vm_ptr) {
+  if (!vm_ptr)
+    return 0;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  return static_cast<uint32_t>(vm->currentLocalsBasePublic());
 }
 
 // Semantic comparison bridges — handle NaN-boxed type dispatch correctly
@@ -220,14 +234,16 @@ static HAVEL_NAN_SAFE bool rawBitsAreNaN(double d) {
 
 static HAVEL_NAN_SAFE double valueToDouble(uint64_t bits) {
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) {
-    double d; std::memcpy(&d, &bits, sizeof(double)); return d;
+    double d;
+    std::memcpy(&d, &bits, sizeof(double));
+    return d;
   }
   uint64_t tag = (bits & 0x0007000000000000ULL) >> 48;
   if (tag == 0x1) { // INT48
     uint64_t payload = bits & 0x0000FFFFFFFFFFFFULL;
     int64_t val = (payload & 0x0000800000000000ULL)
-      ? static_cast<int64_t>(payload | 0xFFFF000000000000ULL)
-      : static_cast<int64_t>(payload);
+                      ? static_cast<int64_t>(payload | 0xFFFF000000000000ULL)
+                      : static_cast<int64_t>(payload);
     return static_cast<double>(val);
   }
   if (tag == 0x2) { // BOOL
@@ -244,26 +260,29 @@ static HAVEL_NAN_SAFE double valueToDouble(uint64_t bits) {
 
 static HAVEL_NAN_SAFE bool valueIsTruthy(uint64_t bits) {
   uint64_t nullBits = 0x7FF8000000000000ULL | (0x3ULL << 48);
-  if (bits == nullBits) return false;
+  if (bits == nullBits)
+    return false;
   uint64_t tag = (bits & 0x0007000000000000ULL) >> 48;
   if (tag == 0x1) { // INT48
     uint64_t payload = bits & 0x0000FFFFFFFFFFFFULL;
     int64_t val = (payload & 0x0000800000000000ULL)
-      ? static_cast<int64_t>(payload | 0xFFFF000000000000ULL)
-      : static_cast<int64_t>(payload);
+                      ? static_cast<int64_t>(payload | 0xFFFF000000000000ULL)
+                      : static_cast<int64_t>(payload);
     return val != 0;
   }
-  if (tag == 0x2) return (bits & 0x0000FFFFFFFFFFFFULL) != 0; // BOOL
+  if (tag == 0x2)
+    return (bits & 0x0000FFFFFFFFFFFFULL) != 0;                  // BOOL
   if ((bits & 0x7FF8000000000000ULL) != 0x7FF8000000000000ULL) { // DOUBLE
     // Fast-math-safe: NaN doubles are falsy; test by raw bits, not isnan.
     if ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
         (bits & 0x000FFFFFFFFFFFFFULL) != 0) {
-      return false;  // NaN: falsy
+      return false; // NaN: falsy
     }
-    double d; std::memcpy(&d, &bits, sizeof(double));
-    return d != 0.0;  // note: -0.0 == 0.0 compares equal under IEEE;
-                      // the interpreter treats -0.0 as falsy via the same
-                      // comparison, so this matches.
+    double d;
+    std::memcpy(&d, &bits, sizeof(double));
+    return d != 0.0; // note: -0.0 == 0.0 compares equal under IEEE;
+                     // the interpreter treats -0.0 as falsy via the same
+                     // comparison, so this matches.
   }
   return true; // objects, arrays, etc. are truthy
 }
@@ -276,10 +295,10 @@ uint64_t havel_vm_is(uint64_t l, uint64_t r) {
 }
 
 uint64_t havel_vm_not(uint64_t v) {
-    return Value::makeBool(!valueIsTruthy(v)).rawBits();
+  return Value::makeBool(!valueIsTruthy(v)).rawBits();
 }
 
-uint64_t havel_vm_negate(void* vm_ptr, uint64_t val_bits) {
+uint64_t havel_vm_negate(void *vm_ptr, uint64_t val_bits) {
   // Unary minus (Phase C: NEGATE gates the parser's emitExpr/inferExpr).
   // Stage the operand on the VM stack and run the interpreter's own
   // execNegate, so int/double/op_negate semantics stay single-sourced.
@@ -288,10 +307,11 @@ uint64_t havel_vm_negate(void* vm_ptr, uint64_t val_bits) {
   if (!vm_ptr) {
     Value v;
     std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    if (v.isInt()) return Value(-v.asInt()).rawBits();
+    if (v.isInt())
+      return Value(-v.asInt()).rawBits();
     return Value::makeNull().rawBits();
   }
-  auto* vm = static_cast<VM*>(vm_ptr);
+  auto *vm = static_cast<VM *>(vm_ptr);
   const size_t depth_before = vm->stackDepthPublic();
   vm->pushStackPublic(Value::fromRawBits(val_bits));
   try {
@@ -305,12 +325,13 @@ uint64_t havel_vm_negate(void* vm_ptr, uint64_t val_bits) {
   }
 }
 
-uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
-    if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    return vm->execLengthOp(v).rawBits();
+uint64_t havel_vm_length(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value(static_cast<int64_t>(0)).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value v;
+  std::memcpy(&v, &val_bits, sizeof(uint64_t));
+  return vm->execLengthOp(v).rawBits();
 }
 
 // Comparison bridges (Runtime ABI): pure word semantics, no VM state.
@@ -320,9 +341,11 @@ uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
 // for these (an accidental second copy in CoreRuntimeExports.cpp broke
 // the linker's one-definition rule once - do not duplicate).
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(true).rawBits();
+  if (l == r)
+    return Value::makeBool(true).rawBits();
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld == rd).rawBits();
 }
 
@@ -334,10 +357,11 @@ extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_eq(uint64_t l, uint64_t r) {
 // NaN, the comparison reads "not equal", and dispatch code (the self-hosted
 // emitter's AST walker) falls through every branch. These variants take the
 // vm pointer so strings compare by CONTENT like the interpreter.
-extern "C" uint64_t havel_vm_eq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(true).rawBits();
+extern "C" uint64_t havel_vm_eq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (l == r)
+    return Value::makeBool(true).rawBits();
   if (vm_ptr) {
-    auto* vm = static_cast<VM*>(vm_ptr);
+    auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
     const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
@@ -350,14 +374,16 @@ extern "C" uint64_t havel_vm_eq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
     }
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld == rd).rawBits();
 }
 
-extern "C" uint64_t havel_vm_neq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(false).rawBits();
+extern "C" uint64_t havel_vm_neq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (l == r)
+    return Value::makeBool(false).rawBits();
   if (vm_ptr) {
-    auto* vm = static_cast<VM*>(vm_ptr);
+    auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
     const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
@@ -370,38 +396,45 @@ extern "C" uint64_t havel_vm_neq_vm(void* vm_ptr, uint64_t l, uint64_t r) {
     }
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(true).rawBits();
   return Value::makeBool(ld != rd).rawBits();
 }
 
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_neq(uint64_t l, uint64_t r) {
-  if (l == r) return Value::makeBool(false).rawBits();
+  if (l == r)
+    return Value::makeBool(false).rawBits();
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(true).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(true).rawBits();
   return Value::makeBool(ld != rd).rawBits();
 }
 
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lt(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld < rd).rawBits();
 }
 
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_lte(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld <= rd).rawBits();
 }
 
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gt(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld > rd).rawBits();
 }
 
 extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd)) return Value::makeBool(false).rawBits();
+  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
+    return Value::makeBool(false).rawBits();
   return Value::makeBool(ld >= rd).rawBits();
 }
 
@@ -415,29 +448,28 @@ extern "C" HAVEL_NAN_SAFE int havel_vm_is_truthy(uint64_t v) {
 // need generic semantics for everything else (the Cranelift prototype):
 // the VM's execBinaryOp owns the language semantics, so stage the operand
 // words on the VM stack and run it in isolation.
-static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
-                              uint64_t l, uint64_t r);
+static uint64_t runVmBinaryOp(void *vm_ptr, havel::compiler::OpCode op, uint64_t l, uint64_t r);
 
-extern "C" uint64_t havel_vm_add(void* vm_ptr, uint64_t l, uint64_t r) {
+extern "C" uint64_t havel_vm_add(void *vm_ptr, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::ADD, l, r);
 }
-extern "C" uint64_t havel_vm_sub(void* vm_ptr, uint64_t l, uint64_t r) {
+extern "C" uint64_t havel_vm_sub(void *vm_ptr, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::SUB, l, r);
 }
-extern "C" uint64_t havel_vm_mul(void* vm_ptr, uint64_t l, uint64_t r) {
+extern "C" uint64_t havel_vm_mul(void *vm_ptr, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, havel::compiler::OpCode::MUL, l, r);
 }
 // Generic binop fallback (ORC): runs the VM's execBinaryOp for the given
 // raw OpCode on raw operand words. Replaces the previous deopt-to-null
 // behavior for unspecialized operand mixes (e.g. string + int).
-extern "C" uint64_t havel_vm_binop(void* vm_ptr, uint32_t op, uint64_t l, uint64_t r) {
+extern "C" uint64_t havel_vm_binop(void *vm_ptr, uint32_t op, uint64_t l, uint64_t r) {
   return runVmBinaryOp(vm_ptr, static_cast<havel::compiler::OpCode>(op), l, r);
 }
 
-static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
-                              uint64_t l, uint64_t r) {
-  auto* vm = static_cast<VM*>(vm_ptr);
-  if (!vm) return Value::makeNull().rawBits();
+static uint64_t runVmBinaryOp(void *vm_ptr, havel::compiler::OpCode op, uint64_t l, uint64_t r) {
+  auto *vm = static_cast<VM *>(vm_ptr);
+  if (!vm)
+    return Value::makeNull().rawBits();
   const size_t depth_before = vm->stackDepthPublic();
   vm->pushStackPublic(Value::fromRawBits(l));
   vm->pushStackPublic(Value::fromRawBits(r));
@@ -454,7 +486,6 @@ static uint64_t runVmBinaryOp(void* vm_ptr, havel::compiler::OpCode op,
   }
 }
 
-
 // Power function
 uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {
   Value base, exp;
@@ -464,10 +495,12 @@ uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {
   if (base.isInt() && exp.isInt()) {
     int64_t b = base.asInt();
     int64_t e = exp.asInt();
-    if (e < 0) return Value(0.0).rawBits();
+    if (e < 0)
+      return Value(0.0).rawBits();
     int64_t result = 1;
     while (e > 0) {
-      if (e & 1) result *= b;
+      if (e & 1)
+        result *= b;
       b *= b;
       e >>= 1;
     }
@@ -477,26 +510,31 @@ uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {
 }
 
 // Array operations - use public heap API
-uint64_t havel_vm_array_new(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_new(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   auto ref = vm->createHostArray();
   return Value::makeArrayId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_get(void *vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, idx;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-  if (!arr.isArrayId() || !idx.isInt()) return Value::makeNull().rawBits();
-  return vm->getHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt())).rawBits();
+  if (!arr.isArrayId() || !idx.isInt())
+    return Value::makeNull().rawBits();
+  return vm->getHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()))
+      .rawBits();
 }
 
-uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_collection_get_raw(void *vm_ptr, uint64_t container_bits, uint64_t key_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   // op_index overloads re-enter the interpreter below this JIT frame;
   // defer GC while the caller's raw values are unrooted (see
   // VM::GCSuspendDeferGuard).
@@ -509,37 +547,47 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   // Previously int-only, so `arr[i]` with i a num read null under
   // tiering while the interpreter returned the element.
   auto indexFromRaw = [](const Value &v) -> std::optional<int64_t> {
-    if (v.isInt()) return v.asInt();
-    if (v.isDouble()) return static_cast<int64_t>(v.asDouble());
+    if (v.isInt())
+      return v.asInt();
+    if (v.isDouble())
+      return static_cast<int64_t>(v.asDouble());
     return std::nullopt;
   };
 
   if (container.isArrayId()) {
     auto index = indexFromRaw(key_val);
-    if (!index) return Value::makeNull().rawBits();
-    auto* array = vm->getHeap().array(container.asArrayId());
-    if (!array) return Value::makeNull().rawBits();
+    if (!index)
+      return Value::makeNull().rawBits();
+    auto *array = vm->getHeap().array(container.asArrayId());
+    if (!array)
+      return Value::makeNull().rawBits();
     int64_t idx = *index;
-    if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
-    if (idx < 0 || static_cast<size_t>(idx) >= array->size()) return Value::makeNull().rawBits();
+    if (idx < 0)
+      idx = static_cast<int64_t>(array->size()) + idx;
+    if (idx < 0 || static_cast<size_t>(idx) >= array->size())
+      return Value::makeNull().rawBits();
     return (*array)[static_cast<size_t>(idx)].rawBits();
   }
 
   if (container.isSetId()) {
     auto key = vm->resolveKeyPublic(key_val);
-    if (!key) return Value::makeBool(false).rawBits();
-    auto* set = vm->getHeap().set(container.asSetId());
-    if (!set) return Value::makeBool(false).rawBits();
+    if (!key)
+      return Value::makeBool(false).rawBits();
+    auto *set = vm->getHeap().set(container.asSetId());
+    if (!set)
+      return Value::makeBool(false).rawBits();
     return Value::makeBool(set->find(*key) != set->end()).rawBits();
   }
 
   if (container.isStringId() || container.isStringValId()) {
     auto index = indexFromRaw(key_val);
-    if (!index) return Value::makeNull().rawBits();
+    if (!index)
+      return Value::makeNull().rawBits();
     std::string s;
     if (container.isStringId()) {
       auto *sp = vm->getHeap().string(container.asStringId());
-      if (sp) s = *sp;
+      if (sp)
+        s = *sp;
     } else if (container.isStringValId() && vm->getCurrentChunk()) {
       s = vm->getCurrentChunk()->getString(container.asStringValId());
     }
@@ -548,38 +596,55 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
     while (bytePos < s.size()) {
       unsigned char c = static_cast<unsigned char>(s[bytePos]);
       size_t cpLen = 1;
-      if (c < 0x80) cpLen = 1;
-      else if ((c & 0xE0) == 0xC0) cpLen = 2;
-      else if ((c & 0xF0) == 0xE0) cpLen = 3;
-      else if ((c & 0xF8) == 0xF0) cpLen = 4;
-      if (bytePos + cpLen > s.size()) cpLen = 1;
+      if (c < 0x80)
+        cpLen = 1;
+      else if ((c & 0xE0) == 0xC0)
+        cpLen = 2;
+      else if ((c & 0xF0) == 0xE0)
+        cpLen = 3;
+      else if ((c & 0xF8) == 0xF0)
+        cpLen = 4;
+      if (bytePos + cpLen > s.size())
+        cpLen = 1;
       numCodepoints++;
       bytePos += cpLen;
     }
     int64_t idx = *index;
-    if (idx < 0) idx = numCodepoints + idx;
-    if (idx < 0 || idx >= numCodepoints) return Value::makeNull().rawBits();
+    if (idx < 0)
+      idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints)
+      return Value::makeNull().rawBits();
     size_t targetByte = 0;
     int64_t cpIdx = 0;
     while (cpIdx < idx && targetByte < s.size()) {
       unsigned char c = static_cast<unsigned char>(s[targetByte]);
       size_t cpLen = 1;
-      if (c < 0x80) cpLen = 1;
-      else if ((c & 0xE0) == 0xC0) cpLen = 2;
-      else if ((c & 0xF0) == 0xE0) cpLen = 3;
-      else if ((c & 0xF8) == 0xF0) cpLen = 4;
-      if (targetByte + cpLen > s.size()) cpLen = 1;
+      if (c < 0x80)
+        cpLen = 1;
+      else if ((c & 0xE0) == 0xC0)
+        cpLen = 2;
+      else if ((c & 0xF0) == 0xE0)
+        cpLen = 3;
+      else if ((c & 0xF8) == 0xF0)
+        cpLen = 4;
+      if (targetByte + cpLen > s.size())
+        cpLen = 1;
       targetByte += cpLen;
       cpIdx++;
     }
     size_t cpLen = 1;
     if (targetByte < s.size()) {
       unsigned char c = static_cast<unsigned char>(s[targetByte]);
-      if (c < 0x80) cpLen = 1;
-      else if ((c & 0xE0) == 0xC0) cpLen = 2;
-      else if ((c & 0xF0) == 0xE0) cpLen = 3;
-      else if ((c & 0xF8) == 0xF0) cpLen = 4;
-      if (targetByte + cpLen > s.size()) cpLen = 1;
+      if (c < 0x80)
+        cpLen = 1;
+      else if ((c & 0xE0) == 0xC0)
+        cpLen = 2;
+      else if ((c & 0xF0) == 0xE0)
+        cpLen = 3;
+      else if ((c & 0xF8) == 0xF0)
+        cpLen = 4;
+      if (targetByte + cpLen > s.size())
+        cpLen = 1;
     }
     auto ref = vm->getHeap().allocateString(s.substr(targetByte, cpLen));
     return Value::makeStringId(ref.id).rawBits();
@@ -595,20 +660,20 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
     // members where the interpreter saw only direct fields (op_index
     // overloads invoked by module subscripts returned the raw field value
     // instead of the computed one under tiering).
-    Value opIndex = vm->getHostObjectField(
-        ObjectRef{container.asObjectId(), true}, "op_index");
+    Value opIndex = vm->getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
     if (!opIndex.isNull() &&
-        (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
-         opIndex.isHostFuncId())) {
+        (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
       return vm->callFunction(opIndex, {container, key_val}).rawBits();
     }
     auto key = vm->resolveKeyPublic(key_val);
-    if (!key) return Value::makeNull().rawBits();
+    if (!key)
+      return Value::makeNull().rawBits();
     if (container.asObjectId() == vm->globalsMirrorObjectId()) {
       return vm->lookupGlobalByKey(*key).rawBits();
     }
     auto *object = vm->getHeap().object(container.asObjectId());
-    if (!object) return Value::makeNull().rawBits();
+    if (!object)
+      return Value::makeNull().rawBits();
     auto kv = object->find(*key);
     return (kv == object->end() ? Value::makeNull() : kv->second).rawBits();
   }
@@ -616,341 +681,376 @@ uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
-    struct CacheEntry {
-        uint64_t container_bits = 0;
-        uint64_t version = 0;
-        uint64_t key_bits = 0;
-        uint64_t value_bits = 0;
-        uint64_t gc_epoch = 0;
-        bool valid = false;
-    };
-
-    // Same GC-epoch discipline as object_get_raw_ic: container ids are
-    // recycled after a sweep, so the epoch must ride along in the key or
-    // a dead container's entry can be served to its id's new owner.
-    thread_local uint64_t last_epoch = 0;
-    thread_local std::array<CacheEntry, 8> cache{};
-
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value container, key_val;
-    std::memcpy(&container, &container_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    const uint64_t epoch = vm->getHeap().gcEpoch();
-    if (epoch != last_epoch) {
-        last_epoch = epoch;
-        for (auto& e : cache) e.valid = false;
-    }
-
+uint64_t havel_vm_collection_get_raw_ic(void *vm_ptr, uint64_t container_bits, uint64_t key_bits) {
+  struct CacheEntry {
+    uint64_t container_bits = 0;
     uint64_t version = 0;
-    if (container.isArrayId()) version = vm->arrayVersion(container.asArrayId());
-    else if (container.isSetId()) version = vm->setVersion(container.asSetId());
-    else if (container.isObjectId()) version = vm->objectLookupVersion(container.asObjectId());
-    else if (container.isStringId() || container.isStringValId()) version = container_bits;
+    uint64_t key_bits = 0;
+    uint64_t value_bits = 0;
+    uint64_t gc_epoch = 0;
+    bool valid = false;
+  };
 
-    const size_t primary = static_cast<size_t>((container_bits ^ key_bits ^ (version >> 1)) & (cache.size() - 1));
-    for (size_t probe = 0; probe < cache.size(); ++probe) {
-        const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
-        if (entry.valid && entry.container_bits == container_bits && entry.version == version && entry.key_bits == key_bits &&
-            entry.gc_epoch == epoch) {
-            return entry.value_bits;
-        }
-    }
+  // Same GC-epoch discipline as object_get_raw_ic: container ids are
+  // recycled after a sweep, so the epoch must ride along in the key or
+  // a dead container's entry can be served to its id's new owner.
+  thread_local uint64_t last_epoch = 0;
+  thread_local std::array<CacheEntry, 8> cache{};
 
-    // Object containers: cache only plain direct-field reads. op_index
-    // overloads run arbitrary code (computed results, side effects) and
-    // the _G globals mirror changes without an object shape bump, so both
-    // must take the un-cached raw path - serving a cached first result
-    // for either is stale by construction.
-    if (container.isObjectId()) {
-      Value opIndex = vm->getHostObjectField(
-          ObjectRef{container.asObjectId(), true}, "op_index");
-      if (!opIndex.isNull() &&
-          (opIndex.isFunctionObjId() || opIndex.isClosureId() ||
-           opIndex.isHostFuncId())) {
-        return havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
-      }
-    }
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value container, key_val;
+  std::memcpy(&container, &container_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  const uint64_t epoch = vm->getHeap().gcEpoch();
+  if (epoch != last_epoch) {
+    last_epoch = epoch;
+    for (auto &e : cache)
+      e.valid = false;
+  }
 
-    auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
-    if (container.isObjectId() &&
-        container.asObjectId() == vm->globalsMirrorObjectId()) {
-      return result_bits;
+  uint64_t version = 0;
+  if (container.isArrayId())
+    version = vm->arrayVersion(container.asArrayId());
+  else if (container.isSetId())
+    version = vm->setVersion(container.asSetId());
+  else if (container.isObjectId())
+    version = vm->objectLookupVersion(container.asObjectId());
+  else if (container.isStringId() || container.isStringValId())
+    version = container_bits;
+
+  const size_t primary =
+      static_cast<size_t>((container_bits ^ key_bits ^ (version >> 1)) & (cache.size() - 1));
+  for (size_t probe = 0; probe < cache.size(); ++probe) {
+    const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
+    if (entry.valid && entry.container_bits == container_bits && entry.version == version &&
+        entry.key_bits == key_bits && entry.gc_epoch == epoch) {
+      return entry.value_bits;
     }
-    cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, epoch, true};
+  }
+
+  // Object containers: cache only plain direct-field reads. op_index
+  // overloads run arbitrary code (computed results, side effects) and
+  // the _G globals mirror changes without an object shape bump, so both
+  // must take the un-cached raw path - serving a cached first result
+  // for either is stale by construction.
+  if (container.isObjectId()) {
+    Value opIndex = vm->getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
+    if (!opIndex.isNull() &&
+        (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
+      return havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+    }
+  }
+
+  auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+  if (container.isObjectId() && container.asObjectId() == vm->globalsMirrorObjectId()) {
     return result_bits;
+  }
+  cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, epoch, true};
+  return result_bits;
 }
 
-uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
-    if (!vm_ptr) return val_bits;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    // Full interpreter parity: ARRAY_SET falls through array/set/object
-    // semantics (VM::indexAssignPublic mirrors VMCollections.cpp,
-    // including the object GC write barrier and op_index_set dispatch).
-    // Previously this bailed on non-array containers, so every
-    // obj[key] = value in JIT-compiled code silently no-opped - the
-    // self-hosted parser's binding-power table built empty and every
-    // operator lookup read BP_NONE, corrupting parses once getBPTABLE
-    // tiered.
-    return vm->indexAssignPublic(arr_bits, idx_bits, val_bits);
+uint64_t havel_vm_array_set(void *vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  // Full interpreter parity: ARRAY_SET falls through array/set/object
+  // semantics (VM::indexAssignPublic mirrors VMCollections.cpp,
+  // including the object GC write barrier and op_index_set dispatch).
+  // Previously this bailed on non-array containers, so every
+  // obj[key] = value in JIT-compiled code silently no-opped - the
+  // self-hosted parser's binding-power table built empty and every
+  // operator lookup read BP_NONE, corrupting parses once getBPTABLE
+  // tiered.
+  return vm->indexAssignPublic(arr_bits, idx_bits, val_bits);
 }
 
-uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {
-  if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_len(void *vm_ptr, uint64_t arr_bits) {
+  if (!vm_ptr)
+    return Value(static_cast<int64_t>(0)).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value(static_cast<int64_t>(0)).rawBits();
+  if (!arr.isArrayId())
+    return Value(static_cast<int64_t>(0)).rawBits();
   return Value(static_cast<int64_t>(vm->getHostArrayLength(ArrayRef{arr.asArrayId()}))).rawBits();
 }
 
-void havel_vm_array_push(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_array_push(void *vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, val;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return;
+  if (!arr.isArrayId())
+    return;
   vm->pushHostArrayValue(ArrayRef{arr.asArrayId()}, val);
 }
 
 // Object operations - use public API
-uint64_t havel_vm_object_new(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_object_new(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   auto ref = vm->createHostObject();
   return Value::makeObjectId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_object_get(void* vm_ptr, uint64_t obj_bits, uint32_t key_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
-  
+uint64_t havel_vm_object_get(void *vm_ptr, uint64_t obj_bits, uint32_t key_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
+
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
-  
-  const auto& key = chunk->getString(key_id);
-  if (key.empty()) return Value::makeNull().rawBits();
-  
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
+
+  const auto &key = chunk->getString(key_id);
+  if (key.empty())
+    return Value::makeNull().rawBits();
+
   return vm->getHostObjectField(ObjectRef{obj.asObjectId()}, key).rawBits();
 }
 
-uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return val_bits;
-  
+uint64_t havel_vm_object_set(void *vm_ptr, uint64_t obj_bits, uint32_t key_id, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return val_bits;
+
   Value obj, val;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return val_bits;
-  
-  const auto& key = chunk->getString(key_id);
-  if (key.empty()) return val_bits;
-  
+  if (!obj.isObjectId())
+    return val_bits;
+
+  const auto &key = chunk->getString(key_id);
+  if (key.empty())
+    return val_bits;
+
   vm->setHostObjectField(ObjectRef{obj.asObjectId()}, key, val);
   return val_bits;
 }
 
-uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    // Member access on non-objects (array len/index, fn properties, string
-    // prototypes, ...) previously bailed to null here - the interpreter's
-    // OBJECT_GET handles all of them, so route through the parity seam.
-    // tokens.len on an array reading null hung the self-hosted parser.
+uint64_t havel_vm_object_get_raw(void *vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  // Member access on non-objects (array len/index, fn properties, string
+  // prototypes, ...) previously bailed to null here - the interpreter's
+  // OBJECT_GET handles all of them, so route through the parity seam.
+  // tokens.len on an array reading null hung the self-hosted parser.
+  Value out;
+  if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
+    return out.rawBits();
+  }
+  return Value::makeNull().rawBits();
+}
+
+uint64_t havel_vm_object_get_raw_ic(void *vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+  struct CacheEntry {
+    uint32_t obj_id = 0;
+    uint64_t shape_version = 0;
+    uint64_t key_bits = 0;
+    uint64_t value_bits = 0;
+    uint64_t gc_epoch = 0;
+    bool valid = false;
+  };
+
+  // GC epoch: heap ids are RECYCLED, so an (obj_id, shape_version, key)
+  // key alone can hit a dead object's stale entry when a new object
+  // reuses its id (the self-hosted emitter's AST nodes - one per
+  // expression, churned fast - read each other's `kind` through exactly
+  // this collision once a collection cycle ran mid-emission, and every
+  // node dispatched into the wrong emit branch). Folding the epoch in
+  // makes every cache die with the collection that invalidated it.
+  thread_local uint64_t last_epoch = 0;
+  thread_local std::array<CacheEntry, 4> cache{};
+
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value obj, key_val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  const uint64_t epoch = vm->getHeap().gcEpoch();
+  if (epoch != last_epoch) {
+    last_epoch = epoch;
+    for (auto &e : cache)
+      e.valid = false;
+  }
+  if (!obj.isObjectId()) {
+    // Non-object receivers take the un-cached parity path
+    // (memberGetPublic); arrays are mutable so the IC's shape-version
+    // scheme does not apply to them anyway.
     Value out;
     if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
-        return out.rawBits();
+      return out.rawBits();
     }
     return Value::makeNull().rawBits();
-}
+  }
 
-uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    struct CacheEntry {
-        uint32_t obj_id = 0;
-        uint64_t shape_version = 0;
-        uint64_t key_bits = 0;
-        uint64_t value_bits = 0;
-        uint64_t gc_epoch = 0;
-        bool valid = false;
-    };
+  const uint32_t obj_id = obj.asObjectId();
+  if (obj_id == vm->globalsMirrorObjectId()) {
+    auto key_str = vm->resolveKeyPublic(key_val);
+    if (!key_str)
+      return Value::makeNull().rawBits();
+    return vm->lookupGlobalByKey(*key_str).rawBits();
+  }
 
-    // GC epoch: heap ids are RECYCLED, so an (obj_id, shape_version, key)
-    // key alone can hit a dead object's stale entry when a new object
-    // reuses its id (the self-hosted emitter's AST nodes - one per
-    // expression, churned fast - read each other's `kind` through exactly
-    // this collision once a collection cycle ran mid-emission, and every
-    // node dispatched into the wrong emit branch). Folding the epoch in
-    // makes every cache die with the collection that invalidated it.
-    thread_local uint64_t last_epoch = 0;
-    thread_local std::array<CacheEntry, 4> cache{};
-
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    const uint64_t epoch = vm->getHeap().gcEpoch();
-    if (epoch != last_epoch) {
-        last_epoch = epoch;
-        for (auto& e : cache) e.valid = false;
-    }
-    if (!obj.isObjectId()) {
-        // Non-object receivers take the un-cached parity path
-        // (memberGetPublic); arrays are mutable so the IC's shape-version
-        // scheme does not apply to them anyway.
+  // Lazy module proxies must not enter (or be served from) the IC:
+  // their whole point is to be swapped for the real namespace on first
+  // touch (memberGetPublic performs the swap, mirroring the
+  // interpreter's OBJECT_GET). Caching the proxy's pre-init reads
+  // (null fields) pinned stale nulls forever - the self-hosted
+  // parser's skipCommentsAndNewlines read TID.NewLine through a cached
+  // proxy entry and never stopped looping.
+  {
+    auto *proxy = vm->getHeap().object(obj_id);
+    if (proxy) {
+      auto *lazyFlag = proxy->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
         Value out;
         if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
-            return out.rawBits();
+          return out.rawBits();
         }
         return Value::makeNull().rawBits();
+      }
     }
+  }
 
-    const uint32_t obj_id = obj.asObjectId();
-    if (obj_id == vm->globalsMirrorObjectId()) {
-        auto key_str = vm->resolveKeyPublic(key_val);
-        if (!key_str) return Value::makeNull().rawBits();
-        return vm->lookupGlobalByKey(*key_str).rawBits();
+  const uint64_t version = vm->objectLookupVersion(obj_id);
+  const size_t primary =
+      static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
+  for (size_t probe = 0; probe < cache.size(); ++probe) {
+    const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
+    if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version &&
+        entry.key_bits == key_bits && entry.gc_epoch == epoch) {
+      return entry.value_bits;
     }
+  }
 
-    // Lazy module proxies must not enter (or be served from) the IC:
-    // their whole point is to be swapped for the real namespace on first
-    // touch (memberGetPublic performs the swap, mirroring the
-    // interpreter's OBJECT_GET). Caching the proxy's pre-init reads
-    // (null fields) pinned stale nulls forever - the self-hosted
-    // parser's skipCommentsAndNewlines read TID.NewLine through a cached
-    // proxy entry and never stopped looping.
-    {
-        auto* proxy = vm->getHeap().object(obj_id);
-        if (proxy) {
-            auto* lazyFlag = proxy->get("__lazy__");
-            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-                Value out;
-                if (vm->memberGetPublic(obj_bits, key_bits, &out)) {
-                    return out.rawBits();
-                }
-                return Value::makeNull().rawBits();
-            }
-        }
-    }
-
-    const uint64_t version = vm->objectLookupVersion(obj_id);
-    const size_t primary = static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
-    for (size_t probe = 0; probe < cache.size(); ++probe) {
-        const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
-        if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version && entry.key_bits == key_bits &&
-            entry.gc_epoch == epoch) {
-            return entry.value_bits;
-        }
-    }
-
-    // Interp OBJECT_GET parity lives in memberGetPublic (getter
-    // interceptor, numeric index, chain walk with zero-arg prototype
-    // auto-call, len, built-in prototype method binding, __vivify). The
-    // cacheable flag gates the IC: side-effectful reads (auto-call,
-    // getter, bound-object allocation, vivify persistence, globals mirror)
-    // must never be cached - the first result would be served for every
-    // later read of the same (obj, key, shape).
-    Value out;
-    bool cacheable = false;
-    if (!vm->memberGetPublic(obj_bits, key_bits, &out, &cacheable)) {
-        return Value::makeNull().rawBits();
-    }
-    const uint64_t result_bits = out.rawBits();
-    if (!cacheable) {
-        return result_bits;
-    }
-    cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
+  // Interp OBJECT_GET parity lives in memberGetPublic (getter
+  // interceptor, numeric index, chain walk with zero-arg prototype
+  // auto-call, len, built-in prototype method binding, __vivify). The
+  // cacheable flag gates the IC: side-effectful reads (auto-call,
+  // getter, bound-object allocation, vivify persistence, globals mirror)
+  // must never be cached - the first result would be served for every
+  // later read of the same (obj, key, shape).
+  Value out;
+  bool cacheable = false;
+  if (!vm->memberGetPublic(obj_bits, key_bits, &out, &cacheable)) {
+    return Value::makeNull().rawBits();
+  }
+  const uint64_t result_bits = out.rawBits();
+  if (!cacheable) {
     return result_bits;
+  }
+  cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, epoch, true};
+  return result_bits;
 }
 
-uint64_t havel_vm_object_set_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits, uint64_t val_bits) {
-    if (!vm_ptr) return val_bits;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val, val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return val_bits;
+uint64_t havel_vm_object_set_raw(void *vm_ptr, uint64_t obj_bits, uint64_t key_bits,
+                                 uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value obj, key_val, val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  if (!obj.isObjectId())
+    return val_bits;
 
-    auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return val_bits;
+  auto key_str = vm->resolveKeyPublic(key_val);
+  if (!key_str)
+    return val_bits;
 
-    vm->setHostObjectField(ObjectRef{obj.asObjectId()}, *key_str, val);
-    // Return the object reference (not the value) so chained sets
-    // (obj.a, obj.b, obj.c pushed through repeated SET/SET/SET) keep
-    // operating on the same object. Previously this returned val_bits,
-    // which made later chained sets pass a non-ObjectId as obj and
-    // silently no-op — turning every multi-field object initializer
-    // into a one-field object followed by globals pollution. Matches
-    // interpreter OBJECT_SET which pops key/value/obj and pushes obj.
-    return obj_bits;
+  vm->setHostObjectField(ObjectRef{obj.asObjectId()}, *key_str, val);
+  // Return the object reference (not the value) so chained sets
+  // (obj.a, obj.b, obj.c pushed through repeated SET/SET/SET) keep
+  // operating on the same object. Previously this returned val_bits,
+  // which made later chained sets pass a non-ObjectId as obj and
+  // silently no-op — turning every multi-field object initializer
+  // into a one-field object followed by globals pollution. Matches
+  // interpreter OBJECT_SET which pops key/value/obj and pushes obj.
+  return obj_bits;
 }
 
-uint64_t havel_vm_object_has_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    if (!vm_ptr) return Value::makeBool(false).rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
+uint64_t havel_vm_object_has_raw(void *vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value obj, key_val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  if (!obj.isObjectId())
+    return Value::makeBool(false).rawBits();
 
-    auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return Value::makeBool(false).rawBits();
+  auto key_str = vm->resolveKeyPublic(key_val);
+  if (!key_str)
+    return Value::makeBool(false).rawBits();
 
-    return Value::makeBool(vm->hasHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
+  return Value::makeBool(vm->hasHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
 }
 
-uint64_t havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
-    // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops obj/key
-    // and pushes a bool - true when the key existed and was removed.
-    // Previously this returned void (JIT pushes null), diverging from
-    // the interpreter's bool for any expression-context delete.
-    if (!vm_ptr) return Value::makeBool(false).rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, key_val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
-    if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
+uint64_t havel_vm_object_delete_raw(void *vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+  // Interpreter parity (VMCollections.cpp OBJECT_DELETE): pops obj/key
+  // and pushes a bool - true when the key existed and was removed.
+  // Previously this returned void (JIT pushes null), diverging from
+  // the interpreter's bool for any expression-context delete.
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value obj, key_val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  if (!obj.isObjectId())
+    return Value::makeBool(false).rawBits();
 
-    auto key_str = vm->resolveKeyPublic(key_val);
-    if (!key_str) return Value::makeBool(false).rawBits();
+  auto key_str = vm->resolveKeyPublic(key_val);
+  if (!key_str)
+    return Value::makeBool(false).rawBits();
 
-    return Value::makeBool(
-        vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
+  return Value::makeBool(vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str))
+      .rawBits();
 }
 
-void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_backedge(void *vm_ptr, uint32_t ip) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   vm->recordBackedgePublic(ip);
   if (vm->consumeJitYieldRequest()) {
     throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
   }
 }
 
-void havel_vm_backedge_n(void* vm_ptr, uint32_t ip, uint32_t n) {
+void havel_vm_backedge_n(void *vm_ptr, uint32_t ip, uint32_t n) {
   // Batched backedge hook for the Cranelift tier-1 lowering: native loops
   // call this every BACKEDGE_STRIDE-th taken backedge with the exact
   // stride delta, so hotness/tier-up accounting and the coroutine yield
   // request keep working at a fraction of the per-iteration call rate.
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  if (n == 0) return;
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  if (n == 0)
+    return;
   vm->recordBackedgeDeltaPublic(ip, n);
   if (vm->consumeJitYieldRequest()) {
     throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
   }
 }
 
-void havel_vm_gc_checkpoint(void* vm_ptr, const uint64_t* roots,
-                            uint32_t count) {
+void havel_vm_gc_checkpoint(void *vm_ptr, const uint64_t *roots, uint32_t count) {
   // JIT safe-point GC check (called from the tier-1 backedge hook, i.e.
   // every BACKEDGE_STRIDE-th taken edge): native loops allocate through
   // the Runtime-ABI bridges without any interpreter dispatch checkpoint,
@@ -961,9 +1061,11 @@ void havel_vm_gc_checkpoint(void* vm_ptr, const uint64_t* roots,
   // operand stack) into `roots` immediately before this call, so the
   // collection sees them as extra roots. Common path is one probe
   // (budget not due) - no snapshot, no copy.
-  if (!vm_ptr || !roots) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  if (!vm->gcCollectionPendingPublic()) return;
+  if (!vm_ptr || !roots)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  if (!vm->gcCollectionPendingPublic())
+    return;
   std::vector<Value> extra;
   extra.reserve(count);
   for (uint32_t i = 0; i < count; ++i) {
@@ -975,215 +1077,221 @@ void havel_vm_gc_checkpoint(void* vm_ptr, const uint64_t* roots,
 }
 
 #include "runtime/HavelEngine.hpp"
-extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) {
-    static ::havel::HavelEngine engine;
-    if (!engine.isInitialized()) {
-        engine.initializeMinimal();
-        
-        // If we have strings, create a dummy chunk so that name lookups (LOAD_GLOBAL, CALL_METHOD) work in AOT
-        if (strings && count > 0) {
-            auto chunk = std::make_shared<BytecodeChunk>();
-            for (uint32_t i = 0; i < count; ++i) {
-                chunk->addString(strings[i]);
-            }
-            // Set as current chunk for the VM (this is a hack for AOT, but it works)
-            engine.vm()->setCurrentChunkPublic(chunk.get());
-            // Push the initial frame for the main script (even if function count is 0)
-            // This ensures that LOAD_VAR/STORE_VAR and other frame-dependent operations
-            // don't crash when executed in the top-level script.
-            engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
-            
-            // Keep it alive
-            static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
-        }
+extern "C" void *havel_vm_init_standalone(const char **strings, uint32_t count) {
+  static ::havel::HavelEngine engine;
+  if (!engine.isInitialized()) {
+    engine.initializeMinimal();
+
+    // If we have strings, create a dummy chunk so that name lookups (LOAD_GLOBAL, CALL_METHOD) work
+    // in AOT
+    if (strings && count > 0) {
+      auto chunk = std::make_shared<BytecodeChunk>();
+      for (uint32_t i = 0; i < count; ++i) {
+        chunk->addString(strings[i]);
+      }
+      // Set as current chunk for the VM (this is a hack for AOT, but it works)
+      engine.vm()->setCurrentChunkPublic(chunk.get());
+      // Push the initial frame for the main script (even if function count is 0)
+      // This ensures that LOAD_VAR/STORE_VAR and other frame-dependent operations
+      // don't crash when executed in the top-level script.
+      engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
+
+      // Keep it alive
+      static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
     }
-    return engine.vm();
+  }
+  return engine.vm();
 }
 
 // Extended init for AOT with closures: also creates function entries in the chunk
 // so that CLOSURE opcode can look up functions by index.
-extern "C" void* havel_vm_init_standalone_with_functions(
-    const char** strings, uint32_t string_count,
-    const char** func_names, uint32_t func_count,
-    const uint32_t* func_param_counts, const uint32_t* func_local_counts,
-    const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
-    const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
-    uint32_t total_upvalues,
-    const uint32_t* func_const_counts, const uint64_t* func_const_data,
-    const uint32_t* func_instr_counts, const uint64_t* func_instr_data,
-    uint32_t num_functions,
-    const char* build_dir
-) {
-    static ::havel::HavelEngine engine;
-    if (!engine.isInitialized()) {
-        engine.initializeMinimal();
-        
-        // Initialize module loader for AOT so that IMPORT works
-        auto* vm = engine.vm();
-        if (vm) {
-            // Use build_dir (passed from stub) for module paths
-            // build_dir is the build directory (e.g., /path/to/build-debug)
-            // Source modules are at build_dir/../modules
-            std::string stdlibPath;
-            const char* envStdlib = std::getenv("HAVEL_STDLIB");
-            if (envStdlib && envStdlib[0] != '\0') {
-                stdlibPath = envStdlib;
-            } else if (build_dir && build_dir[0] != '\0') {
-                stdlibPath = (std::filesystem::path(build_dir) / ".." / "modules" / "std").string();
-            } else {
-                auto exePath = Env::executable();
-                if (!exePath.empty()) {
-                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
-                } else {
-                    stdlibPath = "./modules/std";
-                }
-            }
-            vm->moduleLoader().setStdlibPath(stdlibPath);
+extern "C" void *havel_vm_init_standalone_with_functions(
+    const char **strings, uint32_t string_count, const char **func_names, uint32_t func_count,
+    const uint32_t *func_param_counts, const uint32_t *func_local_counts,
+    const uint32_t *func_upvalue_counts, const uint32_t *func_is_generator,
+    const uint32_t *upvalue_indices, const uint32_t *upvalue_captures_local,
+    uint32_t total_upvalues, const uint32_t *func_const_counts, const uint64_t *func_const_data,
+    const uint32_t *func_instr_counts, const uint64_t *func_instr_data, uint32_t num_functions,
+    const char *build_dir) {
+  static ::havel::HavelEngine engine;
+  if (!engine.isInitialized()) {
+    engine.initializeMinimal();
 
-            // Add module search paths - use build_dir/.. for source
-            std::string modulesRoot;
-            if (build_dir && build_dir[0] != '\0') {
-                modulesRoot = (std::filesystem::path(build_dir) / ".." / "modules").string();
-            } else {
-                auto exePath = Env::executable();
-                if (!exePath.empty()) {
-                    modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
-                } else {
-                    modulesRoot = "./modules";
-                }
-            }
-            auto canonicalRoot = std::filesystem::exists(modulesRoot)
-                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
-            vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-            vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
-            vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
-            vm->moduleLoader().addSearchPath(canonicalRoot);
+    // Initialize module loader for AOT so that IMPORT works
+    auto *vm = engine.vm();
+    if (vm) {
+      // Use build_dir (passed from stub) for module paths
+      // build_dir is the build directory (e.g., /path/to/build-debug)
+      // Source modules are at build_dir/../modules
+      std::string stdlibPath;
+      const char *envStdlib = std::getenv("HAVEL_STDLIB");
+      if (envStdlib && envStdlib[0] != '\0') {
+        stdlibPath = envStdlib;
+      } else if (build_dir && build_dir[0] != '\0') {
+        stdlibPath = (std::filesystem::path(build_dir) / ".." / "modules" / "std").string();
+      } else {
+        auto exePath = Env::executable();
+        if (!exePath.empty()) {
+          stdlibPath =
+              (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+        } else {
+          stdlibPath = "./modules/std";
+        }
+      }
+      vm->moduleLoader().setStdlibPath(stdlibPath);
 
-            // Also add build directory to C loader's search paths for native modules
-            if (build_dir && build_dir[0] != '\0') {
-                auto extLoader = vm->pluginLoader();
-                if (extLoader) {
-                    std::string buildModulesPath = (std::filesystem::path(build_dir) / "modules").string();
-                    extLoader->addSearchPath(buildModulesPath);
-                    extLoader->addModulePaths();
-                }
-            }
+      // Add module search paths - use build_dir/.. for source
+      std::string modulesRoot;
+      if (build_dir && build_dir[0] != '\0') {
+        modulesRoot = (std::filesystem::path(build_dir) / ".." / "modules").string();
+      } else {
+        auto exePath = Env::executable();
+        if (!exePath.empty()) {
+          modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+        } else {
+          modulesRoot = "./modules";
         }
-        
-        if (strings && string_count > 0) {
-            auto chunk = std::make_shared<BytecodeChunk>();
-            for (uint32_t i = 0; i < string_count; ++i) {
-                chunk->addString(strings[i]);
-            }
-            
-            // Parse upvalue data
-            uint32_t upvalue_offset = 0;
-            uint64_t const_data_offset = 0;
-            uint64_t instr_data_offset = 0;
-            for (uint32_t fi = 0; fi < func_count; ++fi) {
-                std::string name(func_names[fi]);
-                uint32_t param_count = func_param_counts[fi];
-                uint32_t local_count = func_local_counts[fi];
-                uint32_t upvalue_count = func_upvalue_counts[fi];
-                bool is_gen = func_is_generator[fi] != 0;
-                
-                BytecodeFunction func(name, param_count, local_count);
-                func.is_generator = is_gen;
-                
-                // Add upvalue descriptors
-                for (uint32_t ui = 0; ui < upvalue_count; ++ui) {
-                    UpvalueDescriptor desc;
-                    desc.index = upvalue_indices[upvalue_offset + ui];
-                    desc.captures_local = upvalue_captures_local[upvalue_offset + ui] != 0;
-                    func.upvalues.push_back(desc);
-                }
-                upvalue_offset += upvalue_count;
-                
-                // Deserialize constants
-                if (func_const_counts && func_const_data && fi < num_functions) {
-                    uint32_t const_count = func_const_counts[fi];
-                    func.constants.reserve(const_count);
-                    for (uint32_t ci = 0; ci < const_count; ++ci) {
-                        func.constants.push_back(Value::fromRawBits(func_const_data[const_data_offset++]));
-                    }
-                }
-                
-                // Deserialize instructions
-                if (func_instr_counts && func_instr_data && fi < num_functions) {
-                    uint32_t instr_count = func_instr_counts[fi];
-                    for (uint32_t ii = 0; ii < instr_count; ++ii) {
-                        uint32_t opcode = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
-                        uint32_t num_operands = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
-                        std::vector<Value> operands;
-                        operands.reserve(num_operands);
-                        for (uint32_t oi = 0; oi < num_operands; ++oi) {
-                            operands.push_back(Value::fromRawBits(func_instr_data[instr_data_offset++]));
-                        }
-                        func.instructions.emplace_back(static_cast<OpCode>(opcode), std::move(operands));
-                    }
-                }
-                
-                chunk->addFunction(std::move(func));
-            }
-            
-            engine.vm()->setCurrentChunkPublic(chunk.get());
-            engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
-            
-            static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
+      }
+      auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                               ? std::filesystem::canonical(modulesRoot).string()
+                               : modulesRoot;
+      vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+      vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
+      vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
+      vm->moduleLoader().addSearchPath(canonicalRoot);
+
+      // Also add build directory to C loader's search paths for native modules
+      if (build_dir && build_dir[0] != '\0') {
+        auto extLoader = vm->pluginLoader();
+        if (extLoader) {
+          std::string buildModulesPath = (std::filesystem::path(build_dir) / "modules").string();
+          extLoader->addSearchPath(buildModulesPath);
+          extLoader->addModulePaths();
         }
+      }
     }
-    return engine.vm();
+
+    if (strings && string_count > 0) {
+      auto chunk = std::make_shared<BytecodeChunk>();
+      for (uint32_t i = 0; i < string_count; ++i) {
+        chunk->addString(strings[i]);
+      }
+
+      // Parse upvalue data
+      uint32_t upvalue_offset = 0;
+      uint64_t const_data_offset = 0;
+      uint64_t instr_data_offset = 0;
+      for (uint32_t fi = 0; fi < func_count; ++fi) {
+        std::string name(func_names[fi]);
+        uint32_t param_count = func_param_counts[fi];
+        uint32_t local_count = func_local_counts[fi];
+        uint32_t upvalue_count = func_upvalue_counts[fi];
+        bool is_gen = func_is_generator[fi] != 0;
+
+        BytecodeFunction func(name, param_count, local_count);
+        func.is_generator = is_gen;
+
+        // Add upvalue descriptors
+        for (uint32_t ui = 0; ui < upvalue_count; ++ui) {
+          UpvalueDescriptor desc;
+          desc.index = upvalue_indices[upvalue_offset + ui];
+          desc.captures_local = upvalue_captures_local[upvalue_offset + ui] != 0;
+          func.upvalues.push_back(desc);
+        }
+        upvalue_offset += upvalue_count;
+
+        // Deserialize constants
+        if (func_const_counts && func_const_data && fi < num_functions) {
+          uint32_t const_count = func_const_counts[fi];
+          func.constants.reserve(const_count);
+          for (uint32_t ci = 0; ci < const_count; ++ci) {
+            func.constants.push_back(Value::fromRawBits(func_const_data[const_data_offset++]));
+          }
+        }
+
+        // Deserialize instructions
+        if (func_instr_counts && func_instr_data && fi < num_functions) {
+          uint32_t instr_count = func_instr_counts[fi];
+          for (uint32_t ii = 0; ii < instr_count; ++ii) {
+            uint32_t opcode = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+            uint32_t num_operands = static_cast<uint32_t>(func_instr_data[instr_data_offset++]);
+            std::vector<Value> operands;
+            operands.reserve(num_operands);
+            for (uint32_t oi = 0; oi < num_operands; ++oi) {
+              operands.push_back(Value::fromRawBits(func_instr_data[instr_data_offset++]));
+            }
+            func.instructions.emplace_back(static_cast<OpCode>(opcode), std::move(operands));
+          }
+        }
+
+        chunk->addFunction(std::move(func));
+      }
+
+      engine.vm()->setCurrentChunkPublic(chunk.get());
+      engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
+
+      static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
+    }
+  }
+  return engine.vm();
 }
 
 // Range and iterator operations - use public heap API
-uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_range_new(void *vm_ptr, uint64_t start_bits, uint64_t end_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value start, end;
   std::memcpy(&start, &start_bits, sizeof(uint64_t));
   std::memcpy(&end, &end_bits, sizeof(uint64_t));
-  if (!start.isInt() || !end.isInt()) return Value::makeNull().rawBits();
+  if (!start.isInt() || !end.isInt())
+    return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateRange(start.asInt(), end.asInt(), 1);
   return Value::makeRangeId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_iter_new(void* vm_ptr, uint64_t coll_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_iter_new(void *vm_ptr, uint64_t coll_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value coll;
   std::memcpy(&coll, &coll_bits, sizeof(uint64_t));
   auto ref = vm->createIterator(coll);
   return Value::makeIteratorId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_iter_next(void *vm_ptr, uint64_t iter_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value iter;
   std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
-  if (!iter.isIteratorId()) return Value::makeNull().rawBits();
-  
+  if (!iter.isIteratorId())
+    return Value::makeNull().rawBits();
+
   // DEBUG
   uint32_t iter_id = iter.asIteratorId();
-  auto* iter_ref = vm->getHeap().iterator(iter_id);
+  auto *iter_ref = vm->getHeap().iterator(iter_id);
   if (iter_ref && iter_ref->iterable.isRangeId()) {
-    auto* r = vm->getHeap().range(iter_ref->iterable.asRangeId());
+    auto *r = vm->getHeap().range(iter_ref->iterable.asRangeId());
   }
-  
+
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
 }
 
-uint64_t havel_vm_time_now(void* vm_ptr) {
+uint64_t havel_vm_time_now(void *vm_ptr) {
   (void)vm_ptr;
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
   return Value(static_cast<int64_t>(ms)).rawBits();
 }
 
 // Concurrency primitives
-uint64_t havel_vm_thread_new(void* vm_ptr, uint32_t func_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_thread_new(void *vm_ptr, uint32_t func_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value fn = Value::makeFunctionObjId(func_id);
 
   // Prefer explicit concurrency bridge naming, then language-level naming.
@@ -1197,9 +1305,10 @@ uint64_t havel_vm_thread_new(void* vm_ptr, uint32_t func_id) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_channel_new(void* vm_ptr, uint64_t cap_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_channel_new(void *vm_ptr, uint64_t cap_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value cap;
   std::memcpy(&cap, &cap_bits, sizeof(uint64_t));
 
@@ -1222,9 +1331,10 @@ uint64_t havel_vm_channel_new(void* vm_ptr, uint64_t cap_bits) {
   return result.rawBits();
 }
 
-void havel_vm_channel_send(void* vm_ptr, uint64_t chan_bits, uint64_t val_bits) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_channel_send(void *vm_ptr, uint64_t chan_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value chan, val;
   std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
@@ -1235,9 +1345,10 @@ void havel_vm_channel_send(void* vm_ptr, uint64_t chan_bits, uint64_t val_bits) 
   }
 }
 
-uint64_t havel_vm_channel_recv(void* vm_ptr, uint64_t chan_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_channel_recv(void *vm_ptr, uint64_t chan_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value chan;
   std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
 
@@ -1248,9 +1359,10 @@ uint64_t havel_vm_channel_recv(void* vm_ptr, uint64_t chan_bits) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_thread_join(void* vm_ptr, uint64_t thread_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_thread_join(void *vm_ptr, uint64_t thread_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value thread;
   std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
   Value result = vm->invokeHostFunctionDirect("thread_join", {thread});
@@ -1260,9 +1372,10 @@ uint64_t havel_vm_thread_join(void* vm_ptr, uint64_t thread_bits) {
   return result.rawBits();
 }
 
-void havel_vm_thread_send(void* vm_ptr, uint64_t thread_bits, uint64_t val_bits) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_thread_send(void *vm_ptr, uint64_t thread_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value thread, val;
   std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
@@ -1272,9 +1385,10 @@ void havel_vm_thread_send(void* vm_ptr, uint64_t thread_bits, uint64_t val_bits)
   }
 }
 
-uint64_t havel_vm_thread_recv(void* vm_ptr, uint64_t thread_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_thread_recv(void *vm_ptr, uint64_t thread_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value thread;
   std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
   Value result = vm->invokeHostFunctionDirect("thread_receive", {thread});
@@ -1284,9 +1398,10 @@ uint64_t havel_vm_thread_recv(void* vm_ptr, uint64_t thread_bits) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_interval_start(void* vm_ptr, uint64_t duration_bits, uint64_t callback_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_interval_start(void *vm_ptr, uint64_t duration_bits, uint64_t callback_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value duration, callback;
   std::memcpy(&duration, &duration_bits, sizeof(uint64_t));
   std::memcpy(&callback, &callback_bits, sizeof(uint64_t));
@@ -1297,9 +1412,10 @@ uint64_t havel_vm_interval_start(void* vm_ptr, uint64_t duration_bits, uint64_t 
   return result.rawBits();
 }
 
-uint64_t havel_vm_interval_stop(void* vm_ptr, uint64_t interval_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_interval_stop(void *vm_ptr, uint64_t interval_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value interval;
   std::memcpy(&interval, &interval_bits, sizeof(uint64_t));
   Value result = vm->invokeHostFunctionDirect("interval_stop", {interval});
@@ -1309,9 +1425,10 @@ uint64_t havel_vm_interval_stop(void* vm_ptr, uint64_t interval_bits) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_timeout_start(void* vm_ptr, uint64_t delay_bits, uint64_t callback_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_timeout_start(void *vm_ptr, uint64_t delay_bits, uint64_t callback_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value delay, callback;
   std::memcpy(&delay, &delay_bits, sizeof(uint64_t));
   std::memcpy(&callback, &callback_bits, sizeof(uint64_t));
@@ -1322,9 +1439,10 @@ uint64_t havel_vm_timeout_start(void* vm_ptr, uint64_t delay_bits, uint64_t call
   return result.rawBits();
 }
 
-uint64_t havel_vm_timeout_cancel(void* vm_ptr, uint64_t timeout_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_timeout_cancel(void *vm_ptr, uint64_t timeout_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value timeout;
   std::memcpy(&timeout, &timeout_bits, sizeof(uint64_t));
   Value result = vm->invokeHostFunctionDirect("timeout_cancel", {timeout});
@@ -1334,9 +1452,10 @@ uint64_t havel_vm_timeout_cancel(void* vm_ptr, uint64_t timeout_bits) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_channel_close(void* vm_ptr, uint64_t chan_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_channel_close(void *vm_ptr, uint64_t chan_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value chan;
   std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
   Value result = vm->invokeHostFunctionDirect("channel_close", {chan});
@@ -1346,13 +1465,13 @@ uint64_t havel_vm_channel_close(void* vm_ptr, uint64_t chan_bits) {
   return result.rawBits();
 }
 
-uint64_t havel_vm_yield(void* vm_ptr, uint64_t val_bits) {
+uint64_t havel_vm_yield(void *vm_ptr, uint64_t val_bits) {
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
   throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, v};
 }
 
-uint64_t havel_vm_await(void* vm_ptr, uint64_t val_bits) {
+uint64_t havel_vm_await(void *vm_ptr, uint64_t val_bits) {
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
   throw JitCoroutineSignal{JitCoroutineSignal::Op::AWAIT, v};
@@ -1361,52 +1480,58 @@ uint64_t havel_vm_await(void* vm_ptr, uint64_t val_bits) {
 // Yield-point check: called by JIT-compiled code at loop backedges.
 // If the scheduler has requested preemption, throws JitCoroutineSignal
 // to exit the JIT frame and return control to the scheduler.
-void havel_vm_check_yield(void* vm_ptr) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_check_yield(void *vm_ptr) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   if (vm->consumeJitYieldRequest()) {
     throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
   }
 }
 
 // String operations
-uint64_t havel_vm_string_len(void* vm_ptr, uint64_t str_bits) {
-  if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_len(void *vm_ptr, uint64_t str_bits) {
+  if (!vm_ptr)
+    return Value(static_cast<int64_t>(0)).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value str;
   std::memcpy(&str, &str_bits, sizeof(uint64_t));
-  if (!str.isStringId()) return Value(static_cast<int64_t>(0)).rawBits();
-  return Value(static_cast<int64_t>(vm->getRuntimeStringLength(StringRef{str.asStringId()}))).rawBits();
+  if (!str.isStringId())
+    return Value(static_cast<int64_t>(0)).rawBits();
+  return Value(static_cast<int64_t>(vm->getRuntimeStringLength(StringRef{str.asStringId()})))
+      .rawBits();
 }
 
-uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
-  
+uint64_t havel_vm_string_concat(void *vm_ptr, uint64_t l_bits, uint64_t r_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
+
   Value l, r;
   std::memcpy(&l, &l_bits, sizeof(uint64_t));
   std::memcpy(&r, &r_bits, sizeof(uint64_t));
-  
+
   if (!(l.isStringId() || l.isStringValId()) || !(r.isStringId() || r.isStringValId())) {
     return Value::makeNull().rawBits();
   }
-  
+
   std::string lStr, rStr;
   if (l.isStringId()) {
-    auto* strPtr = vm->getHeap().string(l.asStringId());
+    auto *strPtr = vm->getHeap().string(l.asStringId());
     lStr = strPtr ? *strPtr : "";
   } else {
     lStr = chunk->getString(l.asStringValId());
   }
   if (r.isStringId()) {
-    auto* strPtr = vm->getHeap().string(r.asStringId());
+    auto *strPtr = vm->getHeap().string(r.asStringId());
     rStr = strPtr ? *strPtr : "";
   } else {
     rStr = chunk->getString(r.asStringValId());
   }
-  
+
   std::string result = lStr + rStr;
   auto ref = vm->createRuntimeString(std::move(result));
   return Value::makeStringId(ref.id).rawBits();
@@ -1417,574 +1542,593 @@ uint64_t havel_vm_bit_and(uint64_t a_bits, uint64_t b_bits) {
   Value a, b;
   std::memcpy(&a, &a_bits, sizeof(uint64_t));
   std::memcpy(&b, &b_bits, sizeof(uint64_t));
-  if (a.isInt() && b.isInt()) return Value(a.asInt() & b.asInt()).rawBits();
+  if (a.isInt() && b.isInt())
+    return Value(a.asInt() & b.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 uint64_t havel_vm_bit_or(uint64_t a_bits, uint64_t b_bits) {
   Value a, b;
   std::memcpy(&a, &a_bits, sizeof(uint64_t));
   std::memcpy(&b, &b_bits, sizeof(uint64_t));
-  if (a.isInt() && b.isInt()) return Value(a.asInt() | b.asInt()).rawBits();
+  if (a.isInt() && b.isInt())
+    return Value(a.asInt() | b.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 uint64_t havel_vm_bit_xor(uint64_t a_bits, uint64_t b_bits) {
   Value a, b;
   std::memcpy(&a, &a_bits, sizeof(uint64_t));
   std::memcpy(&b, &b_bits, sizeof(uint64_t));
-  if (a.isInt() && b.isInt()) return Value(a.asInt() ^ b.asInt()).rawBits();
+  if (a.isInt() && b.isInt())
+    return Value(a.asInt() ^ b.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 uint64_t havel_vm_bit_not(uint64_t val_bits) {
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  if (v.isInt()) return Value(~v.asInt()).rawBits();
+  if (v.isInt())
+    return Value(~v.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 uint64_t havel_vm_bit_lsh(uint64_t a_bits, uint64_t b_bits) {
   Value a, b;
   std::memcpy(&a, &a_bits, sizeof(uint64_t));
   std::memcpy(&b, &b_bits, sizeof(uint64_t));
-  if (a.isInt() && b.isInt()) return Value(a.asInt() << b.asInt()).rawBits();
+  if (a.isInt() && b.isInt())
+    return Value(a.asInt() << b.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 uint64_t havel_vm_bit_rsh(uint64_t a_bits, uint64_t b_bits) {
   Value a, b;
   std::memcpy(&a, &a_bits, sizeof(uint64_t));
   std::memcpy(&b, &b_bits, sizeof(uint64_t));
-  if (a.isInt() && b.isInt()) return Value(a.asInt() >> b.asInt()).rawBits();
+  if (a.isInt() && b.isInt())
+    return Value(a.asInt() >> b.asInt()).rawBits();
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_fiber_sleep(void* vm_ptr, uint64_t ms_bits) {
+uint64_t havel_vm_fiber_sleep(void *vm_ptr, uint64_t ms_bits) {
   Value v;
   std::memcpy(&v, &ms_bits, sizeof(uint64_t));
   throw JitCoroutineSignal{JitCoroutineSignal::Op::SLEEP, v};
 }
 
 // Host function call
-uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uint32_t count) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    // Host functions may re-enter the interpreter (module wrappers,
-    // callbacks). The JIT caller's raw values are unrooted meanwhile.
-    auto gc_guard = vm->gcDeferGuardPublic();
+uint64_t havel_vm_call_host(void *vm_ptr, uint32_t host_idx, uint64_t *args, uint32_t count) {
+  if (!vm_ptr)
+    return 0x7FF8000000000003ULL;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  // Host functions may re-enter the interpreter (module wrappers,
+  // callbacks). The JIT caller's raw values are unrooted meanwhile.
+  auto gc_guard = vm->gcDeferGuardPublic();
 
-    std::vector<Value> valArgs;
-    for (uint32_t i = 0; i < count; ++i) {
-        Value v;
-        std::memcpy(&v, &args[i], sizeof(uint64_t));
-        valArgs.push_back(v);
-    }
-    
-    return vm->callHostFunction(host_idx, valArgs).rawBits();
+  std::vector<Value> valArgs;
+  for (uint32_t i = 0; i < count; ++i) {
+    Value v;
+    std::memcpy(&v, &args[i], sizeof(uint64_t));
+    valArgs.push_back(v);
+  }
+
+  return vm->callHostFunction(host_idx, valArgs).rawBits();
 }
 
-uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t method_name_id,
-                              uint64_t* args, uint32_t arg_count) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    // Method bodies run interpreted/re-entered below this JIT frame while
-    // the caller's raw values (receiver staged by the lowering, live
-    // vstack temps) are unrooted.
-    auto gc_guard = vm->gcDeferGuardPublic();
-    auto* chunk = vm->getCurrentChunk();
-    if (!chunk) return Value::makeNull().rawBits();
-
-    Value receiver;
-    std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
-    const std::string method_name = chunk->getString(method_name_id);
-    if (method_name.empty()) return Value::makeNull().rawBits();
-
-    // Lazy module proxy: the interpreter's CALL_METHOD path
-    // (VMControlFlow) triggers module initialization before field lookup -
-    // a proxy object only carries __lazy__/__module__ markers. Without
-    // this, JIT-compiled calls resolved methods against the bare proxy:
-    // scopeResolveUpvalue's bc.add_upvalue_to returned null from JIT code
-    // (no descriptor ever registered), while interpreted it worked.
-    if (receiver.isObjectId()) {
-        auto* proxy = vm->getHeap().object(receiver.asObjectId());
-        if (proxy) {
-            auto* lazyFlag = proxy->get("__lazy__");
-            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-                auto* modNameVal = proxy->get("__module__");
-                std::string modName;
-                if (modNameVal) {
-                    if (modNameVal->isStringId()) {
-                        if (auto* s = vm->getHeap().string(modNameVal->asStringId()))
-                            modName = *s;
-                    } else if (modNameVal->isStringValId()) {
-                        modName = chunk->getString(modNameVal->asStringValId());
-                    }
-                }
-                if (!modName.empty()) {
-                    vm->ensureModuleLoaded(modName);
-                    Value loaded;
-                    if (vm->resolveGlobalPublic(modName, &loaded) && loaded.isObjectId()) {
-                        receiver = loaded;
-                    } else {
-                        std::string capModName = modName;
-                        capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
-                        if (vm->resolveGlobalPublic(capModName, &loaded) && loaded.isObjectId()) {
-                            receiver = loaded;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    std::vector<Value> callArgs;
-    callArgs.reserve(static_cast<size_t>(arg_count) + 1);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-        Value v;
-        std::memcpy(&v, &args[i], sizeof(uint64_t));
-        callArgs.push_back(v);
-    }
-
-    bool passReceiverAsSelf = true;
-
-    // Field dispatch shared by the object-field paths below: a field value
-    // may be a host fn, a havel fn/closure, or a class prototype stored as
-    // a field (interpreter isClassNewCall, VMControlFlow.cpp:646-662) -
-    // the last is invoked through its "new" host method with
-    // (classProto, ...args), never called directly. Calling an ObjectId as
-    // a fn segfaulted from ORC-compiled code (b.shape(3,4) where shape is
-    // a class proto).
-    auto dispatchField = [&](const Value &fieldVal,
-                             const std::vector<Value> &fieldArgs) -> uint64_t {
-        if (fieldVal.isHostFuncId()) {
-            if (auto hostName = vm->getHostFunctionName(fieldVal.asHostFuncId())) {
-                return vm->invokeHostFunctionDirect(*hostName, fieldArgs).rawBits();
-            }
-            return Value::makeNull().rawBits();
-        }
-        if (fieldVal.isFunctionObjId() || fieldVal.isClosureId()) {
-            return vm->callFunction(fieldVal, fieldArgs).rawBits();
-        }
-        if (fieldVal.isObjectId()) {
-            auto *fieldObj = vm->getHeap().object(fieldVal.asObjectId());
-            if (fieldObj) {
-                auto *isClassVal = fieldObj->get("__is_class");
-                if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
-                    auto *newMethod = fieldObj->get("new");
-                    if (newMethod && newMethod->isHostFuncId()) {
-                        if (auto hostName =
-                                vm->getHostFunctionName(newMethod->asHostFuncId())) {
-                            std::vector<Value> newArgs;
-                            newArgs.reserve(fieldArgs.size() + 1);
-                            newArgs.push_back(fieldVal);
-                            newArgs.insert(newArgs.end(), fieldArgs.begin(),
-                                           fieldArgs.end());
-                            return vm->invokeHostFunctionDirect(*hostName, newArgs)
-                                .rawBits();
-                        }
-                    }
-                }
-            }
-        }
-        return Value::makeNull().rawBits();
-    };
-
-    if (receiver.isObjectId()) {
-        ObjectRef recvRef{receiver.asObjectId(), true};
-        auto* obj = vm->getHeap().object(recvRef.id);
-        if (obj) {
-            bool foundViaModule = false;
-            for (const auto& [name, val] : vm->getGlobals()) {
-                // Skip the ambient @ self-binding: class-instance methods
-                // compile to STORE_GLOBAL "this" (ByteCompiler).
-                // After a compiled @-method ran once, globals["this"] holds
-                // the latest instance, whose id matches the receiver of
-                // EVERY subsequent myObj.method() bridge call - treating it
-                // as a module object rerouted class-chain methods into the
-                // module arm (no receiver prepend), and the compiled callee
-                // crashed dereferencing args[0]. The interpreter never takes
-                // this route: its module scan only runs in the direct-field
-                // dispatch arm (VMControlFlow.cpp:588), never for
-                // chain-resolved or prototype methods.
-                if (name == "this") continue;
-                if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
-                    foundViaModule = true;
-                    break;
-                }
-            }
-            // Interpreter parity (VMControlFlow.cpp:575-645): the module
-            // scan only suppresses the receiver when the method does NOT
-            // want self. Host fns want self when registered with a "self"
-            // first param (host_function_wants_self_) or on class
-            // protos; Havel fns/closures want self when their first
-            // param is literally "self" (isClassInstance) or on class
-            // instances. Dropping the receiver here shifted args by one
-            // for self-style methods (observed: {greet: fn(self, name)}
-            // under tiering produced "hi 0" instead of "hi bob" at the
-            // first compiled call). Same rule applies in the non-module
-            // arm below for local plain objects.
-            auto methodWantsSelf = [&](const Value &methodValue) {
-                if (methodValue.isHostFuncId()) {
-                    bool isClassProto = obj->get("__class") != nullptr ||
-                                        obj->get("__struct") != nullptr ||
-                                        obj->get("__is_class") != nullptr;
-                    return isClassProto ||
-                           vm->host_function_wants_self_.count(
-                               methodValue.asHostFuncId()) > 0;
-                }
-                bool isClassInstance = obj->get("__class") != nullptr ||
-                                       obj->get("__struct") != nullptr;
-                const BytecodeFunction *bf = nullptr;
-                if (methodValue.isClosureId()) {
-                    auto *closure =
-                        vm->getHeap().closure(methodValue.asClosureId());
-                    if (closure && closure->chunk)
-                        bf = closure->chunk->getFunction(
-                            closure->function_index);
-                } else if (methodValue.isFunctionObjId()) {
-                    bf = vm->resolveFunctionFromId(
-                        methodValue.asFunctionObjId());
-                }
-                return isClassInstance ||
-                       (bf && !bf->param_names.empty() &&
-                        bf->param_names[0] == "self");
-            };
-            if (foundViaModule) {
-                Value methodValue = vm->getHostObjectField(recvRef, method_name);
-                if (!methodValue.isNull()) {
-                    std::vector<Value> fieldArgs = callArgs;
-                    if (methodWantsSelf(methodValue)) {
-                        fieldArgs.insert(fieldArgs.begin(), receiver);
-                    }
-                    return dispatchField(methodValue, fieldArgs);
-                }
-            } else {
-                auto* classVal = obj->get("__class");
-                if (!classVal) classVal = obj->get("__struct");
-                if (classVal && classVal->isObjectId()) {
-                    passReceiverAsSelf = true;
-                } else if (obj->get("__is_class") || obj->get("__is_struct")) {
-                    passReceiverAsSelf = true;
-                } else {
-                    Value methodValue = vm->getHostObjectField(recvRef, method_name);
-                    if (!methodValue.isNull()) {
-                        passReceiverAsSelf = methodWantsSelf(methodValue);
-                    } else {
-                        passReceiverAsSelf = false;
-                    }
-                }
-            }
-        }
-    }
-
-    if (passReceiverAsSelf) {
-        callArgs.insert(callArgs.begin(), receiver);
-    }
-    const bool receiverPrepended = passReceiverAsSelf;
-
-    if (receiver.isObjectId() && !passReceiverAsSelf) {
-        Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
-        if (!methodValue.isNull()) {
-            return dispatchField(methodValue, callArgs);
-        }
-    }
-
-    // Class prototype chain walk: interpreter CALL_METHOD
-    // (VMControlFlow.cpp:667-699) resolves instance methods not found as
-    // direct fields by walking the __class/__struct prototype object and
-    // its __parent chain. getPrototypeMethod only inspects the direct
-    // class object, so inherited methods were missed and JIT-compiled
-    // calls returned null (observed: Child.baseMethod() -> null at the
-    // first tiered call, interpreter returned 42). Mirror the interpreter
-    // exactly: host funcs and Havel fns/closures are both callable, and
-    // the receiver is prepended unconditionally for class-prototype
-    // methods (isInstanceFunc=false in interp arg prep).
-    if (receiver.isObjectId()) {
-        auto* instObj = vm->getHeap().object(receiver.asObjectId());
-        auto* classProto = instObj;
-        if (classProto) {
-            auto* classVal = classProto->get("__class");
-            if (!classVal) classVal = classProto->get("__struct");
-            if (classVal && classVal->isObjectId()) {
-                classProto = vm->getHeap().object(classVal->asObjectId());
-            } else {
-                classProto = nullptr;
-            }
-            while (classProto) {
-                auto* methodVal = classProto->get(method_name);
-                if (methodVal) {
-                    if (methodVal->isHostFuncId() ||
-                        methodVal->isFunctionObjId() ||
-                        methodVal->isClosureId()) {
-                        std::vector<Value> boundArgs = callArgs;
-                        if (!receiverPrepended) {
-                            boundArgs.insert(boundArgs.begin(), receiver);
-                        }
-                        if (methodVal->isHostFuncId()) {
-                            if (auto hostName =
-                                    vm->getHostFunctionName(methodVal->asHostFuncId())) {
-                                return vm->invokeHostFunctionDirect(*hostName, boundArgs)
-                                    .rawBits();
-                            }
-                        } else {
-                            return vm->callFunction(*methodVal, boundArgs).rawBits();
-                        }
-                    }
-                }
-                auto* parentVal = classProto->get("__parent");
-                if (parentVal && parentVal->isObjectId()) {
-                    classProto = vm->getHeap().object(parentVal->asObjectId());
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    // Closure property call: `closure.prop(args)` — properties attached via
-    // OBJECT_SET live in closure_properties_ (fn.prop = v static state).
-    // The interpreter CALL_METHOD resolves them here (VMControlFlow.cpp:490,
-    // added for debounce's wrapped.cancel()); without this arm the bridge
-    // fell through to the prototype lookup and pushed null from ORC-compiled
-    // callers (observed: wrapped.cancel() -> null at first tiered call).
-    // The interpreter marks these resolved via module (no self arg), so the
-    // receiver must NOT be passed - strip the receiver the default
-    // passReceiverAsSelf=true prepended above.
-    if (receiver.isClosureId()) {
-        auto propIt = vm->closure_properties_.find(receiver.asClosureId());
-        if (propIt != vm->closure_properties_.end()) {
-            auto *props = vm->getHeap().object(propIt->second.id);
-            if (props) {
-                auto it = props->find(method_name);
-                if (it != props->end()) {
-                    std::vector<Value> propArgs = callArgs;
-                    if (receiverPrepended && !propArgs.empty()) {
-                        propArgs.erase(propArgs.begin());
-                    }
-                    if (it->second.isHostFuncId()) {
-                        if (auto hostName =
-                                vm->getHostFunctionName(it->second.asHostFuncId())) {
-                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
-                                .rawBits();
-                        }
-                    } else if (it->second.isFunctionObjId() ||
-                               it->second.isClosureId()) {
-                        return vm->callFunction(it->second, propArgs).rawBits();
-                    }
-                }
-            }
-        }
-    }
-
-    // Host function property call / dotted host name: interpreter CALL_METHOD
-    // resolves host func receivers through hostfunc_properties_ (fn.prop =
-    // v, e.g. wrapped.cancel on a host-wrapped module closure) and dotted
-    // host names ("interval.start" -> receiver "interval" + "." + method)
-    // (VMControlFlow.cpp:439-489). Both resolve module-style: no receiver
-    // arg (strip what passReceiverAsSelf=true prepended). A miss returns
-    // null WITHOUT falling through to prototype/class lookups, mirroring
-    // the interpreter's break.
-    if (receiver.isHostFuncId()) {
-        uint32_t recvIdx = receiver.asHostFuncId();
-        auto propIt = vm->hostfunc_properties_.find(recvIdx);
-        if (propIt != vm->hostfunc_properties_.end()) {
-            auto *props = vm->getHeap().object(propIt->second.id);
-            if (props) {
-                auto it = props->find(method_name);
-                if (it != props->end()) {
-                    std::vector<Value> propArgs = callArgs;
-                    if (receiverPrepended && !propArgs.empty()) {
-                        propArgs.erase(propArgs.begin());
-                    }
-                    if (it->second.isHostFuncId()) {
-                        if (auto hostName =
-                                vm->getHostFunctionName(it->second.asHostFuncId())) {
-                            return vm->invokeHostFunctionDirect(*hostName, propArgs)
-                                .rawBits();
-                        }
-                    } else if (it->second.isFunctionObjId() ||
-                               it->second.isClosureId()) {
-                        return vm->callFunction(it->second, propArgs).rawBits();
-                    }
-                }
-            }
-        }
-        const auto &hostNames = vm->getHostFunctionNames();
-        std::string receiver_name;
-        if (recvIdx < hostNames.size()) {
-            receiver_name = hostNames[recvIdx];
-        }
-        std::string dotted = receiver_name + "." + method_name;
-        for (size_t i = 0; i < hostNames.size(); ++i) {
-            if (hostNames[i] == dotted) {
-                std::vector<Value> propArgs = callArgs;
-                if (receiverPrepended && !propArgs.empty()) {
-                    propArgs.erase(propArgs.begin());
-                }
-                return vm->invokeHostFunctionDirect(dotted, propArgs).rawBits();
-            }
-        }
-        return Value::makeNull().rawBits();
-    }
-
-    // Prototype/module method resolution: getPrototypeMethodValue mirrors
-    // the interpreter's prototype table + module monkey-patch steps and
-    // returns closures/functions as Values (getPrototypeMethod collapses
-    // module-patched closures to a host-index 0 sentinel and misses the
-    // capitalized module globals for string/array/int/etc., so tiered
-    // calls either invoked an unrelated host function or returned null).
-    // Prototype methods are receiver-bound by definition: the interpreter's
-    // OBJECT_GET materializes them as allocateBoundMethod(hostfn, receiver),
-    // so the host function sees the receiver as its first argument. callArgs
-    // already carries it when passReceiverAsSelf was true (the receiver
-    // was inserted up front - non-object receivers like arrays take that
-    // path); insert it only when it is missing, or receiver-dependent
-    // builtins see a doubled receiver (array.push reached with
-    // [recv, recv, value] and threw "expects 2 arguments, got 3" from
-    // JIT-compiled pusher). The patched closure takes the same receiver
-    // argument (interpreter step 1.5 passes it via arg prep).
-    Value protoMethod = vm->getPrototypeMethodValue(receiver, method_name);
-    if (!protoMethod.isNull()) {
-        std::vector<Value> boundArgs;
-        if (passReceiverAsSelf) {
-            boundArgs = callArgs;
-        } else {
-            boundArgs.reserve(callArgs.size() + 1);
-            boundArgs.push_back(receiver);
-            boundArgs.insert(boundArgs.end(), callArgs.begin(),
-                             callArgs.end());
-        }
-        if (protoMethod.isHostFuncId()) {
-            if (auto hostName =
-                    vm->getHostFunctionName(protoMethod.asHostFuncId())) {
-                Value result =
-                    vm->invokeHostFunctionDirect(*hostName, boundArgs);
-                if (!result.isNull()) return result.rawBits();
-            }
-        } else if (protoMethod.isClosureId() ||
-                   protoMethod.isFunctionObjId()) {
-            return vm->callFunction(protoMethod, boundArgs).rawBits();
-        }
-    }
-
-    if (receiver.isObjectId()) {
-        Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
-        if (!methodValue.isNull()) {
-            return dispatchField(methodValue, callArgs);
-        }
-    }
-
+uint64_t havel_vm_call_method(void *vm_ptr, uint64_t receiver_bits, uint32_t method_name_id,
+                              uint64_t *args, uint32_t arg_count) {
+  if (!vm_ptr)
     return Value::makeNull().rawBits();
-}
+  auto *vm = static_cast<VM *>(vm_ptr);
+  // Method bodies run interpreted/re-entered below this JIT frame while
+  // the caller's raw values (receiver staged by the lowering, live
+  // vstack temps) are unrooted.
+  auto gc_guard = vm->gcDeferGuardPublic();
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
 
-uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    auto* chunk = vm->getCurrentChunk();
-    if (!chunk || !chunk->getFunction(func_index))
-        return Value::makeNull().rawBits();
-    const auto* target = chunk->getFunction(func_index);
+  Value receiver;
+  std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
+  const std::string method_name = chunk->getString(method_name_id);
+  if (method_name.empty())
+    return Value::makeNull().rawBits();
 
- GCHeap::RuntimeClosure closure;
- closure.function_index = func_index;
- closure.chunk = chunk;
- closure.chunk_ref = vm->findOwningChunk(chunk);
- closure.upvalues.reserve(target->upvalues.size());
-
- auto& mainChunk = vm->getMainChunk();
- if (mainChunk && chunk != mainChunk.get()) {
-     closure.module_globals = std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
- }
-
-    for (const auto& descriptor : target->upvalues) {
-        if (descriptor.captures_local) {
-            uint32_t abs = vm->toAbsoluteLocalPublic(descriptor.index);
-            auto& open_uv = vm->openUpvaluesPublic();
-            auto open_it = open_uv.find(abs);
-            if (open_it == open_uv.end()) {
-                auto cell = std::make_shared<GCHeap::UpvalueCell>();
-                cell->is_open = true;
-                cell->open_index = descriptor.index;
-                cell->locals_base = static_cast<uint32_t>(vm->currentLocalsBasePublic());
-                open_uv.emplace(abs, cell);
-                closure.upvalues.push_back(std::move(cell));
-            } else {
-                closure.upvalues.push_back(open_it->second);
-            }
-        } else {
-            auto* parent_closure = vm->currentClosurePublic();
-            if (!parent_closure || descriptor.index >= parent_closure->upvalues.size())
-                return Value::makeNull().rawBits();
-            closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
+  // Lazy module proxy: the interpreter's CALL_METHOD path
+  // (VMControlFlow) triggers module initialization before field lookup -
+  // a proxy object only carries __lazy__/__module__ markers. Without
+  // this, JIT-compiled calls resolved methods against the bare proxy:
+  // scopeResolveUpvalue's bc.add_upvalue_to returned null from JIT code
+  // (no descriptor ever registered), while interpreted it worked.
+  if (receiver.isObjectId()) {
+    auto *proxy = vm->getHeap().object(receiver.asObjectId());
+    if (proxy) {
+      auto *lazyFlag = proxy->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+        auto *modNameVal = proxy->get("__module__");
+        std::string modName;
+        if (modNameVal) {
+          if (modNameVal->isStringId()) {
+            if (auto *s = vm->getHeap().string(modNameVal->asStringId()))
+              modName = *s;
+          } else if (modNameVal->isStringValId()) {
+            modName = chunk->getString(modNameVal->asStringValId());
+          }
         }
+        if (!modName.empty()) {
+          vm->ensureModuleLoaded(modName);
+          Value loaded;
+          if (vm->resolveGlobalPublic(modName, &loaded) && loaded.isObjectId()) {
+            receiver = loaded;
+          } else {
+            std::string capModName = modName;
+            capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+            if (vm->resolveGlobalPublic(capModName, &loaded) && loaded.isObjectId()) {
+              receiver = loaded;
+            }
+          }
+        }
+      }
     }
+  }
 
- auto ref = vm->getHeap().allocateClosure(std::move(closure));
- return Value::makeClosureId(ref.id).rawBits();
+  std::vector<Value> callArgs;
+  callArgs.reserve(static_cast<size_t>(arg_count) + 1);
+  for (uint32_t i = 0; i < arg_count; ++i) {
+    Value v;
+    std::memcpy(&v, &args[i], sizeof(uint64_t));
+    callArgs.push_back(v);
+  }
+
+  bool passReceiverAsSelf = true;
+
+  // Field dispatch shared by the object-field paths below: a field value
+  // may be a host fn, a havel fn/closure, or a class prototype stored as
+  // a field (interpreter isClassNewCall, VMControlFlow.cpp:646-662) -
+  // the last is invoked through its "new" host method with
+  // (classProto, ...args), never called directly. Calling an ObjectId as
+  // a fn segfaulted from ORC-compiled code (b.shape(3,4) where shape is
+  // a class proto).
+  auto dispatchField = [&](const Value &fieldVal, const std::vector<Value> &fieldArgs) -> uint64_t {
+    if (fieldVal.isHostFuncId()) {
+      if (auto hostName = vm->getHostFunctionName(fieldVal.asHostFuncId())) {
+        return vm->invokeHostFunctionDirect(*hostName, fieldArgs).rawBits();
+      }
+      return Value::makeNull().rawBits();
+    }
+    if (fieldVal.isFunctionObjId() || fieldVal.isClosureId()) {
+      return vm->callFunction(fieldVal, fieldArgs).rawBits();
+    }
+    if (fieldVal.isObjectId()) {
+      auto *fieldObj = vm->getHeap().object(fieldVal.asObjectId());
+      if (fieldObj) {
+        auto *isClassVal = fieldObj->get("__is_class");
+        if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+          auto *newMethod = fieldObj->get("new");
+          if (newMethod && newMethod->isHostFuncId()) {
+            if (auto hostName = vm->getHostFunctionName(newMethod->asHostFuncId())) {
+              std::vector<Value> newArgs;
+              newArgs.reserve(fieldArgs.size() + 1);
+              newArgs.push_back(fieldVal);
+              newArgs.insert(newArgs.end(), fieldArgs.begin(), fieldArgs.end());
+              return vm->invokeHostFunctionDirect(*hostName, newArgs).rawBits();
+            }
+          }
+        }
+      }
+    }
+    return Value::makeNull().rawBits();
+  };
+
+  if (receiver.isObjectId()) {
+    ObjectRef recvRef{receiver.asObjectId(), true};
+    auto *obj = vm->getHeap().object(recvRef.id);
+    if (obj) {
+      bool foundViaModule = false;
+      for (const auto &[name, val] : vm->getGlobals()) {
+        // Skip the ambient @ self-binding: class-instance methods
+        // compile to STORE_GLOBAL "this" (ByteCompiler).
+        // After a compiled @-method ran once, globals["this"] holds
+        // the latest instance, whose id matches the receiver of
+        // EVERY subsequent myObj.method() bridge call - treating it
+        // as a module object rerouted class-chain methods into the
+        // module arm (no receiver prepend), and the compiled callee
+        // crashed dereferencing args[0]. The interpreter never takes
+        // this route: its module scan only runs in the direct-field
+        // dispatch arm (VMControlFlow.cpp:588), never for
+        // chain-resolved or prototype methods.
+        if (name == "this")
+          continue;
+        if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
+          foundViaModule = true;
+          break;
+        }
+      }
+      if (!foundViaModule && vm->isNamespaceObjectGlobal(receiver.asObjectId())) {
+        // Shared classifier (ambient + module base + pushed
+        // frames): module maps are no longer seeded with the
+        // stdlib, so namespace objects like `bit`/`fs` are not in
+        // the ambient during module-context calls - the loop
+        // above alone would misclassify them as instance
+        // receivers and shift the args by one. The helper skips
+        // the "this" binding, matching the loop above.
+        foundViaModule = true;
+      }
+      // Interpreter parity (VMControlFlow.cpp:575-645): the module
+      // scan only suppresses the receiver when the method does NOT
+      // want self. Host fns want self when registered with a "self"
+      // first param (host_function_wants_self_) or on class
+      // protos; Havel fns/closures want self when their first
+      // param is literally "self" (isClassInstance) or on class
+      // instances. Dropping the receiver here shifted args by one
+      // for self-style methods (observed: {greet: fn(self, name)}
+      // under tiering produced "hi 0" instead of "hi bob" at the
+      // first compiled call). Same rule applies in the non-module
+      // arm below for local plain objects.
+      auto methodWantsSelf = [&](const Value &methodValue) {
+        if (methodValue.isHostFuncId()) {
+          bool isClassProto = obj->get("__class") != nullptr || obj->get("__struct") != nullptr ||
+                              obj->get("__is_class") != nullptr;
+          return isClassProto ||
+                 vm->host_function_wants_self_.count(methodValue.asHostFuncId()) > 0;
+        }
+        bool isClassInstance = obj->get("__class") != nullptr || obj->get("__struct") != nullptr;
+        const BytecodeFunction *bf = nullptr;
+        if (methodValue.isClosureId()) {
+          auto *closure = vm->getHeap().closure(methodValue.asClosureId());
+          if (closure && closure->chunk)
+            bf = closure->chunk->getFunction(closure->function_index);
+        } else if (methodValue.isFunctionObjId()) {
+          bf = vm->resolveFunctionFromId(methodValue.asFunctionObjId());
+        }
+        return isClassInstance || (bf && !bf->param_names.empty() && bf->param_names[0] == "self");
+      };
+      if (foundViaModule) {
+        Value methodValue = vm->getHostObjectField(recvRef, method_name);
+        if (!methodValue.isNull()) {
+          std::vector<Value> fieldArgs = callArgs;
+          if (methodWantsSelf(methodValue)) {
+            fieldArgs.insert(fieldArgs.begin(), receiver);
+          }
+          return dispatchField(methodValue, fieldArgs);
+        }
+      } else {
+        auto *classVal = obj->get("__class");
+        if (!classVal)
+          classVal = obj->get("__struct");
+        if (classVal && classVal->isObjectId()) {
+          passReceiverAsSelf = true;
+        } else if (obj->get("__is_class") || obj->get("__is_struct")) {
+          passReceiverAsSelf = true;
+        } else {
+          Value methodValue = vm->getHostObjectField(recvRef, method_name);
+          if (!methodValue.isNull()) {
+            passReceiverAsSelf = methodWantsSelf(methodValue);
+          } else {
+            passReceiverAsSelf = false;
+          }
+        }
+      }
+    }
+  }
+
+  if (passReceiverAsSelf) {
+    callArgs.insert(callArgs.begin(), receiver);
+  }
+  const bool receiverPrepended = passReceiverAsSelf;
+
+  if (receiver.isObjectId() && !passReceiverAsSelf) {
+    Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+    if (!methodValue.isNull()) {
+      return dispatchField(methodValue, callArgs);
+    }
+  }
+
+  // Class prototype chain walk: interpreter CALL_METHOD
+  // (VMControlFlow.cpp:667-699) resolves instance methods not found as
+  // direct fields by walking the __class/__struct prototype object and
+  // its __parent chain. getPrototypeMethod only inspects the direct
+  // class object, so inherited methods were missed and JIT-compiled
+  // calls returned null (observed: Child.baseMethod() -> null at the
+  // first tiered call, interpreter returned 42). Mirror the interpreter
+  // exactly: host funcs and Havel fns/closures are both callable, and
+  // the receiver is prepended unconditionally for class-prototype
+  // methods (isInstanceFunc=false in interp arg prep).
+  if (receiver.isObjectId()) {
+    auto *instObj = vm->getHeap().object(receiver.asObjectId());
+    auto *classProto = instObj;
+    if (classProto) {
+      auto *classVal = classProto->get("__class");
+      if (!classVal)
+        classVal = classProto->get("__struct");
+      if (classVal && classVal->isObjectId()) {
+        classProto = vm->getHeap().object(classVal->asObjectId());
+      } else {
+        classProto = nullptr;
+      }
+      while (classProto) {
+        auto *methodVal = classProto->get(method_name);
+        if (methodVal) {
+          if (methodVal->isHostFuncId() || methodVal->isFunctionObjId() ||
+              methodVal->isClosureId()) {
+            std::vector<Value> boundArgs = callArgs;
+            if (!receiverPrepended) {
+              boundArgs.insert(boundArgs.begin(), receiver);
+            }
+            if (methodVal->isHostFuncId()) {
+              if (auto hostName = vm->getHostFunctionName(methodVal->asHostFuncId())) {
+                return vm->invokeHostFunctionDirect(*hostName, boundArgs).rawBits();
+              }
+            } else {
+              return vm->callFunction(*methodVal, boundArgs).rawBits();
+            }
+          }
+        }
+        auto *parentVal = classProto->get("__parent");
+        if (parentVal && parentVal->isObjectId()) {
+          classProto = vm->getHeap().object(parentVal->asObjectId());
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  // Closure property call: `closure.prop(args)` — properties attached via
+  // OBJECT_SET live in closure_properties_ (fn.prop = v static state).
+  // The interpreter CALL_METHOD resolves them here (VMControlFlow.cpp:490,
+  // added for debounce's wrapped.cancel()); without this arm the bridge
+  // fell through to the prototype lookup and pushed null from ORC-compiled
+  // callers (observed: wrapped.cancel() -> null at first tiered call).
+  // The interpreter marks these resolved via module (no self arg), so the
+  // receiver must NOT be passed - strip the receiver the default
+  // passReceiverAsSelf=true prepended above.
+  if (receiver.isClosureId()) {
+    auto propIt = vm->closure_properties_.find(receiver.asClosureId());
+    if (propIt != vm->closure_properties_.end()) {
+      auto *props = vm->getHeap().object(propIt->second.id);
+      if (props) {
+        auto it = props->find(method_name);
+        if (it != props->end()) {
+          std::vector<Value> propArgs = callArgs;
+          if (receiverPrepended && !propArgs.empty()) {
+            propArgs.erase(propArgs.begin());
+          }
+          if (it->second.isHostFuncId()) {
+            if (auto hostName = vm->getHostFunctionName(it->second.asHostFuncId())) {
+              return vm->invokeHostFunctionDirect(*hostName, propArgs).rawBits();
+            }
+          } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+            return vm->callFunction(it->second, propArgs).rawBits();
+          }
+        }
+      }
+    }
+  }
+
+  // Host function property call / dotted host name: interpreter CALL_METHOD
+  // resolves host func receivers through hostfunc_properties_ (fn.prop =
+  // v, e.g. wrapped.cancel on a host-wrapped module closure) and dotted
+  // host names ("interval.start" -> receiver "interval" + "." + method)
+  // (VMControlFlow.cpp:439-489). Both resolve module-style: no receiver
+  // arg (strip what passReceiverAsSelf=true prepended). A miss returns
+  // null WITHOUT falling through to prototype/class lookups, mirroring
+  // the interpreter's break.
+  if (receiver.isHostFuncId()) {
+    uint32_t recvIdx = receiver.asHostFuncId();
+    auto propIt = vm->hostfunc_properties_.find(recvIdx);
+    if (propIt != vm->hostfunc_properties_.end()) {
+      auto *props = vm->getHeap().object(propIt->second.id);
+      if (props) {
+        auto it = props->find(method_name);
+        if (it != props->end()) {
+          std::vector<Value> propArgs = callArgs;
+          if (receiverPrepended && !propArgs.empty()) {
+            propArgs.erase(propArgs.begin());
+          }
+          if (it->second.isHostFuncId()) {
+            if (auto hostName = vm->getHostFunctionName(it->second.asHostFuncId())) {
+              return vm->invokeHostFunctionDirect(*hostName, propArgs).rawBits();
+            }
+          } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+            return vm->callFunction(it->second, propArgs).rawBits();
+          }
+        }
+      }
+    }
+    const auto &hostNames = vm->getHostFunctionNames();
+    std::string receiver_name;
+    if (recvIdx < hostNames.size()) {
+      receiver_name = hostNames[recvIdx];
+    }
+    std::string dotted = receiver_name + "." + method_name;
+    for (size_t i = 0; i < hostNames.size(); ++i) {
+      if (hostNames[i] == dotted) {
+        std::vector<Value> propArgs = callArgs;
+        if (receiverPrepended && !propArgs.empty()) {
+          propArgs.erase(propArgs.begin());
+        }
+        return vm->invokeHostFunctionDirect(dotted, propArgs).rawBits();
+      }
+    }
+    return Value::makeNull().rawBits();
+  }
+
+  // Prototype/module method resolution: getPrototypeMethodValue mirrors
+  // the interpreter's prototype table + module monkey-patch steps and
+  // returns closures/functions as Values (getPrototypeMethod collapses
+  // module-patched closures to a host-index 0 sentinel and misses the
+  // capitalized module globals for string/array/int/etc., so tiered
+  // calls either invoked an unrelated host function or returned null).
+  // Prototype methods are receiver-bound by definition: the interpreter's
+  // OBJECT_GET materializes them as allocateBoundMethod(hostfn, receiver),
+  // so the host function sees the receiver as its first argument. callArgs
+  // already carries it when passReceiverAsSelf was true (the receiver
+  // was inserted up front - non-object receivers like arrays take that
+  // path); insert it only when it is missing, or receiver-dependent
+  // builtins see a doubled receiver (array.push reached with
+  // [recv, recv, value] and threw "expects 2 arguments, got 3" from
+  // JIT-compiled pusher). The patched closure takes the same receiver
+  // argument (interpreter step 1.5 passes it via arg prep).
+  Value protoMethod = vm->getPrototypeMethodValue(receiver, method_name);
+  if (!protoMethod.isNull()) {
+    std::vector<Value> boundArgs;
+    if (passReceiverAsSelf) {
+      boundArgs = callArgs;
+    } else {
+      boundArgs.reserve(callArgs.size() + 1);
+      boundArgs.push_back(receiver);
+      boundArgs.insert(boundArgs.end(), callArgs.begin(), callArgs.end());
+    }
+    if (protoMethod.isHostFuncId()) {
+      if (auto hostName = vm->getHostFunctionName(protoMethod.asHostFuncId())) {
+        Value result = vm->invokeHostFunctionDirect(*hostName, boundArgs);
+        if (!result.isNull())
+          return result.rawBits();
+      }
+    } else if (protoMethod.isClosureId() || protoMethod.isFunctionObjId()) {
+      return vm->callFunction(protoMethod, boundArgs).rawBits();
+    }
+  }
+
+  if (receiver.isObjectId()) {
+    Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+    if (!methodValue.isNull()) {
+      return dispatchField(methodValue, callArgs);
+    }
+  }
+
+  return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_array_del(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_closure_new(void *vm_ptr, uint32_t func_index) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk || !chunk->getFunction(func_index))
+    return Value::makeNull().rawBits();
+  const auto *target = chunk->getFunction(func_index);
+
+  GCHeap::RuntimeClosure closure;
+  closure.function_index = func_index;
+  closure.chunk = chunk;
+  closure.chunk_ref = vm->findOwningChunk(chunk);
+  closure.upvalues.reserve(target->upvalues.size());
+
+  auto &mainChunk = vm->getMainChunk();
+  if (mainChunk && chunk != mainChunk.get()) {
+    closure.module_globals =
+        std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
+  }
+
+  for (const auto &descriptor : target->upvalues) {
+    if (descriptor.captures_local) {
+      uint32_t abs = vm->toAbsoluteLocalPublic(descriptor.index);
+      auto &open_uv = vm->openUpvaluesPublic();
+      auto open_it = open_uv.find(abs);
+      if (open_it == open_uv.end()) {
+        auto cell = std::make_shared<GCHeap::UpvalueCell>();
+        cell->is_open = true;
+        cell->open_index = descriptor.index;
+        cell->locals_base = static_cast<uint32_t>(vm->currentLocalsBasePublic());
+        open_uv.emplace(abs, cell);
+        closure.upvalues.push_back(std::move(cell));
+      } else {
+        closure.upvalues.push_back(open_it->second);
+      }
+    } else {
+      auto *parent_closure = vm->currentClosurePublic();
+      if (!parent_closure || descriptor.index >= parent_closure->upvalues.size())
+        return Value::makeNull().rawBits();
+      closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
+    }
+  }
+
+  auto ref = vm->getHeap().allocateClosure(std::move(closure));
+  return Value::makeClosureId(ref.id).rawBits();
+}
+
+uint64_t havel_vm_array_del(void *vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, idx;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeBool(false).rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeBool(false).rawBits();
+  if (!arr.isArrayId())
+    return Value::makeBool(false).rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeBool(false).rawBits();
   int64_t i = vm->toIntPublic(idx);
-  if (i < 0) i += static_cast<int64_t>(a->size());
-  if (i < 0 || static_cast<size_t>(i) >= a->size()) return Value::makeBool(false).rawBits();
+  if (i < 0)
+    i += static_cast<int64_t>(a->size());
+  if (i < 0 || static_cast<size_t>(i) >= a->size())
+    return Value::makeBool(false).rawBits();
   a->erase(a->begin() + static_cast<size_t>(i));
   return Value::makeBool(true).rawBits();
 }
 
-uint64_t havel_vm_array_freeze(void* vm_ptr, uint64_t arr_bits) {
-  if (!vm_ptr) return arr_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_freeze(void *vm_ptr, uint64_t arr_bits) {
+  if (!vm_ptr)
+    return arr_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return arr_bits;
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (a) a->frozen = true;
+  if (!arr.isArrayId())
+    return arr_bits;
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (a)
+    a->frozen = true;
   return arr_bits;
 }
 
-uint64_t havel_vm_array_pop(void* vm_ptr, uint64_t arr_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_pop(void *vm_ptr, uint64_t arr_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeNull().rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a || a->frozen || a->empty()) return Value::makeNull().rawBits();
+  if (!arr.isArrayId())
+    return Value::makeNull().rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a || a->frozen || a->empty())
+    return Value::makeNull().rawBits();
   Value back = a->back();
   a->pop_back();
   vm->getHeap().bumpArrayVersion(arr.asArrayId());
   return back.rawBits();
 }
 
-uint64_t havel_vm_array_has(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_has(void *vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, val;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeBool(false).rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeBool(false).rawBits();
-  for (const auto& e : *a) {
+  if (!arr.isArrayId())
+    return Value::makeBool(false).rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeBool(false).rawBits();
+  for (const auto &e : *a) {
     Value ev = e;
-    if (ev.rawBits() == val.rawBits()) return Value::makeBool(true).rawBits();
+    if (ev.rawBits() == val.rawBits())
+      return Value::makeBool(true).rawBits();
   }
   return Value::makeBool(false).rawBits();
 }
 
-uint64_t havel_vm_array_find(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeInt(-1).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_find(void *vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeInt(-1).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, val;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeInt(-1).rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeInt(-1).rawBits();
+  if (!arr.isArrayId())
+    return Value::makeInt(-1).rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeInt(-1).rawBits();
   for (size_t i = 0; i < a->size(); i++) {
     if ((*a)[i].rawBits() == val.rawBits())
       return Value::makeInt(static_cast<int64_t>(i)).rawBits();
@@ -1992,15 +2136,18 @@ uint64_t havel_vm_array_find(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits)
   return Value::makeInt(-1).rawBits();
 }
 
-uint64_t havel_vm_array_map(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_map(void *vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, fn;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeNull().rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeNull().rawBits();
+  if (!arr.isArrayId())
+    return Value::makeNull().rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeNull().rawBits();
   // Mirror interpreter ARRAY_MAP (VMCollections.cpp): the source array and
   // the result are popped/held only in C++ while the mapped fn runs, which
   // can allocate and trigger GC; pin both as external roots and re-fetch
@@ -2008,7 +2155,7 @@ uint64_t havel_vm_array_map(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
   // unreferenced result (and a temporary source array) out from under the
   // bridge -> use-after-free.
   auto resultRef = vm->getHeap().allocateArray();
-  auto* result = vm->getHeap().array(resultRef.id);
+  auto *result = vm->getHeap().array(resultRef.id);
   uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
   uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
@@ -2022,19 +2169,22 @@ uint64_t havel_vm_array_map(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
-uint64_t havel_vm_array_filter(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_filter(void *vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, fn;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeNull().rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeNull().rawBits();
+  if (!arr.isArrayId())
+    return Value::makeNull().rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeNull().rawBits();
   // Same GC-safety contract as havel_vm_array_map: pin source + result
   // across the predicate calls, re-fetch after each one.
   auto resultRef = vm->getHeap().allocateArray();
-  auto* result = vm->getHeap().array(resultRef.id);
+  auto *result = vm->getHeap().array(resultRef.id);
   uint64_t resultRootId = vm->pinExternalRoot(Value::makeArrayId(resultRef.id));
   uint64_t srcRootId = vm->pinExternalRoot(arr);
   for (size_t i = 0; i < a->size(); i++) {
@@ -2050,16 +2200,20 @@ uint64_t havel_vm_array_filter(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   return Value::makeArrayId(resultRef.id).rawBits();
 }
 
-uint64_t havel_vm_array_reduce(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits, uint64_t init_bits) {
-  if (!vm_ptr) return init_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_reduce(void *vm_ptr, uint64_t arr_bits, uint64_t fn_bits,
+                               uint64_t init_bits) {
+  if (!vm_ptr)
+    return init_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, fn, initial;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
   std::memcpy(&initial, &init_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return init_bits;
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return init_bits;
+  if (!arr.isArrayId())
+    return init_bits;
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return init_bits;
   // Same GC-safety contract: pin the source across the reducer calls
   // (initial/acc are Value copies on the C++ stack, but the array is only
   // reachable through this pointer while the reducer runs).
@@ -2073,15 +2227,18 @@ uint64_t havel_vm_array_reduce(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits
   return acc.rawBits();
 }
 
-uint64_t havel_vm_array_foreach(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_array_foreach(void *vm_ptr, uint64_t arr_bits, uint64_t fn_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value arr, fn;
   std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
-  if (!arr.isArrayId()) return Value::makeNull().rawBits();
-  auto* a = vm->getHeap().array(arr.asArrayId());
-  if (!a) return Value::makeNull().rawBits();
+  if (!arr.isArrayId())
+    return Value::makeNull().rawBits();
+  auto *a = vm->getHeap().array(arr.asArrayId());
+  if (!a)
+    return Value::makeNull().rawBits();
   // Same GC-safety contract: the source array is unreachable from VM
   // roots while the callback runs (popped by the lowering); pin it.
   uint64_t srcRootId = vm->pinExternalRoot(arr);
@@ -2093,25 +2250,30 @@ uint64_t havel_vm_array_foreach(void* vm_ptr, uint64_t arr_bits, uint64_t fn_bit
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_set_new(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_set_new(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   auto ref = vm->getHeap().allocateSet();
   return Value::makeSetId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_set_set(void* vm_ptr, uint64_t set_bits, uint64_t val_bits, uint64_t key_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_set_set(void *vm_ptr, uint64_t set_bits, uint64_t val_bits, uint64_t key_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value setVal, val, key;
   std::memcpy(&setVal, &set_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
   std::memcpy(&key, &key_bits, sizeof(uint64_t));
-  if (!setVal.isSetId()) return Value::makeNull().rawBits();
-  auto* s = vm->getHeap().set(setVal.asSetId());
-  if (!s) return Value::makeNull().rawBits();
+  if (!setVal.isSetId())
+    return Value::makeNull().rawBits();
+  auto *s = vm->getHeap().set(setVal.asSetId());
+  if (!s)
+    return Value::makeNull().rawBits();
   auto k = vm->resolveKeyPublic(key);
-  if (!k) return Value::makeNull().rawBits();
+  if (!k)
+    return Value::makeNull().rawBits();
   if (s->find(*k) != s->end()) {
     (*s)[*k] = val;
   } else {
@@ -2121,88 +2283,103 @@ uint64_t havel_vm_set_set(void* vm_ptr, uint64_t set_bits, uint64_t val_bits, ui
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_set_del(void* vm_ptr, uint64_t set_bits, uint64_t key_bits) {
-    if (!vm_ptr) return Value::makeBool(false).rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value setVal, key;
-    std::memcpy(&setVal, &set_bits, sizeof(uint64_t));
-    std::memcpy(&key, &key_bits, sizeof(uint64_t));
-    if (!setVal.isSetId()) return Value::makeBool(false).rawBits();
-    auto* s = vm->getHeap().set(setVal.asSetId());
-    if (!s) return Value::makeBool(false).rawBits();
-    auto k = vm->resolveKeyPublic(key);
-    if (!k) return Value::makeBool(false).rawBits();
-    // Interpreter parity (VMCollections.cpp SET_DEL): pushes a bool -
-    // true when the key was present and removed (version bump only on
-    // actual removal). Previously returned null, diverging from the
-    // interpreter for expression-context use.
-    const bool removed = s->erase(*k) > 0;
-    if (removed) {
-        vm->getHeap().bumpSetVersion(setVal.asSetId());
-    }
-    return Value::makeBool(removed).rawBits();
+uint64_t havel_vm_set_del(void *vm_ptr, uint64_t set_bits, uint64_t key_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value setVal, key;
+  std::memcpy(&setVal, &set_bits, sizeof(uint64_t));
+  std::memcpy(&key, &key_bits, sizeof(uint64_t));
+  if (!setVal.isSetId())
+    return Value::makeBool(false).rawBits();
+  auto *s = vm->getHeap().set(setVal.asSetId());
+  if (!s)
+    return Value::makeBool(false).rawBits();
+  auto k = vm->resolveKeyPublic(key);
+  if (!k)
+    return Value::makeBool(false).rawBits();
+  // Interpreter parity (VMCollections.cpp SET_DEL): pushes a bool -
+  // true when the key was present and removed (version bump only on
+  // actual removal). Previously returned null, diverging from the
+  // interpreter for expression-context use.
+  const bool removed = s->erase(*k) > 0;
+  if (removed) {
+    vm->getHeap().bumpSetVersion(setVal.asSetId());
+  }
+  return Value::makeBool(removed).rawBits();
 }
 
-uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits, uint64_t step_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_range_step_new(void *vm_ptr, uint64_t start_bits, uint64_t end_bits,
+                                 uint64_t step_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value start, end, step;
   std::memcpy(&start, &start_bits, sizeof(uint64_t));
   std::memcpy(&end, &end_bits, sizeof(uint64_t));
   std::memcpy(&step, &step_bits, sizeof(uint64_t));
-    int64_t start_val = vm->toIntPublic(start);
-    int64_t end_val = vm->toIntPublic(end);
-    int64_t step_val = vm->toIntPublic(step);
-    auto ref = vm->getHeap().allocateRange(start_val, end_val, step_val);
-    return Value::makeRangeId(ref.id).rawBits();
+  int64_t start_val = vm->toIntPublic(start);
+  int64_t end_val = vm->toIntPublic(end);
+  int64_t step_val = vm->toIntPublic(step);
+  auto ref = vm->getHeap().allocateRange(start_val, end_val, step_val);
+  return Value::makeRangeId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_object_keys(void* vm_ptr, uint64_t obj_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_object_keys(void *vm_ptr, uint64_t obj_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeNull().rawBits();
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateArray();
-  auto* arr = vm->getHeap().array(ref.id);
-  for (const auto& [k, v] : o->data) {
+  auto *arr = vm->getHeap().array(ref.id);
+  for (const auto &[k, v] : o->data) {
     auto strRef = vm->createRuntimeString(k);
     arr->push_back(Value::makeStringId(strRef.id));
   }
   return Value::makeArrayId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_object_values(void* vm_ptr, uint64_t obj_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_object_values(void *vm_ptr, uint64_t obj_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeNull().rawBits();
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateArray();
-  auto* arr = vm->getHeap().array(ref.id);
-  for (const auto& [k, v] : o->data) {
+  auto *arr = vm->getHeap().array(ref.id);
+  for (const auto &[k, v] : o->data) {
     arr->push_back(v);
   }
   return Value::makeArrayId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_object_entries(void* vm_ptr, uint64_t obj_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_object_entries(void *vm_ptr, uint64_t obj_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeNull().rawBits();
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateArray();
-  auto* arr = vm->getHeap().array(ref.id);
-  for (const auto& [k, v] : o->data) {
+  auto *arr = vm->getHeap().array(ref.id);
+  for (const auto &[k, v] : o->data) {
     auto pairRef = vm->getHeap().allocateArray();
-    auto* pair = vm->getHeap().array(pairRef.id);
+    auto *pair = vm->getHeap().array(pairRef.id);
     auto strRef = vm->createRuntimeString(k);
     pair->push_back(Value::makeStringId(strRef.id));
     pair->push_back(v);
@@ -2211,44 +2388,54 @@ uint64_t havel_vm_object_entries(void* vm_ptr, uint64_t obj_bits) {
   return Value::makeArrayId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_object_has(void* vm_ptr, uint64_t obj_bits, uint32_t key_id) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeBool(false).rawBits();
+uint64_t havel_vm_object_has(void *vm_ptr, uint64_t obj_bits, uint32_t key_id) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeBool(false).rawBits();
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeBool(false).rawBits();
-  const std::string& key = chunk->getString(key_id);
+  if (!obj.isObjectId())
+    return Value::makeBool(false).rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeBool(false).rawBits();
+  const std::string &key = chunk->getString(key_id);
   return Value::makeBool(o->data.count(key) > 0).rawBits();
 }
 
-uint64_t havel_vm_object_delete(void* vm_ptr, uint64_t obj_bits, uint32_t key_id) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeBool(false).rawBits();
+uint64_t havel_vm_object_delete(void *vm_ptr, uint64_t obj_bits, uint32_t key_id) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeBool(false).rawBits();
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeBool(false).rawBits();
-  const std::string& key = chunk->getString(key_id);
+  if (!obj.isObjectId())
+    return Value::makeBool(false).rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeBool(false).rawBits();
+  const std::string &key = chunk->getString(key_id);
   return Value::makeBool(o->data.erase(key) > 0).rawBits();
 }
 
-uint64_t havel_vm_object_new_unsorted(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_object_new_unsorted(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   auto ref = vm->getHeap().allocateObject(false);
   return Value::makeObjectId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_upper(void* vm_ptr, uint64_t str_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_upper(void *vm_ptr, uint64_t str_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
@@ -2257,9 +2444,10 @@ uint64_t havel_vm_string_upper(void* vm_ptr, uint64_t str_bits) {
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_lower(void* vm_ptr, uint64_t str_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_lower(void *vm_ptr, uint64_t str_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
@@ -2268,9 +2456,10 @@ uint64_t havel_vm_string_lower(void* vm_ptr, uint64_t str_bits) {
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_trim(void* vm_ptr, uint64_t str_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_trim(void *vm_ptr, uint64_t str_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
@@ -2284,9 +2473,11 @@ uint64_t havel_vm_string_trim(void* vm_ptr, uint64_t str_bits) {
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_sub(void* vm_ptr, uint64_t str_bits, uint64_t start_bits, uint64_t len_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_sub(void *vm_ptr, uint64_t str_bits, uint64_t start_bits,
+                             uint64_t len_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, sv, lv;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&sv, &start_bits, sizeof(uint64_t));
@@ -2294,29 +2485,36 @@ uint64_t havel_vm_string_sub(void* vm_ptr, uint64_t str_bits, uint64_t start_bit
   std::string s = vm->toString(v);
   int64_t start = vm->toIntPublic(sv);
   int64_t len = vm->toIntPublic(lv);
-  if (start < 0) start = 0;
-  if (start > static_cast<int64_t>(s.size())) start = static_cast<int64_t>(s.size());
-  if (len < 0) len = 0;
-  auto ref = vm->createRuntimeString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
+  if (start < 0)
+    start = 0;
+  if (start > static_cast<int64_t>(s.size()))
+    start = static_cast<int64_t>(s.size());
+  if (len < 0)
+    len = 0;
+  auto ref =
+      vm->createRuntimeString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_find(void* vm_ptr, uint64_t str_bits, uint64_t sub_bits) {
-  if (!vm_ptr) return Value::makeInt(-1).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_find(void *vm_ptr, uint64_t str_bits, uint64_t sub_bits) {
+  if (!vm_ptr)
+    return Value::makeInt(-1).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, sub;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&sub, &sub_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
   std::string subStr = vm->toString(sub);
   auto pos = s.find(subStr);
-  if (pos == std::string::npos) return Value::makeInt(-1).rawBits();
+  if (pos == std::string::npos)
+    return Value::makeInt(-1).rawBits();
   return Value::makeInt(static_cast<int64_t>(pos)).rawBits();
 }
 
-uint64_t havel_vm_string_has(void* vm_ptr, uint64_t str_bits, uint64_t sub_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_has(void *vm_ptr, uint64_t str_bits, uint64_t sub_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, sub;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&sub, &sub_bits, sizeof(uint64_t));
@@ -2325,9 +2523,10 @@ uint64_t havel_vm_string_has(void* vm_ptr, uint64_t str_bits, uint64_t sub_bits)
   return Value::makeBool(s.find(subStr) != std::string::npos).rawBits();
 }
 
-uint64_t havel_vm_string_starts(void* vm_ptr, uint64_t str_bits, uint64_t pre_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_starts(void *vm_ptr, uint64_t str_bits, uint64_t pre_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, pre;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&pre, &pre_bits, sizeof(uint64_t));
@@ -2336,27 +2535,31 @@ uint64_t havel_vm_string_starts(void* vm_ptr, uint64_t str_bits, uint64_t pre_bi
   return Value::makeBool(s.size() >= p.size() && s.compare(0, p.size(), p) == 0).rawBits();
 }
 
-uint64_t havel_vm_string_ends(void* vm_ptr, uint64_t str_bits, uint64_t suf_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_ends(void *vm_ptr, uint64_t str_bits, uint64_t suf_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, suf;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&suf, &suf_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
   std::string sf = vm->toString(suf);
-  return Value::makeBool(s.size() >= sf.size() && s.compare(s.size() - sf.size(), sf.size(), sf) == 0).rawBits();
+  return Value::makeBool(s.size() >= sf.size() &&
+                         s.compare(s.size() - sf.size(), sf.size(), sf) == 0)
+      .rawBits();
 }
 
-uint64_t havel_vm_string_split(void* vm_ptr, uint64_t str_bits, uint64_t delim_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_split(void *vm_ptr, uint64_t str_bits, uint64_t delim_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, delim;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&delim, &delim_bits, sizeof(uint64_t));
   std::string s = vm->toString(v);
   std::string d = vm->toString(delim);
   auto ref = vm->getHeap().allocateArray();
-  auto* arr = vm->getHeap().array(ref.id);
+  auto *arr = vm->getHeap().array(ref.id);
   if (d.empty()) {
     for (char c : s) {
       auto sr = vm->createRuntimeString(std::string(1, c));
@@ -2379,9 +2582,11 @@ uint64_t havel_vm_string_split(void* vm_ptr, uint64_t str_bits, uint64_t delim_b
   return Value::makeArrayId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_replace(void* vm_ptr, uint64_t str_bits, uint64_t old_bits, uint64_t new_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_replace(void *vm_ptr, uint64_t str_bits, uint64_t old_bits,
+                                 uint64_t new_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v, oldVal, newVal;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
   std::memcpy(&oldVal, &old_bits, sizeof(uint64_t));
@@ -2400,75 +2605,94 @@ uint64_t havel_vm_string_replace(void* vm_ptr, uint64_t str_bits, uint64_t old_b
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_string_promote(void* vm_ptr, uint64_t str_bits) {
-  if (!vm_ptr) return str_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_string_promote(void *vm_ptr, uint64_t str_bits) {
+  if (!vm_ptr)
+    return str_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
-  if (!v.isStringValId()) return str_bits;
+  if (!v.isStringValId())
+    return str_bits;
   std::string s = vm->toString(v);
   auto ref = vm->createRuntimeString(std::move(s));
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_to_int(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_to_int(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    return Value::makeInt(vm->toIntPublic(v)).rawBits();
+  return Value::makeInt(vm->toIntPublic(v)).rawBits();
 }
 
-uint64_t havel_vm_to_float(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_to_float(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    return Value::makeDouble(vm->toFloatPublic(v)).rawBits();
+  return Value::makeDouble(vm->toFloatPublic(v)).rawBits();
 }
 
-uint64_t havel_vm_to_string(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_to_string(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
   auto ref = vm->createRuntimeString(vm->toString(v));
   return Value::makeStringId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_to_bool(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_to_bool(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    return Value::makeBool(vm->toBoolPublic(v)).rawBits();
+  return Value::makeBool(vm->toBoolPublic(v)).rawBits();
 }
 
-uint64_t havel_vm_type_of(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeInt(0).rawBits();
+uint64_t havel_vm_type_of(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeInt(0).rawBits();
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  if (v.isInt()) return Value::makeInt(1).rawBits();
-  if (v.isDouble()) return Value::makeInt(2).rawBits();
-  if (v.isBool()) return Value::makeInt(3).rawBits();
-  if (v.isNull()) return Value::makeInt(4).rawBits();
-  if (v.isStringId() || v.isStringValId()) return Value::makeInt(5).rawBits();
-  if (v.isArrayId()) return Value::makeInt(6).rawBits();
-  if (v.isObjectId()) return Value::makeInt(7).rawBits();
-  if (v.isClosureId() || v.isFunctionObjId()) return Value::makeInt(8).rawBits();
+  if (v.isInt())
+    return Value::makeInt(1).rawBits();
+  if (v.isDouble())
+    return Value::makeInt(2).rawBits();
+  if (v.isBool())
+    return Value::makeInt(3).rawBits();
+  if (v.isNull())
+    return Value::makeInt(4).rawBits();
+  if (v.isStringId() || v.isStringValId())
+    return Value::makeInt(5).rawBits();
+  if (v.isArrayId())
+    return Value::makeInt(6).rawBits();
+  if (v.isObjectId())
+    return Value::makeInt(7).rawBits();
+  if (v.isClosureId() || v.isFunctionObjId())
+    return Value::makeInt(8).rawBits();
   return Value::makeInt(0).rawBits();
 }
 
-uint64_t havel_vm_as_type(void* vm_ptr, uint64_t val_bits, uint32_t type_name_id) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return val_bits;
+uint64_t havel_vm_as_type(void *vm_ptr, uint64_t val_bits, uint32_t type_name_id) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return val_bits;
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  const std::string& typeName = chunk->getString(type_name_id);
-    if (typeName == "int" || typeName == "Int") return Value::makeInt(vm->toIntPublic(v)).rawBits();
-  if (typeName == "float" || typeName == "Float" || typeName == "double" || typeName == "num" || typeName == "Num")
+  const std::string &typeName = chunk->getString(type_name_id);
+  if (typeName == "int" || typeName == "Int")
+    return Value::makeInt(vm->toIntPublic(v)).rawBits();
+  if (typeName == "float" || typeName == "Float" || typeName == "double" || typeName == "num" ||
+      typeName == "Num")
     return Value::makeDouble(vm->toFloatPublic(v)).rawBits();
   if (typeName == "string" || typeName == "String") {
     auto ref = vm->createRuntimeString(vm->toString(v));
@@ -2477,87 +2701,101 @@ uint64_t havel_vm_as_type(void* vm_ptr, uint64_t val_bits, uint32_t type_name_id
   if (typeName == "bool" || typeName == "Bool" || typeName == "boolean")
     return Value::makeBool(vm->toBoolPublic(v)).rawBits();
   if (typeName == "array" || typeName == "Array") {
-    if (v.isArrayId()) return val_bits;
+    if (v.isArrayId())
+      return val_bits;
     auto ref = vm->getHeap().allocateArray();
     return Value::makeArrayId(ref.id).rawBits();
   }
   return val_bits;
 }
 
-uint64_t havel_vm_print(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_print(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    ::havel::debug("{}", vm->toString(v));
+  ::havel::debug("{}", vm->toString(v));
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_debug(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-    ::havel::debug("JIT debug breakpoint");
+uint64_t havel_vm_debug(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  ::havel::debug("JIT debug breakpoint");
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_import(void* vm_ptr, uint64_t path_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_import(void *vm_ptr, uint64_t path_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value pathVal;
   std::memcpy(&pathVal, &path_bits, sizeof(uint64_t));
   std::string path = vm->toString(pathVal);
-  if (path.empty()) return Value::makeNull().rawBits();
+  if (path.empty())
+    return Value::makeNull().rawBits();
   Value result = vm->loadModule(path);
   return result.rawBits();
 }
 
-void havel_vm_import_wildcard(void* vm_ptr, uint64_t exports_bits) {
-  if (!vm_ptr) return;
-  auto* vm = static_cast<VM*>(vm_ptr);
+void havel_vm_import_wildcard(void *vm_ptr, uint64_t exports_bits) {
+  if (!vm_ptr)
+    return;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value exports;
   std::memcpy(&exports, &exports_bits, sizeof(uint64_t));
-  if (!exports.isObjectId()) return;
-  auto* obj = vm->getHeap().object(exports.asObjectId());
-  if (!obj) return;
-  for (const auto& [name, value] : *obj) {
-    if (name.empty() || name[0] == '_') continue;
+  if (!exports.isObjectId())
+    return;
+  auto *obj = vm->getHeap().object(exports.asObjectId());
+  if (!obj)
+    return;
+  for (const auto &[name, value] : *obj) {
+    if (name.empty() || name[0] == '_')
+      continue;
     vm->getGlobals()[name] = value;
   }
 }
 
-uint64_t havel_vm_yield_resume(void* vm_ptr, uint64_t co_bits) {
+uint64_t havel_vm_yield_resume(void *vm_ptr, uint64_t co_bits) {
   Value v;
   std::memcpy(&v, &co_bits, sizeof(uint64_t));
   throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD_RESUME, v};
 }
 
-uint64_t havel_vm_go_async(void* vm_ptr, uint64_t fn_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_go_async(void *vm_ptr, uint64_t fn_bits) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value fn;
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
   uint32_t gid = vm->spawnGoroutine(fn, {});
   return Value::makeThreadId(gid).rawBits();
 }
 
-uint64_t havel_vm_spread(void* vm_ptr, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_spread(void *vm_ptr, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
   if (v.isArrayId()) {
-    auto* arr = vm->getHeap().array(v.asArrayId());
-    if (!arr) return val_bits;
-    for (const auto& elem : *arr) {
-        vm->pushStackPublic(elem);
+    auto *arr = vm->getHeap().array(v.asArrayId());
+    if (!arr)
+      return val_bits;
+    for (const auto &elem : *arr) {
+      vm->pushStackPublic(elem);
     }
   }
   return val_bits;
 }
 
-uint64_t havel_vm_class_new(void* vm_ptr, uint32_t type_id, uint32_t parent_type_id, uint32_t field_count) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
+uint64_t havel_vm_class_new(void *vm_ptr, uint32_t type_id, uint32_t parent_type_id,
+                            uint32_t field_count) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
   (void)field_count;
-  auto* vm = static_cast<VM*>(vm_ptr);
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value typeName = Value::makeStringValId(type_id);
   Value result = vm->invokeHostFunctionDirect("class.new", {typeName});
   if (!result.isNull() && parent_type_id != 0) {
@@ -2570,10 +2808,11 @@ uint64_t havel_vm_class_new(void* vm_ptr, uint32_t type_id, uint32_t parent_type
   return result.rawBits();
 }
 
-uint64_t havel_vm_struct_new(void* vm_ptr, uint32_t type_id, uint64_t* args_bits,
+uint64_t havel_vm_struct_new(void *vm_ptr, uint32_t type_id, uint64_t *args_bits,
                              uint32_t arg_count) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value typeName = Value::makeStringValId(type_id);
   std::vector<Value> args;
   args.reserve(static_cast<size_t>(arg_count) + 1);
@@ -2586,19 +2825,21 @@ uint64_t havel_vm_struct_new(void* vm_ptr, uint32_t type_id, uint64_t* args_bits
   return vm->invokeHostFunctionDirect("struct.new", args).rawBits();
 }
 
-uint64_t havel_vm_struct_get(void* vm_ptr, uint64_t obj_bits, uint32_t field_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_struct_get(void *vm_ptr, uint64_t obj_bits, uint32_t field_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
   Value field = Value::makeStringValId(field_id);
   return vm->invokeHostFunctionDirect("struct.get", {obj, field}).rawBits();
 }
 
-uint64_t havel_vm_struct_set(void* vm_ptr, uint64_t obj_bits, uint32_t field_id,
+uint64_t havel_vm_struct_set(void *vm_ptr, uint64_t obj_bits, uint32_t field_id,
                              uint64_t val_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj, val;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
@@ -2606,23 +2847,29 @@ uint64_t havel_vm_struct_set(void* vm_ptr, uint64_t obj_bits, uint32_t field_id,
   return vm->invokeHostFunctionDirect("struct.set", {obj, field, val}).rawBits();
 }
 
-uint64_t havel_vm_prot_check(void* vm_ptr, uint64_t value_bits, uint32_t proto_id) {
-  if (!vm_ptr) return Value::makeBool(false).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeBool(false).rawBits();
+uint64_t havel_vm_prot_check(void *vm_ptr, uint64_t value_bits, uint32_t proto_id) {
+  if (!vm_ptr)
+    return Value::makeBool(false).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeBool(false).rawBits();
   Value value;
   std::memcpy(&value, &value_bits, sizeof(uint64_t));
   const std::string proto = chunk->getString(proto_id);
-  if (proto == "Iterable") return vm->invokeHostFunctionDirect("isIterable", {value}).rawBits();
-  if (proto == "Indexable") return vm->invokeHostFunctionDirect("isIndexable", {value}).rawBits();
-  if (proto == "Callable") return vm->invokeHostFunctionDirect("callable", {value}).rawBits();
+  if (proto == "Iterable")
+    return vm->invokeHostFunctionDirect("isIterable", {value}).rawBits();
+  if (proto == "Indexable")
+    return vm->invokeHostFunctionDirect("isIndexable", {value}).rawBits();
+  if (proto == "Callable")
+    return vm->invokeHostFunctionDirect("callable", {value}).rawBits();
   return Value::makeBool(false).rawBits();
 }
 
-uint64_t havel_vm_prot_cast(void* vm_ptr, uint64_t value_bits, uint32_t proto_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_prot_cast(void *vm_ptr, uint64_t value_bits, uint32_t proto_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value value;
   std::memcpy(&value, &value_bits, sizeof(uint64_t));
   uint64_t check_bits = havel_vm_prot_check(vm_ptr, value_bits, proto_id);
@@ -2631,34 +2878,44 @@ uint64_t havel_vm_prot_cast(void* vm_ptr, uint64_t value_bits, uint32_t proto_id
   return vm->toBoolPublic(ok) ? value.rawBits() : Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_class_get_field(void* vm_ptr, uint64_t obj_bits, uint32_t field_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_class_get_field(void *vm_ptr, uint64_t obj_bits, uint32_t field_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return Value::makeNull().rawBits();
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
-  const std::string& key = chunk->getString(field_id);
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return Value::makeNull().rawBits();
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
+  const std::string &key = chunk->getString(field_id);
   auto it = o->data.find(key);
-  if (it != o->data.end()) return it->second.rawBits();
+  if (it != o->data.end())
+    return it->second.rawBits();
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_class_set_field(void* vm_ptr, uint64_t obj_bits, uint32_t field_id, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_class_set_field(void *vm_ptr, uint64_t obj_bits, uint32_t field_id,
+                                  uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
   Value obj, val;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return val_bits;
-  auto* o = vm->getHeap().object(obj.asObjectId());
-  if (!o) return val_bits;
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return val_bits;
-  const std::string& key = chunk->getString(field_id);
+  if (!obj.isObjectId())
+    return val_bits;
+  auto *o = vm->getHeap().object(obj.asObjectId());
+  if (!o)
+    return val_bits;
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return val_bits;
+  const std::string &key = chunk->getString(field_id);
   o->data[key] = val;
   // Return the object reference (not the value) so chained sets on the
   // same instance keep operating on the same instance. See comment in
@@ -2666,43 +2923,53 @@ uint64_t havel_vm_class_set_field(void* vm_ptr, uint64_t obj_bits, uint32_t fiel
   return obj_bits;
 }
 
-uint64_t havel_vm_load_class_proto(void* vm_ptr, uint32_t type_id) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
-  const std::string& typeName = chunk->getString(type_id);
+uint64_t havel_vm_load_class_proto(void *vm_ptr, uint32_t type_id) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
+  const std::string &typeName = chunk->getString(type_id);
   auto global = vm->getGlobalThreadSafe(typeName);
   return global.has_value() ? global->rawBits() : Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id, uint64_t* args, uint32_t arg_count) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
+uint64_t havel_vm_call_super(void *vm_ptr, uint64_t obj_bits, uint32_t method_id, uint64_t *args,
+                             uint32_t arg_count) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
   // Super-method bodies re-enter below this JIT frame; the caller's raw
   // values are unrooted meanwhile.
   auto gc_guard = vm->gcDeferGuardPublic();
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return Value::makeNull().rawBits();
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return Value::makeNull().rawBits();
 
   Value obj;
   std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-  if (!obj.isObjectId()) return Value::makeNull().rawBits();
+  if (!obj.isObjectId())
+    return Value::makeNull().rawBits();
 
   // Resolve parent class/prototype.
   Value classObj = vm->getHostObjectField(ObjectRef{obj.asObjectId(), true}, "__class");
   if (classObj.isNull()) {
     classObj = vm->getHostObjectField(ObjectRef{obj.asObjectId(), true}, "__parent");
   }
-  if (!classObj.isObjectId()) return Value::makeNull().rawBits();
+  if (!classObj.isObjectId())
+    return Value::makeNull().rawBits();
 
   Value parentObj = vm->getHostObjectField(ObjectRef{classObj.asObjectId(), true}, "__parent");
-  if (!parentObj.isObjectId()) return Value::makeNull().rawBits();
+  if (!parentObj.isObjectId())
+    return Value::makeNull().rawBits();
 
   const std::string methodName = chunk->getString(method_id);
-  if (methodName.empty()) return Value::makeNull().rawBits();
+  if (methodName.empty())
+    return Value::makeNull().rawBits();
   Value method = vm->objectGetWithClassChain(parentObj.asObjectId(), methodName);
-  if (method.isNull()) return Value::makeNull().rawBits();
+  if (method.isNull())
+    return Value::makeNull().rawBits();
 
   std::vector<Value> callArgs;
   callArgs.reserve(static_cast<size_t>(arg_count) + 1);
@@ -2715,47 +2982,54 @@ uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id
   return vm->callFunction(method, callArgs).rawBits();
 }
 
-uint64_t havel_vm_enum_new(void* vm_ptr, uint32_t type_id, uint32_t tag, uint32_t payload_count) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    EnumRef ref = vm->createEnum(type_id, tag, payload_count);
-    if (payload_count > 0) {
-        auto* payloads = vm->getHeap().enumPayloadsMut(ref.id);
-        if (payloads) {
-            for (uint32_t i = 0; i < payload_count && i < payloads->size(); ++i) {
-                Value p = vm->popStackPublic();
-                (*payloads)[payloads->size() - 1 - i] = p;
-            }
-        }
+uint64_t havel_vm_enum_new(void *vm_ptr, uint32_t type_id, uint32_t tag, uint32_t payload_count) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  EnumRef ref = vm->createEnum(type_id, tag, payload_count);
+  if (payload_count > 0) {
+    auto *payloads = vm->getHeap().enumPayloadsMut(ref.id);
+    if (payloads) {
+      for (uint32_t i = 0; i < payload_count && i < payloads->size(); ++i) {
+        Value p = vm->popStackPublic();
+        (*payloads)[payloads->size() - 1 - i] = p;
+      }
     }
-    return Value::makeEnumId(ref.id).rawBits();
+  }
+  return Value::makeEnumId(ref.id).rawBits();
 }
 
-uint64_t havel_vm_enum_tag(void* vm_ptr, uint64_t enum_bits) {
-    if (!vm_ptr) return Value::makeInt(0).rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &enum_bits, sizeof(uint64_t));
-    if (!v.isEnumId()) return Value::makeInt(0).rawBits();
-    EnumRef ref{v.asEnumId(), 0, 0};
-    return Value::makeInt(static_cast<int64_t>(vm->getEnumTag(ref))).rawBits();
+uint64_t havel_vm_enum_tag(void *vm_ptr, uint64_t enum_bits) {
+  if (!vm_ptr)
+    return Value::makeInt(0).rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value v;
+  std::memcpy(&v, &enum_bits, sizeof(uint64_t));
+  if (!v.isEnumId())
+    return Value::makeInt(0).rawBits();
+  EnumRef ref{v.asEnumId(), 0, 0};
+  return Value::makeInt(static_cast<int64_t>(vm->getEnumTag(ref))).rawBits();
 }
 
-uint64_t havel_vm_enum_payload(void* vm_ptr, uint64_t enum_bits, uint32_t idx) {
-    if (!vm_ptr) return Value::makeNull().rawBits();
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &enum_bits, sizeof(uint64_t));
-    if (!v.isEnumId()) return Value::makeNull().rawBits();
-    EnumRef ref{v.asEnumId(), 0, 0};
-    return vm->getEnumPayload(ref, idx).rawBits();
+uint64_t havel_vm_enum_payload(void *vm_ptr, uint64_t enum_bits, uint32_t idx) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
+  auto *vm = static_cast<VM *>(vm_ptr);
+  Value v;
+  std::memcpy(&v, &enum_bits, sizeof(uint64_t));
+  if (!v.isEnumId())
+    return Value::makeNull().rawBits();
+  EnumRef ref{v.asEnumId(), 0, 0};
+  return vm->getEnumPayload(ref, idx).rawBits();
 }
 
-uint64_t havel_vm_export_fn(void* vm_ptr, uint32_t name_id, uint64_t fn_bits) {
-  if (!vm_ptr) return fn_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return fn_bits;
+uint64_t havel_vm_export_fn(void *vm_ptr, uint32_t name_id, uint64_t fn_bits) {
+  if (!vm_ptr)
+    return fn_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return fn_bits;
   std::string name = chunk->getString(name_id);
   Value fn;
   std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
@@ -2763,11 +3037,13 @@ uint64_t havel_vm_export_fn(void* vm_ptr, uint32_t name_id, uint64_t fn_bits) {
   return fn_bits;
 }
 
-uint64_t havel_vm_export_var(void* vm_ptr, uint32_t name_id, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk) return val_bits;
+uint64_t havel_vm_export_var(void *vm_ptr, uint32_t name_id, uint64_t val_bits) {
+  if (!vm_ptr)
+    return val_bits;
+  auto *vm = static_cast<VM *>(vm_ptr);
+  auto *chunk = vm->getCurrentChunk();
+  if (!chunk)
+    return val_bits;
   std::string name = chunk->getString(name_id);
   Value val;
   std::memcpy(&val, &val_bits, sizeof(uint64_t));
@@ -2775,12 +3051,13 @@ uint64_t havel_vm_export_var(void* vm_ptr, uint32_t name_id, uint64_t val_bits) 
   return val_bits;
 }
 
-uint64_t havel_vm_begin_module(void* vm_ptr) {
+uint64_t havel_vm_begin_module(void *vm_ptr) {
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_end_module(void* vm_ptr) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
+uint64_t havel_vm_end_module(void *vm_ptr) {
+  if (!vm_ptr)
+    return Value::makeNull().rawBits();
   return Value::makeNull().rawBits();
 }
 
@@ -2789,4 +3066,4 @@ uint64_t havel_vm_end_module(void* vm_ptr) {
 #pragma GCC visibility pop
 #endif
 
-}  // namespace havel::compiler
+} // namespace havel::compiler

@@ -165,11 +165,6 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             vm_->setHotTraceCallback([existingJIT](const compiler::BytecodeFunction& func,
                                                  uint32_t start_ip,
                                                  uint64_t hot_count) {
-                if (std::getenv("HAVEL_ORC_TRACE") == nullptr) {
-                    // ORC hot-trace disabled by default (LLVM 23 codegen
-                    // crash; see Havel.cpp's registration).
-                    return;
-                }
                 if (existingJIT) {
                     existingJIT->compileTrace(func, start_ip, hot_count);
                 }

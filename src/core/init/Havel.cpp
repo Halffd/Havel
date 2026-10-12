@@ -209,24 +209,9 @@ void Havel::initialize(bool isStartup) {
   bytecodeVM->setHotFunctionCallback([](const compiler::BytecodeFunction& func) {
     // JIT compilation will be handled by the VM's tiering system
   });
-// The ORC hot-trace path segfaults inside LLVM 23's codegen passes
-// (DominatorTreeWrapperPass, via SimpleCompiler's target-machine pipeline)
-// on IR our BytecodeOrcJitLowering emits with the LLVM-23 instruction
-// API (BinaryOperator::CreateNot InsertPosition overload). Every
-// --tiering run on an LLVM-enabled build crashed on the first hot
-// backedge site (gdb: execJump -> recordBackedgeDeltaPublic ->
-// compileTrace -> LLJIT::lookup -> SimpleCompiler -> SEGV). Default the
-// trace path OFF until the ORC lowering is fixed for LLVM 23;
-// HAVEL_ORC_TRACE=1 re-enables it for the backend owner's debugging.
   bytecodeVM->setHotTraceCallback([jitPtr = jit.get()](const compiler::BytecodeFunction& func,
                                                       uint32_t start_ip,
                                                       uint64_t hot_count) {
-    if (std::getenv("HAVEL_ORC_TRACE") == nullptr) {
-                // ORC hot-trace disabled by default: see the comment above
-                // (LLVM 23 codegen crash). Remove this gate when the ORC
-                // lowering is fixed.
-                return;
-              }
     if (jitPtr) {
       jitPtr->compileTrace(func, start_ip, hot_count);
     }

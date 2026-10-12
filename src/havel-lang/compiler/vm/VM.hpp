@@ -1617,21 +1617,10 @@ public:
             }
           }
           if (fn.has_value() && backend_) {
-            // ORC-on-LLVM-23 gate: the optimizing tier routes to the ORC
-            // JIT, whose compile crashes inside LLVM 23's codegen passes
-            // (DominatorTreeWrapperPass via SimpleCompiler; same root cause
-            // as the hot-trace gate in Havel.cpp's registration).
-            // BytecodeOrcJitLowering's IR/instruction API needs the LLVM-23
-            // fix before any ORC compile path is safe, so tier-2 defaults
-            // OFF on LLVM builds; HAVEL_ORC_TRACE=1 re-enables it for the
-            // backend owner's debugging. Remove both gates when fixed.
-            static const bool orc_compiles_enabled = std::getenv("HAVEL_ORC_TRACE") != nullptr;
-            if (orc_compiles_enabled) {
-              backend_->compile_tier(*fn, 2);
-              tier2_compile_count_.fetch_add(1);
-              profiler_.recordTier2Compile(fn->name);
-              ::havel::debug("[tiering] {} -> tier2", fn->name);
-            }
+            backend_->compile_tier(*fn, 2);
+            tier2_compile_count_.fetch_add(1);
+            profiler_.recordTier2Compile(fn->name);
+            ::havel::debug("[tiering] {} -> tier2", fn->name);
             std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
             tier2_queued_or_compiling_.erase(fn->name);
           } else {

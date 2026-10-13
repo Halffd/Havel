@@ -51,7 +51,19 @@ bool X11Adapter::Init() {
     initialized_ = true;
     debug("X11Adapter: Initialized on display {}", DisplayString(display_));
     g_active_x11_adapter.store(this, std::memory_order_release);
-    registerExitCleanup([this]() { UngrabAllDevices(); });
+    // Do NOT capture `this` here. runExitCleanups() runs from main() *after*
+    // static destruction has begun, by which time this X11Adapter is gone and
+    // Shutdown() has already cleared g_active_x11_adapter - a captured
+    // `this` dereferenced a freed object and segfaulted every `--io x11` run
+    // at exit (X11Adapter.cpp:54, ExitHandler.cpp:24). Resolve the live
+    // adapter through the atomic instead: non-null only while this object is
+    // alive and initialised.
+    registerExitCleanup([]() {
+        X11Adapter *adapter = g_active_x11_adapter.load(std::memory_order_acquire);
+        if (adapter) {
+            adapter->UngrabAllDevices();
+        }
+    });
     return true;
 #else
     return false;

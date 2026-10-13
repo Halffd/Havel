@@ -3653,7 +3653,18 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
       pushGlobalsMove();
       current_frame.owns_globals = true;
     }
-    installModuleGlobals(tail_closure_globals, /*push=*/false);
+    // VM-OPT-001: cache lineages park the outgoing ambient under its
+    // identity before swapping the target in (the flag lives on the
+    // stack frame this activation already owns). Copy-managed lineages
+    // (module-fn wrapper) keep the copy install; their pop drops the
+    // map and the wrapper epilogue keeps the sidecar authoritative.
+    const bool tail_cached =
+        !globals_stack_.empty() && globals_stack_.back().ambient_cached;
+    if (tail_cached && globals_identity_) {
+      ambient_cache_[globals_identity_].swap(globals);
+    }
+    installModuleGlobals(tail_closure_globals, /*push=*/false,
+                         /*use_cache=*/tail_cached);
   }
   // Keep same locals base
 
@@ -4972,8 +4983,13 @@ Value VM::deepWrapModuleFunctions(
           // ambient. Cross-context calls (identity differs, e.g.
           // launcher -> module) still install. Same discipline as the
           // doCall module-closure path's identity check.
+          // use_cache=false: this path's epilogue wholesale
+          // move-assigns the ambient into the sidecar before popping,
+          // so its frames are flagged !ambient_cached and the pop drops
+          // the moved-from map instead of parking it.
           bool wrapper_pushed_globals =
-              installModuleGlobals(moduleGlobals);
+              installModuleGlobals(moduleGlobals, /*push=*/true,
+                                   /*use_cache=*/false);
           auto savedMirrorId = globals_mirror_object_id_;
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);
@@ -5108,6 +5124,31 @@ Value VM::deepWrapModuleFunctions(
             globals_mirror_object_id_ = savedMirrorId;
             current_chunk = savedChunk;
             throw;
+          }
+          if (stack.size() <= frame_stack_depth) {
+            // A Havel throw inside the wrapped body transferred to an
+            // OUTER try handler: handleScriptThrow already unwound our
+            // frames, redirected the outer frame to its catch ip, and
+            // truncated the operand stack to the handler's entry depth.
+            // A normal completion leaves exactly one result on the
+            // stack (the RET push) - at or below the entry depth there
+            // is no result to pop, and popping would steal an operand
+            // belonging to the outer frame's catch block (observed as
+            // "Stack underflow" at the caller's TRY_EXIT; a value was
+            // consumed, shifting every catch-stack access after it).
+            // Restore this wrapper's context, suppress the CALL site's
+            // result push (same mechanism as the budget-cutoff path),
+            // and return a placeholder the caller never reads.
+            if (locals.size() > savedLocalsSize) {
+              locals.resize(savedLocalsSize);
+            }
+            if (wrapper_pushed_globals) {
+              popGlobals();
+            }
+            globals_mirror_object_id_ = savedMirrorId;
+            current_chunk = savedChunk;
+            budget_unwind_no_result_ = true;
+            return Value::makeNull();
           }
           Value result = popStack();
           if (locals.size() > savedLocalsSize) {
@@ -5317,6 +5358,23 @@ Value VM::deepWrapModuleFunctions(
             globals_mirror_object_id_ = savedMirrorId;
             current_chunk = savedChunk;
             throw;
+          }
+          if (stack.size() <= frame_stack_depth) {
+            // Exception transfer to an OUTER try handler - see the
+            // $module_fn_ wrapper's twin of this guard for the full
+            // rationale. No result exists to pop; restore this
+            // wrapper's context, suppress the CALL site's result push,
+            // and return a placeholder the caller never reads.
+            if (locals.size() > base) {
+              locals.resize(base);
+            }
+            if (closure_pushed_globals) {
+              popGlobals();
+            }
+            globals_mirror_object_id_ = savedMirrorId;
+            current_chunk = savedChunk;
+            budget_unwind_no_result_ = true;
+            return Value::makeNull();
           }
           Value result = popStack();
           if (bc_execute_depth_ == 0) {

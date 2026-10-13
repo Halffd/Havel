@@ -280,6 +280,70 @@ computePipelineFingerprint) makes foreign entries reject as
 pipeline-fingerprint-drift and recompile; `HAVEL_STARTUP_TIMING=1` shows
 the rejects. Clear the cache when in doubt.
 
+## VM-OPT-001: save-and-swap ambient installs (2026-10-13)
+
+Ticket VM-OPT-001 asked to eliminate the residual O(n) map copy on
+cross-module calls (the de-seeding had already removed the ~437us/call
+bloat; what remained was `globals = *target` — O(module-own-names) per
+install, plus the wrapper epilogue's wholesale sidecar move-assign).
+
+Design chosen (the ticket's "save-and-swap" variant, scoped):
+
+- `ambient_cache_` in VM.hpp, keyed by the sidecar shared_ptr
+  (owner_less — keys cannot dangle), holds each module's parked ambient
+  between calls. Install = O(1) swap; pop = O(1) swap back. First
+  install of a module copies once.
+- The cache-managed paths are doCall's closure install, the JIT callee
+  install, and TAIL_CALL frame reuse. The module-fn HOST WRAPPER stays
+  on the copy path and its frames are flagged `!ambient_cached`: the
+  wrapper epilogue wholesale move-assigns the ambient into the sidecar
+  before popping, so parking its moved-from map would poison the cache.
+- GC posture: cache entries are not directly scanned, exactly like the
+  existing globals_stack_ pushed snapshots; liveness flows through
+  the sidecars, which STORE_GLOBAL dual-writes keep authoritative.
+  Same bounded over-retention class as the pushed frames.
+- popGlobals parks under the identity CURRENT at pop time (TAIL_CALL
+  chains may swap several modules through one stack frame), and only
+  on the normal restore path — the fiber-restored/foreign-pop early
+  returns are engine-main lineage (null identity), never cache-managed.
+
+Found and fixed on the way (pre-existing, reproduced on a clean tree):
+a Havel `throw` unwinding past a module wrapper transferred to the
+outer try handler via handleScriptThrow, after which the wrapper's
+completion path popStack()ed a result that was never pushed — stealing
+an operand from the caller's catch block and corrupting every stack
+access after it (surfaced as "Stack underflow" at the caller's
+TRY_EXIT; minimal repro: `try { wrappedModuleFnThatThrows() } catch`).
+Both wrappers ($module_fn_ and $module_closure_) now detect the
+transfer (no result at or below the entry stack depth) and restore
+their context + suppress the CALL-site result push via the existing
+budget_unwind_no_result_ mechanism.
+
+Measured (scripts/benchmarks/bigmap_bench.hv — 20k alternating
+cross-module calls into a module with 400 own globals; rusage CPU,
+3-run medians, paired stash A/B; post-swap runs taken under HIGHER
+load than pre-swap, so the comparison is conservative):
+
+| shape | pre-swap | post-swap |
+|---|---|---|
+| total CPU | 4.27 / 4.27 / 4.29 s | 2.19 / 2.30 / 1.60 s |
+| user CPU | ~1.17 s | ~0.72 s |
+| sys CPU  | ~3.09 s | ~1.42 s |
+
+~2x total CPU; the sys collapse is the copy's node-allocation churn
+(400-entry unordered_map copied per call -> 20k copies) disappearing.
+On the tiny-map fixture (module_globals_bench, ~5-entry modules) the
+win is small — the residual per-call cost there is frame machinery,
+not map size; the O(n) term is what this change removes.
+
+Correctness pinned by scripts/smoke/test_vm_opt_001_ambient_globals_swap.hv
+(alternating writes, nested recursion, closure-created-in-module
+observing state, exception mid-call, tail chains, GC pressure between
+installs). Also on file: importing the same module under two path
+spellings ("modglob/x" vs "x") loads two module instances with
+separate sidecars — pre-existing loader behavior, worked around in
+the fixtures; a fix belongs to the module loader, not this change.
+
 ## ORC vs Cranelift at tier 2 (2026-10-12, first-ever measurement)
 
 Matched workloads on the LLVM-enabled build (`build-crane-release`, mode

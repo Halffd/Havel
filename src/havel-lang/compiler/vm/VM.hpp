@@ -10,6 +10,7 @@
 #include <string_view>
 #include <functional>
 #include <memory>
+#include <map>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -443,6 +444,12 @@ public:
     std::shared_ptr<std::unordered_map<std::string, Value>> second;
     bool fiber_restored = false;
     Fiber *owner = nullptr;
+    // True when the ambient installed for this frame is cache-managed
+    // (VM-OPT-001 save-and-swap): popGlobals parks it back into
+    // ambient_cache_ instead of dropping it. False for the module-fn
+    // host-wrapper path, whose epilogue wholesale move-assigns the
+    // ambient into the sidecar and would poison a cache entry.
+    bool ambient_cached = false;
   };
   std::vector<GlobalsFrame> globals_stack_;
   // Identity (which module_globals shared_ptr) of the map currently
@@ -465,6 +472,20 @@ public:
     return baseModuleGlobals_.get();
   }
 
+  // VM-OPT-001 save-and-swap: per-sidecar parked ambients. After a
+  // module's first install, its ambient map lives here between calls,
+  // so every later install/pop of that module is an O(1) swap instead
+  // of an O(n) map copy. Keyed by the sidecar shared_ptr itself
+  // (owner_less): the key cannot dangle, and entries for reloaded
+  // modules simply become unreachable. GC posture matches the existing
+  // globals_stack_ snapshots: not directly scanned; liveness flows
+  // through the sidecars, which STORE_GLOBAL dual-writes keep
+  // authoritative. Same class of (bounded, pre-existing) over-retention
+  // as the pushed frames.
+  std::map<std::shared_ptr<std::unordered_map<std::string, Value>>,
+           std::unordered_map<std::string, Value>, std::owner_less<>>
+      ambient_cache_;
+
   // Identity-gated module-globals install, shared by every cross-module
   // call site: doCall's closure path, the JIT-compiled callee path,
   // the module-fn host wrapper, and TAIL_CALL's frame reuse. Returns
@@ -473,16 +494,39 @@ public:
   // dual-writes keep the ambient and the shared map in sync.
   // `push=false` is TAIL_CALL frame reuse only: the frame already owns
   // its globals push and just the map contents are swapped.
+  // `use_cache=false` is the module-fn host wrapper only: its epilogue
+  // move-assigns the whole ambient into the sidecar before popping, so
+  // its frames are flagged !ambient_cached and their ambients are
+  // dropped at pop (the sidecar is the synced authority) instead of
+  // parked - parking a post-steal ambient would poison the cache.
   bool installModuleGlobals(
       const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
-      bool push = true) {
+      bool push = true, bool use_cache = true) {
     if (!target || target == globals_identity_) {
       return false;
     }
     if (push) {
       pushGlobalsMove();
     }
-    globals = *target;
+    if (use_cache) {
+      auto it = ambient_cache_.find(target);
+      if (it != ambient_cache_.end()) {
+        // O(1): park-then-swap. The cache entry goes empty; pop's stash
+        // (keyed by the identity at pop time, so TAIL_CALL chains park
+        // under the right module) refills it.
+        globals.swap(it->second);
+      } else {
+        // First install of this module: one copy, and prime the slot so
+        // the pop stash has an entry to fill.
+        globals = *target;
+        ambient_cache_[target];
+      }
+      if (push) {
+        globals_stack_.back().ambient_cached = true;
+      }
+    } else {
+      globals = *target;
+    }
     globals_identity_ = target;
     return true;
   }
@@ -530,6 +574,14 @@ public:
       for (const auto &[k, v] : globals) {
         frame.first[k] = v;
       }
+    }
+    // VM-OPT-001 stash: a cache-managed ambient parks under its CURRENT
+    // identity (TAIL_CALL chains may have swapped in a different module
+    // than the one installed at push time; the identity at pop time is
+    // the map's actual owner). The early-return paths above are
+    // engine-main lineage only (null identity, never cache-managed).
+    if (frame.ambient_cached && globals_identity_) {
+      ambient_cache_[globals_identity_].swap(globals);
     }
     globals = std::move(frame.first);
     globals_identity_ = std::move(frame.second);

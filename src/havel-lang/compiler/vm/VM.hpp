@@ -465,6 +465,28 @@ public:
     return baseModuleGlobals_.get();
   }
 
+  // Identity-gated module-globals install, shared by every cross-module
+  // call site: doCall's closure path, the JIT-compiled callee path,
+  // the module-fn host wrapper, and TAIL_CALL's frame reuse. Returns
+  // true when the caller owns the restore (popGlobals on exit); a
+  // same-module call returns false and stays O(1) - STORE_GLOBAL
+  // dual-writes keep the ambient and the shared map in sync.
+  // `push=false` is TAIL_CALL frame reuse only: the frame already owns
+  // its globals push and just the map contents are swapped.
+  bool installModuleGlobals(
+      const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
+      bool push = true) {
+    if (!target || target == globals_identity_) {
+      return false;
+    }
+    if (push) {
+      pushGlobalsMove();
+    }
+    globals = *target;
+    globals_identity_ = target;
+    return true;
+  }
+
   // Swap `globals` + identity onto the stack as one unit (moving the
   // map). Restores via popGlobals().
   void pushGlobalsMove() {
@@ -1579,22 +1601,30 @@ public:
         func.jit_compiled = true;
       }
 
-      // Tier 2 queueing: only small, very hot functions qualify.
-      if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
-          !tier2_compiled_.count(key)) {
-        tier2_compiled_.insert(key);
-        {
-          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-          if (tier2_queued_or_compiling_.insert(key).second) {
-            tier2_queue_.push(func);
-            tier2_enqueue_count_.fetch_add(1);
-            ::havel::debug("[tiering] {} queued for tier2", key);
-          } else {
-            tier2_skip_duplicate_count_.fetch_add(1);
-          }
+    }
+
+    // Tier 2 queueing: only small, very hot functions qualify. Re-checked
+    // on every hot event and deduped by its own sets. Previously this sat
+    // INSIDE the one-shot tier-1 guard above, so a function could only
+    // ever queue if its FIRST tier-up moment had already crossed
+    // tier2_threshold - the steady-state tier-2 path was dead wiring
+    // (tier2_enqueued counted backedge-site statistics only; a
+    // 20k-invocation bench queued two functions by crossing both
+    // thresholds at once, a 3k one queued none).
+    if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
+        !tier2_compiled_.count(key)) {
+      tier2_compiled_.insert(key);
+      {
+        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+        if (tier2_queued_or_compiling_.insert(key).second) {
+          tier2_queue_.push(func);
+          tier2_enqueue_count_.fetch_add(1);
+          ::havel::debug("[tiering] {} queued for tier2", key);
+        } else {
+          tier2_skip_duplicate_count_.fetch_add(1);
         }
-        ensureTier2Worker();
       }
+      ensureTier2Worker();
     }
   }
 

@@ -3166,15 +3166,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     // sidecar - the self-hosted parser's BP_TABLE diverged exactly this
     // way). The frame also carries locals slots for parameters so
     // upvalue bridges can address the activation record.
-    bool jit_owns_globals = false;
-    if (closure_globals) {
-      if (closure_globals != globals_identity_) {
-        pushGlobalsMove();
-        globals = *closure_globals;
-        globals_identity_ = closure_globals;
-        jit_owns_globals = true;
-      }
-    }
+    bool jit_owns_globals = installModuleGlobals(closure_globals);
     const size_t jit_locals_base = locals.size();
     const size_t jit_needed = std::max(callee->local_count, callee->param_count);
     locals.resize(jit_locals_base + jit_needed, nullptr);
@@ -3368,17 +3360,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
   current_chunk = resolve_chunk;
 
-  bool frame_owns_globals = false;
-  if (closure_globals) {
-    if (closure_globals != globals_identity_) {
-      pushGlobalsMove();
-      globals = *closure_globals;
-      globals_identity_ = closure_globals;
-      frame_owns_globals = true;
-    }
-    // else: same module map already installed — calls stay O(1); STORE_GLOBAL
-    // dual-writes keep globals and the shared module map in sync.
-  }
+  bool frame_owns_globals = installModuleGlobals(closure_globals);
+  // Same-module calls return false and stay O(1); STORE_GLOBAL
+  // dual-writes keep globals and the shared module map in sync.
 
   size_t base = locals.size();
   size_t stack_depth = stack.size(); // Save current stack depth
@@ -3664,15 +3648,12 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
   current_frame.ip = 0;
   current_frame.closure_id = closure_id;
   current_chunk = resolve_chunk;
-  if (tail_closure_globals) {
-    if (tail_closure_globals != globals_identity_) {
-      if (!current_frame.owns_globals) {
-        pushGlobalsMove();
-        current_frame.owns_globals = true;
-      }
-      globals = *tail_closure_globals;
-      globals_identity_ = tail_closure_globals;
+  if (tail_closure_globals && tail_closure_globals != globals_identity_) {
+    if (!current_frame.owns_globals) {
+      pushGlobalsMove();
+      current_frame.owns_globals = true;
     }
+    installModuleGlobals(tail_closure_globals, /*push=*/false);
   }
   // Keep same locals base
 
@@ -4991,12 +4972,8 @@ Value VM::deepWrapModuleFunctions(
           // ambient. Cross-context calls (identity differs, e.g.
           // launcher -> module) still install. Same discipline as the
           // doCall module-closure path's identity check.
-          bool wrapper_pushed_globals = moduleGlobals != globals_identity_;
-          if (wrapper_pushed_globals) {
-            pushGlobalsMove();
-            globals = *moduleGlobals;
-            globals_identity_ = moduleGlobals;
-          }
+          bool wrapper_pushed_globals =
+              installModuleGlobals(moduleGlobals);
           auto savedMirrorId = globals_mirror_object_id_;
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);

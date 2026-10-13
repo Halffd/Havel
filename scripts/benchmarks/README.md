@@ -280,6 +280,41 @@ computePipelineFingerprint) makes foreign entries reject as
 pipeline-fingerprint-drift and recompile; `HAVEL_STARTUP_TIMING=1` shows
 the rejects. Clear the cache when in doubt.
 
+## ORC vs Cranelift at tier 2 (2026-10-12, first-ever measurement)
+
+Matched workloads on the LLVM-enabled build (`build-crane-release`, mode
+19), now unblocked by the ORC LLVM-23 fix. Tier-1 fires at 15k hotness on
+both builds so the comparison starts from the same point; the LLVM build
+also queues ORC O2 tier-2 at 10k (nollvm's "tier 2" is a Cranelift
+recompile - its optimizing backend is absent).
+
+| bench | Cranelift tier-1 (nollvm) | + ORC O2 tier-2 (LLVM) |
+|---|---|---|
+| tier_bench_two_fns (3 runs) | 12.7 / 13.8 / 14.1 s | 13.0 / 13.7 / 14.3 s |
+| tier_bench_loop (3 runs) | 3.2 / 3.7 / 3.1 s | 3.1 / 3.1 / 2.9 s |
+
+Medians overlap: **ORC's O2 pipeline buys nothing measurable over
+Cranelift tier-1 on these shapes** (tiny integer-arithmetic loop bodies
+where Cranelift's int fast path is already near-native). Compile latency
+is also a wash at this function size: queued->compiled timestamps are
+sub-millisecond for both.
+
+Caveats, honestly: these are synthetic benches of ~20-instruction
+functions. ORC's real strengths (cross-function inlining, vectorization,
+scheduling on larger bodies) are unexercised. What the measurement DOES
+establish: for the dispatch-bound hot-loop profile tiering actually sees
+in this codebase, tier-2 ORC does not earn its complexity as a default;
+keep Cranelift the default tier-1 and ORC opt-in.
+
+Also fixed on the way: tier-2 queueing was dead wiring. The enqueue sat
+inside maybeTierUp's one-shot tier-1 guard, so a function could only ever
+queue if its FIRST hot event had already crossed tier2_threshold - the
+20k-invocation module-globals bench queued two functions by crossing both
+thresholds at once; a 3k-invocation bench queued none. The tier-2 check
+now re-runs on every hot event with its own dedup sets (steady-state
+tier-2 works; measured with the threshold trick above because the bench
+invocation counts sit below the default 10k).
+
 ## Fallback behavior (verified, by design)
 
 `can_lower` declines functions with opcodes outside the subset (e.g.

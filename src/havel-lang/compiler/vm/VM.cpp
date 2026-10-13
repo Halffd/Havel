@@ -5520,6 +5520,39 @@ std::string VM::resolveLazyAliasName(const std::string &name) const {
   return {};
 }
 
+bool VM::isCallableNamespaceObject(Value value) const {
+  // Cycle-breaker predicate (the modules_loading_ escape hatch): a
+  // non-empty object whose every entry is CALLABLE - host functions
+  // from the native namespace object, plus function/closure exports
+  // shadow-merged from the in-flight .hv load (isHostFnNamespaceObject
+  // rejects that merged shape because its .hv entries are not host
+  // fns; the escape's own contract - callers only invoke entries at
+  // runtime, never in __init__ - covers exactly this shape).
+  if (!value.isObjectId())
+    return false;
+  auto *obj = heap_.object(value.asObjectId());
+  if (!obj || obj->size() == 0)
+    return false;
+  bool sawCallable = false;
+  for (const auto &[k, v] : *obj) {
+    (void)k;
+    if (v.isHostFuncId() || v.isFunctionObjId() || v.isClosureId() ||
+        v.isBoundMethodId()) {
+      sawCallable = true;
+    } else if (!v.isObjectId()) {
+      // Scalars/strings in the namespace shape mean this is user data,
+      // not a module namespace.
+      return false;
+    }
+    // Object entries are permitted as NESTED namespace objects (display
+    // re-exports x11; a module namespace carrying another module's
+    // namespace is the exact merge shape this predicate serves). Any
+    // user data-object coincidence is bounded by the sawCallable
+    // requirement below.
+  }
+  return sawCallable;
+}
+
 bool VM::isHostFnNamespaceObject(Value value) const {
   if (!value.isObjectId())
     return false;
@@ -6121,7 +6154,7 @@ Value VM::loadModule(const std::string &path) {
         // completes (callers only invoke them at runtime, not in __init__).
         Value cycleNamespace;
         if (findGlobalValueByName(path, &cycleNamespace) &&
-            isHostFnNamespaceObject(cycleNamespace)) {
+            isCallableNamespaceObject(cycleNamespace)) {
           return cycleNamespace;
         }
         COMPILER_THROW("Circular dependency detected: " + path);
@@ -6370,7 +6403,12 @@ Value VM::loadModule(const std::string &path) {
         }
       }
     }
-    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+    current_script_dir_ =
+        std::filesystem::path(!resolved->sourcePath.empty()
+                                  ? resolved->sourcePath
+                                  : resolved->canonicalPath)
+            .parent_path()
+            .string();
 
     // Try to load globals from .hvc cache
     std::unordered_map<std::string, Value> cachedGlobals;
@@ -6571,7 +6609,12 @@ load_from_source:
     std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     // Set script directory for relative imports within the module
-    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+    current_script_dir_ =
+        std::filesystem::path(!resolved->sourcePath.empty()
+                                  ? resolved->sourcePath
+                                  : resolved->canonicalPath)
+            .parent_path()
+            .string();
 
     // Compile through the module compiler hook: the SDK registers the
     // parse + ByteCompiler pipeline, runtime-only builds degrade with a
@@ -7756,7 +7799,12 @@ Value VM::loadScript(const std::string &path) {
     COMPILER_THROW("load: cannot open file: " + resolved->canonicalPath);
   }
   std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-  current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+  current_script_dir_ =
+      std::filesystem::path(!resolved->sourcePath.empty()
+                                ? resolved->sourcePath
+                                : resolved->canonicalPath)
+          .parent_path()
+          .string();
 
   auto compiled = ModuleCompilerHook::instance().compileSource(source);
   switch (compiled.status) {

@@ -344,6 +344,48 @@ spellings ("modglob/x" vs "x") loads two module instances with
 separate sidecars — pre-existing loader behavior, worked around in
 the fixtures; a fix belongs to the module loader, not this change.
 
+## Module identity by path spelling, fixed (2026-10-13)
+
+Found during VM-OPT-001 (worked around in its fixtures): importing the
+same module file under two path spellings ("modglob/x" from a driver
+vs "x" from a sibling module) loaded TWO module instances with separate
+sidecars - silent state split-brain. Root cause: ModuleLoader::
+canonicalizePath delegated to resolve(), whose cache-hit path returns
+an EMPTY canonicalPath, so loadModule fell back to the RAW import
+string as its cache key. canonicalizePath now uses
+computeCanonicalPathNoCache (source-tree identity, spelling-stable).
+
+Two more latent bugs the fix exposed (both now fixed):
+
+1. **Warm .hvc loads resolved a module body's imports against the
+   cache directory.** makeBcCache reports the .hvc path as the
+   resolution's canonicalPath, and loadModule set current_script_dir_
+   from it - so a module served from ~/.cache/havel executed its
+   `use "x"` statements with the cache dir as base. Stdlib survived
+   by accident (bare names resolve via lang.*/std.* prefixes inside
+   the cache dir); user modules with sibling imports died with
+   "Module not found" the moment their .hvc was warm. loadModule now
+   prefers ResolvedModule::sourcePath for the script dir (lang/stdlib
+   modules keep the old behavior - their cache copies sit in the same
+   dir - and source-less bundles fall back to the .hvc path).
+
+2. **The circular-dependency escape hatch rejected the merged
+   namespace object.** With spelling-stable keys, the window <->
+   protocols <- display cycle is detected correctly - and the escape
+   then failed: its predicate (isHostFnNamespaceObject) requires every
+   entry to be a host function, but the in-flight display namespace
+   has already been shadow-merged with .hv exports (closures) and a
+   nested namespace object (x11). The escape now uses a dedicated
+   isCallableNamespaceObject predicate (callables + nested namespace
+   objects, at least one callable required - arbitrary data objects
+   are still rejected).
+
+Verified: module-identity + vm-opt-001 smokes pass cold AND warm
+(warm is the previously broken path); window_list, window_active,
+hk_trigger_burst/e2e (the regressions the fix exposed mid-gate) all
+pass; full gate 345/6 = exactly the pre-existing set (orc quartet +
+repl + qt); ctest 12/12; both module benches intact.
+
 ## ORC vs Cranelift at tier 2 (2026-10-12, first-ever measurement)
 
 Matched workloads on the LLVM-enabled build (`build-crane-release`, mode

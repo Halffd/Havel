@@ -2422,6 +2422,7 @@ public:
   // buildNamespaceGlobals() from dotted host functions (every field is a
   // host fn). `use window` must NOT short-circuit on such a namespace when
   // a same-named .hv module source exists — the module would never load.
+  bool isCallableNamespaceObject(Value value) const;
   bool isHostFnNamespaceObject(Value value) const;
   void activateLazyModule(const std::string &name);
   bool isLazyModuleLoaded(const std::string &name) const;

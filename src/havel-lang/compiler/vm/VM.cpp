@@ -593,6 +593,10 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   if (debug_mode) {
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
+  // Same as executePersistent: a fresh pipeline call does not resume into
+  // the previous dispatch's suspension record. Drivers (REPL pump, IO
+  // thread slices) leave the flag behind; the ops would bail otherwise.
+  clearLastSuspension();
 
   // If a scheduler is available, run the main script as a goroutine
   // so it cooperatively yields with other goroutines (spawned via go/async).
@@ -725,6 +729,9 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
           current_executing_fiber_ = nullptr;
         } else {
           cur->state = Scheduler::GoroutineState::Done;
+          if (cur->id == main_script_goroutine_id_) {
+            main_script_goroutine_id_ = UINT32_MAX;
+          }
         }
       } else if (cur->state == Scheduler::GoroutineState::Runnable ||
                  cur->state == Scheduler::GoroutineState::Running) {
@@ -813,6 +820,20 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       } else {
         cur->state = Scheduler::GoroutineState::Done;
         if (cur->fiber) cur->fiber->state = FiberState::DONE;
+        // Main script completed: unwound the execute() scheduler loop here
+        // instead of idling below. Live goroutines the script left behind
+        // (timers, worker loops, hotkey handlers) are exactly the things a
+        // caller keeps pumping after execute() returns — the REPL's pump
+        // callback (io->PumpOnce + tickScheduler), the script-mode tick
+        // loop, the daemon idle callback. Before this, a script whose main
+        // returned while a sleeping goroutine was still alive kept the loop
+        // alive forever: nextSleepDeadline() always produced a near-future
+        // deadline, so neither break fired and `havel --repl script.hv`
+        // never reached "Enter REPL..." (repl+script wedged after the
+        // script ran; same wedge in script-only strategies).
+        if (cur->id == main_script_goroutine_id_) {
+          main_script_goroutine_id_ = UINT32_MAX;
+        }
       }
     }
 vm_in_execute_.store(false, std::memory_order_release);
@@ -928,6 +949,14 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     }
   }
 
+  // A fresh top-level evaluation must not inherit the suspension record
+  // left by the last driver-run goroutine slice. last_suspension_reason_
+  // is a *record of how the previous dispatch exited* (e.g. a goroutine's
+  // sleep parked its fiber and left SLEEP behind), but every dispatch op
+  // bails to the slow path — which returns immediately — while it is set,
+  // so the fresh eval executed zero instructions and REPL lines printed
+  // nothing. Clear it: this frame is not resuming into a suspension.
+  clearLastSuspension();
   runDispatchLoop(0);
 
   std::unordered_map<std::string, Value> lazyModuleUpdates;
@@ -4720,6 +4749,20 @@ void VM::tickScheduler(bool wait_for_sleepers) {
 
   sched->setCurrent(g);
 
+  // Per-slice tick budget. HavelEngine arms this itself for the paths it
+  // drives (processGoroutines / processGoroutinesInline); tickScheduler
+  // has no such driver, so arm it here: a goroutine body that runs long
+  // without suspending (busy loop, long computation, sleep clamped to 0)
+  // must not wedge the caller pumping it (REPL pump callback, bc.tick,
+  // minimal-mode tick loop). The dispatch loops bare-return at their
+  // checkpoints once the budget is armed, and the expiry branch below
+  // requeues the goroutine instead of losing it.
+  beginFastTick(8 * 8192);
+  struct EndDriverTick {
+    VM &vm;
+    ~EndDriverTick() { vm.endFastTick(); }
+  } end_driver_tick{*this};
+
   if (g->state == Scheduler::GoroutineState::Created) {
     auto result = startGoroutineCall(g->callable, g->locals);
     if (result != VM::GoroutineCallResult::Failed) {
@@ -4770,6 +4813,17 @@ void VM::tickScheduler(bool wait_for_sleepers) {
 
   uint8_t lastReason = getLastSuspensionReason();
   void *lastContext = getLastSuspensionContext();
+  if (lastReason == 0 && tickBudgetExhausted() && g->fiber) {
+    // Budget cutoff mid-body: the goroutine is neither suspended nor done.
+    // Save its fiber, put it back in the queue, restore the caller's
+    // in-flight state, and return — the next pump continues it.
+    saveFiberStatePublic(g->fiber);
+    g->state = Scheduler::GoroutineState::Runnable;
+    sched->enqueue(g);
+    if (sched->current() == g) sched->clearCurrent();
+    restore_caller();
+    return;
+  }
   if (lastReason != 0) {
     clearLastSuspension();
     if (g->fiber) saveFiberStatePublic(g->fiber);

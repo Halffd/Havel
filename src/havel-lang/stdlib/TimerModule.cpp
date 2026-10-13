@@ -14,7 +14,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 void registerTimerModule(const VMApi &api) {
-  // timer.setTimeout(ms, fn) — one-shot timer, delegates to timeout.start
+  // timer.setTimeout(ms, fn) - one-shot timer, delegates to timeout.start
   api.registerFunction("timer.setTimeout", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("timer.setTimeout requires ms and callback");
@@ -22,14 +22,14 @@ void registerTimerModule(const VMApi &api) {
     return api.vm().invokeHostFunctionDirect("timeout.start", args);
   });
 
-  // timer.setInterval(ms, fn) — repeating timer, delegates to interval.start
+  // timer.setInterval(ms, fn) - repeating timer, delegates to interval.start
   api.registerFunction("timer.setInterval", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("timer.setInterval requires ms and callback");
     return api.vm().invokeHostFunctionDirect("interval.start", args);
   });
 
-  // timer.clear(id) — cancel a timer (interval or timeout)
+  // timer.clear(id) - cancel a timer (interval or timeout)
   api.registerFunction("timer.clear", [api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("timer.clear requires a timer id");
@@ -42,13 +42,13 @@ void registerTimerModule(const VMApi &api) {
     throw std::runtime_error("timer.clear: invalid timer id");
   });
 
-  // timer.activeCount() — number of active timers (tracked by TimerService)
+  // timer.activeCount() - number of active timers (tracked by TimerService)
   api.registerFunction("timer.activeCount", [](const std::vector<Value> &args) {
     (void)args;
     return Value::makeInt(0);
   });
 
-  // timer.sleep(ms) — sleep for milliseconds (delegates to VM yield with sleep reason)
+  // timer.sleep(ms) - sleep for milliseconds (delegates to VM yield with sleep reason)
   api.registerFunction("timer.sleep", [api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("timer.sleep requires milliseconds");
@@ -59,7 +59,7 @@ void registerTimerModule(const VMApi &api) {
     return api.vm().invokeHostFunctionDirect("sleep_ms", args);
   });
 
-  // timer.now() — current time in milliseconds
+  // timer.now() - current time in milliseconds
   api.registerFunction("timer.now", [](const std::vector<Value> &args) {
     (void)args;
     auto now = std::chrono::steady_clock::now();

@@ -9,7 +9,7 @@
  * buildNamespaceGlobals() materializes their namespace objects (qt.*, ...).
  *
  * Before this drain existed the registry was a function-local static with
- * no reader — every C-ABI extension function ever registered was silently
+ * no reader - every C-ABI extension function ever registered was silently
  * discarded, which is how the qt.* and gtk.* namespaces died when those
  * extensions moved into the toolkit plugins.
  */
@@ -31,7 +31,7 @@ namespace havel::compiler {
 ///
 /// @param vm VM that will execute the drained functions; may be null for
 ///        a pure presence check.
-/// @return name -> host function map ("qt.init", ...) — may be empty.
+/// @return name -> host function map ("qt.init", ...) - may be empty.
 std::unordered_map<std::string, BytecodeHostFunction>
 takeRegisteredExtensionFunctions(VM *vm);
 

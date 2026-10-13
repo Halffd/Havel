@@ -1,9 +1,9 @@
-// IPixelAutomation.hpp — the Qt-free half of pixel automation.
+// IPixelAutomation.hpp - the Qt-free half of pixel automation.
 //
 // PixelAutomationService (the Qt-using wrapper) lives in havel_gui, but the
 // core and the pixel module used to name the concrete class directly:
 // HostModules.cpp constructed it, PixelModule.cpp called its methods. That one
-// reference was enough to pull havel_gui — and therefore Qt — into any binary
+// reference was enough to pull havel_gui - and therefore Qt - into any binary
 // that linked libhavel_core.a, no matter how many Qt symbols the guard found,
 // because the referenced symbol ("havel::host::PixelAutomationService::...")
 // is not Qt-mangled.
@@ -41,7 +41,7 @@ struct HAVEL_EXPORT Color {
     std::string toHex() const;
 
     // Check if color is near another color with tolerance
-    bool near(const Color& other, int tolerance = 0) const;
+    bool IsNear(const Color& other, int tolerance = 0) const;
 };
 
 /**

@@ -8,8 +8,11 @@
 #include <cstdint>
 #include <unordered_map>
 #include <memory>
+#include "havel_platform.h"
+#if !HAVEL_PLATFORM_WINDOWS
 #include <sys/eventfd.h>
 #include <unistd.h>
+#endif
 #include <atomic>
 
 #include "utils/LockFreeQueue.hpp"
@@ -120,7 +123,7 @@ public:
      * Submit blocking work to the callback worker pool (thread-safe).
      *
      * The job runs on a worker thread; it must not touch VM state,
-     * Values, or the GC heap — C++ payload in, C++ result out. It
+     * Values, or the GC heap - C++ payload in, C++ result out. It
      * posts its result back via push(Event(ASYNC_HOST_COMPLETE, ...))
      * or deferToVM, never by invoking the VM directly.
      *
@@ -179,6 +182,25 @@ public:
 
     int wakeupFd() const { return wakeupFd_; }
 
+#if HAVEL_PLATFORM_WINDOWS
+    /**
+     * Win32 event handle used to poke the event loop, or nullptr if the
+     * wakeup object was never created.
+     *
+     * Typed void* on purpose: EventQueue.hpp is included by most of the VM,
+     * and pulling <windows.h> into all of them for one handle costs every
+     * reader the min/max macro surface. The definition side casts this back
+     * to HANDLE, where <windows.h> is already included.
+     *
+     * IMPORTANT: wakeupFd() returns -1 on Windows, so any select()/poll()
+     * loop built on it will simply never be woken. Consumers of the wakeup
+     * object - core/io/EventListener.cpp and compiler/vm/VM.cpp - must wait
+     * on wakeupHandle() with WaitForMultipleObjects on Windows instead.
+     * That switch is still outstanding; see docs/build/windows.md.
+     */
+    void *wakeupHandle() const { return wakeupEvent_; }
+#endif
+
     void drainWakeup();
     
     /**
@@ -200,6 +222,9 @@ private:
     std::unordered_map<uint8_t, EventHandler> handlers_;
     mutable std::mutex handlers_mutex_;
     int wakeupFd_ = -1;
+#if HAVEL_PLATFORM_WINDOWS
+    void *wakeupEvent_ = nullptr;
+#endif
     void signalWakeup();
     
     // Worker thread pool for executing callbacks asynchronously

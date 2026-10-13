@@ -12,7 +12,7 @@
 //
 // Functions containing opcodes the CFG model cannot faithfully carry
 // (exception handlers, coroutine suspension, inline caches) are skipped
-// untouched — never partially optimized.
+// untouched - never partially optimized.
 
 #include "CFGIntegration.hpp"
 #include "BytecodePasses.hpp"

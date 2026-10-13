@@ -432,7 +432,7 @@ void EvdevAdapter::DrainHotplugEvents() {
     alignas(struct inotify_event) char buf[4096];
     for (;;) {
         ssize_t n = read(hotplugFd_, buf, sizeof(buf));
-        if (n <= 0) return; // EAGAIN (non-blocking) or error — nothing pending
+        if (n <= 0) return; // EAGAIN (non-blocking) or error - nothing pending
         const char *p = buf;
         const char *end = buf + n;
         while (p < end) {
@@ -508,7 +508,7 @@ void EvdevAdapter::DetachDevice(const std::string &path) {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
                            [&](const Device &d) { return d.path == path; });
-    if (it == devices_.end()) return; // not tracked — nothing to do
+    if (it == devices_.end()) return; // not tracked - nothing to do
     debug("EvdevAdapter: Detaching device {} ({})", it->name, path);
     it->grab.reset();
     grabbedFds_.erase(it->fd);
@@ -831,7 +831,7 @@ void EvdevAdapter::RecheckDevices() {
         if (!currentPaths.count(devices_[i].path)) {
             std::string path = devices_[i].path;
             DetachDevice(path); // acquires the same (recursive) lock
-            continue;            // vector shifted — don't advance index
+            continue;            // vector shifted - don't advance index
         }
         ++i;
     }
@@ -1187,7 +1187,7 @@ if (!mouseCallback_ && !blockInput_.load()) {
     } else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
         // EvdevAdapter applies scrollSpeed_ only when forwarding via uinput
         // directly (no mouseCallback). When mouseCallback is set, EventListener
-        // handles scaling via IO::scrollSpeed — do not scale here to avoid
+        // handles scaling via IO::scrollSpeed - do not scale here to avoid
         // double-scaling.
         int32_t raw = ev.value;
         int32_t scaled = mouseCallback_ ? raw

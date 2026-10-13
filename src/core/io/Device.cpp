@@ -1,5 +1,8 @@
 #include "Device.hpp"
 #include "utils/Logger.hpp"
+// std::map is used for the (vendor, product) -> merged Device map below. It used
+// to arrive transitively; include what you use.
+#include <map>
 #include <fstream>
 #include <algorithm>
 #include <iostream>
@@ -152,8 +155,8 @@ int Device::countKeysInRange(int start, int end) const {
     return count;
 }
 
-DeviceCapabilities Device::analyzeCapabilities() {
-    DeviceCapabilities caps;
+InputDeviceCapabilities Device::analyzeCapabilities() {
+    InputDeviceCapabilities caps;
     
     if (!hasEventType(EV_KEY)) return caps;
     

@@ -15,16 +15,23 @@ class HAVEL_EXPORT DisplayManager {
             wID id {0};            // For XRandR/Wayland output ID
             wID crtc_id {0};       // For XRandR
         };
-        static Display* display;
-        static ::Window root;
+        // An X11 Display and its root Window have no Windows spelling, so they
+        // exist only where they exist. Every Xlib-specific entry point is gated
+        // with them; Windows enumerates monitors through GetMonitors() instead.
+        // Stubbing them as void* would only move the failure out to every
+        // caller.
         static bool initialized;
         static bool headlessMode;
         static void SetHeadlessMode(bool headless) { headlessMode = headless; }
         static bool IsHeadlessMode() { return headlessMode; }
         static void Initialize();
+        static void Close();
+#if HAVEL_PLATFORM_POSIX
+        static Display* display;
+        static ::Window root;
         static Display* GetDisplay();
         static ::Window GetRootWindow();
-        static void Close();
+#endif
         static bool IsInitialized();
         
         static std::vector<MonitorInfo> GetMonitors();
@@ -47,9 +54,14 @@ class HAVEL_EXPORT DisplayManager {
         static std::vector<MonitorInfo> cached_monitors;
         static void RefreshMonitorCache();
         
+#if HAVEL_PLATFORM_POSIX
         // X11 implementation
         static std::vector<MonitorInfo> GetMonitorsX11();
         static int X11ErrorHandler(Display* display, XErrorEvent* event);
+#elif HAVEL_PLATFORM_WINDOWS
+        // Win32 implementation
+        static std::vector<MonitorInfo> GetMonitorsWindows();
+#endif
         
         #ifdef __WAYLAND__
         // Wayland implementation  

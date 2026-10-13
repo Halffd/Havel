@@ -1,6 +1,6 @@
 #pragma once
 
-// BytecodeOrcJIT.h — public interface only.
+// BytecodeOrcJIT.h - public interface only.
 // LLVM headers are intentionally NOT included here to prevent namespace
 // pollution of std::__detail under libstdc++ 15 / LLVM 23+.
 // All LLVM types are forward-declared or kept in the .cpp.

@@ -12,18 +12,24 @@
 #include "Config.h"
 #include "LoggerC.h"
 
+#include "havel_cplat.h"
+
 #include <ctype.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/inotify.h>
-#include <sys/stat.h>
 #include <time.h>
+
+#include <sys/stat.h>
+
+#if HAVEL_PLATFORM_POSIX
+#include <fcntl.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sys/inotify.h>
 #include <unistd.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Internal hash map (open-addressing, FNV-1a)
@@ -160,17 +166,17 @@ struct HavelConfig {
     CfgWatch*    watchers;
     size_t       watcherCount;
     size_t       watcherCap;
-    pthread_mutex_t mutex;
+    havel_mutex_t mutex;
 
     // File watching
     bool          watching;
-    pthread_t     watchThread;
-    pthread_mutex_t watchMutex;
+    havel_thread_t watchThread;
+    havel_mutex_t watchMutex;
 
     // Debounced save
     bool          savePending;
-    pthread_t     saveThread;
-    pthread_mutex_t saveMutex;
+    havel_thread_t saveThread;
+    havel_mutex_t saveMutex;
 };
 
 // ---------------------------------------------------------------------------
@@ -187,9 +193,9 @@ static void ensureInit(void) {
     g_config.watchers = NULL;
     g_config.watcherCount = 0;
     g_config.watcherCap = 0;
-    pthread_mutex_init(&g_config.mutex, NULL);
-    pthread_mutex_init(&g_config.watchMutex, NULL);
-    pthread_mutex_init(&g_config.saveMutex, NULL);
+    havel_mutex_init(&g_config.mutex);
+    havel_mutex_init(&g_config.watchMutex);
+    havel_mutex_init(&g_config.saveMutex);
     g_config.watching = false;
     g_config.savePending = false;
     g_configInit = true;
@@ -207,14 +213,41 @@ HavelConfig* HavelConfig_getInstance(void) {
 static char* g_configDir = NULL;
 static char* g_mainConfig = NULL;
 static char* g_hotkeysDir = NULL;
-static pthread_mutex_t g_pathMutex;
-static void __attribute__((constructor)) init_pathMutex(void) {
+static havel_mutex_t g_pathMutex;
+
+/* The path mutex has to be recursive: mkdirRecursive() below walks a path and
+   re-enters the directory helpers that take this same lock.
+
+   POSIX gets this ready from a constructor attribute, which runs before main().
+   MSVC has no such attribute and nothing runs before main on Windows, so the
+   init is lazy and idempotent instead. CRITICAL_SECTION is recursive exactly
+   like PTHREAD_MUTEX_RECURSIVE, which is why the two need no other
+   difference. */
+#if HAVEL_PLATFORM_WINDOWS
+static void init_pathMutex(void) {
+  InitializeCriticalSection(&g_pathMutex);
+}
+static havel_once_t g_pathMutexOnce = HAVEL_ONCE_INIT;
+#define PATH_MUTEX_LOCK()                                    \
+  do {                                                       \
+    havel_once_call(&g_pathMutexOnce, init_pathMutex);        \
+    havel_mutex_lock(&g_pathMutex);                          \
+  } while (0)
+#define PATH_MUTEX_UNLOCK() havel_mutex_unlock(&g_pathMutex)
+#else
+static void init_pathMutex(void) {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init(&g_pathMutex, &attr);
+  havel_mutex_init(&g_pathMutex);
   pthread_mutexattr_destroy(&attr);
 }
+static void __attribute__((constructor)) init_pathMutexCtor(void) {
+  init_pathMutex();
+}
+#define PATH_MUTEX_LOCK() havel_mutex_lock(&g_pathMutex)
+#define PATH_MUTEX_UNLOCK() havel_mutex_unlock(&g_pathMutex)
+#endif
 
 static char* defaultConfigDir(void) {
     const char* home = getenv("HOME");
@@ -228,7 +261,7 @@ static char* defaultConfigDir(void) {
 }
 
 static char* getPathDir(void) {
-    pthread_mutex_lock(&g_pathMutex);
+    PATH_MUTEX_LOCK();
     if (!g_configDir) {
         g_configDir = defaultConfigDir();
         size_t len = strlen(g_configDir) + strlen("havel.cfg");
@@ -238,12 +271,12 @@ static char* getPathDir(void) {
         g_hotkeysDir = (char*)malloc(hlen + 1);
         snprintf(g_hotkeysDir, hlen + 1, "%shotkeys/", g_configDir);
     }
-    pthread_mutex_unlock(&g_pathMutex);
+    PATH_MUTEX_UNLOCK();
     return g_configDir;
 }
 
 void HavelConfig_setConfigPath(const char* dir, const char* basename) {
-    pthread_mutex_lock(&g_pathMutex);
+    PATH_MUTEX_LOCK();
     free(g_configDir); g_configDir = NULL;
     free(g_mainConfig); g_mainConfig = NULL;
     free(g_hotkeysDir); g_hotkeysDir = NULL;
@@ -257,7 +290,7 @@ void HavelConfig_setConfigPath(const char* dir, const char* basename) {
     size_t hlen = dlen + strlen("hotkeys/");
     g_hotkeysDir = (char*)malloc(hlen + 1);
     snprintf(g_hotkeysDir, hlen + 1, "%shotkeys/", dir);
-    pthread_mutex_unlock(&g_pathMutex);
+    PATH_MUTEX_UNLOCK();
 }
 
 void HavelConfig_getConfigDir(char* buf, size_t bufSize) {
@@ -279,21 +312,21 @@ static void mkdirRecursive(const char* path) {
     for (char* p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
-            mkdir(tmp, 0755);
+            havel_mkdir(tmp);
             *p = '/';
         }
     }
-    mkdir(tmp, 0755);
+    havel_mkdir(tmp);
     free(tmp);
 }
 
 void HavelConfig_ensureConfigDir(void) {
-    pthread_mutex_lock(&g_pathMutex);
+    PATH_MUTEX_LOCK();
     getPathDir();
     struct stat st;
     if (stat(g_configDir, &st) != 0) mkdirRecursive(g_configDir);
     if (g_hotkeysDir && stat(g_hotkeysDir, &st) != 0) mkdirRecursive(g_hotkeysDir);
-    pthread_mutex_unlock(&g_pathMutex);
+    PATH_MUTEX_UNLOCK();
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +371,7 @@ static void parseTomlLine(char* line, char** section) {
         val[vlen - 2] = '\0';
     }
 
-    pthread_mutex_lock(&g_config.mutex);
+    havel_mutex_lock(&g_config.mutex);
     if (*section && **section) {
         size_t klen = strlen(*section) + 1 + strlen(key) + 1;
         char* fullKey = (char*)malloc(klen);
@@ -348,7 +381,7 @@ static void parseTomlLine(char* line, char** section) {
     } else {
         cfgMapSet(&g_config.values, key, val);
     }
-    pthread_mutex_unlock(&g_config.mutex);
+    havel_mutex_unlock(&g_config.mutex);
 
     free(key);
     free(val);
@@ -363,10 +396,10 @@ void HavelConfig_load(HavelConfig* cfg, const char* filename) {
     char fpath[4096];
     HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
 
-    pthread_mutex_lock(&g_config.mutex);
+    havel_mutex_lock(&g_config.mutex);
     free(g_config.path);
     g_config.path = strdup(fpath);
-    pthread_mutex_unlock(&g_config.mutex);
+    havel_mutex_unlock(&g_config.mutex);
 
     FILE* f = fopen(fpath, "r");
     if (!f) {
@@ -421,13 +454,13 @@ void HavelConfig_save(HavelConfig* cfg, const char* filename) {
     if (filename && *filename) {
         HavelConfig_getConfigFilePath(filename, fpath, sizeof(fpath));
     } else {
-        pthread_mutex_lock(&g_config.mutex);
+        havel_mutex_lock(&g_config.mutex);
         if (!g_config.path || !*g_config.path) {
-            pthread_mutex_unlock(&g_config.mutex);
+            havel_mutex_unlock(&g_config.mutex);
             return;
         }
         snprintf(fpath, sizeof(fpath), "%s", g_config.path);
-        pthread_mutex_unlock(&g_config.mutex);
+        havel_mutex_unlock(&g_config.mutex);
     }
 
     HavelConfig_ensureConfigDir();
@@ -438,7 +471,7 @@ void HavelConfig_save(HavelConfig* cfg, const char* filename) {
         return;
     }
 
-    pthread_mutex_lock(&g_config.mutex);
+    havel_mutex_lock(&g_config.mutex);
 
     // Collect all keys, sort them
     size_t nKeys = g_config.values.len;
@@ -480,15 +513,15 @@ void HavelConfig_save(HavelConfig* cfg, const char* filename) {
         }
     }
 
-    pthread_mutex_unlock(&g_config.mutex);
+    havel_mutex_unlock(&g_config.mutex);
     free(keys);
     fclose(f);
 }
 
 void HavelConfig_reload(HavelConfig* cfg) {
-    pthread_mutex_lock(&g_config.mutex);
+    havel_mutex_lock(&g_config.mutex);
     char* p = g_config.path ? strdup(g_config.path) : NULL;
-    pthread_mutex_unlock(&g_config.mutex);
+    havel_mutex_unlock(&g_config.mutex);
 
     if (!p || !*p) { free(p); return; }
 
@@ -550,7 +583,7 @@ void HavelConfig_reload(HavelConfig* cfg) {
     free(section);
 
     // Notify watchers of changed values, then swap
-    pthread_mutex_lock(&g_config.mutex);
+    havel_mutex_lock(&g_config.mutex);
     for (size_t w = 0; w < g_config.watcherCount; w++) {
         CfgWatch* cw = &g_config.watchers[w];
         for (size_t i = 0; i < newValues.cap; i++) {
@@ -567,7 +600,7 @@ void HavelConfig_reload(HavelConfig* cfg) {
     }
     cfgMapFree(&g_config.values);
     g_config.values = newValues;
-    pthread_mutex_unlock(&g_config.mutex);
+    havel_mutex_unlock(&g_config.mutex);
     free(p);
 }
 
@@ -590,12 +623,12 @@ static void* saveThreadFunc(void* arg) {
 
 void HavelConfig_requestSave(HavelConfig* cfg) {
     cfg->savePending = true;
-    pthread_mutex_lock(&cfg->saveMutex);
+    havel_mutex_lock(&cfg->saveMutex);
     if (!cfg->saveThread) {
-        pthread_create(&cfg->saveThread, NULL, saveThreadFunc, cfg);
-        pthread_detach(cfg->saveThread);
+        havel_thread_create(&cfg->saveThread, saveThreadFunc, cfg);
+        havel_thread_detach(cfg->saveThread);
     }
-    pthread_mutex_unlock(&cfg->saveMutex);
+    havel_mutex_unlock(&cfg->saveMutex);
 }
 
 void HavelConfig_forceSave(HavelConfig* cfg) {
@@ -611,10 +644,10 @@ void HavelConfig_ensureConfigFile(HavelConfig* cfg, const char* filename) {
     char fpath[4096];
     HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
 
-    pthread_mutex_lock(&cfg->mutex);
+    havel_mutex_lock(&cfg->mutex);
     free(cfg->path);
     cfg->path = strdup(fpath);
-    pthread_mutex_unlock(&cfg->mutex);
+    havel_mutex_unlock(&cfg->mutex);
 
     HavelConfig_ensureConfigDir();
 
@@ -648,19 +681,19 @@ void HavelConfig_ensureConfigFile(HavelConfig* cfg, const char* filename) {
 
 const char* HavelConfig_getString(const HavelConfig* cfg, const char* key, const char* defaultVal) {
     (void)cfg;
-    pthread_mutex_lock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_lock((havel_mutex_t*)&g_config.mutex);
     const char* v = cfgMapGet(&g_config.values, key);
-    pthread_mutex_unlock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_unlock((havel_mutex_t*)&g_config.mutex);
     return v ? v : (defaultVal ? defaultVal : "");
 }
 
 bool HavelConfig_getBool(const HavelConfig* cfg, const char* key, bool defaultVal) {
     const char* v = HavelConfig_getString(cfg, key, NULL);
     if (!v) return defaultVal;
-    if (strcasecmp(v, "true") == 0 || strcasecmp(v, "yes") == 0 ||
-        strcasecmp(v, "on") == 0 || strcmp(v, "1") == 0) return true;
-    if (strcasecmp(v, "false") == 0 || strcasecmp(v, "no") == 0 ||
-        strcasecmp(v, "off") == 0 || strcmp(v, "0") == 0) return false;
+    if (havel_strcasecmp(v, "true") == 0 || havel_strcasecmp(v, "yes") == 0 ||
+        havel_strcasecmp(v, "on") == 0 || strcmp(v, "1") == 0) return true;
+    if (havel_strcasecmp(v, "false") == 0 || havel_strcasecmp(v, "no") == 0 ||
+        havel_strcasecmp(v, "off") == 0 || strcmp(v, "0") == 0) return false;
     return defaultVal;
 }
 
@@ -690,10 +723,10 @@ static void notifyWatchers(HavelConfig* cfg, const char* key, const char* value)
 }
 
 void HavelConfig_setString(HavelConfig* cfg, const char* key, const char* value, bool save) {
-    pthread_mutex_lock(&cfg->mutex);
+    havel_mutex_lock(&cfg->mutex);
     cfgMapSet(&cfg->values, key, value);
     notifyWatchers(cfg, key, value);
-    pthread_mutex_unlock(&cfg->mutex);
+    havel_mutex_unlock(&cfg->mutex);
     if (save) HavelConfig_requestSave(cfg);
 }
 
@@ -714,16 +747,16 @@ void HavelConfig_setDouble(HavelConfig* cfg, const char* key, double value, bool
 }
 
 bool HavelConfig_has(const HavelConfig* cfg, const char* key) {
-    pthread_mutex_lock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_lock((havel_mutex_t*)&g_config.mutex);
     bool found = cfgMapGet(&g_config.values, key) != NULL;
-    pthread_mutex_unlock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_unlock((havel_mutex_t*)&g_config.mutex);
     return found;
 }
 
 bool HavelConfig_remove(HavelConfig* cfg, const char* key) {
-    pthread_mutex_lock(&cfg->mutex);
+    havel_mutex_lock(&cfg->mutex);
     bool removed = cfgMapRemove(&cfg->values, key);
-    pthread_mutex_unlock(&cfg->mutex);
+    havel_mutex_unlock(&cfg->mutex);
     if (removed) HavelConfig_requestSave(cfg);
     return removed;
 }
@@ -733,7 +766,7 @@ bool HavelConfig_remove(HavelConfig* cfg, const char* key) {
 // ---------------------------------------------------------------------------
 
 size_t HavelConfig_getAllKeys(const HavelConfig* cfg, char*** outKeys) {
-    pthread_mutex_lock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_lock((havel_mutex_t*)&g_config.mutex);
     size_t n = g_config.values.len;
     char** arr = (char**)malloc(n * sizeof(char*));
     size_t ki = 0;
@@ -741,7 +774,7 @@ size_t HavelConfig_getAllKeys(const HavelConfig* cfg, char*** outKeys) {
         if (g_config.values.entries[i].occupied)
             arr[ki++] = strdup(g_config.values.entries[i].key);
     }
-    pthread_mutex_unlock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_unlock((havel_mutex_t*)&g_config.mutex);
     *outKeys = arr;
     return ki;
 }
@@ -752,7 +785,7 @@ void HavelConfig_freeKeys(char** keys, size_t count) {
 }
 
 size_t HavelConfig_getConfigs(const HavelConfig* cfg, char*** outEntries) {
-    pthread_mutex_lock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_lock((havel_mutex_t*)&g_config.mutex);
     size_t n = g_config.values.len;
     char** arr = (char**)malloc(n * sizeof(char*));
     size_t ki = 0;
@@ -767,7 +800,7 @@ size_t HavelConfig_getConfigs(const HavelConfig* cfg, char*** outEntries) {
             arr[ki++] = entry;
         }
     }
-    pthread_mutex_unlock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_unlock((havel_mutex_t*)&g_config.mutex);
     *outEntries = arr;
     return ki;
 }
@@ -817,31 +850,80 @@ bool HavelConfig_getVerboseConditionLogging(const HavelConfig* cfg) {
 }
 
 // ---------------------------------------------------------------------------
-// File watching (inotify + poll fallback)
+// File watching
+//
+// POSIX watches with inotify and falls back to polling when inotify is
+// unavailable. Windows has no inotify at all, so it takes the polling path
+// directly. That is the same code the POSIX fallback already runs, at the same
+// one-second granularity its poll() timeout used, so the observable behaviour
+// - reload when the file's mtime moves forward - is unchanged.
 // ---------------------------------------------------------------------------
 
 static time_t getLastModified(const char* filepath) {
+#if HAVEL_PLATFORM_WINDOWS
+    const int wlen = MultiByteToWideChar(CP_UTF8, 0, filepath, -1, NULL, 0);
+    if (wlen <= 0) return 0;
+    wchar_t* wpath = (wchar_t*)malloc((size_t)wlen * sizeof(wchar_t));
+    if (!wpath) return 0;
+    MultiByteToWideChar(CP_UTF8, 0, filepath, -1, wpath, wlen);
+
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    const BOOL ok = GetFileAttributesExW(wpath, GetFileExInfoStandard, &data);
+    free(wpath);
+    if (!ok) return 0;
+
+    ULARGE_INTEGER stamp;
+    stamp.LowPart = data.ftLastWriteTime.dwLowDateTime;
+    stamp.HighPart = data.ftLastWriteTime.dwHighDateTime;
+    /* Win32 counts 100ns ticks from 1601-01-01; time_t counts seconds from
+       1970-01-01. 11644473600 is exactly that gap in seconds. */
+    return (time_t)((stamp.QuadPart - 116444736000000000ULL) / 10000000ULL);
+#else
     struct stat st;
     if (stat(filepath, &st) == 0) return st.st_mtime;
     return 0;
+#endif
 }
 
 static void* watchThreadFunc(void* arg) {
     HavelConfig* cfg = (HavelConfig*)arg;
 
-    pthread_mutex_lock(&cfg->mutex);
+    havel_mutex_lock(&cfg->mutex);
     char* fpath = cfg->path ? strdup(cfg->path) : NULL;
-    pthread_mutex_unlock(&cfg->mutex);
+    havel_mutex_unlock(&cfg->mutex);
 
     if (!fpath) return NULL;
 
+#if HAVEL_PLATFORM_WINDOWS
+    /* No inotify on Windows, so this is the polling path natively rather than
+       as a degraded fallback. The one-second tick matches the granularity the
+       POSIX poll() timeout used, so a reload still lands within a second of
+       the file changing. Sleep() is interruptible-free here by design: the
+       loop re-reads cfg->watching every tick, which is what lets
+       HavelConfig_stopFileWatching() join this thread. */
+    time_t lastMod = getLastModified(fpath);
+    while (cfg->watching) {
+        Sleep(1000);
+        time_t curMod = getLastModified(fpath);
+        if (curMod > lastMod) {
+            lastMod = curMod;
+            HavelConfig_reload(cfg);
+        }
+    }
+    free(fpath);
+    return NULL;
+#else
     int fd = inotify_init1(IN_NONBLOCK);
     if (fd == -1) {
         HAVEL_LOG_WARN("inotify_init failed, falling back to polling");
         time_t lastMod = getLastModified(fpath);
         while (cfg->watching) {
+#if HAVEL_PLATFORM_WINDOWS
+            Sleep(1000);
+#else
             struct timespec ts = {1, 0};
             nanosleep(&ts, NULL);
+#endif
             time_t curMod = getLastModified(fpath);
             if (curMod > lastMod) {
                 lastMod = curMod;
@@ -879,28 +961,29 @@ static void* watchThreadFunc(void* arg) {
     close(fd);
     free(fpath);
     return NULL;
+#endif  // HAVEL_PLATFORM_WINDOWS
 }
 
 void HavelConfig_startFileWatching(HavelConfig* cfg, const char* filename) {
-    pthread_mutex_lock(&cfg->watchMutex);
+    havel_mutex_lock(&cfg->watchMutex);
     if (cfg->watching) {
-        pthread_mutex_unlock(&cfg->watchMutex);
+        havel_mutex_unlock(&cfg->watchMutex);
         return;
     }
     HavelConfig_ensureConfigFile(cfg, filename ? filename : "havel.cfg");
     cfg->watching = true;
-    pthread_create(&cfg->watchThread, NULL, watchThreadFunc, cfg);
-    pthread_mutex_unlock(&cfg->watchMutex);
+    havel_thread_create(&cfg->watchThread, watchThreadFunc, cfg);
+    havel_mutex_unlock(&cfg->watchMutex);
 }
 
 void HavelConfig_stopFileWatching(HavelConfig* cfg) {
-    pthread_mutex_lock(&cfg->watchMutex);
+    havel_mutex_lock(&cfg->watchMutex);
     cfg->watching = false;
     if (cfg->watchThread) {
-        pthread_join(cfg->watchThread, NULL);
-        cfg->watchThread = 0;
+        havel_thread_join(cfg->watchThread, NULL);
+        cfg->watchThread = HAVEL_THREAD_NULL;
     }
-    pthread_mutex_unlock(&cfg->watchMutex);
+    havel_mutex_unlock(&cfg->watchMutex);
 }
 
 // ---------------------------------------------------------------------------
@@ -908,7 +991,7 @@ void HavelConfig_stopFileWatching(HavelConfig* cfg) {
 // ---------------------------------------------------------------------------
 
 void HavelConfig_watch(HavelConfig* cfg, const char* key, HavelConfig_WatchCallback cb, void* userData) {
-    pthread_mutex_lock(&cfg->mutex);
+    havel_mutex_lock(&cfg->mutex);
     if (cfg->watcherCount >= cfg->watcherCap) {
         size_t newCap = cfg->watcherCap ? cfg->watcherCap * 2 : 8;
         cfg->watchers = (CfgWatch*)realloc(cfg->watchers, newCap * sizeof(CfgWatch));
@@ -918,7 +1001,7 @@ void HavelConfig_watch(HavelConfig* cfg, const char* key, HavelConfig_WatchCallb
     cfg->watchers[cfg->watcherCount].cb = cb;
     cfg->watchers[cfg->watcherCount].userData = userData;
     cfg->watcherCount++;
-    pthread_mutex_unlock(&cfg->mutex);
+    havel_mutex_unlock(&cfg->mutex);
 }
 
 // ---------------------------------------------------------------------------
@@ -928,12 +1011,12 @@ void HavelConfig_watch(HavelConfig* cfg, const char* key, HavelConfig_WatchCallb
 void HavelConfig_print(const HavelConfig* cfg) {
     (void)cfg;
     printf("=== Config Values ===\n");
-    pthread_mutex_lock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_lock((havel_mutex_t*)&g_config.mutex);
     for (size_t i = 0; i < g_config.values.cap; i++) {
         if (g_config.values.entries[i].occupied) {
             printf("%s = %s\n", g_config.values.entries[i].key, g_config.values.entries[i].value);
         }
     }
-    pthread_mutex_unlock((pthread_mutex_t*)&g_config.mutex);
+    havel_mutex_unlock((havel_mutex_t*)&g_config.mutex);
     printf("====================\n");
 }

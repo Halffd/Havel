@@ -64,7 +64,7 @@ struct ScriptThrow final {
   Value value;
 };
 
-// JIT coroutine signal — thrown by JIT runtime stubs to exit native code
+// JIT coroutine signal - thrown by JIT runtime stubs to exit native code
 // when a coroutine/scheduler opcode (YIELD, AWAIT, GO_ASYNC, FIBER_SLEEP,
 // YIELD_RESUME) requires returning control to the scheduler.
 // executeCompiled() catches this and translates it into a suspension request.
@@ -130,19 +130,19 @@ struct VMExecutionResult {
     YIELD,       // Instruction completed normally, return value on stack
     SUSPENDED,   // Fiber suspended (waiting for event), state frozen
     RETURNED,    // Function returned, value in result_value
-    ERROR,       // Exception thrown, message in error_message
+    THREW,       // Exception thrown, message in error_message
     DEBUG_BREAK  // Breakpoint hit, debugger should take control
   };
   
   Type type;
   Value result_value;           // For YIELD or RETURNED
-  std::string error_message;    // For ERROR
+  std::string error_message;    // For THREW
   
   // Default constructor
   VMExecutionResult();
   
   // Convenience constructors
-  static VMExecutionResult Yield(const Value& value) {
+  static VMExecutionResult Yielded(const Value& value) {
     VMExecutionResult r;
     r.type = YIELD;
     r.result_value = value;
@@ -165,7 +165,7 @@ struct VMExecutionResult {
   
   static VMExecutionResult Error(const std::string& msg) {
     VMExecutionResult r;
-    r.type = ERROR;
+    r.type = THREW;
     r.error_message = msg;
     r.result_value = Value();
     return r;
@@ -428,7 +428,7 @@ std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
 // Key: module path, Value: empty string = not found, non-empty = resolved canonical path
 std::unordered_map<std::string, std::string> module_resolution_cache_;
 
-// Lazy module registry — descriptors are registered at startup,
+// Lazy module registry - descriptors are registered at startup,
 // init functions are called on first use (import/access)
 std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
@@ -448,7 +448,7 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
     };
     std::vector<GlobalsFrame> globals_stack_;
     // Identity (which module_globals shared_ptr) of the map currently
-    // installed as `globals` — null for the engine-main map. Restored from
+    // installed as `globals` - null for the engine-main map. Restored from
     // globals_stack_ frames on pop.
     std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
 
@@ -1028,7 +1028,7 @@ public:
   bool hasCurrentExceptionPublic() const { return has_current_exception_; }
     void setCurrentExceptionPublic(const Value& v) { has_current_exception_ = true; current_exception_ = v; }
 
-    // OBJECT_GET_RAW support — dynamic key lookup with class/parent chain walk
+    // OBJECT_GET_RAW support - dynamic key lookup with class/parent chain walk
     uint32_t globalsMirrorObjectId() const { return globals_mirror_object_id_; }
     uint64_t objectShapeVersion(uint32_t obj_id) const {
         auto *obj = heap_.object(obj_id);
@@ -2043,18 +2043,18 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // Fiber-suspending blocking host calls (A+C threading model).
   //
   // Host functions with slow/blocking implementations call
-  // runBlockingHostCall(job, lift) unconditionally — the context decides
+  // runBlockingHostCall(job, lift) unconditionally - the context decides
   // the mode, authors never branch:
   //
   //   goroutine context + live event queue: job() runs on an EventQueue
   //     worker thread and returns a shared_ptr<void> (any C++ result;
-  //     never a Value — Values never cross threads). The completion
+  //     never a Value - Values never cross threads). The completion
   //     event carries the cell; on the VM thread lift(cell) builds the
   //     result Value and Scheduler::resumeExternalWithValue parks->
   //     resumes the goroutine. The VM thread never blocks on the I/O.
   //
   //   no goroutine / no queue: job runs inline on the VM thread and
-  //     lift(job()) returns directly — cost identical to a plain
+  //     lift(job()) returns directly - cost identical to a plain
   //     synchronous host call.
   //
   // Suspend case returns Value::makePending(token); the CALL epilogue
@@ -2062,7 +2062,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   //
   // GC note: lift may capture Values (host-object ids etc.). lift runs
   // on the VM thread but survives across a suspension where GC can
-  // run, so pending records pin those captures via external roots —
+  // run, so pending records pin those captures via external roots -
   // the registerCallback discipline.
   // =====================================================================
   using AsyncCxxResult = havel::compiler::AsyncCxxResult;
@@ -2085,7 +2085,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
     // clear it on handleSuspended/yield (ExecutionEngine) leak it. Without
     // this check the Pending token escapes into parkIfPendingCallResult with
     // no fiber to park on, the result is neutralized to null, and the
-    // conditional evaluates to false — conditional hotkeys silently die.
+    // conditional evaluates to false - conditional hotkeys silently die.
     bool can_park = sched && sched->current() && current_executing_fiber_ &&
                     event_queue_ && !event_queue_->isShutdown();
     if (can_park) {
@@ -2259,7 +2259,7 @@ Value loadModule(const std::string& path);
   // True when `value` is a namespace object synthesized by
   // buildNamespaceGlobals() from dotted host functions (every field is a
   // host fn). `use window` must NOT short-circuit on such a namespace when
-  // a same-named .hv module source exists — the module would never load.
+  // a same-named .hv module source exists - the module would never load.
   bool isHostFnNamespaceObject(Value value) const;
   void activateLazyModule(const std::string &name);
 bool isLazyModuleLoaded(const std::string &name) const;
@@ -2539,7 +2539,7 @@ bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire)
       // touched by at most one thread at a time. Different threads may
       // LEGITIMATELY take turns driving the VM (main thread runs
       // vm->execute(); the EventListener event-loop thread runs
-      // executeFrame(); any thread may run callFunctionSync) — but never
+      // executeFrame(); any thread may run callFunctionSync) - but never
       // concurrently, and foreign threads must never mutate VM state
       // while the owner thread is inside dispatch.
       //

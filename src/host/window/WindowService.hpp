@@ -76,7 +76,7 @@ public:
     bool setAlwaysOnTop(uint64_t id, bool onTop);
     bool moveWindowToMonitor(uint64_t id, int monitor);
 
-    // EWMH state toggles — delegate to backend; return false when unimplemented.
+    // EWMH state toggles - delegate to backend; return false when unimplemented.
     bool setSticky(uint64_t id, bool on);
     bool isSticky(uint64_t id);
     bool setShaded(uint64_t id, bool on);

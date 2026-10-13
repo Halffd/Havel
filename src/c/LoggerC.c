@@ -5,11 +5,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <dirent.h>
+#include "havel_cplat.h"
 
 #define HAVEL_LOG_BUF_SIZE 8192
 #define HAVEL_PATH_BUF_SIZE 4096
@@ -25,7 +21,7 @@ typedef struct {
 
 struct HavelLogger {
     LoggerImpl      impl;
-    pthread_mutex_t mutex;
+    havel_mutex_t mutex;
     char**          history;
     size_t          historyCount;
     size_t          historyCapacity;
@@ -75,6 +71,15 @@ static const char* levelString(HavelLoggerLevel level) {
 }
 
 static void getCurrentTimestamp(char* buf, size_t bufSize) {
+#if HAVEL_PLATFORM_WINDOWS
+    /* GetLocalTime carries millisecond fields directly, which is the same
+       figure clock_gettime+CLOCK_REALTIME produced on POSIX. */
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    snprintf(buf, bufSize, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
+             st.wSecond, st.wMilliseconds);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm_buf;
@@ -83,9 +88,16 @@ static void getCurrentTimestamp(char* buf, size_t bufSize) {
     snprintf(buf, bufSize, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
              tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
              tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms);
+#endif
 }
 
 static void getFormattedTimestamp(char* buf, size_t bufSize) {
+#if HAVEL_PLATFORM_WINDOWS
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    snprintf(buf, bufSize, "%04d-%02d-%02d_%02d-%02d-%02d",
+             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm_buf;
@@ -93,13 +105,19 @@ static void getFormattedTimestamp(char* buf, size_t bufSize) {
     snprintf(buf, bufSize, "%04d-%02d-%02d_%02d-%02d-%02d",
              tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
              tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+#endif
 }
 
 static void getLogDirectory(char* buf, size_t bufSize) {
     const char* home = getenv("HOME");
+#if HAVEL_PLATFORM_WINDOWS
+    /* HOME is normally not set on Windows; USERPROFILE is its counterpart,
+       and without this the log directory lands in the process CWD. */
+    if (!home) home = getenv("USERPROFILE");
+#endif
     if (!home) {
         snprintf(buf, bufSize, "./logs");
-        mkdir("./logs", 0755);
+        havel_mkdir("./logs");
         return;
     }
     snprintf(buf, bufSize, "%s/.local/share/havel/logs", home);
@@ -107,11 +125,11 @@ static void getLogDirectory(char* buf, size_t bufSize) {
     for (size_t i = 0; i < len; i++) {
         if (buf[i] == '/') {
             buf[i] = '\0';
-            mkdir(buf, 0755);
+            havel_mkdir(buf);
             buf[i] = '/';
         }
     }
-    mkdir(buf, 0755);
+    havel_mkdir(buf);
 }
 
 static void historyPush(HavelLogger* logger, const char* entry) {
@@ -136,14 +154,13 @@ static void cleanupOldLogs(HavelLogger* logger) {
     char logDir[HAVEL_PATH_BUF_SIZE];
     getLogDirectory(logDir, sizeof(logDir));
 
-    DIR* dir = opendir(logDir);
-    if (!dir) return;
+    havel_dir_t dir;
+    if (!havel_dir_open(&dir, logDir)) return;
 
     time_t now = time(NULL);
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        const char* name = entry->d_name;
+    const char* name;
+    while (havel_dir_next(&dir, &name)) {
         size_t len = strlen(name);
         if (len < 14 || strcmp(name + len - 4, ".log") != 0) continue;
 
@@ -163,10 +180,10 @@ static void cleanupOldLogs(HavelLogger* logger) {
         if (diffDays > (double)logger->logMaxPeriod) {
             char fullPath[HAVEL_PATH_BUF_SIZE];
             snprintf(fullPath, sizeof(fullPath), "%s/%s", logDir, name);
-            unlink(fullPath);
+            havel_unlink(fullPath);
         }
     }
-    closedir(dir);
+    havel_dir_close(&dir);
 }
 
 static void openNewLogFile(HavelLogger* logger) {
@@ -207,7 +224,7 @@ static void havel_log(HavelLogger* logger, HavelLoggerLevel level, const char* m
     if (logger->destroying) return;
     if (level < logger->currentLevel) return;
 
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
 
     if (logger->useTimestampedFiles) {
         char currentDate[11];
@@ -253,7 +270,7 @@ static void havel_log(HavelLogger* logger, HavelLoggerLevel level, const char* m
         }
     }
 
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 static HavelLogger* g_instance = NULL;
@@ -269,7 +286,7 @@ static void destroyLogger(void) {
         free(g_instance->history[i]);
     }
     free(g_instance->history);
-    pthread_mutex_destroy(&g_instance->mutex);
+    havel_mutex_destroy(&g_instance->mutex);
     free(g_instance);
     g_instance = NULL;
 }
@@ -280,7 +297,7 @@ HavelLogger* HavelLogger_getInstance(void) {
     HavelLogger* logger = (HavelLogger*)calloc(1, sizeof(HavelLogger));
     if (!logger) return NULL;
 
-    pthread_mutex_init(&logger->mutex, NULL);
+    havel_mutex_init(&logger->mutex);
     logger->currentLevel = HAVEL_LOG_INFO;
     logger->consoleOutput = true;
     logger->useTimestampedFiles = true;
@@ -313,7 +330,7 @@ HavelLogger* HavelLogger_getInstance(void) {
 
 void HavelLogger_initialize(HavelLogger* logger, bool useTimestampedFiles, int logMaxPeriod, bool coloredOutput) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     logger->useTimestampedFiles = useTimestampedFiles;
     logger->logMaxPeriod = logMaxPeriod;
     logger->coloredOutput = coloredOutput;
@@ -322,7 +339,7 @@ void HavelLogger_initialize(HavelLogger* logger, bool useTimestampedFiles, int l
     } else {
         HavelLogger_setLogFile(logger, "havel.log");
     }
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 void HavelLogger_initializeWithConfig(HavelLogger* logger, bool useTimestamped, int logMaxPeriod, bool colorsEnabled) {
@@ -331,7 +348,7 @@ void HavelLogger_initializeWithConfig(HavelLogger* logger, bool useTimestamped, 
 
 void HavelLogger_setLogFile(HavelLogger* logger, const char* filename) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     if (logger->impl.logFile) {
         fclose(logger->impl.logFile);
         logger->impl.logFile = NULL;
@@ -345,14 +362,14 @@ void HavelLogger_setLogFile(HavelLogger* logger, const char* filename) {
         long sz = ftell(logger->impl.logFile);
         if (sz > 0) logger->currentFileSize = (size_t)sz;
     }
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 void HavelLogger_setLogLevel(HavelLogger* logger, HavelLoggerLevel level) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     logger->currentLevel = level;
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 HavelLoggerLevel HavelLogger_getCurrentLevel(const HavelLogger* logger) {
@@ -362,28 +379,28 @@ HavelLoggerLevel HavelLogger_getCurrentLevel(const HavelLogger* logger) {
 
 void HavelLogger_setColoredOutput(HavelLogger* logger, bool enabled) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     logger->coloredOutput = enabled;
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 void HavelLogger_setMaxHistorySize(HavelLogger* logger, size_t maxSize) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     logger->maxHistorySize = maxSize;
     while (logger->historyCount > logger->maxHistorySize) {
         free(logger->history[0]);
         memmove(logger->history, logger->history + 1, (logger->historyCount - 1) * sizeof(char*));
         logger->historyCount--;
     }
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 void HavelLogger_setMaxFileSize(HavelLogger* logger, size_t maxBytes) {
     if (!logger) return;
-    pthread_mutex_lock(&logger->mutex);
+    havel_mutex_lock(&logger->mutex);
     logger->maxFileSize = maxBytes;
-    pthread_mutex_unlock(&logger->mutex);
+    havel_mutex_unlock(&logger->mutex);
 }
 
 void HavelLogger_getLogFilePath(const HavelLogger* logger, char* buf, size_t bufSize) {

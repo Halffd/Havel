@@ -30,7 +30,7 @@ struct EventPayload {
  *   Producers publish.  The runtime dispatches.  Havel handlers execute.
  *
  * - Producers (FileWatcher, WindowEventSource, scripts via `emit`) call
- *   publish(); it is thread-safe and only queues — it never touches the VM.
+ *   publish(); it is thread-safe and only queues - it never touches the VM.
  * - The VM's normal execution loop (the engine's goroutine pump) calls
  *   dispatch(); queued events are matched against subscriptions and their
  *   handlers run OUTSIDE backend threads, in VM context.
@@ -54,14 +54,14 @@ public:
 
     // Subscribe a handler to an event name. Thread-safe.
     // Dotted names by convention ("file.changed", "window.focused",
-    // "my.event") — the runtime assigns no meaning to them.
+    // "my.event") - the runtime assigns no meaning to them.
     SubscriptionId subscribe(const std::string &name, HandlerFn handler);
 
     // Remove one subscription. Returns false when the id is unknown.
     bool unsubscribe(SubscriptionId id);
 
     // Drop every subscription (script reload: handlers must never outlive
-    // their compile unit — the classic handler-infestation failure).
+    // their compile unit - the classic handler-infestation failure).
     void clearAll();
 
     // Queue an event for dispatch. Thread-safe; never touches the VM.
@@ -75,7 +75,7 @@ public:
     size_t queuedCount() const;
 
     // Subscription argument (e.g. a watch path for `on file.changed(path)`)
-    // — event sources read it to establish their native watcher.
+    // - event sources read it to establish their native watcher.
     void setSubscriptionArg(SubscriptionId id, std::string arg);
     std::string getSubscriptionArg(SubscriptionId id) const;
 

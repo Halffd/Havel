@@ -42,7 +42,7 @@ static void ensureQtBackend() {
     if (!svc) return;
     if (svc->hasBackend()) return;
     
-    // Skip Qt backend creation in headless environments — would abort on
+    // Skip Qt backend creation in headless environments - would abort on
     // QGuiApplication creation when no display is available.
     if (havel::qtRuntimeUnavailable()) return;
     

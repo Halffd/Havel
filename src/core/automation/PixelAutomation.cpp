@@ -59,7 +59,7 @@ std::string Color::toHex() const {
     return std::string(buf);
 }
 
-bool Color::near(const Color &other, int tolerance) const {
+bool Color::IsNear(const Color &other, int tolerance) const {
     return std::abs(r - other.r) <= tolerance &&
            std::abs(g - other.g) <= tolerance &&
            std::abs(b - other.b) <= tolerance;
@@ -117,7 +117,7 @@ struct PixelAutomation::Impl {
                 if (provider->capture(region, pixels) && pixels.w > 0 &&
                     pixels.h > 0) {
                     // Copy into a Mat that owns its buffer before cvtColor runs,
-                    // so the cache never aliases the provider's std::vector —
+                    // so the cache never aliases the provider's std::vector -
                     // that vector dies with this call, and depending on
                     // cvtColor's dst reallocation to rescue the alias would be
                     // an implementation detail, not a guarantee.
@@ -276,7 +276,7 @@ Color PixelAutomation::getPixel(int x, int y) {
     }
 #endif
 
-    // A 3x3 grab, sampled at its centre — what the old QScreen::grabWindow call
+    // A 3x3 grab, sampled at its centre - what the old QScreen::grabWindow call
     // did, so the coordinates line up with the old behaviour.
     constexpr int captureSize = 3;
     const ScreenBounds region{x - 1, y - 1, captureSize, captureSize};
@@ -301,13 +301,13 @@ Color PixelAutomation::getPixel(int x, int y) {
 
 bool PixelAutomation::pixelMatch(int x, int y, const Color &expectedColor, int tolerance) {
     Color actual = getPixel(x, y);
-    return actual.near(expectedColor, tolerance);
+    return actual.IsNear(expectedColor, tolerance);
 }
 
 bool PixelAutomation::pixelMatch(int x, int y, const std::string &hexColor, int tolerance) {
     Color expected = Color::fromHex(hexColor);
     Color actual = getPixel(x, y);
-    return actual.near(expected, tolerance);
+    return actual.IsNear(expected, tolerance);
 }
 
 bool PixelAutomation::waitPixel(int x, int y, const Color &expectedColor, int tolerance, int timeout) {

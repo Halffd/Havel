@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
     havel::setQtBridgeInstaller(&havel::compiler::installToolkitBridge);
     // Load the Qt toolkit plugin eagerly so its in-process factories (UI/
     // screenshot/clipboard backends, pixel service, screen provider) are
-    // registered before the host or the language host can ask for them —
+    // registered before the host or the language host can ask for them -
     // the same ordering havel_gui's static initializer used to guarantee.
     // If the plugin cannot load (Qt version skew), this logs once and the
     // features degrade instead of the binary failing to boot.

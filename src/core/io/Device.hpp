@@ -3,29 +3,13 @@
 #include <vector>
 #include <cstdint>
 #include <sstream>
+#include "havel_platform.h"
+#if !HAVEL_PLATFORM_WINDOWS
 #include <linux/input.h>
-// Event types from linux/input.h
-#define EV_SYN 0x00
-#define EV_KEY 0x01
-#define EV_REL 0x02
-#define EV_ABS 0x03
-#define EV_MSC 0x04
-#define EV_SW 0x05
-#define EV_LED 0x11
-#define EV_SND 0x12
-#define EV_FF 0x15
-
-// Gamepad buttons
-#define BTN_GAMEPAD 0x130
-#define BTN_TL 0x136
-#define BTN_TR 0x137
-#define BTN_SELECT 0x13a
-#define BTN_START 0x13b
-
-// Joystick buttons
-#define BTN_JOYSTICK 0x120
-#define BTN_TRIGGER 0x120
-#define BTN_THUMB 0x121
+#endif
+// EV_/KEY_/BTN_/REL_/ABS_ codes now live in input_event_codes.hpp, which is
+// one copy shared with KeyMap.hpp instead of a second hand-written list.
+#include "input_event_codes.hpp"
 
 enum class DeviceType {
     Unknown,
@@ -38,7 +22,12 @@ enum class DeviceType {
     Other
 };
 
-struct DeviceCapabilities {
+// Renamed from DeviceCapabilities: the Windows SDK ships a TCHAR-generic
+// alias `#define DeviceCapabilities DeviceCapabilitiesA` (the real ANSI entry
+// point of the Win32 DeviceCapabilitiesA API), so on a Windows build every
+// use of the old name was silently rewritten to DeviceCapabilitiesA - the
+// function, not this struct - and the members stopped parsing.
+struct InputDeviceCapabilities {
     int totalKeys = 0;
     int letterKeys = 0;
     int numberKeys = 0;
@@ -57,7 +46,7 @@ struct DeviceInfo {
     std::string name;
     std::string eventPath;
     DeviceType type;
-    DeviceCapabilities capabilities;
+    InputDeviceCapabilities capabilities;
     double confidence = 0.0; // 0.0 = not confident, 1.0 = very confident
     std::string reason; // Why this classification was chosen
 };
@@ -76,7 +65,7 @@ public:
     std::string eventPath;
     std::vector<std::string> capabilities;
     DeviceType type = DeviceType::Unknown;
-    DeviceCapabilities caps;
+    InputDeviceCapabilities caps;
     double confidence = 0.0;
     std::string classificationReason;
     
@@ -99,7 +88,7 @@ public:
     
     // Device type detection
     DeviceType detectType();
-    DeviceCapabilities analyzeCapabilities();
+    InputDeviceCapabilities analyzeCapabilities();
     bool isRealKeyboard() const;
     bool isRealMouse() const;
     bool isGamepad() const;

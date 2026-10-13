@@ -1,4 +1,4 @@
-// ConfigBridge implementation — extracted from ModularHostBridges.cpp when
+// ConfigBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"

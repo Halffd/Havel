@@ -27,7 +27,7 @@
 namespace havel::compiler {
 
 // ============================================================================
-// Main executeInstruction dispatcher — switch-based (portable)
+// Main executeInstruction dispatcher - switch-based (portable)
 // ============================================================================
 
 void VM::executeInstruction(const Instruction &instruction) {
@@ -115,7 +115,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // the make_counter pattern); a goroutine suspension/resume can leave the
     // ambient globals map without the sidecar's keys (fiber switches churn
     // ambient), losing counter state like `count`. The sidecar is the
-    // authoritative store for such names — STORE_GLOBAL persists there.
+    // authoritative store for such names - STORE_GLOBAL persists there.
     {
       const auto &cf_fallback = currentFrame();
       if (cf_fallback.closure_id != 0) {
@@ -138,7 +138,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // closure created inside async_mod.debounce) swaps ambient globals for
     // the module map; closures from the MAIN script invoked from there
     // (debounce's `func` argument, a script closure) must still see the
-    // script globals — they live on globals_stack_ for the duration of the
+    // script globals - they live on globals_stack_ for the duration of the
     // swap. Read (never write) through them so module sandboxes stay intact.
     for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend();
          ++git) {
@@ -236,7 +236,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // already carries the key: a script closure invoked from a
     // module-closure context (timer callback running a <timeout> closure
     // from async_mod.debounce, with the script's func argument writing
-    // script globals) writes into the swapped ambient copy — the caller's
+    // script globals) writes into the swapped ambient copy - the caller's
     // real map sits on globals_stack_ and would never see the update.
     // Only pre-existing keys are mirrored (innermost first, matching the
     // LOAD_GLOBAL read order) so module sandboxes stay untouched, AND only
@@ -734,7 +734,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 }
 
 // ============================================================================
-// Direct-threaded dispatch loop (GNU extension — GCC and Clang)
+// Direct-threaded dispatch loop (GNU extension - GCC and Clang)
 // Uses computed goto (labels-as-values) instead of switch for ~15-25%
 // faster dispatch by eliminating branch prediction misses.
 // ============================================================================
@@ -1186,7 +1186,7 @@ op_CALL: {
     }
   }
   frm.ip++;
-  // ip now points at the instruction AFTER this CALL — the exact address
+  // ip now points at the instruction AFTER this CALL - the exact address
   // a coroutine yield must return to. Stash it for doCall's resume path.
   pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
   try {
@@ -1209,7 +1209,7 @@ op_CALL: {
   // exit() host calls must stop the script immediately, mirroring the slow
   // dispatch loop's post-CALL check (VM.cpp:~2121). Without this a
   // fast-dispatched script keeps running past process.exit() and any later
-  // exit() call overwrites the recorded exit code — a test with the
+  // exit() call overwrites the recorded exit code - a test with the
   // `if fail { exit(255) } ... exit(0)` pattern could never fail.
   if (exit_requested_.load())
     return;
@@ -2980,7 +2980,7 @@ op_JUMP_IF_NULL: {
 }
 
 slow_dispatch_fallback:
-  // Suspension or complex opcode encountered — return to caller's slow path
+  // Suspension or complex opcode encountered - return to caller's slow path
   // static init: getenv on every slow-path return was 3.5% of a closure
   // call benchmark profile
   static const bool _sleep_trace_fb = std::getenv("HAVEL_TRACE_SLEEP") != nullptr;

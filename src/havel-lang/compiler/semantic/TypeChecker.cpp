@@ -464,7 +464,7 @@ std::optional<std::string> TypeChecker::resolveGenericTypeRef(
     // Resolve base type name
     auto baseResolved = resolveTypeName(ref.name);
     if (!baseResolved) {
-        // Base type not found — will be reported as error elsewhere
+        // Base type not found - will be reported as error elsewhere
         return std::nullopt;
     }
 
@@ -532,7 +532,7 @@ bool TypeChecker::validateTypeArgCount(const std::string &baseName,
 
     const auto &info = it->second;
     if (!info.isGeneric()) {
-        // Non-generic type used with type arguments — error
+        // Non-generic type used with type arguments - error
         if (argCount > 0) {
             result_.errors.push_back(
                 "type '" + baseName +
@@ -777,7 +777,7 @@ void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
             const auto *nullable =
                 dynamic_cast<const ast::NullableType *>((*let.typeAnnotation)->type.get());
             if (nullable) {
-                // ?UnknownType — just register as nullable dynamic
+                // ?UnknownType - just register as nullable dynamic
                 if (!varName.empty()) {
                     env_.set(varName, "?dynamic");
                     if (identPtr) result_.knownTypes[identPtr] = "?dynamic";

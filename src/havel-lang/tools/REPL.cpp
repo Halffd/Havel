@@ -222,7 +222,7 @@ extern "C" int havel_rl_getc(FILE *fp) {
 }
 #endif
 
-// ANSI Color codes — wrapped in RL_PROMPT_START/END_IGNORE for readline
+// ANSI Color codes - wrapped in RL_PROMPT_START/END_IGNORE for readline
 #define PROMPT_COLOR "\001\033[1;32m\002"
 #define RESET_COLOR "\001\033[0m\002"
 #define CONT_COLOR "\001\033[1;34m\002"
@@ -343,7 +343,7 @@ void REPL::attach(compiler::VM* existingVM,
 
     info("Attaching REPL to existing VM...");
 
-    // Reuse the existing VM — non-owning reference via no-op deleter
+    // Reuse the existing VM - non-owning reference via no-op deleter
     vm_ = std::shared_ptr<compiler::VM>(existingVM, [](compiler::VM*){});
     modules_ = std::shared_ptr<Modules>(modules, [](Modules*){});
   known_globals_ = std::move(globals);
@@ -434,7 +434,7 @@ void REPL::replInputThreadEntry() {
             }
             // EOF is terminal for the reader, but do NOT wake()/shutdown
             // the queue from here: wake() sets the shutdown flag, and the
-            // consumer drops every queued line once shutdown is set — a
+            // consumer drops every queued line once shutdown is set - a
             // piped multi-line session lost everything after the first
             // line. The __EOF__ marker drives the main loop's exit after
             // the queue drains.
@@ -456,7 +456,7 @@ void REPL::replInputThreadEntry() {
     // Do NOT store(false) here. replThreadRunning_ is the CONSUMER's loop
     // condition: on the EOF path the producer pushes __EOF__ and returns,
     // and if it also cleared the flag the main loop's while-check could
-    // observe false before draining the queue — every line pushed just
+    // observe false before draining the queue - every line pushed just
     // before EOF (the normal piped session: stdin is fully buffered while
     // the REPL initializes) was dropped unexecuted (observed: piped
     // `print(...)`/`:globals` lines echoed by readline but never evaluated,
@@ -478,7 +478,7 @@ std::string REPL::readLineNoPump(const std::string& prompt) {
         return result;
     }
     // readline() returns NULL only on EOF (or alloc failure). Returning ""
-    // alone hid EOF from the caller — std::cin.eof() is never set by
+    // alone hid EOF from the caller - std::cin.eof() is never set by
     // readline, so the producer treated EOF as an empty line, skipped it,
     // and looped forever re-printing the prompt (observed as an endless
     // "havel>" flood at 100% CPU when stdin is a pipe). Mark EOF so the
@@ -668,7 +668,7 @@ void REPL::setResumeGrabsCallback(std::function<void()> callback) {
 }
 
 std::string REPL::readLine(const std::string& prompt) {
-    // Suspend grabs and ungrab all input devices before reading —
+    // Suspend grabs and ungrab all input devices before reading -
     // X11 key grabs prevent keystrokes from reaching the terminal.
     // suspendGrabs() prevents PumpOnce/executeFrame from re-grabbing
     // keys during the select() loop.
@@ -686,7 +686,7 @@ std::string REPL::readLine(const std::string& prompt) {
 #ifdef HAVE_READLINE
     // Use readline callback mode so we can pump events in our own
     // select() loop instead of blocking inside readline().
-    // rl_event_hook only fires between keystrokes — if no key is
+    // rl_event_hook only fires between keystrokes - if no key is
     // pressed, readline blocks in poll/select on stdin and the hook
     // never runs.  Callback mode lets us drive the loop and call
     // PumpOnce() on every iteration, keeping goroutines and when-blocks
@@ -722,7 +722,7 @@ std::string REPL::readLine(const std::string& prompt) {
         FD_SET(STDIN_FILENO, &fds);
         struct timeval tv;
         tv.tv_sec = 0;
-        tv.tv_usec = 50000; // 50ms timeout — keeps event pump responsive
+        tv.tv_usec = 50000; // 50ms timeout - keeps event pump responsive
         int ret = select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv);
         if (ret > 0) {
             rl_callback_read_char();
@@ -1196,7 +1196,7 @@ vm_->storeReplChunk(sharedChunk);
   auto result = vm_->executePersistent(*sharedChunk, "__main__");
 
   // Wrap FunctionObjId globals into closures so cross-chunk calls work.
-  // A FunctionObjId is just a raw index — meaningless in a different chunk.
+  // A FunctionObjId is just a raw index - meaningless in a different chunk.
   // Closures carry their chunk pointer, making them safe to call from any REPL line.
   auto& g = vm_->globals;
   for (auto& [name, val] : g) {
@@ -1279,13 +1279,13 @@ int REPL::run() {
     // command, EOF, double Ctrl-C). readline calls rl_event_hook at most
     // ten times a second while waiting for terminal input; setting rl_done
     // makes it return immediately. Without this, run()'s join on the
-    // producer thread hung after `exit` — the producer was already blocked
+    // producer thread hung after `exit` - the producer was already blocked
     // reading the NEXT line, and nothing told readline to stop until the
     // user pressed one more key.
     //
     // TTY only. With rl_event_hook installed on a NON-tty stdin (pipe,
     // closed file), readline switches to a FIONREAD/pselect polling loop
-    // that never issues the 0-byte read() which signals EOF — a piped
+    // that never issues the 0-byte read() which signals EOF - a piped
     // session hung in that poll forever (observed: printf ... | havel --repl
     // never exits). Without the hook, a piped readline() blocks in read(),
     // sees EOF, and returns NULL like it always did.

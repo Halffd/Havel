@@ -149,7 +149,7 @@ int main(int argc, char* argv[]) {
     }
     
     int exitCode;
-    std::string stdout, stderr;
+    std::string out, stderr;
     if (!readResponse(fd, exitCode, stdout, stderr)) {
         std::cerr << "Failed to read response" << std::endl;
         close(fd);

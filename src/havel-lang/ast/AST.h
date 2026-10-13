@@ -140,8 +140,8 @@ enum class NodeType {
   SpreadPattern, // ..rest for array rest patterns
   ConstructorPattern, // Name(p1, p2) constructor destructuring in match
   OnEventStatement, // generic on-event subscriptions (file.changed, "my.event")
-  OnEventExpression, // `let w = on file.changed("./x") { ... }` — subscription as a value
-  EmitStatement,    // emit "my.event" { payload } — sugar over event.publish
+  OnEventExpression, // `let w = on file.changed("./x") { ... }` - subscription as a value
+  EmitStatement,    // emit "my.event" { payload } - sugar over event.publish
   RelationalCaseTest, // <0, >10, <=2, >=10 relational case test in switch
   // Literals
   StringLiteral,                // "Hello"
@@ -166,7 +166,7 @@ enum class NodeType {
     TypeDeclaration, // type Point = {x: Float, y: Float}
     UnionType, // type Result = Ok(a) | Error(String)
     TypeAnnotation, // : List(Int)
-    GenericTypeRef, // List(Int), Result(int, str) — parameterized type reference
+    GenericTypeRef, // List(Int), Result(int, str) - parameterized type reference
   StructDeclaration, // struct Vec2 { x: Num, y: Num }
   StructDefinition,  // struct body definition
   StructFieldDef,    // struct field with optional type
@@ -2139,7 +2139,7 @@ struct OnEventStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// On Event Expression — the same subscription as OnEventStatement but in
+// On Event Expression - the same subscription as OnEventStatement but in
 // expression position: `let w = on file.changed("./foo") { ... }` / `w =
 // on window.focused { ... }`. Compiles to event.subscribe whose return
 // (the subscription id) is the expression's value.
@@ -2168,7 +2168,7 @@ struct OnEventExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Emit Statement (emit "my.event" { foo: 123 } / emit mpv.paused) —
+// Emit Statement (emit "my.event" { foo: 123 } / emit mpv.paused) -
 // syntax sugar over the event.publish host function. Libraries build
 // their own event APIs without touching the compiler.
 struct EmitStatement : public Statement {

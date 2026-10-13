@@ -1,4 +1,4 @@
-// ModeBridge implementation — extracted from ModularHostBridges.cpp when
+// ModeBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -81,7 +81,7 @@ void fireModeTransition(VM *vm, const std::string &prev,
 
 void ModeBridge::install(PipelineOptions &options) {
   // mode() - returns current mode name string
-  // Does NOT set globals["mode"] — would shadow host function ref,
+  // Does NOT set globals["mode"] - would shadow host function ref,
   // breaking mode.set / mode.current CALL_METHOD dispatch.
   // Reactive when blocks use mode() and LOAD_GLOBAL tracks "mode"
   // via trackGlobalAccess even for host function lookups.

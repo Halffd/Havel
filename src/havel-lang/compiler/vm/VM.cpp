@@ -292,7 +292,7 @@ void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
       continue;
     // Read the value the open cell currently aliases. The cell's
     // locals_base/open_index refer to the shared locals array as laid out
-    // by the spawning frame — still valid right now, at spawn time.
+    // by the spawning frame - still valid right now, at spawn time.
     uint32_t abs_index = cell->locals_base + cell->open_index;
     Value current = (abs_index < locals.size()) ? locals[abs_index]
                                                  : Value::makeNull();
@@ -634,7 +634,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();
         if (sc == 0) break;
-        // A goroutine sleeping with a deadline will wake on its own —
+        // A goroutine sleeping with a deadline will wake on its own -
         // the deadline poll below handles it. Only decide "script done"
         // when nothing sleeps and nothing awaits an event-driven resume.
         auto deadline = scheduler_->nextSleepDeadline();
@@ -659,7 +659,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         }
         if (!deadline) {
           // Suspended goroutines await event-driven resume (async host
-          // call on a worker, channel, thread join) — no sleep deadline.
+          // call on a worker, channel, thread join) - no sleep deadline.
           // Wait on the deferred-wakeup fd so the resume jolts the
           // loop; exit_requested_ at the loop top still honors exit.
           // If only persistent hotkey goroutines remain, the script is
@@ -820,7 +820,7 @@ vm_in_execute_.store(false, std::memory_order_release);
     // No scheduler: run the plain dispatch loop directly (same contract
     // executePersistent uses below). Before this, execute() silently
     // skipped execution and returned null whenever no scheduler was
-    // installed (C API havel_loadstring, direct VM usage) — the setup ran
+    // installed (C API havel_loadstring, direct VM usage) - the setup ran
     // but no dispatch loop ever consumed the bytecode.
     runDispatchLoop(0);
   }
@@ -1171,7 +1171,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
         return VMExecutionResult::Returned(ret_val);
       }
       current_executing_fiber_ = nullptr;
-      return VMExecutionResult::Yield(nullptr);
+      return VMExecutionResult::Yielded(nullptr);
     }
 
     // Get and execute instruction
@@ -1263,7 +1263,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // consumed suspension_requested_ and propagated (reason, context)
     // into last_*). Without this check, executeOneStep reports a normal
     // yield, the engine re-queues the goroutine, and it resumes at the
-    // NEXT instruction — the sleep is silently dropped (async_mod.sleep
+    // NEXT instruction - the sleep is silently dropped (async_mod.sleep
     // measured ~0ms via namespace calls).
     if (last_suspension_reason_ != 0 && current_fiber) {
       void *context = last_suspension_context_;
@@ -1275,7 +1275,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
     // Return normal yield (instruction completed successfully)
     current_executing_fiber_ = nullptr;
-    return VMExecutionResult::Yield(nullptr);
+    return VMExecutionResult::Yielded(nullptr);
 
   } catch (const ScriptThrow &thrown) {
     // Handle script-thrown exceptions
@@ -1307,7 +1307,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     }
     // Exception was caught and handled
     current_executing_fiber_ = nullptr;
-    return VMExecutionResult::Yield(nullptr);
+    return VMExecutionResult::Yielded(nullptr);
 
   } catch (const std::runtime_error &e) {
     std::string msg = e.what();
@@ -1336,7 +1336,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
   }
 
   current_executing_fiber_ = nullptr;
-  return VMExecutionResult::Yield(nullptr);
+  return VMExecutionResult::Yielded(nullptr);
 }
 
 // ============================================================================
@@ -1465,15 +1465,15 @@ void VM::loadFiberState(Fiber *fiber) {
   // STEP 6: Reattach globals scope if the ambient globals lost script keys.
   // Under GC churn a goroutine resumes against a module sidecar map lacking
   // script globals, so every global read fails. Merge missing keys BACK into
-  // ambient instead of wholesale-replacing it — replacing destroys the
+  // ambient instead of wholesale-replacing it - replacing destroys the
   // goroutine's live progress (e.g. tick_in=5 reset to spawn-time 0) and
   // produces resetting tick sequences.
   //
   // Merge source priority (most fresh first):
-  //   1. fiber->saved_globals — refreshed on every saveFiberState, holds the
+  //   1. fiber->saved_globals - refreshed on every saveFiberState, holds the
   //      goroutine's last-live progress. Preserves shared-write values main
   //      wrote too (main and goroutine share ambient, which was copied here).
-  //   2. spawn_globals_snapshot_ — spawn-time copy, used only on first run
+  //   2. spawn_globals_snapshot_ - spawn-time copy, used only on first run
   //      (before any save). Stale, but better than nothing.
   // ambient stays primary: merges only add missing keys, never overwrite, so
   // shared-write semantics are preserved when ambient is the right map.
@@ -1482,7 +1482,7 @@ void VM::loadFiberState(Fiber *fiber) {
   // a module-fn call whose wrapper pushed the caller's (script) globals onto
   // globals_stack_ and swapped ambient to the module map. saveFiberState
   // preserved that stack in fiber->saved_globals_stack; without restoring it
-  // here, the resume loses the pushed script map entirely — later returns pop
+  // here, the resume loses the pushed script map entirely - later returns pop
   // foreign entries and names written by the goroutine's script frames before
   // the module call (e.g. a nested-capture counter's `count`) vanish from
   // ambient.
@@ -1633,13 +1633,13 @@ void VM::saveFiberState(Fiber *fiber) {
 
   // STEP 5: Refresh the per-fiber fresh-globals fallback. loadFiberState
   // uses this (in preference to the stale spawn-time snapshot) when
-  // ambient globals is a churned sidecar missing script keys — merging
+  // ambient globals is a churned sidecar missing script keys - merging
   // the LAST saved values keeps the goroutine's live progress (e.g.
   // tick_in=5 survives a GC-churned ambient that lost it) without
   // breaking shared-write semantics (ambient stays the primary map).
   fiber->saved_globals = globals;
   // SavedGlobalsFrame (Fiber.hpp) is a plain pair; GlobalsFrame carries the
-  // fiber_restored tag, which is live-stack bookkeeping only — drop it here.
+  // fiber_restored tag, which is live-stack bookkeeping only - drop it here.
   fiber->saved_globals_stack.clear();
   fiber->saved_globals_stack.reserve(globals_stack_.size());
   for (const auto &gf : globals_stack_) {
@@ -1663,7 +1663,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   frame_count_ = 0;
 
   // Resolve the callable's identity + chunk in ONE place.
-  // The Value is the single source of truth — no caller-side chunk pinning
+  // The Value is the single source of truth - no caller-side chunk pinning
   // is needed.
   uint32_t function_id = 0;
   uint32_t closure_id = 0;
@@ -1684,7 +1684,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     }
   } else if (callable.isFunctionObjId()) {
     function_id = callable.asFunctionObjId();
-    // Bare function id — search all chunks the VM knows about.
+    // Bare function id - search all chunks the VM knows about.
     // Prefer current_chunk (fast path), then module/persistent chunks.
     const BytecodeChunk *current = current_chunk;
     if (current && current->getFunction(function_id)) {
@@ -1732,11 +1732,11 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   }
 
   // A suspended module call leaves the module fn's CALLER map pushed onto
-  // globals_stack_ (see the module_fn/closure wrapper suspension paths) —
+  // globals_stack_ (see the module_fn/closure wrapper suspension paths) -
   // and the VM ambient still holds the MODULE's map. A goroutine starting
   // here is a fresh script-level entry (Created spawns, update ticks): it
   // must run against the script scope, not the module sidecar. Copy the
-  // pushed map into ambient WITHOUT popping it — the suspended module
+  // pushed map into ambient WITHOUT popping it - the suspended module
   // frame's eventual RET still owns the pop.
   if (!globals_stack_.empty()) {
     globals = globals_stack_.back().first;
@@ -2071,7 +2071,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       return;
     }
     if (frame_count_ > stop_frame_depth && !exit_requested_.load()) {
-      // runDispatchFast returned due to other reasons (complex opcode) — fall
+      // runDispatchFast returned due to other reasons (complex opcode) - fall
       // through to slow path
       if (fast_tick_budget_ != 0 && fast_tick_consumed_ >= fast_tick_budget_) {
         // Tick budget expired: the fast loop returned at its periodic
@@ -3417,7 +3417,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       globals_identity_ = closure_globals;
       frame_owns_globals = true;
     }
-    // else: same module map already installed — calls stay O(1); STORE_GLOBAL
+    // else: same module map already installed - calls stay O(1); STORE_GLOBAL
     // dual-writes keep globals and the shared module map in sync.
   }
 
@@ -3833,8 +3833,8 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
     // been reused by other frames (goroutines start at locals_base 0, so
     // their STORE_VAR writes overlap the spawning frame's slots). Closing
     // here with the reused value would corrupt the capture (e.g. a captured
-    // channel replaced by an int). UpvalueCell::close is idempotent — the
-    // first close wins — so route through it.
+    // channel replaced by an int). UpvalueCell::close is idempotent - the
+    // first close wins - so route through it.
     if (index < locals.size()) {
       cell->close(locals[index]);
     } else {
@@ -3960,7 +3960,7 @@ void VM::maybeCollectGarbageWithExtraRoots(
   if (gc_suspend_counter_ > 0)
     return;
   // Building the root snapshot is expensive (full operand-stack copy plus
-  // globals, closure table and scheduler roots — measured at 41% of a
+  // globals, closure table and scheduler roots - measured at 41% of a
   // property-heavy benchmark's runtime). The dispatch loop calls this
   // every 8192 instructions, so probe the cheap gate first and only pay
   // for the snapshot when a collection will actually run.
@@ -4537,7 +4537,7 @@ void VM::doReturn() {
 
   // Materialize chunk-relative StringValId values into heap-stable StringId
   // while current_chunk still points to the callee's chunk. StringValId is
-  // a chunk-local index — after restoring the parent frame's chunk it would
+  // a chunk-local index - after restoring the parent frame's chunk it would
   // resolve to the wrong string. Deep walk handles objects/arrays too.
   if (current_chunk &&
       (ret.isStringValId() || ret.isObjectId() || ret.isArrayId())) {
@@ -4601,7 +4601,7 @@ void VM::doReturn() {
 
   // immutable_locals_ stores absolute indices into the locals vector.
   // After returning from a frame and truncating locals, those indices
-  // are stale — clear them so the parent frame's val declarations
+  // are stale - clear them so the parent frame's val declarations
   // can be re-established on next function entry.
   immutable_locals_.clear();
 
@@ -4704,7 +4704,7 @@ void VM::tickScheduler(bool wait_for_sleepers) {
   // bc.tick can be called from INSIDE running bytecode (e.g. a script's
   // main function). startGoroutineCall clears stack/locals/frames for the
   // fresh goroutine context, which would destroy the CALLER's in-flight
-  // frames — after the tick, the outer dispatch loop would see
+  // frames - after the tick, the outer dispatch loop would see
   // frame_count_ == 0 and silently end the script (rc=0, no continuation).
   // Snapshot the caller's state and restore it after the goroutine ran.
   ExecutionState caller_state = saveState();
@@ -4987,7 +4987,7 @@ Value VM::deepWrapModuleFunctions(
           }
           auto *savedChunk = current_chunk;
           // Push the caller's globals onto globals_stack_ (move, not copy) and
-          // swap ambient to the module map — same discipline as doCall for
+          // swap ambient to the module map - same discipline as doCall for
           // module closures. The old copy-into-local approach left nothing on
           // globals_stack_, so closures from the MAIN script invoked from the
           // module fn (throttle's `func` argument) could not see script
@@ -5102,7 +5102,7 @@ Value VM::deepWrapModuleFunctions(
             const size_t wrapped_frame_depth = frame_count_ - 1;
             runDispatchLoop(wrapped_frame_depth);
             module_wrapper_execution_depth_.fetch_sub(1);
-            // The wrapped frame — not the current top frame — owns the
+            // The wrapped frame - not the current top frame - owns the
             // caller-map push so the caller scope is restored when it returns.
             if (suspension_requested_ || last_suspension_reason_ != 0 ||
                 (tickBudgetExhausted() && frame_count_ > wrapped_frame_depth)) {
@@ -5114,7 +5114,7 @@ Value VM::deepWrapModuleFunctions(
               // caller's map is ALREADY on globals_stack_ (pushed at entry).
               // Mark the WRAPPED frame as the owner so its eventual RET pops
               // that push and restores the caller's scope. Ambient stays the
-              // module map — exactly what the resumed module function sees.
+              // module map - exactly what the resumed module function sees.
               // No-push nested calls (same module map already ambient) leave
               // nothing to pop: the outer frame's completion restores.
               if (wrapper_pushed_globals &&
@@ -5125,7 +5125,7 @@ Value VM::deepWrapModuleFunctions(
                   last_suspension_reason_ == 0) {
                 // Budget cutoff, NOT a suspension. The wrapped frame is still
                 // live and will push its real result when it resumes and
-                // returns. Suppress the placeholder push here — the caller's
+                // returns. Suppress the placeholder push here - the caller's
                 // operand stack must stay exactly as the cut-off frames left
                 // it, or the resume reads the placeholder as their operand.
                 budget_unwind_no_result_ = true;
@@ -5213,7 +5213,7 @@ Value VM::deepWrapModuleFunctions(
 
           auto *savedChunk = current_chunk;
           // Push caller globals and swap ambient to the closure's module
-          // map — same push/pop discipline as the $module_fn_ wrapper (see
+          // map - same push/pop discipline as the $module_fn_ wrapper (see
           // there for rationale). Script closures invoked from the module
           // closure (async_mod.throttle's `func`) need the script map
           // reachable via globals_stack_ or LOAD_GLOBAL 'counter' fails.
@@ -5247,7 +5247,7 @@ Value VM::deepWrapModuleFunctions(
           // explicitly on completion; the wrapped frame's RET must NOT pop
           // (the suspension path flips owns_globals to true so the RESUMED
           // fn's RET performs the pop). A stale true value in a reused arena
-          // slot would pop a foreign globals_stack_ entry — the historic
+          // slot would pop a foreign globals_stack_ entry - the historic
           // "_atoms_cache undefined" root cause.
           if (frame_arena_.size() <= frame_count_) {
             CallFrame cf;
@@ -5380,7 +5380,7 @@ Value VM::deepWrapModuleFunctions(
     // debounce closure) so `wrapper.cancel(args)` keeps working after the
     // closure crossed the module export boundary. OBJECT_SET on a HostFuncId
     // stores into hostfunc_properties_[hostIdx], and the closure branch of
-    // this function appended its own props to closure_properties_[id] —
+    // this function appended its own props to closure_properties_[id] -
     // copy them onto the wrapper's hostfunc properties object.
     {
       auto propIt = closure_properties_.find(closureId);
@@ -5838,7 +5838,7 @@ Value VM::loadModule(const std::string &path) {
     // "Module not found" because the native leg searches for
     // havel_mod_cfg.so, which does not exist (the file is
     // havel_mod_config.so).
-    // Guard: alias-named plugins must not shadow Havel source modules —
+    // Guard: alias-named plugins must not shadow Havel source modules -
     // the log plugin's "debug" alias would otherwise hijack `use debug`
     // (modules/lang/debug.hv) and hand the compiler the wrong exports.
     bool aliasHasSource = false;
@@ -6025,7 +6025,7 @@ Value VM::loadModule(const std::string &path) {
       return exports;
     }
 
-    // Check lazy modules — activate if registered (fallback for modules not registered as eager plugins)
+    // Check lazy modules - activate if registered (fallback for modules not registered as eager plugins)
     auto lazyIt = lazy_modules_.find(path);
     if (lazyIt != lazy_modules_.end()) {
       activateLazyModule(path);
@@ -6080,7 +6080,7 @@ Value VM::loadModule(const std::string &path) {
 
   // Thread-safe module loading entry. Circular dep detection: if another
   // goroutine is already loading this module, one of us must yield. We
-  // throw rather than deadlock — cooperative scheduling means the loader
+  // throw rather than deadlock - cooperative scheduling means the loader
   // will finish once we return control.
   bool shouldUseCache = false;
   {
@@ -6090,7 +6090,7 @@ Value VM::loadModule(const std::string &path) {
       if (!shouldUseCache) {
         // Same-name cycle through a host-fn namespace (protocols <->
         // display): the outer load shadow-merges its module exports INTO
-        // that very object, so handing it out here is safe — the importer
+        // that very object, so handing it out here is safe - the importer
         // binds a namespace that gets the .hv fns once the outer load
         // completes (callers only invoke them at runtime, not in __init__).
         auto git = globals.find(path);
@@ -6398,7 +6398,7 @@ Value VM::loadModule(const std::string &path) {
     // Restore cached globals (lazy tables, etc.)
     for (const auto &[name, value] : cachedGlobals) {
       // Never clobber per-process runtime globals (fs, app, etc.) with the
-      // serialized copy — host-fn fields came back as null and app carries
+      // serialized copy - host-fn fields came back as null and app carries
       // stale args. A stale GLBS section from an older binary can still
       // contain them, so guard both serialize and restore.
       if (runtimeGlobalsSkipList().count(name)) continue;
@@ -6431,7 +6431,7 @@ Value VM::loadModule(const std::string &path) {
     // were saved from the cold run's globals and must be restored now.
     for (const auto &ref : closureRefs) {
       // Re-bind imported closures by looking up the source module's exports.
-      // Only check the in-memory session cache — never call loadModule() from
+      // Only check the in-memory session cache - never call loadModule() from
       // here. Cold loads handle circular imports progressively via __main__
       // execution; the warm restore path runs inside loadModule() itself, so
       // calling loadModule() for another module that transitively imports back
@@ -6604,7 +6604,7 @@ load_from_source:
   // Execute the module in a sandboxed globals context
   // Save current globals state
   pushGlobalsCopy();
-  // The sandbox holds a fresh map, not a module_globals copy — make sure a
+  // The sandbox holds a fresh map, not a module_globals copy - make sure a
   // nested call with a stale-matching identity can't skip its swap.
   globals_identity_.reset();
 
@@ -6621,7 +6621,7 @@ load_from_source:
   bool saved_exception = has_current_exception_;
   Value saved_exception_val = current_exception_;
 
-  // Fresh globals for the module — populate with host globals so
+  // Fresh globals for the module - populate with host globals so
   // the module can call print(), len(), str, etc.
   globals.clear();
   // Register host function globals into sandbox (print, len, str, etc.)
@@ -6820,7 +6820,7 @@ load_from_source:
   // pools. Nested functions (no upvalues) are emitted as LOAD_CONST fn[i] and
   // get wrapped into Closures at .hvc deserialization time (see
   // VM.cpp:3896-3942). Those closures start with module_globals=nullptr so
-  // STORE_GLOBAL writeback (VMDispatch.cpp:174-178) is skipped — module state
+  // STORE_GLOBAL writeback (VMDispatch.cpp:174-178) is skipped - module state
   // changes inside them (e.g. pratt::pos++ inside advance()) never persist.
   // Assign the shared moduleGlobalsForCache snapshot so they write back to the
   // same map the top-level Parser() closure reads.
@@ -6848,7 +6848,7 @@ load_from_source:
 
   // Materialize chunk-relative values into heap-stable values before
   // restoring the caller's chunk. StringValId and FunctionObjId are
-  // indices into the *module's* chunk — they'd resolve against the
+  // indices into the *module's* chunk - they'd resolve against the
   // caller's chunk after restore, producing garbage.
   //
   // If this Havel module shadows a host (lazy) module, use the host
@@ -6930,11 +6930,11 @@ load_from_source:
     if (name.empty() || name[0] == '_')
       continue;
     // When shadowing a host module, skip Havel functions that have the same
-    // name as an existing host function on the host module object — the
+    // name as an existing host function on the host module object - the
     // host function is already available and adding a wrapper that calls
     // config.<name>() would cause infinite recursion (config == exports).
     // Values can be ClosureId (cached .hvc loads) or FunctionObjId (fresh
-    // source compile) — match by NAME, not value flavor.
+    // source compile) - match by NAME, not value flavor.
     if (shadowingHostModule && hostModuleFuncNames.count(name))
       continue;
     // Skip inherited globals UNLESS the module redefined them
@@ -7035,7 +7035,7 @@ load_from_source:
   // Restore caller's globals and execution state
   // But first, capture any lazy module objects that were initialized
   // during the module's execution (e.g., fs, sys) so we can propagate
-  // them to the caller's globals — otherwise the caller still has
+  // them to the caller's globals - otherwise the caller still has
   // the stale lazy proxy objects.
   std::unordered_map<std::string, Value> lazyModuleUpdates;
   for (const auto &lm : lazy_modules_) {
@@ -7256,7 +7256,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
             } else if (v.isObjectId()) {
                 uint32_t id = v.asObjectId();
                 // Guard against object cycles (e.g. a globals mirror that
-                // references itself) — without this, a self-referential
+                // references itself) - without this, a self-referential
                 // object overflows the stack in serializeGlobals.
                 if (!visitedObj.insert(id).second) return;
                 auto* obj = heap_.object(id);
@@ -7686,7 +7686,7 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     auto globalsData = *globalsDataOpt;
     // readGlobalsFromHvc already strips the trailing [GLBS][size] trailer
     // and returns only the serialized payload ([numGlobals][string table]
-    // [name+value...]...). Feed it directly — skipping bytes here would
+    // [name+value...]...). Feed it directly - skipping bytes here would
     // drop the leading numGlobals field and yield an empty result,
     // forcing the slow recompile+serialize path every launch.
     if (globalsData.empty()) return false;

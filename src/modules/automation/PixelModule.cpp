@@ -348,7 +348,7 @@ void registerPixelModule(const VMApi& api) {
         return Value::makeBool(svc->captureRegion(host::Region(x, y, w, h), path));
     });
 
-    // Build module object — pin as GC root to prevent collection during registration
+    // Build module object - pin as GC root to prevent collection during registration
     auto pixelObj = api.makeObject();
     api.setGlobal("pixel", pixelObj);
     api.setField(pixelObj, PIXEL_MODULE_MARKER, Value::makeBool(true));

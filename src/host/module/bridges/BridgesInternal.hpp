@@ -1,6 +1,6 @@
 #pragma once
 
-// BridgesInternal.hpp — shared helpers for the per-domain bridge
+// BridgesInternal.hpp - shared helpers for the per-domain bridge
 // translation units. This content was centralized when the monolithic
 // src/host/module/ModularHostBridges.cpp (~7.9k lines) was split.
 

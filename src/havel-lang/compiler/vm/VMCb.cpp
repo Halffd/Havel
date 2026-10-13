@@ -20,8 +20,8 @@ CallbackId VM::registerCallback(const Value &closure) {
 
   // Close open upvalue cells now, while the creating frame's locals are
   // still mapped (same discipline as spawnGoroutine): a callback can be
-  // invoked long after its creating frame returned — e.g. a timeout
-  // closure capturing a fn parameter — and an open cell would read the
+  // invoked long after its creating frame returned - e.g. a timeout
+  // closure capturing a fn parameter - and an open cell would read the
   // spawning frame's locals region, which is recycled by then. Closing
   // captures the current value so the callback sees the creating scope's
   // state. Without this, timer callbacks observed captured variables as
@@ -85,7 +85,7 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
   // clears VM locals and the goroutine frame's locals_base is its own). Any
   // OPEN upvalue cell captured by the spawned closure points into the
   // SPAWNING frame's locals region (locals_base + open_index); once the
-  // goroutine runs, those indices read the goroutine's own locals — garbage
+  // goroutine runs, those indices read the goroutine's own locals - garbage
   // (e.g. a captured closure slot resolving to the goroutine's loop counter
   // int). Close the open cells now: capture the current value so the
   // goroutine sees the spawning scope's state. Cells stay shared with any

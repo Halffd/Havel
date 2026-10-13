@@ -3,9 +3,10 @@
 #include <unordered_map>
 #include <vector>
 #include "havel_platform.h"
+#include "input_event_codes.hpp"
 
 #if HAVEL_PLATFORM_LINUX
-#  include <linux/input-event-codes.h>
+
 #  if defined(HAVE_X11)
 #    include <X11/keysym.h>
 #    include <X11/X.h>

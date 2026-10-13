@@ -371,7 +371,7 @@ void *havel_loader_get_handle(HavelLoader *loader, const char *name) {
   /* Module plugins may be registered under their canonical stem while the
    * caller asks via an alias (loadModulePlugin resolves the alias inside
    * havel_loader_load_module, then queries the handle by the requested
-   * name). Read-only over the existing alias map — never triggers a scan. */
+   * name). Read-only over the existing alias map - never triggers a scan. */
   if (strncmp(name, "havel_mod_", 10) == 0 && loader->alias_map_built) {
     const char *canonical = alias_map_lookup(loader, name + 10);
     if (canonical) {
@@ -1069,9 +1069,9 @@ const HavelModuleABI *havel_loader_probe_module(HavelLoader *loader, const char 
 }
 
 /* Build the alias map from plugin metadata. Discovery order:
- * 1. Plugins already registered in the loaded list — probe is metadata-only
+ * 1. Plugins already registered in the loaded list - probe is metadata-only
  *    (no dlopen, no register_fn).
- * 2. havel_mod_*.so files in the search paths not yet loaded — probed via
+ * 2. havel_mod_*.so files in the search paths not yet loaded - probed via
  *    havel_loader_probe_module, which dlopens (running the plugin's ELF
  *    constructors, which for havel plugins are trivial static ABI structs)
  *    and keeps it registered; register_fn is never invoked. */

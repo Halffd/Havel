@@ -515,7 +515,7 @@ case OpCode::INCLOCAL:
             break;
         }
 
-      // Comparisons — use type feedback to specialize or fall back to bridge
+      // Comparisons - use type feedback to specialize or fall back to bridge
       case OpCode::EQ:
       case OpCode::NEQ:
       case OpCode::LT:
@@ -1781,7 +1781,7 @@ case OpCode::LENGTH: {
         //
         // Previously this handler popped only arg_count items, leaving the
         // callee on the VM stack and passing args[0] = first actual arg to
-        // havel_vm_call — which then read args[0] as the callee. That made
+        // havel_vm_call - which then read args[0] as the callee. That made
         // every TAIL_CALL treat its first argument as the callee ("TAIL_CALL
         // expects function ... (got int)" when calling print(int)).
         const uint32_t callCount = argCount + 1;
@@ -2098,7 +2098,7 @@ case OpCode::LENGTH: {
         // callers can chain, but the interpreter's ARRAY_SET discards it
         // (only the op_index_set object path pushes the container, which
         // the bridge handles internally). Previously this pushed the
-        // bridge result, leaving one extra vstack entry per ARRAY_SET —
+        // bridge result, leaving one extra vstack entry per ARRAY_SET -
         // vstack depth diverged between arms of a join, so a branch
         // containing arr[i] = v corrupted the merged stack (an if-arm
         // assign turned the if-expression's result into the leftover
@@ -2172,7 +2172,7 @@ case OpCode::LENGTH: {
         // LAST. havel_vm_object_set_raw(vm, obj, key, val) takes key/val
         // in that order. Previously this handler popped in val/key/obj
         // order, silently swapping key and value, which made every
-        // JIT/AOT OBJECT_SET write the value under the wrong key — and
+        // JIT/AOT OBJECT_SET write the value under the wrong key - and
         // the matching get returned null.
         llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* val = vstack.back(); vstack.pop_back();

@@ -132,7 +132,7 @@ std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSou
     // (lang/math/math.hv) cannot collide with a top-level one
     // (lang/math.hv): both used to compress to "lang.math", the flat
     // cache held one bytecode for two different sources, and importing
-    // the nested one served the wrapper's .hvc — whose own `use
+    // the nested one served the wrapper's .hvc - whose own `use
     // "math/math"` then tripped the circular-dependency guard and
     // dropped every sidecar export (math.randint returned null).
     for (const char* ns : {"lang", "std", "app"}) {
@@ -585,7 +585,7 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   std::string canonicalKey = computeCanonicalPathNoCache(modulePath, scriptDir);
 
   // 1. Check cache (already loaded?) using canonical path as key
-  // If already in cache, return Cached type — BUT first drop the entry if the
+  // If already in cache, return Cached type - BUT first drop the entry if the
   // underlying source filename has been touched since we cached it.
   if (!canonicalKey.empty() && cache_.count(canonicalKey) > 0) {
     if (!isFreshLocked(canonicalKey)) {

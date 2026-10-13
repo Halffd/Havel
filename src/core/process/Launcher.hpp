@@ -55,14 +55,18 @@ struct LaunchParams {
     bool detachFromParent = false;  // If true, child will survive parent process death
 };
 
+// MSVC's <stdio.h> defines stdout/stderr as macros expanding to
+// __acrt_iob_func(1)/(2), so `std::string out;` becomes a bogus member
+// declaration ("C2535: '__acrt_iob_func': member function already defined").
+// the member names - and the 30-odd callers that use .out/.err - intact.
 struct ProcessResult {
     int64_t pid = -1;
     int32_t exitCode = -1;
     bool success = false;
     std::string error = "";
     uint32_t executionTimeMs = 0;
-    std::string stdout = "";
-    std::string stderr = "";
+    std::string out = "";
+    std::string err = "";
 };
 
 #include "havel-lang/common/Export.hpp"

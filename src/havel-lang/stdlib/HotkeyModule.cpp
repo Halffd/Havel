@@ -1272,7 +1272,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeBool(true);
   });
 
-  // __set_enabled — property setter interceptor for `m.enabled = bool`
+  // __set_enabled - property setter interceptor for `m.enabled = bool`
   // Calls EnableHotkey/DisableHotkey so OS grab state stays in sync
   api.registerPrototypeMethod("Hotkey", "__set_enabled", 2, [&vm](const std::vector<Value> &args) -> Value {
     if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
@@ -1300,7 +1300,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return args[1];
   });
 
-  // __set_grab — property setter interceptor for `m.grab = bool`
+  // __set_grab - property setter interceptor for `m.grab = bool`
   // Calls SetHotkeyGrab so OS grab state stays in sync
   api.registerPrototypeMethod("Hotkey", "__set_grab", 2, [&vm](const std::vector<Value> &args) -> Value {
     if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
@@ -1429,7 +1429,7 @@ Value HotkeyModule::createHotkeyContext(VM *vm, const std::string &hotkeyId,
                                      callback, true, grab, condCb);
 }
 
-// Called when a hotkey fires — increment trigger count
+// Called when a hotkey fires - increment trigger count
 void HotkeyModule::recordTrigger(const std::string &hotkeyId) {
     auto *ctx = getHotkeyContextDataMutable(hotkeyId);
     if (ctx) {

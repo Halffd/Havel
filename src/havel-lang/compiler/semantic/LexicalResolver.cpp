@@ -815,7 +815,7 @@ auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     if (switch_stmt.expression) {
       resolveExpression(*switch_stmt.expression);
     }
-    // Cases resolve in the enclosing scope (no new scope per case — the
+    // Cases resolve in the enclosing scope (no new scope per case - the
     // subject is compiled into a hidden local, tests compare against it).
     for (const auto &case_node : switch_stmt.cases) {
       if (!case_node) {
@@ -962,7 +962,7 @@ case ast::NodeType::BlockStatement: {
         // global_variables_ before local scopes, so reads of the catch
         // variable inside the body bind to Global whenever a global by the
         // same name exists. Keep the declaration node's binding in lockstep
-        // with those reads — otherwise the ByteCompiler writes the caught
+        // with those reads - otherwise the ByteCompiler writes the caught
         // value to a local slot that nobody reads.
         if (function_stack_.size() == 1 &&
             global_variables_.count(catchName) > 0) {
@@ -1077,7 +1077,7 @@ case ast::NodeType::BlockStatement: {
       if (method) {
         beginFunction(method.get());
         // Skip the implicit self when a param is literally named self
-        // (explicit receiver form op_index(self, k)) — declaring both
+        // (explicit receiver form op_index(self, k)) - declaring both
         // hits the duplicate-declaration error.
         bool explicitSelf = false;
         for (const auto &param : method->parameters) {
@@ -1330,7 +1330,7 @@ case ast::NodeType::ImportStatement:
 case ast::NodeType::OnStartStatement:
 case ast::NodeType::OnReloadStatement: {
   // Lifecycle hook bodies resolve like function bodies (own function
-  // context — the compile creates a chunk-level function per block).
+  // context - the compile creates a chunk-level function per block).
   const ast::Statement *onBase = &statement;
   const ast::Statement *onBody = nullptr;
   if (statement.kind == ast::NodeType::OnStartStatement) {
@@ -1364,7 +1364,7 @@ case ast::NodeType::OnEventStatement: {
 }
 
 case ast::NodeType::EmitStatement: {
-  // `emit <name> [payload]` — resolve the payload object's fields.
+  // `emit <name> [payload]` - resolve the payload object's fields.
   const auto &emit = static_cast<const ast::EmitStatement &>(statement);
   if (emit.payload) {
     resolveExpression(*emit.payload);
@@ -1934,7 +1934,7 @@ case ast::NodeType::MemberExpression: {
     break;
   }
 
-  // Hotkey expression: ~space => { ... } — same scoping as statement form
+  // Hotkey expression: ~space => { ... } - same scoping as statement form
   case ast::NodeType::HotkeyExpression: {
     const auto &hkExpr = static_cast<const ast::HotkeyExpression &>(expression);
     if (hkExpr.binding) {
@@ -1952,7 +1952,7 @@ case ast::NodeType::MemberExpression: {
     break;
   }
 
-  // Closure expressions — resolve duration and body against current scope
+  // Closure expressions - resolve duration and body against current scope
   case ast::NodeType::ThreadExpression: {
     const auto &threadExpr = static_cast<const ast::ThreadExpression &>(expression);
     beginFunction(&threadExpr);
@@ -2180,7 +2180,7 @@ case ast::NodeType::MemberExpression: {
     }
 
     case ast::NodeType::OnEventExpression: {
-        // `let w = on <event> { ... }` — own function context with one
+        // `let w = on <event> { ... }` - own function context with one
         // `event` parameter (same shape as the statement form).
         const auto &onEvent = static_cast<const ast::OnEventExpression &>(expression);
         beginFunction(&onEvent);

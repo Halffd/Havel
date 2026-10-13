@@ -1,4 +1,4 @@
-// TimerBridge implementation — extracted from ModularHostBridges.cpp when
+// TimerBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -29,7 +29,7 @@ Value TimerBridge::handleAfter(const std::vector<Value> &args,
 
   int64_t delay_ms = args[0].asInt();
 
-  // Legacy shim: sleep for delay_ms (callback argument is ignored —
+  // Legacy shim: sleep for delay_ms (callback argument is ignored -
   // scripts use timeout{} for real callbacks). The sleep runs on a
   // worker under the A+C model so goroutines park instead of stalling
   // the VM thread; top-level calls block inline exactly as before.

@@ -20,7 +20,7 @@ struct Color {
 
     static Color fromHex(const std::string& hex);
     std::string toHex() const;
-    bool near(const Color& other, int tolerance = 0) const;
+    bool IsNear(const Color& other, int tolerance = 0) const;
     int distance(const Color& other) const;
 };
 

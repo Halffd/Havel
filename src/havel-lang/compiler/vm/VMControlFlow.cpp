@@ -369,7 +369,7 @@ case OpCode::CALL_METHOD: {
     // Dispatches based on receiver type without boxing.
     // Operands: <string method_name, uint32 arg_count[, bool is_pipe_stage]>.
     // is_pipe_stage is set by pipeline compilation (`data |> doubled`) and
-    // gates the script-global fallback below — only pipe stages may call a
+    // gates the script-global fallback below - only pipe stages may call a
     // same-named global with the receiver as the first argument.
     if (instruction.operands.size() < 2 || instruction.operands.size() > 3 ||
         !instruction.operands[0].isStringValId() ||
@@ -444,7 +444,7 @@ case OpCode::CALL_METHOD: {
   } else if (receiver.isRangeId()) {
         type_name = "range";
     } else if (receiver.isHostFuncId()) {
-        // Property call first: hostfunc.prop(args) — properties attached
+        // Property call first: hostfunc.prop(args) - properties attached
         // via OBJECT_SET (fn.prop = ...) live in hostfunc_properties_.
         // Module-exported closures are wrapped as host functions and carry
         // their closure properties over (deepWrapModuleFunctions), e.g.
@@ -495,7 +495,7 @@ case OpCode::CALL_METHOD: {
             break;
         }
     } else if (receiver.isClosureId()) {
-      // Closure field call: `closure.prop(args)` — properties live in
+      // Closure field call: `closure.prop(args)` - properties live in
       // closure_properties_ (OBJECT_SET stores them there for closures).
       // Without this arm the generic else below silently pushed null, so
       // `wrapped.cancel()` on debounce's returned closure never ran the
@@ -587,7 +587,7 @@ if (instanceObj) {
                         // If this host function wants self (its first param is "self"), force self pass.
                         bool wantsSelf = host_function_wants_self_.count(host_func_idx) > 0;
                         // Set found_via_module if the object is in globals (likely a module/namespace)
-                        // BUT NOT if the receiver is a class/struct prototype — those need self passed
+                        // BUT NOT if the receiver is a class/struct prototype - those need self passed
                         // BUT NOT if the wrapped host function wants self (instance method style)
                         bool isClassProto = instanceObj->get("__class") != nullptr ||
                                           instanceObj->get("__struct") != nullptr ||
@@ -788,7 +788,7 @@ if (instanceObj) {
       // silently returned null. The receiver is passed as the first argument
       // (the pipe/method semantic), matching how prototypes receive self.
       // Gated on isPipeCall: a plain `x.load(y)` member call must never
-      // resolve to a global `load` — the receiver is not an argument of the
+      // resolve to a global `load` - the receiver is not an argument of the
       // call the author wrote.
       auto globalIt = globals.find(method_name);
       if (globalIt != globals.end() &&
@@ -1451,7 +1451,7 @@ case OpCode::CLOSURE: {
       if (main_chunk_.get() == current_chunk) chunk_pin = main_chunk_;
   }
   // Inherit chunk_ref from parent closure if we're inside one and the local
-  // pin somehow failed (defensive — keeps nested closures safe across reloads).
+  // pin somehow failed (defensive - keeps nested closures safe across reloads).
   if (!chunk_pin) {
       uint32_t parent_closure_id = currentFrame().closure_id;
       if (parent_closure_id != 0) {

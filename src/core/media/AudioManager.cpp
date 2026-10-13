@@ -73,7 +73,7 @@ bool AudioManager::isMuted() { return isMuted(getDefaultOutput()); }
 bool AudioManager::isMuted(const std::string &d) { ensureBackend(); return backend_ && backend_->isMuted(d); }
 
 const std::vector<AudioDevice> &AudioManager::getDevices() const {
-  // Caller must NOT hold the reference across an interrupt / yield —
+  // Caller must NOT hold the reference across an interrupt / yield -
   // monitor thread rewrites the vector under deviceMutex.
   std::lock_guard<std::mutex> lk(deviceMutex);
   if (backend_) backend_->updateDeviceCache(cachedDevices);
@@ -101,7 +101,7 @@ std::string AudioManager::getDefaultInput() const { return "default"; }
 bool AudioManager::setDefaultOutput(const std::string &d) { defaultOutputDevice = d; return true; }
 
 AudioDevice *AudioManager::findDeviceByName(const std::string &name) {
-  // Returned pointer is a heap copy of the snapshot — caller owns it.
+  // Returned pointer is a heap copy of the snapshot - caller owns it.
   auto snap = getDevicesSnapshot();
   auto it = std::find_if(snap.begin(), snap.end(),
     [&](const AudioDevice &d) { return d.name == name; });

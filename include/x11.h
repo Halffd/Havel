@@ -2,6 +2,8 @@
 // Safe X11 wrapper - use this instead of direct X11 includes
 // This header provides safe X11 constants and undefines conflicting macros
 
+#include "havel_platform.h"
+
 namespace x11 {
     // X11 constants - use the actual macro values, not the names
     using XStatus = int;
@@ -99,7 +101,13 @@ namespace x11 {
     constexpr long XStructureNotifyMask = 1L<<17;
 }
 
-// Include X11 headers 
+// Include X11 headers
+// The x11:: constants above are deliberately left unguarded so that code
+// which only wants the names still compiles everywhere. The X11 headers
+// themselves have no Windows spelling, so they are gated: on a Windows
+// build this header contributes constants and nothing else, and every
+// consumer that actually calls into Xlib is expected to be gated too.
+#if !HAVEL_PLATFORM_WINDOWS
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XTest.h>
@@ -114,6 +122,7 @@ namespace x11 {
 #include <X11/extensions/Xinerama.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrender.h>
+#endif  // !HAVEL_PLATFORM_WINDOWS
 
 // Undefine X11 macros that conflict with Qt
 #undef None
@@ -195,6 +204,11 @@ namespace x11 {
 #undef Complex
 #endif
 // X11 types in safe namespace
+// Every alias and wrapper below names an X11 global, so the whole block goes
+// together. On Windows the earlier x11:: namespace (plain constants such as
+// XStatus and XNone) is still available, because those are self-contained;
+// only the part that cannot exist without Xlib is withheld.
+#if !HAVEL_PLATFORM_WINDOWS
 namespace x11 {
     // Type aliases
     using Display = ::Display;
@@ -255,3 +269,4 @@ namespace x11 {
         return XCloseDisplay(display);
     }
 }
+#endif  // !HAVEL_PLATFORM_WINDOWS

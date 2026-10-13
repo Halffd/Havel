@@ -256,7 +256,7 @@ struct ExtensionFunctionWrapper {
         }
 
         /* Convert Value args to HavelValue args (strings, handles and
-         * collections included — not just primitives) */
+         * collections included - not just primitives) */
         std::vector<HavelValue*> c_args;
         c_args.reserve(args.size());
         for (const auto& arg : args) {

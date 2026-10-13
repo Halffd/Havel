@@ -296,7 +296,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   if (!vm) return Value::makeBool(false);
 
   // Native module plugins (havel_mod_<name>.so) register through the VM's
-  // own VMApi and set their global object — the working path, so prefer
+  // own VMApi and set their global object - the working path, so prefer
   // them and return that object (image = extension.load("image") must
   // yield something with .load()). C-ABI extensions (havel_extension_init)
   // would receive the zero-initialized API table from the old getHavelAPI
@@ -314,7 +314,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   if (globalIt != vm->getGlobals().end() && globalIt->second.isObjectId()) {
     return globalIt->second;
   }
-  // C-ABI extension fallback: load WITHOUT calling init — a stub API would
+  // C-ABI extension fallback: load WITHOUT calling init - a stub API would
   // crash it. The extension loads inertly; its functions stay unreachable
   // until the C API host side is implemented.
   extensionLoader_->loadExtensionWithInit(name, nullptr);
@@ -334,7 +334,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
         if (!vm) return Value::makeNull();
         auto arr = vm->createHostArray();
         for (const auto &name : names) {
-          // Push the actual extension name — the old code discarded it
+          // Push the actual extension name - the old code discarded it
           // ((void)name) and pushed null for every entry.
           auto ref = vm->createRuntimeString(name);
           vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));

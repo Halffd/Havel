@@ -4,6 +4,9 @@ src/file
 .cache
 .idea
 .vscode
+# Visual Studio's per-machine solution cache. Machine-specific and regenerated
+# on every open, same category as .idea and .vscode above.
+.vs
 .codex
 .env
 .claude
@@ -19,6 +22,9 @@ build
 build-debug
 build-release
 build*
+# `build*` also swallows docs/build/, which is documentation, not build
+# output. Re-include it so docs/build/windows.md can actually be committed.
+!docs/build/
 *-protocol.o
 *-client-protocol.o
 *-server-protocol.o

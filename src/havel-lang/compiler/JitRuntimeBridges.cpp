@@ -181,7 +181,7 @@ uint32_t havel_vm_locals_base(void* vm_ptr) {
     return static_cast<uint32_t>(vm->currentLocalsBasePublic());
 }
 
-// Semantic comparison bridges — handle NaN-boxed type dispatch correctly
+// Semantic comparison bridges - handle NaN-boxed type dispatch correctly
 // int 1 == double 1.0 must be true, but their bit representations differ
 
 // All bridges in this TU compile with -ffast-math, where std::isnan folds
@@ -854,7 +854,7 @@ uint64_t havel_vm_object_set_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     // (obj.a, obj.b, obj.c pushed through repeated SET/SET/SET) keep
     // operating on the same object. Previously this returned val_bits,
     // which made later chained sets pass a non-ObjectId as obj and
-    // silently no-op — turning every multi-field object initializer
+    // silently no-op - turning every multi-field object initializer
     // into a one-field object followed by globals pollution. Matches
     // interpreter OBJECT_SET which pops key/value/obj and pushes obj.
     return obj_bits;
@@ -1704,7 +1704,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
-    // Closure property call: `closure.prop(args)` — properties attached via
+    // Closure property call: `closure.prop(args)` - properties attached via
     // OBJECT_SET live in closure_properties_ (fn.prop = v static state).
     // The interpreter CALL_METHOD resolves them here (VMControlFlow.cpp:490,
     // added for debounce's wrapped.cancel()); without this arm the bridge

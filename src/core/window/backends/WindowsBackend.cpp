@@ -569,7 +569,10 @@ std::vector<WindowInfo> WindowsBackend::getAllWindows() {
 
 WindowInfo WindowsBackend::getWindowInfo(wID id) {
   WindowInfo info;
-  info.id = static_cast<uint64_t>(id);
+  // wID is HWND on Windows (see include/types.hpp), which is a pointer type.
+// static_cast cannot convert a pointer to an integer; reinterpret_cast is the
+// cast that actually expresses "the handle value as a number".
+info.id = reinterpret_cast<uint64_t>(id);
   info.title = getWindowTitle(id);
   info.windowClass = getWindowClass(id);
   info.pid = getWindowPID(id);

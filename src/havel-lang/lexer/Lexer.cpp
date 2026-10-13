@@ -603,7 +603,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
                 value += '\x01'; // start interpolation marker
                 braceDepth++;
             } else if (peek(1) != '{') {
-                // Literal { — not interpolation. Use ${expr} or $var.
+                // Literal { - not interpolation. Use ${expr} or $var.
                 value += advance();
             } else {
                 // Escaped brace {{ - consume both and add single {
@@ -1538,7 +1538,7 @@ if (isDigit(c) || canBeNegativeNumber) {
  while (la2 < source.length() && (isAlphaNumeric(source[la2]) || source[la2] == '_')) la2++;
  // If identifier is immediately followed by '/', this is a regex literal /pattern/
  if (la2 < source.length() && source[la2] == '/') {
- // Not a hotkey — will be handled by regex scan below
+ // Not a hotkey - will be handled by regex scan below
  }
  else {
  // Check if there's a closing '/' between the identifier and '=>'
@@ -1553,7 +1553,7 @@ if (isDigit(c) || canBeNegativeNumber) {
  }
  }
  if (hasClosingSlashBeforeArrow) {
- // Not a hotkey — regex literal with pattern after identifier chars
+ // Not a hotkey - regex literal with pattern after identifier chars
  }
  else {
  // Check if the identifier is a keyword that starts a condition (if/when)
@@ -1577,11 +1577,11 @@ if (isDigit(c) || canBeNegativeNumber) {
  }
  if (isSlashHotkey) {
  if (identifierIsKeyword) {
- // / followed by condition keyword — only consume /
+ // / followed by condition keyword - only consume /
  currentTokens.push_back(makeToken("/", TokenType::Hotkey));
  advance(); // consume '/'
  } else {
- // /identifier — consume the whole thing as one token
+ // /identifier - consume the whole thing as one token
  std::string hotkeyValue = source.substr(position, hotkeyEnd - position);
  advance(); // consume '/'
  while (position < source.length() && position < hotkeyEnd) {
@@ -2408,7 +2408,7 @@ continue;
     }
 
     // Handle modifier-based hotkeys starting with special characters like # and
-    // combo '&' — but inside (( )), & is bitwise AND
+    // combo '&' - but inside (( )), & is bitwise AND
     if (c == '&') {
         if (inBitwiseExpr) {
             currentTokens.push_back(makeToken("&", TokenType::BitwiseAnd));
@@ -2450,7 +2450,7 @@ continue;
 }
 
 // Handle modifier-based hotkeys starting with special characters like ^ + !
-    // @ ~ $ — but inside (( )), ^ is bitwise XOR and ~ is bitwise NOT
+    // @ ~ $ - but inside (( )), ^ is bitwise XOR and ~ is bitwise NOT
     if (c == '^' && inBitwiseExpr) {
         currentTokens.push_back(makeToken("^", TokenType::BitwiseXor));
         if (debug_lexer) {

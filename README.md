@@ -125,6 +125,61 @@ cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DPORTABLE_BUILD=ON
 cmake --build build-release
 ```
 
+### Building on Windows
+
+**Status: the Windows build does not compile yet.** The port is in progress.
+Do not expect a working `havel.exe` from this tree. This section documents how
+to try, and what is known to be missing.
+
+Prerequisites:
+
+- Visual Studio 2022 or newer with the Desktop development with C++ workload
+- CMake 3.20 or newer
+- No X11, Wayland, libevdev, D-Bus or libcurl. Those are Linux subsystems and
+  are either gated out or not yet ported on Windows.
+
+```powershell
+# Headless is the only UI backend that builds: Qt is not wired up on Windows.
+cmake -S . -B build-msvc -G "Visual Studio 2022" `
+  -DUI_BACKEND=HEADLESS -DENABLE_QT_UI_BACKEND=OFF
+cmake --build build-msvc --config Release --parallel 2
+```
+
+Use `--parallel 2` or lower. The default (all cores) exhausts the MSVC heap and
+the link step fails rather than the compile.
+
+Current error count on a clean configure is around 320, down from 132 when the
+port started. That number rose partway through because MSVC stops a translation
+unit at 100 errors and MSBuild halts dependent projects, so earlier counts were
+not seeing most of the tree at all.
+
+What works today:
+
+- The C runtime layer (`src/c`): logger and config compile clean on Windows,
+  using `CRITICAL_SECTION`, `FindFirstFile`, and `GetDiskFreeSpaceEx`.
+- Brightness: gamma is driven through `SetDeviceGammaRamp` / `GetDeviceGammaRamp`,
+  with monitors enumerated through `DisplayManager`.
+- Shell pipelines: `pipe`/`fork`/`execvp` are replaced with `CreatePipe` and
+  `CreateProcessW`.
+
+What does not, in priority order:
+
+1. Hotkey parsing (`KeyMap.cpp`) still uses X11 keysyms (`XK_*`). It needs to
+   map onto Win32 virtual-key codes. This is the highest-risk item: a wrong
+   mapping selects the wrong key silently instead of failing loudly.
+2. X11 window management (`WindowManager`, `WindowManagerDetector`,
+   `WindowService`, `X11Backend`) and Wayland are unported.
+3. `curl`, `dbus` and `fnmatch` are not available and have no Windows path yet.
+
+See `docs/build/windows.md` for the toolchain details, `docs/windows-modules.md`
+for the per-module triage, and `docs/plat001-investigation.md` for the full
+history including the wrong turns.
+
+One thing to know before writing code: Windows headers define several macros
+that collide with ordinary C++ names. `ERROR`, `near`, `min`, `max` and
+`Yield()` have all broken this tree. If something suddenly fails to compile
+after including a Windows header, suspect a macro before suspecting the code.
+
 ## Verify Installation
 
 ```bash

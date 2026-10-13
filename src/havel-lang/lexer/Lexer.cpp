@@ -1517,6 +1517,18 @@ std::vector<Token> Lexer::tokenize() {
                        prev == TokenType::OpenBrace ||
                        prev == TokenType::CloseBrace);
       }
+      // A comment must be recognised before the hotkey lookahead below.
+      // '/' is itself a key (the keymap registers it as a punctuation alias),
+      // so at statement start a line like `// =>` looks exactly like the
+      // hotkey `/ =>`, and `// when x { a => b }` looks like `when <cond> =>`.
+      // isHotkeyBindingAhead() is peek-only and does not skip comments, so
+      // those lines were scanned as hotkey bindings and the trailing `}`
+      // reached the parser unopened: "Unmatched '}' - no open block to close".
+      if (atStmtStart && peek() == '/' && (peek(1) == '/' || peek(1) == '*')) {
+        advance();                       // '/'
+        skipComment();
+        continue;
+      }
       if (atStmtStart && isHotkeyBindingAhead(position)) {
         // Re-enter tokenize at the binding start so scanHotkey() sees its
         // first character consumed, exactly as the other hotkey call sites.

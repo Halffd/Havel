@@ -142,6 +142,10 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--keep", action="store_true",
                     help="create the device and stay alive")
+    ap.add_argument("--repeat", type=int, default=0,
+                    help="tap the last key N times")
+    ap.add_argument("--gap", type=int, default=1000,
+                    help="ms between repeats (default 1000)")
     args = ap.parse_args()
 
     if args.list:
@@ -153,6 +157,19 @@ def main():
 
     _create_device()
     print("havel-inject: virtual keyboard ready", file=sys.stderr)
+
+    if args.repeat and args.keys:
+        # Tap one key repeatedly, timestamping each emission. Device creation
+        # happens once above, so the printed timestamps are the real emission
+        # times - the latency test's whole point is to keep setup cost out of
+        # the measurement.
+        spec = args.keys[-1]
+        for _ in range(args.repeat):
+            print("%d sent %s" % (int(time.time() * 1000), spec),
+                  file=sys.stderr, flush=True)
+            tap(spec, args.hold / 1000.0)
+            time.sleep(args.gap / 1000.0)
+        return
 
     if args.keys:
         for spec in args.keys:

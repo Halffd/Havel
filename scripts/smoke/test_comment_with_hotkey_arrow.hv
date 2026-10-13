@@ -1,0 +1,46 @@
+// Regression: a `//` comment must never be scanned as a hotkey binding.
+// '/' is itself a key in the keymap (punctuation alias), and the statement-start
+// hotkey lookahead runs before any character is consumed, so these lines were
+// lexed as the hotkey `/ =>` or `when <cond> =>` and their trailing braces
+// reached the parser unopened:
+//     Unmatched '}' - no open block to close
+// Reproduced with:
+//     // =>
+//     // when x { a => b }
+// Fix: recognise a comment before the hotkey lookahead. Headless-safe.
+
+fired = 0
+
+// =>
+// => leading arrow is still just a comment
+// when x { a => b }
+// when mode == "x" { Enter => f() }
+// { a => b }
+// a => b
+// plain comment with no hotkey shapes at all
+
+F24 => { fired = fired + 1 }
+
+// A real binding must still be recognised after the fix.
+; => { fired = fired + 10 }
+
+plk = false
+when plk == true {
+    F22 => { fired = fired + 100 }
+}
+plk = true
+
+sleep(100)
+hotkey.trigger("F24")
+sleep(100)
+hotkey.trigger(";")
+sleep(200)
+hotkey.trigger("F22")
+sleep(300)
+
+print("fired:", fired)
+assert(fired == 111, "hotkey bindings must still bind after the comment fix, got " + fired)
+print("PASS: comment_with_hotkey_arrow")
+// Persistent hotkeys (F24, ";", F22) keep the event loop alive, so
+// exit explicitly rather than relying on an idle VM.
+process.exit(0)

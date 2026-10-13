@@ -3,7 +3,7 @@
 
 #include <wayland-client.h>
 #include <string>
-#include <vector>
+#include <deque>
 #include <mutex>
 #include <memory>
 #include <functional>
@@ -26,6 +26,10 @@ struct WaylandProtocolInfo {
 
 struct WaylandOutputInfo {
     struct wl_output *output = nullptr;
+    // The registry global this output was bound from. libwayland passes this
+    // to global_remove, and the proxy has to be matched back to its entry
+    // there - without it there is no way to tell which output went away.
+    uint32_t globalName = 0;
     std::string name;
     int32_t width = 0;
     int32_t height = 0;
@@ -59,7 +63,12 @@ public:
     zwlr_data_control_manager_v1* wlrDataControlManager() const { return dataControlManager_; }
     ext_data_control_manager_v1* extDataControlManager() const { return extDataControlManager_; }
 
-    const std::vector<WaylandOutputInfo>& outputs() const { return outputs_; }
+    // std::deque, not std::vector: wl_output_add_listener() below is handed
+    // &outputs_.back() as its opaque user_data, so every element's address has
+    // to stay put for the lifetime of the proxy. A vector reallocates on the
+    // second monitor and leaves the first monitor's listener pointing at freed
+    // storage; deque never moves existing elements.
+    const std::deque<WaylandOutputInfo>& outputs() const { return outputs_; }
     const std::vector<WaylandProtocolInfo>& protocols() const { return protocolList_; }
 
     std::string compositorName() const { return compositorName_; }
@@ -110,7 +119,7 @@ private:
     zwlr_data_control_manager_v1 *dataControlManager_ = nullptr;
     ext_data_control_manager_v1 *extDataControlManager_ = nullptr;
 
-    std::vector<WaylandOutputInfo> outputs_;
+    std::deque<WaylandOutputInfo> outputs_;
     std::vector<WaylandProtocolInfo> protocolList_;
     std::string compositorName_;
 

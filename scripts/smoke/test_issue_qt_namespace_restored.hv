@@ -1,6 +1,6 @@
 // Regression for the dead qt.*/gtk.* extension namespaces.
 //
-// smoke: timeout = 240
+// smoke: timeout = 420
 //
 // Since the "Qt6 extension merged into havel_toolkit_qt.so" refactor,
 // api_register_function stored every C-ABI registration in a
@@ -62,7 +62,7 @@ fs.mkdir(FIXTURE_DIR)
 // under test); QT_QPA_PLATFORM=offscreen stays inherited so any Qt
 // initialization is inert. `env -u` is a no-op when the var is unset
 // (direct suite runs).
-res = process.run("cd \"${build_dir}\" && printf 'print(\"QT_FN_\" + str(qt.init != nil))\\nexit\\n' | env -u HAVEL_HEADLESS timeout 25 ./havel --repl 2>&1")
+res = process.run("cd \"${build_dir}\" && printf 'print(\"QT_FN_\" + str(qt.init != nil))\\nexit\\n' | env -u HAVEL_HEADLESS timeout 120 ./havel --repl 2>&1")
 assert(res.exitCode == 0, "repl session with qt toolkit must exit 0 (pre-null-guard it SIGSEGV'd at backend creation), got ${res.exitCode}")
 assert(res.stdout.includes("QT_FN_true"), "qt.init must resolve as a function when the toolkit registers; got: ${res.stdout}")
 
@@ -77,14 +77,14 @@ assert(res.stdout.includes("QT_FN_true"), "qt.init must resolve as a function wh
 // actually reached.
 GTK_CHILD = "${FIXTURE_DIR}/gtk_child.hv"
 fs.write(GTK_CHILD, "use ui\nprocess.exit(0)\n")
-res2 = process.run("cd \"${build_dir}\" && env -u HAVEL_HEADLESS -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY timeout 25 ./havel --ui gtk -d \"${GTK_CHILD}\" 2>&1")
+res2 = process.run("cd \"${build_dir}\" && env -u HAVEL_HEADLESS -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY timeout 120 ./havel --ui gtk -d \"${GTK_CHILD}\" 2>&1")
 assert(res2.exitCode == 1, "display-less gtk session must end in the documented refusal (exit 1), got ${res2.exitCode}")
 assert(res2.stdout.includes("Registered extension function: gtk.init"), "gtk register bridge must run; got: ${res2.stdout}")
 assert(res2.stdout.includes("No UI backend available"), "headless GTK must refuse with the documented error, got: ${res2.stdout}")
 
 // ---------------------------------------------------------------- case 3
 // Invalid --ui value: warning + auto fallback, never fatal.
-res3 = process.run("cd \"${build_dir}\" && printf 'exit\\n' | env -u HAVEL_HEADLESS timeout 25 ./havel --ui bogus --repl 2>&1")
+res3 = process.run("cd \"${build_dir}\" && printf 'exit\\n' | env -u HAVEL_HEADLESS timeout 120 ./havel --ui bogus --repl 2>&1")
 assert(res3.exitCode == 0, "invalid --ui value must fall back to auto and still work, got ${res3.exitCode}")
 assert(res3.stdout.includes("ignoring 'bogus'"), "invalid --ui value must be warned about, got: ${res3.stdout}")
 

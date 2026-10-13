@@ -273,6 +273,14 @@ void VM::releaseTimeoutClosure(uint32_t timeout_id) {
   }
 }
 
+void VM::releaseIntervalClosure(uint32_t interval_id) {
+  auto it = interval_captured_closures_.find(interval_id);
+  if (it != interval_captured_closures_.end()) {
+    releaseCallback(it->second);
+    interval_captured_closures_.erase(it);
+  }
+}
+
 bool VM::isTimeoutClosurePinned(uint32_t timeout_id) const {
   return timeout_captured_closures_.find(timeout_id) != timeout_captured_closures_.end();
 }
@@ -615,12 +623,18 @@ void VM::setEventQueue(class EventQueue* eq) {
   if (eq && !timer_handler_registered_) {
     timer_handler_registered_ = true;
     eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
-      auto *payload = static_cast<std::pair<CallbackId, uint32_t>*>(event.ptr);
+      auto *payload = static_cast<TimerFirePayload*>(event.ptr);
       if (!payload) return;
       bool is_timeout = (event.data1 == 1);
+      PendingTimerCallback pcb;
+      pcb.closure = payload->closure;
+      pcb.callback_id = payload->callback_id;
+      pcb.timer_id = payload->timer_id;
+      pcb.is_timeout = is_timeout;
+      pcb.has_callback_id = payload->has_callback_id;
       {
         std::lock_guard<std::mutex> lk(pending_timer_mutex_);
-        pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
+        pending_timer_callbacks_.push_back(pcb);
       }
       delete payload;
     });
@@ -649,7 +663,8 @@ void VM::executePendingTimerCallbacks() {
   for (auto& cb : callbacks) {
     if (exit_requested_.load()) break;
     try {
-      Value result = invokeCallback(cb.callback_id, {});
+      Value result = cb.has_callback_id ? invokeCallback(cb.callback_id, {})
+                                        : callFunction(cb.closure, {});
       if (cb.is_timeout) {
         addTimeoutResult(cb.timer_id, result);
         // Release the pinned timeout closure after it fires.

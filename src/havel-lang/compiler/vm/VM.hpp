@@ -578,9 +578,13 @@ void* last_suspension_context_ = nullptr;
 	
 class EventQueue* event_queue_ = nullptr;
 struct PendingTimerCallback {
-  CallbackId callback_id;
-  uint32_t timer_id;
-  bool is_timeout;
+  // Either an external-root callback id (has_callback_id) or a closure
+  // Value pushed by the Value-form timer producers. See TimerFirePayload.
+  CallbackId callback_id = INVALID_CALLBACK_ID;
+  Value closure;
+  uint32_t timer_id = 0;
+  bool is_timeout = false;
+  bool has_callback_id = false;
 };
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
@@ -2182,6 +2186,8 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // or is cancelled. Returns the callback ID for the pinned closure.
   CallbackId pinTimeoutClosure(uint32_t timeout_id, const Value &closure);
   void releaseTimeoutClosure(uint32_t timeout_id);
+  // Same, for intervals: both the sweep hook and interval.stop land here.
+  void releaseIntervalClosure(uint32_t interval_id);
   bool isTimeoutClosurePinned(uint32_t timeout_id) const;
 
   // ========== IMAGE HELPERS ==========

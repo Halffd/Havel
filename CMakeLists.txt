@@ -3174,7 +3174,13 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test below.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_lang havel_core -Wl,--end-group
+        # The havel archives must share one group: havel_core (EventBridge,
+        # FileWatcher) references EventRuntime in havel_runtime, and
+        # havel_runtime references back into havel_core. Outside a group
+        # ld sees them in link order and skips the members it thinks are
+        # unneeded, so EventBridge.o resolves against a havel_runtime.a
+        # that was already passed.
+        -Wl,--start-group havel_lang havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

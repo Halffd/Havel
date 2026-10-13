@@ -11,6 +11,19 @@ namespace havel::compiler {
 
 ConcurrencyBridge::ConcurrencyBridge(const ::havel::HostContext &ctx) : ctx_(&ctx), vm_(ctx.vm) {
   event_queue_ = std::make_unique<EventQueue>();
+  // The sweep collects intervals the script dropped without calling stop().
+  // Drop this bridge's pin for it too, or a toggle-style script (create
+  // timers, null the globals) leaks one external root per timer forever and
+  // every GC cycle marks all of them.
+  if (vm_) {
+    vm_->getHeap().addIntervalFreedHook([this](uint32_t id) {
+      auto it = interval_callbacks_.find(id);
+      if (it != interval_callbacks_.end()) {
+        vm_->releaseCallback(it->second);
+        interval_callbacks_.erase(it);
+      }
+    });
+  }
 }
 
 ConcurrencyBridge::~ConcurrencyBridge() {
@@ -379,7 +392,8 @@ auto intervalIdPtr = std::make_shared<uint32_t>(0);
   auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {
     auto *eq = vm->getEventQueue();
     if (eq && !eq->isShutdown()) {
-      auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
+      auto *payload = new TimerFirePayload(
+          TimerFirePayload::fromClosure(callback, *intervalIdPtr));
       eq->push(Event(EventType::TIMER_FIRE, 0, payload));
     }
   };
@@ -387,6 +401,11 @@ auto intervalIdPtr = std::make_shared<uint32_t>(0);
 auto intervalObj = std::make_shared<Interval>(static_cast<int>(interval_ms), std::move(vm_cb));
 auto intervalRef = vm_->getHeap().allocateIntervalObj(intervalObj);
 *intervalIdPtr = intervalRef.id;
+// Pin the closure: the heap Interval object holds no Value the GC can trace
+// (the callback is a C++ std::function), so an unpinned closure is collected
+// the moment the script drops the handle while the timer keeps ticking.
+interval_callbacks_[intervalRef.id] =
+static_cast<uint32_t>(vm_->registerCallback(callback));
 return Value::makeIntervalId(intervalRef.id);
 }
 
@@ -401,6 +420,12 @@ uint32_t interval_id = args[0].asIntervalId();
 auto *intervalObj = vm_->getHeap().interval(interval_id);
 if (intervalObj) {
 intervalObj->stop();
+}
+
+auto cb = interval_callbacks_.find(interval_id);
+if (cb != interval_callbacks_.end()) {
+vm_->releaseCallback(cb->second);
+interval_callbacks_.erase(cb);
 }
 
 return Value::makeNull();

@@ -2441,7 +2441,8 @@ void VM::registerDefaultHostFunctions() {
       // Timer thread: only ever push events. Never invoke VM callbacks
       // from here (timer thread != VM thread). If no queue, drop the tick.
       if (event_queue_) {
-        auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *intervalIdPtr);
+        auto *payload = new TimerFirePayload(
+            TimerFirePayload::fromCallbackId(callbackId, *intervalIdPtr));
         event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
       }
     };
@@ -2528,8 +2529,8 @@ void VM::registerDefaultHostFunctions() {
           // Timer thread: only ever push events. Never call the closure
           // from here (timer thread != VM thread). If no queue, drop the tick.
           if (event_queue_) {
-            auto *payload =
-                new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+            auto *payload = new TimerFirePayload(
+                TimerFirePayload::fromClosure(closure, *intervalIdPtr));
             event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
           }
         };
@@ -2583,7 +2584,8 @@ void VM::registerDefaultHostFunctions() {
 
     auto callback = [this, callbackId = registerCallback(closure), timeoutIdPtr]() {
       if (event_queue_) {
-        auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *timeoutIdPtr);
+        auto *payload = new TimerFirePayload(
+            TimerFirePayload::fromCallbackId(callbackId, *timeoutIdPtr));
         event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
       } else {
         try {
@@ -2646,8 +2648,8 @@ void VM::registerDefaultHostFunctions() {
           // Timer thread: only ever push events. Never call the closure
           // from here (timer thread != VM thread). If no queue, drop the fire.
           if (event_queue_) {
-            auto *payload =
-                new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+            auto *payload = new TimerFirePayload(
+                TimerFirePayload::fromClosure(closure, *timeoutIdPtr));
             event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
           }
         };

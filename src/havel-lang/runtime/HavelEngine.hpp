@@ -320,15 +320,17 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
                 vm_->setEventQueue(hostContext_->eventQueue);
                 hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,
 [this](const compiler::Event& event) {
-auto *payload = static_cast<std::pair<compiler::Value, uint32_t>*>(event.ptr);
+auto *payload = static_cast<compiler::TimerFirePayload*>(event.ptr);
 if (!payload) return;
-compiler::Value closure = payload->first;
-uint32_t timer_id = payload->second;
+compiler::TimerFirePayload fire = *payload;
 bool is_timeout = (event.data1 == 1);
 delete payload;
 if (!vm_) return;
 try {
-compiler::Value result = vm_->callFunction(closure, {});
+compiler::Value result = fire.has_callback_id
+? vm_->invokeCallback(fire.callback_id, {})
+: vm_->callFunction(fire.closure, {});
+uint32_t timer_id = fire.timer_id;
 if (is_timeout) {
 vm_->addTimeoutResult(timer_id, result);
 } else {

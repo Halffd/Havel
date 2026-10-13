@@ -1,0 +1,33 @@
+// LINT-ONLY. Do not run: the bodies below are the exact shapes from a real
+// config that compiled silently and died at runtime with
+// "Undefined variable: 'stop'". Each bare name inside a nested closure now
+// produces a compiler warning naming the explicit form.
+//
+//   ./build-debug/havel --lint scripts/tests/lang/timer_bare_member_diagnostic.hv
+//
+// Checked manually: the warnings name @stop / @run? / @enabled. The executable
+// behaviour of the explicit forms is covered by timer_stop_from_closure.hv.
+//
+// Headless-safe: never executed.
+
+class AutoBase {
+    running: bool = false
+    enabled: bool = false
+    timer = null
+
+    fn run?() {
+        false
+    }
+    fn stop() {
+        @timer = null
+        @running = false
+    }
+    fn start() {
+        @timer = interval 100 { }
+        // All four of these lost the receiver and resolved as globals.
+        timeout 10000 { stop() }
+        go { stop() }
+        interval 100 { enabled = true }
+        if !@running { go { run?() } }
+    }
+}

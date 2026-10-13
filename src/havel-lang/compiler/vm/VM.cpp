@@ -108,6 +108,13 @@ VM::VM(const VMConfig &cfg) {
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
   heap_.setAllocationCounter(profiler_.allocationSink());
+  // A timer whose handle the script drops is collected by the sweep, which
+  // reports it here so the closure pin dies with it. Without this the pin
+  // outlives the timer: a script that toggles a timer by nulling the global
+  // instead of calling stop() leaks one external root per toggle, and every
+  // GC cycle then marks all of them - progressive scheduler slowdown.
+  heap_.addIntervalFreedHook([this](uint32_t id) { releaseIntervalClosure(id); });
+  heap_.addTimeoutFreedHook([this](uint32_t id) { releaseTimeoutClosure(id); });
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -172,6 +179,13 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
   heap_.setAllocationCounter(profiler_.allocationSink());
+  // A timer whose handle the script drops is collected by the sweep, which
+  // reports it here so the closure pin dies with it. Without this the pin
+  // outlives the timer: a script that toggles a timer by nulling the global
+  // instead of calling stop() leaks one external root per toggle, and every
+  // GC cycle then marks all of them - progressive scheduler slowdown.
+  heap_.addIntervalFreedHook([this](uint32_t id) { releaseIntervalClosure(id); });
+  heap_.addTimeoutFreedHook([this](uint32_t id) { releaseTimeoutClosure(id); });
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;

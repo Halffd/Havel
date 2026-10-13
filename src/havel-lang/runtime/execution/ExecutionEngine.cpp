@@ -55,14 +55,13 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
     
         event_queue_->onEvent(EventType::TIMER_FIRE,
             [this](const Event& event) {
-                auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+                auto *payload = static_cast<TimerFirePayload*>(event.ptr);
                 if (!payload) return;
-                Value closure = payload->first;
-                uint32_t timer_id = payload->second;
+                TimerFirePayload fire = *payload;
                 bool is_timeout = (event.data1 == 1);
                 delete payload;
-                scheduler_->schedule([this, timer_id, closure, is_timeout]() {
-                    onTimerFire(timer_id, closure, is_timeout);
+                scheduler_->schedule([this, fire, is_timeout]() {
+                    onTimerFire(fire, is_timeout);
                 }, FiberPriority::HOTKEY);
             });
 
@@ -851,7 +850,9 @@ void ExecutionEngine::onTimerFire(const TimerFirePayload& fire, bool is_timeout)
     }
 
     try {
-        Value result = vm_->callFunction(closure, {});
+        Value result = fire.has_callback_id
+                           ? vm_->invokeCallback(fire.callback_id, {})
+                           : vm_->callFunction(fire.closure, {});
         if (is_timeout) {
             vm_->addTimeoutResult(timer_id, result);
         } else {

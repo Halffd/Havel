@@ -1,0 +1,21 @@
+// VM-OPT-001 fixture: module with mutable shared state + closure factory.
+x_state = 0
+
+fn bumpX() {
+  x_state = x_state + 1
+  return x_state
+}
+
+fn getX() {
+  return x_state
+}
+
+fn makeAdder() {
+  fn adder(v) {
+    x_state = x_state + v
+    return x_state
+  }
+  return adder
+}
+
+{ bumpX: bumpX, getX: getX, makeAdder: makeAdder }

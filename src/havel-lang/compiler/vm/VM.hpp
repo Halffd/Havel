@@ -10,6 +10,7 @@
 #include <string_view>
 #include <functional>
 #include <memory>
+#include <map>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -34,10 +35,12 @@
 #include "../../runtime/HostContext.hpp"
 #include "../../runtime/ModuleLoader.hpp"
 
-namespace havel { class Loader; }
+namespace havel {
+class Loader;
+}
 
 #include "utils/RobinHoodHashMap.hpp"
-#include "../../../utils/Logger.hpp"  // tier-manager debug output
+#include "../../../utils/Logger.hpp" // tier-manager debug output
 #include "../runtime/EventQueue.hpp"
 
 namespace havel::compiler {
@@ -77,33 +80,32 @@ struct JitCoroutineSignal final {
     SLEEP,        // FIBER_SLEEP opcode hit
   };
   Op op;
-  Value value;          // The value involved (yield value, awaitable, function ref, ms)
+  Value value; // The value involved (yield value, awaitable, function ref, ms)
 };
 
 struct ScriptError final {
-    Value value;
-    std::string message;
-    std::string stackTrace;
-    uint32_t line = 0;
-    uint32_t column = 0;
+  Value value;
+  std::string message;
+  std::string stackTrace;
+  uint32_t line = 0;
+  uint32_t column = 0;
 
-    ScriptError(Value val, const std::string &msg,
-        const std::string &trace, uint32_t ln = 0, uint32_t col = 0)
-        : value(std::move(val)), message(msg), stackTrace(trace), line(ln),
-          column(col) {}
+  ScriptError(Value val, const std::string &msg, const std::string &trace, uint32_t ln = 0,
+              uint32_t col = 0)
+      : value(std::move(val)), message(msg), stackTrace(trace), line(ln), column(col) {}
 
-    const char *what() const noexcept { return message.c_str(); }
+  const char *what() const noexcept { return message.c_str(); }
 
-    // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
+  // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
 };
 
 // ============================================================================
 // LAZY MODULE LOADING
 struct ModuleDescriptor {
-    std::string name;
-    std::function<void(struct VMApi&)> initFn;
-    bool loaded = false;
-    std::vector<std::string> aliases;
+  std::string name;
+  std::function<void(struct VMApi &)> initFn;
+  bool loaded = false;
+  std::vector<std::string> aliases;
 };
 
 // ============================================================================
@@ -115,55 +117,55 @@ struct ModuleDescriptor {
 // Used by the hotkey fast path: instead of spawning a goroutine and
 // running the bytecode dispatch loop, we iterate these calls directly.
 struct DirectCall {
-    uint32_t host_func_idx;
-    std::vector<Value> args;
+  uint32_t host_func_idx;
+  std::vector<Value> args;
 };
 
 // A sequence of direct calls for a host-only hotkey callback.
 struct DirectCallThunk {
-    std::vector<DirectCall> calls;
+  std::vector<DirectCall> calls;
 };
 
 // ============================================================================
 struct VMExecutionResult {
   enum Type : uint8_t {
-    YIELD,       // Instruction completed normally, return value on stack
-    SUSPENDED,   // Fiber suspended (waiting for event), state frozen
-    RETURNED,    // Function returned, value in result_value
-    ERROR,       // Exception thrown, message in error_message
-    DEBUG_BREAK  // Breakpoint hit, debugger should take control
+    YIELD,      // Instruction completed normally, return value on stack
+    SUSPENDED,  // Fiber suspended (waiting for event), state frozen
+    RETURNED,   // Function returned, value in result_value
+    ERROR,      // Exception thrown, message in error_message
+    DEBUG_BREAK // Breakpoint hit, debugger should take control
   };
-  
+
   Type type;
-  Value result_value;           // For YIELD or RETURNED
-  std::string error_message;    // For ERROR
-  
+  Value result_value;        // For YIELD or RETURNED
+  std::string error_message; // For ERROR
+
   // Default constructor
   VMExecutionResult();
-  
+
   // Convenience constructors
-  static VMExecutionResult Yield(const Value& value) {
+  static VMExecutionResult Yield(const Value &value) {
     VMExecutionResult r;
     r.type = YIELD;
     r.result_value = value;
     return r;
   }
-  
+
   static VMExecutionResult Suspended() {
     VMExecutionResult r;
     r.type = SUSPENDED;
     r.result_value = Value();
     return r;
   }
-  
-  static VMExecutionResult Returned(const Value& value) {
+
+  static VMExecutionResult Returned(const Value &value) {
     VMExecutionResult r;
     r.type = RETURNED;
     r.result_value = value;
     return r;
   }
-  
-  static VMExecutionResult Error(const std::string& msg) {
+
+  static VMExecutionResult Error(const std::string &msg) {
     VMExecutionResult r;
     r.type = ERROR;
     r.error_message = msg;
@@ -180,57 +182,55 @@ struct VMExecutionResult {
 };
 
 struct VMConfig {
-    // Heap / GC
-    uint64_t heap_min_bytes = 64 * 1024 * 1024;
-    uint64_t heap_max_bytes = 4ULL * 1024 * 1024 * 1024;
-    size_t gc_budget = 65536;
-    bool gc_incremental = true;
-    bool gc_stop_the_world = true;
-    size_t gc_full_collection_interval = 8;
-    uint8_t gc_promotion_age = 2;
+  // Heap / GC
+  uint64_t heap_min_bytes = 64 * 1024 * 1024;
+  uint64_t heap_max_bytes = 4ULL * 1024 * 1024 * 1024;
+  size_t gc_budget = 65536;
+  bool gc_incremental = true;
+  bool gc_stop_the_world = true;
+  size_t gc_full_collection_interval = 8;
+  uint8_t gc_promotion_age = 2;
 
-    // Call / stack limits
-    size_t max_call_depth = 16384;
-    size_t max_stack_depth = 1 << 20;
-    uint64_t max_instructions = 0;
+  // Call / stack limits
+  size_t max_call_depth = 16384;
+  size_t max_stack_depth = 1 << 20;
+  uint64_t max_instructions = 0;
 
-    // Scheduler / goroutine
-    uint64_t goroutine_tick_instructions = 10000;
-    uint64_t goroutine_hotkey_tick_instructions = 100000;
+  // Scheduler / goroutine
+  uint64_t goroutine_tick_instructions = 10000;
+  uint64_t goroutine_hotkey_tick_instructions = 100000;
 
-    // Tiering (JIT). Zero means "use the HAVEL_TIER1_THRESHOLD /
-    // HAVEL_TIER2_THRESHOLD environment defaults" so operators can tune
-    // thresholds without recompiling; an explicit nonzero value wins.
-    bool tiering_enabled = false;
-    uint64_t tier1_threshold = 0;
-    uint64_t tier2_threshold = 0;
-    bool tier2_flush_on_shutdown = false;
+  // Tiering (JIT). Zero means "use the HAVEL_TIER1_THRESHOLD /
+  // HAVEL_TIER2_THRESHOLD environment defaults" so operators can tune
+  // thresholds without recompiling; an explicit nonzero value wins.
+  bool tiering_enabled = false;
+  uint64_t tier1_threshold = 0;
+  uint64_t tier2_threshold = 0;
+  bool tier2_flush_on_shutdown = false;
 
-    // JIT Debug
-    bool debugJIT = false;
+  // JIT Debug
+  bool debugJIT = false;
 
-    // Timer check interval (instructions between timer checks)
-    size_t timer_check_interval = 1000;
+  // Timer check interval (instructions between timer checks)
+  size_t timer_check_interval = 1000;
 
-    // Self-hosted modules
-    std::string self_hosted_modules_path;
+  // Self-hosted modules
+  std::string self_hosted_modules_path;
 
-    // Headless mode - skip hardware initialization
-    bool headlessMode = false;
+  // Headless mode - skip hardware initialization
+  bool headlessMode = false;
 };
 
 class HAVEL_EXPORT VM : public BytecodeInterpreter {
 public:
-// Timer check callback - called periodically during script execution
-using TimerCheckFunction = std::function<void()>;
-using HotTraceCallback = std::function<void(const BytecodeFunction&, uint32_t, uint64_t)>;
-  
+  // Timer check callback - called periodically during script execution
+  using TimerCheckFunction = std::function<void()>;
+  using HotTraceCallback = std::function<void(const BytecodeFunction &, uint32_t, uint64_t)>;
+
   class GCRoot {
   public:
     GCRoot() = default;
-    GCRoot(VM &vm, const Value &value) : vm_(&vm) {
-      id_ = vm.pinExternalRoot(value);
-    }
+    GCRoot(VM &vm, const Value &value) : vm_(&vm) { id_ = vm.pinExternalRoot(value); }
     GCRoot(const GCRoot &) = delete;
     GCRoot &operator=(const GCRoot &) = delete;
     GCRoot(GCRoot &&other) noexcept : vm_(other.vm_), id_(other.id_) {
@@ -270,41 +270,34 @@ using HotTraceCallback = std::function<void(const BytecodeFunction&, uint32_t, u
     uint64_t id_ = 0;
   };
 
-  enum class DebugStepMode : uint8_t {
-    Continue,
-    StepInto,
-    StepOver,
-    StepOut
-  };
+  enum class DebugStepMode : uint8_t { Continue, StepInto, StepOver, StepOut };
 
 private:
-
- struct TryHandler {
+  struct TryHandler {
     uint32_t catch_ip = 0;
-    uint32_t finally_ip = 0; // 0 if no finally block
-    uint32_t finally_return_ip =
-        0; // Where to go after finally (catch_ip or re-throw)
+    uint32_t finally_ip = 0;        // 0 if no finally block
+    uint32_t finally_return_ip = 0; // Where to go after finally (catch_ip or re-throw)
     size_t stack_depth = 0;
   };
 
-struct CallFrame {
-  const BytecodeFunction *function = nullptr;
-  const BytecodeChunk *chunk = nullptr;
-  size_t ip = 0;
-  size_t locals_base = 0;
-  uint32_t closure_id = 0;
-  bool owns_globals = false;
-  // Module-global keys this frame (or a same-module callee) wrote and
-  // persisted to the shared module_globals map. On return, these keys are
-  // copied from the shared map into the caller's restored globals copy so
-  // nested same-module writes are not lost (see doReturn refresh).
-  std::vector<std::string> written_globals;
-  std::vector<TryHandler> try_stack;
-  size_t stack_depth = 0; // Expression stack depth at call time
-  std::vector<Value> defer_stack; // Deferred closures to execute on scope exit
-};
-  public:
+  struct CallFrame {
+    const BytecodeFunction *function = nullptr;
+    const BytecodeChunk *chunk = nullptr;
+    size_t ip = 0;
+    size_t locals_base = 0;
+    uint32_t closure_id = 0;
+    bool owns_globals = false;
+    // Module-global keys this frame (or a same-module callee) wrote and
+    // persisted to the shared module_globals map. On return, these keys are
+    // copied from the shared map into the caller's restored globals copy so
+    // nested same-module writes are not lost (see doReturn refresh).
+    std::vector<std::string> written_globals;
+    std::vector<TryHandler> try_stack;
+    size_t stack_depth = 0;         // Expression stack depth at call time
+    std::vector<Value> defer_stack; // Deferred closures to execute on scope exit
+  };
 
+public:
   // Operand stack. Flat vector instead of std::stack (deque-backed):
   // deque chunk allocation showed as kernel clear_pages + per-op overhead
   // in dispatch profiles (push 4%, pop 2.7%). The vector keeps capacity
@@ -313,45 +306,45 @@ struct CallFrame {
   std::vector<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
- size_t frame_count_ = 0;
- // CALL argument scratch pool, keyed by frame depth. CALL builds its
- // argument vector in pool[depth] and MOVES it out into doCall's by-value
- // parameter, so nested calls (which run at a deeper frame_count_) use a
- // different slot and cannot alias. Slots keep their capacity across calls,
- // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
- // (2M-iteration closure benchmark: ~2M mallocs).
- std::vector<std::vector<Value>> call_arg_pool_;
- // Memoize the temporary closures doCall allocates for FunctionObjId
- // callees. The temp closure's identity is (function index, parent
- // module_globals pointer) - nothing else varies - so a repeated global-fn
- // call reuses the memoized closure instead of allocating a fresh
- // RuntimeClosure per call (a 2M-iteration plain-fn loop allocated ~2M
- // closures: one heap mutex pair, hash insert, ages bookkeeping and a page
- // of memory each time).
- std::unordered_map<uint64_t, uint32_t> foid_closure_memo_;
- static uint64_t foidMemoKey(uint32_t function_index, const void *globals_ptr) {
-   return (static_cast<uint64_t>(function_index) << 32) ^
-          (reinterpret_cast<uintptr_t>(globals_ptr) >> 3);
- }
- inline std::vector<Value> takeCallArgScratch() {
-   call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
-   auto &slot = call_arg_pool_[frame_count_];
-   if (!slot.empty()) slot.clear();
-   return std::move(slot);
- }
- int bc_execute_depth_ = 0;
- GCHeap heap_;
-  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
-      open_upvalues;
-    std::unordered_map<std::string, Value> globals;
-    mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
-    // Thread-safe module loading: protects modules_loading_ and coordinates
-    // concurrent loads of the same module (goroutine + main fiber).
-    std::mutex modules_loading_mutex_;
-    std::condition_variable modules_loading_cv_;
-    std::unordered_set<std::string> modules_loading_; // Circular dependency detection
-    std::unordered_set<std::string> immutable_globals_; // val-declared globals
-    std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
+  size_t frame_count_ = 0;
+  // CALL argument scratch pool, keyed by frame depth. CALL builds its
+  // argument vector in pool[depth] and MOVES it out into doCall's by-value
+  // parameter, so nested calls (which run at a deeper frame_count_) use a
+  // different slot and cannot alias. Slots keep their capacity across calls,
+  // eliminating the per-CALL heap allocation of a fresh std::vector<Value>
+  // (2M-iteration closure benchmark: ~2M mallocs).
+  std::vector<std::vector<Value>> call_arg_pool_;
+  // Memoize the temporary closures doCall allocates for FunctionObjId
+  // callees. The temp closure's identity is (function index, parent
+  // module_globals pointer) - nothing else varies - so a repeated global-fn
+  // call reuses the memoized closure instead of allocating a fresh
+  // RuntimeClosure per call (a 2M-iteration plain-fn loop allocated ~2M
+  // closures: one heap mutex pair, hash insert, ages bookkeeping and a page
+  // of memory each time).
+  std::unordered_map<uint64_t, uint32_t> foid_closure_memo_;
+  static uint64_t foidMemoKey(uint32_t function_index, const void *globals_ptr) {
+    return (static_cast<uint64_t>(function_index) << 32) ^
+           (reinterpret_cast<uintptr_t>(globals_ptr) >> 3);
+  }
+  inline std::vector<Value> takeCallArgScratch() {
+    call_arg_pool_.resize(std::max(call_arg_pool_.size(), frame_count_ + 2));
+    auto &slot = call_arg_pool_[frame_count_];
+    if (!slot.empty())
+      slot.clear();
+    return std::move(slot);
+  }
+  int bc_execute_depth_ = 0;
+  GCHeap heap_;
+  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>> open_upvalues;
+  std::unordered_map<std::string, Value> globals;
+  mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
+  // Thread-safe module loading: protects modules_loading_ and coordinates
+  // concurrent loads of the same module (goroutine + main fiber).
+  std::mutex modules_loading_mutex_;
+  std::condition_variable modules_loading_cv_;
+  std::unordered_set<std::string> modules_loading_;   // Circular dependency detection
+  std::unordered_set<std::string> immutable_globals_; // val-declared globals
+  std::unordered_set<uint32_t> immutable_locals_;     // val-declared local indices (per-frame)
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
   // Registration metadata keyed by the same name as host_functions. The
   // std::function cannot carry arity or an owner, so they are recorded here at
@@ -362,150 +355,243 @@ struct CallFrame {
   // registration, which is the only place the owner is actually known.
   std::string host_module_scope_ = "vm";
   std::vector<std::string> host_function_names_; // Index -> name mapping
-  std::unordered_set<uint32_t> host_function_wants_self_; // Host function indices whose first param is "self"
-utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
+  std::unordered_set<uint32_t>
+      host_function_wants_self_; // Host function indices whose first param is "self"
+  utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   // Module-import wrapper metadata: wrapper name -> {source module key, field path}.
   // The wrapper NAME is an ambiguous concatenation ($module_fn_<key>_<field>),
   // so serializeGlobals must NOT re-parse it; it reads this table instead.
   std::unordered_map<std::string, std::pair<std::string, std::string>> host_module_wrapper_meta_;
   std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
-  std::unordered_map<std::string, uint64_t> module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
+  std::unordered_map<std::string, uint64_t>
+      module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
   // Persistent class registry: class name -> class prototype object
   // Survives globals map changes (execute_persistent, function calls, etc.)
   std::unordered_map<std::string, Value> class_registry_;
-  std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions
+  std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>>
+      imported_module_globals_; // GC root for wrapped module functions
   // Spawn-time globals snapshot per goroutine closure id. Restored in
   // startGoroutineCall so a goroutine's first run resolves globals against
   // the module scope that was active at spawn, not whatever map is ambient
   // at first-pick (module-cache fixup may reassign the closure's module_globals).
-  std::unordered_map<uint32_t, std::shared_ptr<std::unordered_map<std::string, Value>>> spawn_globals_snapshot_;
+  std::unordered_map<uint32_t, std::shared_ptr<std::unordered_map<std::string, Value>>>
+      spawn_globals_snapshot_;
 
-   
-        // Function properties support (fn.prop = value for static state, memoization, etc.)
-        std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
-        uint32_t bind_count_ = 0;
-        std::unordered_map<uint32_t, ObjectRef> closure_properties_;  // closure_id -> properties object
-        std::unordered_map<uint32_t, ObjectRef> hostfunc_properties_; // host_func_idx -> properties object
-    std::unordered_map<CallbackId, DirectCallThunk> direct_call_thunks_;
+  // Function properties support (fn.prop = value for static state, memoization, etc.)
+  std::unordered_map<uint32_t, ObjectRef>
+      function_properties_; // function_index -> properties object
+  uint32_t bind_count_ = 0;
+  std::unordered_map<uint32_t, ObjectRef> closure_properties_; // closure_id -> properties object
+  std::unordered_map<uint32_t, ObjectRef>
+      hostfunc_properties_; // host_func_idx -> properties object
+  std::unordered_map<CallbackId, DirectCallThunk> direct_call_thunks_;
 
-        bool has_current_exception_ = false;
+  bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 
-    // Module exports for END_MODULE opcode
-    Value module_exports_;
+  // Module exports for END_MODULE opcode
+  Value module_exports_;
 
-    // Module system: delegate path resolution + caching to canonical ModuleLoader
-    // Circular dependency detection still in VM
-    std::string current_script_dir_; // Directory of the currently executing script (for relative imports)
- // Keep module BytecodeChunks alive so exported closures can reference them
- std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
-// Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
-std::shared_ptr<BytecodeChunk> main_chunk_;
-// Keep REPL chunks alive so closures/functions from previous lines remain valid
-std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
-// Keep persistent execution chunks alive so function objects remain valid
-std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
+  // Module system: delegate path resolution + caching to canonical ModuleLoader
+  // Circular dependency detection still in VM
+  std::string
+      current_script_dir_; // Directory of the currently executing script (for relative imports)
+  // Keep module BytecodeChunks alive so exported closures can reference them
+  std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
+  // Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
+  std::shared_ptr<BytecodeChunk> main_chunk_;
+  // Keep REPL chunks alive so closures/functions from previous lines remain valid
+  std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
+  // Keep persistent execution chunks alive so function objects remain valid
+  std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
 
-    // Canonical module loader for path resolution and caching
-    ModuleLoader moduleLoader_;
+  // Canonical module loader for path resolution and caching
+  ModuleLoader moduleLoader_;
 
-    // Path to directory containing self-hosted module bytecode (e.g., "out/")
-    std::string self_hosted_modules_path_;
+  // Path to directory containing self-hosted module bytecode (e.g., "out/")
+  std::string self_hosted_modules_path_;
 
-    // Plugin loader for dynamic .so module discovery
-    havel::Loader *pluginLoader_ = nullptr;
+  // Plugin loader for dynamic .so module discovery
+  havel::Loader *pluginLoader_ = nullptr;
 
-    // Native plugins whose register_fn is currently executing on this stack.
-    // Eager stdlib plugins (object, string, math, array, ...) call
-    // vm.loadModule("<own name>") from inside register_fn to merge their
-    // Havel-script export set. Without this guard that call re-enters the
-    // native-plugin branch below, re-runs register_fn, and recurses forever
-    // until stack overflow (SIGSEGV). When a plugin is mid-registration we
-    // fall through to Havel-script resolution instead.
-    std::unordered_set<std::string> native_plugin_in_progress_;
+  // Native plugins whose register_fn is currently executing on this stack.
+  // Eager stdlib plugins (object, string, math, array, ...) call
+  // vm.loadModule("<own name>") from inside register_fn to merge their
+  // Havel-script export set. Without this guard that call re-enters the
+  // native-plugin branch below, re-runs register_fn, and recurses forever
+  // until stack overflow (SIGSEGV). When a plugin is mid-registration we
+  // fall through to Havel-script resolution instead.
+  std::unordered_set<std::string> native_plugin_in_progress_;
 
-// Resolution cache to avoid repeated ModuleLoader::resolve() filesystem stats
-// Key: module path, Value: empty string = not found, non-empty = resolved canonical path
-std::unordered_map<std::string, std::string> module_resolution_cache_;
+  // Resolution cache to avoid repeated ModuleLoader::resolve() filesystem stats
+  // Key: module path, Value: empty string = not found, non-empty = resolved canonical path
+  std::unordered_map<std::string, std::string> module_resolution_cache_;
 
-// Lazy module registry — descriptors are registered at startup,
-// init functions are called on first use (import/access)
-std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
+  // Lazy module registry — descriptors are registered at startup,
+  // init functions are called on first use (import/access)
+  std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
-    // A frame on the globals stack: the map that was swapped out plus the
-    // module-globals identity that was active at swap time. Identity lets
-    // call sites skip the full-map copy when a call stays inside one module.
-    // Fields keep the pair names (.first/.second) so existing access sites
-    // read unchanged. fiber_restored marks frames (re)installed wholesale
-    // by loadFiberState's globals_stack_ repair: such frames hold deep
-    // copies taken at suspension time and can be OLDER than live ambient
-    // writes (see popGlobals' stale-frame guard).
-    struct GlobalsFrame {
-      std::unordered_map<std::string, Value> first;
-      std::shared_ptr<std::unordered_map<std::string, Value>> second;
-      bool fiber_restored = false;
-      Fiber* owner = nullptr;
-    };
-    std::vector<GlobalsFrame> globals_stack_;
-    // Identity (which module_globals shared_ptr) of the map currently
-    // installed as `globals` — null for the engine-main map. Restored from
-    // globals_stack_ frames on pop.
-    std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
+  // A frame on the globals stack: the map that was swapped out plus the
+  // module-globals identity that was active at swap time. Identity lets
+  // call sites skip the full-map copy when a call stays inside one module.
+  // Fields keep the pair names (.first/.second) so existing access sites
+  // read unchanged. fiber_restored marks frames (re)installed wholesale
+  // by loadFiberState's globals_stack_ repair: such frames hold deep
+  // copies taken at suspension time and can be OLDER than live ambient
+  // writes (see popGlobals' stale-frame guard).
+  struct GlobalsFrame {
+    std::unordered_map<std::string, Value> first;
+    std::shared_ptr<std::unordered_map<std::string, Value>> second;
+    bool fiber_restored = false;
+    Fiber *owner = nullptr;
+    // True when the ambient installed for this frame is cache-managed
+    // (VM-OPT-001 save-and-swap): popGlobals parks it back into
+    // ambient_cache_ instead of dropping it. False for the module-fn
+    // host-wrapper path, whose epilogue wholesale move-assigns the
+    // ambient into the sidecar and would poison a cache entry.
+    bool ambient_cached = false;
+  };
+  std::vector<GlobalsFrame> globals_stack_;
+  // Identity (which module_globals shared_ptr) of the map currently
+  // installed as `globals` — null for the engine-main map. Restored from
+  // globals_stack_ frames on pop.
+  std::shared_ptr<std::unordered_map<std::string, Value>> globals_identity_;
 
-    // Swap `globals` + identity onto the stack as one unit (moving the
-    // map). Restores via popGlobals().
-    void pushGlobalsMove() {
-      globals_stack_.push_back({std::move(globals), globals_identity_, false, current_executing_fiber_});
+  // Shared, lazily-built base layer every module context can read: the
+  // object-typed namespace entries of the engine-main map (fs, sys,
+  // math, ...). Module sidecar maps hold only their OWN names; global
+  // reads resolve host functions through host_function_globals_ (already
+  // in the chain) and these namespace objects through the base - with no
+  // per-module seeding. The old seeding copied ~1200 host fns + objects
+  // into every module map, bloating sidecars to ~1600-2000 entries so
+  // every identity-mismatched cross-module call copied the whole map
+  // into the ambient (~100-400us per call; ~80% of the self-hosted
+  // parse's CPU - see scripts/benchmarks/README.md).
+  std::shared_ptr<const std::unordered_map<std::string, Value>> baseModuleGlobals_;
+  const std::unordered_map<std::string, Value> *baseModuleGlobals() const {
+    return baseModuleGlobals_.get();
+  }
+
+  // VM-OPT-001 save-and-swap: per-sidecar parked ambients. After a
+  // module's first install, its ambient map lives here between calls,
+  // so every later install/pop of that module is an O(1) swap instead
+  // of an O(n) map copy. Keyed by the sidecar shared_ptr itself
+  // (owner_less): the key cannot dangle, and entries for reloaded
+  // modules simply become unreachable. GC posture matches the existing
+  // globals_stack_ snapshots: not directly scanned; liveness flows
+  // through the sidecars, which STORE_GLOBAL dual-writes keep
+  // authoritative. Same class of (bounded, pre-existing) over-retention
+  // as the pushed frames.
+  std::map<std::shared_ptr<std::unordered_map<std::string, Value>>,
+           std::unordered_map<std::string, Value>, std::owner_less<>>
+      ambient_cache_;
+
+  // Identity-gated module-globals install, shared by every cross-module
+  // call site: doCall's closure path, the JIT-compiled callee path,
+  // the module-fn host wrapper, and TAIL_CALL's frame reuse. Returns
+  // true when the caller owns the restore (popGlobals on exit); a
+  // same-module call returns false and stays O(1) - STORE_GLOBAL
+  // dual-writes keep the ambient and the shared map in sync.
+  // `push=false` is TAIL_CALL frame reuse only: the frame already owns
+  // its globals push and just the map contents are swapped.
+  // `use_cache=false` is the module-fn host wrapper only: its epilogue
+  // move-assigns the whole ambient into the sidecar before popping, so
+  // its frames are flagged !ambient_cached and their ambients are
+  // dropped at pop (the sidecar is the synced authority) instead of
+  // parked - parking a post-steal ambient would poison the cache.
+  bool installModuleGlobals(
+      const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
+      bool push = true, bool use_cache = true) {
+    if (!target || target == globals_identity_) {
+      return false;
     }
-    // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
-    void pushGlobalsCopy() {
-      globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
+    if (push) {
+      pushGlobalsMove();
     }
-    void popGlobals() {
-      auto &frame = globals_stack_.back();
-      // Stale-frame guard: loadFiberState's globals_stack_ repair can
-      // (re)install suspension-time copies of the engine-main scope into
-      // the live globals stack (tagged fiber_restored). Such a frame can be
-      // OLDER than writes the main fiber made while a goroutine was parked
-      // (loop accumulators, counters); restoring it wholesale clobbers
-      // those writes back to spawn-time values and scatters later writes
-      // across orphaned copies. When a fiber-restored frame and the current
-      // ambient are BOTH engine-main lineage (null identity), merge the
-      // fresher current writes into the frame before restoring. Frames
-      // pushed by real module/loader calls are never tagged, so their pops
-      // behave exactly as before - module sandboxes stay untouched.
-      const bool engine_main_both = (!frame.second && !globals_identity_);
-      const bool foreign_pop = engine_main_both &&
-                               frame.owner &&
-                               current_executing_fiber_ &&
-                               frame.owner != current_executing_fiber_;
-      if (foreign_pop) {
-        for (const auto &[k, v] : frame.first) {
-          if (!globals.count(k)) {
-            globals.emplace(k, v);
-          }
+    if (use_cache) {
+      auto it = ambient_cache_.find(target);
+      if (it != ambient_cache_.end()) {
+        // O(1): park-then-swap. The cache entry goes empty; pop's stash
+        // (keyed by the identity at pop time, so TAIL_CALL chains park
+        // under the right module) refills it.
+        globals.swap(it->second);
+      } else {
+        // First install of this module: one copy, and prime the slot so
+        // the pop stash has an entry to fill.
+        globals = *target;
+        ambient_cache_[target];
+      }
+      if (push) {
+        globals_stack_.back().ambient_cached = true;
+      }
+    } else {
+      globals = *target;
+    }
+    globals_identity_ = target;
+    return true;
+  }
+
+  // Swap `globals` + identity onto the stack as one unit (moving the
+  // map). Restores via popGlobals().
+  void pushGlobalsMove() {
+    globals_stack_.push_back(
+        {std::move(globals), globals_identity_, false, current_executing_fiber_});
+  }
+  // Same, but leaves `globals` intact (module-sandbox entry wants a copy).
+  void pushGlobalsCopy() {
+    globals_stack_.push_back({globals, globals_identity_, false, current_executing_fiber_});
+  }
+  void popGlobals() {
+    auto &frame = globals_stack_.back();
+    // Stale-frame guard: loadFiberState's globals_stack_ repair can
+    // (re)install suspension-time copies of the engine-main scope into
+    // the live globals stack (tagged fiber_restored). Such a frame can be
+    // OLDER than writes the main fiber made while a goroutine was parked
+    // (loop accumulators, counters); restoring it wholesale clobbers
+    // those writes back to spawn-time values and scatters later writes
+    // across orphaned copies. When a fiber-restored frame and the current
+    // ambient are BOTH engine-main lineage (null identity), merge the
+    // fresher current writes into the frame before restoring. Frames
+    // pushed by real module/loader calls are never tagged, so their pops
+    // behave exactly as before - module sandboxes stay untouched.
+    const bool engine_main_both = (!frame.second && !globals_identity_);
+    const bool foreign_pop = engine_main_both && frame.owner && current_executing_fiber_ &&
+                             frame.owner != current_executing_fiber_;
+    if (foreign_pop) {
+      for (const auto &[k, v] : frame.first) {
+        if (!globals.count(k)) {
+          globals.emplace(k, v);
         }
-        globals_stack_.pop_back();
-        return;
       }
-      bool should_merge_into_frame = false;
-      if (engine_main_both && frame.fiber_restored) {
-        should_merge_into_frame = true;
-      }
-      if (should_merge_into_frame) {
-        for (const auto &[k, v] : globals) {
-          frame.first[k] = v;
-        }
-      }
-      globals = std::move(frame.first);
-      globals_identity_ = std::move(frame.second);
       globals_stack_.pop_back();
+      return;
     }
- std::unordered_map<std::string, Value> rootGlobals_;
+    bool should_merge_into_frame = false;
+    if (engine_main_both && frame.fiber_restored) {
+      should_merge_into_frame = true;
+    }
+    if (should_merge_into_frame) {
+      for (const auto &[k, v] : globals) {
+        frame.first[k] = v;
+      }
+    }
+    // VM-OPT-001 stash: a cache-managed ambient parks under its CURRENT
+    // identity (TAIL_CALL chains may have swapped in a different module
+    // than the one installed at push time; the identity at pop time is
+    // the map's actual owner). The early-return paths above are
+    // engine-main lineage only (null identity, never cache-managed).
+    if (frame.ambient_cached && globals_identity_) {
+      ambient_cache_[globals_identity_].swap(globals);
+    }
+    globals = std::move(frame.first);
+    globals_identity_ = std::move(frame.second);
+    globals_stack_.pop_back();
+  }
+  std::unordered_map<std::string, Value> rootGlobals_;
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
-    uint32_t globals_mirror_object_id_ = UINT32_MAX;
+  uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
   // Per-site backedge accounting. `count` mirrors the interpreter's
   // per-ip backedge counter; the function-pointer fields cache the
@@ -517,94 +603,91 @@ std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
   // would-fire event for (same fn + same ip = same site key).
   struct BackedgeSiteState {
     uint64_t count = 0;
-    const BytecodeFunction* tier1_fn = nullptr;  // tier-up attempted here
-    const BytecodeFunction* trace_fn = nullptr;   // hot-trace hook fired here
-    const BytecodeFunction* tier2_fn = nullptr;   // tier-2 site deduped here
+    const BytecodeFunction *tier1_fn = nullptr; // tier-up attempted here
+    const BytecodeFunction *trace_fn = nullptr; // hot-trace hook fired here
+    const BytecodeFunction *tier2_fn = nullptr; // tier-2 site deduped here
   };
   std::unordered_map<uint32_t, BackedgeSiteState> backedge_counters_;
-    // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
-    // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
-    RuntimeProfiler profiler_;
-    static_assert(RuntimeProfiler::kMaxTrackedFunctions > 0,
-                  "profiler function index space must exist");
+  // Low-overhead runtime profiling (TODO #26): lock-free counters feeding
+  // tiering decisions and diagnostics; see RuntimeProfiler.hpp.
+  RuntimeProfiler profiler_;
+  static_assert(RuntimeProfiler::kMaxTrackedFunctions > 0,
+                "profiler function index space must exist");
 
-    // Coroutine support (Lua-style coroutines)
-uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
+  // Coroutine support (Lua-style coroutines)
+  uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
-  
   // When an operation needs to wait (thread.join, channel.recv, etc)
   // it sets these flags to signal the VM to suspend the current fiber
-  bool suspension_requested_ = false; // True if suspension needed
-  uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum value)
-  void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
-  Fiber* current_executing_fiber_ = nullptr; // Set when executing inside a fiber context
+  bool suspension_requested_ = false;        // True if suspension needed
+  uint8_t suspension_reason_ = 0;            // Why is it suspending? (SuspensionReason enum value)
+  void *suspension_context_ = nullptr;       // Context pointer (thread_id, channel*, etc)
+  Fiber *current_executing_fiber_ = nullptr; // Set when executing inside a fiber context
   std::atomic<bool> jit_yield_requested_{false}; // Scheduler sets this to preempt JIT
-  std::function<void()> yield_callback_; // Called periodically to allow scheduler goroutine processing
+  std::function<void()>
+      yield_callback_; // Called periodically to allow scheduler goroutine processing
 
   // Track main script goroutine ID for SLEEP handling in simple execute()
   uint32_t main_script_goroutine_id_ = UINT32_MAX;
 
-// Last suspension info preserved after runDispatchLoop exits
-// Used by processGoroutines to set WaitHandle on the goroutine
-uint8_t last_suspension_reason_ = 0;
-void* last_suspension_context_ = nullptr;
+  // Last suspension info preserved after runDispatchLoop exits
+  // Used by processGoroutines to set WaitHandle on the goroutine
+  uint8_t last_suspension_reason_ = 0;
+  void *last_suspension_context_ = nullptr;
 
- 
- // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
- // Used to unpark fibers when threads complete
- std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
- mutable std::shared_mutex thread_wait_mutex_;
+  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
+  // Used to unpark fibers when threads complete
+  std::unordered_map<uint32_t, Fiber *> thread_wait_map_;
+  mutable std::shared_mutex thread_wait_mutex_;
 
- // Track the current when block's watcher ID for nested when cleanup
- // When a when block's body executes, this is set to its watcher_id
- // Nested when blocks can then register cleanup for themselves
- uint32_t current_when_watcher_id_ = 0;
+  // Track the current when block's watcher ID for nested when cleanup
+  // When a when block's body executes, this is set to its watcher_id
+  // Nested when blocks can then register cleanup for themselves
+  uint32_t current_when_watcher_id_ = 0;
 
-    // Thread/timeout/interval result storage for <- await
-    std::unordered_map<uint32_t, Value> thread_results_;
-    std::unordered_map<uint32_t, Value> timeout_results_;
-    std::unordered_map<uint32_t, Value> interval_results_;
+  // Thread/timeout/interval result storage for <- await
+  std::unordered_map<uint32_t, Value> thread_results_;
+  std::unordered_map<uint32_t, Value> timeout_results_;
+  std::unordered_map<uint32_t, Value> interval_results_;
 
-// Closures captured by timer/thread callbacks (invisible to GC otherwise)
-    std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
-    
-    // Track suspended VM fibers waiting on channel receive
-    // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
-    std::unordered_map<uint32_t, Fiber*> channel_wait_map_;
-    mutable std::shared_mutex channel_wait_mutex_;
-	
-class EventQueue* event_queue_ = nullptr;
-struct PendingTimerCallback {
-  CallbackId callback_id;
-  uint32_t timer_id;
-  bool is_timeout;
-};
+  // Closures captured by timer/thread callbacks (invisible to GC otherwise)
+  std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
+
+  // Track suspended VM fibers waiting on channel receive
+  // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
+  std::unordered_map<uint32_t, Fiber *> channel_wait_map_;
+  mutable std::shared_mutex channel_wait_mutex_;
+
+  class EventQueue *event_queue_ = nullptr;
+  struct PendingTimerCallback {
+    CallbackId callback_id;
+    uint32_t timer_id;
+    bool is_timeout;
+  };
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;
- void executePendingTimerCallbacks();
+  void executePendingTimerCallbacks();
 
- WatcherRegistry* watcher_registry_ = nullptr;
- Scheduler* scheduler_ = nullptr;
+  WatcherRegistry *watcher_registry_ = nullptr;
+  Scheduler *scheduler_ = nullptr;
 
- struct SignalBinding {
-     std::string name;
-     uint32_t func_id;
-     size_t ip;
-     std::unordered_set<std::string> dependencies;
- };
- std::vector<SignalBinding> signalBindings_;
+  struct SignalBinding {
+    std::string name;
+    uint32_t func_id;
+    size_t ip;
+    std::unordered_set<std::string> dependencies;
+  };
+  std::vector<SignalBinding> signalBindings_;
 
- void emitVariableChanged(const std::string& var_name);
-  
+  void emitVariableChanged(const std::string &var_name);
+
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index
-  std::unordered_map<std::string,
-  std::unordered_map<std::string, uint32_t>>
-  prototypes_;
+  std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> prototypes_;
 
   // Method overloading tracker (maps classObjId.methodName -> list of candidate function values)
   std::unordered_map<std::string, std::vector<Value>> overloaded_methods_;
@@ -620,95 +703,100 @@ struct PendingTimerCallback {
   // Host context for service access (non-owning)
   const HostContext *context_ = nullptr;
 
-const BytecodeChunk *current_chunk = nullptr;
+  const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
-    bool host_globals_registered_ = false;
-bool prototypes_registered_ = false;
-VMConfig vm_config_{};
-size_t max_call_depth_ = 16384;
-size_t tail_call_depth_ = 0;
-// Return address for coroutine resume / YIELD_RESUME CallerFrame saves.
-// The fast dispatch path advances frame ip BEFORE executeInstruction while
-// the slow loop advances AFTER, so "currentFrame().ip + 1" is only correct
-// in the slow loop. Dispatch sites that know the true return address set
-// this before executeInstruction; the resume branches consume it (-1 = none).
-int32_t pending_call_return_ip_ = -1;
-    bool profiling_enabled_ = false;
-    bool trace_execution_ = false;
-    bool trace_gc_ = false;
-    bool trace_scheduler_ = false;
-    bool trace_calls_ = false;
-    bool trace_globals_ = false;
-    bool trace_channels_ = false;
-    bool trace_hotkeys_ = false;
-    bool trace_when_ = false;
-    bool trace_async_ = false;
-    std::array<uint64_t, 256> opcode_counts_{};
-    uint64_t executed_instructions_ = 0;
-    uint64_t max_instructions_ = 0; // 0 = no limit
+  bool host_globals_registered_ = false;
+  bool prototypes_registered_ = false;
+  VMConfig vm_config_{};
+  size_t max_call_depth_ = 16384;
+  size_t tail_call_depth_ = 0;
+  // Return address for coroutine resume / YIELD_RESUME CallerFrame saves.
+  // The fast dispatch path advances frame ip BEFORE executeInstruction while
+  // the slow loop advances AFTER, so "currentFrame().ip + 1" is only correct
+  // in the slow loop. Dispatch sites that know the true return address set
+  // this before executeInstruction; the resume branches consume it (-1 = none).
+  int32_t pending_call_return_ip_ = -1;
+  bool profiling_enabled_ = false;
+  bool trace_execution_ = false;
+  bool trace_gc_ = false;
+  bool trace_scheduler_ = false;
+  bool trace_calls_ = false;
+  bool trace_globals_ = false;
+  bool trace_channels_ = false;
+  bool trace_hotkeys_ = false;
+  bool trace_when_ = false;
+  bool trace_async_ = false;
+  std::array<uint64_t, 256> opcode_counts_{};
+  uint64_t executed_instructions_ = 0;
+  uint64_t max_instructions_ = 0; // 0 = no limit
 
-    // Scheduler time-slice budget for runDispatchFast: when nonzero, the
-    // fast dispatch loop returns at its next periodic check (the
-    // 8192-instruction backedge hook) once this many instructions ran,
-    // so a goroutine tick can hand control back to the scheduler without
-    // per-instruction stepping. The driver (processGoroutinesInline /
-    // ExecutionEngine) sets it per tick, reads instructions consumed via
-    // fastTickConsumed(), and clears it for unbounded (callFunctionSync)
-    // execution.
-    uint64_t fast_tick_budget_ = 0;
-    uint64_t fast_tick_consumed_ = 0;
-    // Set by a module-function wrapper when it unwinds because the tick budget
-    // expired (rather than completing). doCall/doTailCall read it to suppress
-    // the usual result push: the wrapped frame is still live and will push its
-    // real result when it eventually returns, so a placeholder here would land
-    // on top of the still-active frames' operand stack and corrupt its resume.
-    bool budget_unwind_no_result_ = false;
+  // Scheduler time-slice budget for runDispatchFast: when nonzero, the
+  // fast dispatch loop returns at its next periodic check (the
+  // 8192-instruction backedge hook) once this many instructions ran,
+  // so a goroutine tick can hand control back to the scheduler without
+  // per-instruction stepping. The driver (processGoroutinesInline /
+  // ExecutionEngine) sets it per tick, reads instructions consumed via
+  // fastTickConsumed(), and clears it for unbounded (callFunctionSync)
+  // execution.
+  uint64_t fast_tick_budget_ = 0;
+  uint64_t fast_tick_consumed_ = 0;
+  // Cross-entry instruction counter for the dispatch loops' periodic
+  // accounting (see runDispatchFast). beginFastTick resets it per tick.
+  uint64_t dispatch_instr_counter_ = 0;
+  // Set by a module-function wrapper when it unwinds because the tick budget
+  // expired (rather than completing). doCall/doTailCall read it to suppress
+  // the usual result push: the wrapped frame is still live and will push its
+  // real result when it eventually returns, so a placeholder here would land
+  // on top of the still-active frames' operand stack and corrupt its resume.
+  bool budget_unwind_no_result_ = false;
 
-    bool fastTickExpired() const { return fast_tick_budget_ != 0; }
-    // True once the armed per-tick instruction budget has been consumed. The
-    // dispatch loops bare-return at that point without any suspension flag, so
-    // nested module wrappers use this to tell a budget cutoff (they must unwind
-    // without popping globals_stack_) from real function completion.
-    bool tickBudgetExhausted() const {
-      return fast_tick_budget_ != 0 &&
-             fast_tick_consumed_ >= fast_tick_budget_;
-    }
-    uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
-    void beginFastTick(uint64_t budget) {
-      fast_tick_budget_ = budget;
-      fast_tick_consumed_ = 0;
-      budget_unwind_no_result_ = false;
-    }
-    void endFastTick() { fast_tick_budget_ = 0; }
+  bool fastTickExpired() const { return fast_tick_budget_ != 0; }
+  // True once the armed per-tick instruction budget has been consumed. The
+  // dispatch loops bare-return at that point without any suspension flag, so
+  // nested module wrappers use this to tell a budget cutoff (they must unwind
+  // without popping globals_stack_) from real function completion.
+  bool tickBudgetExhausted() const {
+    return fast_tick_budget_ != 0 && fast_tick_consumed_ >= fast_tick_budget_;
+  }
+  uint64_t fastTickConsumed() const { return fast_tick_consumed_; }
+  void beginFastTick(uint64_t budget) {
+    fast_tick_budget_ = budget;
+    fast_tick_consumed_ = 0;
+    budget_unwind_no_result_ = false;
+    // Tick budgets compare against the dispatch loop's instruction
+    // counter, which must start fresh per tick (the pump reads the
+    // consumed count to time-slice goroutines).
+    dispatch_instr_counter_ = 0;
+  }
+  void endFastTick() { fast_tick_budget_ = 0; }
 
-    // System object initializer - called after registerDefaultHostGlobals()
-    using SystemObjectInitializer = std::function<void(VM *)>;
-    SystemObjectInitializer system_object_initializer_;
+  // System object initializer - called after registerDefaultHostGlobals()
+  using SystemObjectInitializer = std::function<void(VM *)>;
+  SystemObjectInitializer system_object_initializer_;
 
-    // Timer check function - called periodically during execution
-    TimerCheckFunction timer_check_func_;
-    size_t instructions_since_timer_check_ = 0;
-    size_t timer_check_interval_ = 1000;
+  // Timer check function - called periodically during execution
+  TimerCheckFunction timer_check_func_;
+  size_t instructions_since_timer_check_ = 0;
+  size_t timer_check_interval_ = 1000;
 
-    // Debugger state
-    DebugStepMode debug_step_mode_ = DebugStepMode::Continue;
-    std::unordered_map<std::string, std::unordered_set<uint32_t>> debug_breakpoints_;
-    bool debugger_attached_ = false;
-    bool debug_break_on_step_ = false;
-    size_t debug_step_frame_depth_ = 0;
-    std::function<void()> debug_break_cb_;
-    std::unordered_set<std::string> debug_function_breakpoints_;
-    bool debug_break_on_throw_ = false;
-    bool debug_break_on_uncaught_ = false;
-    std::atomic<bool> debug_pause_requested_{false};
-    std::string debug_last_break_file_;
-    uint32_t debug_last_break_line_ = 0;
-    size_t debug_last_break_depth_ = 0;
+  // Debugger state
+  DebugStepMode debug_step_mode_ = DebugStepMode::Continue;
+  std::unordered_map<std::string, std::unordered_set<uint32_t>> debug_breakpoints_;
+  bool debugger_attached_ = false;
+  bool debug_break_on_step_ = false;
+  size_t debug_step_frame_depth_ = 0;
+  std::function<void()> debug_break_cb_;
+  std::unordered_set<std::string> debug_function_breakpoints_;
+  bool debug_break_on_throw_ = false;
+  bool debug_break_on_uncaught_ = false;
+  std::atomic<bool> debug_pause_requested_{false};
+  std::string debug_last_break_file_;
+  uint32_t debug_last_break_line_ = 0;
+  size_t debug_last_break_depth_ = 0;
 
   template <typename T> T getValue(const Value &value);
- std::string toStringInternal(const Value &value,
-                                  std::unordered_set<uint32_t> &visitedIds,
-                                  int depth);
+  std::string toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds,
+                               int depth);
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
   Value getConstant(uint32_t index);
@@ -727,17 +815,15 @@ int32_t pending_call_return_ip_ = -1;
   struct PendingCall {
     Value fn;
     std::vector<Value> args;
-    Value *result; // Pointer to store result
-    bool *completed;       // Flag to signal completion
+    Value *result;   // Pointer to store result
+    bool *completed; // Flag to signal completion
   };
   std::vector<PendingCall> pending_calls;
   std::mutex pending_calls_mutex_;
-  void scheduleCall(const Value &fn,
-                    const std::vector<Value> &args,
-                    Value &result, bool &completed);
+  void scheduleCall(const Value &fn, const std::vector<Value> &args, Value &result,
+                    bool &completed);
   void processPendingCalls();
-  Value callFunctionSync(const Value &fn,
-                                 const std::vector<Value> &args);
+  Value callFunctionSync(const Value &fn, const std::vector<Value> &args);
   void executeInstruction(const Instruction &instruction);
 
   // Inline stack helper declarations - extracted from executeInstruction lambdas
@@ -753,11 +839,11 @@ int32_t pending_call_return_ip_ = -1;
   void execNegate();
   void execJump(const Instruction &instruction);
   void execJumpIfFalse(const Instruction &instruction);
-	void execJumpIfTrue(const Instruction &instruction);
-	bool execCollectionOp(const Instruction &instruction);
-	bool execConcurrencyOp(const Instruction &instruction);
-	bool execControlFlowOp(const Instruction &instruction);
-	bool execBuiltinOp(const Instruction &instruction);
+  void execJumpIfTrue(const Instruction &instruction);
+  bool execCollectionOp(const Instruction &instruction);
+  bool execConcurrencyOp(const Instruction &instruction);
+  bool execControlFlowOp(const Instruction &instruction);
+  bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args);
 
@@ -800,17 +886,17 @@ int32_t pending_call_return_ip_ = -1;
   void packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee);
   void runDispatchLoop(size_t stop_frame_depth);
   void runDispatchFast(size_t stop_frame_depth);
-inline void periodicYieldCheck() {
-        if (yield_callback_) {
-            yield_callback_();
-        }
-        if (suspension_requested_) {
-            // Suspension requested (e.g., time.sleep), yield to scheduler
-            if (yield_callback_) {
-                yield_callback_();
-            }
-        }
+  inline void periodicYieldCheck() {
+    if (yield_callback_) {
+      yield_callback_();
     }
+    if (suspension_requested_) {
+      // Suspension requested (e.g., time.sleep), yield to scheduler
+      if (yield_callback_) {
+        yield_callback_();
+      }
+    }
+  }
   bool handleScriptThrow(const Value &value);
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
@@ -822,150 +908,153 @@ inline void periodicYieldCheck() {
   int64_t toInt(const Value &value) const;
   double toFloat(const Value &value) const;
   bool toBool(const Value &value) const;
-    std::optional<std::string> valueAsString(const Value &value) const;
-    std::optional<std::string> resolveKey(const Value &value) const;
-    bool valuesEqualDeep(const Value &left, const Value &right) const;
+  std::optional<std::string> valueAsString(const Value &value) const;
+  std::optional<std::string> resolveKey(const Value &value) const;
+  bool valuesEqualDeep(const Value &left, const Value &right) const;
   bool valuesEqualDeep(const Value &left, const Value &right,
                        std::unordered_set<uint64_t> &visited_array_pairs,
                        std::unordered_set<uint64_t> &visited_object_pairs) const;
 
-
   std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
-    void maybeCollectGarbage();
-    // Collection with extra roots: JIT safe-point checkpoints (the tier-1
-    // backedge hook) spill the compiled frame's live values (locals +
-    // operand stack) as raw words and pass them here, so a mid-native-loop
-    // collection sees them. Same gating as maybeCollectGarbage.
-    void maybeCollectGarbageWithExtraRoots(
-        const std::vector<Value> &extra_roots);
-    // Cheap probe for JIT safe points: would a collection run right now?
-    // (budget exceeded or externally requested, and not suspended.)
-    bool gcCollectionPendingPublic() const {
-        return !gcSuspended() && heap_.shouldMaybeCollect();
-    }
-    void collectGarbage();
-    void stepGarbageCollection(size_t work_budget = 128);
-    void drainFinalizers();
-    void registerDefaultHostFunctions();
-    void registerDefaultHostGlobals();
-    void registerDefaultPrototypes();
+  void maybeCollectGarbage();
+  // Collection with extra roots: JIT safe-point checkpoints (the tier-1
+  // backedge hook) spill the compiled frame's live values (locals +
+  // operand stack) as raw words and pass them here, so a mid-native-loop
+  // collection sees them. Same gating as maybeCollectGarbage.
+  void maybeCollectGarbageWithExtraRoots(const std::vector<Value> &extra_roots);
+  // Cheap probe for JIT safe points: would a collection run right now?
+  // (budget exceeded or externally requested, and not suspended.)
+  bool gcCollectionPendingPublic() const { return !gcSuspended() && heap_.shouldMaybeCollect(); }
+  void collectGarbage();
+  void stepGarbageCollection(size_t work_budget = 128);
+  void drainFinalizers();
+  void registerDefaultHostFunctions();
+  void registerDefaultHostGlobals();
+  void registerDefaultPrototypes();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
-    // Build namespace objects for dotted host function names so scripts can
-    // call window.active(), group.list(), etc. Skips prefixes whose global
-    // already exists (e.g. "system" handled by registerDefaultHostGlobals).
-    void buildNamespaceGlobals();
+  // Build namespace objects for dotted host function names so scripts can
+  // call window.active(), group.list(), etc. Skips prefixes whose global
+  // already exists (e.g. "system" handled by registerDefaultHostGlobals).
+  void buildNamespaceGlobals();
+
 public:
-    // Value utility functions (public for prototype method implementations and JIT bridges)
-    int64_t toIntPublic(const Value &value) const { return toInt(value); }
-    double toFloatPublic(const Value &value) const { return toFloat(value); }
-    bool toBoolPublic(const Value &value) const { return toBool(value); }
-    bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
-    Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) { return callFunctionSync(fn, args); }
-    std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
-    void pushStackPublic(Value value) { pushStack(std::move(value)); }
-    Value popStackPublic() { return popStack(); }
-    // Runtime-ABI helpers for backend bridges (CoreRuntimeExports): the
-    // generic binary-op bridge runs execBinaryOp against the shared stack
-    // mid-dispatch, so it needs depth inspection, truncation, and the op
-    // itself behind public seams.
-    size_t stackDepthPublic() const { return stack.size(); }
-    void truncateStackPublic(size_t depth) {
-      while (stack.size() > depth) stack.pop_back();
+  // Value utility functions (public for prototype method implementations and JIT bridges)
+  int64_t toIntPublic(const Value &value) const { return toInt(value); }
+  double toFloatPublic(const Value &value) const { return toFloat(value); }
+  bool toBoolPublic(const Value &value) const { return toBool(value); }
+  bool valuesEqualDeepPublic(const Value &left, const Value &right) const {
+    return valuesEqualDeep(left, right);
+  }
+  Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) {
+    return callFunctionSync(fn, args);
+  }
+  std::optional<std::string> resolveKeyPublic(const Value &value) const {
+    return resolveKey(value);
+  }
+  void pushStackPublic(Value value) { pushStack(std::move(value)); }
+  Value popStackPublic() { return popStack(); }
+  // Runtime-ABI helpers for backend bridges (CoreRuntimeExports): the
+  // generic binary-op bridge runs execBinaryOp against the shared stack
+  // mid-dispatch, so it needs depth inspection, truncation, and the op
+  // itself behind public seams.
+  size_t stackDepthPublic() const { return stack.size(); }
+  void truncateStackPublic(size_t depth) {
+    while (stack.size() > depth)
+      stack.pop_back();
+  }
+  void execBinaryOpPublic(const Instruction &instr) { execBinaryOp(instr); }
+  size_t getStackSizePublic() const { return stack.size(); }
+  void loadFiberStatePublic(Fiber *fiber) { loadFiberState(fiber); }
+  void saveFiberStatePublic(Fiber *fiber) { saveFiberState(fiber); }
+  // Fire yield_callback_ if set (guarded the same way the dispatch loop's
+  // periodicYieldCheck does NOT guard: the inline-yield reentrancy guard
+  // lives in HavelEngine::processGoroutinesInline, so calling this from a
+  // host fn chunked loop while siblings run inline is safe).
+  void fireYieldCallbackPublic() {
+    if (yield_callback_)
+      yield_callback_();
+  }
+  // Replace top-of-stack with a new value (used when resuming from await)
+  void replaceStackTop(Value value) {
+    if (!stack.empty()) {
+      stack.back() = std::move(value);
+    } else {
+      pushStack(std::move(value));
     }
-    void execBinaryOpPublic(const Instruction &instr) {
-      execBinaryOp(instr);
-    }
-    size_t getStackSizePublic() const { return stack.size(); }
-    void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
-    void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
-    // Fire yield_callback_ if set (guarded the same way the dispatch loop's
-    // periodicYieldCheck does NOT guard: the inline-yield reentrancy guard
-    // lives in HavelEngine::processGoroutinesInline, so calling this from a
-    // host fn chunked loop while siblings run inline is safe).
-    void fireYieldCallbackPublic() { if (yield_callback_) yield_callback_(); }
-    // Replace top-of-stack with a new value (used when resuming from await)
-    void replaceStackTop(Value value) {
-        if (!stack.empty()) {
-            stack.back() = std::move(value);
-        } else {
-            pushStack(std::move(value));
+  }
+  // Deliver a channel/external resume value onto the suspended stack.
+  // A channel ITER_NEXT suspension leaves a Pending marker (see ITER_NEXT
+  // in VMCollections.cpp); the loop body expects the {first, second, done}
+  // iterator-result object, so wrap the delivered value. All resume sites
+  // (processGoroutines, resumeGoroutine, HavelEngine, ExecutionEngine)
+  // must go through this helper or `for v in ch` reads a null first item.
+  // A resume on a closed+drained channel (close unparked the waiter)
+  // wraps as done:true so the iteration terminates instead of yielding
+  // the null placeholder as a data item.
+  //
+  // The marker may sit BELOW the stack top: when ITER_NEXT suspends
+  // inside a module-fn wrapper (async_mod.parallelMap's collection loop),
+  // the wrapper returns null to the outer CALL, whose handler pushes a
+  // null result slot ABOVE the marker before the fiber is saved. Scan
+  // for the marker instead of assuming it is top-of-stack.
+  void deliverResumeValue(Scheduler::AwaitableType type, Value value, uint32_t target_id = 0,
+                          bool channel_iter_pending = false) {
+    if (type == Scheduler::AwaitableType::CHANNEL_RECV && channel_iter_pending && !stack.empty()) {
+      // Unwind the stack looking for the marker (topmost wins; only one
+      // channel-iter suspension can be active per fiber). Cap the scan:
+      // the marker sits just below the null slots pushed by the CALL
+      // unwinding (one per module-wrapper level), so it is near the top.
+      std::vector<Value> above;
+      bool found = false;
+      for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
+        if (stack.back().isPending()) {
+          found = true;
+          break;
         }
-    }
-    // Deliver a channel/external resume value onto the suspended stack.
-    // A channel ITER_NEXT suspension leaves a Pending marker (see ITER_NEXT
-    // in VMCollections.cpp); the loop body expects the {first, second, done}
-    // iterator-result object, so wrap the delivered value. All resume sites
-    // (processGoroutines, resumeGoroutine, HavelEngine, ExecutionEngine)
-    // must go through this helper or `for v in ch` reads a null first item.
-    // A resume on a closed+drained channel (close unparked the waiter)
-    // wraps as done:true so the iteration terminates instead of yielding
-    // the null placeholder as a data item.
-    //
-    // The marker may sit BELOW the stack top: when ITER_NEXT suspends
-    // inside a module-fn wrapper (async_mod.parallelMap's collection loop),
-    // the wrapper returns null to the outer CALL, whose handler pushes a
-    // null result slot ABOVE the marker before the fiber is saved. Scan
-    // for the marker instead of assuming it is top-of-stack.
-    void deliverResumeValue(Scheduler::AwaitableType type, Value value,
-                            uint32_t target_id = 0,
-                            bool channel_iter_pending = false) {
-        if (type == Scheduler::AwaitableType::CHANNEL_RECV &&
-            channel_iter_pending && !stack.empty()) {
-          // Unwind the stack looking for the marker (topmost wins; only one
-          // channel-iter suspension can be active per fiber). Cap the scan:
-          // the marker sits just below the null slots pushed by the CALL
-          // unwinding (one per module-wrapper level), so it is near the top.
-          std::vector<Value> above;
-          bool found = false;
-          for (int depth = 0; depth < 16 && !stack.empty(); ++depth) {
-            if (stack.back().isPending()) {
-              found = true;
-              break;
-            }
-            above.push_back(popStackPublic());
-          }
-          if (found) {
-            bool done = false;
-            if (value.isNull() && target_id != 0) {
-              Value state = invokeHostFunctionDirect(
-                  "channel_state", {Value::makeChannelId(target_id)});
-              done = state.isInt() && state.asInt() == 2;
-            }
-            auto resultObj = heap_.allocateObject();
-            auto *obj = heap_.object(resultObj.id);
-            // Value mirrored into first AND second (channels have no keys):
-            // the C++ loop compiler's fallback reads result.first while
-            // the self-hosted emitter reads result.second.
-            (*obj)["first"] = value;
-            (*obj)["second"] = std::move(value);
-            (*obj)["done"] = Value::makeBool(done);
-            replaceStackTop(Value::makeObjectId(resultObj.id));
-            // DROP the slots above the marker: they are the null result
-            // slots the module-fn wrapper's outer CALL pushed while the
-            // suspension unwound (one per wrapper level). The re-dispatch
-            // resumes INSIDE the suspended fn, whose next instructions
-            // consume the wrapped result at the marker's position; when
-            // the fn eventually returns, its RET re-pushes a result into
-            // the outer slot (doReturn preserves exactly one value).
-            return;
-          }
-          // No marker within reach: restore whatever was scanned off and
-          // fall back to plain replaceStackTop (ordinary receive resume).
-          for (auto it = above.rbegin(); it != above.rend(); ++it) {
-            pushStack(std::move(*it));
-          }
+        above.push_back(popStackPublic());
+      }
+      if (found) {
+        bool done = false;
+        if (value.isNull() && target_id != 0) {
+          Value state =
+              invokeHostFunctionDirect("channel_state", {Value::makeChannelId(target_id)});
+          done = state.isInt() && state.asInt() == 2;
         }
-        replaceStackTop(std::move(value));
+        auto resultObj = heap_.allocateObject();
+        auto *obj = heap_.object(resultObj.id);
+        // Value mirrored into first AND second (channels have no keys):
+        // the C++ loop compiler's fallback reads result.first while
+        // the self-hosted emitter reads result.second.
+        (*obj)["first"] = value;
+        (*obj)["second"] = std::move(value);
+        (*obj)["done"] = Value::makeBool(done);
+        replaceStackTop(Value::makeObjectId(resultObj.id));
+        // DROP the slots above the marker: they are the null result
+        // slots the module-fn wrapper's outer CALL pushed while the
+        // suspension unwound (one per wrapper level). The re-dispatch
+        // resumes INSIDE the suspended fn, whose next instructions
+        // consume the wrapped result at the marker's position; when
+        // the fn eventually returns, its RET re-pushes a result into
+        // the outer slot (doReturn preserves exactly one value).
+        return;
+      }
+      // No marker within reach: restore whatever was scanned off and
+      // fall back to plain replaceStackTop (ordinary receive resume).
+      for (auto it = above.rbegin(); it != above.rend(); ++it) {
+        pushStack(std::move(*it));
+      }
     }
+    replaceStackTop(std::move(value));
+  }
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
-  GCHeap::RuntimeClosure* currentClosurePublic() {
-    uint32_t id = jit_active_closure_id_ != 0 ? jit_active_closure_id_
-                                               : currentFrame().closure_id;
-    if (id == 0) return nullptr;
+  GCHeap::RuntimeClosure *currentClosurePublic() {
+    uint32_t id = jit_active_closure_id_ != 0 ? jit_active_closure_id_ : currentFrame().closure_id;
+    if (id == 0)
+      return nullptr;
     return heap_.closure(id);
   }
   uint32_t setJITActiveClosurePublic(uint32_t closure_id) {
@@ -982,31 +1071,40 @@ public:
     locals[abs_index] = std::move(value);
   }
   uint32_t toAbsoluteLocalPublic(uint32_t local_index) { return toAbsoluteLocal(local_index); }
-  void closeFrameUpvaluesPublic(uint32_t locals_base, uint32_t locals_end) { closeFrameUpvalues(locals_base, locals_end); }
-  size_t currentLocalsBasePublic() const { return frame_count_ > 0 ? currentFrame().locals_base : 0; }
-  const Value* getLocalsPointerPublic(size_t base) const { 
-    if (base >= locals.size()) return nullptr;
-    return &locals[base]; 
+  void closeFrameUpvaluesPublic(uint32_t locals_base, uint32_t locals_end) {
+    closeFrameUpvalues(locals_base, locals_end);
   }
-    void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
-        if (frame_count_ >= frame_arena_.size()) {
- frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}});
- } else {
- frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}};
-        }
-        frame_count_++;
+  size_t currentLocalsBasePublic() const {
+    return frame_count_ > 0 ? currentFrame().locals_base : 0;
+  }
+  const Value *getLocalsPointerPublic(size_t base) const {
+    if (base >= locals.size())
+      return nullptr;
+    return &locals[base];
+  }
+  void pushFramePublic(const BytecodeFunction *function, size_t ip, size_t locals_base,
+                       uint32_t closure_id) {
+    if (frame_count_ >= frame_arena_.size()) {
+      frame_arena_.push_back(
+          CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}});
+    } else {
+      frame_arena_[frame_count_] =
+          CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}};
     }
+    frame_count_++;
+  }
   size_t currentLocalsSizePublic() const { return locals.size(); }
-  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
+  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>> &openUpvaluesPublic() {
+    return open_upvalues;
+  }
   void doTailCallPublic(Value callee_value, std::vector<Value> args) {
     doTailCall(std::move(callee_value), std::move(args));
   }
-  
-  
+
   void setJitTailCall(bool occurred) { jit_tail_call_occurred_ = occurred; }
   bool hasJitTailCall() const { return jit_tail_call_occurred_; }
 
-  const BytecodeFunction* currentFunction() const {
+  const BytecodeFunction *currentFunction() const {
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
@@ -1015,276 +1113,279 @@ public:
   // the self-hosted launcher REPL (bc.tick).
   void tickScheduler(bool wait_for_sleepers = false);
   size_t frameCountPublic() const { return frame_count_; }
-  void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
-                      size_t stack_depth) {
-    currentFrame().try_stack.push_back(
-        TryHandler{.catch_ip = catch_ip,
-                   .finally_ip = finally_ip,
-                   .finally_return_ip = 0,
-                   .stack_depth = stack_depth});
+  void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip, size_t stack_depth) {
+    currentFrame().try_stack.push_back(TryHandler{.catch_ip = catch_ip,
+                                                  .finally_ip = finally_ip,
+                                                  .finally_return_ip = 0,
+                                                  .stack_depth = stack_depth});
   }
-  void tryExitPublic() { if (!currentFrame().try_stack.empty()) currentFrame().try_stack.pop_back(); }
-  Value currentExceptionPublic() const { return has_current_exception_ ? current_exception_ : Value::makeNull(); }
+  void tryExitPublic() {
+    if (!currentFrame().try_stack.empty())
+      currentFrame().try_stack.pop_back();
+  }
+  Value currentExceptionPublic() const {
+    return has_current_exception_ ? current_exception_ : Value::makeNull();
+  }
   bool hasCurrentExceptionPublic() const { return has_current_exception_; }
-    void setCurrentExceptionPublic(const Value& v) { has_current_exception_ = true; current_exception_ = v; }
+  void setCurrentExceptionPublic(const Value &v) {
+    has_current_exception_ = true;
+    current_exception_ = v;
+  }
 
-    // OBJECT_GET_RAW support — dynamic key lookup with class/parent chain walk
-    uint32_t globalsMirrorObjectId() const { return globals_mirror_object_id_; }
-    uint64_t objectShapeVersion(uint32_t obj_id) const {
-        auto *obj = heap_.object(obj_id);
-        return obj ? obj->shape_version.load(std::memory_order_relaxed) : 0;
-    }
+  // OBJECT_GET_RAW support — dynamic key lookup with class/parent chain walk
+  uint32_t globalsMirrorObjectId() const { return globals_mirror_object_id_; }
+  uint64_t objectShapeVersion(uint32_t obj_id) const {
+    auto *obj = heap_.object(obj_id);
+    return obj ? obj->shape_version.load(std::memory_order_relaxed) : 0;
+  }
 
-    uint64_t arrayVersion(uint32_t array_id) const {
-        return heap_.arrayVersion(array_id);
-    }
+  uint64_t arrayVersion(uint32_t array_id) const { return heap_.arrayVersion(array_id); }
 
-    uint64_t setVersion(uint32_t set_id) const {
-        return heap_.setVersion(set_id);
-    }
+  uint64_t setVersion(uint32_t set_id) const { return heap_.setVersion(set_id); }
 
-    uint64_t objectLookupVersion(uint32_t obj_id) const {
-        uint64_t hash = 1469598103934665603ULL;
-        const GCHeap::ObjectEntry *current = heap_.object(obj_id);
-        for (size_t depth = 0; current && depth < 8; ++depth) {
-            const uint64_t version = current->shape_version.load(std::memory_order_relaxed);
-            hash ^= version + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
-            auto *parent_val = current->get("__proto");
-            if (!parent_val) parent_val = current->get("__class");
-            if (!parent_val) parent_val = current->get("__struct");
-            if (!parent_val) parent_val = current->get("__parent");
-            if (parent_val && parent_val->isObjectId()) {
-                current = heap_.object(parent_val->asObjectId());
-            } else {
-                current = nullptr;
-            }
-        }
-        return hash;
+  uint64_t objectLookupVersion(uint32_t obj_id) const {
+    uint64_t hash = 1469598103934665603ULL;
+    const GCHeap::ObjectEntry *current = heap_.object(obj_id);
+    for (size_t depth = 0; current && depth < 8; ++depth) {
+      const uint64_t version = current->shape_version.load(std::memory_order_relaxed);
+      hash ^= version + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      auto *parent_val = current->get("__proto");
+      if (!parent_val)
+        parent_val = current->get("__class");
+      if (!parent_val)
+        parent_val = current->get("__struct");
+      if (!parent_val)
+        parent_val = current->get("__parent");
+      if (parent_val && parent_val->isObjectId()) {
+        current = heap_.object(parent_val->asObjectId());
+      } else {
+        current = nullptr;
+      }
     }
-    Value objectGetWithClassChain(uint32_t obj_id, const std::string& key) {
-        GCHeap::ObjectEntry *current_obj = heap_.object(obj_id);
-        while (current_obj) {
-            auto *val = current_obj->get(key);
-            if (val) return *val;
-            auto* parent_val = current_obj->get("__proto");
-            if (!parent_val) parent_val = current_obj->get("__class");
-            if (!parent_val) parent_val = current_obj->get("__struct");
-            if (!parent_val) parent_val = current_obj->get("__parent");
-            if (parent_val && parent_val->isObjectId()) {
-                current_obj = heap_.object(parent_val->asObjectId());
-            } else {
-                current_obj = nullptr;
-            }
-        }
-        return Value::makeNull();
+    return hash;
+  }
+  Value objectGetWithClassChain(uint32_t obj_id, const std::string &key) {
+    GCHeap::ObjectEntry *current_obj = heap_.object(obj_id);
+    while (current_obj) {
+      auto *val = current_obj->get(key);
+      if (val)
+        return *val;
+      auto *parent_val = current_obj->get("__proto");
+      if (!parent_val)
+        parent_val = current_obj->get("__class");
+      if (!parent_val)
+        parent_val = current_obj->get("__struct");
+      if (!parent_val)
+        parent_val = current_obj->get("__parent");
+      if (parent_val && parent_val->isObjectId()) {
+        current_obj = heap_.object(parent_val->asObjectId());
+      } else {
+        current_obj = nullptr;
+      }
     }
-Value lookupGlobalByKey(const std::string& key) {
+    return Value::makeNull();
+  }
+  Value lookupGlobalByKey(const std::string &key) {
     auto it = globals.find(key);
-    if (it != globals.end()) return it->second;
+    if (it != globals.end())
+      return it->second;
     auto hostIt = host_function_globals_.find(key);
-    if (hostIt != host_function_globals_.end()) return hostIt->second;
+    if (hostIt != host_function_globals_.end())
+      return hostIt->second;
     return Value::makeNull();
   }
 
-    // Backedge loop detection
-    void recordBackedgePublic(uint32_t ip) {
-        recordBackedgeDeltaPublic(ip, 1);
+  // Backedge loop detection
+  void recordBackedgePublic(uint32_t ip) { recordBackedgeDeltaPublic(ip, 1); }
+  // Batched form for JIT code: native loops report one call per
+  // BACKEDGE_STRIDE taken backedges with the exact stride delta so
+  // hotness, tier-up and profiler totals stay accurate at a fraction
+  // of the call rate.
+  void recordBackedgeDeltaPublic(uint32_t ip, uint32_t delta) {
+    // Hot path: this runs on EVERY loop backedge (millions in the
+    // benchmarks). Sub-threshold stays a counter bump plus two
+    // relaxed atomics; everything else (frame lookup, per-function
+    // profiler stat, hot-trace hook, tier-up, tier-2 site dedup)
+    // only runs past the tier-1 threshold, and each one-shot event
+    // only once per (function, ip) via the per-site cache - the old
+    // shape re-hashed the function name and took hot_trace_mutex_
+    // on EVERY past-threshold iteration, which dominated hot loops.
+    auto &site = backedge_counters_[ip];
+    const uint64_t count = (site.count += delta);
+    trace_hot_count_.fetch_add(delta, std::memory_order_relaxed);
+    profiler_.recordBackedgeTotal(delta);
+    if (count < tier1_threshold_) {
+      return;
     }
-    // Batched form for JIT code: native loops report one call per
-    // BACKEDGE_STRIDE taken backedges with the exact stride delta so
-    // hotness, tier-up and profiler totals stay accurate at a fraction
-    // of the call rate.
-    void recordBackedgeDeltaPublic(uint32_t ip, uint32_t delta) {
-        // Hot path: this runs on EVERY loop backedge (millions in the
-        // benchmarks). Sub-threshold stays a counter bump plus two
-        // relaxed atomics; everything else (frame lookup, per-function
-        // profiler stat, hot-trace hook, tier-up, tier-2 site dedup)
-        // only runs past the tier-1 threshold, and each one-shot event
-        // only once per (function, ip) via the per-site cache - the old
-        // shape re-hashed the function name and took hot_trace_mutex_
-        // on EVERY past-threshold iteration, which dominated hot loops.
-        auto& site = backedge_counters_[ip];
-        const uint64_t count = (site.count += delta);
-        trace_hot_count_.fetch_add(delta, std::memory_order_relaxed);
-        profiler_.recordBackedgeTotal(delta);
-        if (count < tier1_threshold_) {
-            return;
-        }
-        if (!hasActiveFrames()) {
-            return;
-        }
-        const auto &frame = currentFrame();
-        if (!frame.function) {
-            return;
-        }
-        const BytecodeFunction* fn = frame.function;
-        if (frame.chunk) {
-            profiler_.recordBackedge(frame.chunk->getFunctionIndex(fn), delta);
-        }
-        // (fn, ip) site key: computed lazily - the string hash is only
-        // affordable on the one-shot event paths, never per iteration.
-        auto site_key_of = [&fn, ip]() {
-            return (static_cast<uint64_t>(std::hash<std::string>{}(fn->name)) << 32) ^ ip;
-        };
-        // Trace callback fires once per site past the tier-1 threshold
-        // (hot-trace hooks; separate from function tier-up).
-        if (site.trace_fn != fn) {
-            bool should_fire = false;
-            {
-                std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                should_fire = hot_trace_sites_.insert(site_key_of()).second;
-            }
-            if (should_fire) {
-                if (hot_trace_cb_) {
-                    hot_trace_cb_(*fn, ip, count);
-                }
-            }
-            site.trace_fn = fn;
-        }
-        // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
-        // backedge count even without binop feedback at the loop head.
-        // maybeTierUp dedups by function name internally, so one attempt
-        // per site is enough; a debugger suppresses without deciding, so
-        // keep attempting while one is attached.
-        if (site.tier1_fn != fn || debugger_attached_) {
-            maybeTierUp(*fn, count, "backedge");
-            if (!debugger_attached_) {
-                site.tier1_fn = fn;
-            }
-        }
-        // Tier-2 backedge hotness statistic: count each SITE once
-        // (mirroring the site-key dedup above); actual tier-2 queueing is
-        // the tier manager's job.
-        if (count >= tier2_threshold_ && site.tier2_fn != fn) {
-            bool first_time = false;
-            {
-                std::lock_guard<std::mutex> lock(hot_trace_mutex_);
-                first_time = tier2_backedge_sites_.insert(site_key_of()).second;
-            }
-            if (first_time) {
-                tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
-            }
-            site.tier2_fn = fn;
-        }
+    if (!hasActiveFrames()) {
+      return;
     }
+    const auto &frame = currentFrame();
+    if (!frame.function) {
+      return;
+    }
+    const BytecodeFunction *fn = frame.function;
+    if (frame.chunk) {
+      profiler_.recordBackedge(frame.chunk->getFunctionIndex(fn), delta);
+    }
+    // (fn, ip) site key: computed lazily - the string hash is only
+    // affordable on the one-shot event paths, never per iteration.
+    auto site_key_of = [&fn, ip]() {
+      return (static_cast<uint64_t>(std::hash<std::string>{}(fn->name)) << 32) ^ ip;
+    };
+    // Trace callback fires once per site past the tier-1 threshold
+    // (hot-trace hooks; separate from function tier-up).
+    if (site.trace_fn != fn) {
+      bool should_fire = false;
+      {
+        std::lock_guard<std::mutex> lock(hot_trace_mutex_);
+        should_fire = hot_trace_sites_.insert(site_key_of()).second;
+      }
+      if (should_fire) {
+        if (hot_trace_cb_) {
+          hot_trace_cb_(*fn, ip, count);
+        }
+      }
+      site.trace_fn = fn;
+    }
+    // Backedge-driven tier-up (TODO #25): loop-heavy functions tier on
+    // backedge count even without binop feedback at the loop head.
+    // maybeTierUp dedups by function name internally, so one attempt
+    // per site is enough; a debugger suppresses without deciding, so
+    // keep attempting while one is attached.
+    if (site.tier1_fn != fn || debugger_attached_) {
+      maybeTierUp(*fn, count, "backedge");
+      if (!debugger_attached_) {
+        site.tier1_fn = fn;
+      }
+    }
+    // Tier-2 backedge hotness statistic: count each SITE once
+    // (mirroring the site-key dedup above); actual tier-2 queueing is
+    // the tier manager's job.
+    if (count >= tier2_threshold_ && site.tier2_fn != fn) {
+      bool first_time = false;
+      {
+        std::lock_guard<std::mutex> lock(hot_trace_mutex_);
+        first_time = tier2_backedge_sites_.insert(site_key_of()).second;
+      }
+      if (first_time) {
+        tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+      }
+      site.tier2_fn = fn;
+    }
+  }
 
   // Direct invocation (bypasses stack, takes args as vector)
-  Value invokeHostFunctionDirect(const std::string &name,
-                                 const std::vector<Value> &args);
+  Value invokeHostFunctionDirect(const std::string &name, const std::vector<Value> &args);
 
   VM();
-VM(const VMConfig& cfg);
-VM(const HostContext &ctx);
-VM(const HostContext &ctx, const VMConfig& cfg);
+  VM(const VMConfig &cfg);
+  VM(const HostContext &ctx);
+  VM(const HostContext &ctx, const VMConfig &cfg);
   ~VM() override;
-  Value execute(const BytecodeChunk &chunk,
-                const std::string &function_name,
+  Value execute(const BytecodeChunk &chunk, const std::string &function_name,
                 const std::vector<Value> &args = {}) override;
   // Execute persistently (preserves globals and heap - for REPL)
-  Value executePersistent(const BytecodeChunk &chunk,
-                          const std::string &function_name,
+  Value executePersistent(const BytecodeChunk &chunk, const std::string &function_name,
                           const std::vector<Value> &args = {});
-  
-  
+
   // Evaluate a condition bytecode (for reactive watchers)
   // Executes condition code and returns result as boolean
   // Used by WatcherRegistry to re-evaluate conditions on variable changes
   // @param func_index The function index in bytecode (condition function)
   // @param ip Optional instruction pointer within function (default: 0)
   // @return Boolean result of condition evaluation
-   bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
+  bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
 
-   Value evaluateExpressionBytecode(uint32_t func_index, size_t ip = 0);
+  Value evaluateExpressionBytecode(uint32_t func_index, size_t ip = 0);
 
-   void registerSignal(const std::string& name, uint32_t func_id);
-   void processSignalBindings(const std::string& changed_var);
-  
-  
+  void registerSignal(const std::string &name, uint32_t func_id);
+  void processSignalBindings(const std::string &changed_var);
+
   // Execute exactly one bytecode instruction in the current fiber
   // Returns immediately after one instruction (never blocks)
   // Used by main event loop for cooperative fiber scheduling
   // @param current_fiber The Fiber to execute in (must be RUNNABLE state)
   // @return VMExecutionResult indicating what happened
   VMExecutionResult executeOneStep(Fiber *current_fiber);
-  
-  
-    // Load fiber's state into VM's global execution state
-    // Must be called before executeOneStep() to restore suspended fiber
-    // @param fiber The Fiber to load (must have SUSPENDED or pending state)
-    void loadFiberState(Fiber *fiber);
 
-    // Save VM's current execution state back to fiber
-    // Must be called after executeOneStep() to persist execution progress
-    // @param fiber The Fiber to save to (preserves IP for resumption)
-    void saveFiberState(Fiber *fiber);
+  // Load fiber's state into VM's global execution state
+  // Must be called before executeOneStep() to restore suspended fiber
+  // @param fiber The Fiber to load (must have SUSPENDED or pending state)
+  void loadFiberState(Fiber *fiber);
 
-    // Initialize a newly-spawned goroutine for first execution
-// Sets up the initial call frame, resolves chunk from closure if needed,
-// and copies arguments into locals. If the function is JIT-compiled,
-// executes it via JIT directly and returns JITExecuted.
-// @param function_id Bytecode function index to execute
-// @param closure_id Closure context (0 for plain functions)
-// @param args Arguments to pass to the function
-// @param fallback_chunk Optional chunk to use when closure chunk is unavailable (e.g. after reload)
-// @return GoroutineCallResult indicating success and execution mode
-enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
+  // Save VM's current execution state back to fiber
+  // Must be called after executeOneStep() to persist execution progress
+  // @param fiber The Fiber to save to (preserves IP for resumption)
+  void saveFiberState(Fiber *fiber);
+
+  // Initialize a newly-spawned goroutine for first execution
+  // Sets up the initial call frame, resolves chunk from closure if needed,
+  // and copies arguments into locals. If the function is JIT-compiled,
+  // executes it via JIT directly and returns JITExecuted.
+  // @param function_id Bytecode function index to execute
+  // @param closure_id Closure context (0 for plain functions)
+  // @param args Arguments to pass to the function
+  // @param fallback_chunk Optional chunk to use when closure chunk is unavailable (e.g. after
+  // reload)
+  // @return GoroutineCallResult indicating success and execution mode
+  enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
 
   // Primary entry: start a goroutine for first execution given a callable Value.
   // The Value already carries its chunk context (closure.chunk_ref) so the VM
   // can resolve everything internally. Caller does not need to know what kind
   // of callable it is.
-  GoroutineCallResult startGoroutineCall(const Value &callable,
-      const std::vector<Value> &args);
+  GoroutineCallResult startGoroutineCall(const Value &callable, const std::vector<Value> &args);
 
   // Legacy entry with explicit (function_id, closure_id, fallback_chunk).
   // Bridges to startGoroutineCall(Value) by wrapping function_id into a
   // Value::makeFunctionObjId or using the closure_id directly. Prefer the
   // Value-based overload in new code.
   GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-      const std::vector<Value> &args, const BytecodeChunk* fallback_chunk = nullptr);
+                                         const std::vector<Value> &args,
+                                         const BytecodeChunk *fallback_chunk = nullptr);
 
-  
   // Track which fiber is waiting on a specific thread
   // Called when a fiber is suspended waiting for THREAD_JOIN completion
   // @param thread_id The thread being waited on
   // @param fiber The fiber waiting (will be unparked when thread completes)
   void registerThreadWait(uint32_t thread_id, Fiber *fiber);
-  
+
   // Get the fiber waiting on a specific thread (if any)
-  Fiber* getThreadWaitingFiber(uint32_t thread_id) const;
-  
+  Fiber *getThreadWaitingFiber(uint32_t thread_id) const;
+
   // Unregister a thread from tracking once the fiber is resumed
   void unregisterThreadWait(uint32_t thread_id);
-  
+
   // Get all thread IDs that have waiting fibers (for iteration in main loop)
   // Thread-safe copy of all threads with suspended fibers
   std::vector<uint32_t> getWaitingThreadIds() const;
-  
+
   // Check and clear all threads, calling callback for each waiting fiber
   // Callback signature: void(uint32_t thread_id, Fiber* waiting_fiber)
   // Used by ExecutionEngine to unpark fibers when threads complete
-  template<typename Callback>
-  void checkWaitingThreads(const Callback& on_fiber_ready) {
+  template <typename Callback> void checkWaitingThreads(const Callback &on_fiber_ready) {
     std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
-    for (auto& [thread_id, fiber] : thread_wait_map_) {
+    for (auto &[thread_id, fiber] : thread_wait_map_) {
       if (fiber) {
         on_fiber_ready(thread_id, fiber);
       }
     }
   }
 
-    // ========== CALLER INFO ==========
+  // ========== CALLER INFO ==========
 
-    // ========== THREAD RESULTS (for await thread join) ==========
-    // Get the result stored for a completed thread (used by ExecutionEngine to
-    // populate wait_handle.resume_value when unparking a waiting goroutine)
-    Value getThreadResult(uint32_t thread_id) const {
-        auto it = thread_results_.find(thread_id);
-        if (it != thread_results_.end()) return it->second;
-        return Value::makeNull();
-    }
+  // ========== THREAD RESULTS (for await thread join) ==========
+  // Get the result stored for a completed thread (used by ExecutionEngine to
+  // populate wait_handle.resume_value when unparking a waiting goroutine)
+  Value getThreadResult(uint32_t thread_id) const {
+    auto it = thread_results_.find(thread_id);
+    if (it != thread_results_.end())
+      return it->second;
+    return Value::makeNull();
+  }
 
-    // ========== CALLER INFO ==========
+  // ========== CALLER INFO ==========
   // Returns caller info at given depth (0 = immediate caller, 1 = caller's caller, etc.)
   // Returns {function_name, line, file} as strings, or empty strings if unavailable
   struct CallerInfo {
@@ -1294,14 +1395,13 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
     std::string file;
   };
   CallerInfo getCallerInfo(int depth = 0) const;
-  
+
   // Check if there are any active frames (for detecting completion)
   bool hasActiveFrames() const { return frame_count_ > 0; }
-  
-  Value call(const Value &callee_value,
-             const std::vector<Value> &args = {});
+
+  Value call(const Value &callee_value, const std::vector<Value> &args = {});
   std::string toString(const Value &value);
-  const std::string* getStringPtr(const Value &value) const;
+  const std::string *getStringPtr(const Value &value) const;
   bool toBoolPublic(const Value &value);
   void setDebugMode(bool enabled) override;
 
@@ -1326,15 +1426,15 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   using DebugBreakCallback = std::function<void()>;
   void setDebugBreakCallback(DebugBreakCallback cb) { debug_break_cb_ = std::move(cb); }
 
-  void setBreakpoint(const std::string& file, uint32_t line);
-  void clearBreakpoint(const std::string& file, uint32_t line);
+  void setBreakpoint(const std::string &file, uint32_t line);
+  void clearBreakpoint(const std::string &file, uint32_t line);
   void clearAllBreakpoints();
-  bool hasBreakpoint(const std::string& file, uint32_t line) const;
+  bool hasBreakpoint(const std::string &file, uint32_t line) const;
 
-  void setFunctionBreakpoint(const std::string& name) { debug_function_breakpoints_.insert(name); }
-  void clearFunctionBreakpoint(const std::string& name) { debug_function_breakpoints_.erase(name); }
+  void setFunctionBreakpoint(const std::string &name) { debug_function_breakpoints_.insert(name); }
+  void clearFunctionBreakpoint(const std::string &name) { debug_function_breakpoints_.erase(name); }
   void clearAllFunctionBreakpoints() { debug_function_breakpoints_.clear(); }
-  bool hasFunctionBreakpoint(const std::string& name) const {
+  bool hasFunctionBreakpoint(const std::string &name) const {
     return debug_function_breakpoints_.count(name) > 0;
   }
 
@@ -1352,20 +1452,17 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   DebugFrameInfo getCurrentFrameInfo() const;
   std::vector<DebugVarInfo> getLocals(int depth = -1);
   std::vector<DebugVarInfo> getDebugGlobals();
-  Value evaluateInFrame(const std::string& expr, int depth = -1);
+  Value evaluateInFrame(const std::string &expr, int depth = -1);
 
   bool checkDebugBreak();
   void attachDebugger();
   void detachDebugger();
   bool isDebuggerAttached() const { return debugger_attached_; }
 
-  void registerHostFunction(const std::string &name,
-                            BytecodeHostFunction function) override;
-  void registerHostFunction(const std::string &name, size_t arity,
-                            BytecodeHostFunction function);
+  void registerHostFunction(const std::string &name, BytecodeHostFunction function) override;
+  void registerHostFunction(const std::string &name, size_t arity, BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
-  
-  
+
   // Spawn a new goroutine (fiber) to execute a closure or function concurrently
   // @param callee The closure or function object to execute
   // @param args Arguments to pass to the function
@@ -1377,48 +1474,52 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   // own locals layout makes those indices invalid, so capture the values.
   void closeOpenUpvaluesForSpawn(uint32_t closure_id);
 
-    // Spawn a goroutine from a registered callback
-    uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
+  // Spawn a goroutine from a registered callback
+  uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
 
-    // Spawn a goroutine from a registered callback with explicit priority
-    uint32_t spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args = {});
+  // Spawn a goroutine from a registered callback with explicit priority
+  uint32_t spawnCallback(CallbackId id, FiberPriority priority,
+                         const std::vector<Value> &args = {});
 
-    // Create a persistent goroutine for a hotkey callback.
-    // Unlike spawnCallback, this goroutine:
-    //   - Is immediately parked (Suspended) after creation
-    //   - Is recycled on each trigger via Scheduler::requeueFront()
-    //   - Never transitions to Done (re-suspends in handleReturned)
-    // This eliminates per-press goroutine allocation for hotkeys.
-    uint32_t createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
-        const std::vector<Value> &args = {}, HotkeyPolicy policy = HotkeyPolicy(0),
-        const std::string &alias = "");
+  // Create a persistent goroutine for a hotkey callback.
+  // Unlike spawnCallback, this goroutine:
+  //   - Is immediately parked (Suspended) after creation
+  //   - Is recycled on each trigger via Scheduler::requeueFront()
+  //   - Never transitions to Done (re-suspends in handleReturned)
+  // This eliminates per-press goroutine allocation for hotkeys.
+  uint32_t createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
+                                          const std::vector<Value> &args = {},
+                                          HotkeyPolicy policy = HotkeyPolicy(0),
+                                          const std::string &alias = "");
 
-    // Build a direct-call thunk for a hotkey callback.
-    // Analyzes the callback's bytecode; if it's host-only (only calls host
-    // functions with pre-resolvable arguments), returns a thunk that invokes
-    // the host functions directly, bypassing VM dispatch entirely.
-    DirectCallThunk buildDirectCallThunk(CallbackId id);
+  // Build a direct-call thunk for a hotkey callback.
+  // Analyzes the callback's bytecode; if it's host-only (only calls host
+  // functions with pre-resolvable arguments), returns a thunk that invokes
+  // the host functions directly, bypassing VM dispatch entirely.
+  DirectCallThunk buildDirectCallThunk(CallbackId id);
 
-    // Retrieve a stored thunk by callback ID (empty if none).
-    DirectCallThunk getDirectCallThunk(CallbackId id) const {
-        auto it = direct_call_thunks_.find(id);
-        if (it != direct_call_thunks_.end()) return it->second;
-        return {};
-    }
-    void storeDirectCallThunk(CallbackId id, DirectCallThunk thunk) {
-        direct_call_thunks_[id] = std::move(thunk);
-    }
+  // Retrieve a stored thunk by callback ID (empty if none).
+  DirectCallThunk getDirectCallThunk(CallbackId id) const {
+    auto it = direct_call_thunks_.find(id);
+    if (it != direct_call_thunks_.end())
+      return it->second;
+    return {};
+  }
+  void storeDirectCallThunk(CallbackId id, DirectCallThunk thunk) {
+    direct_call_thunks_[id] = std::move(thunk);
+  }
 
-    // Execute a DirectCallThunk: calls each host function directly without
-    // VM dispatch. Returns true if all calls succeeded.
-    bool executeDirectCallThunk(const DirectCallThunk& thunk);
+  // Execute a DirectCallThunk: calls each host function directly without
+  // VM dispatch. Returns true if all calls succeeded.
+  bool executeDirectCallThunk(const DirectCallThunk &thunk);
 
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
-  
-  void requestSuspension(uint8_t reason, void* context = nullptr) {
+  void requestSuspension(uint8_t reason, void *context = nullptr) {
     if (std::getenv("HAVEL_TRACE_SLEEP")) {
-      // fprintf(stderr, "[SLEEPDBG] requestSuspension reason=%d inline=%d exec_fiber=%d last=%d\n", (int)reason, (int)inline_yield_active_, (int)(current_executing_fiber_!=nullptr), (int)last_suspension_reason_);
+      // fprintf(stderr, "[SLEEPDBG] requestSuspension reason=%d inline=%d exec_fiber=%d last=%d\n",
+      // (int)reason, (int)inline_yield_active_, (int)(current_executing_fiber_!=nullptr),
+      // (int)last_suspension_reason_);
     }
     suspension_requested_ = true;
     suspension_reason_ = reason;
@@ -1426,10 +1527,10 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   }
   bool isSuspensionRequested() const { return suspension_requested_; }
   void clearSuspensionRequest() { suspension_requested_ = false; }
-  
+
   // Check if VM is currently executing a fiber (for goroutine context detection)
   bool hasCurrentExecutingFiber() const { return current_executing_fiber_ != nullptr; }
-  
+
   // JIT yield-point: scheduler calls this to request preemption of
   // a long-running JIT-compiled function. The JIT's havel_vm_check_yield()
   // stub reads this flag and throws JitCoroutineSignal if set.
@@ -1441,31 +1542,36 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   bool hasYieldCallback() const { return static_cast<bool>(yield_callback_); }
   void setHotTraceCallback(HotTraceCallback cb) { hot_trace_cb_ = std::move(cb); }
   bool hasHotTraceCallback() const { return static_cast<bool>(hot_trace_cb_); }
- uint8_t getSuspensionReason() const { return suspension_reason_; }
-void* getSuspensionContext() const { return suspension_context_; }
+  uint8_t getSuspensionReason() const { return suspension_reason_; }
+  void *getSuspensionContext() const { return suspension_context_; }
 
-uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
-  void* getLastSuspensionContext() const { return last_suspension_context_; }
-  void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
-  void setLastSuspension(uint8_t reason, void* ctx) { last_suspension_reason_ = reason; last_suspension_context_ = ctx; }
+  uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
+  void *getLastSuspensionContext() const { return last_suspension_context_; }
+  void clearLastSuspension() {
+    last_suspension_reason_ = 0;
+    last_suspension_context_ = nullptr;
+  }
+  void setLastSuspension(uint8_t reason, void *ctx) {
+    last_suspension_reason_ = reason;
+    last_suspension_context_ = ctx;
+  }
   bool isInlineYieldActive() const { return inline_yield_active_; }
 
   // Register a suspended fiber waiting on a channel receive
-  void registerChannelWait(uint32_t channel_id, Fiber* fiber);
+  void registerChannelWait(uint32_t channel_id, Fiber *fiber);
   // Resume a suspended fiber waiting on a channel receive
-  Fiber* resumeChannelWait(uint32_t channel_id);
+  Fiber *resumeChannelWait(uint32_t channel_id);
 
   uint32_t getHostFunctionIndex(const std::string &name);
   void throwError(const std::string &msg);
-  
-  
-  using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
+
+  using HotFunctionCallback = std::function<void(const BytecodeFunction &)>;
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   // Runtime profiling (TODO #26): aggregate counters, safe to read from any
   // thread; summary() is for diagnostics only (hvdb status, shutdown report).
-  const RuntimeProfiler& profiler() const { return profiler_; }
-  RuntimeProfiler& profiler() { return profiler_; }
+  const RuntimeProfiler &profiler() const { return profiler_; }
+  RuntimeProfiler &profiler() { return profiler_; }
 
   // ===== Tier manager (TODO #25) =====
   //
@@ -1481,8 +1587,7 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   // where hotness is the strongest available signal at the call site
   // (binop feedback count, backedge count, or invocation count). Every
   // function is decided once per tier; the sets below dedup.
-  void maybeTierUp(const BytecodeFunction& func, uint64_t hotness,
-                   const char* reason) {
+  void maybeTierUp(const BytecodeFunction &func, uint64_t hotness, const char *reason) {
     if (!tiering_enabled_ || !backend_ || debugger_attached_) {
       return;
     }
@@ -1510,7 +1615,7 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     // fallback. HAVEL_TIERING=0 remains the global opt-out.
     const size_t size = func.instructions.size();
     if (size == 0 || size > tier1_max_instructions_) {
-      return;  // never worth compiling (empty or above the tier-1 cap)
+      return; // never worth compiling (empty or above the tier-1 cap)
     }
     if (hotness < tier1_threshold_) {
       return;
@@ -1518,28 +1623,29 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     const std::string key = func.name;
     // Debug isolation: HAVEL_TIER1_ONLY=<name[,name...]> restricts tier-up
     // to the listed functions (miscompile bisects; not a production knob).
-    static const std::string only_env = std::getenv("HAVEL_TIER1_ONLY")
-                                             ? std::getenv("HAVEL_TIER1_ONLY")
-                                             : std::string();
+    static const std::string only_env =
+        std::getenv("HAVEL_TIER1_ONLY") ? std::getenv("HAVEL_TIER1_ONLY") : std::string();
     if (!only_env.empty()) {
       bool listed = false;
       size_t pos = 0;
       while (pos <= only_env.size() && !listed) {
         size_t comma = only_env.find(',', pos);
-        const std::string tok = only_env.substr(
-            pos, comma == std::string::npos ? std::string::npos : comma - pos);
-        if (tok == key) listed = true;
-        if (comma == std::string::npos) break;
+        const std::string tok =
+            only_env.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        if (tok == key)
+          listed = true;
+        if (comma == std::string::npos)
+          break;
         pos = comma + 1;
       }
-      if (!listed) return;
+      if (!listed)
+        return;
     }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
       tier1_transition_count_.fetch_add(1);
       profiler_.recordTier1Compile(key);
-      ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason,
-                     hotness);
+      ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason, hotness);
       if (backend_->compile_tier(func, 1)) {
         // The execute fast paths gate on jit_compiled for ANY backend, not
         // just the legacy ORC flag: mark the function so calls route through
@@ -1547,22 +1653,30 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
         func.jit_compiled = true;
       }
 
-      // Tier 2 queueing: only small, very hot functions qualify.
-      if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
-          !tier2_compiled_.count(key)) {
-        tier2_compiled_.insert(key);
-        {
-          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-          if (tier2_queued_or_compiling_.insert(key).second) {
-            tier2_queue_.push(func);
-            tier2_enqueue_count_.fetch_add(1);
-            ::havel::debug("[tiering] {} queued for tier2", key);
-          } else {
-            tier2_skip_duplicate_count_.fetch_add(1);
-          }
+    }
+
+    // Tier 2 queueing: only small, very hot functions qualify. Re-checked
+    // on every hot event and deduped by its own sets. Previously this sat
+    // INSIDE the one-shot tier-1 guard above, so a function could only
+    // ever queue if its FIRST tier-up moment had already crossed
+    // tier2_threshold - the steady-state tier-2 path was dead wiring
+    // (tier2_enqueued counted backedge-site statistics only; a
+    // 20k-invocation bench queued two functions by crossing both
+    // thresholds at once, a 3k one queued none).
+    if (hotness >= tier2_threshold_ && size <= tier2_max_instructions_ &&
+        !tier2_compiled_.count(key)) {
+      tier2_compiled_.insert(key);
+      {
+        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+        if (tier2_queued_or_compiling_.insert(key).second) {
+          tier2_queue_.push(func);
+          tier2_enqueue_count_.fetch_add(1);
+          ::havel::debug("[tiering] {} queued for tier2", key);
+        } else {
+          tier2_skip_duplicate_count_.fetch_add(1);
         }
-        ensureTier2Worker();
       }
+      ensureTier2Worker();
     }
   }
 
@@ -1599,14 +1713,11 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
     }
   }
 
-  
   // Backend attachment (TODO #18/#19): the VM executes through a
   // CompilerBackend. The interpreter is always available as the reference
   // path; a JIT backend replaces the fast path when attached.
-  void setBackend(std::unique_ptr<CompilerBackend> backend) {
-    backend_ = std::move(backend);
-  }
-  CompilerBackend* getBackend() const { return backend_.get(); }
+  void setBackend(std::unique_ptr<CompilerBackend> backend) { backend_ = std::move(backend); }
+  CompilerBackend *getBackend() const { return backend_.get(); }
 
   // Legacy attachment shim: wraps a JITCompiler in the backend boundary.
   // New embedders should build a JITCompilerBackend (owning) and call
@@ -1623,13 +1734,13 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   // interface (hvdb status output, launcher JIT flag wiring). Null when no
   // JIT is attached. Sees through the TieredBackend composite to its
   // optimizing (ORC) tier.
-  JITCompiler* getJITCompiler() const {
-    if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(backend_.get())) {
+  JITCompiler *getJITCompiler() const {
+    if (auto *jit_backend = dynamic_cast<JITCompilerBackend *>(backend_.get())) {
       return jit_backend->legacy();
     }
-    if (auto* tiered = dynamic_cast<TieredBackend*>(backend_.get())) {
-      auto* optimizing = tiered->optimizing();
-      if (auto* jit_backend = dynamic_cast<JITCompilerBackend*>(optimizing)) {
+    if (auto *tiered = dynamic_cast<TieredBackend *>(backend_.get())) {
+      auto *optimizing = tiered->optimizing();
+      if (auto *jit_backend = dynamic_cast<JITCompilerBackend *>(optimizing)) {
         return jit_backend->legacy();
       }
     }
@@ -1642,228 +1753,306 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   }
 
   void setMaxCallDepth(size_t value);
-    void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
-    void setTraceExecution(bool enabled) { 
-      trace_execution_ = enabled; 
-    }
-    void setTraceGC(bool enabled) { trace_gc_ = enabled; }
-    void setTraceScheduler(bool enabled) { trace_scheduler_ = enabled; }
-    void setTraceCalls(bool enabled) { trace_calls_ = enabled; }
-    void setTraceGlobals(bool enabled) { trace_globals_ = enabled; }
-    void setTraceChannels(bool enabled) { trace_channels_ = enabled; }
-    void setTraceHotkeys(bool enabled) { trace_hotkeys_ = enabled; }
-    void setTraceWhen(bool enabled) { trace_when_ = enabled; }
-    void setTraceAsync(bool enabled) { trace_async_ = enabled; }
-    bool isTraceExecution() const { return trace_execution_; }
-    bool isTraceGC() const { return trace_gc_; }
-    bool isTraceScheduler() const { return trace_scheduler_; }
-    bool isTraceCalls() const { return trace_calls_; }
-    bool isTraceGlobals() const { return trace_globals_; }
-    bool isTraceChannels() const { return trace_channels_; }
-    bool isTraceHotkeys() const { return trace_hotkeys_; }
-    bool isTraceWhen() const { return trace_when_; }
-    bool isTraceAsync() const { return trace_async_; }
+  void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
+  void setTraceExecution(bool enabled) { trace_execution_ = enabled; }
+  void setTraceGC(bool enabled) { trace_gc_ = enabled; }
+  void setTraceScheduler(bool enabled) { trace_scheduler_ = enabled; }
+  void setTraceCalls(bool enabled) { trace_calls_ = enabled; }
+  void setTraceGlobals(bool enabled) { trace_globals_ = enabled; }
+  void setTraceChannels(bool enabled) { trace_channels_ = enabled; }
+  void setTraceHotkeys(bool enabled) { trace_hotkeys_ = enabled; }
+  void setTraceWhen(bool enabled) { trace_when_ = enabled; }
+  void setTraceAsync(bool enabled) { trace_async_ = enabled; }
+  bool isTraceExecution() const { return trace_execution_; }
+  bool isTraceGC() const { return trace_gc_; }
+  bool isTraceScheduler() const { return trace_scheduler_; }
+  bool isTraceCalls() const { return trace_calls_; }
+  bool isTraceGlobals() const { return trace_globals_; }
+  bool isTraceChannels() const { return trace_channels_; }
+  bool isTraceHotkeys() const { return trace_hotkeys_; }
+  bool isTraceWhen() const { return trace_when_; }
+  bool isTraceAsync() const { return trace_async_; }
 
-    // Instruction tracing for --trace flag
-    void traceInstruction(const Instruction& inst, const BytecodeFunction* func, size_t frame_depth, size_t ip) const;
-    void traceGC(const std::string& message) const;
-    void traceScheduler(const std::string& message) const;
-    void traceCall(const std::string& message) const;
-    void traceGlobal(const std::string& message) const;
-    void traceChannel(const std::string& message) const;
-    void traceHotkey(const std::string& message) const;
-    void traceWhen(const std::string& message) const;
-    void traceAsync(const std::string& message) const;
-    uint64_t executedInstructionCount() const { return executed_instructions_; }
-    void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
-    uint64_t maxInstructions() const { return max_instructions_; }
-    uint64_t opcodeCount(OpCode opcode) const {
-        return opcode_counts_[static_cast<uint8_t>(opcode)];
-    }
+  // Instruction tracing for --trace flag
+  void traceInstruction(const Instruction &inst, const BytecodeFunction *func, size_t frame_depth,
+                        size_t ip) const;
+  void traceGC(const std::string &message) const;
+  void traceScheduler(const std::string &message) const;
+  void traceCall(const std::string &message) const;
+  void traceGlobal(const std::string &message) const;
+  void traceChannel(const std::string &message) const;
+  void traceHotkey(const std::string &message) const;
+  void traceWhen(const std::string &message) const;
+  void traceAsync(const std::string &message) const;
+  uint64_t executedInstructionCount() const { return executed_instructions_; }
+  void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
+  uint64_t maxInstructions() const { return max_instructions_; }
+  uint64_t opcodeCount(OpCode opcode) const { return opcode_counts_[static_cast<uint8_t>(opcode)]; }
 
-    void setHeadlessMode(bool enabled) { headlessMode_ = enabled; }
-    bool isHeadlessMode() const { return headlessMode_; }
+  void setHeadlessMode(bool enabled) { headlessMode_ = enabled; }
+  bool isHeadlessMode() const { return headlessMode_; }
 
-    void setSelfHostedModulesPath(const std::string& path) { self_hosted_modules_path_ = path; }
-    const std::string& getSelfHostedModulesPath() const { return self_hosted_modules_path_; }
+  void setSelfHostedModulesPath(const std::string &path) { self_hosted_modules_path_ = path; }
+  const std::string &getSelfHostedModulesPath() const { return self_hosted_modules_path_; }
 
-    void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
-    void runGarbageCollection() { collectGarbage(); }
-GCHeap::Stats gcStats() const { return heap_.stats(); }
-GCHeap& getHeap() { return heap_; }
-const GCHeap& getHeap() const { return heap_; }
-const VMConfig& vmConfig() const { return vm_config_; }
-uint64_t getMemoryUsage() const { return heap_.approxHeapBytes(); }
-uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
-  
-	
- void setEventQueue(class EventQueue* eq);
-	class EventQueue* getEventQueue() { return event_queue_; }
-        void processPendingEvents();
-        void processEventsAndYield();
+  void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
+  void runGarbageCollection() { collectGarbage(); }
+  GCHeap::Stats gcStats() const { return heap_.stats(); }
+  GCHeap &getHeap() { return heap_; }
+  const GCHeap &getHeap() const { return heap_; }
+  const VMConfig &vmConfig() const { return vm_config_; }
+  uint64_t getMemoryUsage() const { return heap_.approxHeapBytes(); }
+  uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
-	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
-	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }
+  void setEventQueue(class EventQueue *eq);
+  class EventQueue *getEventQueue() { return event_queue_; }
+  void processPendingEvents();
+  void processEventsAndYield();
 
-	void setScheduler(Scheduler* sched) { scheduler_ = sched; }
- 	Scheduler* getScheduler() const { return scheduler_; }
+  void setWatcherRegistry(WatcherRegistry *wr) { watcher_registry_ = wr; }
+  WatcherRegistry *getWatcherRegistry() const { return watcher_registry_; }
 
-        std::function<void(const std::string&)> on_var_changed_sync_;
-        std::atomic<bool> on_var_changed_busy_{false};
+  void setScheduler(Scheduler *sched) { scheduler_ = sched; }
+  Scheduler *getScheduler() const { return scheduler_; }
 
-        void setOnVarChangedSync(std::function<void(const std::string&)> cb) { on_var_changed_sync_ = std::move(cb); }
+  std::function<void(const std::string &)> on_var_changed_sync_;
+  std::atomic<bool> on_var_changed_busy_{false};
 
-        // Non-zero while deepWrapModuleFunctions is on the stack. The
-        // conditional-hotkey re-eval path uses this to decide between
-        // synchronous (cond function runs immediately, sees the just-stored
-        // global) and deferred (queued to pending_var_changes_ for drain at
-        // the next scheduler tick) emission. Synchronous re-eval from inside
-        // deepWrapModuleFunctions crosses the still-being-wrapped module FFI
-        // and wedges the frame; deferral is mandatory in that case.
-        std::atomic<int> deep_wrap_module_functions_depth_{0};
-
-        // Track nested module wrapper executions to prevent stack overflow
-        // from deeply nested dispatch loops. Each wrapped module function
-        // runs runDispatchLoop, which can call other wrapped functions.
-        std::atomic<int> module_wrapper_execution_depth_{0};
-        static constexpr int MAX_MODULE_WRAPPER_EXECUTION_DEPTH = 50;
-
-        // >0 while a wrapped module function's dispatch loop is on the C++
-        // stack. Re-entrant scheduling (e.g. processGoroutinesInline from a
-        // yieldNow inside a module fn) must not run sibling goroutines in
-        // this window: ambient globals is the module's map, so siblings
-        // would resolve their script globals against the wrong scope.
-        int moduleWrapperDepth() const {
-            return module_wrapper_execution_depth_.load(std::memory_order_acquire);
-        }
-
-        // Drain callback invoked by host-side getters that read state derived
-        // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine
-        // sets this to its drainPendingVarChanges(): if the caller just
-        // performed a STORE_GLOBAL that queued a var change, this flushes the
-        // pending re-eval before the getter reads ctx->grab. Otherwise
-        // scripts that do `mode = "gaming"; ...; hotkey.grab` inside the
-        // same goroutine tick see stale grab state.
-        std::function<void()> drain_conditional_hotkey_pending_fn_;
-        void setDrainConditionalHotkeyPendingFn(std::function<void()> cb) {
-            drain_conditional_hotkey_pending_fn_ = std::move(cb);
-        }
-        void drainConditionalHotkeyPending() {
-            if (drain_conditional_hotkey_pending_fn_) drain_conditional_hotkey_pending_fn_();
-        }
-
-    // When true, the script requested program exit (via exit() host function)
-    std::atomic<bool> exit_requested_{false};
-    bool exitRequested() const { return exit_requested_.load(); }
-    // The exit code passed to the exit() function
-    std::atomic<int> exit_code_{0};
-    int exitCode() const { return exit_code_.load(); }
-    // Cooperative exit request, shared by the exit()/sys.exit host fns
-    // (VMHostFunctions) and stdlib modules (SysModule's sys.exit): sets the
-    // flag + code so the engine's loops shut down cleanly instead of
-    // calling std::exit mid-goroutine.
-    void requestExit(int code) {
-        exit_code_.store(code);
-        exit_requested_.store(true);
-    }
-  
-    void setGlobal(std::string name, Value value) {
-        assertVMThread("setGlobal");
-        auto key = name;
-        globals[std::move(name)] = std::move(value);
-        emitVariableChanged(key);
-    }
-
-    // Module-globals persistence for the Runtime ABI global_set bridge
-    // (CoreRuntimeExports): the interpreter's STORE_GLOBAL, when running in
-    // a module function frame (closure_id != 0), also persists the write to
-    // the closure's shared module_globals map and records the key in the
-    // frame's written_globals list so doReturn refreshes the caller's
-    // snapshot (VMDispatch.cpp STORE_GLOBAL). JIT-compiled code takes this
-    // path too, or module-level caches (BP_TABLE and friends) written by
-    // compiled functions would be lost for every other frame - the exact
-    // corruption that broke the self-hosted parser when the launcher's
-    // getBPTABLE tiered up.
-    // Global read for the Runtime ABI global_get bridge: the interpreter's
-    // LOAD_GLOBAL chain is globals -> lazy modules -> host functions ->
-    // closure module_globals sidecar. JIT code reads through this seam so
-    // module-level state written by any frame (sidecar) is visible.
-    // Returns true with *out set; false = genuinely undefined (caller
-    // decides null vs error).
-    // Runtime-ABI seam (JitRuntimeBridges eq/neq): the interpreter's EQ
-    // compares strings by CONTENT across representations (heap StringId,
-    // chunk-local StringValId, RegexValId - see valuesEqualDeep); the
-    // bridges' raw-bit NaN dance cannot, so JIT-compiled code comparing a
-    // heap string against a chunk-local string constant (the self-hosted
-    // emitter's node.kind vs "NumberLiteral") always saw "not equal" and
-    // every dispatch fell through to the null branch. This seam gives the
-    // bridges the interpreter's exact string-equality behavior.
-    bool stringsEqualPublic(uint64_t l_bits, uint64_t r_bits) const {
-        Value l = Value::fromRawBits(l_bits);
-        Value r = Value::fromRawBits(r_bits);
-        auto ls = valueAsString(l);
-        if (!ls) return false;
-        auto rs = valueAsString(r);
-        return rs.has_value() && *ls == *rs;
-    }
-
-    bool resolveGlobalPublic(const std::string& name, Value* out) {
-        auto it = globals.find(name);
-        if (it != globals.end()) {
-            *out = it->second;
-            return true;
-        }
-        auto hostIt = host_function_globals_.find(name);
-        if (hostIt != host_function_globals_.end()) {
-            *out = hostIt->second;
-            return true;
-        }
-        const auto& cf = currentFrame();
-        if (cf.closure_id != 0) {
-            auto* closure = heap_.closure(cf.closure_id);
-            if (closure && closure->module_globals) {
-                auto sideIt = closure->module_globals->find(name);
-                if (sideIt != closure->module_globals->end()) {
-                    *out = sideIt->second;
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    void persistModuleGlobalPublic(const std::string& name, const Value& value) {
-        const auto& cf = currentFrame();
-        if (cf.closure_id == 0) return;
-        auto* closure = heap_.closure(cf.closure_id);
-        if (!closure || !closure->module_globals) return;
-        (*closure->module_globals)[name] = value;
-        if (frame_count_ > 0) {
-            auto& wf = frame_arena_[frame_count_ - 1];
-            if (std::find(wf.written_globals.begin(), wf.written_globals.end(),
-                          name) == wf.written_globals.end()) {
-                wf.written_globals.push_back(name);
-            }
-        }
-    }
-  [[nodiscard]] GCRoot makeRoot(const Value &value) {
-    return GCRoot(*this, value);
+  void setOnVarChangedSync(std::function<void(const std::string &)> cb) {
+    on_var_changed_sync_ = std::move(cb);
   }
+
+  // Non-zero while deepWrapModuleFunctions is on the stack. The
+  // conditional-hotkey re-eval path uses this to decide between
+  // synchronous (cond function runs immediately, sees the just-stored
+  // global) and deferred (queued to pending_var_changes_ for drain at
+  // the next scheduler tick) emission. Synchronous re-eval from inside
+  // deepWrapModuleFunctions crosses the still-being-wrapped module FFI
+  // and wedges the frame; deferral is mandatory in that case.
+  std::atomic<int> deep_wrap_module_functions_depth_{0};
+
+  // Track nested module wrapper executions to prevent stack overflow
+  // from deeply nested dispatch loops. Each wrapped module function
+  // runs runDispatchLoop, which can call other wrapped functions.
+  std::atomic<int> module_wrapper_execution_depth_{0};
+  static constexpr int MAX_MODULE_WRAPPER_EXECUTION_DEPTH = 50;
+
+  // >0 while a wrapped module function's dispatch loop is on the C++
+  // stack. Re-entrant scheduling (e.g. processGoroutinesInline from a
+  // yieldNow inside a module fn) must not run sibling goroutines in
+  // this window: ambient globals is the module's map, so siblings
+  // would resolve their script globals against the wrong scope.
+  int moduleWrapperDepth() const {
+    return module_wrapper_execution_depth_.load(std::memory_order_acquire);
+  }
+
+  // Drain callback invoked by host-side getters that read state derived
+  // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine
+  // sets this to its drainPendingVarChanges(): if the caller just
+  // performed a STORE_GLOBAL that queued a var change, this flushes the
+  // pending re-eval before the getter reads ctx->grab. Otherwise
+  // scripts that do `mode = "gaming"; ...; hotkey.grab` inside the
+  // same goroutine tick see stale grab state.
+  std::function<void()> drain_conditional_hotkey_pending_fn_;
+  void setDrainConditionalHotkeyPendingFn(std::function<void()> cb) {
+    drain_conditional_hotkey_pending_fn_ = std::move(cb);
+  }
+  void drainConditionalHotkeyPending() {
+    if (drain_conditional_hotkey_pending_fn_)
+      drain_conditional_hotkey_pending_fn_();
+  }
+
+  // When true, the script requested program exit (via exit() host function)
+  std::atomic<bool> exit_requested_{false};
+  bool exitRequested() const { return exit_requested_.load(); }
+  // The exit code passed to the exit() function
+  std::atomic<int> exit_code_{0};
+  int exitCode() const { return exit_code_.load(); }
+  // Cooperative exit request, shared by the exit()/sys.exit host fns
+  // (VMHostFunctions) and stdlib modules (SysModule's sys.exit): sets the
+  // flag + code so the engine's loops shut down cleanly instead of
+  // calling std::exit mid-goroutine.
+  void requestExit(int code) {
+    exit_code_.store(code);
+    exit_requested_.store(true);
+  }
+
+  void setGlobal(std::string name, Value value) {
+    assertVMThread("setGlobal");
+    auto key = name;
+    globals[std::move(name)] = std::move(value);
+    emitVariableChanged(key);
+  }
+
+  // Module-globals persistence for the Runtime ABI global_set bridge
+  // (CoreRuntimeExports): the interpreter's STORE_GLOBAL, when running in
+  // a module function frame (closure_id != 0), also persists the write to
+  // the closure's shared module_globals map and records the key in the
+  // frame's written_globals list so doReturn refreshes the caller's
+  // snapshot (VMDispatch.cpp STORE_GLOBAL). JIT-compiled code takes this
+  // path too, or module-level caches (BP_TABLE and friends) written by
+  // compiled functions would be lost for every other frame - the exact
+  // corruption that broke the self-hosted parser when the launcher's
+  // getBPTABLE tiered up.
+  // Global read for the Runtime ABI global_get bridge: the interpreter's
+  // LOAD_GLOBAL chain is globals -> lazy modules -> host functions ->
+  // closure module_globals sidecar. JIT code reads through this seam so
+  // module-level state written by any frame (sidecar) is visible.
+  // Returns true with *out set; false = genuinely undefined (caller
+  // decides null vs error).
+  // Runtime-ABI seam (JitRuntimeBridges eq/neq): the interpreter's EQ
+  // compares strings by CONTENT across representations (heap StringId,
+  // chunk-local StringValId, RegexValId - see valuesEqualDeep); the
+  // bridges' raw-bit NaN dance cannot, so JIT-compiled code comparing a
+  // heap string against a chunk-local string constant (the self-hosted
+  // emitter's node.kind vs "NumberLiteral") always saw "not equal" and
+  // every dispatch fell through to the null branch. This seam gives the
+  // bridges the interpreter's exact string-equality behavior.
+  bool stringsEqualPublic(uint64_t l_bits, uint64_t r_bits) const {
+    Value l = Value::fromRawBits(l_bits);
+    Value r = Value::fromRawBits(r_bits);
+    auto ls = valueAsString(l);
+    if (!ls)
+      return false;
+    auto rs = valueAsString(r);
+    return rs.has_value() && *ls == *rs;
+  }
+
+  bool resolveGlobalPublic(const std::string &name, Value *out) {
+    auto it = globals.find(name);
+    if (it != globals.end()) {
+      *out = it->second;
+      return true;
+    }
+    auto hostIt = host_function_globals_.find(name);
+    if (hostIt != host_function_globals_.end()) {
+      *out = hostIt->second;
+      return true;
+    }
+    const auto &cf = currentFrame();
+    if (cf.closure_id != 0) {
+      auto *closure = heap_.closure(cf.closure_id);
+      if (closure && closure->module_globals) {
+        auto sideIt = closure->module_globals->find(name);
+        if (sideIt != closure->module_globals->end()) {
+          *out = sideIt->second;
+          return true;
+        }
+      }
+    }
+    // Module base layer (see baseModuleGlobals_): namespace objects
+    // (fs, sys, ...) visible from every module context without
+    // per-module seeding. AFTER the sidecar step: a module's own value
+    // for a shared name must win over the engine-wide base object.
+    // Same order as the interpreter's LOAD_GLOBAL arm so JIT and
+    // interpreter resolve identically.
+    if (baseModuleGlobals_) {
+      auto baseIt = baseModuleGlobals_->find(name);
+      if (baseIt != baseModuleGlobals_->end()) {
+        *out = baseIt->second;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // True when `obj_id` names a namespace-style object: one reachable as
+  // a global — the ambient, the shared module base, or a pushed globals
+  // frame. CALL_METHOD (interpreter and the havel_vm_call_method bridge)
+  // uses this to classify a receiver as a module/namespace object (no
+  // implicit self argument) vs a plain instance object. The old inline
+  // scans walked only the ambient map: O(entries) per method call, and
+  // since module maps stopped being seeded with the stdlib the ambient
+  // alone no longer contains the namespace objects. The ambient "this"
+  // self-binding never classifies (class-instance methods store the
+  // receiver there — see havel_vm_call_method).
+  bool isNamespaceObjectGlobal(uint32_t obj_id) const {
+    for (const auto &g : globals) {
+      if (g.first == "this")
+        continue;
+      if (g.second.isObjectId() && g.second.asObjectId() == obj_id)
+        return true;
+    }
+    if (baseModuleGlobals_) {
+      for (const auto &g : *baseModuleGlobals_) {
+        if (g.first == "this")
+          continue;
+        if (g.second.isObjectId() && g.second.asObjectId() == obj_id)
+          return true;
+      }
+    }
+    for (const auto &frame : globals_stack_) {
+      for (const auto &g : frame.first) {
+        if (g.first == "this")
+          continue;
+        if (g.second.isObjectId() && g.second.asObjectId() == obj_id)
+          return true;
+      }
+    }
+    return false;
+  }
+
+  // Find the object bound to `name` across every map a global read can
+  // reach: the ambient, the shared module base, then the pushed
+  // globals_stack_ frames (innermost first, matching LOAD_GLOBAL's read
+  // order). Used by the module loader's circular-dependency escape
+  // hatch, which previously consulted only the ambient — during a nested
+  // module load the ambient is the loading module's sandbox, which no
+  // longer carries the stdlib namespace objects (see VM::loadModule).
+  // Returns false when the name is not bound in any of them.
+  bool findGlobalValueByName(const std::string &name, Value *out) const {
+    auto it = globals.find(name);
+    if (it != globals.end()) {
+      *out = it->second;
+      return true;
+    }
+    if (baseModuleGlobals_) {
+      auto baseIt = baseModuleGlobals_->find(name);
+      if (baseIt != baseModuleGlobals_->end()) {
+        *out = baseIt->second;
+        return true;
+      }
+    }
+    for (auto frameIt = globals_stack_.rbegin(); frameIt != globals_stack_.rend(); ++frameIt) {
+      auto pushedIt = frameIt->first.find(name);
+      if (pushedIt != frameIt->first.end()) {
+        *out = pushedIt->second;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void persistModuleGlobalPublic(const std::string &name, const Value &value) {
+    const auto &cf = currentFrame();
+    if (cf.closure_id == 0)
+      return;
+    auto *closure = heap_.closure(cf.closure_id);
+    if (!closure || !closure->module_globals)
+      return;
+    (*closure->module_globals)[name] = value;
+    if (frame_count_ > 0) {
+      auto &wf = frame_arena_[frame_count_ - 1];
+      if (std::find(wf.written_globals.begin(), wf.written_globals.end(), name) ==
+          wf.written_globals.end()) {
+        wf.written_globals.push_back(name);
+      }
+    }
+  }
+  [[nodiscard]] GCRoot makeRoot(const Value &value) { return GCRoot(*this, value); }
   ObjectRef createHostObject();
   ArrayRef createHostArray();
   StringRef createRuntimeString(std::string value);
   size_t getRuntimeStringLength(StringRef string_ref);
   uint32_t getStringId(const Value &str);
-  void setHostObjectField(ObjectRef object_ref, const std::string &key,
-                          Value value);
+  void setHostObjectField(ObjectRef object_ref, const std::string &key, Value value);
   // Runtime-ABI seam (JitRuntimeBridges array_set): the interpreter's
   // ARRAY_SET falls through to set/object semantics when the container is
   // not an array (VMCollections.cpp) - including the object GC write
   // barrier and frozen-object checks - and JIT-compiled code must see the
   // exact same behavior. Returns the container word the interpreter would
   // push (the container on success; val on bail to match the old contract).
-  uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits,
-                             uint64_t val_bits);
+  uint64_t indexAssignPublic(uint64_t container_bits, uint64_t key_bits, uint64_t val_bits);
 
   // Runtime-ABI seam (JitRuntimeBridges object_get): the interpreter's
   // OBJECT_GET handles non-object receivers too - array len/index access,
@@ -1873,112 +2062,99 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   // chain; without this, tokens.len on an ARRAY read as null and the
   // self-hosted parser's at()/advance() always saw EOF, hanging parses in
   // an infinite loop the moment `at` tiered. True when *out is set.
-  bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits,
-                       Value* out, bool* cacheable = nullptr);
+  bool memberGetPublic(uint64_t receiver_bits, uint64_t key_bits, Value *out,
+                       bool *cacheable = nullptr);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
-    size_t getHostArrayLength(ArrayRef array_ref);
-    Value execLengthOp(Value v);
- Value execLengthOpPublic(Value v) { return execLengthOp(v); }
+  size_t getHostArrayLength(ArrayRef array_ref);
+  Value execLengthOp(Value v);
+  Value execLengthOpPublic(Value v) { return execLengthOp(v); }
+  void execNegatePublic() { execNegate(); }
   Value getHostArrayValue(ArrayRef array_ref, size_t index);
   void setHostArrayValue(ArrayRef array_ref, size_t index, Value value);
-    Value popHostArrayValue(ArrayRef array_ref);
-    void insertHostArrayValue(ArrayRef array_ref, size_t index,
-                              Value value);
-    Value removeHostArrayValue(ArrayRef array_ref, size_t index);
+  Value popHostArrayValue(ArrayRef array_ref);
+  void insertHostArrayValue(ArrayRef array_ref, size_t index, Value value);
+  Value removeHostArrayValue(ArrayRef array_ref, size_t index);
 
-    // Range helpers
+  // Range helpers
   bool isInRange(RangeRef range_ref, int64_t value);
 
   // Enum helpers
-  uint32_t registerEnumType(const std::string &name,
-                            const std::vector<std::string> &variants);
+  uint32_t registerEnumType(const std::string &name, const std::vector<std::string> &variants);
   EnumRef createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
   uint32_t getEnumTag(EnumRef enum_ref);
   Value getEnumPayload(EnumRef enum_ref, size_t index);
-  void setEnumPayload(EnumRef enum_ref, size_t index,
-                      const Value &value);
+  void setEnumPayload(EnumRef enum_ref, size_t index, const Value &value);
   uint32_t getEnumPayloadCount(EnumRef enum_ref);
   std::string getEnumTypeName(uint32_t typeId) const;
   std::string getEnumVariantName(uint32_t typeId, uint32_t tag) const;
   uint32_t getEnumTypeVariantCount(uint32_t typeId) const;
 
-    // Membership helpers
-    bool arrayContains(ArrayRef array_ref, const Value &value);
-    bool objectHasKey(ObjectRef object_ref, const std::string &key);
+  // Membership helpers
+  bool arrayContains(ArrayRef array_ref, const Value &value);
+  bool objectHasKey(ObjectRef object_ref, const std::string &key);
 
-    // Iterator helpers
+  // Iterator helpers
   IteratorRef createIterator(const Value &iterable);
   Value iteratorNext(IteratorRef iterRef);
 
   // Object helpers
   std::vector<std::string> getHostObjectKeys(ObjectRef object_ref);
-  std::vector<std::pair<std::string, Value>>
-  getHostObjectEntries(ObjectRef object_ref);
+  std::vector<std::pair<std::string, Value>> getHostObjectEntries(ObjectRef object_ref);
   bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
-  Value getHostObjectField(ObjectRef object_ref,
-                                   const std::string &key);
-    bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
-    void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
-    void setHostObjectSealed(ObjectRef object_ref, bool sealed);
+  Value getHostObjectField(ObjectRef object_ref, const std::string &key);
+  bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
+  void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
+  void setHostObjectSealed(ObjectRef object_ref, bool sealed);
 
-    // Function calling
-  Value callHostFunction(const Value &fn,
-                                  const std::vector<Value> &args);
+  // Function calling
+  Value callHostFunction(const Value &fn, const std::vector<Value> &args);
 
-// General function call (handles both VM closures and host functions)
-Value callFunction(const Value &fn,
- const std::vector<Value> &args);
+  // General function call (handles both VM closures and host functions)
+  Value callFunction(const Value &fn, const std::vector<Value> &args);
 
-// Call a method on a receiver (canonical method call)
-Value callMethod(Value receiver, uint32_t method_name_id, const std::vector<Value> &args);
+  // Call a method on a receiver (canonical method call)
+  Value callMethod(Value receiver, uint32_t method_name_id, const std::vector<Value> &args);
 
-// Call super method
-Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &args);
+  // Call super method
+  Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &args);
 
-    void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
-    void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }
-    Value getIntervalResult(uint32_t id) const {
-        auto it = interval_results_.find(id);
-        return (it != interval_results_.end()) ? it->second : Value::makeNull();
-    }
-    Value getTimeoutResult(uint32_t id) const {
-        auto it = timeout_results_.find(id);
-        return (it != timeout_results_.end()) ? it->second : Value::makeNull();
-    }
+  void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
+  void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }
+  Value getIntervalResult(uint32_t id) const {
+    auto it = interval_results_.find(id);
+    return (it != interval_results_.end()) ? it->second : Value::makeNull();
+  }
+  Value getTimeoutResult(uint32_t id) const {
+    auto it = timeout_results_.find(id);
+    return (it != timeout_results_.end()) ? it->second : Value::makeNull();
+  }
 
   // Prototype system - methods on types
-  void registerPrototypeMethod(const std::string &typeName,
-                                const std::string &methodName,
-                                uint32_t hostFuncIndex);
-  void registerPrototypeMethodByName(const std::string &typeName,
-                                      const std::string &methodName,
-                                      const std::string &funcName);
-  std::optional<uint32_t>
-  getPrototypeMethod(const Value &value, const std::string &methodName);
+  void registerPrototypeMethod(const std::string &typeName, const std::string &methodName,
+                               uint32_t hostFuncIndex);
+  void registerPrototypeMethodByName(const std::string &typeName, const std::string &methodName,
+                                     const std::string &funcName);
+  std::optional<uint32_t> getPrototypeMethod(const Value &value, const std::string &methodName);
   // Method value for a receiver, mirroring the interpreter's prototype +
   // module monkey-patch steps: checks both the lowercase and capitalized
   // module globals like VMControlFlow's CALL_METHOD step 1.5, and returns
   // patched closures/functions as Values (getPrototypeMethod collapses
   // those to a host-index 0 sentinel). Used by the ORC call_method bridge.
-  Value getPrototypeMethodValue(const Value &value,
-                                const std::string &methodName);
+  Value getPrototypeMethodValue(const Value &value, const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
 
   // Resolve a function object id to its BytecodeFunction across the chunk
   // set (current, main, persistent, module) - mirrors the interpreter's
   // CALL_METHOD first-param "self" detection lookup.
-  const BytecodeFunction *
-  resolveFunctionFromId(uint32_t function_index) const;
+  const BytecodeFunction *resolveFunctionFromId(uint32_t function_index) const;
 
   // Protocol system
   void registerProtocol(const std::string &protocolName,
                         const std::unordered_set<std::string> &methods);
-  void registerProtocolImpl(const std::string &protocolName,
-                            const std::string &typeName);
-  bool typeImplementsProtocol(const std::string &typeName,
-                              const std::string &protocolName) const;
+  void registerProtocolImpl(const std::string &protocolName, const std::string &typeName);
+  bool typeImplementsProtocol(const std::string &typeName, const std::string &protocolName) const;
   std::unordered_set<std::string> getTypeProtocols(const std::string &typeName) const;
   std::unordered_set<std::string> getProtocolMethods(const std::string &protocolName) const;
   std::vector<std::string> getProtocolNames() const;
@@ -1988,13 +2164,10 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> &getHostFunctions() {
     return host_functions;
   }
-  const utils::RobinHoodHashMap<std::string, BytecodeHostFunction> &
-  getHostFunctions() const {
+  const utils::RobinHoodHashMap<std::string, BytecodeHostFunction> &getHostFunctions() const {
     return host_functions;
   }
-  const std::vector<std::string>& getHostFunctionNames() const {
-    return host_function_names_;
-  }
+  const std::vector<std::string> &getHostFunctionNames() const { return host_function_names_; }
   std::optional<std::string> getHostFunctionName(uint32_t index) const;
 
   // --- Host function introspection (hvdb) ---
@@ -2002,12 +2175,9 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // Derived entirely from the live registry; nothing here is a hand-kept list.
   // Rows come out in host-function-index order.
   std::vector<HostFunctionInfo> getHostFunctionInfo() const;
-  std::optional<HostFunctionInfo> getHostFunctionInfoByName(
-      const std::string &name) const;
+  std::optional<HostFunctionInfo> getHostFunctionInfoByName(const std::string &name) const;
 
-  void setHostModuleScope(std::string scope) {
-    host_module_scope_ = std::move(scope);
-  }
+  void setHostModuleScope(std::string scope) { host_module_scope_ = std::move(scope); }
   const std::string &hostModuleScope() const { return host_module_scope_; }
 
   // Overrides the scope-derived module label. Used where the owner is known
@@ -2023,8 +2193,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   // return cannot leave registrations attributed to the wrong module.
   class HostModuleScope {
   public:
-    HostModuleScope(VM &vm, std::string scope)
-        : vm_(vm), previous_(vm.hostModuleScope()) {
+    HostModuleScope(VM &vm, std::string scope) : vm_(vm), previous_(vm.hostModuleScope()) {
       vm_.setHostModuleScope(std::move(scope));
     }
     ~HostModuleScope() { vm_.setHostModuleScope(previous_); }
@@ -2073,8 +2242,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   std::mutex pending_host_calls_mutex_;
   uint32_t next_pending_token_ = 1;
 
-  template<typename JobFn, typename LiftFn>
-  Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
+  template <typename JobFn, typename LiftFn> Value runBlockingHostCall(JobFn &&job, LiftFn &&lift) {
     auto *sched = getScheduler();
     // The async-park path requires ONE more precondition besides a live
     // scheduler+queue: the VM must be dispatching inside a goroutine fiber
@@ -2086,15 +2254,14 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
     // this check the Pending token escapes into parkIfPendingCallResult with
     // no fiber to park on, the result is neutralized to null, and the
     // conditional evaluates to false — conditional hotkeys silently die.
-    bool can_park = sched && sched->current() && current_executing_fiber_ &&
-                    event_queue_ && !event_queue_->isShutdown();
+    bool can_park = sched && sched->current() && current_executing_fiber_ && event_queue_ &&
+                    !event_queue_->isShutdown();
     if (can_park) {
       uint32_t token;
       {
         std::lock_guard<std::mutex> lock(pending_host_calls_mutex_);
         token = next_pending_token_++;
-        pending_host_calls_[token] = PendingHostCall{
-            std::forward<LiftFn>(lift)};
+        pending_host_calls_[token] = PendingHostCall{std::forward<LiftFn>(lift)};
       }
       auto *eq = event_queue_;
       eq->postToWorker([eq, token, job = std::forward<JobFn>(job)]() {
@@ -2110,8 +2277,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
         // Deliver. EventQueue drops events post-shutdown; the cell is
         // a shared_ptr so the memory is freed wherever the last
         // reference dies (here or in the handler).
-        eq->push(Event(EventType::ASYNC_HOST_COMPLETE, token,
-                       new AsyncCxxResult(std::move(cell))));
+        eq->push(Event(EventType::ASYNC_HOST_COMPLETE, token, new AsyncCxxResult(std::move(cell))));
       });
       return Value::makePending(token);
     }
@@ -2139,7 +2305,8 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
       return false;
     }
     Value top = stack.back();
-    if (!top.isPending()) return false;
+    if (!top.isPending())
+      return false;
     uint32_t token = top.asPendingToken();
     Scheduler::Goroutine *g = scheduler_->current();
     if (g && g->fiber == current_executing_fiber_) {
@@ -2147,14 +2314,14 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
         std::lock_guard<std::mutex> wm(g->wait_handle_mutex_);
         g->wait_handle.set_external(token);
       }
-      last_suspension_reason_ =
-          static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
+      last_suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
       last_suspension_context_ = nullptr;
       suspension_requested_ = false;
       return true;
     }
     ::havel::error("[VM] Pending value escaped without a matching current "
-                   "goroutine (token {})", token);
+                   "goroutine (token {})",
+                   token);
     stack.back() = Value::makeNull();
     return false;
   }
@@ -2164,8 +2331,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
 
   // Callback system - VM owns closures, systems use opaque IDs
   CallbackId registerCallback(const Value &closure);
-  Value invokeCallback(CallbackId id,
-                               const std::vector<Value> &args = {});
+  Value invokeCallback(CallbackId id, const std::vector<Value> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
 
@@ -2177,9 +2343,7 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
 
   // ========== IMAGE HELPERS ==========
   // Set timer check callback - called periodically during script execution
-  void setTimerCheckFunction(TimerCheckFunction func) {
-    timer_check_func_ = std::move(func);
-  }
+  void setTimerCheckFunction(TimerCheckFunction func) { timer_check_func_ = std::move(func); }
 
   // Value utility functions
   bool isNull(const Value &value) const;
@@ -2194,63 +2358,61 @@ Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &ar
   void suspendOrSleepMs(int64_t duration_ms);
 
   // Image helpers - create GC-managed images
-  VMImage createImage(int width, int height, int stride, PixelFormat format,
-                      const uint8_t *data);
-  VMImage createImageFromRGBA(int width, int height,
-                              const std::vector<uint8_t> &rgbaData);
+  VMImage createImage(int width, int height, int stride, PixelFormat format, const uint8_t *data);
+  VMImage createImageFromRGBA(int width, int height, const std::vector<uint8_t> &rgbaData);
 
   // ============================================================================
   // Execution Context System - Isolated execution with shared globals
   // ============================================================================
 
-// Thread-safe global variable access
+  // Thread-safe global variable access
   void setGlobalThreadSafe(const std::string &name, Value value);
-  std::optional<Value>
-  getGlobalThreadSafe(const std::string &name) const;
+  std::optional<Value> getGlobalThreadSafe(const std::string &name) const;
 
   // Get all globals (for module export collection)
   const std::unordered_map<std::string, Value> &getAllGlobals() const { return globals; }
 
-    // Get _G as object (for module exports)
-    Value getGlobalObject() {
-        return globals["_G"];
-    }
+  // Get _G as object (for module exports)
+  Value getGlobalObject() { return globals["_G"]; }
 
-    void setGlobalObject(const std::string& name, const Value& value) {
-        globals[name] = value;
-    }
+  void setGlobalObject(const std::string &name, const Value &value) { globals[name] = value; }
 
-    Value runInContext(const std::string& source, Value context);
+  Value runInContext(const std::string &source, Value context);
 
-    Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
-Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
-  Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
-                                const std::string& canonicalKey, const std::string& fieldPath,
-                                int depth = 0,
-                                std::shared_ptr<std::unordered_set<uint32_t>> visited = nullptr);
+  Value deepMaterializeStrings(Value value, const BytecodeChunk *chunk);
+  Value deepMaterializeStrings(Value value, const BytecodeChunk *chunk,
+                               std::unordered_set<uint32_t> &visited);
+  Value
+  deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
+                          std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                          const std::string &canonicalKey, const std::string &fieldPath,
+                          int depth = 0,
+                          std::shared_ptr<std::unordered_set<uint32_t>> visited = nullptr);
 
-Value loadModule(const std::string& path);
-    Value loadScript(const std::string& path);
-    // Globals serialization for .hvc cache
-    // An imported closure (defined in another module) is serialized as a
-    // ClosureImportRef { modulePath, functionName } so warm loads can re-bind
-    // it. Local closures are skipped: they are recreated from the module's own
-    // chunk on restore.
-    struct ClosureImportRef {
-      std::string modulePath;
-      std::string functionName;
-      std::string globalName; // the name in the importing module's globals
-    };
-    std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value>& globals,
-                                          const std::string& thisModuleKey = "");
-    std::unordered_map<std::string, Value> deserializeGlobals(std::span<const uint8_t> data,
-                                                              std::vector<ClosureImportRef>* outRefs = nullptr);
-    void writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData);
-    std::optional<std::vector<uint8_t>> readGlobalsFromHvc(const std::string& hvcPath);
-    bool deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals,
-                                   std::vector<ClosureImportRef>* outRefs = nullptr);
-    void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
+  Value loadModule(const std::string &path);
+  Value loadScript(const std::string &path);
+  // Globals serialization for .hvc cache
+  // An imported closure (defined in another module) is serialized as a
+  // ClosureImportRef { modulePath, functionName } so warm loads can re-bind
+  // it. Local closures are skipped: they are recreated from the module's own
+  // chunk on restore.
+  struct ClosureImportRef {
+    std::string modulePath;
+    std::string functionName;
+    std::string globalName; // the name in the importing module's globals
+  };
+  std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value> &globals,
+                                        const std::string &thisModuleKey = "");
+  std::unordered_map<std::string, Value>
+  deserializeGlobals(std::span<const uint8_t> data,
+                     std::vector<ClosureImportRef> *outRefs = nullptr);
+  void writeGlobalsToHvc(const std::string &hvcPath, const std::vector<uint8_t> &globalsData);
+  std::optional<std::vector<uint8_t>> readGlobalsFromHvc(const std::string &hvcPath);
+  bool deserializeGlobalsFromHvc(const std::string &hvcPath,
+                                 std::unordered_map<std::string, Value> &outGlobals,
+                                 std::vector<ClosureImportRef> *outRefs = nullptr);
+  void registerLazyModule(const std::string &name, std::function<void(struct VMApi &)> initFn,
+                          const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   // Returns the real module name if `name` is a registered alias of a lazy
@@ -2260,78 +2422,81 @@ Value loadModule(const std::string& path);
   // buildNamespaceGlobals() from dotted host functions (every field is a
   // host fn). `use window` must NOT short-circuit on such a namespace when
   // a same-named .hv module source exists — the module would never load.
+  bool isCallableNamespaceObject(Value value) const;
   bool isHostFnNamespaceObject(Value value) const;
   void activateLazyModule(const std::string &name);
-bool isLazyModuleLoaded(const std::string &name) const;
-    void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
-    void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
-    const std::string& currentScriptDir() const { return current_script_dir_; }
+  bool isLazyModuleLoaded(const std::string &name) const;
+  void addModuleSearchPath(const std::string &path) { moduleLoader_.addSearchPath(path); }
+  void setCurrentScriptDir(const std::string &dir) { current_script_dir_ = dir; }
+  const std::string &currentScriptDir() const { return current_script_dir_; }
 
-    ModuleLoader& moduleLoader() { return moduleLoader_; }
-    void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }
-    havel::Loader *pluginLoader() const { return pluginLoader_; }
+  ModuleLoader &moduleLoader() { return moduleLoader_; }
+  void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }
+  havel::Loader *pluginLoader() const { return pluginLoader_; }
 
-    // Thread-safe module loading: check if module is currently loading,
-    // wait if another goroutine is loading it, or register current load.
-    // Returns true if the module was found in cache after waiting.
-    bool enterModuleLoading(const std::string& canonicalKey);
-    // Erase from modules_loading_ and notify waiters.
-    void moduleLoadDone(const std::string& canonicalKey);
+  // Thread-safe module loading: check if module is currently loading,
+  // wait if another goroutine is loading it, or register current load.
+  // Returns true if the module was found in cache after waiting.
+  bool enterModuleLoading(const std::string &canonicalKey);
+  // Erase from modules_loading_ and notify waiters.
+  void moduleLoadDone(const std::string &canonicalKey);
 
- // Get the current bytecode chunk (for execution contexts)
+  // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
-  void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
- void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
-    void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
-        main_chunk_ = std::move(chunk);
-        current_chunk = main_chunk_.get();
+  void setCurrentChunkPublic(const BytecodeChunk *chunk) { current_chunk = chunk; }
+  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
+  void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+    main_chunk_ = std::move(chunk);
+    current_chunk = main_chunk_.get();
+  }
+  void setMainChunkShared(const std::shared_ptr<BytecodeChunk> &chunk) {
+    main_chunk_ = chunk;
+    current_chunk = main_chunk_.get();
+  }
+  const std::shared_ptr<BytecodeChunk> &getMainChunk() const { return main_chunk_; }
+  std::unordered_map<std::string, Value> &getGlobals() { return globals; }
+  const std::unordered_map<std::string, Value> &getGlobals() const { return globals; }
+  auto &hostFunctionGlobals() { return host_function_globals_; }
+  const auto &hostFunctionGlobals() const { return host_function_globals_; }
+  bool hasGlobalPublic(const std::string &name) const {
+    return globals.find(name) != globals.end();
+  }
+  bool isHostFunctionGlobal(const std::string &name) const {
+    return host_function_globals_.find(name) != host_function_globals_.end();
+  }
+  void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
+    repl_chunks_.push_back(chunk);
+    if (repl_chunks_.size() > 64) {
+      repl_chunks_.erase(repl_chunks_.begin());
     }
-    void setMainChunkShared(const std::shared_ptr<BytecodeChunk>& chunk) {
-        main_chunk_ = chunk;
-        current_chunk = main_chunk_.get();
+    current_chunk = chunk.get();
+  }
+  void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
+    persistent_chunks_.push_back(std::move(chunk));
+    if (persistent_chunks_.size() > 64) {
+      persistent_chunks_.erase(persistent_chunks_.begin());
     }
- const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
-  std::unordered_map<std::string, Value>& getGlobals() { return globals; }
-  const std::unordered_map<std::string, Value>& getGlobals() const { return globals; }
-  auto& hostFunctionGlobals() { return host_function_globals_; }
-  const auto& hostFunctionGlobals() const { return host_function_globals_; }
-  bool hasGlobalPublic(const std::string &name) const { return globals.find(name) != globals.end(); }
-  bool isHostFunctionGlobal(const std::string &name) const { return host_function_globals_.find(name) != host_function_globals_.end(); }
-    void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
-        repl_chunks_.push_back(chunk);
-        if (repl_chunks_.size() > 64) {
-            repl_chunks_.erase(repl_chunks_.begin());
-        }
-        current_chunk = chunk.get();
-    }
- void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
-        persistent_chunks_.push_back(std::move(chunk));
-        if (persistent_chunks_.size() > 64) {
-            persistent_chunks_.erase(persistent_chunks_.begin());
-        }
-}
+  }
 
-    // Resolve the shared_ptr that owns `raw`, so callers can pin a chunk alive
-    // while holding only a raw pointer (e.g. RuntimeClosure::chunk).
-    // Returns nullptr if no VM-owned shared_ptr currently references `raw`.
-    // Important: a null return strongly implies `raw` is already dangling.
-    std::shared_ptr<BytecodeChunk> findOwningChunk(const BytecodeChunk* raw) const;
+  // Resolve the shared_ptr that owns `raw`, so callers can pin a chunk alive
+  // while holding only a raw pointer (e.g. RuntimeClosure::chunk).
+  // Returns nullptr if no VM-owned shared_ptr currently references `raw`.
+  // Important: a null return strongly implies `raw` is already dangling.
+  std::shared_ptr<BytecodeChunk> findOwningChunk(const BytecodeChunk *raw) const;
 
-    // Normalize a callable Value to a closure form pinned to its owning chunk.
-    //
-    // Accepts Value::FunctionObjId or Value::ClosureId. For FunctionObjId,
-    // searches current_chunk → main_chunk_ → persistent_chunks_ → module_chunks_
-    // for the function, allocates a RuntimeClosure with chunk_ref pinned, and
-    // returns Value::makeClosureId(...). For ClosureId, returns the input
-    // unchanged. Returns Null Value on failure (no chunk found / not callable).
-    //
-    // Use this whenever a spawner wants to enqueue a callable that may outlive
-    // the VM's current_chunk (goroutines, hotkeys, timers, persistent callbacks).
-    Value pinCallableAsClosure(Value callable);
+  // Normalize a callable Value to a closure form pinned to its owning chunk.
+  //
+  // Accepts Value::FunctionObjId or Value::ClosureId. For FunctionObjId,
+  // searches current_chunk → main_chunk_ → persistent_chunks_ → module_chunks_
+  // for the function, allocates a RuntimeClosure with chunk_ref pinned, and
+  // returns Value::makeClosureId(...). For ClosureId, returns the input
+  // unchanged. Returns Null Value on failure (no chunk found / not callable).
+  //
+  // Use this whenever a spawner wants to enqueue a callable that may outlive
+  // the VM's current_chunk (goroutines, hotkeys, timers, persistent callbacks).
+  Value pinCallableAsClosure(Value callable);
 
-        void clearPersistentChunks() {
-            persistent_chunks_.clear();
-        }
+  void clearPersistentChunks() { persistent_chunks_.clear(); }
 
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;
@@ -2349,307 +2514,302 @@ bool isLazyModuleLoaded(const std::string &name) const;
   const HostContext *hostContext() const { return context_; }
 
 private:
-    std::atomic<uint32_t> active_hotkey_executions_{0};
-    mutable std::recursive_mutex execution_mutex_; // Main VM execution lock
-    bool jit_tail_call_occurred_ = false;
+  std::atomic<uint32_t> active_hotkey_executions_{0};
+  mutable std::recursive_mutex execution_mutex_; // Main VM execution lock
+  bool jit_tail_call_occurred_ = false;
 
-    uint32_t app_args_array_id_ = 0;
-    std::vector<std::string> program_args_;
-    std::function<void()> restart_callback_;
-    HotFunctionCallback hot_func_cb_;
-    std::unique_ptr<CompilerBackend> backend_;
-    bool tiering_enabled_ = false;
-    uint64_t tier1_threshold_ = 1000;
-    uint64_t tier2_threshold_ = 10000;
-    // Function-size bounds for tier decisions (TODO #25): huge functions
-    // are not worth tier-1 codegen cost until proven hotter; anything above
-    // the hard cap never tiers (compile cost dwarfs interpreter time on a
-    // single pass).
-    uint32_t tier1_max_instructions_ = 20000;
-    uint32_t tier2_max_instructions_ = 8000;
-    std::unordered_set<std::string> tier1_compiled_;
-    std::unordered_set<std::string> tier2_compiled_;
-    std::unordered_set<std::string> tier2_queued_or_compiling_;
-    std::mutex tier2_queue_mutex_;
-    std::queue<BytecodeFunction> tier2_queue_;
-    std::thread tier2_worker_;
-    std::atomic<bool> tier2_worker_running_{false};
-    std::atomic<bool> vm_in_execute_{false};
-    std::atomic<uint64_t> tier1_transition_count_{0};
-    std::atomic<uint64_t> tier2_enqueue_count_{0};
-    std::atomic<uint64_t> tier2_compile_count_{0};
-    std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
-    std::atomic<uint64_t> trace_hot_count_{0};
-    std::unordered_set<uint64_t> hot_trace_sites_;
-    std::unordered_set<uint64_t> tier2_backedge_sites_;
-    std::mutex hot_trace_mutex_;
-    HotTraceCallback hot_trace_cb_;
-    bool tier2_flush_on_shutdown_ = false;
-    bool headlessMode_ = false;
-    uint32_t jit_active_closure_id_ = 0;
-    std::function<void(VM&)> post_reset_setup_;
-    int gc_suspend_counter_ = 0;
-    void* serviceRegistry_ = nullptr;
-    bool inline_yield_active_ = false;
+  uint32_t app_args_array_id_ = 0;
+  std::vector<std::string> program_args_;
+  std::function<void()> restart_callback_;
+  HotFunctionCallback hot_func_cb_;
+  std::unique_ptr<CompilerBackend> backend_;
+  bool tiering_enabled_ = false;
+  uint64_t tier1_threshold_ = 1000;
+  uint64_t tier2_threshold_ = 10000;
+  // Function-size bounds for tier decisions (TODO #25): huge functions
+  // are not worth tier-1 codegen cost until proven hotter; anything above
+  // the hard cap never tiers (compile cost dwarfs interpreter time on a
+  // single pass).
+  uint32_t tier1_max_instructions_ = 20000;
+  uint32_t tier2_max_instructions_ = 8000;
+  std::unordered_set<std::string> tier1_compiled_;
+  std::unordered_set<std::string> tier2_compiled_;
+  std::unordered_set<std::string> tier2_queued_or_compiling_;
+  std::mutex tier2_queue_mutex_;
+  std::queue<BytecodeFunction> tier2_queue_;
+  std::thread tier2_worker_;
+  std::atomic<bool> tier2_worker_running_{false};
+  std::atomic<bool> vm_in_execute_{false};
+  std::atomic<uint64_t> tier1_transition_count_{0};
+  std::atomic<uint64_t> tier2_enqueue_count_{0};
+  std::atomic<uint64_t> tier2_compile_count_{0};
+  std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
+  std::atomic<uint64_t> trace_hot_count_{0};
+  std::unordered_set<uint64_t> hot_trace_sites_;
+  std::unordered_set<uint64_t> tier2_backedge_sites_;
+  std::mutex hot_trace_mutex_;
+  HotTraceCallback hot_trace_cb_;
+  bool tier2_flush_on_shutdown_ = false;
+  bool headlessMode_ = false;
+  uint32_t jit_active_closure_id_ = 0;
+  std::function<void(VM &)> post_reset_setup_;
+  int gc_suspend_counter_ = 0;
+  void *serviceRegistry_ = nullptr;
+  bool inline_yield_active_ = false;
 
-    // ============================================================================
-    // Inline Cache for hot operations (ARRAY_GET, ARRAY_SET, etc.)
-    // ============================================================================
-    
-    // Inline cache entry for array operations
-    struct ArrayInlineCache {
-        // Cache key: (array_id << 32) | instruction_ip
-        uint64_t key = 0;
-        
-        // Cached type information
-        bool is_valid = false;
-        bool is_string = false;
-        bool is_array = false;
-        bool is_object = false;
-        
-        // For arrays: direct pointer to array data
-        GCHeap::ArrayEntry* array_ptr = nullptr;
-        bool array_frozen = false;
-        
-        // For strings: direct pointer to string data
-        const std::string* string_ptr = nullptr;
-        
-        // For objects: cached property offset (if object has hidden class)
-        uint32_t property_offset = 0;
-        
-        // Cache statistics
-        uint32_t hits = 0;
-        uint32_t misses = 0;
-        
-        void invalidate() {
-            is_valid = false;
-            is_string = false;
-            is_array = false;
-            is_object = false;
-            array_ptr = nullptr;
-            array_frozen = false;
-            string_ptr = nullptr;
-            property_offset = 0;
-        }
-    };
-    
-    // Inline cache for array operations (ARRAY_GET, ARRAY_SET, ARRAY_LEN)
-    // Keyed by (array_id << 32) | instruction_ip
-    std::unordered_map<uint64_t, ArrayInlineCache> array_inline_cache_;
-    
-    // Inline cache for property access (OBJECT_GET, OBJECT_SET)
-    // Keyed by (object_id << 32) | property_name_id
-    struct PropertyInlineCache {
-        uint64_t key = 0;
-        bool is_valid = false;
-        uint32_t property_offset = 0;
-        uint32_t object_id = 0;
-        bool is_object = false;
-        uint32_t hits = 0;
-        uint32_t misses = 0;
-        
-        void invalidate() {
-            is_valid = false;
-            property_offset = 0;
-            object_id = 0;
-            is_object = false;
-        }
-    };
-    
-    std::unordered_map<uint64_t, PropertyInlineCache> property_inline_cache_;
-    
-    // Inline cache for iterator operations (ITER_NEXT)
-    struct IteratorInlineCache {
-        uint64_t key = 0;
-        bool is_valid = false;
-        uint32_t iterator_id = 0;
-        uint32_t hits = 0;
-        uint32_t misses = 0;
-        
-        void invalidate() {
-            is_valid = false;
-            iterator_id = 0;
-        }
-    };
-    
-    std::unordered_map<uint64_t, IteratorInlineCache> iterator_inline_cache_;
-    
-    // Inline cache for string operations (STRING_GET_FAST)
-    // Keyed by (string_id << 32) | instruction_ip
-    struct StringInlineCache {
-        uint64_t key = 0;
-        bool is_valid = false;
-        const std::string* string_ptr = nullptr;
-        int64_t num_codepoints = 0;
-        uint32_t hits = 0;
-        uint32_t misses = 0;
-        
-        void invalidate() {
-            is_valid = false;
-            string_ptr = nullptr;
-            num_codepoints = 0;
-        }
-    };
-    
-    // Inline cache for string operations (STRING_GET_FAST)
-    // Keyed by (string_id << 32) | instruction_ip
-    std::unordered_map<uint64_t, StringInlineCache> string_inline_cache_;
-    
-    // Global inline cache configuration
-    static constexpr size_t MAX_INLINE_CACHE_SIZE = 4096;
-    static constexpr uint32_t INLINE_CACHE_THRESHOLD = 10; // Start caching after N executions
-    
-    // Helper functions for inline cache
-    ArrayInlineCache& getArrayInlineCache(uint32_t array_id, uint32_t ip);
-    PropertyInlineCache& getPropertyInlineCache(uint32_t object_id, uint32_t name_id);
-    IteratorInlineCache& getIteratorInlineCache(uint32_t iterator_id);
-    StringInlineCache& getStringInlineCache(uint32_t string_id, uint32_t ip);
-    
-    void invalidateArrayInlineCache(uint32_t array_id);
-    void invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id);
-    void invalidateIteratorInlineCache(uint32_t iterator_id);
-    void invalidateStringInlineCache(uint32_t string_id);
-    
-    // Clean up old cache entries if cache grows too large
-    void trimInlineCaches();
-    void printInlineCacheStats() const;
+  // ============================================================================
+  // Inline Cache for hot operations (ARRAY_GET, ARRAY_SET, etc.)
+  // ============================================================================
 
-  public:
-bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
-    void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
-     void* getServiceRegistry() const { return serviceRegistry_; }
+  // Inline cache entry for array operations
+  struct ArrayInlineCache {
+    // Cache key: (array_id << 32) | instruction_ip
+    uint64_t key = 0;
 
-      // RAII guard for vm_in_execute_. Ensures the flag is cleared on
-      // exception escape, preventing executeFrame() from being permanently
-      // locked out (ExecutionEngine.cpp:108 returns early while true).
-      struct ExecuteGuard {
-        std::atomic<bool>& flag;
-        explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
-          flag.store(true, std::memory_order_release);
-        }
-        ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
-        ExecuteGuard(const ExecuteGuard&) = delete;
-        ExecuteGuard& operator=(const ExecuteGuard&) = delete;
-      };
+    // Cached type information
+    bool is_valid = false;
+    bool is_string = false;
+    bool is_array = false;
+    bool is_object = false;
 
-      // =====================================================================
-      // VM-thread ownership guard (debug builds).
-      //
-      // The invariant: Havel state (stack, frames, heap, globals) is
-      // touched by at most one thread at a time. Different threads may
-      // LEGITIMATELY take turns driving the VM (main thread runs
-      // vm->execute(); the EventListener event-loop thread runs
-      // executeFrame(); any thread may run callFunctionSync) — but never
-      // concurrently, and foreign threads must never mutate VM state
-      // while the owner thread is inside dispatch.
-      //
-      // runDispatchLoop() latches dispatch_thread_ to whichever thread
-      // enters it and clears the latch on exit. While latched, the
-      // HAVEL_ASSERT_VM_THREAD guard fires if any OTHER thread reaches a
-      // VM-state choke point (invokeCallback, spawnGoroutine,
-      // setGlobal, heap allocation). This makes cross-thread violations
-      // (e.g. a detached timer thread calling invokeCallback while the
-      // event thread is dispatching) crash loudly in debug instead of
-      // corrupting state.
-      // =====================================================================
-#ifndef NDEBUG
-      std::thread::id dispatch_thread_{};
-      std::atomic<bool> dispatch_latched_{false};
+    // For arrays: direct pointer to array data
+    GCHeap::ArrayEntry *array_ptr = nullptr;
+    bool array_frozen = false;
 
-      void latchDispatchThread() {
-        // Nested re-entry (callFunctionSync inside dispatch) keeps latch.
-        if (dispatch_latched_.load(std::memory_order_acquire)) {
-          if (dispatch_thread_ != std::this_thread::get_id()) {
-            fprintf(stderr,
-                    "[VM-THREAD-VIOLATION] thread %zu entered dispatch while "
-                    "thread %zu holds it\n",
-                    hash_thread_id(std::this_thread::get_id()),
-                    hash_thread_id(dispatch_thread_));
-            abort();
-          }
-          return;
-        }
-        dispatch_thread_ = std::this_thread::get_id();
-        dispatch_latched_.store(true, std::memory_order_release);
-      }
+    // For strings: direct pointer to string data
+    const std::string *string_ptr = nullptr;
 
-      void unlatchDispatchThread() {
-        if (dispatch_latched_.load(std::memory_order_acquire) &&
-            dispatch_thread_ == std::this_thread::get_id()) {
-          dispatch_latched_.store(false, std::memory_order_release);
-          dispatch_thread_ = std::thread::id{};
-        }
-      }
+    // For objects: cached property offset (if object has hidden class)
+    uint32_t property_offset = 0;
 
-      static size_t hash_thread_id(std::thread::id id) {
-        return std::hash<std::thread::id>{}(id);
-      }
+    // Cache statistics
+    uint32_t hits = 0;
+    uint32_t misses = 0;
 
-      // Fire when a foreign thread touches VM state mid-dispatch: a
-      // detached timer thread calling invokeCallback while the event
-      // thread is dispatching crashes loudly here instead of corrupting
-      // state. No-op in release builds.
-      void assertVMThread(const char* what) {
-        if (dispatch_latched_.load(std::memory_order_acquire) &&
-            dispatch_thread_ != std::this_thread::get_id()) {
-          fprintf(stderr,
-                  "[VM-THREAD-VIOLATION] %s called from foreign thread %zu "
-                  "while thread %zu owns dispatch\n",
-                  what, hash_thread_id(std::this_thread::get_id()),
-                  hash_thread_id(dispatch_thread_));
-          abort();
-        }
-      }
-#else
-      void latchDispatchThread() {}
-      void unlatchDispatchThread() {}
-      void assertVMThread(const char*) {}
-#endif
+    void invalidate() {
+      is_valid = false;
+      is_string = false;
+      is_array = false;
+      is_object = false;
+      array_ptr = nullptr;
+      array_frozen = false;
+      string_ptr = nullptr;
+      property_offset = 0;
+    }
+  };
 
+  // Inline cache for array operations (ARRAY_GET, ARRAY_SET, ARRAY_LEN)
+  // Keyed by (array_id << 32) | instruction_ip
+  std::unordered_map<uint64_t, ArrayInlineCache> array_inline_cache_;
 
+  // Inline cache for property access (OBJECT_GET, OBJECT_SET)
+  // Keyed by (object_id << 32) | property_name_id
+  struct PropertyInlineCache {
+    uint64_t key = 0;
+    bool is_valid = false;
+    uint32_t property_offset = 0;
+    uint32_t object_id = 0;
+    bool is_object = false;
+    uint32_t hits = 0;
+    uint32_t misses = 0;
 
-    void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
+    void invalidate() {
+      is_valid = false;
+      property_offset = 0;
+      object_id = 0;
+      is_object = false;
+    }
+  };
+
+  std::unordered_map<uint64_t, PropertyInlineCache> property_inline_cache_;
+
+  // Inline cache for iterator operations (ITER_NEXT)
+  struct IteratorInlineCache {
+    uint64_t key = 0;
+    bool is_valid = false;
+    uint32_t iterator_id = 0;
+    uint32_t hits = 0;
+    uint32_t misses = 0;
+
+    void invalidate() {
+      is_valid = false;
+      iterator_id = 0;
+    }
+  };
+
+  std::unordered_map<uint64_t, IteratorInlineCache> iterator_inline_cache_;
+
+  // Inline cache for string operations (STRING_GET_FAST)
+  // Keyed by (string_id << 32) | instruction_ip
+  struct StringInlineCache {
+    uint64_t key = 0;
+    bool is_valid = false;
+    const std::string *string_ptr = nullptr;
+    int64_t num_codepoints = 0;
+    uint32_t hits = 0;
+    uint32_t misses = 0;
+
+    void invalidate() {
+      is_valid = false;
+      string_ptr = nullptr;
+      num_codepoints = 0;
+    }
+  };
+
+  // Inline cache for string operations (STRING_GET_FAST)
+  // Keyed by (string_id << 32) | instruction_ip
+  std::unordered_map<uint64_t, StringInlineCache> string_inline_cache_;
+
+  // Global inline cache configuration
+  static constexpr size_t MAX_INLINE_CACHE_SIZE = 4096;
+  static constexpr uint32_t INLINE_CACHE_THRESHOLD = 10; // Start caching after N executions
+
+  // Helper functions for inline cache
+  ArrayInlineCache &getArrayInlineCache(uint32_t array_id, uint32_t ip);
+  PropertyInlineCache &getPropertyInlineCache(uint32_t object_id, uint32_t name_id);
+  IteratorInlineCache &getIteratorInlineCache(uint32_t iterator_id);
+  StringInlineCache &getStringInlineCache(uint32_t string_id, uint32_t ip);
+
+  void invalidateArrayInlineCache(uint32_t array_id);
+  void invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id);
+  void invalidateIteratorInlineCache(uint32_t iterator_id);
+  void invalidateStringInlineCache(uint32_t string_id);
+
+  // Clean up old cache entries if cache grows too large
+  void trimInlineCaches();
+  void printInlineCacheStats() const;
 
 public:
-    // GC deferral for Runtime-ABI re-entry bridges (havel_vm_call* and
-    // friends): while a JIT-compiled (or AOT) frame holds raw values in
-    // native registers/spill slots above this C++ stack, no collection may
-    // run - those values are not in any interpreter root set, so a
-    // dispatch-checkpoint collection inside the nested call could free
-    // them prematurely. Unlike resumeGC(), release does NOT attempt a
-    // collection (the native frame is still live at that point); the
-    // pending budget is picked up by the next dispatch-loop checkpoint
-    // (no native frames) or the JIT backedge GC checkpoint (which spills
-    // its frame's live values as extra roots).
-    struct GCSuspendDeferGuard {
-        VM* vm_;
-        explicit GCSuspendDeferGuard(VM* v) : vm_(v) {
-            if (vm_) vm_->gc_suspend_counter_++;
-        }
-        ~GCSuspendDeferGuard() {
-            if (vm_ && --vm_->gc_suspend_counter_ < 0) {
-                vm_->gc_suspend_counter_ = 0;
-            }
-        }
-        GCSuspendDeferGuard(const GCSuspendDeferGuard&) = delete;
-        GCSuspendDeferGuard& operator=(const GCSuspendDeferGuard&) = delete;
-    };
-    GCSuspendDeferGuard gcDeferGuardPublic() { return GCSuspendDeferGuard(this); }
+  bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
+  void setServiceRegistry(void *sr) { serviceRegistry_ = sr; }
+  void *getServiceRegistry() const { return serviceRegistry_; }
 
-    void suspendGC() { gc_suspend_counter_++; }
-    void resumeGC() {
-        if (--gc_suspend_counter_ <= 0) {
-            gc_suspend_counter_ = 0;
-            maybeCollectGarbage();
-        }
+  // RAII guard for vm_in_execute_. Ensures the flag is cleared on
+  // exception escape, preventing executeFrame() from being permanently
+  // locked out (ExecutionEngine.cpp:108 returns early while true).
+  struct ExecuteGuard {
+    std::atomic<bool> &flag;
+    explicit ExecuteGuard(std::atomic<bool> &f) : flag(f) {
+      flag.store(true, std::memory_order_release);
     }
-    void resumeGCWithFullCollect() {
-        if (--gc_suspend_counter_ <= 0) {
-            gc_suspend_counter_ = 0;
-            collectGarbage();
-        }
+    ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
+    ExecuteGuard(const ExecuteGuard &) = delete;
+    ExecuteGuard &operator=(const ExecuteGuard &) = delete;
+  };
+
+  // =====================================================================
+  // VM-thread ownership guard (debug builds).
+  //
+  // The invariant: Havel state (stack, frames, heap, globals) is
+  // touched by at most one thread at a time. Different threads may
+  // LEGITIMATELY take turns driving the VM (main thread runs
+  // vm->execute(); the EventListener event-loop thread runs
+  // executeFrame(); any thread may run callFunctionSync) — but never
+  // concurrently, and foreign threads must never mutate VM state
+  // while the owner thread is inside dispatch.
+  //
+  // runDispatchLoop() latches dispatch_thread_ to whichever thread
+  // enters it and clears the latch on exit. While latched, the
+  // HAVEL_ASSERT_VM_THREAD guard fires if any OTHER thread reaches a
+  // VM-state choke point (invokeCallback, spawnGoroutine,
+  // setGlobal, heap allocation). This makes cross-thread violations
+  // (e.g. a detached timer thread calling invokeCallback while the
+  // event thread is dispatching) crash loudly in debug instead of
+  // corrupting state.
+  // =====================================================================
+#ifndef NDEBUG
+  std::thread::id dispatch_thread_{};
+  std::atomic<bool> dispatch_latched_{false};
+
+  void latchDispatchThread() {
+    // Nested re-entry (callFunctionSync inside dispatch) keeps latch.
+    if (dispatch_latched_.load(std::memory_order_acquire)) {
+      if (dispatch_thread_ != std::this_thread::get_id()) {
+        fprintf(stderr,
+                "[VM-THREAD-VIOLATION] thread %zu entered dispatch while "
+                "thread %zu holds it\n",
+                hash_thread_id(std::this_thread::get_id()), hash_thread_id(dispatch_thread_));
+        abort();
+      }
+      return;
     }
-    bool gcSuspended() const { return gc_suspend_counter_ > 0; }
+    dispatch_thread_ = std::this_thread::get_id();
+    dispatch_latched_.store(true, std::memory_order_release);
+  }
+
+  void unlatchDispatchThread() {
+    if (dispatch_latched_.load(std::memory_order_acquire) &&
+        dispatch_thread_ == std::this_thread::get_id()) {
+      dispatch_latched_.store(false, std::memory_order_release);
+      dispatch_thread_ = std::thread::id{};
+    }
+  }
+
+  static size_t hash_thread_id(std::thread::id id) { return std::hash<std::thread::id>{}(id); }
+
+  // Fire when a foreign thread touches VM state mid-dispatch: a
+  // detached timer thread calling invokeCallback while the event
+  // thread is dispatching crashes loudly here instead of corrupting
+  // state. No-op in release builds.
+  void assertVMThread(const char *what) {
+    if (dispatch_latched_.load(std::memory_order_acquire) &&
+        dispatch_thread_ != std::this_thread::get_id()) {
+      fprintf(stderr,
+              "[VM-THREAD-VIOLATION] %s called from foreign thread %zu "
+              "while thread %zu owns dispatch\n",
+              what, hash_thread_id(std::this_thread::get_id()), hash_thread_id(dispatch_thread_));
+      abort();
+    }
+  }
+#else
+  void latchDispatchThread() {}
+  void unlatchDispatchThread() {}
+  void assertVMThread(const char *) {}
+#endif
+
+  void setPostResetSetup(std::function<void(VM &)> cb) { post_reset_setup_ = std::move(cb); }
+
+public:
+  // GC deferral for Runtime-ABI re-entry bridges (havel_vm_call* and
+  // friends): while a JIT-compiled (or AOT) frame holds raw values in
+  // native registers/spill slots above this C++ stack, no collection may
+  // run - those values are not in any interpreter root set, so a
+  // dispatch-checkpoint collection inside the nested call could free
+  // them prematurely. Unlike resumeGC(), release does NOT attempt a
+  // collection (the native frame is still live at that point); the
+  // pending budget is picked up by the next dispatch-loop checkpoint
+  // (no native frames) or the JIT backedge GC checkpoint (which spills
+  // its frame's live values as extra roots).
+  struct GCSuspendDeferGuard {
+    VM *vm_;
+    explicit GCSuspendDeferGuard(VM *v) : vm_(v) {
+      if (vm_)
+        vm_->gc_suspend_counter_++;
+    }
+    ~GCSuspendDeferGuard() {
+      if (vm_ && --vm_->gc_suspend_counter_ < 0) {
+        vm_->gc_suspend_counter_ = 0;
+      }
+    }
+    GCSuspendDeferGuard(const GCSuspendDeferGuard &) = delete;
+    GCSuspendDeferGuard &operator=(const GCSuspendDeferGuard &) = delete;
+  };
+  GCSuspendDeferGuard gcDeferGuardPublic() { return GCSuspendDeferGuard(this); }
+
+  void suspendGC() { gc_suspend_counter_++; }
+  void resumeGC() {
+    if (--gc_suspend_counter_ <= 0) {
+      gc_suspend_counter_ = 0;
+      maybeCollectGarbage();
+    }
+  }
+  void resumeGCWithFullCollect() {
+    if (--gc_suspend_counter_ <= 0) {
+      gc_suspend_counter_ = 0;
+      collectGarbage();
+    }
+  }
+  bool gcSuspended() const { return gc_suspend_counter_ > 0; }
 
 public:
   void setAppArgs(uint32_t array_id) {
@@ -2660,10 +2820,10 @@ public:
       setHostObjectField(ref, "args", Value::makeArrayId(array_id));
     }
   }
-  void setProgramArgs(const std::vector<std::string>& args) { program_args_ = args; }
-  const std::vector<std::string>& getProgramArgs() const { return program_args_; }
+  void setProgramArgs(const std::vector<std::string> &args) { program_args_ = args; }
+  const std::vector<std::string> &getProgramArgs() const { return program_args_; }
   void setRestartCallback(std::function<void()> cb) { restart_callback_ = std::move(cb); }
-  std::recursive_mutex& getExecutionMutex() const { return execution_mutex_; }
+  std::recursive_mutex &getExecutionMutex() const { return execution_mutex_; }
 };
 
 } // namespace havel::compiler
@@ -2675,11 +2835,9 @@ public:
 // under clang + GCC 16 headers.
 namespace std {
 template <>
-struct formatter<havel::compiler::VM::GoroutineCallResult, char>
-    : formatter<string_view, char> {
+struct formatter<havel::compiler::VM::GoroutineCallResult, char> : formatter<string_view, char> {
   template <typename FormatContext>
-  auto format(const havel::compiler::VM::GoroutineCallResult &r,
-              FormatContext &ctx) const {
+  auto format(const havel::compiler::VM::GoroutineCallResult &r, FormatContext &ctx) const {
     string_view name = "Failed";
     switch (r) {
     case havel::compiler::VM::GoroutineCallResult::Interpreter:

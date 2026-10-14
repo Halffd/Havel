@@ -1,0 +1,49 @@
+// Regression: tier-1 write-barrier contract for OBJECT_SET/ARRAY_SET.
+// havel_gc_write_barrier used to pin every stored value as an external
+// root forever (149k pins over one self-hosted parse, all scanned by
+// every collection). It is now a marking barrier mirroring the
+// interpreter's store sites (heap_.writeBarrier(makeNull(), value)),
+// which only marks while incremental GC is active.
+//
+// What this pins down: values stored into a long-lived container from
+// TIERED code (the backedge hook trips the threshold, then the loop body
+// runs natively) must survive collections triggered by the same loop's
+// allocation pressure. An under-marking barrier sweeps values that are
+// still reachable, and the read-back below fails.
+//
+// Expected: "write-barrier smoke ok", exit 0.
+
+fn churn_and_store(n) {
+  keeper = []
+  garbage = []
+  // `0 .. (n - 1)` (inclusive range -> n iterations).
+  for i in 0 .. (n - 1) {
+    // Allocation pressure: fresh garbage every iteration so the loop's
+    // GC checkpoints have work, interleaved with the kept stores.
+    garbage.push({ tmp: i, junk: "x${i}" })
+    if garbage.len() > 8 {
+      garbage = []
+    }
+    obj = { slot: i, twice: i * 2, tag: "keep-${i}" }
+    keeper.push(obj)
+  }
+  return keeper
+}
+
+keeper = churn_and_store(30000)
+assert(keeper.len() == 30000, "all stored objects kept: ${keeper.len()}")
+
+// Spot-check contents: first, middle, last, plus a full pass over the
+// numeric field (cheap) so a swept slot cannot hide. Note: `0 .. n` is
+// INCLUSIVE, so the full pass must stop at len()-1.
+for i in [0, 1, 14999, 15000, 29998, 29999] {
+  assert(keeper[i].slot == i, "slot ${i} survived: ${keeper[i].slot}")
+  assert(keeper[i].twice == i * 2, "field twice ${i} survived")
+}
+for i in 0 .. (keeper.len() - 1) {
+  if keeper[i].slot != i {
+    assert(false, "sweep corruption at ${i}: ${keeper[i].slot}")
+  }
+}
+assert(keeper[0].tag == "keep-0", "string field survived")
+print("write-barrier smoke ok")

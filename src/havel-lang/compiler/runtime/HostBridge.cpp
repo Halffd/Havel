@@ -30,8 +30,7 @@ HostBridge::HostBridge(const ::havel::HostContext &ctx)
   extensionLoader_ = std::make_unique<Loader>();
 }
 
-HostBridge::HostBridge(const ::havel::HostContext &ctx,
-                       const ExecutionPolicy &policy)
+HostBridge::HostBridge(const ::havel::HostContext &ctx, const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<Loader>();
   moduleLoader_.setExecutionPolicy(policy);
@@ -44,12 +43,25 @@ void HostBridge::registerModeCallbacks(const std::string &, CallbackId, Callback
 void HostBridge::initBridges() {}
 void HostBridge::install(InstallProfile, bool) {}
 void HostBridge::runVmSetup() {}
-void HostBridge::registerModule(const HostModule &module) { modules_.push_back(module); }
-void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) { vm_setup_callbacks_.push_back(std::move(setupFn)); }
-void HostBridge::registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn) { options_.host_functions[fullName] = std::move(fn); }
-std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx) { return std::make_shared<HostBridge>(ctx); }
-std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx, const ExecutionPolicy &policy) { return std::make_shared<HostBridge>(ctx, policy); }
-bool HostBridge::import(const std::string &) { return false; }
+void HostBridge::registerModule(const HostModule &module) {
+  modules_.push_back(module);
+}
+void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) {
+  vm_setup_callbacks_.push_back(std::move(setupFn));
+}
+void HostBridge::registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn) {
+  options_.host_functions[fullName] = std::move(fn);
+}
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx) {
+  return std::make_shared<HostBridge>(ctx);
+}
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx,
+                                             const ExecutionPolicy &policy) {
+  return std::make_shared<HostBridge>(ctx, policy);
+}
+bool HostBridge::import(const std::string &) {
+  return false;
+}
 void HostBridge::loadExtension(const std::string &) {}
 void HostBridge::checkTimers() {}
 
@@ -58,35 +70,64 @@ void HostBridge::checkTimers() {}
 // Helper: convert OpCode to string name (simplified subset for bytecode() display)
 [[maybe_unused]] static std::string opcodeNameStr(OpCode opcode) {
   switch (opcode) {
-    case OpCode::LOAD_CONST: return "LOAD_CONST";
-    case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
-    case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
-    case OpCode::STORE_IMMUT_GLOBAL: return "STORE_IMMUT_GLOBAL";
-    case OpCode::LOAD_VAR: return "LOAD_VAR";
-    case OpCode::STORE_VAR: return "STORE_VAR";
-    case OpCode::STORE_IMMUT_VAR: return "STORE_IMMUT_VAR";
-    case OpCode::POP: return "POP";
-    case OpCode::DUP: return "DUP";
-    case OpCode::ADD: return "ADD";
-    case OpCode::SUB: return "SUB";
-    case OpCode::MUL: return "MUL";
-    case OpCode::DIV: return "DIV";
-    case OpCode::INT_DIV: return "INT_DIV";
-  case OpCode::DIVMOD: return "DIVMOD";
-  case OpCode::REMAINDER: return "REMAINDER";
-    case OpCode::RETURN: return "RETURN";
-	case OpCode::CALL: return "CALL";
-	case OpCode::CALL_DYN: return "CALL_DYN";
-	case OpCode::CALL_SPREAD: return "CALL_SPREAD";
-	case OpCode::JUMP: return "JUMP";
-    case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
-    case OpCode::OBJECT_NEW: return "OBJECT_NEW";
-    case OpCode::OBJECT_SET: return "OBJECT_SET";
-    case OpCode::OBJECT_GET: return "OBJECT_GET";
-    case OpCode::ARRAY_NEW: return "ARRAY_NEW";
-    case OpCode::ARRAY_SET: return "ARRAY_SET";
-    case OpCode::ARRAY_GET: return "ARRAY_GET";
-    default: return std::to_string(static_cast<int>(opcode));
+  case OpCode::LOAD_CONST:
+    return "LOAD_CONST";
+  case OpCode::LOAD_GLOBAL:
+    return "LOAD_GLOBAL";
+  case OpCode::STORE_GLOBAL:
+    return "STORE_GLOBAL";
+  case OpCode::STORE_IMMUT_GLOBAL:
+    return "STORE_IMMUT_GLOBAL";
+  case OpCode::LOAD_VAR:
+    return "LOAD_VAR";
+  case OpCode::STORE_VAR:
+    return "STORE_VAR";
+  case OpCode::STORE_IMMUT_VAR:
+    return "STORE_IMMUT_VAR";
+  case OpCode::POP:
+    return "POP";
+  case OpCode::DUP:
+    return "DUP";
+  case OpCode::ADD:
+    return "ADD";
+  case OpCode::SUB:
+    return "SUB";
+  case OpCode::MUL:
+    return "MUL";
+  case OpCode::DIV:
+    return "DIV";
+  case OpCode::INT_DIV:
+    return "INT_DIV";
+  case OpCode::DIVMOD:
+    return "DIVMOD";
+  case OpCode::REMAINDER:
+    return "REMAINDER";
+  case OpCode::RETURN:
+    return "RETURN";
+  case OpCode::CALL:
+    return "CALL";
+  case OpCode::CALL_DYN:
+    return "CALL_DYN";
+  case OpCode::CALL_SPREAD:
+    return "CALL_SPREAD";
+  case OpCode::JUMP:
+    return "JUMP";
+  case OpCode::JUMP_IF_FALSE:
+    return "JUMP_IF_FALSE";
+  case OpCode::OBJECT_NEW:
+    return "OBJECT_NEW";
+  case OpCode::OBJECT_SET:
+    return "OBJECT_SET";
+  case OpCode::OBJECT_GET:
+    return "OBJECT_GET";
+  case OpCode::ARRAY_NEW:
+    return "ARRAY_NEW";
+  case OpCode::ARRAY_SET:
+    return "ARRAY_SET";
+  case OpCode::ARRAY_GET:
+    return "ARRAY_GET";
+  default:
+    return std::to_string(static_cast<int>(opcode));
   }
 }
 
@@ -137,21 +178,21 @@ static std::string getTypeName(const Value &value) {
 }
 
 HostBridge::HostBridge(const ::havel::HostContext &ctx)
-    : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()),
-      moduleLoader_(*ctx_) {
+    : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<Loader>();
   initBridges();
 }
 
-HostBridge::HostBridge(const ::havel::HostContext &ctx,
-                       const ExecutionPolicy &policy)
+HostBridge::HostBridge(const ::havel::HostContext &ctx, const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<Loader>();
   moduleLoader_.setExecutionPolicy(policy);
   initBridges();
 }
 
-HostBridge::~HostBridge() { shutdown(); }
+HostBridge::~HostBridge() {
+  shutdown();
+}
 
 void HostBridge::shutdown() {
   clear();
@@ -184,19 +225,19 @@ void HostBridge::clear() {
   hotkey_binding_keys_.clear();
 }
 
-void HostBridge::registerModeCallbacks(const std::string &modeName,
-                                           CallbackId enterId, CallbackId exitId) {
-    ModeBinding binding;
-    binding.modeName = modeName;
-    binding.enter_id = enterId;
-    binding.exit_id = exitId;
-    mode_bindings_[modeName] = std::move(binding);
-    mode_definition_order_.push_back(modeName);
+void HostBridge::registerModeCallbacks(const std::string &modeName, CallbackId enterId,
+                                       CallbackId exitId) {
+  ModeBinding binding;
+  binding.modeName = modeName;
+  binding.enter_id = enterId;
+  binding.exit_id = exitId;
+  mode_bindings_[modeName] = std::move(binding);
+  mode_definition_order_.push_back(modeName);
 }
 
 void HostBridge::initBridges() {
 #ifdef HAVEL_CORE_PROFILE
-    extensionLoader_ = std::make_unique<Loader>();
+  extensionLoader_ = std::make_unique<Loader>();
 #else
   ioBridge_ = std::make_unique<IOBridge>(ctx_);
   systemBridge_ = std::make_unique<SystemBridge>(ctx_);
@@ -217,356 +258,400 @@ void HostBridge::initBridges() {
   if (ctx_->hotkeyManager) {
     ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
   }
-    automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
-    browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
-    toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
+  automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
+  browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
+  toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
 }
 #endif
 
-void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
-  const bool coreProfile = (profile == InstallProfile::Core);
-  options_.host_functions.reserve(64);
-  vm_setup_callbacks_.reserve(16);
+  void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
+    const bool coreProfile = (profile == InstallProfile::Core);
+    options_.host_functions.reserve(64);
+    vm_setup_callbacks_.reserve(16);
 
-  options_.host_functions["type"] = [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
-    auto ref = ctx_->vm->getHeap().allocateString(getTypeName(args[0]));
-    return Value::makeStringId(ref.id);
-  };
+    options_.host_functions["type"] = [this](const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeNull();
+      auto ref = ctx_->vm->getHeap().allocateString(getTypeName(args[0]));
+      return Value::makeStringId(ref.id);
+    };
 
-  options_.host_functions["len"] = [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeInt(0);
-    auto *vm = static_cast<VM *>(ctx_->vm);
-    return vm->execLengthOp(args[0]);
-  };
+    options_.host_functions["len"] = [this](const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeInt(0);
+      auto *vm = static_cast<VM *>(ctx_->vm);
+      return vm->execLengthOp(args[0]);
+    };
 
 #ifdef HAVEL_CORE_PROFILE
-  if (coreProfile) {
-    return;
-  }
+    if (coreProfile) {
+      return;
+    }
 #endif
 
-  if (eagerBridgeInstall && !coreProfile) {
-    ioBridge_->install(options_);
-    systemBridge_->install(options_);
-    uiBridge_->install(options_);
-    inputBridge_->install(options_);
-    mediaBridge_->install(options_);
-    networkBridge_->install(options_);
-    audioBridge_->install(options_);
-    displayBridge_->install(options_);
-    brightnessBridge_->install(options_);
-    modeBridge_->install(options_);
-    timerBridge_->install(options_);
-    appBridge_->install(options_);
-    concurrencyBridge_->install(options_);
-    automationBridge_->install(options_);
-    browserBridge_->install(options_);
-    toolsBridge_->install(options_);
-  }
-
-  addVmSetup([](VM &vm) {
-    auto hotkeyObj = vm.createHostObject();
-    for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
-      std::string fn = std::string("hotkey.") + name;
-      int idx = vm.getHostFunctionIndex(fn);
-      if (idx >= 0) {
-        vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
-      }
+    if (eagerBridgeInstall && !coreProfile) {
+      ioBridge_->install(options_);
+      systemBridge_->install(options_);
+      uiBridge_->install(options_);
+      inputBridge_->install(options_);
+      mediaBridge_->install(options_);
+      networkBridge_->install(options_);
+      audioBridge_->install(options_);
+      displayBridge_->install(options_);
+      brightnessBridge_->install(options_);
+      modeBridge_->install(options_);
+      timerBridge_->install(options_);
+      appBridge_->install(options_);
+      concurrencyBridge_->install(options_);
+      automationBridge_->install(options_);
+      browserBridge_->install(options_);
+      toolsBridge_->install(options_);
     }
-    vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
-    // extension object
-    auto extensionObj = vm.createHostObject();
-    for (const auto &name : {"load", "isLoaded", "list", "addSearchPath"}) {
-      std::string fn = std::string("extension.") + name;
-      int idx = vm.getHostFunctionIndex(fn);
-      if (idx >= 0) {
-        vm.setHostObjectField(extensionObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
-      }
-    }
-    vm.setGlobal("extension", Value::makeObjectId(extensionObj.id));
-  });
-
-  options_.host_functions["extension.load"] =
-[this](const std::vector<Value> &args) -> Value {
-  if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-  auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
-  auto *vm = static_cast<VM *>(ctx_->vm);
-  if (!vm) return Value::makeBool(false);
-
-  // Native module plugins (havel_mod_<name>.so) register through the VM's
-  // own VMApi and set their global object — the working path, so prefer
-  // them and return that object (image = extension.load("image") must
-  // yield something with .load()). C-ABI extensions (havel_extension_init)
-  // would receive the zero-initialized API table from the old getHavelAPI
-  // stub (the C API host side is not compiled into the binary) and
-  // segfaulted on the first api->register_function call (observed SIGSEGV
-  // at image_extension.cpp:207), so never hand a stub API to a C-ABI init.
-  auto globalIt = vm->getGlobals().find(name);
-  if (!(globalIt != vm->getGlobals().end() && globalIt->second.isObjectId())) {
-    if (auto plugin = extensionLoader_->loadModulePlugin(name)) {
-      VMApi api(*vm);
-      plugin->register_fn(static_cast<void *>(&api));
-      globalIt = vm->getGlobals().find(name);
-    }
-  }
-  if (globalIt != vm->getGlobals().end() && globalIt->second.isObjectId()) {
-    return globalIt->second;
-  }
-  // C-ABI extension fallback: load WITHOUT calling init — a stub API would
-  // crash it. The extension loads inertly; its functions stay unreachable
-  // until the C API host side is implemented.
-  extensionLoader_->loadExtensionWithInit(name, nullptr);
-  return Value(extensionLoader_->isLoaded(name));
-};
-  options_.host_functions["extension.isLoaded"] =
-      [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-        auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
-        return Value(extensionLoader_->isLoaded(name));
-      };
-  options_.host_functions["extension.list"] =
-      [this](const std::vector<Value> &args) {
-        (void)args;
-        auto names = extensionLoader_->getLoadedExtensions();
-        auto *vm = static_cast<VM *>(ctx_->vm);
-        if (!vm) return Value::makeNull();
-        auto arr = vm->createHostArray();
-        for (const auto &name : names) {
-          // Push the actual extension name — the old code discarded it
-          // ((void)name) and pushed null for every entry.
-          auto ref = vm->createRuntimeString(name);
-          vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
+    addVmSetup([](VM &vm) {
+      auto hotkeyObj = vm.createHostObject();
+      for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
+        std::string fn = std::string("hotkey.") + name;
+        int idx = vm.getHostFunctionIndex(fn);
+        if (idx >= 0) {
+          vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
         }
-        return Value::makeArrayId(arr.id);
-      };
-  options_.host_functions["extension.addSearchPath"] =
-      [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-        extensionLoader_->addSearchPath(ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString());
-        return Value::makeBool(true);
-      };
+      }
+      vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
-  auto isCallable = [](const Value &v) {
-    return v.isHostFuncId() || v.isClosureId() || v.isFunctionObjId();
-  };
+      // extension object
+      auto extensionObj = vm.createHostObject();
+      for (const auto &name : {"load", "isLoaded", "list", "addSearchPath"}) {
+        std::string fn = std::string("extension.") + name;
+        int idx = vm.getHostFunctionIndex(fn);
+        if (idx >= 0) {
+          vm.setHostObjectField(extensionObj, name,
+                                Value::makeHostFuncId(static_cast<uint32_t>(idx)));
+        }
+      }
+      vm.setGlobal("extension", Value::makeObjectId(extensionObj.id));
+    });
 
-  options_.host_functions["any"] = [this, isCallable](const std::vector<Value> &args) {
-    if (args.size() < 2 || !isCallable(args[1])) return Value::makeBool(false);
-    IteratorRef iterRef = ctx_->vm->createIterator(args[0]);
-    while (true) {
-      auto result = ctx_->vm->iteratorNext(iterRef);
-      if (!result.isObjectId()) return Value::makeBool(false);
-      auto resultObjRef = ObjectRef{result.asObjectId(), true};
-      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (doneVal.isBool() && doneVal.asBool()) return Value::makeBool(false);
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
-      std::vector<Value> predArgs{valueVal};
-      auto predResult = ctx_->vm->callFunction(args[1], predArgs);
-      if (predResult.isBool() && predResult.asBool()) return Value::makeBool(true);
-      if (predResult.isInt() && predResult.asInt() != 0) return Value::makeBool(true);
-    }
-  };
+    options_.host_functions["extension.load"] = [this](const std::vector<Value> &args) -> Value {
+      if (args.empty() || !args[0].isStringValId())
+        return Value::makeBool(false);
+      auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
+      auto *vm = static_cast<VM *>(ctx_->vm);
+      if (!vm)
+        return Value::makeBool(false);
 
-  options_.host_functions["all"] = [this, isCallable](const std::vector<Value> &args) {
-    if (args.size() < 2 || !isCallable(args[1])) return Value::makeBool(false);
-    IteratorRef iterRef = ctx_->vm->createIterator(args[0]);
-    bool found_any = false;
-    while (true) {
-      auto result = ctx_->vm->iteratorNext(iterRef);
-      if (!result.isObjectId()) break;
-      auto resultObjRef = ObjectRef{result.asObjectId(), true};
-      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (doneVal.isBool() && doneVal.asBool()) break;
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
-      found_any = true;
-      std::vector<Value> predArgs{valueVal};
-      auto predResult = ctx_->vm->callFunction(args[1], predArgs);
-      bool isTruthy = (predResult.isBool() && predResult.asBool()) ||
-                      (predResult.isInt() && predResult.asInt() != 0);
-      if (!isTruthy) return Value::makeBool(false);
-    }
-    return Value::makeBool(found_any);
-  };
-
-  options_.host_functions["eval"] = [this](const std::vector<Value> &args) {
-    if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
-    std::string code = ctx_->vm->resolveStringKey(args[0]);
-    if (code.empty()) return Value::makeNull();
-    try {
-      auto compiled = ModuleCompilerHook::instance().compileSource(code);
-      if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk)
+      // Native module plugins (havel_mod_<name>.so) register through the VM's
+      // own VMApi and set their global object — the working path, so prefer
+      // them and return that object (image = extension.load("image") must
+      // yield something with .load()). C-ABI extensions (havel_extension_init)
+      // would receive the zero-initialized API table from the old getHavelAPI
+      // stub (the C API host side is not compiled into the binary) and
+      // segfaulted on the first api->register_function call (observed SIGSEGV
+      // at image_extension.cpp:207), so never hand a stub API to a C-ABI init.
+      auto globalIt = vm->getGlobals().find(name);
+      if (!(globalIt != vm->getGlobals().end() && globalIt->second.isObjectId())) {
+        if (auto plugin = extensionLoader_->loadModulePlugin(name)) {
+          VMApi api(*vm);
+          plugin->register_fn(static_cast<void *>(&api));
+          globalIt = vm->getGlobals().find(name);
+        }
+      }
+      if (globalIt != vm->getGlobals().end() && globalIt->second.isObjectId()) {
+        return globalIt->second;
+      }
+      // Module base layer (VM::baseModuleGlobals_): when this runs with a
+      // module's ambient installed, getGlobals() holds that module's own
+      // names only — the namespace objects live in the shared base (see
+      // VM::loadModule for why maps are no longer seeded).
+      if (const auto *base = vm->baseModuleGlobals()) {
+        auto baseIt = base->find(name);
+        if (baseIt != base->end() && baseIt->second.isObjectId()) {
+          return baseIt->second;
+        }
+      }
+      // C-ABI extension fallback: load WITHOUT calling init — a stub API would
+      // crash it. The extension loads inertly; its functions stay unreachable
+      // until the C API host side is implemented.
+      extensionLoader_->loadExtensionWithInit(name, nullptr);
+      return Value(extensionLoader_->isLoaded(name));
+    };
+    options_.host_functions["extension.isLoaded"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !args[0].isStringValId())
+        return Value::makeBool(false);
+      auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
+      return Value(extensionLoader_->isLoaded(name));
+    };
+    options_.host_functions["extension.list"] = [this](const std::vector<Value> &args) {
+      (void)args;
+      auto names = extensionLoader_->getLoadedExtensions();
+      auto *vm = static_cast<VM *>(ctx_->vm);
+      if (!vm)
         return Value::makeNull();
-      return ctx_->vm->execute(*compiled.chunk, "__main__");
-    } catch (...) {
-      return Value::makeNull();
-    }
-  };
-
-  options_.host_functions["inspect"] = [this](const std::vector<Value> &args) {
-    if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
-    auto ref = ctx_->vm->getHeap().allocateString(getTypeName(args[0]));
-    return Value::makeStringId(ref.id);
-  };
-
-  options_.host_functions["prototypes"] = [this](const std::vector<Value> &args) {
-    if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
-    auto arrRef = ctx_->vm->getHeap().allocateArray();
-    auto *arr = ctx_->vm->getHeap().array(arrRef.id);
-    if (!args[0].isObjectId()) return Value::makeArrayId(arrRef.id);
-    auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
-    while (obj) {
-      auto *nameVal = obj->get("__name");
-      if (nameVal && nameVal->isStringId()) {
-        arr->push_back(*nameVal);
-      } else {
-        arr->push_back(Value::makeStringId(ctx_->vm->getHeap().allocateString("<anonymous>").id));
+      auto arr = vm->createHostArray();
+      for (const auto &name : names) {
+        // Push the actual extension name — the old code discarded it
+        // ((void)name) and pushed null for every entry.
+        auto ref = vm->createRuntimeString(name);
+        vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
       }
-      GCHeap::ObjectEntry *next = nullptr;
-      auto *protoVal = obj->get("__proto");
-      if (protoVal && protoVal->isObjectId()) next = ctx_->vm->getHeap().object(protoVal->asObjectId());
-      if (!next) {
-        auto *parentVal = obj->get("__class");
-        if (!parentVal) parentVal = obj->get("__parent");
-        if (!parentVal) parentVal = obj->get("__struct");
-        if (parentVal && parentVal->isObjectId()) next = ctx_->vm->getHeap().object(parentVal->asObjectId());
+      return Value::makeArrayId(arr.id);
+    };
+    options_.host_functions["extension.addSearchPath"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !args[0].isStringValId())
+        return Value::makeBool(false);
+      extensionLoader_->addSearchPath(ctx_->vm ? ctx_->vm->resolveStringKey(args[0])
+                                               : args[0].toString());
+      return Value::makeBool(true);
+    };
+
+    auto isCallable = [](const Value &v) {
+      return v.isHostFuncId() || v.isClosureId() || v.isFunctionObjId();
+    };
+
+    options_.host_functions["any"] = [this, isCallable](const std::vector<Value> &args) {
+      if (args.size() < 2 || !isCallable(args[1]))
+        return Value::makeBool(false);
+      IteratorRef iterRef = ctx_->vm->createIterator(args[0]);
+      while (true) {
+        auto result = ctx_->vm->iteratorNext(iterRef);
+        if (!result.isObjectId())
+          return Value::makeBool(false);
+        auto resultObjRef = ObjectRef{result.asObjectId(), true};
+        auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+        if (doneVal.isBool() && doneVal.asBool())
+          return Value::makeBool(false);
+        auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
+        std::vector<Value> predArgs{valueVal};
+        auto predResult = ctx_->vm->callFunction(args[1], predArgs);
+        if (predResult.isBool() && predResult.asBool())
+          return Value::makeBool(true);
+        if (predResult.isInt() && predResult.asInt() != 0)
+          return Value::makeBool(true);
       }
-      obj = next;
-    }
-    return Value::makeArrayId(arrRef.id);
-  };
+    };
 
-  options_.host_functions["proto"] = [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
-    if (!args[0].isObjectId()) return args[0];
-    ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
-    return args[0];
-  };
-  options_.host_functions["getproto"] = [this](const std::vector<Value> &args) {
-    if (args.empty() || !ctx_ || !ctx_->vm || !args[0].isObjectId()) return Value::makeNull();
-    auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
-    if (!obj) return Value::makeNull();
-    auto *protoVal = obj->get("__proto");
-    return protoVal ? *protoVal : Value::makeNull();
-  };
-  options_.host_functions["setproto"] = [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
-    if (!args[0].isObjectId()) return args[0];
-    ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
-    return args[0];
-  };
+    options_.host_functions["all"] = [this, isCallable](const std::vector<Value> &args) {
+      if (args.size() < 2 || !isCallable(args[1]))
+        return Value::makeBool(false);
+      IteratorRef iterRef = ctx_->vm->createIterator(args[0]);
+      bool found_any = false;
+      while (true) {
+        auto result = ctx_->vm->iteratorNext(iterRef);
+        if (!result.isObjectId())
+          break;
+        auto resultObjRef = ObjectRef{result.asObjectId(), true};
+        auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+        if (doneVal.isBool() && doneVal.asBool())
+          break;
+        auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
+        found_any = true;
+        std::vector<Value> predArgs{valueVal};
+        auto predResult = ctx_->vm->callFunction(args[1], predArgs);
+        bool isTruthy = (predResult.isBool() && predResult.asBool()) ||
+                        (predResult.isInt() && predResult.asInt() != 0);
+        if (!isTruthy)
+          return Value::makeBool(false);
+      }
+      return Value::makeBool(found_any);
+    };
 
-  options_.host_functions["caller"] = [this](const std::vector<Value> &args) {
-    if (!ctx_ || !ctx_->vm) return Value::makeNull();
-    int depth = (!args.empty() && args[0].isInt()) ? static_cast<int>(args[0].asInt()) : 0;
-    auto info = ctx_->vm->getCallerInfo(depth);
-    auto objRef = ctx_->vm->getHeap().allocateObject();
-    auto *obj = ctx_->vm->getHeap().object(objRef.id);
-    obj->set("function", Value::makeStringId(ctx_->vm->getHeap().allocateString(info.function).id));
-    obj->set("line", Value::makeInt(static_cast<int64_t>(info.line)));
-    obj->set("column", Value::makeInt(static_cast<int64_t>(info.column)));
-    obj->set("file", Value::makeStringId(ctx_->vm->getHeap().allocateString(info.file).id));
-    return Value::makeObjectId(objRef.id);
-  };
-
-  options_.host_functions["defun"] = [this](const std::vector<Value> &args) {
-    if (args.size() < 3 || !ctx_ || !ctx_->vm) return Value::makeNull();
-    std::string typeName = ctx_->vm->resolveStringKey(args[0]);
-    std::string methodName = ctx_->vm->resolveStringKey(args[1]);
-    if (typeName.empty() || methodName.empty()) return Value::makeNull();
-    Value fn = args[2];
-    const BytecodeChunk *fnChunk = ctx_->vm->getCurrentChunk();
-    std::string fullName = typeName + "." + methodName;
-    uint32_t funcIdx = ctx_->vm->getHostFunctionIndex(fullName);
-    options_.host_functions[fullName] = [this, fn, fnChunk](const std::vector<Value> &callArgs) {
-      if (!ctx_ || !ctx_->vm) return Value::makeNull();
+    options_.host_functions["eval"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      std::string code = ctx_->vm->resolveStringKey(args[0]);
+      if (code.empty())
+        return Value::makeNull();
       try {
-        const auto *savedChunk = ctx_->vm->getCurrentChunk();
-        ctx_->vm->setCurrentChunk(fnChunk);
-        auto result = ctx_->vm->call(fn, callArgs);
-        ctx_->vm->setCurrentChunk(savedChunk);
-        return result;
+        auto compiled = ModuleCompilerHook::instance().compileSource(code);
+        if (compiled.status != SourceCompileStatus::Ok || !compiled.chunk)
+          return Value::makeNull();
+        return ctx_->vm->execute(*compiled.chunk, "__main__");
       } catch (...) {
         return Value::makeNull();
       }
     };
-    ctx_->vm->registerPrototypeMethod(typeName, methodName, funcIdx);
-    return Value::makeBool(true);
-  };
 
-  options_.host_functions["del"] = [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
-    if (args[0].isObjectId() && args[1].isStringValId()) {
+    options_.host_functions["inspect"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      auto ref = ctx_->vm->getHeap().allocateString(getTypeName(args[0]));
+      return Value::makeStringId(ref.id);
+    };
+
+    options_.host_functions["prototypes"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      auto arrRef = ctx_->vm->getHeap().allocateArray();
+      auto *arr = ctx_->vm->getHeap().array(arrRef.id);
+      if (!args[0].isObjectId())
+        return Value::makeArrayId(arrRef.id);
       auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
-      if (obj) {
-        std::string key = ctx_->vm->resolveStringKey(args[1]);
-        if (!key.empty()) {
-          obj->erase(key);
-          return Value::makeBool(true);
+      while (obj) {
+        auto *nameVal = obj->get("__name");
+        if (nameVal && nameVal->isStringId()) {
+          arr->push_back(*nameVal);
+        } else {
+          arr->push_back(Value::makeStringId(ctx_->vm->getHeap().allocateString("<anonymous>").id));
+        }
+        GCHeap::ObjectEntry *next = nullptr;
+        auto *protoVal = obj->get("__proto");
+        if (protoVal && protoVal->isObjectId())
+          next = ctx_->vm->getHeap().object(protoVal->asObjectId());
+        if (!next) {
+          auto *parentVal = obj->get("__class");
+          if (!parentVal)
+            parentVal = obj->get("__parent");
+          if (!parentVal)
+            parentVal = obj->get("__struct");
+          if (parentVal && parentVal->isObjectId())
+            next = ctx_->vm->getHeap().object(parentVal->asObjectId());
+        }
+        obj = next;
+      }
+      return Value::makeArrayId(arrRef.id);
+    };
+
+    options_.host_functions["proto"] = [this](const std::vector<Value> &args) {
+      if (args.size() < 2 || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      if (!args[0].isObjectId())
+        return args[0];
+      ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
+      return args[0];
+    };
+    options_.host_functions["getproto"] = [this](const std::vector<Value> &args) {
+      if (args.empty() || !ctx_ || !ctx_->vm || !args[0].isObjectId())
+        return Value::makeNull();
+      auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
+      if (!obj)
+        return Value::makeNull();
+      auto *protoVal = obj->get("__proto");
+      return protoVal ? *protoVal : Value::makeNull();
+    };
+    options_.host_functions["setproto"] = [this](const std::vector<Value> &args) {
+      if (args.size() < 2 || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      if (!args[0].isObjectId())
+        return args[0];
+      ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
+      return args[0];
+    };
+
+    options_.host_functions["caller"] = [this](const std::vector<Value> &args) {
+      if (!ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      int depth = (!args.empty() && args[0].isInt()) ? static_cast<int>(args[0].asInt()) : 0;
+      auto info = ctx_->vm->getCallerInfo(depth);
+      auto objRef = ctx_->vm->getHeap().allocateObject();
+      auto *obj = ctx_->vm->getHeap().object(objRef.id);
+      obj->set("function",
+               Value::makeStringId(ctx_->vm->getHeap().allocateString(info.function).id));
+      obj->set("line", Value::makeInt(static_cast<int64_t>(info.line)));
+      obj->set("column", Value::makeInt(static_cast<int64_t>(info.column)));
+      obj->set("file", Value::makeStringId(ctx_->vm->getHeap().allocateString(info.file).id));
+      return Value::makeObjectId(objRef.id);
+    };
+
+    options_.host_functions["defun"] = [this](const std::vector<Value> &args) {
+      if (args.size() < 3 || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      std::string typeName = ctx_->vm->resolveStringKey(args[0]);
+      std::string methodName = ctx_->vm->resolveStringKey(args[1]);
+      if (typeName.empty() || methodName.empty())
+        return Value::makeNull();
+      Value fn = args[2];
+      const BytecodeChunk *fnChunk = ctx_->vm->getCurrentChunk();
+      std::string fullName = typeName + "." + methodName;
+      uint32_t funcIdx = ctx_->vm->getHostFunctionIndex(fullName);
+      options_.host_functions[fullName] = [this, fn, fnChunk](const std::vector<Value> &callArgs) {
+        if (!ctx_ || !ctx_->vm)
+          return Value::makeNull();
+        try {
+          const auto *savedChunk = ctx_->vm->getCurrentChunk();
+          ctx_->vm->setCurrentChunk(fnChunk);
+          auto result = ctx_->vm->call(fn, callArgs);
+          ctx_->vm->setCurrentChunk(savedChunk);
+          return result;
+        } catch (...) {
+          return Value::makeNull();
+        }
+      };
+      ctx_->vm->registerPrototypeMethod(typeName, methodName, funcIdx);
+      return Value::makeBool(true);
+    };
+
+    options_.host_functions["del"] = [this](const std::vector<Value> &args) {
+      if (args.size() < 2 || !ctx_ || !ctx_->vm)
+        return Value::makeNull();
+      if (args[0].isObjectId() && args[1].isStringValId()) {
+        auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
+        if (obj) {
+          std::string key = ctx_->vm->resolveStringKey(args[1]);
+          if (!key.empty()) {
+            obj->erase(key);
+            return Value::makeBool(true);
+          }
         }
       }
+      return Value::makeBool(false);
+    };
+
+    options_.host_functions["implements"] = [](const std::vector<Value> &args) {
+      (void)args;
+      return Value::makeBool(false);
+    };
+  }
+  void HostBridge::runVmSetup() {
+    for (auto &setupFn : vm_setup_callbacks_) {
+      setupFn(*static_cast<VM *>(ctx_->vm));
     }
-    return Value::makeBool(false);
-  };
-
-  options_.host_functions["implements"] = [](const std::vector<Value> &args) {
-    (void)args;
-    return Value::makeBool(false);
-  };
-}
-void HostBridge::runVmSetup() {
-  for (auto &setupFn : vm_setup_callbacks_) {
-    setupFn(*static_cast<VM *>(ctx_->vm));
   }
-}
 
-void HostBridge::registerModule(const HostModule &module) {
-  modules_.push_back(module);
-}
-
-void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) {
-  vm_setup_callbacks_.push_back(std::move(setupFn));
-}
-
-void HostBridge::registerExtensionFunction(const std::string &fullName,
-                                           BytecodeHostFunction fn) {
-  options_.host_functions[fullName] = std::move(fn);
-}
-
-std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx) {
-  return std::make_shared<HostBridge>(ctx);
-}
-
-std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx,
-                                             const ExecutionPolicy &policy) {
-  return std::make_shared<HostBridge>(ctx, policy);
-}
-
-bool HostBridge::import(const std::string &importSpec) {
-  if (!ctx_->vm) {
-    return false;
+  void HostBridge::registerModule(const HostModule &module) {
+    modules_.push_back(module);
   }
-  return moduleLoader_.import(importSpec, *ctx_->vm);
-}
 
-void HostBridge::loadExtension(const std::string &name) {
-  if (!extensionLoader_) {
-    return;
+  void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) {
+    vm_setup_callbacks_.push_back(std::move(setupFn));
   }
-  // Same policy as the extension.load host function: prefer the native
-  // module plugin; C-ABI extensions load without init (no stub API).
-  if (extensionLoader_->loadModulePlugin(name)) {
-    return;
-  }
-  extensionLoader_->loadExtensionWithInit(name, nullptr);
-}
 
-void HostBridge::checkTimers() {
-  if (concurrencyBridge_) {
-    concurrencyBridge_->checkTimers();
+  void HostBridge::registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn) {
+    options_.host_functions[fullName] = std::move(fn);
   }
-}
+
+  std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx) {
+    return std::make_shared<HostBridge>(ctx);
+  }
+
+  std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx,
+                                               const ExecutionPolicy &policy) {
+    return std::make_shared<HostBridge>(ctx, policy);
+  }
+
+  bool HostBridge::import(const std::string &importSpec) {
+    if (!ctx_->vm) {
+      return false;
+    }
+    return moduleLoader_.import(importSpec, *ctx_->vm);
+  }
+
+  void HostBridge::loadExtension(const std::string &name) {
+    if (!extensionLoader_) {
+      return;
+    }
+    // Same policy as the extension.load host function: prefer the native
+    // module plugin; C-ABI extensions load without init (no stub API).
+    if (extensionLoader_->loadModulePlugin(name)) {
+      return;
+    }
+    extensionLoader_->loadExtensionWithInit(name, nullptr);
+  }
+
+  void HostBridge::checkTimers() {
+    if (concurrencyBridge_) {
+      concurrencyBridge_->checkTimers();
+    }
+  }
 
 #endif
 

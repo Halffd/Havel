@@ -272,6 +272,24 @@ if(WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     # add_compile_definitions, not another CMAKE_*_FLAGS assignment, because
     # the _FLAGS variables above are set per-config and would be lost.
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+
+    # NOT defining WINDOWS as a preprocessor macro, deliberately.
+    #
+    # WINDOWS is a CMake variable, not a preprocessor macro, so the seven
+    # `#ifdef WINDOWS` sites in the tree never fired on a Windows build. The
+    # important one is src/core/io/WindowsIOBackend.hpp, which keeps the real
+    # Win32 backend inside `#ifdef WINDOWS` and a do-nothing stub in the
+    # `#else`; that is why the ported input backend was dead code.
+    #
+    # Defining it fixes that but costs 174 errors in one step, because
+    # Clipboard::Method has an enumerator literally named WINDOWS
+    # (src/host/clipboard/Clipboard.hpp). The macro rewrites that enumerator
+    # to 1 and the enum stops parsing. Measured: 244 errors without the macro,
+    # 418 with it.
+    #
+    # So the correct fix is to rename that enumerator first and then define the
+    # macro, not to define the macro first. Recorded here rather than landed
+    # half-way with the tree worse than it started.
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")

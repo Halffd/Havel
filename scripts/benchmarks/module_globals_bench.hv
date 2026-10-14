@@ -1,0 +1,68 @@
+// module-globals call-path benchmark (Phase D: the parse's ~80% cost).
+//
+// Two fixture modules live in modglob/. Three call shapes are measured
+// with equal iteration counts so the per-call overheads are comparable:
+//
+//   direct : main script calls module B's fb            -> wrapper path
+//            (doCall host branch: globals install per call)
+//   cross  : main calls A's fa, which calls B's coreB   -> cross-module
+//            closure path (doCall closure branch: the ambient install
+//            that dominated the self-hosted parse)
+//   self   : main calls A's faSelf, which calls A's own coreA
+//            -> same-module control (identity gate, no install)
+//
+// Run:
+//   python3 scripts/benchmarks/rusage_run.py \
+//     ./build-*/havel run scripts/benchmarks/module_globals_bench.hv
+//
+// Expected while module sidecars are seeded with the full stdlib
+// (the bloat this bench pins down): direct and cross cost ~100s of us
+// per call; self is near-free. After the sidecars shrink to module-own
+// names, all three converge to the same single-digit us.
+
+use { fa } from "modglob/a"
+use { faSelf } from "modglob/a"
+use { fb } from "modglob/b"
+
+N = 20000
+
+fn direct() {
+  total = 0
+  for i in 0 .. (N - 1) {
+    total = total + fb(i)
+  }
+  return total
+}
+
+fn cross() {
+  total = 0
+  for i in 0 .. (N - 1) {
+    total = total + fa(i)
+  }
+  return total
+}
+
+fn selfControl() {
+  total = 0
+  for i in 0 .. (N - 1) {
+    total = total + faSelf(i)
+  }
+  return total
+}
+
+t0 = time.now()
+r1 = direct()
+t1 = time.now()
+r2 = cross()
+t2 = time.now()
+r3 = selfControl()
+t3 = time.now()
+print("SHAPES ms: direct=${t1 - t0} cross=${t2 - t1} self=${t3 - t2}")
+// Fixture arithmetic, checked against closed forms:
+//   direct: sum(i-1)        = N(N-1)/2 - N
+//   cross:  sum(2i + 1)    = N*N
+//   self:   sum(i + 2)      = N(N-1)/2 + 2N
+assert(r1 == N * (N - 1) / 2 - N, "direct matches its closed form: ${r1}")
+assert(r2 == N * N, "cross matches its closed form: ${r2}")
+assert(r3 == N * (N - 1) / 2 + 2 * N, "self matches its closed form: ${r3}")
+print("module-globals bench ok")

@@ -1,0 +1,12 @@
+// Benchmark fixture module B. Minimal so the call cost, not the body,
+// dominates.
+
+fn coreB(x) {
+  return x * 2
+}
+
+fn fb(x) {
+  return x - 1
+}
+
+{ coreB: coreB, fb: fb }

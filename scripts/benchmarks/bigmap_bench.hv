@@ -1,0 +1,51 @@
+// VM-OPT-001 focused benchmark: cross-module calls into a module with a
+// LARGE own-name map (400 globals) - the shape where the O(n) ambient
+// copy dominated. The wrapper path alternates get/set calls into
+// bigmod/big.hv; every call installs/restores the module's ambient.
+//
+// Run:
+//   python3 scripts/benchmarks/rusage_run.py \
+//     ./build-*/havel run scripts/benchmarks/bigmap_bench.hv
+//
+// Closed-form check: N=20000 alternating calls,
+//   even i: t += 399 (getG)          -> 10000 * 399
+//   odd  i: t += i    (setG returns)  -> sum of odds 1..19999 = 10000^2
+//   expected t = 10000*399 + 100000000 = 103990000... adjusted for the
+//   loop shape: each even call reads g399=399 UNLESS a prior odd call
+//   overwrote it: after odd call i, g399=i until the next odd call.
+//   t = sum over even calls of (g399 at that time) + sum of odd i.
+//   g399 alternates: call 1 (odd, i=1) sets 1; call 2 reads 1; call 3
+//   sets 3; call 4 reads 3... so reads see the previous odd i:
+//   t = sum_{odd i in 1..19999} i (from setG return) + sum_{even i} (i-1)
+//     = 100000000 + sum_{odd i} (i-1) = 100000000 + (1+3+...+19997)
+//     = 100000000 + 99980000... asserted empirically below; the exact
+//   value is computed by the script itself from N so any N works.
+//
+// The assertion uses the same alternation arithmetic the script
+// computes; a mismatch means install/restore corrupted module state.
+
+use { getG, setG } from "bigmod/big"
+
+N = 20000
+t = 0
+for i in 0 .. (N - 1) {
+  if i % 2 == 0 {
+    t = t + getG()
+  } else {
+    t = t + setG(i)
+  }
+}
+
+// closed form: every odd call returns i (and stores it); every even
+// call reads the value the previous odd call stored (i-1 for i>=2,
+// and 399 for the i=0 first call).
+expected = 399
+for i in 1 .. (N - 1) {
+  if i % 2 == 1 {
+    expected = expected + i
+  } else {
+    expected = expected + (i - 1)
+  }
+}
+assert(t == expected, "bigmap bench state coherent: ${t} != ${expected}")
+print("bigmap bench ok t=${t}")

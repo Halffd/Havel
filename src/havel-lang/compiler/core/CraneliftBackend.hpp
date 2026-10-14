@@ -141,6 +141,8 @@ public:
         reinterpret_cast<const void*>(&havel_vm_backedge_n));
     add("havel_vm_gc_checkpoint",
         reinterpret_cast<const void*>(&havel_vm_gc_checkpoint));
+    add("havel_vm_negate",
+        reinterpret_cast<const void*>(&havel_vm_negate));
     add("havel_vm_upvalue_get",
         reinterpret_cast<const void*>(&havel_vm_upvalue_get));
     add("havel_vm_upvalue_set",
@@ -243,6 +245,10 @@ public:
         case OpCode::ADD:
         case OpCode::SUB:
         case OpCode::MUL:
+        case OpCode::DIV:
+        case OpCode::MOD:
+        case OpCode::NEGATE:
+        case OpCode::TAIL_CALL:
         case OpCode::EQ:
         case OpCode::NEQ:
         case OpCode::LT:
@@ -375,6 +381,23 @@ private:
         case OpCode::ADD: op = 3; break;
         case OpCode::SUB: op = 4; break;
         case OpCode::MUL: op = 5; break;
+        // Phase C extensions: DIV/MOD ride the generic binop bridge (the
+        // operand carries the C++ opcode - the lowering does not embed the
+        // integer values), NEGATE has its own unary bridge, TAIL_CALL
+        // lowers as call-then-return.
+        case OpCode::DIV:
+          op = 61;
+          operand = static_cast<uint32_t>(static_cast<uint32_t>(inst.opcode));
+          break;
+        case OpCode::MOD:
+          op = 62;
+          operand = static_cast<uint32_t>(static_cast<uint32_t>(inst.opcode));
+          break;
+        case OpCode::NEGATE: op = 63; break;
+        case OpCode::TAIL_CALL:
+          // Operand is the argument count, like CALL.
+          op = 64;
+          break;
         case OpCode::LT: op = 6; break;
         case OpCode::RETURN: op = 7; break;
         case OpCode::JUMP: op = 8; break;
@@ -422,7 +445,8 @@ private:
         case OpCode::SET_SET: op = 56; break;
         default: break;  // can_lower() already refused anything else
       }
-      if (!inst.operands.empty()) {
+      if (!inst.operands.empty() && inst.opcode != OpCode::DIV &&
+          inst.opcode != OpCode::MOD) {
         // Global names travel as chunk-local StringValIds; the StringValId
         // payload packs (chunkId << 31 | stringIndex), so the low 31 bits
         // are the index and the operand resolves exactly like the

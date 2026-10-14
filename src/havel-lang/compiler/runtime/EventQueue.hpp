@@ -8,14 +8,21 @@
 #include <cstdint>
 #include <unordered_map>
 #include <memory>
+#include <utility>
 #include "havel_platform.h"
 #if !HAVEL_PLATFORM_WINDOWS
+// eventfd is a Linux interface with no Windows spelling: it turns a signal
+// into a readable fd, which is how the main loop waits for a cross-thread
+// wakeup. Windows uses a Win32 event object for the same job.
 #include <sys/eventfd.h>
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif
 #include <atomic>
 
 #include "utils/LockFreeQueue.hpp"
+#include "havel-lang/core/Value.hpp"
 
 namespace havel::compiler {
 
@@ -43,6 +50,42 @@ enum class EventType : uint8_t {
 // so ownership is safe wherever the last reference dies (worker drop,
 // queue drop, or the VM-side handler).
 using AsyncCxxResult = std::shared_ptr<void>;
+
+/**
+ * Payload carried in Event::ptr for EventType::TIMER_FIRE.
+ *
+ * Timer producers historically pushed either
+ * std::pair<Value, uint32_t> (closure, timer id) or
+ * std::pair<CallbackId, uint32_t> (pinned callback id, timer id) depending
+ * on which host function created the timer, while consumers cast to
+ * whichever pair they expected. Because EventQueue::onEvent keeps ONE
+ * handler per event type, the last registration won: VM::setEventQueue's
+ * CallbackId handler and ExecutionEngine's Value handler overwrote each
+ * other, so a CallbackId was reinterpreted as a closure Value and the
+ * timer callback threw "Closure not found for call" on every tick.
+ *
+ * One struct, one cast. Producers set has_callback_id; consumers honour it.
+ * Freed with `delete static_cast<TimerFirePayload*>(ptr)` everywhere.
+ */
+struct TimerFirePayload {
+    core::Value closure;             // valid when has_callback_id == false
+    uint32_t callback_id = 0;    // valid when has_callback_id == true
+    uint32_t timer_id = 0;
+    bool has_callback_id = false;
+
+    static TimerFirePayload fromClosure(core::Value v, uint32_t timerId) {
+        return TimerFirePayload{.closure = std::move(v),
+                                .callback_id = 0,
+                                .timer_id = timerId,
+                                .has_callback_id = false};
+    }
+    static TimerFirePayload fromCallbackId(uint32_t cbId, uint32_t timerId) {
+        return TimerFirePayload{.closure = core::Value(),
+                                .callback_id = cbId,
+                                .timer_id = timerId,
+                                .has_callback_id = true};
+    }
+};
 
 /**
  * Event - Typed event with flexible payload
@@ -123,7 +166,7 @@ public:
      * Submit blocking work to the callback worker pool (thread-safe).
      *
      * The job runs on a worker thread; it must not touch VM state,
-     * Values, or the GC heap - C++ payload in, C++ result out. It
+     * Values, or the GC heap — C++ payload in, C++ result out. It
      * posts its result back via push(Event(ASYNC_HOST_COMPLETE, ...))
      * or deferToVM, never by invoking the VM directly.
      *
@@ -180,25 +223,12 @@ public:
         return events_.unsafe_size();
     }
 
+#if !HAVEL_PLATFORM_WINDOWS
     int wakeupFd() const { return wakeupFd_; }
-
-#if HAVEL_PLATFORM_WINDOWS
-    /**
-     * Win32 event handle used to poke the event loop, or nullptr if the
-     * wakeup object was never created.
-     *
-     * Typed void* on purpose: EventQueue.hpp is included by most of the VM,
-     * and pulling <windows.h> into all of them for one handle costs every
-     * reader the min/max macro surface. The definition side casts this back
-     * to HANDLE, where <windows.h> is already included.
-     *
-     * IMPORTANT: wakeupFd() returns -1 on Windows, so any select()/poll()
-     * loop built on it will simply never be woken. Consumers of the wakeup
-     * object - core/io/EventListener.cpp and compiler/vm/VM.cpp - must wait
-     * on wakeupHandle() with WaitForMultipleObjects on Windows instead.
-     * That switch is still outstanding; see docs/build/windows.md.
-     */
-    void *wakeupHandle() const { return wakeupEvent_; }
+#else
+    // The Win32 counterpart of wakeupFd(). Returned as void* so this header
+    // stays free of HANDLE for callers that never touch it.
+    void* wakeupHandle() const { return wakeupEvent_; }
 #endif
 
     void drainWakeup();
@@ -221,9 +251,10 @@ private:
     utils::LockFreeQueue<Event> events_;
     std::unordered_map<uint8_t, EventHandler> handlers_;
     mutable std::mutex handlers_mutex_;
+#if !HAVEL_PLATFORM_WINDOWS
     int wakeupFd_ = -1;
-#if HAVEL_PLATFORM_WINDOWS
-    void *wakeupEvent_ = nullptr;
+#else
+    HANDLE wakeupEvent_ = nullptr;
 #endif
     void signalWakeup();
     

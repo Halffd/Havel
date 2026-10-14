@@ -1039,7 +1039,7 @@ if target.kind == "IndexExpression" {
 				emitStoreVar(emitter, target.name)
 			}
 		}
-	else if target.kind == "MemberExpression" {
+		else if target.kind == "MemberExpression" {
 		// obj.prop += val → evaluate the receiver ONCE into a temp local.
 		// Re-emitting target.obj in the in-place, fallback and reload paths
 		// evaluated side-effecting receivers (getObj().a += 2 called
@@ -1112,7 +1112,7 @@ if target.kind == "IndexExpression" {
 			bc.emit("LOAD_VAR", tempResult)
 		}
 	}
-	else if target.kind == "IndexExpression" {
+		else if target.kind == "IndexExpression" {
 		// arr[i] += val → save arr, load arr[i], load val, op, save result, arr[i] = result
 		tempObj = scopeLocalCount(emitter.scope)
 		emitter.scope.count = emitter.scope.count + 1
@@ -1141,75 +1141,75 @@ if target.kind == "IndexExpression" {
 		bc.emit("POP")
 		bc.emit("LOAD_VAR", tempResult)
 	}
-else if target.kind == "AtExpression" {
-  // @field += val → load self.field, load val, op, store self.field
-  fname = target.field
-  if fname.kind == "Identifier" { fname = fname.name }
-  tempResult = scopeLocalCount(emitter.scope)
-  emitter.scope.count = emitter.scope.count + 1
-  bc.emit("LOAD_VAR", 0)
-  fidx = bc.add_string(fname)
-  bc.emit("LOAD_CONST", fidx)
-  bc.emit("OBJECT_GET")
-  emitExpr(emitter, node.value)
-  opcodes = {
-    "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-    "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
-    "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-    "<<=": "BIT_LSH", ">>=": "BIT_RSH",
-  }
-  oc = opcodes[node.oper]
-  if oc != null { bc.emit(oc) }
-  else { emitError("unknown compound @ op: " + node.oper, node.line, node.col) }
-  bc.emit("DUP")
-  bc.emit("STORE_VAR", tempResult)
-  bc.emit("LOAD_VAR", 0)
-  bc.emit("LOAD_VAR", tempResult)
-  fidx2 = bc.add_string(fname)
-  bc.emit("LOAD_CONST", fidx2)
-  bc.emit("OBJECT_SET")
-  bc.emit("POP")
-  // The mutated value is already on the stack (DUP'd before STORE); the
-  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
-  // per loop iteration (async-task operand stack balloon).
-}
-else if target.kind == "AtAtExpression" {
-  // @@field += val → load Class.field, load val, op, store Class.field
-  fname = target.field
-  if fname.kind == "Identifier" { fname = fname.name }
-  tempResult = scopeLocalCount(emitter.scope)
-  emitter.scope.count = emitter.scope.count + 1
-  classSid = globalIdx(emitter, emitter.currentClassName)
-  bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
-  fidx = bc.add_string(fname)
-  bc.emit("LOAD_CONST", fidx)
-  bc.emit("OBJECT_GET")
-  emitExpr(emitter, node.value)
-  opcodes = {
-    "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-    "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
-    "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-    "<<=": "BIT_LSH", ">>=": "BIT_RSH",
-  }
-  oc = opcodes[node.oper]
-  if oc != null { bc.emit(oc) }
-  else { emitError("unknown compound @@ op: " + node.oper, node.line, node.col) }
-  bc.emit("DUP")
-  bc.emit("STORE_VAR", tempResult)
-  classSid2 = globalIdx(emitter, emitter.currentClassName)
-  bc.emit("LOAD_GLOBAL", bc.str_id(classSid2))
-  bc.emit("LOAD_VAR", tempResult)
-  fidx2 = bc.add_string(fname)
-  bc.emit("LOAD_CONST", fidx2)
-  bc.emit("OBJECT_SET")
-  bc.emit("POP")
-  // The mutated value is already on the stack (DUP'd before STORE); the
-  // final LOAD_VAR tempResult used to add a duplicate that leaked one slot
-  // per loop iteration (async-task operand stack balloon).
-}
-else {
-emitError("unsupported compound target: " + target.kind, node.line, node.col)
-}
+		else if target.kind == "AtExpression" {
+				// @field += val → load self.field, load val, op, store self.field
+				fname = target.field
+				if fname.kind == "Identifier" { fname = fname.name }
+				tempResult = scopeLocalCount(emitter.scope)
+				emitter.scope.count = emitter.scope.count + 1
+				bc.emit("LOAD_VAR", 0)
+				fidx = bc.add_string(fname)
+				bc.emit("LOAD_CONST", fidx)
+				bc.emit("OBJECT_GET")
+				emitExpr(emitter, node.value)
+				opcodes = {
+					"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+					"%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+					"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+					"<<=": "BIT_LSH", ">>=": "BIT_RSH",
+				}
+				oc = opcodes[node.oper]
+				if oc != null { bc.emit(oc) }
+				else { emitError("unknown compound @ op: " + node.oper, node.line, node.col) }
+				bc.emit("DUP")
+				bc.emit("STORE_VAR", tempResult)
+				bc.emit("LOAD_VAR", 0)
+				bc.emit("LOAD_VAR", tempResult)
+				fidx2 = bc.add_string(fname)
+				bc.emit("LOAD_CONST", fidx2)
+				bc.emit("OBJECT_SET")
+				bc.emit("POP")
+				// The mutated value is already on the stack (DUP'd before STORE); the
+				// final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+				// per loop iteration (async-task operand stack balloon).
+		}
+		else if target.kind == "AtAtExpression" {
+				// @@field += val → load Class.field, load val, op, store Class.field
+				fname = target.field
+				if fname.kind == "Identifier" { fname = fname.name }
+				tempResult = scopeLocalCount(emitter.scope)
+				emitter.scope.count = emitter.scope.count + 1
+				classSid = globalIdx(emitter, emitter.currentClassName)
+				bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
+				fidx = bc.add_string(fname)
+				bc.emit("LOAD_CONST", fidx)
+				bc.emit("OBJECT_GET")
+				emitExpr(emitter, node.value)
+				opcodes = {
+					"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+					"%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+					"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+					"<<=": "BIT_LSH", ">>=": "BIT_RSH",
+				}
+				oc = opcodes[node.oper]
+				if oc != null { bc.emit(oc) }
+				else { emitError("unknown compound @@ op: " + node.oper, node.line, node.col) }
+				bc.emit("DUP")
+				bc.emit("STORE_VAR", tempResult)
+				classSid2 = globalIdx(emitter, emitter.currentClassName)
+				bc.emit("LOAD_GLOBAL", bc.str_id(classSid2))
+				bc.emit("LOAD_VAR", tempResult)
+				fidx2 = bc.add_string(fname)
+				bc.emit("LOAD_CONST", fidx2)
+				bc.emit("OBJECT_SET")
+				bc.emit("POP")
+				// The mutated value is already on the stack (DUP'd before STORE); the
+				// final LOAD_VAR tempResult used to add a duplicate that leaked one slot
+				// per loop iteration (async-task operand stack balloon).
+		}
+		else {
+			emitError("unsupported compound target: " + target.kind, node.line, node.col)
+		}
 return
 
 }
@@ -1447,32 +1447,31 @@ return
 
 }
     if k == "InterpolatedString" {
-  emptyIdx = bc.add_string("")
-  bc.emit("LOAD_CONST", emptyIdx)
-  for seg in node.parts {
-    if seg.kind == "StringLiteral" {
-      strIdx = bc.add_string(seg.value)
-      bc.emit("LOAD_CONST", strIdx)
-                bc.emit("STRING_CONCAT")
-            }
-            else {
-                // Interpolation segments are never tail positions: the
-                // string still has to be assembled after they evaluate.
-                // Without this clear, a return-expr interpolation like
-                // return o["a${str(k)}"] inherits inTailPosition from the
-                // enclosing return; the str(k) segment emits TAIL_CALL and
-                // the function aborts with the raw segment value instead
-                // of running the subscript (same fix as the C++ emitter).
-                savedTail = emitter.inTailPosition
-                emitter.inTailPosition = false
-                emitExpr(emitter, seg)
-                emitter.inTailPosition = savedTail
-                bc.emit("TO_STRING")
-                bc.emit("STRING_CONCAT")
-            }
+      emptyIdx = bc.add_string("")
+      bc.emit("LOAD_CONST", emptyIdx)
+      for seg in node.parts {
+        if seg.kind == "StringLiteral" {
+          strIdx = bc.add_string(seg.value)
+          bc.emit("LOAD_CONST", strIdx)
+          bc.emit("STRING_CONCAT")
         }
-        return
-
+        else {
+          // Interpolation segments are never tail positions: the
+          // string still has to be assembled after they evaluate.
+          // Without this clear, a return-expr interpolation like
+          // return o["a${str(k)}"] inherits inTailPosition from the
+          // enclosing return; the str(k) segment emits TAIL_CALL and
+          // the function aborts with the raw segment value instead
+          // of running the subscript (same fix as the C++ emitter).
+          savedTail = emitter.inTailPosition
+          emitter.inTailPosition = false
+          emitExpr(emitter, seg)
+          emitter.inTailPosition = savedTail
+          bc.emit("TO_STRING")
+          bc.emit("STRING_CONCAT")
+        }
+      }
+      return
     }
     if k == "SpreadExpression" {
         emitExpr(emitter, node.value)
@@ -4102,7 +4101,7 @@ for stmt in body {
       }
     }
   }
-  else {
+    else {
         topStmts.push(stmt)
 
     }
@@ -4426,9 +4425,9 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
         fieldIdx = bc.add_string(prop.key)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_GET")
-		if prop.value != null {
-			if prop.value.kind == "Identifier" {
-				bindSlot = scopeDeclare(emitter.scope, prop.value.name)
+        if prop.value != null {
+          if prop.value.kind == "Identifier" {
+            bindSlot = scopeDeclare(emitter.scope, prop.value.name)
             bc.emit("DUP")
             bc.emit("STORE_VAR", bindSlot)
             bc.emit("IS_NULL")
@@ -4436,12 +4435,12 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
             bc.emit("AND")
           }
           else {
-			emitExpr(emitter, prop.value)
+            emitExpr(emitter, prop.value)
             bc.emit("EQ")
             bc.emit("AND")
           }
         }
-		if prop.value == null {
+        if prop.value == null {
           bc.emit("IS_NULL")
           bc.emit("NOT")
           bc.emit("AND")
@@ -5063,7 +5062,7 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
     bc.emit("OBJECT_SET")
     bc.emit("CALL", 4)
    }
-   else {
+    else {
     bc.emit("CALL", 3)
 }
    }

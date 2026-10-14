@@ -1,0 +1,36 @@
+// Module-identity regression: importing the same module file under two
+// path spellings must load ONE module instance with ONE sidecar.
+//
+// The bug: ModuleLoader::canonicalizePath delegated to resolve(), whose
+// cache-hit path returns ResolvedModule{Cached, "", key, ""} - an empty
+// canonical path - so canonicalizePath returned "" and loadModule fell
+// back to the RAW import string as its cache key. "modglob/x" (driver
+// spelling) and "x" (sibling-module spelling inside y.hv) keyed
+// differently: the same file loaded twice with separate sidecars, and
+// module state split-brained (a direct bump was invisible to calls
+// routed through the sibling module, and vice versa).
+//
+// Shape: x.hv holds a counter; y.hv imports "x" by its bare sibling
+// name and re-exports a viaX() that bumps it. The driver imports
+// "modglob/x" by path AND y by path - both spellings of x must meet
+// in one instance.
+//
+// Expected: "module-identity smoke ok", exit 0.
+
+use { bumpX, getX } from "modglob/x"
+use { viaX } from "modglob/y"
+
+r1 = bumpX()   // x 0 -> 1 (driver spelling)
+r2 = viaX()    // sibling spelling must see 1 -> 2, returns 102
+r3 = getX()    // driver spelling must see 2
+assert(r1 == 1, "direct bump: ${r1}")
+assert(r2 == 102, "sibling spelling shares state (102, not a fresh 101): ${r2}")
+assert(r3 == 2, "driver spelling sees the sibling's bump: ${r3}")
+
+// And back the other way: sibling route, then direct read
+r4 = viaX()    // 2 -> 3, returns 103
+r5 = getX()    // 3
+assert(r4 == 103, "second sibling call: ${r4}")
+assert(r5 == 3, "direct read after sibling bump: ${r5}")
+
+print("module-identity smoke ok")

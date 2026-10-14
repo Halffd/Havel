@@ -93,13 +93,30 @@ int main() {
     CHECK(out.asInt() == 42);
 
     // Unsupported opcode must be refused (left to the interpreter).
-    // MOD has no bridge lowering in the fast tier (div/mod semantics stay
-    // in the runtime and the ORC backend owns them).
+    // DIV/MOD/NEGATE/TAIL_CALL gained bridges in the fast tier (the
+    // parser's core dispatch functions need them); collection literals
+    // STORE_IMMUT_VAR (`val` locals) still has no lowering and must stay
+    // refused.
     BytecodeFunction g("cl_bad", 0, 0);
-    g.instructions.push_back(Instruction(OpCode::MOD));
+    g.instructions.push_back(Instruction(OpCode::STORE_IMMUT_VAR));
     g.instructions.push_back(Instruction(OpCode::RETURN));
     CHECK(!CraneliftBackend::can_lower(g));
     CHECK(!backend.compile(g));
+
+    // MOD now lowers: int div/mod semantics stay single-sourced in the
+    // runtime's generic binop bridge, with the C++ opcode in the operand.
+    BytecodeFunction m("cl_mod", 2, 2);
+    m.instructions.push_back(
+        Instruction(OpCode::LOAD_VAR, {Value::makeInt(0)}));
+    m.instructions.push_back(
+        Instruction(OpCode::LOAD_VAR, {Value::makeInt(1)}));
+    m.instructions.push_back(Instruction(OpCode::MOD));
+    m.instructions.push_back(Instruction(OpCode::RETURN));
+    // Execution is not checked here: the generic binop bridge needs a real
+    // VM (a null vm returns null by contract), so div/mod runtime
+    // semantics are covered by the VM-level smoke tests instead.
+    CHECK(CraneliftBackend::can_lower(m));
+    CHECK(backend.compile(m));
   }
 #endif
 

@@ -424,6 +424,17 @@ else if (op == OpCode::INT_DIV) {
         return merged;
     };
 
+    // LLVM 23: BasicBlock::getTerminator() asserts on blocks with no
+    // terminator (and under NDEBUG the assert vanishes, leaving UB that
+    // reads garbage and - on empty blocks - returns a bogus non-null, so
+    // the "skip already-terminated blocks" checks below silently skipped
+    // EVERY block and emitted functions full of empty, unterminated
+    // basic blocks; LLVM 23's codegen then SEGV'd in DominatorTree on
+    // the invalid IR). Safe predicate instead:
+    auto blockHasTerminator = [](llvm::BasicBlock *bb) {
+        return bb && !bb->empty() && bb->back().isTerminator();
+    };
+
     B.CreateBr(basicBlocks[0]);
     pendingIncoming[0].push_back({entryBB, {}});
 
@@ -433,7 +444,7 @@ else if (op == OpCode::INT_DIV) {
         llvm::BasicBlock* instrBlock = basicBlocks[ip]; // Save the instruction block
 
         // Skip blocks that are already fully emitted.
-        if (instrBlock->getTerminator() != nullptr) {
+        if (blockHasTerminator(instrBlock)) {
             continue;
         }
 
@@ -2665,12 +2676,13 @@ case OpCode::LENGTH: {
 
     // Default fallthrough to next instruction block if the opcode didn't terminate.
     // We terminate the current insert block (which might be a merge block from a specialized op).
-    if (B.GetInsertBlock()->getTerminator() == nullptr) {
+    if (!blockHasTerminator(B.GetInsertBlock())) {
         B.CreateBr(basicBlocks[ip + 1]);
     }
 
     // Capture outgoing stack state for each successor. This feeds entry PHIs.
-    if (auto *term = B.GetInsertBlock()->getTerminator()) {
+    if (blockHasTerminator(B.GetInsertBlock())) {
+        auto *term = B.GetInsertBlock()->getTerminator();
         if (auto *br = llvm::dyn_cast<llvm::BranchInst>(term)) {
             std::unordered_set<size_t> seenSuccs;
             for (unsigned s = 0; s < br->getNumSuccessors(); ++s) {
@@ -2686,7 +2698,7 @@ case OpCode::LENGTH: {
 
 // Function epilogue for paths that reach the synthetic exit block.
 B.SetInsertPoint(basicBlocks[func.instructions.size()]);
-if (B.GetInsertBlock()->getTerminator() == nullptr) {
+if (!blockHasTerminator(B.GetInsertBlock())) {
     llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
     if (!fn_unreg) {
         fn_unreg = llvm::Function::Create(

@@ -1,0 +1,22 @@
+// Regression: a timer payload read with the wrong type deadlocks the VM.
+// A mismatched TIMER_FIRE cast threw "Closure not found for call" from inside
+// the timer handler while the interval object kept its own thread alive. This
+// script only proves the payload survives GC and dispatch, so the timer is
+// allowed to keep ticking; the runner's timeout is the safety net.
+// Expected: 200 ticks within 10s and rc 0. Headless-safe: no OS input.
+
+TICKS = 200
+
+ticks = 0
+iv = interval 2 { ticks = ticks + 1 }
+
+deadline = time.millis() + 10000
+while ticks < TICKS && time.millis() < deadline {
+    sleep(5)
+}
+
+assert(ticks >= TICKS, "interval must tick " + TICKS + " times, got " + ticks)
+print("PASS: timer_payload_not_swept ticks:", ticks)
+// The interval above is deliberately left running; without an explicit exit the
+// VM keeps its timer thread alive and the runner kills us at its cap.
+process.exit(0)

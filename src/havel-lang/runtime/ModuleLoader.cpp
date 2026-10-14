@@ -946,11 +946,21 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
 
   std::string ModuleLoader::canonicalizePath(const std::string& modulePath,
                                              const std::string& scriptDir) const {
-    auto resolved = resolve(modulePath, scriptDir);
-    if (resolved && !resolved->canonicalPath.empty()) {
-      return resolved->canonicalPath;
-    }
-    return "";
+    // Identity function for the module cache key: MUST return the same
+    // canonical source path for every spelling of one file, whether or
+    // not the module is already loaded. resolve() could not be used
+    // here: on a cache hit it returns ResolvedModule{Cached, "", key, ""}
+    // with an EMPTY canonicalPath, so canonicalizePath returned "" and
+    // loadModule fell back to the RAW import string as key - importing
+    // the same file under two spellings ("modglob/x" from a driver vs
+    // "x" from a sibling module) then loaded TWO module instances with
+    // separate sidecars: module state split-brain (verified: direct
+    // call bumped one instance, the sibling's call bumped the other).
+    // computeCanonicalPathNoCache resolves against the source tree and
+    // the cached-bytecode names without consulting the in-memory
+    // module cache, so the key is stable across spellings and load
+    // order.
+    return computeCanonicalPathNoCache(modulePath, scriptDir);
   }
 
   std::string ModuleLoader::getCacheDir() const {

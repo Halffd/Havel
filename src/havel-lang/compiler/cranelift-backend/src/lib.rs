@@ -153,6 +153,18 @@ pub const OP_TRY_EXIT: u32 = 58;
 pub const OP_THROW: u32 = 59;
 pub const OP_LOAD_EXCEPTION: u32 = 60;
 
+// Bridge-lowered arithmetic extensions (Phase C: the self-hosted parser's
+// core dispatch fns - parseStatement/parseExpr/parseBlock/nud/led - are
+// refused on TAIL_CALL; emitExpr/infer on NEGATE/DIV). The two div ops ride
+// the generic havel_vm_binop bridge, with the C++ OpCode carried in the
+// instruction operand by the adapter; NEGATE has its own bridge; TAIL_CALL
+// lowers as call-then-return (native frames replace the interpreter's
+// frame reuse - recursion depth is bounded by expression nesting).
+pub const OP_DIV: u32 = 61;
+pub const OP_MOD: u32 = 62;
+pub const OP_NEGATE: u32 = 63;
+pub const OP_TAIL_CALL: u32 = 64;
+
 // Native backedge-hook throttle: a taken backward edge reports through
 // havel_vm_backedge_n every BACKEDGE_STRIDE-th edge with an exact delta of
 // BACKEDGE_STRIDE (per-site counter), instead of calling the hook per
@@ -188,11 +200,16 @@ fn stack_effect(op: u32, operand: u32, next_operand: Option<u32>) -> Result<(i64
         OP_STORE_UPVALUE => (1, 0),
         OP_LOAD_UPVALUE => (0, 1),
         OP_ADD | OP_SUB | OP_MUL | OP_LT | OP_EQ | OP_NEQ | OP_LTE | OP_GT | OP_GTE => (2, 1),
+        OP_DIV | OP_MOD => (2, 1),
         OP_STRING_CONCAT | OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_LSH | OP_BIT_RSH => (2, 1),
         OP_NOT | OP_LENGTH | OP_BIT_NOT | OP_STRING_LEN | OP_STRING_UPPER | OP_STRING_LOWER
-        | OP_STRING_TRIM | OP_STRING_PROMOTE => (1, 1),
+        | OP_STRING_TRIM | OP_STRING_PROMOTE | OP_NEGATE => (1, 1),
         OP_JUMP => (0, 0),
         OP_JUMP_IF_FALSE | OP_JUMP_IF_TRUE | OP_JUMP_IF_NULL => (1, 0),
+        OP_TAIL_CALL => {
+            let argc = operand as i64;
+            (argc + 1, 0)
+        }
         OP_CALL => {
             let argc = operand as i64;
             (argc + 1, 1)
@@ -280,6 +297,47 @@ mod fallback_shims {
     unsafe extern "C" fn shim_mul(_vm: *mut c_void, l: u64, r: u64) -> u64 {
         if is_int48(l) && is_int48(r) {
             pack_int48(unpack_int48(l).wrapping_mul(unpack_int48(r)))
+        } else {
+            NULL_TAGGED
+        }
+    }
+
+    // Div/mod: the standalone harness has no VM, so only the int path is
+    // representable. Int div/mod run the real semantics (truncated
+    // division; division by zero yields null, mirroring the runtime's
+    // error-to-null bridge contract for a null vm). Non-int operands
+    // cannot reach a real runtime here, so null.
+    unsafe extern "C" fn shim_binop(_vm: *mut c_void, op: u32, l: u64, r: u64) -> u64 {
+        if !(is_int48(l) && is_int48(r)) {
+            return NULL_TAGGED;
+        }
+        let a = unpack_int48(l);
+        let b = unpack_int48(r);
+        // The op operand is the C++ OpCode the adapter carried: DIV=16,
+        // MOD=20 (BytecodeIR.hpp enum order).
+        match op {
+            16 => {
+                if b == 0 {
+                    NULL_TAGGED
+                } else {
+                    pack_int48(a.wrapping_div(b))
+                }
+            }
+            20 => {
+                if b == 0 {
+                    NULL_TAGGED
+                } else {
+                    pack_int48(a.wrapping_rem(b))
+                }
+            }
+            _ => NULL_TAGGED,
+        }
+    }
+
+    // NEGATE: int-48 fast path; non-int cannot be represented standalone.
+    unsafe extern "C" fn shim_negate(_vm: *mut c_void, v: u64) -> u64 {
+        if is_int48(v) {
+            pack_int48(unpack_int48(v).wrapping_neg())
         } else {
             NULL_TAGGED
         }
@@ -516,6 +574,8 @@ mod fallback_shims {
             "havel_vm_add" => Some(shim_add as *const u8),
             "havel_vm_sub" => Some(shim_sub as *const u8),
             "havel_vm_mul" => Some(shim_mul as *const u8),
+            "havel_vm_binop" => Some(shim_binop as *const u8),
+            "havel_vm_negate" => Some(shim_negate as *const u8),
             "havel_vm_lt" => Some(shim_lt as *const u8),
             "havel_vm_eq" => Some(shim_eq as *const u8),
             "havel_vm_neq" => Some(shim_neq as *const u8),
@@ -735,7 +795,10 @@ impl CraneliftBackend {
                         leader[i + 1] = true;
                     }
                 }
-                OP_RETURN => {
+                // TAIL_CALL terminates like RETURN: it returns the
+                // callee's result and never falls through (the emitter's
+                // following RETURN is dead code).
+                OP_TAIL_CALL | OP_RETURN => {
                     if i + 1 < n {
                         leader[i + 1] = true;
                     }
@@ -821,7 +884,9 @@ impl CraneliftBackend {
                         edges.push((i + 1, after));
                     }
                 }
-                OP_RETURN => {}
+                // TAIL_CALL returns the callee's result: no successor
+                // edge (the following dead RETURN is a separate leader).
+                OP_TAIL_CALL | OP_RETURN => {}
                 _ => {
                     if i + 1 < n {
                         edges.push((i + 1, after));
@@ -902,6 +967,18 @@ impl CraneliftBackend {
         let mut bridge_ids: HashMap<&str, cranelift_module::FuncId> = HashMap::new();
         for sym in ["havel_vm_add", "havel_vm_sub", "havel_vm_mul"] {
             let s = bridge_sig.clone();
+            let id = self
+                .module
+                .declare_function(sym, Linkage::Import, &s)
+                .map_err(|e| err(format!("declare {sym}: {e}")))?;
+            bridge_ids.insert(sym, id);
+        }
+        // Unary vm bridge: (vm, v) -> result (NEGATE).
+        let mut unary_vm_sig = self.module.make_signature();
+        unary_vm_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int64)];
+        unary_vm_sig.returns = vec![AbiParam::new(int64)];
+        for sym in ["havel_vm_negate"] {
+            let s = unary_vm_sig.clone();
             let id = self
                 .module
                 .declare_function(sym, Linkage::Import, &s)
@@ -1203,6 +1280,32 @@ impl CraneliftBackend {
             .declare_function("havel_vm_call", Linkage::Import, &call_sig)
             .map_err(|e| err(format!("declare havel_vm_call: {e}")))?;
 
+        // havel_vm_binop: (vm, C++ OpCode, l, r) -> result. The generic
+        // Runtime-ABI bridge runs the interpreter's execBinaryOp for any
+        // opcode; DIV/MOD lower through it (the adapter carries the C++
+        // opcode in the instruction operand so the lowering embeds no enum
+        // knowledge).
+        let mut binop_sig = self.module.make_signature();
+        binop_sig.params = vec![
+            AbiParam::new(pointer_ty),
+            AbiParam::new(int32),
+            AbiParam::new(int64),
+            AbiParam::new(int64),
+        ];
+        binop_sig.returns = vec![AbiParam::new(int64)];
+        let binop_id = self
+            .module
+            .declare_function("havel_vm_binop", Linkage::Import, &binop_sig)
+            .map_err(|e| err(format!("declare havel_vm_binop: {e}")))?;
+        // havel_vm_negate: (vm, v) -> result (unary minus).
+        let mut negate_sig = self.module.make_signature();
+        negate_sig.params = vec![AbiParam::new(pointer_ty), AbiParam::new(int64)];
+        negate_sig.returns = vec![AbiParam::new(int64)];
+        let negate_id = self
+            .module
+            .declare_function("havel_vm_negate", Linkage::Import, &negate_sig)
+            .map_err(|e| err(format!("declare havel_vm_negate: {e}")))?;
+
         // havel_vm_global_get: (vm, chunk-local string id) -> global Value
         // bits; missing globals yield null.
         let mut global_get_sig = self.module.make_signature();
@@ -1377,6 +1480,8 @@ impl CraneliftBackend {
         bridge_ids.insert("havel_vm_call_method", call_method_id);
         bridge_ids.insert("havel_vm_is_truthy", truthy_id);
         bridge_ids.insert("havel_vm_call", call_id);
+        bridge_ids.insert("havel_vm_binop", binop_id);
+        bridge_ids.insert("havel_vm_negate", negate_id);
         bridge_ids.insert("havel_vm_global_get", global_get_id);
         bridge_ids.insert("havel_vm_global_set", global_set_id);
         bridge_ids.insert("havel_gc_register_roots", gc_register_roots_id);
@@ -1515,6 +1620,12 @@ impl CraneliftBackend {
                 .module
                 .declare_func_in_func(truthy_id, &mut builder.func);
             let call_bridge_ref = self.module.declare_func_in_func(call_id, &mut builder.func);
+            let binop_bridge_ref = self
+                .module
+                .declare_func_in_func(binop_id, &mut builder.func);
+            let negate_bridge_ref = self
+                .module
+                .declare_func_in_func(negate_id, &mut builder.func);
             let global_get_ref = self
                 .module
                 .declare_func_in_func(global_get_id, &mut builder.func);
@@ -2026,6 +2137,74 @@ impl CraneliftBackend {
                         let base = builder.ins().stack_addr(pointer_ty, slot, 0);
                         let cnt = builder.ins().iconst(int32, (argc + 1) as i64);
                         let call = builder.ins().call(call_bridge_ref, &[vm, base, cnt]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_TAIL_CALL => {
+                        // Terminal call: stage [callee, args...] exactly like
+                        // OP_CALL, then return the bridge's result. Native
+                        // frames replace the interpreter's frame reuse, so
+                        // recursion depth is bounded by expression nesting
+                        // (deep enough to need tail-call frame reuse is not
+                        // a shape the lowering's callers produce; can_lower
+                        // still admits it because declining the parser's
+                        // core dispatch fns costs far more than this).
+                        let argc = operand as usize;
+                        if vstack.len() < argc + 1 {
+                            return Err(err("TAIL_CALL with too few stack values".into()));
+                        }
+                        let slot = builder.create_sized_stack_slot(
+                            cranelift::codegen::ir::StackSlotData::new(
+                                cranelift::codegen::ir::StackSlotKind::ExplicitSlot,
+                                ((argc + 1) * 8) as u32,
+                                8,
+                            ),
+                        );
+                        let mut args_rev: Vec<Value> = Vec::with_capacity(argc);
+                        for _ in 0..argc {
+                            args_rev.push(vstack.pop().expect("checked depth"));
+                        }
+                        let callee = vstack.pop().expect("checked depth");
+                        let mut words: Vec<Value> = Vec::with_capacity(argc + 1);
+                        words.push(callee);
+                        for w in args_rev.into_iter().rev() {
+                            words.push(w);
+                        }
+                        for (k, w) in words.iter().enumerate() {
+                            builder.ins().stack_store(*w, slot, (k as i32) * 8);
+                        }
+                        let base = builder.ins().stack_addr(pointer_ty, slot, 0);
+                        let cnt = builder.ins().iconst(int32, (argc + 1) as i64);
+                        let call = builder.ins().call(call_bridge_ref, &[vm, base, cnt]);
+                        let result = builder.inst_results(call)[0];
+                        let gc_unreg_ref = *bridge_refs
+                            .get("havel_gc_unregister_roots")
+                            .expect("gc_unregister_roots bridge");
+                        let null_frame = builder.ins().iconst(pointer_ty, 0);
+                        builder.ins().call(gc_unreg_ref, &[null_frame]);
+                        builder.ins().return_(&[result]);
+                        saw_return = true;
+                        terminated = true;
+                    }
+                    OP_DIV | OP_MOD => {
+                        // Div/mod semantics (div-by-zero, type coercions)
+                        // live in the interpreter's execBinaryOp: route
+                        // through the generic binop bridge with the C++
+                        // opcode the adapter carried in the operand.
+                        let r = vstack
+                            .pop()
+                            .ok_or_else(|| err("DIV/MOD with empty stack".into()))?;
+                        let l = vstack
+                            .pop()
+                            .ok_or_else(|| err("DIV/MOD with empty stack".into()))?;
+                        let op_w = builder.ins().iconst(int32, operand as i64);
+                        let call = builder.ins().call(binop_bridge_ref, &[vm, op_w, l, r]);
+                        vstack.push(builder.inst_results(call)[0]);
+                    }
+                    OP_NEGATE => {
+                        let v = vstack
+                            .pop()
+                            .ok_or_else(|| err("NEGATE with empty stack".into()))?;
+                        let call = builder.ins().call(negate_bridge_ref, &[vm, v]);
                         vstack.push(builder.inst_results(call)[0]);
                     }
                     OP_JUMP_IF_FALSE => {
@@ -3127,6 +3306,125 @@ mod tests {
             unpack_int48(out),
             900123,
             "shim must see [callee=900000, 1, 2, 3] in order: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn tail_call_stages_callee_then_returns_bridge_result() {
+        // TAIL_CALL lowers as call-then-return: stage [callee, args...]
+        // exactly like CALL, then return the bridge's result. The shim
+        // pins the layout (callee first, args in push order) and answers
+        // 900123 only for the exact sequence, so an inverted staging or a
+        // dropped return value cannot pass.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code: Vec<u32> = vec![
+            OP_LOAD_CONST,
+            0, // callee: 900000 (magic)
+            OP_LOAD_CONST,
+            1, // arg1: 1
+            OP_LOAD_CONST,
+            2, // arg2: 2
+            OP_LOAD_CONST,
+            3, // arg3: 3
+            OP_TAIL_CALL,
+            3, // argc - terminal, no RETURN pair follows
+        ];
+        let constants = [
+            pack_int48(900000),
+            pack_int48(1),
+            pack_int48(2),
+            pack_int48(3),
+        ];
+        let f = backend
+            .compile_function("tailtest", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            900123,
+            "TAIL_CALL must stage [callee=900000, 1, 2, 3] and return the result: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn div_routes_through_binop_bridge_with_op_operand() {
+        // DIV lowers through the generic havel_vm_binop bridge; the
+        // instruction operand carries the C++ OpCode (16 = DIV). The shim
+        // computes by that operand: 40/5 = 8 with DIV, but 40%5 = 0 with
+        // MOD's opcode 20 - so a mis-carried operand cannot pass.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [
+            OP_LOAD_CONST,
+            0, //
+            OP_LOAD_CONST,
+            1, //
+            OP_DIV,
+            16, // C++ OpCode::DIV, carried by the adapter
+            OP_RETURN,
+            0,
+        ];
+        let constants = [pack_int48(40), pack_int48(5)];
+        let f = backend
+            .compile_function("divtest", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            8,
+            "DIV bridge must receive op=16 and compute 40/5: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn mod_routes_through_binop_bridge_with_op_operand() {
+        // MOD through the generic binop bridge with opcode 20: 40%6 = 4
+        // (a mis-carried DIV operand would answer 40/6 = 6 instead).
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [
+            OP_LOAD_CONST,
+            0, //
+            OP_LOAD_CONST,
+            1, //
+            OP_MOD,
+            20, // C++ OpCode::MOD, carried by the adapter
+            OP_RETURN,
+            0,
+        ];
+        let constants = [pack_int48(40), pack_int48(6)];
+        let f = backend
+            .compile_function("modtest", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            4,
+            "MOD bridge must receive op=20 and compute 40%6: {out:#x}"
+        );
+    }
+
+    #[test]
+    fn negate_routes_through_unary_bridge() {
+        // NEGATE pops one value and pushes the negated result through
+        // havel_vm_negate: -7 here. A lowering that popped two (binop
+        // shape) would underflow the stack and fail to compile.
+        let mut backend = CraneliftBackend::new().unwrap();
+        let code = [
+            OP_LOAD_CONST,
+            0, //
+            OP_NEGATE,
+            0, //
+            OP_RETURN,
+            0,
+        ];
+        let constants = [pack_int48(7)];
+        let f = backend
+            .compile_function("negtest", &code, &constants, 0)
+            .expect("lowering");
+        let out = unsafe { f(std::ptr::null_mut(), [].as_ptr(), 0) };
+        assert_eq!(
+            unpack_int48(out),
+            -7,
+            "NEGATE bridge must compute -7: {out:#x}"
         );
     }
 

@@ -32,6 +32,7 @@ public:
     static bool removeById(havel::compiler::VM &vm, const std::string &hotkeyId);
     static bool setEnabled(const std::string &hotkeyId, bool enabled);
     static bool setGrab(havel::compiler::VM &vm, const std::string &alias, bool grab);
+    static bool setGrabById(havel::compiler::VM &vm, const std::string &hotkeyId, bool grab);
     static void resetTriggerCount(const std::string &hotkeyId);
     static int64_t getAge(const std::string &hotkeyId);
     static int64_t getElapsed(const std::string &hotkeyId);

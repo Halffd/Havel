@@ -270,6 +270,16 @@ bool isAtEnd() const;
   bool isBinaryDigit(char c) const;
   bool isSkippable(char c) const;
   bool isHotkeyChar(char c) const;
+  // Sigils that begin a modifier prefix, not part of a key name.
+  bool isModifierSigil(char c) const;
+  // Peek-only: does a complete hotkey binding start at `pos`?
+  // Reads nothing. Used to decide, before normal token dispatch, whether a
+  // statement is `<key> =>` rather than an expression starting with a symbol.
+  bool isHotkeyBindingAhead(size_t pos) const;
+  // Is `name` a key the keymap knows? KeyMap is the source of truth once the
+  // table is hydrated; the comparison is case-insensitive so `Escape` resolves
+  // like `escape`.
+  bool isKnownHotkeyName(const std::string &name) const;
 
   // UTF-8 support
     uint32_t decodeUTF8(size_t& pos) const;

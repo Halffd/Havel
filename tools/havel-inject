@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""havel-inject - a virtual keyboard for testing havel's evdev hotkey path.
+
+WHY THIS EXISTS
+---------------
+Havel rejects every uinput/virtual input device on purpose: its own `send()`
+and `click()` write to a uinput device, and reading that device back would loop
+havel's output into its own input path (see IsVirtualDevicePath and the
+BUS_VIRTUAL/identity checks in src/core/io/EvdevAdapter.cpp). The exclusion is
+correct for a real desktop and stays the default.
+
+The side effect is that no test can drive the evdev hotkey path without
+physical hardware: xdotool/XTEST synthesizes inside the X server and never
+produces kernel evdev events. This tool is the other half of the escape hatch.
+
+    HAVEL_TEST_ALLOW_VIRTUAL_INPUT=1 havel run script.hv   # track it
+    tools/havel-inject f24                                  # press F24
+
+With the variable unset (the default, and every production run) havel ignores
+this device exactly as before.
+
+NEVER set HAVEL_TEST_ALLOW_VIRTUAL_INPUT in a real session: with havel's own
+uinput devices visible, its emitted keys can loop back into its input path.
+
+USAGE
+    havel-inject                     interactive: type key names, one per line
+    havel-inject f24 f22 c-f24       tap each key in sequence, then exit
+    havel-inject --hold f24 200      hold f24 for 200ms
+    havel-inject --list              print known key names
+    havel-inject --keep              stay alive so the device persists
+
+Key names are linux input-event codes by name (a, f1..f24, enter, space,
+lctrl/lshift/lalt/lwin, backspace, tab, escape...) or raw numbers.
+Modifiers: prefix '+' for control, '^' for shift, '!' for alt.
+
+Requires: /dev/uinput (root or the input group), python3. No third-party
+modules - the uinput device is created with raw ioctls.
+"""
+
+import argparse
+import ctypes
+import os
+import struct
+import sys
+import time
+
+EV_SYN, EV_KEY = 0, 0x01
+UI_SET_EVBIT, UI_SET_KEYBIT = 0x40045564, 0x40045565
+UI_DEV_CREATE = 0x5501
+ABS_CNT = 0x40
+
+KEYS = {
+    "a": 30, "b": 48, "c": 46, "d": 32, "e": 18, "f": 33, "g": 34, "h": 35,
+    "i": 23, "j": 36, "k": 37, "l": 38, "m": 50, "n": 49, "o": 24, "p": 25,
+    "q": 16, "r": 19, "s": 31, "t": 20, "u": 22, "v": 47, "w": 17, "x": 45,
+    "y": 21, "z": 44,
+    "f1": 59, "f2": 60, "f3": 61, "f4": 62, "f5": 63, "f6": 64, "f7": 65,
+    "f8": 66, "f9": 67, "f10": 68, "f11": 87, "f12": 88, "f13": 183,
+    "f14": 184, "f15": 185, "f16": 186, "f17": 187, "f18": 188, "f19": 189,
+    "f20": 190, "f21": 191, "f22": 192, "f23": 193, "f24": 194,
+    "enter": 28, "kpenter": 96, "space": 57, "tab": 15, "backspace": 14,
+    "escape": 1, "esc": 1, "delete": 111, "insert": 110, "home": 102,
+    "up": 103, "down": 108, "left": 105, "right": 106, "end": 107,
+    "pageup": 104, "pagedown": 109,
+    "lctrl": 29, "rctrl": 97, "lshift": 42, "rshift": 54, "lalt": 56,
+    "ralt": 100, "lwin": 125, "rwin": 126, "menu": 127, "capslock": 58,
+}
+
+MOD_CTRL, MOD_SHIFT, MOD_ALT = 29, 42, 56
+
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+_fd = None
+
+
+def _emit(typ, code, val):
+    now = time.time()
+    sec = int(now)
+    usec = int((now - sec) * 1_000_000)
+    os.write(_fd, struct.pack("llHHi", sec, usec, typ, code, val))
+
+
+def _create_device(name="havel-inject"):
+    """Create the uinput keyboard.
+
+    Letters are mandatory, not decorative: EvdevAdapter::QueryDeviceCapabilities
+    only classifies a device as CAP_KEYBOARD when it exposes a KEY_A..KEY_Z
+    key, so a device with just function keys is silently skipped.
+    """
+    global _fd
+    _fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+    libc.ioctl(_fd, UI_SET_EVBIT, EV_SYN)
+    libc.ioctl(_fd, UI_SET_EVBIT, EV_KEY)
+    for code in sorted(set(KEYS.values())):
+        libc.ioctl(_fd, UI_SET_KEYBIT, code)
+
+    # uinput_setup blob must be written before UI_DEV_CREATE, else the kernel
+    # rejects with EINVAL ("uinput: write device info first").
+    blob = (name.encode() + b"\x00" + b"\x00" * (80 - len(name) - 1)
+            + struct.pack("HHHH", 0x03, 0x1234, 0x5678, 1)   # bus/vendor/prod/ver
+            + struct.pack("I", 0)                          # ff_effects_max
+            + b"\x00" * (ABS_CNT * 4 * 4))
+    os.write(_fd, blob)
+    if libc.ioctl(_fd, UI_DEV_CREATE) < 0:
+        err = ctypes.get_errno()
+        raise SystemExit("UI_DEV_CREATE failed: %s "
+                         "(need root or the input group for /dev/uinput)"
+                         % os.strerror(err))
+    time.sleep(0.4)
+
+
+def parse_key(spec):
+    """'c-f24' -> ([MOD_CTRL], 194). Prefixes: + ctrl, ^ shift, ! alt."""
+    mods, name = [], spec
+    while name and name[0] in "+^!":
+        mods.append({"+": MOD_CTRL, "^": MOD_SHIFT, "!": MOD_ALT}[name[0]])
+        name = name[1:]
+    key = KEYS.get(name.lower())
+    if key is None:
+        if name.isdigit():
+            key = int(name)
+        else:
+            raise SystemExit("unknown key '%s' (try --list)" % spec)
+    return mods, key
+
+
+def tap(spec, hold=0.06):
+    mods, key = parse_key(spec)
+    for m in mods:
+        _emit(EV_KEY, m, 1)
+    _emit(EV_KEY, key, 1)
+    time.sleep(hold)
+    _emit(EV_KEY, key, 0)
+    for m in reversed(mods):
+        _emit(EV_KEY, m, 0)
+    _emit(EV_SYN, 0, 0)
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("keys", nargs="*")
+    ap.add_argument("--hold", type=int, default=60, help="hold ms (default 60)")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--keep", action="store_true",
+                    help="create the device and stay alive")
+    ap.add_argument("--repeat", type=int, default=0,
+                    help="tap the last key N times")
+    ap.add_argument("--gap", type=int, default=1000,
+                    help="ms between repeats (default 1000)")
+    args = ap.parse_args()
+
+    if args.list:
+        print(" ".join(sorted(KEYS)))
+        return
+    if os.environ.get("HAVEL_TEST_ALLOW_VIRTUAL_INPUT") != "1":
+        print("havel-inject: run havel with HAVEL_TEST_ALLOW_VIRTUAL_INPUT=1 or "
+              "it will ignore this device", file=sys.stderr)
+
+    _create_device()
+    print("havel-inject: virtual keyboard ready", file=sys.stderr)
+
+    if args.repeat and args.keys:
+        # Tap one key repeatedly, timestamping each emission. Device creation
+        # happens once above, so the printed timestamps are the real emission
+        # times - the latency test's whole point is to keep setup cost out of
+        # the measurement.
+        spec = args.keys[-1]
+        for _ in range(args.repeat):
+            print("%d sent %s" % (int(time.time() * 1000), spec),
+                  file=sys.stderr, flush=True)
+            tap(spec, args.hold / 1000.0)
+            time.sleep(args.gap / 1000.0)
+        return
+
+    if args.keys:
+        for spec in args.keys:
+            tap(spec, args.hold / 1000.0)
+            time.sleep(0.05)
+        if args.keep:
+            input()
+        return
+
+    print("type key names, one per line (empty line quits)", file=sys.stderr)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            break
+        try:
+            tap(line, args.hold / 1000.0)
+        except SystemExit as exc:
+            print(exc, file=sys.stderr)
+        else:
+            print("sent %s" % line, file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

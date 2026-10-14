@@ -90,7 +90,14 @@ namespace havel
   bool HotkeyManager::AddHotkey(const std::string &key,
                                 std::function<void()> callback)
   {
-    HotKey hk = io->AddHotkey(key, std::move(callback), 0);
+    return AddHotkey(key, std::move(callback), nullptr);
+  }
+
+  bool HotkeyManager::AddHotkey(const std::string &key,
+                                std::function<void()> callback,
+                                int *outId)
+  {
+    HotKey hk = io->AddHotkey(key, std::move(callback), 0, /*allowDuplicateAlias=*/true);
     if (!hk.success) {
       return false;
     }
@@ -100,6 +107,10 @@ namespace havel
     {
       std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
       RegisteredHotkeys()[hk.id] = hk;
+    }
+
+    if (outId) {
+      *outId = hk.id;
     }
 
     return true;
@@ -156,36 +167,42 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
 {
   if (debugging::debug_hotkeys) debug("[HotkeyManager] SetHotkeyGrab alias='{}' grab={}", alias, grab);
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
-    if (grabsSuspended_) {
-      pendingGrabs_[alias] = grab;
-      auto &hotkeys = RegisteredHotkeys();
-      for (auto &[id, hk] : hotkeys) {
-        if (hk.alias == alias) {
-          hk.grab = grab;
-          hk.enabled = grab;
-          break;
-        }
-      }
-      return true;
-    }
     auto &hotkeys = RegisteredHotkeys();
+    // Alias is NOT unique: the same key string can be registered several times
+    // (e.g. one hotkey per `when` branch). Resolve to the first matching id and
+    // delegate, so both entry points share one implementation.
     for (auto &[id, hk] : hotkeys)
     {
       if (hk.alias == alias)
       {
-        hk.grab = grab;
-        hk.enabled = grab;
-        if (!hk.evdev) {
-          if (grab) {
-            io->GrabHotkey(id);
-          } else {
-            io->UngrabHotkey(id);
-          }
-        }
-        return true;
+        return SetHotkeyGrabById(id, grab);
       }
     }
     return false;
+  }
+
+  bool HotkeyManager::SetHotkeyGrabById(int id, bool grab)
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    auto &hotkeys = RegisteredHotkeys();
+    auto it = hotkeys.find(id);
+    if (it == hotkeys.end())
+    {
+      return false;
+    }
+    if (grabsSuspended_) {
+      pendingGrabs_[id] = grab;
+    }
+    it->second.grab = grab;
+    it->second.enabled = grab;
+    if (!it->second.evdev && !grabsSuspended_) {
+      if (grab) {
+        io->GrabHotkey(id);
+      } else {
+        io->UngrabHotkey(id);
+      }
+    }
+    return true;
   }
 
   void HotkeyManager::suspendGrabs()

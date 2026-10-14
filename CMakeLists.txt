@@ -273,23 +273,21 @@ if(WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     # the _FLAGS variables above are set per-config and would be lost.
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
 
-    # NOT defining WINDOWS as a preprocessor macro, deliberately.
+    # WINDOWS as a preprocessor macro, so the tree's `#ifdef WINDOWS` guards
+    # actually fire on a Windows build. CMake's WINDOWS is a variable, not a
+    # macro, so without this none of them did. The one that matters most is
+    # src/core/io/WindowsIOBackend.hpp, which keeps the real Win32 backend
+    # inside `#ifdef WINDOWS` and a stub returning false in the `#else`; that
+    # is why the ported Windows input backend was dead code.
     #
-    # WINDOWS is a CMake variable, not a preprocessor macro, so the seven
-    # `#ifdef WINDOWS` sites in the tree never fired on a Windows build. The
-    # important one is src/core/io/WindowsIOBackend.hpp, which keeps the real
-    # Win32 backend inside `#ifdef WINDOWS` and a do-nothing stub in the
-    # `#else`; that is why the ported input backend was dead code.
-    #
-    # Defining it fixes that but costs 174 errors in one step, because
-    # Clipboard::Method has an enumerator literally named WINDOWS
-    # (src/host/clipboard/Clipboard.hpp). The macro rewrites that enumerator
-    # to 1 and the enum stops parsing. Measured: 244 errors without the macro,
-    # 418 with it.
-    #
-    # So the correct fix is to rename that enumerator first and then define the
-    # macro, not to define the macro first. Recorded here rather than landed
-    # half-way with the tree worse than it started.
+    # Defining it costs errors unless every all-caps WINDOWS identifier is
+    # gone first. Clipboard::Method had an enumerator named WINDOWS, which the
+    # macro rewrote to 1 and which broke the enum; it is now WIN32. A
+    # case-sensitive sweep of src/ and include/ reports zero bare all-caps
+    # WINDOWS identifiers left, so the macro has nothing left to collide with.
+    # Recompile and read that sweep before re-adding this if a new all-caps
+    # WINDOWS identifier is ever introduced.
+    add_compile_definitions(WINDOWS)
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")

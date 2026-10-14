@@ -8,11 +8,13 @@
 #include <cstdint>
 #include <unordered_map>
 #include <memory>
+#include <utility>
 #include <sys/eventfd.h>
 #include <unistd.h>
 #include <atomic>
 
 #include "utils/LockFreeQueue.hpp"
+#include "havel-lang/core/Value.hpp"
 
 namespace havel::compiler {
 
@@ -40,6 +42,42 @@ enum class EventType : uint8_t {
 // so ownership is safe wherever the last reference dies (worker drop,
 // queue drop, or the VM-side handler).
 using AsyncCxxResult = std::shared_ptr<void>;
+
+/**
+ * Payload carried in Event::ptr for EventType::TIMER_FIRE.
+ *
+ * Timer producers historically pushed either
+ * std::pair<Value, uint32_t> (closure, timer id) or
+ * std::pair<CallbackId, uint32_t> (pinned callback id, timer id) depending
+ * on which host function created the timer, while consumers cast to
+ * whichever pair they expected. Because EventQueue::onEvent keeps ONE
+ * handler per event type, the last registration won: VM::setEventQueue's
+ * CallbackId handler and ExecutionEngine's Value handler overwrote each
+ * other, so a CallbackId was reinterpreted as a closure Value and the
+ * timer callback threw "Closure not found for call" on every tick.
+ *
+ * One struct, one cast. Producers set has_callback_id; consumers honour it.
+ * Freed with `delete static_cast<TimerFirePayload*>(ptr)` everywhere.
+ */
+struct TimerFirePayload {
+    core::Value closure;             // valid when has_callback_id == false
+    uint32_t callback_id = 0;    // valid when has_callback_id == true
+    uint32_t timer_id = 0;
+    bool has_callback_id = false;
+
+    static TimerFirePayload fromClosure(core::Value v, uint32_t timerId) {
+        return TimerFirePayload{.closure = std::move(v),
+                                .callback_id = 0,
+                                .timer_id = timerId,
+                                .has_callback_id = false};
+    }
+    static TimerFirePayload fromCallbackId(uint32_t cbId, uint32_t timerId) {
+        return TimerFirePayload{.closure = core::Value(),
+                                .callback_id = cbId,
+                                .timer_id = timerId,
+                                .has_callback_id = true};
+    }
+};
 
 /**
  * Event - Typed event with flexible payload

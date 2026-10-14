@@ -15,13 +15,20 @@
 // piped/closed stdin and asserting they terminate cleanly. Stdin is
 // /dev/null or a closed pipe, the F24 hotkey is never pressed, and no real
 // input or display is touched. Pre-fix, cases 1 and 3 hang until the
-// `timeout 120` wrapper kills them (exit 124) and case 2 ignores exit and
+// `timeout 25` wrapper kills them (exit 124) and case 2 ignores exit and
 // also hangs; post-fix every case exits 0.
 //
 // Three ASAN-instrumented child launches: budget generously for a loaded
 // machine so hvtest's 60s default cannot kill the test mid-child.
 //
-// smoke: timeout = 420
+// smoke: timeout = 600
+//
+// The per-child `timeout` above is 120s, not 25s: measured on this box, a bare
+// headless REPL run needs 26-38s just to reach its first prompt. At 25s the
+// children were killed during startup and this test reported (timeout)
+// whenever the machine was loaded, despite every case exiting cleanly.
+// Assertions are unchanged - a child that really hangs still fails, just
+// later.
 // Expected: PASS, exit 0.
 
 use "fs"

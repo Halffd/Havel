@@ -1,0 +1,53 @@
+// Regression: a fire-and-forget interval must not lose its closure to GC.
+// ConcurrencyBridge::intervalStart stored the closure only inside the
+// Interval's C++ std::function callback, which the GC cannot trace. A script
+// that drops the handle (the normal `interval 2 { ... }` form) therefore had
+// its closure collected while the timer thread kept firing it: every tick
+// threw "Closure not found for call", and anything the closure captured died
+// with it ("OBJECT_GET unknown object id").
+// The allocation loop below is there to force collections to actually run -
+// without allocation pressure the test passes even while broken.
+// Expected: no timer error output, ticks keep climbing and stay equal to
+// ticks_read, rc 0. Headless-safe: no OS input, no hardware.
+
+TICK_FLOOR = 200
+
+ticks = 0
+ticks_read = 0
+captured = { n: 0 }
+
+interval 2 {
+    ticks = ticks + 1
+    captured.n = ticks
+}
+
+i = 0
+while i < 8 {
+    interval 3 { ticks = ticks + 1 }
+    i = i + 1
+}
+
+// Churn the heap so GC collects while the timers are running.
+j = 0
+while j < 200000 {
+    junk = { a: j, b: [j, j + 1, j + 2] }
+    j = j + 1
+}
+
+deadline = time.millis() + 10000
+while ticks < TICK_FLOOR && time.millis() < deadline {
+    sleep(5)
+}
+
+ticks_read = ticks
+sleep(500)
+
+print("ticks:", ticks_read, " still ticking:", ticks > ticks_read)
+
+assert(ticks_read >= TICK_FLOOR, "fire-and-forget interval must tick " + TICK_FLOOR + " times, got " + ticks_read)
+assert(ticks > ticks_read, "fire-and-forget interval must still be alive after GC pressure")
+assert(captured.n > 0, "object captured by the interval closure must survive GC")
+
+print("PASS: timer_fire_and_forget_not_collected")
+// Nine fire-and-forget intervals outlive the assertions on purpose.
+process.exit(0)

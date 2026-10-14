@@ -273,6 +273,14 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     std::unordered_set<std::string> hotkey_condition_deps;
     bool hotkey_condition_last_result = false;
     std::string hotkey_condition_alias;
+    // HotkeyModule id of the owning hotkey context. Two hotkeys can share the
+    // same alias/key string (one per `when` branch); only the id identifies a
+    // single registration, so grab updates are routed through it.
+    std::string hotkey_id;
+    // IO-side hotkey id of the OS registration backing this hotkey (0 when
+    // there is no HotkeyManager, e.g. headless). Grab updates must use this:
+    // aliases are shared between duplicate registrations of the same key.
+    int hotkey_os_id = 0;
 
   // Update goroutine: periodic goroutine managed by scheduler
   uint32_t update_interval_ms = 0;

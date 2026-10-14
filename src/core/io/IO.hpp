@@ -297,8 +297,13 @@ public:
   void KeyTap(const std::string &key, std::function<void()> tapAction);
   void KeyCombo(const std::string &key, std::function<void()> comboAction);
 
+  // allowDuplicateAlias=false rejects a second registration whose raw input
+  // matches an existing alias and returns the existing hotkey. Set it when the
+  // caller genuinely wants several live registrations of the same key (each
+  // `when` branch binds its own), otherwise the second one silently replaces
+  // the first and only the first callback ever fires.
   HotKey AddHotkey(const std::string &rawInput, std::function<void()> action,
-                   int id = 0);
+                   int id = 0, bool allowDuplicateAlias = false);
 
   bool Hotkey(const std::string &hotkeyStr, std::function<void()> action,
               const std::string &condition = "", int id = 0);

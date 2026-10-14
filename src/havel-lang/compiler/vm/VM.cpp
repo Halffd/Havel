@@ -143,6 +143,13 @@ VM::VM(const VMConfig &cfg) {
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
   heap_.setAllocationCounter(profiler_.allocationSink());
+  // A timer whose handle the script drops is collected by the sweep, which
+  // reports it here so the closure pin dies with it. Without this the pin
+  // outlives the timer: a script that toggles a timer by nulling the global
+  // instead of calling stop() leaks one external root per toggle, and every
+  // GC cycle then marks all of them - progressive scheduler slowdown.
+  heap_.addIntervalFreedHook([this](uint32_t id) { releaseIntervalClosure(id); });
+  heap_.addTimeoutFreedHook([this](uint32_t id) { releaseTimeoutClosure(id); });
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -201,6 +208,13 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
   heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
   heap_.setAllocationCounter(profiler_.allocationSink());
+  // A timer whose handle the script drops is collected by the sweep, which
+  // reports it here so the closure pin dies with it. Without this the pin
+  // outlives the timer: a script that toggles a timer by nulling the global
+  // instead of calling stop() leaks one external root per toggle, and every
+  // GC cycle then marks all of them - progressive scheduler slowdown.
+  heap_.addIntervalFreedHook([this](uint32_t id) { releaseIntervalClosure(id); });
+  heap_.addTimeoutFreedHook([this](uint32_t id) { releaseTimeoutClosure(id); });
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
@@ -746,6 +760,11 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         continue;
       }
       scheduler_->setCurrent(cur);
+      // Conditional hotkey: re-check the condition on every trigger, then
+      // re-park if false so its body never runs for this press.
+      if (!hotkeyConditionAllows(cur)) {
+        continue;
+      }
       if (cur->state == Scheduler::GoroutineState::Created) {
         auto result = startGoroutineCall(cur->callable, cur->locals);
         if (result != VM::GoroutineCallResult::Failed) {
@@ -2066,6 +2085,43 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
     return fiber;
   }
   return nullptr;
+}
+
+bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
+  if (!g || !g->persistent || g->hotkey_condition_callback_id == 0) return true;
+
+  auto condVal = externalRootValue(g->hotkey_condition_callback_id);
+  if (!condVal) return true;
+
+  g->hotkey_condition_last_result = false;
+  bool conditionMet = false;
+  try {
+    // callFunctionSync, not call(): current_chunk may be null before any
+    // goroutine has set it. It has a null-chunk fallback via main_chunk_.
+    Value result = callFunctionSync(*condVal, {});
+    conditionMet = toBool(result);
+  } catch (const std::exception &e) {
+    ::havel::error("[VM] conditional hotkey '{}' condition threw: {}", g->hotkey_condition_alias, e.what());
+    conditionMet = false;
+  }
+
+  if (conditionMet) {
+    g->hotkey_condition_last_result = true;
+    return true;
+  }
+
+  // Re-park: the body must not run. The dependency-driven re-evaluation
+  // (onVariableChanged) unparks it when the condition turns true again.
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
+  if (g->fiber) {
+    g->fiber->state = FiberState::SUSPENDED;
+    g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+  }
+  if (scheduler_ && scheduler_->current() == g) {
+    scheduler_->clearCurrent();
+  }
+  return false;
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {

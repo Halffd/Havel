@@ -238,6 +238,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
             if (g) {
                 g->hotkey_condition_callback_id = conditionCb;
                 g->hotkey_condition_alias = hotkeyStr;
+                g->hotkey_id = hotkeyId;
                 // Evaluate condition to track variable dependencies
                 auto condVal = vm->externalRootValue(conditionCb);
                 if (condVal) {
@@ -286,6 +287,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                 sched->wakeHotkey(g, {}, "conditional-os-callback");
                 ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
             };
+            int osId = 0;
             ctx->hotkeyManager->AddHotkey(
                 hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
                     auto *sched = vm->getScheduler();
@@ -295,15 +297,18 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                     } else {
                         sched->deferToVM(std::move(wakeHotkey));
                     }
-                });
+                }, &osId);
             // Set grab state based on initial condition result
             // onVariableChanged will update this dynamically on VAR_CHANGED events
+            // Routed by id, not alias: another `when` branch may have registered
+            // the same key string, and SetHotkeyGrab(alias) would hit that one.
             if (persistentGid != 0) {
                 if (auto* sched = vm->getScheduler()) {
                     if (auto* g = sched->get(persistentGid)) {
-                        ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, g->hotkey_condition_last_result);
-                        ::havel::stdlib::HotkeyModule::setGrab(*vm, hotkeyStr, g->hotkey_condition_last_result);
-                        ::havel::info("[InputBridge] conditional '{}' initial SetHotkeyGrab = {}", hotkeyStr, g->hotkey_condition_last_result);
+                        g->hotkey_os_id = osId;
+                        ctx->hotkeyManager->SetHotkeyGrabById(osId, g->hotkey_condition_last_result);
+                        ::havel::stdlib::HotkeyModule::setGrabById(*vm, hotkeyId, g->hotkey_condition_last_result);
+                        ::havel::info("[InputBridge] conditional '{}' (id={}) initial SetHotkeyGrab = {}", hotkeyStr, osId, g->hotkey_condition_last_result);
                     }
                 }
             }

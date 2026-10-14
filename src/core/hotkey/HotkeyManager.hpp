@@ -42,6 +42,10 @@ public:
   ~HotkeyManager();
 
   bool AddHotkey(const std::string &key, std::function<void()> callback);
+  // Same as above, but reports the IO-side hotkey id. Needed when the same
+  // key string is registered more than once (e.g. two conditional hotkeys on
+  // the same key): alias is not unique, only the id is.
+  bool AddHotkey(const std::string &key, std::function<void()> callback, int *outId);
   bool AddHotkey(const std::string &key, std::function<void()> callback, int id);
   bool AddHotkey(const std::string &key, const std::string &action);
   bool RemoveHotkey(const std::string &key);
@@ -49,6 +53,11 @@ public:
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
   bool SetHotkeyGrab(const std::string &alias, bool grab);
+  // Id-based variant. Preferred whenever the caller knows which registration
+  // it owns — SetHotkeyGrab(alias) only updates the first hotkey registered
+  // with that alias, so two hotkeys sharing a key string would fight over the
+  // same grab state.
+  bool SetHotkeyGrabById(int id, bool grab);
 
 bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id
@@ -173,7 +182,9 @@ private:
     compiler::EventQueue* eventQueue_ = nullptr;
   bool grabsSuspended_ = false;
   int suspendDepth_ = 0;
-  std::unordered_map<std::string, bool> pendingGrabs_;
+  // Grab state deferred while grabs are suspended, keyed by hotkey id
+  // (alias is not unique across duplicate registrations).
+  std::unordered_map<int, bool> pendingGrabs_;
 };
 
 } // namespace havel

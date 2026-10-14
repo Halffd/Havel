@@ -1,6 +1,13 @@
 // Regression for the dead qt.*/gtk.* extension namespaces.
 //
-// smoke: timeout = 420
+// smoke: timeout = 600
+//
+// The per-child `timeout` below is 120s, not 25s: measured on this box, a bare
+// headless `exit` REPL run needs 26-38s just to reach its prompt (three
+// separate display-connection failures with retries before the first prompt).
+// At 25s the children were killed mid-startup and the test passed or failed
+// purely on how loaded the machine happened to be - observed both ways across
+// runs. The assertions themselves are unchanged; only the bound moved.
 //
 // Since the "Qt6 extension merged into havel_toolkit_qt.so" refactor,
 // api_register_function stored every C-ABI registration in a

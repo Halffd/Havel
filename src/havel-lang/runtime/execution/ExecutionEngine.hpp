@@ -143,7 +143,7 @@ private:
 
     void onThreadComplete(uint32_t thread_id);
     void onVariableChanged(const std::string& var_name);
-    void onTimerFire(uint32_t timer_id, Value closure, bool is_timeout);
+    void onTimerFire(const TimerFirePayload& fire, bool is_timeout);
     void onChannelRecv(uint32_t channel_id);
     void onChannelSend(uint32_t channel_id);
   

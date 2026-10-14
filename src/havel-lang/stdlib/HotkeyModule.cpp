@@ -1218,8 +1218,14 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
       g->hotkey_condition_deps.insert(deps.begin(), deps.end());
 
       auto *hostCtx = vm.hostContext();
-      if (hostCtx && hostCtx->hotkeyManager)
-        hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+      if (hostCtx && hostCtx->hotkeyManager) {
+        // By id: other hotkeys may share ctx->alias (same key, different
+        // `when` branch), and alias lookup would toggle the wrong one.
+        if (g->hotkey_os_id > 0)
+          hostCtx->hotkeyManager->SetHotkeyGrabById(g->hotkey_os_id, result);
+        else
+          hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+      }
       ctx->grab = result;
       vm.setHostObjectField(objRef, "grab", Value::makeBool(result));
     }
@@ -1314,7 +1320,14 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     bool grab = vm.toBoolPublic(args[1]);
     auto *hostCtx = vm.hostContext();
     if (hostCtx && hostCtx->hotkeyManager) {
-       hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, grab);
+      int osId = 0;
+      if (auto *g = vm.getScheduler() ? vm.getScheduler()->get(ctx->goroutine_id) : nullptr) {
+        osId = g->hotkey_os_id;
+      }
+      if (osId > 0)
+        hostCtx->hotkeyManager->SetHotkeyGrabById(osId, grab);
+      else
+        hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, grab);
     }
     ctx->grab = grab;
     vm.setHostObjectField(objRef, "grab", Value::makeBool(grab));
@@ -1376,8 +1389,12 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
           g->hotkey_condition_deps.insert(deps.begin(), deps.end());
 
           auto *hostCtx = vm.hostContext();
-          if (hostCtx && hostCtx->hotkeyManager)
-            hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+          if (hostCtx && hostCtx->hotkeyManager) {
+            if (g->hotkey_os_id > 0)
+              hostCtx->hotkeyManager->SetHotkeyGrabById(g->hotkey_os_id, result);
+            else
+              hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+          }
         }
         changed = true;
       }
@@ -1523,6 +1540,10 @@ bool HotkeyModule::setEnabled(const std::string &hotkeyId, bool enabled) {
 bool HotkeyModule::setGrab(VM &vm, const std::string &alias, bool grab) {
   auto hotkeyId = findByAlias(alias);
   if (hotkeyId.empty()) return false;
+  return setGrabById(vm, hotkeyId, grab);
+}
+
+bool HotkeyModule::setGrabById(VM &vm, const std::string &hotkeyId, bool grab) {
   auto *ctx = getHotkeyContextDataMutable(hotkeyId);
   if (!ctx) return false;
   ctx->grab = grab;

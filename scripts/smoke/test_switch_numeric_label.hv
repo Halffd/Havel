@@ -1,0 +1,72 @@
+// Regression: a numeric switch case label is not a hotkey binding.
+//
+// Digits are hotkey keys ('2 => {}' really does bind the key 2), and the
+// statement-start hotkey lookahead cannot tell a case label from a binding -
+// both are `<key> =>`. So `switch x { 2 => {...} }` lexed the label as the
+// hotkey `2` and the resolver failed with "Unresolved identifier '2'".
+// Confirmed directly: `hotkey.trigger("2")` fired a bare `2 => {}` body.
+//
+// Fix: the lexer tracks the brace depth of each switch case list and skips the
+// hotkey lookahead only at a case-label position. The depth is tracked rather
+// than a plain "inside a switch" flag so that a hotkey nested in a case body
+// still binds - which this test asserts rather than assumes.
+
+fired = 0
+
+// Numeric labels: the whole point of the fix.
+x = 2
+switch x {
+    1 => { print("one") }
+    2 => { print("two") }
+    else => { print("other") }
+}
+
+y = 9
+switch y {
+    1 => { print("WRONG one") }
+    2 => { print("WRONG two") }
+    else => { print("other arm hit") }
+}
+
+// A hotkey nested inside a case body must still bind. At depth+1 the lexer
+// must NOT suppress the lookahead.
+z = 5
+switch z {
+    5 => {
+        F24 => { fired = fired + 1 }
+        ; => { fired = fired + 10 }
+    }
+    else => { print("WRONG else") }
+}
+
+// A switch nested inside a switch: the inner case list has its own depth.
+w = 7
+switch w {
+    7 => {
+        switch 1 {
+            1 => { print("inner one") }
+            else => { print("inner wrong") }
+        }
+    }
+    else => { print("WRONG outer") }
+}
+
+// No-match falls through with no else arm.
+q = 99
+switch q {
+    1 => { print("WRONG q") }
+    2 => { print("WRONG q2") }
+}
+
+sleep(100)
+hotkey.trigger("F24")
+sleep(100)
+hotkey.trigger(";")
+sleep(400)
+
+// 1 from F24, 10 from ';' - zero means the lookahead was wrongly suppressed
+// inside the case body, which is the failure mode the depth tracking avoids.
+assert(fired == 11, "hotkeys inside a case body must still bind, got " + fired)
+print("fired:", fired)
+print("PASS: switch_numeric_label")
+process.exit(0)

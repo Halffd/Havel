@@ -1488,6 +1488,9 @@ std::optional<Token> Lexer::tryParseHotkeyBinding() {
 
 std::vector<Token> Lexer::tokenize() {
   currentTokens.clear();
+  switchCaseListDepths_.clear();
+  braceDepth_ = 0;
+  pendingSwitch_ = false;
   size_t tokenCount = 0;
 
   while (!isAtEnd()) {
@@ -1502,11 +1505,45 @@ std::vector<Token> Lexer::tokenize() {
       break;
     }
 
+    // Fold the token emitted by the previous iteration into the switch/brace
+    // state. Done here, on the way back into the loop, so every path that
+    // pushes a token is covered without having to find a single choke point.
+    if (!currentTokens.empty()) {
+      switch (currentTokens.back().type) {
+      case TokenType::Switch:
+        pendingSwitch_ = true;
+        break;
+      case TokenType::OpenBrace:
+      case TokenType::BangOpenBrace:
+        ++braceDepth_;
+        // The first brace after `switch` opens the case list. Anything after
+        // that is a case body, and a nested switch resets pendingSwitch_ the
+        // same way.
+        if (pendingSwitch_) {
+          switchCaseListDepths_.push_back(braceDepth_);
+          pendingSwitch_ = false;
+        }
+        break;
+      case TokenType::CloseBrace:
+        --braceDepth_;
+        if (!switchCaseListDepths_.empty() && braceDepth_ < switchCaseListDepths_.back()) {
+          switchCaseListDepths_.pop_back();
+        }
+        break;
+      default:
+        break;
+      }
+    }
+
     // At statement start, recognise a complete hotkey binding before any
     // character is consumed. isHotkeyBindingAhead() is peek-only: it requires a
     // keymap-known key followed by the `=>` trigger, so `; => {}` becomes a
     // hotkey while `a, b` or `x - 1` fall through untouched. Because nothing is
     // consumed here, the failure path is byte-identical to normal tokenizing.
+    //
+    // Suppressed at a case-label position: a label is also `<key> =>`, and
+    // digits are keys, so without this `switch x { 2 => {...} }` binds the
+    // hotkey `2` instead of matching the value 2.
     {
       bool atStmtStart = currentTokens.empty();
       if (!atStmtStart) {
@@ -1529,7 +1566,7 @@ std::vector<Token> Lexer::tokenize() {
         skipComment();
         continue;
       }
-      if (atStmtStart && isHotkeyBindingAhead(position)) {
+      if (atStmtStart && !inSwitchCaseLabel() && isHotkeyBindingAhead(position)) {
         // Re-enter tokenize at the binding start so scanHotkey() sees its
         // first character consumed, exactly as the other hotkey call sites.
         advance();

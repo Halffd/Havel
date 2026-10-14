@@ -256,6 +256,29 @@ private:
   bool debug_lexer = false;
   bool inBitwiseExpr = false;
 
+  // Switch-case-list tracking.
+  //
+  // Digits are hotkey keys ('2 => {}' really does bind the key 2), so the
+  // statement-start hotkey lookahead otherwise swallows a numeric case label
+  // whole: `switch x { 2 => {...} }` lexed the label as a hotkey and the
+  // resolver then failed with "Unresolved identifier '2'". There is no way to
+  // tell the two apart from the token shape alone - both are `<key> =>` - so
+  // the lexer has to know it is inside a case list.
+  //
+  // Only the case-list's own brace depth is recorded, not the whole switch: a
+  // nested `F2 => {}` inside a case body must still bind. The stack is needed
+  // because switches nest.
+  std::vector<int> switchCaseListDepths_;
+  int braceDepth_ = 0;
+  bool pendingSwitch_ = false;
+
+  // True when the next token sits at a case-label position, i.e. directly in a
+  // case list rather than inside a case body.
+  bool inSwitchCaseLabel() const {
+    return !switchCaseListDepths_.empty() &&
+           braceDepth_ == switchCaseListDepths_.back();
+  }
+
   static const std::unordered_map<char, TokenType> SINGLE_CHAR_TOKENS;
 
 bool isAtEnd() const;

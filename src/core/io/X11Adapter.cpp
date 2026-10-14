@@ -51,16 +51,14 @@ bool X11Adapter::Init() {
     initialized_ = true;
     debug("X11Adapter: Initialized on display {}", DisplayString(display_));
     g_active_x11_adapter.store(this, std::memory_order_release);
-    // Do NOT capture `this` here. runExitCleanups() runs from main() *after*
-    // static destruction has begun, by which time this X11Adapter is gone and
-    // Shutdown() has already cleared g_active_x11_adapter - a captured
-    // `this` dereferenced a freed object and segfaulted every `--io x11` run
-    // at exit (X11Adapter.cpp:54, ExitHandler.cpp:24). Resolve the live
-    // adapter through the atomic instead: non-null only while this object is
-    // alive and initialised.
+    // Exit cleanups run after the Havel instance is destroyed (main runs
+    // runExitCleanups after launcher.run returns), so a raw `this` capture
+    // here is a use-after-free at shutdown: ~X11Adapter already freed the
+    // object by then (observed SIGSEGV at process exit under --io x11).
+    // Route through the atomic pointer instead — Shutdown() nulls it, so
+    // the cleanup no-ops once the adapter is gone.
     registerExitCleanup([]() {
-        X11Adapter *adapter = g_active_x11_adapter.load(std::memory_order_acquire);
-        if (adapter) {
+        if (auto *adapter = g_active_x11_adapter.load(std::memory_order_acquire)) {
             adapter->UngrabAllDevices();
         }
     });
@@ -569,6 +567,13 @@ void X11Adapter::BuildKeycodeMap() {
         else if (ks >= XK_A && ks <= XK_Z) evdev = KEY_A + (ks - XK_A);
         else if (ks >= XK_0 && ks <= XK_9) evdev = KEY_0 + (ks - XK_0);
         else if (ks >= XK_F1 && ks <= XK_F12) evdev = KEY_F1 + (ks - XK_F1);
+        // F13-F24 live in a second, separate evdev block: KEY_F12 is 68
+        // but KEY_F13 is 183, so they cannot extend the range above.
+        // Without this branch every F13-F24 keypress was silently dropped
+        // in ProcessKeyEvent (X11KeycodeToEvdev returned 0) - and havel's
+        // own hotkey convention standardizes on F24 as the
+        // non-conflicting hotkey, so the X11 backend could never see it.
+        else if (ks >= XK_F13 && ks <= XK_F24) evdev = KEY_F13 + (ks - XK_F13);
         else {
             if (ks == XK_Return) evdev = KEY_ENTER;
             else if (ks == XK_Tab) evdev = KEY_TAB;

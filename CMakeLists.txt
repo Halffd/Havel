@@ -3172,15 +3172,12 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(io_key_parse_test PRIVATE cxx_std_23)
     target_link_libraries(io_key_parse_test PRIVATE
         # gtest_main has to precede the havel archives, same reason as
-        # pixel_provider_test below.
+        # pixel_provider_test below. The three havel archives reference each
+        # other cyclically (havel_core's EventBridge/FileWatcher call into
+        # havel_runtime's EventRuntime), so all three must be in one group;
+        # havel_lang alone leaves those unresolved when core is scanned last.
         GTest::gtest GTest::gtest_main
-        # The havel archives must share one group: havel_core (EventBridge,
-        # FileWatcher) references EventRuntime in havel_runtime, and
-        # havel_runtime references back into havel_core. Outside a group
-        # ld sees them in link order and skips the members it thinks are
-        # unneeded, so EventBridge.o resolves against a havel_runtime.a
-        # that was already passed.
-        -Wl,--start-group havel_lang havel_runtime havel_compiler havel_core -Wl,--end-group
+        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
         -Wl,--start-group
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

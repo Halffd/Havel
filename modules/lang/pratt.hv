@@ -1684,11 +1684,11 @@ fn parseInterpolatedString(value, l, c) {
             if current().tid == TID.Comma: advance()
         }
         expect(TID.CloseParen)
-    }
-    else if current().tid == TID.Identifier {
-        params.push({name: advance().value})
+        }
+        else if current().tid == TID.Identifier {
+            params.push({name: advance().value})
 
-    }
+        }
         // Optional => (fn(x) body and fn(x) => body both valid)
         if current().tid == TID.Arrow {
          advance()
@@ -3364,9 +3364,9 @@ skipNewlines()
                 test = null
             }
             else {
-                # '=>' terminates the test expression (same mechanism as
-                # match arms: Arrow BP is 0 while inMatchExpr). Scoped to
-                # the test only — case bodies may still contain lambdas.
+                // '=>' terminates the test expression (same mechanism as
+                // match arms: Arrow BP is 0 while inMatchExpr). Scoped to
+                // the test only - case bodies may still contain lambdas.
                 prevMatch = inMatchExpr
                 inMatchExpr = true
                 test = parseExpr(0)
@@ -5208,8 +5208,6 @@ fn parseAtDecoratorStatement() {
 }
 // ===================================================================
 
-}
-
 // PUBLIC API
 // ===================================================================
 
@@ -5225,23 +5223,8 @@ fn parseProgram(source) {
             continue
         }
         stmt = p.parseStatement()
-        if stmt != null {
-            // Skip ErrorNode to avoid infinite loop on parse errors
-            if stmt.kind != "ErrorNode" {
-                body.push(stmt)
-            } else {
-                // Advance past error token to prevent infinite loop
-                p.advance()
-            }
-        }
-        else if stmt != null and stmt.kind == "ErrorNode" {
-            // Skip ErrorNode to avoid infinite loop on parse errors
-            if stmt.kind != "ErrorNode" {
-                body.push(stmt)
-            } else {
-                // Advance past error token to prevent infinite loop
-                p.advance()
-            }
+        if stmt != null and stmt.kind != "ErrorNode" {
+            body.push(stmt)
         }
         else if stmt != null and stmt.kind == "ErrorNode" {
             // Error recovery — skip to next statement boundary
@@ -5264,8 +5247,6 @@ fn parseProgram(source) {
 // Parse entire source into a Program AST node (alias for parseProgram)
 fn parse(source) {
   return parseProgram(source)
-}
-
 }
 
 fn parseTokens(tokenList) {

@@ -1,0 +1,23 @@
+// Benchmark fixture module A. Exports fa (calls into module B from inside
+// a's own module context - the cross-module closure-call path) and a
+// self-contained fn (same-module control).
+use { coreB } from "b"
+
+fn coreA(x) {
+  return x + 1
+}
+
+fn fa(x) {
+  // Cross-module closure call: fa's ambient is module A's sidecar,
+  // coreB resolves against module B's sidecar - identity mismatch,
+  // full ambient install on every call.
+  return coreB(x) + 1
+}
+
+fn faSelf(x) {
+  // Same-module control: coreA shares A's sidecar - identity gate
+  // holds, install skipped.
+  return coreA(x) + 1
+}
+
+{ coreA: coreA, fa: fa, faSelf: faSelf }

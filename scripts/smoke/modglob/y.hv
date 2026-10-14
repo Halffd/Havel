@@ -1,0 +1,33 @@
+// VM-OPT-001 fixture: cross-module caller - recursion, thrower, tail chain.
+use { bumpX, getX, makeAdder } from "x"
+
+fn fail(msg) { throw msg }
+
+fn viaX() {
+  return bumpX() + 100
+}
+
+fn nested(depth) {
+  if depth <= 0 {
+    return getX()
+  }
+  return nested(depth - 1)
+}
+
+fn thrower() {
+  bumpX()
+  fail("boom")
+}
+
+fn tailIntoX(n) {
+  if n <= 0 {
+    return getX()
+  }
+  return tailIntoX(n - 1)
+}
+
+fn xState() { return getX() }
+
+fn bumpDirect() { return bumpX() }
+
+{ viaX: viaX, nested: nested, thrower: thrower, tailIntoX: tailIntoX, xState: xState, bumpDirect: bumpDirect, makeAdder: makeAdder }

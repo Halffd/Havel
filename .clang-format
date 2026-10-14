@@ -1,0 +1,30 @@
+# Formatting target for the Havel C++ tree.
+#
+# This config describes the TARGET style, not the current tree: measured
+# against the existing sources, a full pass changes 10-93% of lines
+# depending on the file, because the tree mixes 2-space (havel-lang
+# compiler/vm/gc/stdlib) and 4-space (core/, tools/, parts of VM.hpp)
+# populations, plus tabs in 51 files. Adopt INCREMENTALLY:
+#
+#   - format a file only when you are already touching it for real work,
+#     or in a formatting-only commit for that file
+#   - never bulk-reformat: it destroys git blame on the hot files and
+#     wedges in-flight work; use `git blame -w` to survive the churn
+#   - do not reformat files under active investigation mid-bisect
+#
+# Base: LLVM (2-space indent) — the dominant style of the largest
+# subsystem (src/havel-lang/ compiler+vm+gc+stdlib, where all language
+# work happens). Verified smallest-diff there: GC.hpp 10%,
+# BytecodeIR.hpp 25%, TimeModule.cpp 32% under this config.
+---
+BasedOnStyle: LLVM
+ColumnLimit: 100
+PointerAlignment: Right
+SortIncludes: Never
+IncludeBlocks: Preserve
+CompactNamespaces: true
+# The tree's closing comments vary (`// close havel::compiler`,
+# `// namespace havel::compiler`); rewriting them is pure noise.
+FixNamespaceComments: false
+AllowShortFunctionsOnASingleLine: Inline
+KeepEmptyLinesAtTheStartOfBlocks: false

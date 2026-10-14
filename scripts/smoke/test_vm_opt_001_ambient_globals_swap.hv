@@ -1,0 +1,72 @@
+// VM-OPT-001 regression: the ambient-globals save-and-swap cache.
+// Cross-module calls park/restore per-identity ambient maps via
+// ambient_cache_ (VM.hpp) instead of copying them; the module-fn
+// wrapper path keeps its copy+epilogue-steal shape. This pins the
+// semantics the ticket's correctness list demands:
+//   - global reads/writes across alternating module contexts
+//   - nested + recursive cross-module calls restore the right ambient
+//   - closures observe the same bindings (dual-write keeps sidecars
+//     authoritative)
+//   - exceptions thrown mid-call cannot leave the wrong context
+//     installed (also covered: the wrapper exception-transfer guard -
+//     a throw unwinding past a module wrapper used to pop a phantom
+//     result and corrupt the caller's catch stack)
+//   - tail-call chains park each outgoing module under its own identity
+//   - values survive GC collections taken between installs
+//
+// Module identity note: x.hv is imported ONLY by y (sibling spelling
+// "x") and this test imports ONLY y - importing the same module under
+// two path spellings loads two instances (pre-existing loader
+// behavior), which would defeat state assertions.
+//
+// Expected: "vm-opt-001 smoke ok", exit 0.
+
+use { viaX, nested, thrower, tailIntoX, xState, makeAdder } from "modglob/y"
+
+// 1. alternating wrapper-path calls: state evolves in both directions
+a1 = viaX()          // x 0 -> 1, returns 101
+a2 = xState()        // 1
+a3 = viaX()          // x 1 -> 2, returns 102
+a4 = xState()        // 2
+assert(a1 == 101, "viaX first: ${a1}")
+assert(a2 == 1, "state visible after first cross call: ${a2}")
+assert(a3 == 102, "viaX second: ${a3}")
+assert(a4 == 2, "state visible after second cross call: ${a4}")
+
+// 2. nested recursion restores the right ambient at each depth
+n1 = nested(3)
+assert(n1 == 2, "nested recursion sees live state: ${n1}")
+
+// 3. closures created in x observe and mutate module state through the
+//    parked ambient (the closure-path install this change optimizes)
+adder = makeAdder()
+c1 = adder(10)       // x 2 -> 12
+c2 = xState()        // 12
+assert(c1 == 12, "closure write through parked ambient: ${c1}")
+assert(c2 == 12, "sidecar saw the closure's write: ${c2}")
+
+// 4. exception mid-call cannot corrupt the module's context
+savedBefore = xState()   // 12
+try {
+  thrower()              // bumps x, then throws mid-call
+  assert(false, "thrower must throw")
+} catch (e) {
+  assert(xState() == savedBefore + 1, "post-exception state coherent: ${xState()}")
+}
+
+// 5. tail-call chains: each outgoing module parks under its own identity
+t1 = tailIntoX(5)
+assert(t1 == savedBefore + 1, "tail chain result: ${t1}")
+
+// 6. GC pressure between installs: values must survive collections
+big = []
+for i in 0 .. 20000 {
+  big.push({ keep: i, pad: "s${i}" })
+  if big.len() > 64 {
+    big = []
+  }
+}
+assert(xState() == savedBefore + 1, "state survives GC churn: ${xState()}")
+assert(viaX() == savedBefore + 102, "fresh install after GC: ${viaX()}")
+
+print("vm-opt-001 smoke ok")

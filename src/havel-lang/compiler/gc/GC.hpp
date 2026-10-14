@@ -583,6 +583,13 @@ public:
 
   std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizers();
 
+  // JIT write-barrier entry (havel_gc_write_barrier): mirrors the
+  // interpreter's store-site barrier (heap_.writeBarrier(makeNull(), v)).
+  // Public so the Runtime-ABI bridge can reach it without friend status.
+  void writeBarrierPublic(const Value &obj, const Value &field) {
+    writeBarrier(obj, field);
+  }
+
 private:
   enum class Generation : uint8_t {
     Young,

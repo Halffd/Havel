@@ -209,15 +209,17 @@ bool Clipboard::setTextWithTimeout(const std::string& text, const std::string& c
       return;
     }
     if (pid == 0) {
-      close(fds[0]);
-      dup2(fds[1], STDIN_FILENO);
+      // Child reads the pipe: stdin must be the READ end (fds[0]).
       close(fds[1]);
+      dup2(fds[0], STDIN_FILENO);
+      close(fds[0]);
       execl("/bin/sh", "sh", "-c", cmd.c_str(), static_cast<char *>(nullptr));
       _exit(127);
     }
-    close(fds[1]);
+    close(fds[0]);
 
-    const int fd = fds[0];
+    // Parent writes the WRITE end (fds[1]); closing it below signals EOF.
+    const int fd = fds[1];
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::milliseconds(timeoutMs);
     bool timedOut = false;

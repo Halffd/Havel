@@ -1,0 +1,66 @@
+// Stress: many concurrent timers/timeouts interleaved with goroutines.
+// Regression cover for the TIMER_FIRE payload type-pun: interval/timeout
+// pushed pair<CallbackId,uint32_t> while interval.start/timeout.start and
+// ConcurrencyBridge::intervalStart pushed pair<Value,uint32_t>, and the single
+// per-type EventQueue handler cast to whichever it expected. A mismatched cast
+// made every tick throw "Closure not found for call", so callbacks silently
+// never ran. Here all three producers are exercised at once and every
+// callback must land.
+// Expected: 40 goroutines + 40 timeouts complete, intervals reach the tick
+// floor, rc 0. Headless-safe: no OS input, no hardware.
+
+INTERVALS = 40
+TIMEOUTS = 40
+GOROUTINES = 40
+TICK_FLOOR = 200
+
+interval_ticks = 0
+timeout_done = 0
+goroutine_done = 0
+
+interval_handles = []
+timeout_handles = []
+
+i = 0
+while i < INTERVALS {
+    handle = interval 2 { interval_ticks = interval_ticks + 1 }
+    interval_handles.push(handle)
+    i = i + 1
+}
+
+i = 0
+while i < TIMEOUTS {
+    handle = timeout 5 { timeout_done = timeout_done + 1 }
+    timeout_handles.push(handle)
+    i = i + 1
+}
+
+i = 0
+while i < GOROUTINES {
+    go fn() {
+        sleep(3)
+        goroutine_done = goroutine_done + 1
+    }
+    i = i + 1
+}
+
+deadline = time.millis() + 15000
+while (interval_ticks < TICK_FLOOR || timeout_done < TIMEOUTS || goroutine_done < GOROUTINES) && time.millis() < deadline {
+    sleep(5)
+}
+
+i = 0
+while i < interval_handles.len() {
+    interval.stop(interval_handles[i])
+    i = i + 1
+}
+
+print("ticks:", interval_ticks, " timeouts:", timeout_done, " goroutines:", goroutine_done)
+
+assert(timeout_done == TIMEOUTS, "every timeout callback must run once, got " + timeout_done)
+assert(goroutine_done == GOROUTINES, "every goroutine must finish, got " + goroutine_done)
+assert(interval_ticks >= TICK_FLOOR, "interval must tick at least " + TICK_FLOOR + " times, got " + interval_ticks)
+
+print("PASS: timer_stress_many_timers")
+// Explicit exit: live goroutines/timers keep the event loop alive otherwise.
+process.exit(0)

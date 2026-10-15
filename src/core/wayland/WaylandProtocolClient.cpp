@@ -192,10 +192,14 @@ void WaylandProtocolClient::registryHandleGlobal(void *data, struct wl_registry 
         auto *output = static_cast<wl_output *>(
             wl_registry_bind(registry, name, &wl_output_interface,
                              std::min(version, 4u)));
-        WaylandOutputInfo outInfo;
+        self->outputs_.emplace_back();
+        auto &outInfo = self->outputs_.back();
         outInfo.output = output;
-        self->outputs_.push_back(outInfo);
-        wl_output_add_listener(output, &outputListener_, &self->outputs_.back());
+        outInfo.globalName = name;
+        // Registered against the entry itself, not a copy of it: the callbacks
+        // below write geometry/mode/scale/name through this pointer, so it
+        // must be the same object outputs() reports.
+        wl_output_add_listener(output, &outputListener_, &outInfo);
     } else if (strcmp(interface, zwp_virtual_keyboard_manager_v1_interface.name) == 0) {
         self->virtualKeyboardManager_ = static_cast<zwp_virtual_keyboard_manager_v1 *>(
             wl_registry_bind(registry, name, &zwp_virtual_keyboard_manager_v1_interface,
@@ -240,12 +244,24 @@ void WaylandProtocolClient::registryHandleGlobalRemove(void *data,
                                                         uint32_t name) {
     auto *self = static_cast<WaylandProtocolClient *>(data);
     if (name == self->seatGlobalId_) {
-        self->seat_ = nullptr;
+        if (self->seat_) {
+            wl_seat_destroy(self->seat_);
+            self->seat_ = nullptr;
+        }
     }
-    self->outputs_.erase(
-        std::remove_if(self->outputs_.begin(), self->outputs_.end(),
-                       [name](const WaylandOutputInfo &out) { (void)out; (void)name; return false; }),
-        self->outputs_.end());
+    for (auto it = self->outputs_.begin(); it != self->outputs_.end(); ++it) {
+        if (it->globalName != name) continue;
+        // The compositor is done with this proxy and will not send it further
+        // events, so destroying it here is safe. The entry must go too: the
+        // compositor sends a fresh global (with a fresh id) when the monitor
+        // comes back, and a stale entry would report a phantom output for
+        // ever. Erasing drops the address this output's listener was given,
+        // which is fine precisely because wl_output_destroy() has already
+        // removed the listener.
+        if (it->output) wl_output_destroy(it->output);
+        self->outputs_.erase(it);
+        return;
+    }
 }
 
 void WaylandProtocolClient::seatHandleCapabilities(void *, struct wl_seat *, uint32_t) {}

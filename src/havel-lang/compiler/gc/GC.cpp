@@ -1649,6 +1649,12 @@ intervals_.erase(id);
               cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
               subHeapBytes(64);
 recovered_in_cycle_++;
+              // Eagerly join the timer thread now: ~Interval() joins, and
+              // doing it inside the sweep keeps the VM thread from blocking
+              // on an unrelated later erase. Release the closure pin too.
+              for (const auto &hook : interval_freed_hooks_) {
+                hook(id);
+              }
                 }
             }
             if (sweep_index_ >= sweep_keys_.size()) {
@@ -1675,6 +1681,9 @@ recovered_in_cycle_++;
               cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
               subHeapBytes(64);
                     recovered_in_cycle_++;
+                    for (const auto &hook : timeout_freed_hooks_) {
+                        hook(id);
+                    }
                 }
             }
             if (sweep_index_ >= sweep_keys_.size()) {

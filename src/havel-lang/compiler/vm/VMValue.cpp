@@ -597,6 +597,18 @@ bool VM::isTruthy(const Value &value) {
     return true;
   }
 
+  // Step 8b: live handles are truthy. Every runtime handle type (timer,
+  // channel, wait group, thread, coroutine, iterator, ...) used to fall
+  // through to the conservative `false` below, so `if @timer { @timer.stop() }`
+  // silently never ran its body - the timer kept ticking forever and the
+  // handle was then dropped. A handle is either a live object or null, and
+  // null is already handled in step 1.
+  if (value.isIntervalId() || value.isTimeoutId() || value.isChannelId() ||
+      value.isWaitGroupId() || value.isThreadId() || value.isCoroutineId() ||
+      value.isIteratorId() || value.isStringCursorId()) {
+    return true;
+  }
+
   // Step 9: pointer values - null is falsy, non-null is truthy
   if (value.isPtr()) {
     return value.asPtr() != nullptr;

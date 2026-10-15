@@ -104,3 +104,5 @@ scripts/mycache/
 # Cranelift backend prototype build artifacts (cargo)
 src/havel-lang/compiler/cranelift-backend/target/
 src/havel-lang/compiler/cranelift-backend/Cargo.lock
+vscode-extension/node_modules/
+vscode-extension/out/

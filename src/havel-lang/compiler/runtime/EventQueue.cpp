@@ -55,7 +55,7 @@ void EventQueue::push(const Event& event) {
             case EventType::LEGACY_CALLBACK:
                 delete static_cast<Callback*>(event.ptr); break;
             case EventType::TIMER_FIRE:
-                delete static_cast<std::pair<havel::core::Value, uint32_t>*>(event.ptr); break;
+                delete static_cast<TimerFirePayload*>(event.ptr); break;
             case EventType::VAR_CHANGED:
                 delete static_cast<std::string*>(event.ptr); break;
             case EventType::ASYNC_HOST_COMPLETE:
@@ -167,7 +167,7 @@ void EventQueue::clear() {
     if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
       delete static_cast<Callback*>(ev.ptr);
     } else if (ev.type == EventType::TIMER_FIRE && ev.ptr) {
-      delete static_cast<std::pair<havel::core::Value, uint32_t>*>(ev.ptr);
+      delete static_cast<TimerFirePayload*>(ev.ptr);
     } else if (ev.type == EventType::VAR_CHANGED && ev.ptr) {
       delete static_cast<std::string*>(ev.ptr);
     } else if (ev.type == EventType::ASYNC_HOST_COMPLETE && ev.ptr) {

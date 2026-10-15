@@ -21,7 +21,14 @@
 // Three ASAN-instrumented child launches: budget generously for a loaded
 // machine so hvtest's 60s default cannot kill the test mid-child.
 //
-// smoke: timeout = 180
+// smoke: timeout = 600
+//
+// The per-child `timeout` above is 120s, not 25s: measured on this box, a bare
+// headless REPL run needs 26-38s just to reach its first prompt. At 25s the
+// children were killed during startup and this test reported (timeout)
+// whenever the machine was loaded, despite every case exiting cleanly.
+// Assertions are unchanged - a child that really hangs still fails, just
+// later.
 // Expected: PASS, exit 0.
 
 use "fs"
@@ -60,7 +67,7 @@ fs.write(CHILD, child_src)
 // ---------------------------------------------------------------- case 1
 // Full mode, EOF'd stdin: REPL must start (banner + child marker) and
 // exit cleanly. Pre-fix: prompt flood, never exits -> timeout kills it.
-res1 = process.run("timeout 25 \"${havel_bin}\" --repl \"${CHILD}\" < /dev/null 2>&1")
+res1 = process.run("timeout 120 \"${havel_bin}\" --repl \"${CHILD}\" < /dev/null 2>&1")
 assert(res1.exitCode == 0, "full --repl with EOF stdin must exit 0, got ${res1.exitCode} (stdout: ${res1.stdout})")
 assert(res1.stdout.includes("CHILD_SCRIPT_RAN"), "child script must run before the REPL starts")
 assert(res1.stdout.includes("Havel REPL"), "REPL banner must appear; got: ${res1.stdout}")
@@ -69,7 +76,7 @@ assert(res1.stdout.includes("Havel REPL"), "REPL banner must appear; got: ${res1
 // Full mode, piped lines + `exit`: every line must execute and the exit
 // command must terminate the REPL. Pre-fix: exit was a no-op and the
 // session hung -> timeout kills it.
-res2 = process.run("echo 'print(\"REPL_LINE_OK\")' | timeout 25 \"${havel_bin}\" --repl \"${CHILD}\" 2>&1")
+res2 = process.run("echo 'print(\"REPL_LINE_OK\")' | timeout 120 \"${havel_bin}\" --repl \"${CHILD}\" 2>&1")
 assert(res2.exitCode == 0, "full --repl with piped exit must exit 0, got ${res2.exitCode}")
 assert(res2.stdout.includes("REPL_LINE_OK"), "piped print line must execute in the REPL")
 
@@ -77,7 +84,7 @@ assert(res2.stdout.includes("REPL_LINE_OK"), "piped print line must execute in t
 // Minimal mode with a hotkey-registering child: engine.execute() must
 // return so the REPL starts. Pre-fix: execute() wedged in the
 // HotkeyWait keep-alive loop and the banner never appeared.
-res3 = process.run("timeout 25 \"${havel_bin}\" -m --repl \"${CHILD}\" < /dev/null 2>&1")
+res3 = process.run("timeout 120 \"${havel_bin}\" -m --repl \"${CHILD}\" < /dev/null 2>&1")
 assert(res3.exitCode == 0, "minimal --repl with hotkey script must exit 0, got ${res3.exitCode} (stdout: ${res3.stdout})")
 assert(res3.stdout.includes("Havel REPL"), "minimal REPL banner must appear despite hotkey goroutine")
 assert(res3.stdout.includes("CHILD_SCRIPT_RAN"), "child script must run in minimal mode too")

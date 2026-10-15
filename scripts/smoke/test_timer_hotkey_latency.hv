@@ -1,0 +1,138 @@
+// Stress: hotkey callback latency must not degrade when many goroutines and
+// many timers run at once. A timer whose payload is misread never stops
+// ticking, so a broken timer path shows up here as permanent latency: the
+// hotkey callback competes with unbounded timer work instead of a bounded set.
+// Latency is measured INSIDE the callback (time.millis() at fire time minus
+// the stamp taken before hotkey.trigger), not by polling, so the number is
+// the actual dispatch delay rather than the poll granularity.
+// Expectation: baseline max and loaded max both under HOTKEY_BUDGET_MS, and
+// loaded max within LOADED_SLACK_MS of baseline max (an unloaded hotkey must
+// not become several times slower under timer+goroutine load).
+// Headless-safe: F24 is fired via hotkey.trigger, no OS input is injected.
+
+HOTKEYS = 5
+INTERVALS = 20
+TIMEOUTS = 20
+GOROUTINES = 20
+HOTKEY_BUDGET_MS = 300
+LOADED_SLACK_MS = 150
+
+trigger_at = 0
+latencies = []
+busy = 0
+
+F24 => {
+    latencies.push(time.millis() - trigger_at)
+}
+
+// --- baseline: no load ---
+latencies.clear()
+i = 0
+while i < HOTKEYS {
+    trigger_at = time.millis()
+    hotkey.trigger("F24")
+    waited = time.millis() + 2000
+    while latencies.len() <= i && time.millis() < waited {
+        sleep(5)
+    }
+    i = i + 1
+}
+sleep(120)
+
+baseline_max = 0
+i = 0
+while i < latencies.len() {
+    if latencies[i] > baseline_max {
+        baseline_max = latencies[i]
+    }
+    i = i + 1
+}
+assert(latencies.len() == HOTKEYS, "baseline: every hotkey trigger must fire its callback")
+print("baseline_max_ms:", baseline_max)
+
+if baseline_max > HOTKEY_BUDGET_MS {
+    print("FAIL timer_hotkey_latency: baseline hotkey latency " + baseline_max + "ms over budget")
+    process.exit(255)
+}
+
+// --- under load: timers, timeouts and goroutines all running ---
+interval_handles = []
+i = 0
+while i < INTERVALS {
+    handle = interval 2 {
+        busy = busy + 1
+        k = 0
+        while k < 2000 {
+            k = k + 1
+        }
+    }
+    interval_handles.push(handle)
+    i = i + 1
+}
+
+i = 0
+while i < TIMEOUTS {
+    timeout 4 { busy = busy + 1 }
+    i = i + 1
+}
+
+i = 0
+while i < GOROUTINES {
+    go fn() {
+        n = 0
+        while n < 3000 {
+            n = n + 1
+        }
+        sleep(2)
+    }
+    i = i + 1
+}
+
+sleep(150)
+
+latencies.clear()
+i = 0
+while i < HOTKEYS {
+    trigger_at = time.millis()
+    hotkey.trigger("F24")
+    waited = time.millis() + 2000
+    while latencies.len() <= i && time.millis() < waited {
+        sleep(5)
+    }
+    i = i + 1
+}
+sleep(120)
+
+i = 0
+while i < interval_handles.len() {
+    interval.stop(interval_handles[i])
+    i = i + 1
+}
+
+loaded_max = 0
+i = 0
+while i < latencies.len() {
+    if latencies[i] > loaded_max {
+        loaded_max = latencies[i]
+    }
+    i = i + 1
+}
+print("loaded_max_ms:", loaded_max, " busy:", busy)
+
+assert(latencies.len() == HOTKEYS, "under load: every hotkey trigger must still fire its callback")
+assert(busy > 0, "timer and goroutine work must actually be running during measurement")
+
+if loaded_max > HOTKEY_BUDGET_MS {
+    print("FAIL timer_hotkey_latency: loaded hotkey latency " + loaded_max + "ms over budget")
+    process.exit(255)
+}
+
+if loaded_max > baseline_max + LOADED_SLACK_MS {
+    print("FAIL timer_hotkey_latency: hotkey got slower under load, baseline " + baseline_max + "ms loaded " + loaded_max + "ms")
+    process.exit(255)
+}
+
+print("PASS: timer_hotkey_latency")
+// The F24 persistent hotkey is still registered, so the VM would never reach an
+// idle exit on its own.
+process.exit(0)

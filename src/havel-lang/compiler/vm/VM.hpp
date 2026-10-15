@@ -651,22 +651,26 @@ public:
   std::unordered_map<uint32_t, Value> timeout_results_;
   std::unordered_map<uint32_t, Value> interval_results_;
 
-  // Closures captured by timer/thread callbacks (invisible to GC otherwise)
-  std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
-  std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
-  std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
-
-  // Track suspended VM fibers waiting on channel receive
-  // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
-  std::unordered_map<uint32_t, Fiber *> channel_wait_map_;
-  mutable std::shared_mutex channel_wait_mutex_;
-
-  class EventQueue *event_queue_ = nullptr;
-  struct PendingTimerCallback {
-    CallbackId callback_id;
-    uint32_t timer_id;
-    bool is_timeout;
-  };
+// Closures captured by timer/thread callbacks (invisible to GC otherwise)
+    std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
+    std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
+    std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
+    
+    // Track suspended VM fibers waiting on channel receive
+    // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
+    std::unordered_map<uint32_t, Fiber*> channel_wait_map_;
+    mutable std::shared_mutex channel_wait_mutex_;
+	
+class EventQueue* event_queue_ = nullptr;
+struct PendingTimerCallback {
+  // Either an external-root callback id (has_callback_id) or a closure
+  // Value pushed by the Value-form timer producers. See TimerFirePayload.
+  CallbackId callback_id = INVALID_CALLBACK_ID;
+  Value closure;
+  uint32_t timer_id = 0;
+  bool is_timeout = false;
+  bool has_callback_id = false;
+};
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;
@@ -1104,7 +1108,16 @@ public:
   void setJitTailCall(bool occurred) { jit_tail_call_occurred_ = occurred; }
   bool hasJitTailCall() const { return jit_tail_call_occurred_; }
 
-  const BytecodeFunction *currentFunction() const {
+  // Conditional-hotkey gate, evaluated on EVERY trigger of a persistent
+  // hotkey goroutine (not only on its first run). When the condition is false
+  // the goroutine is re-parked Suspended+HotkeyWait and false is returned, so
+  // its body must not run. Every scheduler loop (VM::execute, ExecutionEngine,
+  // HavelEngine) calls this before dispatching a goroutine, so the loops
+  // cannot drift — a missed call made a `when` hotkey fire regardless of its
+  // condition, and two `when` branches on one key then both ran.
+  bool hotkeyConditionAllows(compiler::Scheduler::Goroutine *g);
+
+  const BytecodeFunction* currentFunction() const {
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
@@ -2339,6 +2352,8 @@ public:
   // or is cancelled. Returns the callback ID for the pinned closure.
   CallbackId pinTimeoutClosure(uint32_t timeout_id, const Value &closure);
   void releaseTimeoutClosure(uint32_t timeout_id);
+  // Same, for intervals: both the sweep hook and interval.stop land here.
+  void releaseIntervalClosure(uint32_t interval_id);
   bool isTimeoutClosurePinned(uint32_t timeout_id) const;
 
   // ========== IMAGE HELPERS ==========

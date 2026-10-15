@@ -1,0 +1,42 @@
+// Test: @stop() from a timer callback actually stops the interval.
+// Two bugs stacked here. (1) `timeout { stop() }` with a bare name resolved
+// as a global and threw "Undefined variable: 'stop'". (2) Even with the
+// receiver written, `if @timer { @timer.stop() }` never ran its body:
+// VM::isTruthy had no branch for runtime handle types, so an interval value
+// was falsy and the guard silently skipped the stop. The autoclicker then ran
+// forever at 20Hz with its only handle dropped.
+//
+// Expected: the timer is stopped by the timeout, so the tick count freezes
+// after ~200ms instead of continuing to ~30. Headless-safe: no OS input.
+
+TICKS_AT_STOP = 10
+
+ticks = 0
+
+class AutoBase {
+    timer = null
+    running: bool = false
+
+    fn stop() {
+        if @timer { @timer.stop() }
+        @running = false
+        @timer = null
+    }
+    fn start() {
+        @timer = interval 20 { ticks = ticks + 1 }
+        timeout 200 { @stop() }
+    }
+}
+
+a = AutoBase(0)
+a.start()
+sleep(600)
+
+print("ticks:", ticks)
+
+assert(ticks <= TICKS_AT_STOP + 2,
+       "timer must stop when the timeout calls @stop(), got " + ticks + " ticks")
+assert(a.timer == null, "stop must clear the timer handle")
+assert(a.running == false, "stop must clear running")
+
+print("PASS: timer_stop_from_closure")

@@ -1636,7 +1636,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     current_function->upvalues = upvalues_it->second;
   }
 
-  // If lambda is inside a class method, capture "self" (slot 0 of class method) as upvalue
+  // If lambda is inside a class method, capture "self" (slot 0 of enclosing class method) as an upvalue
   if (in_class_method) {
     // Add upvalue descriptor for "self" (slot 0 of enclosing class method)
     UpvalueDescriptor self_upvalue;
@@ -1748,11 +1748,97 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   current_class_name_ = std::move(saved_class_name);
 }
 
+void ByteCompiler::emitSelfReceiver() {
+  if (current_function && current_function->has_self_upvalue) {
+    emit(OpCode::LOAD_UPVALUE,
+         static_cast<uint32_t>(current_function->upvalues.size() -
+                               (current_function->is_timer_closure ? 2 : 1)));
+  } else {
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+  }
+}
+
+// True when the function being compiled can reach the instance: the method
+// body itself, or a closure that captured self as an upvalue.
+bool ByteCompiler::memberSelfAvailable() const {
+  if (current_function.get() == class_method_body_function_) {
+    return true;
+  }
+  return current_function && current_function->has_self_upvalue;
+}
+
+bool ByteCompiler::bareMemberResolves(const std::string &name) const {
+  if (!in_class_method_ || enclosing_class_members_.count(name) == 0) {
+    return false;
+  }
+  if (!current_class_name_.empty()) {
+    // Direct method body: `this` is slot 0, which emitSelfReceiver reads.
+    return current_function.get() == class_method_body_function_;
+  }
+  // Nested function: the class context is cleared, but a closure compiled in an
+  // instance method captures the instance as an upvalue - exactly what the
+  // explicit `@field` spelling relies on for timeout/interval bodies. Closures
+  // that do NOT capture self (`go` blocks) must not resolve bare names: their
+  // slot 0 is an ordinary local, and reading it as `this` produced
+  // "OBJECT_SET expects object container" on the very first write.
+  return current_function && current_function->has_self_upvalue;
+}
+
+// A bare name inside an instance method that still resolves to a global is
+// almost always a forgotten receiver: nested go/timeout/interval bodies lose
+// current_class_name_ (their @ resolves through a captured self upvalue), so
+// `stop()` inside `timeout 100 { stop() }` compiles to a global lookup and
+// dies at runtime with "Undefined variable: 'stop'". The resolver has already
+// decided this is a global by the time we get here, so the report is a
+// warning - a genuine global that happens to share a field or method name
+// still works, it just gets a note.
+void ByteCompiler::warnIfBareClassMemberLost(const std::string &name) {
+  if (!in_class_method_ || enclosing_class_members_.count(name) == 0) {
+    return;
+  }
+  if (!current_class_name_.empty()) {
+    return;  // class context intact: implicit access already handled
+  }
+  errors::ErrorReporter::instance().warning(
+      ::havel::errors::ErrorStage::Compiler,
+      "'" + name +
+          "' resolves to a global inside a class method. If you meant the "
+          "class member, write it with the receiver: @" +
+          name + " (or @" + name + "() for a method).");
+}
+
 void ByteCompiler::compileClassMethod(
     const std::string &class_name, const ast::ClassMethodDef &method,
     const std::vector<ast::ClassFieldDef> &fields,
     const std::string &parent_class_name,
     const std::unordered_set<std::string> &method_names) {
+  // Bare member names inside this method belong to the class even when a
+  // nested go/timeout/interval wrapper clears current_class_name_ (see
+  // enclosing_class_members_ in ByteCompiler.hpp). Instance methods only: a
+  // class method (@@fn) has no instance to name.
+  const auto prev_enclosing_members = enclosing_class_members_;
+  const bool prev_in_class_method = in_class_method_;
+  enclosing_class_members_ = method_names;
+  for (const auto &field : fields) {
+    enclosing_class_members_.insert(field.name);
+  }
+  if (auto it = class_members_by_name_.find(class_name);
+      it != class_members_by_name_.end()) {
+    for (const auto &f : it->second.fields) {
+      enclosing_class_members_.insert(f);
+    }
+  }
+  in_class_method_ = !method.isClassMethod;
+  struct EnclosingClassRestore {
+    ByteCompiler *self;
+    std::unordered_set<std::string> members;
+    bool in_method;
+    ~EnclosingClassRestore() {
+      self->enclosing_class_members_ = std::move(members);
+      self->in_class_method_ = in_method;
+    }
+  } enclosing_restore{this, std::move(prev_enclosing_members),
+                      prev_in_class_method};
   auto index_it = class_method_indices_by_node_.find(&method);
   if (index_it == class_method_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for class method: " + method.name);
@@ -1792,6 +1878,7 @@ void ByteCompiler::compileClassMethod(
   bf.source_line = method.line;
 
   enterFunction(std::move(bf), index_it->second);
+  class_method_body_function_ = current_function.get();
   next_local_index = max_slot;
 
   if (!is_class_method) {
@@ -4529,12 +4616,11 @@ break;
     // Local bindings (parameters, locals shadowing a field) are trusted as
     // locals — they must not be converted to field access (e.g. `@x = x`
     // where `x` is both a param and a field).
-    if (!current_class_name_.empty() &&
-        binding->kind == ResolvedBindingKind::Global &&
-        (current_class_field_names_.count(binding->name) > 0 ||
-         current_class_method_names_.count(binding->name) > 0)) {
+    warnIfBareClassMemberLost(binding->name);
+    if (binding->kind == ResolvedBindingKind::Global &&
+        bareMemberResolves(binding->name)) {
       // Treat as implicit class member access
-      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      emitSelfReceiver();
       { uint32_t _sid = addStringConstant(binding->name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_GET);
       break;
@@ -4569,13 +4655,16 @@ break;
     }
     break;
   case ResolvedBindingKind::ClassMember:
-    // Bare class member (implicit @self.field) - load self and get field
-    if (!current_class_name_.empty()) {
-      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    // Bare class member (implicit @self.field) - load self and get field.
+    // `self` is slot 0 in the method body, but a captured upvalue inside a
+    // closure compiled in that method (timeout/interval bodies); `go` blocks
+    // capture nothing, so there is no instance to read from and the name
+    // falls back to the global it resolves to.
+    if (memberSelfAvailable()) {
+      emitSelfReceiver();
       { uint32_t _sid = addStringConstant(binding->name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_GET);
     } else {
-      // Should not happen if resolver is correct, but fall back to global
       uint32_t strId = addStringConstant(binding->name);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
@@ -5191,7 +5280,18 @@ case ast::NodeType::CastExpression: {
         uint32_t temp_key = next_local_index;
         reserveLocalSlot(temp_key);
         emit(OpCode::STORE_VAR, temp_key); // pop key
-        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // [self]
+        if (!memberSelfAvailable()) {
+          // No instance to write through (`go` block): fall back to the
+          // global rather than OBJECT_SET-ing slot 0, which is an ordinary
+          // local there and threw "OBJECT_SET expects object container".
+          emit(OpCode::LOAD_VAR, temp_val); // value
+          uint32_t strId = addStringConstant(field_name);
+          emit(OpCode::STORE_GLOBAL,
+               std::vector<Value>{Value::makeStringValId(strId)});
+          emit(OpCode::LOAD_VAR, temp_val); // result = RHS
+          return;
+        }
+        emitSelfReceiver(); // [self]
         emit(OpCode::LOAD_VAR, temp_val); // [self, value]
         emit(OpCode::LOAD_VAR, temp_key); // [self, value, key]
         emit(OpCode::OBJECT_SET);
@@ -5305,9 +5405,9 @@ case ast::NodeType::CastExpression: {
         // Check for bare class member assignment (implicit @self.field = value)
         // Only Global bindings: Local bindings (params shadowing a field) stay
         // assigned to the local.
-        if (!current_class_name_.empty() &&
-            binding->kind == ResolvedBindingKind::Global &&
-            current_class_field_names_.count(binding->name) > 0) {
+        warnIfBareClassMemberLost(binding->name);
+        if (binding->kind == ResolvedBindingKind::Global &&
+            bareMemberResolves(binding->name)) {
           // Treat as implicit class field assignment
           std::string field_name = binding->name;
           uint32_t temp_val = next_local_index;
@@ -5317,7 +5417,7 @@ case ast::NodeType::CastExpression: {
           uint32_t temp_key = next_local_index;
           reserveLocalSlot(temp_key);
           emit(OpCode::STORE_VAR, temp_key);
-          emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+          emitSelfReceiver();
           emit(OpCode::LOAD_VAR, temp_val);
           emit(OpCode::LOAD_VAR, temp_key);
           emit(OpCode::OBJECT_SET);
@@ -10225,6 +10325,9 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   // time.  Local bindings in args would NOT work because the closure has no shared
   // frame — this path is used for simple named-function calls.
   const auto &call = static_cast<const ast::CallExpression &>(*statement.call);
+  // `this` is the method body's slot 0; the wrapper is a new frame, so it has
+  // to capture it before the inner lambda can. Appending keeps every
+  // resolver-assigned index valid.
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf("<go>", 0, 0);
   enterFunction(std::move(bf), funcIndex);

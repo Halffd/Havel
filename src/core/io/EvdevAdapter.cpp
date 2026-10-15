@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
@@ -37,6 +38,32 @@ std::atomic<EvdevAdapter *> g_active_adapter{nullptr};
 bool IsHavelSynthesizedDevice(const input_id &id) {
     return id.vendor == 0x1234 &&
            (id.product == 0x5678 || id.product == 0x5679);
+}
+
+// TEST-ONLY escape hatch for the injector in tools/havel-inject.
+//
+// Both exclusions above (IsVirtualDevicePath and the BUS_VIRTUAL/identity
+// check) exist because havel's own uinput devices would otherwise feed
+// forwarded `send()`/`click()` events back into its own input path and
+// self-sustain a storm. That reasoning is sound for a real desktop and must
+// stay the default.
+//
+// But it also means no test can drive the evdev hotkey path at all: there is
+// no other way to present a keyboard without physical hardware. With
+// HAVEL_TEST_ALLOW_VIRTUAL_INPUT=1 a virtual keyboard is tracked like any
+// other device, so the injector can exercise matching, grab transitions and
+// hotkey delivery for real. Unset (the default, and every production run)
+// the exclusion applies exactly as before.
+//
+// Only set this in a test harness, never in a user session: with havel's own
+// uinput devices visible, its output events can loop back into its input
+// path.
+static bool VirtualInputAllowedForTest() {
+  static const bool allowed = []() {
+    const char *v = std::getenv("HAVEL_TEST_ALLOW_VIRTUAL_INPUT");
+    return v != nullptr && v[0] == '1';
+  }();
+  return allowed;
 }
 
 // A uinput device always links /sys/class/input/eventN to
@@ -461,13 +488,14 @@ bool EvdevAdapter::AttachDevice(const std::string &path) {
     {
         int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) return false;
-        if (IsVirtualDevicePath(path)) {
+        if (!VirtualInputAllowedForTest() && IsVirtualDevicePath(path)) {
             close(fd);
             return false;
         }
         input_id vid{};
         if (ioctl(fd, EVIOCGID, &vid) == 0 &&
-            (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
+            ((!VirtualInputAllowedForTest() &&
+              (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))))) {
             close(fd);
             return false;
         }
@@ -537,13 +565,14 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
         // synthesized by processes (including havel's own uinput device)
         // and must never become tracked/grabbed input. Filtering here
         // covers both initial enumeration and hotplug re-enumeration.
-        if (IsVirtualDevicePath(path)) {
+        if (!VirtualInputAllowedForTest() && IsVirtualDevicePath(path)) {
             close(fd);
             continue;
         }
         input_id vid{};
         if (ioctl(fd, EVIOCGID, &vid) == 0 &&
-            (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))) {
+            ((!VirtualInputAllowedForTest() &&
+              (vid.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(vid))))) {
             close(fd);
             continue;
         }
@@ -575,7 +604,7 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     // own-generated input back into the hotkey matcher. This covers both
     // generic BUS_VIRTUAL uinput devices and havel's own devices (which
     // use BUS_USB + a fixed vendor/product fingerprint).
-    if (IsVirtualDevicePath(path)) {
+    if (!VirtualInputAllowedForTest() && IsVirtualDevicePath(path)) {
         close(fd);
         if (havel::debugging::debug_io)
             debug("EvdevAdapter: Skipping virtual device {}", path);
@@ -583,7 +612,8 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     }
     input_id id{};
     if (ioctl(fd, EVIOCGID, &id) == 0 &&
-        (id.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(id))) {
+        ((!VirtualInputAllowedForTest() &&
+          (id.bustype == BUS_VIRTUAL || IsHavelSynthesizedDevice(id))))) {
         close(fd);
         if (havel::debugging::debug_io)
             debug("EvdevAdapter: Skipping virtual device {}", path);
@@ -642,7 +672,7 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
     // adopted: reading it would feed forwarded events back into the input
     // path (infinite REL feedback loop). Detach it entirely.
     input_id id{};
-    if (IsVirtualDevicePath(path) ||
+    if ((!VirtualInputAllowedForTest() && IsVirtualDevicePath(path)) ||
         (ioctl(it->fd, EVIOCGID, &id) == 0 && IsHavelSynthesizedDevice(id))) {
         error("EvdevAdapter: refusing to grab own uinput device {}", path);
         it->grab.reset();

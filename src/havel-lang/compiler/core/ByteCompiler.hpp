@@ -146,6 +146,21 @@ void optimizeJumps();  // Jump threading optimization
 
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);
+  // Report a bare class-member name that survived resolution as a global.
+  void warnIfBareClassMemberLost(const std::string &name);
+  // Push `self` for the implicit class-member paths. Instance method: local
+  // slot 0. Closure compiled inside an instance method: no receiver slot, the
+  // instance is a captured upvalue (last, or second-to-last for timer
+  // closures which also capture the timer id). Same rule the explicit
+  // `@field = value` path uses - see ByteCompiler.cpp.
+  void emitSelfReceiver();
+  // True when a bare name can be resolved as a member of the enclosing class:
+  // we are lexically inside an instance method, the name is a declared field
+  // or method, and either the class context is intact or a closure captured
+  // self for us.
+  bool bareMemberResolves(const std::string &name) const;
+  // True when a bare class member (ClassMember binding) can reach `self`.
+  bool memberSelfAvailable() const;
   void compileClassMethod(const std::string &class_name,
   const ast::ClassMethodDef &method,
   const std::vector<ast::ClassFieldDef> &fields,
@@ -329,6 +344,20 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   std::string current_parent_class_name_;
   std::unordered_set<std::string> current_class_field_names_;
   std::unordered_set<std::string> current_class_method_names_;
+  // Field+method names of the class methods we are lexically inside, kept
+  // across nested function compilation. current_class_name_ is deliberately
+  // cleared for go/timeout/interval/thread wrappers (their @ resolution goes
+  // through a captured self upvalue instead), which loses the class context
+  // a bare name needs. This set does not get cleared, so a bare name that
+  // still resolves to a global there can be reported as "did you mean @x".
+  std::unordered_set<std::string> enclosing_class_members_;
+  bool in_class_method_ = false;
+  // The function object being compiled for the current class method body. A
+  // nested function (lambda, go/timeout/interval closure) compiles with a
+  // different current_function, and only some of those capture self as an
+  // upvalue - a bare member name can only be resolved from self when this
+  // pointer still matches.
+  const void *class_method_body_function_ = nullptr;
 
   // Inherited member names per class (for bare member access in derived classes).
   struct ClassMemberNames {

@@ -13,6 +13,22 @@ namespace havel::stdlib {
 // Global BrightnessManager instance
 static havel::BrightnessManager *g_brightnessManager = nullptr;
 
+// Resolve the monitor argument of a 2-arg call, mirroring the host bridge
+// (BrightnessBridge.cpp getMonitorFromArgs): a number selects a connected
+// monitor by index via getMonitorByIndex, a string selects by output name.
+// Empty result falls back to all-monitor stepping, like the bridge.
+//
+// This lives at file scope rather than inside registerBrightnessModule: a
+// nested function definition is not valid C++ and clang rejects it outright.
+static std::string monitorFromArg(const Value &arg) {
+  if (!g_brightnessManager) return "";
+  if (arg.isNumber()) {
+    return g_brightnessManager->getMonitorByIndex(
+        static_cast<size_t>(arg.asInt()));
+  }
+  return arg.toString();
+}
+
 void registerBrightnessModule(const VMApi &api) {
   // Get or create the singleton BrightnessManager instance
   if (!g_brightnessManager) {
@@ -121,16 +137,6 @@ void registerBrightnessModule(const VMApi &api) {
   // Resolve the monitor argument of a 2-arg call, mirroring the host bridge
   // (BrightnessBridge.cpp getMonitorFromArgs): a number selects a connected
   // monitor by index via getMonitorByIndex, a string selects by output name.
-  // Empty result falls back to all-monitor stepping, like the bridge.
-  static std::string monitorFromArg(const Value &arg) {
-    if (!g_brightnessManager) return "";
-    if (arg.isNumber()) {
-      return g_brightnessManager->getMonitorByIndex(
-          static_cast<size_t>(arg.asInt()));
-    }
-    return arg.toString();
-  }
-
   api.registerFunction("brightness.increase",
                        [](const std::vector<Value> &args) -> Value {
     if (!g_brightnessManager) return Value::makeBool(false);

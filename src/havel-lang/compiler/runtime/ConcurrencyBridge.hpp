@@ -111,6 +111,14 @@ private:
   
   std::unordered_map<uint32_t, ManagedThread> thread_info_;
   
+  // Interval id -> pinned closure. The interval's std::function callback
+  // captures the closure Value, but nothing on the VM side roots it: the
+  // script may drop the handle immediately, GC then collects the closure
+  // while the timer thread keeps firing it ("Closure not found for call"
+  // on every tick, plus OBJECT_GET failures for anything the closure
+  // captured). Pin on create, unpin on stop.
+  std::unordered_map<uint32_t, uint32_t> interval_callbacks_;
+
   // Channels
   struct Channel {
     std::queue<Value> queue;

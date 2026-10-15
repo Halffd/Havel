@@ -491,6 +491,18 @@ public:
   bool isCollectionInProgress() const;
 
   uint64_t pinExternalRoot(const Value &value);
+
+  // Called when the sweep collects an interval/timeout the script no longer
+  // references. The heap does not own the closure pins (those live in the VM's
+  // captured-closure maps), so the VM registers a hook here: without it a
+  // fire-and-forget timer whose handle is dropped leaks one external root per
+  // timer, forever, and every GC cycle pays to mark them all.
+  // A vector, not a slot: the VM and the concurrency bridge each keep their own
+  // captured-closure maps, so one overwriting the other would resurrect the
+  // leak for whichever registered second.
+  using TimerFreedHook = std::function<void(uint32_t id)>;
+  void addIntervalFreedHook(TimerFreedHook hook) { interval_freed_hooks_.push_back(std::move(hook)); }
+  void addTimeoutFreedHook(TimerFreedHook hook) { timeout_freed_hooks_.push_back(std::move(hook)); }
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<Value> externalRoot(uint64_t root_id) const;
   size_t externalRootCount() const {
@@ -650,6 +662,8 @@ private:
   std::unordered_map<uint32_t, BoundMethod> bound_methods_;
 
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Thread>> threads_;
+  std::vector<TimerFreedHook> interval_freed_hooks_;
+  std::vector<TimerFreedHook> timeout_freed_hooks_;
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Timeout>> timeouts_;
   std::unordered_map<uint32_t, std::vector<Value>> channels_;

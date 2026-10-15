@@ -248,20 +248,47 @@ likely exposed earlier by the already-committed dispatch-accounting
 change shifting allocation cadence — see the next section). Cargo 34/34,
 ctest 10/10, the three Cranelift GC smokes pass interpreted and tiered.
 
-## Known open issue surfaced by this work: the orc quartet
+## Resolved: the orc quartet (2026-10-15, commit 0a1e15f4e)
 
 `test_issue_orc_{object_get_autocall, object_subscript, classnew_field,
-array_hof_gc_safe}` are flaky on current HEAD: `object_get_autocall`
-fails deterministically at k=829 in a plain interpreted run on a clean
-tree (stash-verified), the other three pass 3/3 in quiet direct runs
-and fail under gate timing. Suspected area: incremental-GC mark/sweep
-interaction with the tiered inline caches or the write-barrier shape
-(f51c99b8d marks only the stored VALUE where the interpreter's
-OBJECT_SET site marks the container too) — allocation-cadence changes
-(a09c032f4's honest instruction counting changed tier-up timing) move
-the failure onset around. This is its own investigation; the globals
-work is not the cause (clean-tree A/B) but the gate result above
-records it.
+array_hof_gc_safe}` — root cause was never the GC or tiering: the
+goroutine pump arms a 65536-instruction tick budget around each
+dispatch tick, and a budget expiring inside a nested dispatch loop
+driven by a host function's re-entry (VM::call from class.new running
+the init, or callFunctionSync from the array map/filter/reduce
+bridges) returned with the callee's frame still live. VM::call then
+popped a mid-frame operand as the "return value", the host function
+pushed its real result into the still-live frame's operand region,
+and the resumed callee's RETURN truncated the stack to its frame
+base — wiping the result and exposing the callee's own return value
+instead (`c = Counter()` yielding the init's int-0 implicit return at
+a deterministic per-script iteration; the per-script k moved with any
+allocation/instruction-cadence change, which is why probes shifted or
+dodged it). Fix: VM::call and callFunctionSync disarm the tick budget
+around their nested loops (exception-safe restore); a host function's
+re-entry is not a time-slice point because no driver can resume a C++
+host frame. The global dispatch counter keeps counting, so the outer
+armed loop still expires at its next checkpoint. Previously suspected
+(write-barrier shape, incremental-GC interaction) — disproven by
+probes: class.new returned objects 3000/3000, the push was never
+suppressed, GC and the yield pump never mutated the stack at any
+bracketed point; the one firing condition was budget=65536
+consumed=65536 with every other exit flag zero.
+
+## Historical: the orc quartet as previously recorded (open issue, pre-fix)
+
+`test_issue_orc_{object_get_autocall, object_subscript, classnew_field,
+array_hof_gc_safe}` were flaky on HEAD before 0a1e15f4e:
+`object_get_autocall` failed deterministically at k=829 in a plain
+interpreted run on a clean tree (stash-verified), the other three
+passed 3/3 in quiet direct runs and failed under gate timing. Suspected
+area then: incremental-GC mark/sweep interaction with the tiered
+inline caches or the write-barrier shape (f51c99b8d marks only the
+stored VALUE where the interpreter's OBJECT_SET site marks the
+container too) — allocation-cadence changes (a09c032f4's honest
+instruction counting changed tier-up timing) moved the failure onset
+around. That suspicion was wrong in mechanism but right in shape: the
+cadence sensitivity came from the tick-budget counter, not the GC.
 
 ## Measurement-validity note (the shared-cache incident)
 

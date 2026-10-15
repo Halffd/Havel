@@ -27,7 +27,7 @@
 #
 # Usage:
 #   tools/havel-smoke-merged [--bin <havel>] [--roots a,b,c] [--timeout N]
-#                            [-j N] [--slow-too|--no-slow] [--status] [--list]
+#                            [--status] [--list]
 #
 # Exit codes: 0 all passed (or nothing to do), 1 one or more failures,
 #             2 bad usage / no tests found, 3 another session holds the lock.
@@ -41,7 +41,6 @@ PER_TEST_TIMEOUT=90
 BIN=""
 ROOTS=""
 SLOW_TOO=1
-JOBS=1
 MODE=run
 
 die() { echo "havel-smoke-merged: $*" >&2; exit "${2:-2}"; }
@@ -51,7 +50,6 @@ while [ $# -gt 0 ]; do
         --bin)      BIN="${2:-}"; shift 2 ;;
         --roots)    ROOTS="${2:-}"; shift 2 ;;
         --timeout)  PER_TEST_TIMEOUT="${2:-}"; shift 2 ;;
-        -j|--jobs)  JOBS="${2:-}"; shift 2 ;;
         --slow-too) SLOW_TOO=1; shift ;;
         --no-slow)  SLOW_TOO=0; shift ;;
         --status)   MODE=status; shift ;;
@@ -81,6 +79,7 @@ else
     ROOTS="${ROOTS:+$ROOTS,}$here"
 fi
 [ -d "$here/scripts/smoke" ] || die "invoking checkout has no scripts/smoke" 2
+PRIMARY_ROOT="$here"
 
 # ------------------------------------------------------------------- binary
 # Prefer an explicitly given binary, else the build belonging to the checkout
@@ -153,7 +152,7 @@ echo $$ > "$STATE_DIR/lock.pid"
 
 echo "binary : $BIN"
 echo "roots  : ${ROOTS//,/, }"
-echo "unique : $COUNT tests (deduped by content hash)"
+echo "suite  : $COUNT tests from $PRIMARY_ROOT (per-test directives honoured)"
 echo "log    : $LOG_FILE"
 echo
 
@@ -163,52 +162,34 @@ start=$(date +%s)
 HVTEST_BIN="$(dirname "$BIN")/hvtest"
 [ -x "$HVTEST_BIN" ] || HVTEST_BIN="hvtest"
 
-run_one() {
-    local file="$1" out rc
-    out="$(timeout $((PER_TEST_TIMEOUT + 30)) "$HVTEST_BIN" --timeout "$PER_TEST_TIMEOUT" \
-            --havel "$BIN" "$file" 2>&1)"
-    if printf '%s' "$out" | grep -q '^\[PASS\]'; then
-        echo "PASS $file"
-        return
-    fi
-    # Record WHY. A bare FAIL is nearly useless: it cannot distinguish a real
-    # regression from a slow test that hit the per-test timeout, and that
-    # distinction decides whether anything needs fixing at all.
-    if printf '%s' "$out" | grep -q 'timeout\|timed out'; then
-        echo "TIMEOUT $file"
-    else
-        # First meaningful line of the failure, so the reason is visible in the
-        # summary without reopening the test.
-        local why
-        why="$(printf '%s' "$out" | grep -avE 'X11 display|Wayland|Brightness|module |loader|^\[INFO\]' \
-               | grep -av '^$' | tail -2 | tr '\n' ' ' | cut -c1-160)"
-        echo "FAIL $file :: $why"
-    fi
-}
-export -f run_one
-export HVTEST_BIN BIN PER_TEST_TIMEOUT
+# Run the real suite entry point, NOT `hvtest <file>` per test.
+#
+# The per-test header directives (// smoke: flags / env / timeout / tier) are
+# parsed by run_smoke_suite, and single-file mode ignores every one of them.
+# Driving the tests one at a time looked equivalent and was not: it reported
+# test_issue_orc_classnew_field as failing, when that test carries
+# `// smoke: flags = --tiering` and `// smoke: tier = slow` and only exercises
+# the ORC path when both are honoured. It passes under the real runner.
+#
+# --slow-too is passed so the slow tier is included; a bare `hvtest --smoke`
+# skips exactly the GC/tiering stress tests that catch the worst regressions.
+"$HVTEST_BIN" --smoke --slow-too --timeout "$PER_TEST_TIMEOUT" \
+    --havel "$BIN" --scripts-root "$PRIMARY_ROOT" > "$LOG_FILE" 2>&1
+suite_rc=$?
 
-# Sequential by default. Parallelism is NOT how this tool saves I/O - the
-# dedup and the lock are - it only hides per-test process startup latency on an
-# I/O-bound mount. Kept low deliberately: this exists to stop the box from
-# thrashing, so raising -j to chase wall-clock would defeat it.
-printf '%s\n' "$TESTS" \
-    | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} > "$STATE_DIR/raw.txt"
-
-pass=$(grep -c '^PASS ' "$STATE_DIR/raw.txt" || true)
-fail=$(grep -c '^FAIL ' "$STATE_DIR/raw.txt" || true)
-timeouts=$(grep -c '^TIMEOUT ' "$STATE_DIR/raw.txt" || true)
-# Timeouts are counted separately: they mean the per-test bound was too low
-# for this box, not that the branch is broken. Reporting them as failures
-# alongside real assertion failures hides both.
+pass=$(grep -c '^\[PASS\]' "$LOG_FILE" || true)
+timeouts=$(grep -c '^\[FAIL\].*(timeout)' "$LOG_FILE" || true)
+fail=$(grep -c '^\[FAIL\]' "$LOG_FILE" || true)
+timeouts=$((timeouts))
+fail=$((fail - timeouts))
 failed_list=()
 while IFS= read -r line; do
-    [ -n "$line" ] && failed_list+=("${line#FAIL }")
-done < <(grep '^FAIL ' "$STATE_DIR/raw.txt" || true)
+    [ -n "$line" ] && failed_list+=("$line")
+done < <(grep '^\[FAIL\]' "$LOG_FILE" | grep -av '(timeout)' || true)
 timeout_list=()
 while IFS= read -r line; do
-    [ -n "$line" ] && timeout_list+=("${line#TIMEOUT }")
-done < <(grep '^TIMEOUT ' "$STATE_DIR/raw.txt" || true)
+    [ -n "$line" ] && timeout_list+=("$line")
+done < <(grep '^\[FAIL\].*(timeout)' "$LOG_FILE" || true)
 
 elapsed=$(( $(date +%s) - start ))
 

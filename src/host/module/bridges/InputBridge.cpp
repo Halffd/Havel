@@ -1,4 +1,4 @@
-// InputBridge implementation — extracted from ModularHostBridges.cpp when
+// InputBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -279,7 +279,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
             auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
-                // Conditional hotkeys are always Drop-policy — coalesce
+                // Conditional hotkeys are always Drop-policy - coalesce
                 // redundant triggers on an already queued/running fiber.
                 if (sched->isHotkeyPending(persistentGid)) return;
                 auto *g = sched->get(persistentGid);

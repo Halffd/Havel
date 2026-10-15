@@ -132,19 +132,19 @@ struct VMExecutionResult {
     YIELD,      // Instruction completed normally, return value on stack
     SUSPENDED,  // Fiber suspended (waiting for event), state frozen
     RETURNED,   // Function returned, value in result_value
-    ERROR,      // Exception thrown, message in error_message
+    THREW,      // Exception thrown, message in error_message
     DEBUG_BREAK // Breakpoint hit, debugger should take control
   };
 
   Type type;
   Value result_value;        // For YIELD or RETURNED
-  std::string error_message; // For ERROR
+  std::string error_message; // For THREW
 
   // Default constructor
   VMExecutionResult();
 
   // Convenience constructors
-  static VMExecutionResult Yield(const Value &value) {
+  static VMExecutionResult Yielded(const Value &value) {
     VMExecutionResult r;
     r.type = YIELD;
     r.result_value = value;
@@ -167,7 +167,7 @@ struct VMExecutionResult {
 
   static VMExecutionResult Error(const std::string &msg) {
     VMExecutionResult r;
-    r.type = ERROR;
+    r.type = THREW;
     r.error_message = msg;
     r.result_value = Value();
     return r;

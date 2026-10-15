@@ -332,7 +332,7 @@ if (co) {
         co->state = GCHeap::Coroutine::Runnable;
 
         // Push yield values from last yield (these become the "send" values
-        // passed to the coroutine on resume — currently empty for generators)
+        // passed to the coroutine on resume - currently empty for generators)
         for (const auto &val : co->yield_values) {
             pushStack(val);
         }
@@ -441,7 +441,7 @@ break;
 
  while (co->state != GCHeap::Coroutine::Done && steps < max_steps) {
  if (frame_count_ <= caller_frame_count && co->state != GCHeap::Coroutine::Done) {
- // Coroutine yielded or slept — check if it's a timed sleep
+ // Coroutine yielded or slept - check if it's a timed sleep
  if (co->state == GCHeap::Coroutine::Waiting &&
  co->resume_at_time > std::chrono::steady_clock::time_point{}) {
  auto now = std::chrono::steady_clock::now();
@@ -567,7 +567,7 @@ if (awaitable.isThreadId()) {
     suspension_requested_ = true;
     suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
-    pushStack(Value::makeNull()); // placeholder — replaced on resume by HavelEngine
+    pushStack(Value::makeNull()); // placeholder - replaced on resume by HavelEngine
     break;
   }
 
@@ -607,7 +607,7 @@ if (awaitable.isIntervalId()) {
     suspension_requested_ = true;
     suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(iid));
-    pushStack(Value::makeNull()); // placeholder — replaced on resume
+    pushStack(Value::makeNull()); // placeholder - replaced on resume
     break;
   }
 
@@ -650,7 +650,7 @@ if (awaitable.isTimeoutId()) {
     suspension_requested_ = true;
     suspension_reason_ = static_cast<uint8_t>(Scheduler::SuspensionReason::AWAIT);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
-    pushStack(Value::makeNull()); // placeholder — replaced on resume
+    pushStack(Value::makeNull()); // placeholder - replaced on resume
     break;
   }
 
@@ -749,7 +749,7 @@ case OpCode::FIBER_SLEEP: {
     break;
   }
 
-  // No scheduler — blocking sleep with timer and event processing
+  // No scheduler - blocking sleep with timer and event processing
   {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
   while (std::chrono::steady_clock::now() < deadline) {

@@ -71,7 +71,7 @@ struct DepNodeHash {
 enum class DepColor : uint8_t { Red, Green };
 
 // ---------------------------------------------------------------------------
-// DepGraph — session graph + previous-session graph for red/green marking
+// DepGraph - session graph + previous-session graph for red/green marking
 // ---------------------------------------------------------------------------
 
 // Index into the CURRENT session's node vector.
@@ -185,7 +185,7 @@ class DepGraph {
   // On-disk serialization (TODO.md Phase 2.1/2.4 groundwork)
   //
   // Session-end writes the dep graph (nodes + edges; colors are all green
-  // by construction — a node only entered the graph because its query ran
+  // by construction - a node only entered the graph because its query ran
   // or was promoted red-green). Next session loads it via setPreviousGraph
   // and tryMarkGreen revalidates against fresh inputs. Fingerprints live in
   // the node identity, so the format needs no separate fingerprint table.
@@ -279,7 +279,7 @@ class DepGraph {
 };
 
 // ---------------------------------------------------------------------------
-// Query caches (in-memory, single-threaded — TODO Phase 1.2)
+// Query caches (in-memory, single-threaded - TODO Phase 1.2)
 // ---------------------------------------------------------------------------
 
 // A cached value plus the dep-node that produced it.
@@ -318,7 +318,7 @@ class DefIdCache {
 };
 
 // ---------------------------------------------------------------------------
-// QueryContext — execution environment + implicit dep tracking
+// QueryContext - execution environment + implicit dep tracking
 // ---------------------------------------------------------------------------
 
 // Thrown on cyclic query dependencies (sync cycle detection per TODO
@@ -401,7 +401,7 @@ class QueryContext {
     }
     // Phase 1 memory-only semantics: removing from the slot maps happens
     // through typed paths; simplest correct eviction is clearing all
-    // caches whose provider could have read this node — but Phase 1 keeps
+    // caches whose provider could have read this node - but Phase 1 keeps
     // it conservative: clear everything.
     caches_.clear();
     redCount_++;

@@ -187,7 +187,7 @@ CFGValidationResult validate_cfg(const std::vector<BasicBlock>& blocks,
 // ===== Flatten CFG to Linear Instructions =====
 //
 // Orders blocks in their index order (block i falls through into block i+1
-// for fall-through terminators, so adjacency must be preserved — a BFS or any
+// for fall-through terminators, so adjacency must be preserved - a BFS or any
 // other reordering would miscompile one-armed conditionals) and emits each
 // block's instructions contiguously. Terminators lower to a single
 // jump/return/throw instruction whose target is the absolute instruction index

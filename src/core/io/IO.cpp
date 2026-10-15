@@ -35,7 +35,7 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include <linux/input.h>
 #include <mutex>
 // No Qt in this TU: including qt.hpp pulls QtCore headers, which emit an
-// undefined qt_version_tag reference in every object — forcing every consumer
+// undefined qt_version_tag reference in every object - forcing every consumer
 // (the Qt-free executable, havel-lsp, embedders) to link libQt6Core.
 #include <sys/eventfd.h>
 #include <sys/resource.h>
@@ -1846,7 +1846,7 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
   return result;
 }
 
-KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
+int IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
   if (keyPart.empty()) {
     return 0;
   }
@@ -2134,7 +2134,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
             [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
       } else {
         // Regular keyboard hotkey
-        KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+        int keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
 
         if (keycode == 0) {
           havel::error("Invalid key: '{}' in hotkey: {}", parsed.keyPart,
@@ -2310,7 +2310,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
           [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
     } else {
       // Not a mouse button/wheel, not a combo - try to parse as keyboard key
-      KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+      int keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
       if (keycode != 0) {
         hotkey.type = HotkeyType::Keyboard;
         hotkey.key = static_cast<Key>(keycode);

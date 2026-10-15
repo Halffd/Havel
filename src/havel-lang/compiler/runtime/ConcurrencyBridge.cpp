@@ -543,7 +543,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         return Value::makeNull();
     }
 
-    // No data available — check if we're in a goroutine context
+    // No data available - check if we're in a goroutine context
     // If so, suspend instead of blocking
     auto* vm = getVM();
     auto* sched = vm ? vm->getScheduler() : nullptr;
@@ -551,7 +551,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         auto* current_g = sched->current();
         ::havel::info("[CONCURRENCY] channelReceive: sched={}, current_g={}, state={}", 
             (void*)sched, current_g ? (void*)current_g : nullptr, current_g ? (int)current_g->state.load() : -1);
-        // Any goroutine context (Running or Runnable — a host call runs with
+        // Any goroutine context (Running or Runnable - a host call runs with
         // the goroutine marked Runnable in the launcher flow): suspend SELF
         // and register the channel wait on the current goroutine. The sender
         // unparks it via findGoroutineByWaitTarget(CHANNEL_RECV). The old
@@ -584,7 +584,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         }
     }
 
-    // Main thread (not in a goroutine) — poll instead of blocking
+    // Main thread (not in a goroutine) - poll instead of blocking
     // so goroutines can run and send on this channel.
     // Release mutex before processing events to avoid deadlock when
     // a goroutine calls channelSend (which also locks channels_mutex_).
@@ -623,7 +623,7 @@ Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {
     it->second->cv.notify_all();
     // Close must unpark suspended receivers: a goroutine (or the main
     // fiber) parked in CHANNEL_RECV on an empty channel would otherwise
-    // sleep forever — `for v in ch` / receive() after close must wake,
+    // sleep forever - `for v in ch` / receive() after close must wake,
     // see null, and treat the channel as drained. channelReceive returns
     // null for closed+empty, which both call sites translate to
     // iteration-done / immediate null.
@@ -664,7 +664,7 @@ void ConcurrencyBridge::checkTimers() {
   // Legacy entry point, still called from EventListener/VM timer-check
   // hooks. The old Timer-list machinery here was never populated (no
   // producers) and its would-be callback path invoked the VM from this
-  // thread — a boundary violation under the A+C model. Live timers are
+  // thread - a boundary violation under the A+C model. Live timers are
   // Interval/Timeout heap objects whose worker threads push TIMER_FIRE
   // events into the EventQueue; the VM thread drains them in
   // processPendingEvents. Nothing to do here anymore.

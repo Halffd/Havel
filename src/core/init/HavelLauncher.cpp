@@ -772,7 +772,7 @@ public:
     if (needsUI) {
       // Full mode with UI backend
       if (debugging::debug_io)
-        debug("UI usage detected — using full execution mode");
+        debug("UI usage detected - using full execution mode");
 
       auto *backend = host::UIManager::instance().backend();
       if (!backend) {
@@ -846,7 +846,7 @@ public:
       }
 
       if (!hkManager || hkManager->getHotkeyList().empty()) {
-        info("No hotkeys registered — running event loop for goroutines");
+        info("No hotkeys registered - running event loop for goroutines");
       } else {
         info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
       }
@@ -865,7 +865,7 @@ public:
 
     // Headless mode / hotkey-only (no UI usage)
     if (debugging::debug_io)
-      debug(hasHotkeys ? "ScriptStrategy: hotkeys without ui usage — "
+      debug(hasHotkeys ? "ScriptStrategy: hotkeys without ui usage - "
                          "engine loop, no UI backend"
                        : "ScriptStrategy: going headless (no hotkeys in AST)");
     try {
@@ -1074,7 +1074,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
     //  - io->PumpOnce(): EventListener/hotkey key events
     //  - tickScheduler(): run woken hotkey/event goroutines
     // The old pump only did PumpOnce, so a hotkey press marked its fiber
-    // runnable and nothing ever executed it — hotkeys silently did nothing
+    // runnable and nothing ever executed it - hotkeys silently did nothing
     // for the whole REPL session (the reported failure). Minimal mode
     // already pumps goroutines via HavelEngine::tickGoroutines; this is
     // the full-mode equivalent, guarded by the same idle probe.
@@ -1310,7 +1310,7 @@ public:
     // compile user scripts via the NATIVE pipeline (C++ parser + ByteCompiler)
     // to .hvc bytecode BEFORE handing off to the self-hosted launcher, so the
     // launcher spawns precompiled bytecode instead of re-parsing source with
-    // the interpreted Havel Pratt parser (~0.2-0.3 s/line — measured 225 s on
+    // the interpreted Havel Pratt parser (~0.2-0.3 s/line - measured 225 s on
     // a 2200-line script). The launcher still runs on the VM; it just receives
     // .hvc paths instead of raw source.
     // Precompiled fast path (self-hosted split ticket, Milestone A):
@@ -2898,7 +2898,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           hasUnsupported[i] = true;
           anyUnsupported = true;
           if (cfg.aotWarnings) {
-            warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
+            warn("AOT: skipping function '{}' - contains async/concurrency opcodes "
                  "not supported in AOT",
                  func->name);
           }
@@ -2922,7 +2922,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                 instr.opcode == compiler::OpCode::SPREAD_CALL) {
               shouldSkip[i] = true;
               if (cfg.aotWarnings) {
-                warn("AOT: skipping function '{}' — calls other functions "
+                warn("AOT: skipping function '{}' - calls other functions "
                      "(dynamic dispatch may reach async code)",
                      func->name);
               }
@@ -3394,7 +3394,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               stub << "    return 0;\n";
               stub << "}\n";
             } else {
-              // Entry point not compiled — emit a dummy main that prints message
+              // Entry point not compiled - emit a dummy main that prints message
               stub
                   << "#include <cstdio>\n"
                   << "int main() {\n"
@@ -3424,7 +3424,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               // havel_modules is a static archive only when module plugins
               // are disabled (CMakeLists.txt:1057-1060). With
               // ENABLE_MODULE_PLUGINS=ON, havel_modules is an INTERFACE
-              // target — no libhavel_modules.a archive is produced. Linking
+              // target - no libhavel_modules.a archive is produced. Linking
               // against the missing archive fails the entire
               // --full-aot executable step.
 #ifndef ENABLE_MODULE_PLUGINS

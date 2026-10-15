@@ -293,7 +293,7 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         // NOTE: Modules::install() already flushes options_.host_functions
         // onto the same VM (hostContext_->vm === vm_) before returning, so
         // the names are registered here. An extra registerHostFunction loop
-        // that used to sit at this point was removed — it contributed one
+        // that used to sit at this point was removed - it contributed one
         // extra duplicate-registration pass over every bridge-provided name.
 
         // Re-register channel prototype methods.
@@ -302,7 +302,7 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         // channel_new/channel_send/etc. host functions. As a result,
         // registerPrototypeMethodByName("channel","send","channel.send")
         // looks up "channel.send" in host_function_names_, fails to find
-        // it, and falls back to index 0 — meaning ch.send(v) would
+        // it, and falls back to index 0 - meaning ch.send(v) would
         // dispatch to host_function_names_[0] ("print" or "type"), not
         // to channel.send.
         //
@@ -343,7 +343,7 @@ vm_->addIntervalResult(timer_id, result);
 
                 hostContext_->eventQueue->onEvent(compiler::EventType::FILE_READY,
 [this](const compiler::Event& event) {
-    // Auto-reload: the watched script file changed. Queue the reload —
+    // Auto-reload: the watched script file changed. Queue the reload -
     // processGoroutines runs it OUTSIDE any fiber context.
     (void)event;
     reload_pending_.store(true);
@@ -970,7 +970,7 @@ vm_->addIntervalResult(timer_id, result);
             vm_->storeMainChunk(shared_chunk);
             // Subscription lifetime (reload safety): drop every generic
             // event subscription from the OLD compile before the script's
-            // `on reload { }` body runs — it re-subscribes against the new
+            // `on reload { }` body runs - it re-subscribes against the new
             // chunk. Without this, repeated reloads stack handlers forever.
             if (hostContext_ && hostContext_->eventRuntime) {
                 hostContext_->eventRuntime->clearAll();
@@ -1059,7 +1059,7 @@ private:
     std::atomic<bool> auto_reload_enabled_{false};
     std::atomic<bool> reload_watcher_stop_{false};
     std::atomic<bool> reload_pending_{false};
-    // Native event sources (host/platform boundary) — publish into the
+    // Native event sources (host/platform boundary) - publish into the
     // EventRuntime; the VM pump dispatches. Wired into the HostContext so
     // the EventBridge's subscriptions start them.
     std::unique_ptr<compiler::FileWatcher> file_watcher_;
@@ -1104,7 +1104,7 @@ private:
     // ambient globals map is currently the MODULE's sidecar (the wrapper
     // swapped it). Running sibling goroutines now would make them resolve
     // their script-level globals (e.g. a nested-capture counter's `count`)
-    // against the wrong scope — the sibling dies with a swallowed
+    // against the wrong scope - the sibling dies with a swallowed
     // "Undefined variable" ERROR and is marked Done. Defer sibling work to
     // the outer engine loop, which runs after the caller suspends and the
     // suspended module frame's state has been saved.
@@ -1157,7 +1157,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     // Set when a goroutine's dispatch throws: the catch below must mark
     // it Done or it stays Runnable and the loop re-runs the failing
     // instruction forever (the old per-step executeOneStep mapped
-    // VMExecutionResult::ERROR to Done inside the switch).
+    // VMExecutionResult::THREW to Done inside the switch).
     compiler::Scheduler::Goroutine* failing_g = nullptr;
     // A goroutine that exhausts its tick budget re-queues immediately and
     // pickNext() offers it again on the very next call. Without per-pass
@@ -1244,7 +1244,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         // the main snapshot was saved to main_script_fiber_ above), so
         // "drained" means every frame popped. Passing the entry depth here
         // (as an earlier revision did) made the loop run ZERO instructions
-        // and frames_drained trivially true — every goroutine picked
+        // and frames_drained trivially true - every goroutine picked
         // inline was marked Done without executing anything
         // (window_goroutine_monitor.hv regression).
         const size_t entry_frames = 0;
@@ -1306,7 +1306,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             // VM-level reason left by a PREVIOUS sibling's dispatch (the
             // clear above runs once per invocation, but each sibling
             // dispatch re-stashes its own reason). Suspending here would
-            // park the goroutine with reason None and no wake path —
+            // park the goroutine with reason None and no wake path -
             // permanently bricked (the hotkey-under-load stall: the hotkey
             // goroutine picked after a busy sibling's sleep consumed zero
             // instructions and was never seen again). Clear the stale
@@ -1409,7 +1409,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     held.clear();
 
     // Restore the main-script snapshot we saved above so the shared VM
-    // stack and frame arena match __main__'s half-run state — see
+    // stack and frame arena match __main__'s half-run state - see
     // explanation at saveFiberStatePublic above.
     if (main_script_fiber_) {
       // Reinstate the caller's own pending suspension (saved above) now that
@@ -1442,7 +1442,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     // never run a goroutine unbounded: a body that loops without sleeping
     // or awaiting (e.g. a busy async-task spawned at startup) would never
     // return from runDispatchLoopPublic and would wedge the entire
-    // single-threaded pump — hotkeys, timers and input stop being
+    // single-threaded pump - hotkeys, timers and input stop being
     // serviced (the launch freeze seen at
     // "pickNext Created gid=.. async-task" + startGoroutineCall).
     // Same discipline as processGoroutinesInline: the budget is
@@ -1483,7 +1483,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
                 hostContext_->eventQueue->processAll();
             }
             // Generic event bus: run queued events' matching subscriptions'
-            // handlers in VM context (never on backend threads — producers
+            // handlers in VM context (never on backend threads - producers
             // publish; the runtime dispatches; handlers execute here).
             if (hostContext_->eventRuntime) {
                 hostContext_->eventRuntime->dispatch();
@@ -1528,7 +1528,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           // stay alive after the main script parks. REPL runs must NOT:
           // engine.execute() has to return so the REPL loop can take over
           // pumping (runMinimalReplLoop). With the keep-alive on, -m --repl
-          // wedged here forever right after the script's prints — REPL
+          // wedged here forever right after the script's prints - REPL
           // banner never appeared.
           if (keepAliveForHotkeyWakes_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -1539,7 +1539,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         }
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();
-        if (!deadline) break; // No sleeping goroutines with deadlines — would hang forever
+        if (!deadline) break; // No sleeping goroutines with deadlines - would hang forever
         auto now = std::chrono::steady_clock::now();
         if (*deadline <= now) continue; // Already expired, retry immediately
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
@@ -1646,7 +1646,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       // budget expired (fast path) or a complex-opcode slow fallback.
       const bool frames_drained = vm_->frameCountPublic() <= 0;
       if (lastReason != 0) {
-        // Goroutine suspended — save fiber state and mark as Suspended
+        // Goroutine suspended - save fiber state and mark as Suspended
         vm_->clearLastSuspension();
         if (g->fiber) {
           vm_->saveFiberStatePublic(g->fiber);

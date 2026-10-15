@@ -1,4 +1,4 @@
-// NetworkBridge implementation — extracted from ModularHostBridges.cpp when
+// NetworkBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"

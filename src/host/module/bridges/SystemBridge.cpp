@@ -1,4 +1,4 @@
-// SystemBridge implementation — extracted from ModularHostBridges.cpp when
+// SystemBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -17,7 +17,7 @@ void SystemBridge::install(PipelineOptions &options) {
   // Create system objects and extension object via initializer
   // This runs after all host functions are registered
   options.system_object_initializer = [](compiler::VM *vm) {
-    // System object — merge into an existing global when present (VM's
+    // System object - merge into an existing global when present (VM's
     // registerDefaultHostGlobals adds gc/gcStats to it; replacing here would
     // wipe them and break system.gcStats()).
     uint32_t sysDetectIdx = vm->getHostFunctionIndex("system.detect");
@@ -42,11 +42,11 @@ void SystemBridge::install(PipelineOptions &options) {
       vm->setGlobal("system", Value::makeObjectId(systemObj.id));
     }
 
-    // Process object — merge into an existing global when present. The
+    // Process object - merge into an existing global when present. The
     // sys stdlib plugin builds a `process` object from __proc.* functions
     // (including getState/sendSignal and the SIG* constants). Replacing it
     // here (the old behavior) silently discarded those fields whenever the
-    // initializer ran after plugin registration — a hotkey script calling
+    // initializer ran after plugin registration - a hotkey script calling
     // process.getState() then no-opped with no error. Mirror the `system`
     // merge above: fill only missing or host-function slots.
     auto procIt = allGlobals.find("process");
@@ -88,7 +88,7 @@ void SystemBridge::install(PipelineOptions &options) {
     // Cross-module functions from the sys stdlib plugin. Guarded: the
     // plugin may not be loaded in every embedding. (The old code used
     // getHostFunctionIndex("process.spawn") etc., which registered PHANTOM
-    // names — indices with no implementation — when only the __proc.*
+    // names - indices with no implementation - when only the __proc.*
     // originals exist.)
     auto wireProcFn = [&](const char *field, const char *hostName) {
       if (vm->hasHostFunction(hostName)) {
@@ -194,7 +194,7 @@ mouseObj, "scroll",
     Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.releaseAll")));
   vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
-  // IO object — pure send/receive verbs plus clipboard and executor control.
+  // IO object - pure send/receive verbs plus clipboard and executor control.
     // Keyboard state queries live on the `keyboard` object, input-device
     // management on `devices`, and mouse ops on `mouse` (io used to carry
     // duplicates of all three surfaces).
@@ -397,7 +397,7 @@ mouseObj, "scroll",
     {
       std::lock_guard<std::mutex> lock(seen->first);
       if (seen->second.count(id) > 0) {
-        return Value::makeBool(true); // already ran for this id — skip
+        return Value::makeBool(true); // already ran for this id - skip
       }
       seen->second.insert(id);
     }
@@ -610,7 +610,7 @@ SystemBridge::handleProcessExecute(const std::vector<Value> &args,
   }
 
   auto result = ::havel::Launcher::runSync(command);
-  auto outRef = vm->getHeap().allocateString(result.stdout);
+  auto outRef = vm->getHeap().allocateString(result.out);
   return Value::makeStringId(outRef.id);
 }
 
@@ -836,7 +836,7 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
       [cmd]() -> compiler::AsyncCxxResult {
         auto result = ::havel::Launcher::runSync(cmd);
         return std::static_pointer_cast<void>(
-            std::make_shared<std::string>(std::move(result.stdout)));
+            std::make_shared<std::string>(std::move(result.out)));
       },
       [vm_](const compiler::AsyncCxxResult &cell) -> Value {
         auto out = std::static_pointer_cast<std::string>(cell);

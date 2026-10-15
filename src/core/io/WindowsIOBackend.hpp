@@ -3,6 +3,7 @@
 #ifdef WINDOWS
 #include <windows.h>
 #endif
+#include <map>
 
 namespace havel {
 
@@ -29,6 +30,7 @@ public:
     bool UnregisterHotkey(int keycode, int modifiers, bool isButton) override;
     void UnregisterAll() override;
     bool GrabKeyboard() override;
+    void UngrabKeyboard() override;
 
     bool IsKeyDown(int keycode) override;
     bool IsAnyKeyDown() override;
@@ -37,6 +39,8 @@ public:
     bool SetHardwareSensitivity(double sensitivity) override;
 
     void TypeText(const std::string &text) override;
+
+    XkbCharMapping CharToKeycode(char32_t cp) override;
 
   int GetShiftMask() const override { return MOD_SHIFT; }
   int GetControlMask() const override { return MOD_CONTROL; }
@@ -61,6 +65,14 @@ public:
     if (abstractMask & ModifierMasks::META)    result |= MOD_WIN;
     return result;
   }
+
+private:
+  // RegisterHotKey takes a caller-chosen id, but the IOBackend interface does
+  // not expose one, so ids are allocated here and kept so that unregistering
+  // by keycode can find them again. Windows allows hotkey ids in 0x0000-0xBFFF.
+  std::map<int, int> registeredHotkeys_;
+  int nextHotkeyId_ = 0;
+  bool keyboardBlocked_ = false;
 };
 #else
 class WindowsIOBackend : public IOBackend {
@@ -81,6 +93,7 @@ public:
   bool UnregisterHotkey(int, int, bool) override { return false; }
   void UnregisterAll() override {}
   bool GrabKeyboard() override { return false; }
+  void UngrabKeyboard() override {}
   bool IsKeyDown(int) override { return false; }
   bool IsAnyKeyDown() override { return false; }
   bool SetupXInput2() override { return false; }

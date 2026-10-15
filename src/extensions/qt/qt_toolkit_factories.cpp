@@ -1,4 +1,4 @@
-// qt_toolkit_factories.cpp — the Qt toolkit's factory installer.
+// qt_toolkit_factories.cpp - the Qt toolkit's factory installer.
 //
 // The executable no longer links havel_gui: Qt enters the process exclusively
 // through havel_toolkit_qt.so. The in-process registrations havel_gui used to

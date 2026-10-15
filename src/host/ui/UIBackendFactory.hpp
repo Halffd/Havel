@@ -1,4 +1,4 @@
-// UIBackendFactory.hpp — registry for the optional in-process UI backends.
+// UIBackendFactory.hpp - registry for the optional in-process UI backends.
 //
 // UIManager used to construct QtBackend, GtkBackend and ImGuiBackend itself,
 // behind HAVE_QT_EXTENSION / HAVE_GTK_BACKEND / HAVE_IMGUI_BACKEND guards. Those
@@ -49,8 +49,8 @@ createRegisteredScreenshotBackend(const std::string &toolkit);
 
 // Entry point defined by the Qt toolkit plugin
 // (src/extensions/qt/qt_toolkit_factories.cpp); havel_gui keeps a copy for
-// legacy consumers. A Qt-capable host that does not load the toolkit plugin —
-// havel-wm, the cranelift AOT shim — calls this to get the same in-process Qt
+// legacy consumers. A Qt-capable host that does not load the toolkit plugin -
+// havel-wm, the cranelift AOT shim - calls this to get the same in-process Qt
 // UI backend it used to construct implicitly from libhavel_core.a. It is safe
 // to call more than once. Declared here so the declaration stays Qt-free.
 HAVEL_EXPORT void installQtUIBackendFactories();

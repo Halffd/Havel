@@ -9,15 +9,15 @@
 //   source  -> compile -> CompiledUnit
 //   CompiledUnit -> load/execute on the VM
 //
-// "Execution must never require reparsing source" — the CompiledUnit
+// "Execution must never require reparsing source" - the CompiledUnit
 // carries the BytecodeChunk plus its source identity, so a caller can
 // hold it, serialize it, or execute it without touching source again.
 //
 // Implementations:
-//   NativeCompiler    — the C++ pipeline (Parser -> ByteCompiler), the
+//   NativeCompiler    - the C++ pipeline (Parser -> ByteCompiler), the
 //                       primary path. Cache-validated via
 //                       loadCachedScriptChunk (incremental serve path).
-//   SelfHostedCompiler — the Havel-implemented lexer/pratt/emitter run on
+//   SelfHostedCompiler - the Havel-implemented lexer/pratt/emitter run on
 //                       the VM (archived; bootstrap-verification only).
 //
 // The runtime must not care which implementation produced the chunk:
@@ -42,7 +42,7 @@ struct CompiledUnit {
     std::string sourcePath;
 
     /// True when served from the .hvc incremental cache instead of a fresh
-    /// compile. Diagnostics only — the chunk is semantically identical.
+    /// compile. Diagnostics only - the chunk is semantically identical.
     bool fromCache = false;
 };
 
@@ -51,7 +51,7 @@ struct CompiledUnit {
 /// Deliberately named CompilerFrontend, NOT CompilerBackend: the existing
 /// core/Backend.hpp CompilerBackend is the EXECUTION-backend contract
 /// (VM/JIT function compile+execute); this is the source->unit frontend
-/// contract. Different axes — neither may redefine the other.
+/// contract. Different axes - neither may redefine the other.
 class CompilerFrontend {
 public:
     virtual ~CompilerFrontend() = default;

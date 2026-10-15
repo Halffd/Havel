@@ -1341,7 +1341,7 @@ bool X11Backend::isWindowSkipPager(wID id) {
 }
 
 // ============================================================================
-// Decorations (Motif hints) — borderless
+// Decorations (Motif hints) - borderless
 // ============================================================================
 
 struct MotifHints { unsigned long flags, functions, decorations, input_mode, status; };

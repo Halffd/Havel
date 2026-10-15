@@ -15,7 +15,7 @@ namespace {
 // Registry of allocations made through alloc_bytes/alloc. FFI buffers are
 // process-lifetime or explicitly freed (ffi.freeBytes); a buffer whose owner
 // never frees it used to leak silently at exit. The registry's destructor
-// runs during static teardown — before LSAN's exit check — and releases
+// runs during static teardown - before LSAN's exit check - and releases
 // whatever the script left behind.
 struct FFIRegistry {
     std::mutex mutex;

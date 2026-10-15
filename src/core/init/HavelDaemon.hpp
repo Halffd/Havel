@@ -21,8 +21,8 @@ struct DaemonRequestData {
 
 struct DaemonResponseData {
     int exitCode;
-    std::string stdout;
-    std::string stderr;
+    std::string out;
+    std::string err;
 };
 
 class HavelDaemonImpl {

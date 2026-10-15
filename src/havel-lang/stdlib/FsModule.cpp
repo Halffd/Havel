@@ -1012,7 +1012,7 @@ void registerFsModule(const VMApi &api) {
 #endif
         });
 
-    // fs.lock (advisory file lock via flock — fd stays open)
+    // fs.lock (advisory file lock via flock - fd stays open)
     api.registerFunction(
     "fs.lock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
@@ -1036,7 +1036,7 @@ void registerFsModule(const VMApi &api) {
 #endif
     });
 
-    // fs.tryLock (non-blocking advisory file lock — fd stays open)
+    // fs.tryLock (non-blocking advisory file lock - fd stays open)
     api.registerFunction(
     "fs.tryLock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32

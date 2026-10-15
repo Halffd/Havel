@@ -1,10 +1,10 @@
-// HeadlessRuntime.hpp — single source of truth for "this process may not
+// HeadlessRuntime.hpp - single source of truth for "this process may not
 // touch a display, X server, or input device".
 //
 // The flag is set by the engine next to the IO / DisplayManager headless
 // gates (HavelEngine::initializeMinimal and Havel::initialize). Every code
-// path that would otherwise connect to a display — Qt application creation,
-// X11 FFI library loading, screenshot backends — consults these helpers so
+// path that would otherwise connect to a display - Qt application creation,
+// X11 FFI library loading, screenshot backends - consults these helpers so
 // sandboxed children (hvtest, ctest) stay completely inert instead of
 // injecting input into or capturing the live desktop session.
 #pragma once

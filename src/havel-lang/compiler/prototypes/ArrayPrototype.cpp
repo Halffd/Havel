@@ -272,7 +272,7 @@ regProtoVar("pipeApply", [&vm](const std::vector<Value>& args) {
     }
     if (!args[0].isArrayId()) {
       // Scalar pipe stage: the lambda transforms the scalar (map semantics
-      // on a non-collection — `x | fn => fn + 10` transforms x).
+      // on a non-collection - `x | fn => fn + 10` transforms x).
       return vm.call(args[1], {args[0]});
     }
     auto* arr = vm.getHeap().array(args[0].asArrayId());

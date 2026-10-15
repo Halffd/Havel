@@ -1,4 +1,4 @@
-// UIBridge implementation — extracted from ModularHostBridges.cpp when
+// UIBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -170,14 +170,14 @@ void UIBridge::install(PipelineOptions &options) {
     return handleWindowMoveToMonitor(args, ctx);
   };
   options.host_functions["window.moveMonitor"] = [ctx = ctx_](const auto &args) {
-    // module-level alias — moveMonitor(obj, i, follow)
+    // module-level alias - moveMonitor(obj, i, follow)
     return handleWindowMoveToMonitor(args, ctx);
   };
   options.host_functions["window.moveMonitorNext"] = [ctx = ctx_](const auto &args) {
     return handleWindowMoveToNextMonitor(args, ctx);
   };
   options.host_functions["window.moveMonitorPrev"] = [ctx = ctx_](const auto &args) {
-    // spec has moveMonitorPrev; backend lacks a "prev" op — reuse next with wrapped index? just call next for now.
+    // spec has moveMonitorPrev; backend lacks a "prev" op - reuse next with wrapped index? just call next for now.
     if (args.empty() || !ctx->windowManager) return Value::makeBool(false);
     ::havel::host::WindowService ws(ctx->windowManager);
     uint64_t wid = resolveWindowId(args[0], ws, static_cast<VM *>(ctx->vm));
@@ -598,7 +598,7 @@ options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
     return Value::makeBool(true);
   };
   options.host_functions["window._setPos"] = [ctx = ctx_](const auto &args) {
-    // setPos(x, y, speed, winId, relative) — same signature as move
+    // setPos(x, y, speed, winId, relative) - same signature as move
     return handleWindowMove(args, ctx);
   };
   options.host_functions["window._geometry"] = [ctx = ctx_](const auto &args) {
@@ -831,7 +831,7 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
   // X11 round-trip: fiber-suspending under the A+C model. In a goroutine
   // the query runs on an EventQueue worker (XInitThreads makes Xlib
   // thread-safe process-wide); the window object is built VM-side on
-  // resume. Top-level/init calls run inline — cost identical to today.
+  // resume. Top-level/init calls run inline - cost identical to today.
   auto *wm = ctx->windowManager;
   auto *vm = static_cast<VM *>(ctx->vm);
   compiler::VMApi api(*vm);
@@ -1718,7 +1718,7 @@ Value UIBridge::handleWindowMove(const std::vector<Value> &args,
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   // Signatures supported:
-  //   window.move(winObj, x, y [, speed] [, relative]) — object form
+  //   window.move(winObj, x, y [, speed] [, relative]) - object form
   //   window.move(x, y [, speed] [, winId] [, relative])
   bool sawObject = !args.empty() && args[0].isObjectId();
   // Object form prepends the window object; the remaining args follow the
@@ -1765,7 +1765,7 @@ Value UIBridge::handleWindowMove(const std::vector<Value> &args,
     if (auto *v = (args[relIdx].isBool() ? &args[relIdx] : nullptr))
       relative = v->asBool();
   }
-  (void)speed; // animation speed hint — not implemented in X11 backend yet
+  (void)speed; // animation speed hint - not implemented in X11 backend yet
   if (relative) {
     auto cur = winService.getWindowInfo(wid);
     if (!cur.valid) return Value::makeBool(false);
@@ -1778,8 +1778,8 @@ Value UIBridge::handleWindowMove(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowMoveRel(const std::vector<Value> &args,
                                      const HostContext *ctx) {
-  // moveRel(dx, dy, dw, dh) — relative move+resize on active window
-  // moveRel(winId, dx, dy, dw, dh) — same on specific window
+  // moveRel(dx, dy, dw, dh) - relative move+resize on active window
+  // moveRel(winId, dx, dy, dw, dh) - same on specific window
   if (!ctx->windowManager) return Value::makeBool(false);
   ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
@@ -2260,8 +2260,8 @@ Value UIBridge::handleWindowPos(const std::vector<Value> &args,
   ::havel::host::WindowService winService(ctx->windowManager);
   auto *vm = static_cast<VM *>(ctx->vm);
   // Signatures:
-  //   window.pos(relative = false, windowId = <active>)   — module-level
-  //   win.pos(relative = false)                           — object method (win
+  //   window.pos(relative = false, windowId = <active>)   - module-level
+  //   win.pos(relative = false)                           - object method (win
   //   injected as args[0])
   bool relative = false;
   uint64_t wid = 0;
@@ -2785,7 +2785,7 @@ Value UIBridge::handleWindowSizeObj(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowSetSizeObj(const std::vector<Value> &args,
                                        const HostContext *ctx) {
-  // obj.setSize(w, h) — forward to module-level resize (w, h)
+  // obj.setSize(w, h) - forward to module-level resize (w, h)
   return handleWindowResize(args, ctx);
 }
 

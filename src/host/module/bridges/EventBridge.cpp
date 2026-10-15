@@ -1,4 +1,4 @@
-// EventBridge implementation — the generic event bus host functions.
+// EventBridge implementation - the generic event bus host functions.
 // Producers publish; the runtime dispatches; handlers execute in the VM
 // loop (architecture doc: "on" as syntax sugar over subscriptions).
 
@@ -14,7 +14,7 @@ namespace havel::compiler {
 void EventBridge::install(PipelineOptions &options) {
   // event.subscribe(name, handler, [arg]) -> subscription id
   // The handler is a function object (fn index); the registry stores the
-  // index (GC-safe — the function is also reachable via the chunk). The
+  // index (GC-safe - the function is also reachable via the chunk). The
   // optional arg (e.g. a watch path) is remembered for event-source wiring
   // via event.subscriptionArg(id).
   options.host_functions["event.subscribe"] = [ctx = ctx_](const auto &args) {
@@ -119,7 +119,7 @@ void EventBridge::install(PipelineOptions &options) {
   options.host_functions["event.unsubscribe"] = unsubHandler;
   options.host_functions["event.cancel"] = unsubHandler;
 
-  // event.publish(name, [payload object]) — thread-safe, queued; the VM's
+  // event.publish(name, [payload object]) - thread-safe, queued; the VM's
   // pump dispatches. The payload object's fields are flattened to strings
   // (thread-safe plain data).
   options.host_functions["event.publish"] = [ctx = ctx_](const auto &args) {

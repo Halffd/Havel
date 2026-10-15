@@ -13,7 +13,12 @@ namespace havel {
 
 class IAudioBackend;
 
-enum class AudioBackend { PIPEWIRE, PULSE, ALSA, WINDOWS, AUTO };
+// Named WASAPI, not WINDOWS: include/types.hpp does `#define WINDOWS 1` on a
+// Windows build, so an enumerator spelled WINDOWS expands to the literal 1 -
+// which still parses, and silently aliases this backend onto PULSE. Every
+// include path that reaches this header through types.hpp hits it, which is
+// why it only reproduced in whole-TU compiles and never standalone.
+enum class AudioBackend { PIPEWIRE, PULSE, ALSA, WASAPI, AUTO };
 
 struct AudioDevice {
   std::string name, description;
@@ -57,7 +62,7 @@ public:
     const std::vector<AudioDevice> &getDevices() const;
     std::vector<AudioDevice> getOutputDevices() const;
     std::vector<AudioDevice> getInputDevices() const;
-    // Snapshot helpers — return copies (thread-safe; monitor thread mutates
+    // Snapshot helpers - return copies (thread-safe; monitor thread mutates
     // cachedDevices under deviceMutex).
     std::vector<AudioDevice> getDevicesSnapshot() const;
 

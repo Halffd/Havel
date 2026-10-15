@@ -1,18 +1,18 @@
-// ToolkitBridge.cpp — Qt-free installer for the plugin toolkit bridge.
+// ToolkitBridge.cpp - Qt-free installer for the plugin toolkit bridge.
 //
 // installQtBridge used to live in havel_gui (QtBridge.cpp) and was pulled
 // into the executable by a strong reference from main.cpp. The executable no
 // longer links havel_gui at all: Qt enters the process exclusively through
 // havel_toolkit_qt.so, loaded by UIManager::ensureQtToolkit. This file is the
-// replacement installer — it lives in the core so it is available to every
+// replacement installer - it lives in the core so it is available to every
 // embedder that wants the toolkit bridge, and it stays Qt-free.
 //
 // It does two things, both ordered exactly like the old flow:
 //   1. ensureQtToolkit() dlopens the toolkit plugin and runs its
 //      install_factories slot, which performs the registrations havel_gui's
 //      static initializer used to run before main() (UI/screenshot/clipboard
-//      backends, pixel service, screen provider). If dlopen fails — the Qt
-//      version skew this whole seam exists for — it logs once and the slots
+//      backends, pixel service, screen provider). If dlopen fails - the Qt
+//      version skew this whole seam exists for - it logs once and the slots
 //      stay empty: degraded, not unbootable.
 //   2. It adds the same pipeline host functions the Qt bridge added. Their
 //      bodies are null-guarded identically: clipboard.get/set/clear and
@@ -57,7 +57,7 @@ Value toolkitClipboardSet(const std::vector<Value> &args, const HostContext *ctx
   if (!vm || args.empty() || !ctx->clipboardManager) {
     return Value::makeBool(false);
   }
-  // Unreachable today — see toolkitClipboardGet. The Qt side used
+  // Unreachable today - see toolkitClipboardGet. The Qt side used
   // vm->resolveStringKey(args[0]) and QClipboard::setText here.
   (void)vm;
   return Value::makeBool(false);
@@ -69,11 +69,11 @@ Value toolkitClipboardClear(const std::vector<Value> &args, const HostContext *c
   if (!ctx || !ctx->clipboardManager) {
     return Value::makeBool(false);
   }
-  // Unreachable today — see toolkitClipboardGet.
+  // Unreachable today - see toolkitClipboardGet.
   return Value::makeBool(false);
 }
 
-// gui.notify — the Qt implementation is GuiManager::showNotification, which
+// gui.notify - the Qt implementation is GuiManager::showNotification, which
 // this TU cannot name. Same guard, same arg validation, then a false return:
 // if a host ever provisions a GUI manager it has to answer notifications
 // through the toolkit ABI.

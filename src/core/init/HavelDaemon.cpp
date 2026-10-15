@@ -1,4 +1,4 @@
-// HavelDaemon.cpp — Persistent daemon mode for fast script execution
+// HavelDaemon.cpp - Persistent daemon mode for fast script execution
 // Keeps VM alive, accepts scripts over Unix socket
 
 // System/standard headers FIRST (global scope)
@@ -28,10 +28,11 @@ struct DaemonRequestData {
     int clientFd;
 };
 
+// UCRT's corecrt_wstdio.h does `#define stdout (__acrt_iob_func(1))`, so this
 struct DaemonResponseData {
     int exitCode;
-    std::string stdout;
-    std::string stderr;
+    std::string out;
+    std::string err;
 };
 
 class HavelDaemonImpl {
@@ -246,11 +247,11 @@ private:
                 resp.exitCode = executeFile(req.scriptPath, req.args);
             } else {
                 resp.exitCode = 1;
-                resp.stderr = "No script provided";
+                resp.err = "No script provided";
             }
         } catch (const std::exception& e) {
             resp.exitCode = 1;
-            resp.stderr = std::string("Exception: ") + e.what();
+            resp.err = std::string("Exception: ") + e.what();
         }
         
         // Restore stdout/stderr
@@ -263,10 +264,10 @@ private:
         char buf[4096];
         ssize_t n;
         while ((n = read(stdoutPipe[0], buf, sizeof(buf))) > 0) {
-            resp.stdout.append(buf, n);
+            resp.out.append(buf, n);
         }
         while ((n = read(stderrPipe[0], buf, sizeof(buf))) > 0) {
-            resp.stderr.append(buf, n);
+            resp.err.append(buf, n);
         }
         close(stdoutPipe[0]);
         close(stderrPipe[0]);
@@ -336,14 +337,14 @@ private:
         write(fd, &resp.exitCode, 4);
         
         // Stdout
-        len = resp.stdout.size();
+        len = resp.out.size();
         write(fd, &len, 4);
-        if (len > 0) write(fd, resp.stdout.data(), len);
+        if (len > 0) write(fd, resp.out.data(), len);
         
         // Stderr
-        len = resp.stderr.size();
+        len = resp.err.size();
         write(fd, &len, 4);
-        if (len > 0) write(fd, resp.stderr.data(), len);
+        if (len > 0) write(fd, resp.err.data(), len);
     }
 
     std::string socketPath_;

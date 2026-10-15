@@ -2,7 +2,7 @@
  * ImageModule.cpp - Image processing module for Havel bytecode VM
  *
  * Exposes OpenCV image operations via ImageService.
- * Images are opaque handles (integers) — lightweight, no per-pixel VM objects.
+ * Images are opaque handles (integers) - lightweight, no per-pixel VM objects.
  *
  * NOTE: Uses api.registerFunction() directly instead of HAVEL_REGISTER_FUNCTION
  * macro because lambdas with comma-separated declarations break the preprocessor.

@@ -2770,7 +2770,7 @@ extern "C" void qt_set_app_metadata(const char* appName, const char* orgName, in
 
 static void qt_register_host_functions(HavelAPI* api) {
     /* UIManager::registerToolkitExtensions invokes this at backend-creation
-     * time with a null HavelAPI — none exists that early (the engine is not
+     * time with a null HavelAPI - none exists that early (the engine is not
      * initialized yet). Registering without a target is a no-op; the old
      * code dereferenced null and crashed the whole process before a REPL
      * banner or window could appear (reproduced by test_issue_repl_script_mode

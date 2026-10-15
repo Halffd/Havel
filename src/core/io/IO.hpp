@@ -143,14 +143,12 @@ struct KeyToken {
   bool fromBraces = false;
 };
 
-// Helper to create input_event structs efficiently
-inline input_event MakeEvent(uint16_t type, uint16_t code, int32_t value) {
-  struct input_event ev{};
-  gettimeofday(&ev.time, nullptr);
-  ev.type = type;
-  ev.code = code;
-  ev.value = value;
-  return ev;
+// Platform-neutral replacement for the old MakeEvent(), which built an evdev
+// `struct input_event` and stamped it with gettimeofday(). Neither the type
+// nor the clock exists outside Linux, and every caller only ever wanted "this
+// keycode, down or up". The backend decides what the event actually is.
+inline KeyEventRequest MakeEvent(int keycode, bool down) {
+  return down ? KeyEventRequest::Press(keycode) : KeyEventRequest::Release(keycode);
 }
 
 struct IoEvent {
@@ -402,7 +400,9 @@ public:
 
   static ParsedHotkey ParseModifiersAndFlags(const std::string &input,
                                              bool isEvdev);
-  static KeyCode ParseKeyPart(const std::string &keyPart, bool isEvdev);
+  // Returns a platform keycode as an int, not X11 KeyCode: the X11 typedef is
+  // unavailable off X11, and KeyEventRequest already carries an int.
+  static int ParseKeyPart(const std::string &keyPart, bool isEvdev);
   static ParsedHotkey ParseHotkeyString(const std::string &rawInput);
   int ParseModifiers(std::string str);
   static int ParseMouseButton(const std::string &str);
@@ -487,9 +487,9 @@ public:
   // Performance optimization: Keycode caching and batch event helpers
   static int GetKeyCacheLookup(const std::string &keyName);
   static std::vector<KeyToken> ParseKeyString(const std::string &keys);
-  void SendBatchedKeyEvents(const std::vector<input_event> &events);
+  void SendBatchedKeyEvents(const std::vector<KeyEventRequest> &events);
 
-  // Deferred send queue — prevents injection during hotkey callback
+  // Deferred send queue - prevents injection during hotkey callback
   struct PendingSend {
     std::string keys;
   };

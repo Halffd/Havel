@@ -136,7 +136,7 @@ void registerMathModule(const VMApi &api) {
   api.setGlobal("math", mathObj);
 
   // Load pure-Havel math sidecar (adds TAU, SQRT2, clamp, lerp, etc.)
-  // Load "math/math" directly — that file defines top-level globals
+  // Load "math/math" directly - that file defines top-level globals
   // which become module exports. The wrapper "math" only uses `use`
   // which creates locals (not globals), so they don't get exported.
   Value mathExports;
@@ -217,7 +217,7 @@ void registerMathModule(const VMApi &api) {
     api.setGlobal(sc.globalName, nsObj);
   }
 
-  // Bare constants (backward compat) — set AFTER all sidecar loads because
+  // Bare constants (backward compat) - set AFTER all sidecar loads because
   // loadModule() does globals.clear() and only restores host_function_globals_,
   // which would otherwise wipe out PI/E/INF/NAN set earlier.
   api.setGlobal("PI", Value(3.14159265358979323846));

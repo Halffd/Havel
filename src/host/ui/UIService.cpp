@@ -26,7 +26,7 @@ UIService::UIService() = default;
 
 UIService::~UIService() {
   // Clean up windows. Use deleteLater() so the QWidget is destroyed on the
-  // Qt event loop thread after any pending posted events for it drain —
+  // Qt event loop thread after any pending posted events for it drain -
   // direct delete races QDBusConnection/QXcbEventQueue threads that may
   // still hold a reference to the object's internal state.
   for (auto &[id, window] : windows_) {

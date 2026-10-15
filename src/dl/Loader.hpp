@@ -29,6 +29,13 @@
 #if !HAVEL_PLATFORM_WINDOWS
 #include <dlfcn.h>
 #endif
+// The portable dlopen/dlsym pair. Dynamic::load() used to call dlopen and
+// dlerror directly, which compiles on Linux and fails on Windows with
+// "identifier not found" even though the <dlfcn.h> include above is gated.
+// Going through the shim keeps one implementation of the mapping.
+// `src` is already on the include path for this header - it includes
+// havel-lang/core/Value.hpp by the same root-relative form.
+#include "havel-lang/compiler/platform/dl.hpp"
 
 namespace havel {
 
@@ -334,8 +341,12 @@ public:
 
  bool load(const char *path) {
   if (!path) return false;
-  dlerror();
-  handle_ = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  // Clears any stale error, then opens. The shim maps this pair onto
+  // LoadLibraryA on Windows; calling dlopen directly here compiled on Linux
+  // and failed on Windows with "identifier not found" even though the
+  // <dlfcn.h> include above is gated.
+  platform::last_error_message();
+  handle_ = platform::library_open(path);
   return handle_ != nullptr;
  }
 
@@ -346,7 +357,7 @@ public:
  template <typename T>
  T getSymbol(const char *name) const {
   if (!handle_ || !name) return nullptr;
-  return reinterpret_cast<T>(havel_loader_sym(handle_, name));
+  return reinterpret_cast<T>(platform::library_symbol_get(handle_, name));
  }
 
  void *rawHandle() const { return handle_; }

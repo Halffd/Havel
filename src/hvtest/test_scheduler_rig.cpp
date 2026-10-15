@@ -1052,7 +1052,7 @@ static void test_requeueFront_resets_state_and_requeues() {
     sched.requeueFront(g);
     CHECK(g->state == Scheduler::GoroutineState::Created, "requeueFront should set Created");
     CHECK(g->suspension_reason == Scheduler::SuspensionReason::None, "reason should be None");
-    // requeueFront restores `callable` from `hotkey_callable` — the (function_id,
+    // requeueFront restores `callable` from `hotkey_callable` - the (function_id,
     // closure_id) are re-derived by VM::startGoroutineCall at resume time.
     CHECK(g->callable.isClosureId(), "callable should be restored from hotkey_callable");
     CHECK_EQ(g->callable.asClosureId(), 5u, "callable should equal hotkey_callable");
@@ -1101,7 +1101,7 @@ static void test_isHotkeyPending_coalesce_check() {
     g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(10)};
 
-    // Parked (Suspended/HotkeyWait): not pending — a trigger must wake it.
+    // Parked (Suspended/HotkeyWait): not pending - a trigger must wake it.
     auto* picked = sched.pickNext();
     sched.clearCurrent();
     sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
@@ -1717,7 +1717,7 @@ sched.wakeHotkey(g);
 sched.pickNext();
 sched.clearCurrent();
 
-// Simulate handler return — mimic handleReturned for persistent goroutines
+// Simulate handler return - mimic handleReturned for persistent goroutines
 g->state = Scheduler::GoroutineState::Suspended;
 g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
 if (g->fiber) {
@@ -1803,17 +1803,17 @@ sched.clearCurrent();
 // Simulate running state
 g->state = Scheduler::GoroutineState::Running;
 
-// Second trigger while running — Drop policy
+// Second trigger while running - Drop policy
 bool dropped = sched.wakeHotkey(g);
 CHECK(dropped, "Drop+persistent while running returns true (no double-fire)");
-// Goroutine should still be Running — not requeued
+// Goroutine should still be Running - not requeued
 CHECK(g->state == Scheduler::GoroutineState::Running, "still Running after drop");
 
 // Handler returns → re-park
 g->state = Scheduler::GoroutineState::Suspended;
 g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
 
-// Third trigger after re-park — should work
+// Third trigger after re-park - should work
 bool w3 = sched.wakeHotkey(g);
 CHECK(w3, "trigger after re-park should work");
 
@@ -1839,7 +1839,7 @@ sched.pickNext();
 sched.clearCurrent();
 g->state = Scheduler::GoroutineState::Running;
 
-// Second trigger with new args while running — Replace policy
+// Second trigger with new args while running - Replace policy
 bool replaced = sched.wakeHotkey(g, {Value::makeInt(99)});
 CHECK(replaced, "Replace while running should return true");
 CHECK_EQ(g->hotkey_args[0].asInt(), 99, "args updated by Replace");
@@ -1908,13 +1908,13 @@ sched.pickNext();
 sched.clearCurrent();
 g->state = Scheduler::GoroutineState::Running;
 
-// Rapid-fire 5 triggers while running — all should be dropped
+// Rapid-fire 5 triggers while running - all should be dropped
 for (int i = 0; i < 5; i++) {
 bool result = sched.wakeHotkey(g);
 CHECK(result, "rapid Drop trigger should return true (persistent, no double-fire)");
 }
 
-// Should still be Running — only one execution
+// Should still be Running - only one execution
 CHECK(g->state == Scheduler::GoroutineState::Running, "still Running after rapid drops");
 
 // Re-park
@@ -1958,7 +1958,7 @@ bool c2 = sched.wakeHotkey(g, {Value::makeInt(30)});
 CHECK(c2, "Coalesce with newArgs while pending should return true");
 CHECK_EQ(g->hotkey_args[0].asInt(), 30, "args updated by second coalesce (latest wins)");
 
-// Third trigger with no args — should return true but keep last args
+// Third trigger with no args - should return true but keep last args
 bool c3 = sched.wakeHotkey(g, {});
 CHECK(c3, "Coalesce with no newArgs while pending should return true");
 CHECK_EQ(g->hotkey_args[0].asInt(), 30, "args unchanged when no newArgs provided");
@@ -3003,7 +3003,7 @@ static void test_sleep_loop_multiple_iterations() {
   uint32_t gid = sched.spawn(0, {}, 0, "loop_sleeper");
   auto* g = sched.get(gid);
 
-  // Simulate a loop { sleep(10) } — 5 iterations of suspend/wake/resume
+  // Simulate a loop { sleep(10) } - 5 iterations of suspend/wake/resume
   constexpr int ITERATIONS = 5;
   for (int i = 0; i < ITERATIONS; i++) {
     // Simulate fiber->suspend(SLEEP, 10ms)
@@ -3038,7 +3038,7 @@ static void test_sleep_loop_multiple_iterations() {
     CHECK(picked != nullptr && picked->id == gid, "should pick our goroutine");
     sched.clearCurrent();
 
-    // Simulate fiber->resume() — goroutine continues executing
+    // Simulate fiber->resume() - goroutine continues executing
     g->fiber->resume();
     g->state = Scheduler::GoroutineState::Running;
     sched.clearCurrent();
@@ -3101,7 +3101,7 @@ static void test_hotkey_sleep_loop_with_retrigger() {
   CHECK_EQ(woken, 1u, "should wake from sleep after deadline");
   CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after sleep wake");
 
-  // Fiber resumes — goroutine continues loop body
+  // Fiber resumes - goroutine continues loop body
   auto* repicked = sched.pickNext();
   CHECK(repicked != nullptr && repicked->id == gid, "should be pickable after sleep wake");
   sched.clearCurrent();
@@ -3168,7 +3168,7 @@ static void test_hotkey_while_loop_exits_via_break() {
   g->fiber->resume();
   g->state = Scheduler::GoroutineState::Running;
 
-  // Loop body finishes (function returns) — handleReturned re-parks
+  // Loop body finishes (function returns) - handleReturned re-parks
   // Simulate handleReturned for persistent goroutine with no retrigger
   g->hotkey_retrigger.store(false);
   g->state = Scheduler::GoroutineState::Suspended;
@@ -3220,7 +3220,7 @@ static void test_coroutine_suspend_and_resume() {
   // unpark simulates the coroutine completing
   sched.unpark(g);
   CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
-  // Contract (since 8cc8fc16): unpark must NOT clear wait_handle — it carries
+  // Contract (since 8cc8fc16): unpark must NOT clear wait_handle - it carries
   // resume_value for channel operations. The resume logic in HavelEngine
   // (ExecutionEngine.cpp executeFrame) consumes resume_value via
   // replaceStackTop() and calls wait_handle.clear() after use.
@@ -3416,7 +3416,7 @@ static void test_runBlockingHostCall_async_park_when_fiber_executing() {
       [](const AsyncCxxResult&) { return Value::makeInt(42); });
 
   // The worker threads in EventQueue are already running and can complete
-  // the job between postToWorker and this point — asserting !jobPosted
+  // the job between postToWorker and this point - asserting !jobPosted
   // here races with the worker pool. The observable that distinguishes
   // async park from sync inline is the Pending marker on the return value;
   // the gate in runBlockingHostCall only falls through to lift(job()) when
@@ -3438,7 +3438,7 @@ static void test_runBlockingHostCall_async_park_when_fiber_executing() {
     CHECK(g->wait_handle.target_id != 0, "wait token must be non-zero");
   }
 
-  // Drain cleanup — let the worker pool finish the posted job before the
+  // Drain cleanup - let the worker pool finish the posted job before the
   // test moves on so it doesn't leak across tests.
   constexpr int kMaxDrainIters = 200;
   for (int i = 0; i < kMaxDrainIters && !jobPosted.load(std::memory_order_acquire); ++i) {
@@ -3567,7 +3567,7 @@ static void test_hotkey_retrigger_during_sleep_does_not_double_wake() {
   }
   CHECK(g->hotkey_retrigger.load(), "retrigger flag should be set");
 
-  // Sleep wakes — only ONE wakeup, not 6
+  // Sleep wakes - only ONE wakeup, not 6
   g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
   size_t woken = sched.wakeSleepingGoroutines();
   CHECK_EQ(woken, 1u, "should wake exactly once despite multiple retriggers");
@@ -3734,7 +3734,7 @@ static void test_spawn_concurrent_gid_uniqueness() {
   // thread -> invokeCallback -> script `go { }`) raced with VM-thread spawns:
   // both read the same counter value, both got the same gid, and spawn's
   // goroutines_[gid] = std::move(g) then overwrote the first goroutine while
-  // its raw pointer sat in the run queues — UAF, and the colliding
+  // its raw pointer sat in the run queues - UAF, and the colliding
   // hotkey-persistent goroutines died until process restart. With the
   // atomic counter, concurrent spawns must produce strictly distinct ids.
 
@@ -3774,7 +3774,7 @@ static void test_spawn_concurrent_gid_uniqueness() {
   }
 
   // Cleanup: mark everything Done so later tests see a clean scheduler.
-  // Test threads have joined — no concurrency remains, so direct access is
+  // Test threads have joined - no concurrency remains, so direct access is
   // safe (matches the existing tests' cleanup pattern).
   for (uint32_t id : all) {
     auto* g = sched.get(id);
@@ -3959,7 +3959,7 @@ static void benchmark_scheduler_pump_cost() {
     auto* g = sched.pickNext();
     if (g) {
       if (g->state == Scheduler::GoroutineState::Created) {
-        // mark done without a VM — simulates a goroutine that immediately returns
+        // mark done without a VM - simulates a goroutine that immediately returns
         g->state = Scheduler::GoroutineState::Done;
       }
       sched.yield(g);

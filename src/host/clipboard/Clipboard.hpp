@@ -41,7 +41,7 @@ public:
     X11,      // X11 clipboard (XGetSelectionOwner/XSetSelectionOwner)
     WAYLAND,  // Wayland clipboard (wl_data_device_manager)
     EXTERNAL, // External command (xclip, wl-copy, etc.)
-    WINDOWS,  // Windows clipboard API
+    WIN32_API, // Windows clipboard API
     MACOS     // macOS NSPasteboard
   };
 

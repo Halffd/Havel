@@ -1,4 +1,4 @@
-// BrightnessBridge implementation — extracted from ModularHostBridges.cpp when
+// BrightnessBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -351,7 +351,7 @@ BrightnessBridge::handleIncreaseBrightness(const std::vector<Value> &args,
   if (!ctx || !ctx->brightnessManager)
     return Value::makeBool(false);
   // 0 args means the default step (0.02), matching the module copy and
-  // DEFAULT_BRIGHTNESS_AMOUNT — the old `args.size() < 1` rejection made
+  // DEFAULT_BRIGHTNESS_AMOUNT - the old `args.size() < 1` rejection made
   // bare `brightness.increase()` return false with brightness stuck.
   double amount = args.empty() ? 0.02 : args[0].asNumber();
   auto *vm = static_cast<VM *>(ctx->vm);

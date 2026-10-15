@@ -37,7 +37,7 @@ static int64_t getTimestampMs(const std::vector<Value> &args) {
 }
 
 void registerTimeModule(const VMApi &api) {
-  // time.now() — current epoch in milliseconds
+  // time.now() - current epoch in milliseconds
   api.registerFunction("time.now",
                        [](const std::vector<Value> &args) {
                          (void)args;
@@ -49,7 +49,7 @@ void registerTimeModule(const VMApi &api) {
                          return Value(static_cast<int64_t>(ms));
                        });
 
-  // time.epoch() — Unix epoch in seconds
+  // time.epoch() - Unix epoch in seconds
   api.registerFunction("time.epoch",
                        [](const std::vector<Value> &args) {
                          (void)args;
@@ -61,7 +61,7 @@ void registerTimeModule(const VMApi &api) {
                          return Value(static_cast<int64_t>(secs));
                        });
 
-  // time.millis() — same as time.now (milliseconds since epoch)
+  // time.millis() - same as time.now (milliseconds since epoch)
   api.registerFunction("time.millis",
                        [](const std::vector<Value> &args) {
                          (void)args;
@@ -73,7 +73,7 @@ void registerTimeModule(const VMApi &api) {
                          return Value(static_cast<int64_t>(ms));
                        });
 
-  // time.format(timestamp, format?) — format timestamp as string
+  // time.format(timestamp, format?) - format timestamp as string
   api.registerFunction(
       "time.format", [api](const std::vector<Value> &args) {
         int64_t timestamp = getTimestampMs(args);
@@ -88,7 +88,7 @@ void registerTimeModule(const VMApi &api) {
         return api.makeString(buf);
       });
 
-  // time.parse(datestr, format?) — parse date string to millisecond
+  // time.parse(datestr, format?) - parse date string to millisecond
   // timestamp
   api.registerFunction(
       "time.parse", [api](const std::vector<Value> &args) {
@@ -114,7 +114,7 @@ void registerTimeModule(const VMApi &api) {
         return Value(static_cast<int64_t>(time) * 1000);
       });
 
-// time.sleep(ms) — non-blocking if in a goroutine
+// time.sleep(ms) - non-blocking if in a goroutine
   api.registerFunction(
       "time.sleep", [api](const std::vector<Value> &args) {
         if (args.empty())
@@ -139,56 +139,56 @@ if (api.isInGoroutine()) {
         return Value::makeNull();
       });
 
-  // time.year() — current year
+  // time.year() - current year
   api.registerFunction("time.year", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_year + 1900));
   });
 
-  // time.month() — current month (1-12)
+  // time.month() - current month (1-12)
   api.registerFunction("time.month", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_mon + 1));
   });
 
-  // time.day() — current day of month (1-31)
+  // time.day() - current day of month (1-31)
   api.registerFunction("time.day", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_mday));
   });
 
-  // time.hour() — current hour (0-23)
+  // time.hour() - current hour (0-23)
   api.registerFunction("time.hour", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_hour));
   });
 
-  // time.minute() — current minute (0-59)
+  // time.minute() - current minute (0-59)
   api.registerFunction("time.minute", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_min));
   });
 
-  // time.second() — current second (0-59)
+  // time.second() - current second (0-59)
   api.registerFunction("time.second", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_sec));
   });
 
-  // time.weekday() — day of week (0=Sunday, 6=Saturday)
+  // time.weekday() - day of week (0=Sunday, 6=Saturday)
   api.registerFunction("time.weekday", [](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     return Value(static_cast<int64_t>(tm.tm_wday));
   });
 
-  // time.date() — current date as "YYYY-MM-DD" string
+  // time.date() - current date as "YYYY-MM-DD" string
   api.registerFunction("time.date", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
@@ -197,7 +197,7 @@ if (api.isInGoroutine()) {
     return api.makeString(buf);
   });
 
-  // time.time() — current time as "HH:MM:SS" string
+  // time.time() - current time as "HH:MM:SS" string
   api.registerFunction("time.time", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();

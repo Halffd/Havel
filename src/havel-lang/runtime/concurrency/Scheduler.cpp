@@ -73,7 +73,7 @@ uint32_t Scheduler::spawn(Value callable, const std::vector<Value>& args,
       g->closure_id = 0;
     } else if (callable.isClosureId()) {
       g->closure_id = callable.asClosureId();
-      // init_function_id stays 0 — the VM will resolve it from the closure
+      // init_function_id stays 0 - the VM will resolve it from the closure
       // at startGoroutineCall time. The Fiber constructor only needs an
       // initial marker; startGoroutineCall replaces the frame anyway.
     }
@@ -182,7 +182,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
             if (!g) continue;
             // UAF defense: cleanupDoneGoroutines purges queue entries before
             // erasing the Goroutine. If we ever pop a Done goroutine here, a
-            // purge was skipped — log loudly with timestamp so we can match
+            // purge was skipped - log loudly with timestamp so we can match
             // it against [ERASE] entries to confirm queue poisoning.
             if (g->state == GoroutineState::Done) {
               auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -213,7 +213,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
     if (result) {
     if (result->state == GoroutineState::Done) {
-      // Raced with markGoroutineDone — skip. popRunnable already
+      // Raced with markGoroutineDone - skip. popRunnable already
       // filters Done entries (lines 145-150), but the state can
       // flip between its check and here.
       result = nullptr;
@@ -222,7 +222,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
         std::lock_guard glock(goroutines_mutex_);
         assert(goroutines_.count(result->id) == 1);
       }
-      // NOTE: Do NOT clear wait_handle here — it carries resume_value for
+      // NOTE: Do NOT clear wait_handle here - it carries resume_value for
       // channel operations. The resume logic in HavelEngine consumes it
       // and clears it after use.
       // result->wait_handle.clear();  // REMOVED
@@ -267,7 +267,7 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 
 	g->state = GoroutineState::Runnable;
 	g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
-	// NOTE: Do NOT clear wait_handle here — it carries resume_value for channel
+	// NOTE: Do NOT clear wait_handle here - it carries resume_value for channel
 	// operations. The resume logic in HavelEngine consumes it and the next
 	// suspension will overwrite it.
 	// g->wait_handle.clear();  // REMOVED: was losing channel resume_value
@@ -353,11 +353,11 @@ std::vector<Value> Scheduler::getGCRoots() const {
     std::lock_guard lock(goroutines_mutex_);
     for (const auto& [id, g] : goroutines_) {
         if (!g) continue;
-        // Primary callable — the goroutine's function/closure identity.
+        // Primary callable - the goroutine's function/closure identity.
         // Without this root, the closure can be GC-collected while the
         // goroutine is queued (not yet executing on the VM stack).
         if (!g->callable.isNull()) roots.push_back(g->callable);
-        // Hotkey arm — the version to re-run on each trigger. Separate
+        // Hotkey arm - the version to re-run on each trigger. Separate
         // from callable because hotkeys can swap their callback at runtime.
         if (!g->hotkey_callable.isNull()) roots.push_back(g->hotkey_callable);
         // Stack values (used at spawn, then fiber takes over)
@@ -740,7 +740,7 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, cons
   // locals, fiber->stack or fiber->call_stack here: requeueFront() resets all
   // of them, which destroys the frame the VM is executing and leaves the
   // pointer pushed into hotkey_queue_ that handleReturned() then parks as
-  // Suspended+HotkeyWait — a permanently stuck non-runnable queue entry plus a
+  // Suspended+HotkeyWait - a permanently stuck non-runnable queue entry plus a
   // swallowed trigger.
   //
   // Per the hotkey_retrigger contract (Scheduler.hpp), a trigger that lands on
@@ -813,10 +813,10 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs, cons
   // by the VM and the goroutine will retrigger at the appropriate point.
   if (g->state == GoroutineState::Suspended) {
     if (g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait) {
-      // Idle/parked goroutine waiting for next trigger — wake it up
+      // Idle/parked goroutine waiting for next trigger - wake it up
       requeueFront(g);
     } else {
-      // Mid-sleep or other suspension — set retrigger flag so the
+      // Mid-sleep or other suspension - set retrigger flag so the
       // goroutine re-runs after its current suspension resolves
       g->hotkey_retrigger.store(true, std::memory_order_release);
     }
@@ -833,7 +833,7 @@ bool Scheduler::isHotkeyPending(uint32_t gid) const {
     if (it == goroutines_.end()) return false;
     auto s = it->second->state.load(std::memory_order_acquire);
     // Only goroutines queued or currently executing are "pending". A goroutine
-    // parked in Suspended+HotkeyWait is idle and awaiting its next trigger —
+    // parked in Suspended+HotkeyWait is idle and awaiting its next trigger -
     // isHotkeyPending() must return false so the Drop-policy pre-check in
     // ModularHostBridges does not swallow the trigger (regression 0d576573
     // returned true here and hotkeys never fired).
@@ -900,7 +900,7 @@ bool Scheduler::removeHotkeyByAlias(const std::string& alias) {
     // (priority_mutex_ BEFORE goroutines_mutex_): collect the target under
     // goroutines_mutex_, purge its raw pointer from the run queues under
     // priority_mutex_, then erase the owning unique_ptr from the map. Purge
-    // before erase is mandatory — otherwise hasRunnableFibers()/pickNext()
+    // before erase is mandatory - otherwise hasRunnableFibers()/pickNext()
     // walk a dangling Goroutine* still sitting in a queue (UAF). See the
     // cleanupDoneGoroutines() doc comment.
     Goroutine* target = nullptr;

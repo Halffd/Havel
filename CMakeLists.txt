@@ -66,6 +66,50 @@ else()
 endif()
 
 # ==============================================================================
+# PLATFORM-SPECIFIC LINKER / COMPILE FLAG SHIMS
+# ==============================================================================
+# GNU ld groups resolve the havel_core <-> havel_runtime symbol cycle. MSVC's
+# link.exe and lld-link do not need them (and reject the flags), so they expand
+# to nothing on Windows. The cycle is still resolved because link.exe scans
+# archives iteratively by default.
+if(WINDOWS)
+    set(HAVEL_LINK_GROUP_BEGIN "")
+    set(HAVEL_LINK_GROUP_END "")
+    set(HAVEL_DL_LIBS "")
+    set(HAVEL_NO_LTO_FLAG "")
+    set(HAVEL_VISIBILITY_FLAGS "")
+    set(HAVEL_ALLOW_UNRESOLVED "")
+    set(HAVEL_EXPORT_DYNAMIC "")
+    set(HAVEL_NO_GC_SECTIONS "")
+    set(HAVEL_NO_PIE_FLAG "")
+else()
+    # These MUST be the literal GNU flags, not "${VAR}" of themselves.
+    # An undefined CMake variable expands to the empty string, so a
+    # self-referential set() silently erases the flag instead of defining it.
+    # Losing --start-group/--end-group here does not fail loudly: the
+    # havel_core <-> havel_runtime cycle then fails to resolve at link time,
+    # which is the exact failure these groups exist to prevent.
+    set(HAVEL_LINK_GROUP_BEGIN "-Wl,--start-group")
+    set(HAVEL_LINK_GROUP_END "-Wl,--end-group")
+    set(HAVEL_DL_LIBS "dl")
+    set(HAVEL_NO_LTO_FLAG "-fno-lto")
+    set(HAVEL_VISIBILITY_FLAGS "-fvisibility=hidden -fvisibility-inlines-hidden")
+    set(HAVEL_ALLOW_UNRESOLVED "-Wl,--allow-shlib-undefined")
+    set(HAVEL_EXPORT_DYNAMIC "-Wl,--export-dynamic")
+    set(HAVEL_NO_GC_SECTIONS "-Wl,--no-gc-sections")
+    set(HAVEL_NO_PIE_FLAG "-no-pie")
+endif()
+
+# libm is a separate library on ELF platforms and is part of the CRT on
+# Windows. Linking it by name on MSVC fails with
+# "LNK1181: cannot open input file 'm.lib'".
+if(WINDOWS)
+    set(HAVEL_MATH_LIBS "")
+else()
+    set(HAVEL_MATH_LIBS "m")
+endif()
+
+# ==============================================================================
 # BUILD OPTIONS - Define these FIRST before any logic
 # ==============================================================================
 option(USE_CLANG "Force use of Clang compiler" ON)
@@ -98,7 +142,7 @@ option(UBSAN_ABORT_ON_ERROR "UBSAN: Abort on error" OFF)
 #
 # Scoped to ENABLE_TSAN on purpose: ASAN/UBSAN keep their existing per-target
 # wiring below, so the default Debug dev build is unchanged.
-if(ENABLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(ENABLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WINDOWS)
   add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
   add_link_options(-fsanitize=thread)
 endif()
@@ -157,7 +201,7 @@ endif()
 # -march=native produces binaries tied to the build host CPU. Distro packages
 # and Docker images must set PORTABLE_BUILD=ON to stay distributable.
 set(HAVEL_ARCH_FLAGS "")
-if(NOT PORTABLE_BUILD)
+if(NOT PORTABLE_BUILD AND NOT WINDOWS)
     set(HAVEL_ARCH_FLAGS "-march=native")
 endif()
 
@@ -169,7 +213,7 @@ endif()
 # execute command". Probe the binary clang would actually invoke and fall
 # back to the compiler default rather than hard-failing the whole build.
 set(HAVEL_LLD_LINK_FLAG "")
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT WINDOWS)
     execute_process(
         COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=ld.lld
         OUTPUT_VARIABLE _havel_lld_path
@@ -188,7 +232,64 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     endif()
 endif()
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # clang-cl / MSVC: use MSVC-style flags. No -march, -fvisibility, or GNU
+    # ld flags. UCRT is the default runtime on modern Windows SDKs.
+    #
+    # Gated on the compiler ID, not on WINDOWS. A Windows build with a
+    # GNU-style driver (MinGW gcc/g++) would otherwise be handed /Od /Zi /W4,
+    # which it reads as linker input files and fails on for every single
+    # translation unit.
+    # /utf-8 is mandatory, not cosmetic. The sources are UTF-8 (em-dashes in
+    # comments, E2 80 94). MSVC otherwise reads them in the system ANSI code
+    # page, and this machine's is 932 (Shift_JIS), where E2 80 decodes as one
+    # character and the trailing 94 swallows the byte after it - frequently the
+    # newline. The result is a line that comments out the next one and a burst
+    # of unrelated-looking "syntax error" diagnostics. /utf-8 also makes MSVC
+    # emit UTF-8 narrow literals, which is what the Linux build already does.
+    set(CMAKE_CXX_FLAGS_DEBUG "/utf-8 /Od /Zi /W4 /wd4100 /wd4101 /wd4189")
+    set(CMAKE_CXX_FLAGS_RELEASE "/utf-8 /O2 /DNDEBUG")
+    set(CMAKE_C_FLAGS_DEBUG "/utf-8 /Od /Zi /W4")
+    set(CMAKE_C_FLAGS_RELEASE "/utf-8 /O2 /DNDEBUG")
+    # The tree uses the POSIX spellings of the CRT throughout (strdup, fopen,
+    # sscanf, getenv, strcpy). MSVC keeps those as deprecated aliases of the
+    # _s variants and emits C4996 for every call. src/core/automation compiles
+    # with /WX, so there those warnings are fatal, not cosmetic. Suppressing
+    # them keeps one source spelling for both platforms instead of littering
+    # the tree with per-platform #ifdef around ordinary string calls.
+    #
+    # NOMINMAX belongs here too, and not only in src/include/havel_platform.h.
+    # <windows.h> defines min/max as function-like macros that break every
+    # std::min/std::max call and the real min()/max() templates in
+    # src/utils/Util.hpp. Defining it per-header only works when
+    # havel_platform.h happens to be reached first, and it is not: a header
+    # such as Util.hpp can be pulled in behind a <windows.h> from somewhere
+    # else in the include graph. On the compiler command line it is set before
+    # every include in every translation unit, which is the only ordering that
+    # actually holds. Util.hpp compiles standalone and fails inside havel_core,
+    # which is exactly that ordering problem.
+    #
+    # add_compile_definitions, not another CMAKE_*_FLAGS assignment, because
+    # the _FLAGS variables above are set per-config and would be lost.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+
+    # WINDOWS as a preprocessor macro, so the tree's `#ifdef WINDOWS` guards
+    # actually fire on a Windows build. CMake's WINDOWS is a variable, not a
+    # macro, so without this none of them did. The one that matters most is
+    # src/core/io/WindowsIOBackend.hpp, which keeps the real Win32 backend
+    # inside `#ifdef WINDOWS` and a stub returning false in the `#else`; that
+    # is why the ported Windows input backend was dead code.
+    #
+    # Defining it costs errors unless every all-caps WINDOWS identifier is
+    # gone first. Clipboard::Method had an enumerator named WINDOWS, which the
+    # macro rewrote to 1 and which broke the enum; it is now WIN32. A
+    # case-sensitive sweep of src/ and include/ reports zero bare all-caps
+    # WINDOWS identifiers left, so the macro has nothing left to collide with.
+    # Recompile and read that sweep before re-adding this if a new all-caps
+    # WINDOWS identifier is ever introduced.
+    add_compile_definitions(WINDOWS)
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     # No -ffast-math: core::Value is NaN-boxed (QNAN = 0x7ff8... is the
     # boxing tag). -ffast-math tells the compiler NaN values cannot exist,
@@ -196,11 +297,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # binaries built with it segfault at exit on a wild vtable call
     # (EventListener::Stop -> backend_->Shutdown); -fno-fast-math is clean,
     # with and without -g.
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -fno-fast-math ${HAVEL_VISIBILITY_FLAGS} -Wno-nan-infinity-disabled")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${HAVEL_LLD_LINK_FLAG} -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsplit-dwarf -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -fno-fast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -fno-fast-math ${HAVEL_VISIBILITY_FLAGS} -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
 
@@ -230,9 +331,17 @@ endif()
 # ==============================================================================
 # REQUIRED SYSTEM DEPENDENCIES
 # ==============================================================================
-find_package(PkgConfig REQUIRED)
+if(WINDOWS)
+  find_package(PkgConfig QUIET)
+else()
+  find_package(PkgConfig REQUIRED)
+endif()
 find_package(Threads REQUIRED)
-find_package(OpenGL REQUIRED)
+if(WINDOWS)
+  find_package(OpenGL QUIET)
+else()
+  find_package(OpenGL REQUIRED)
+endif()
 
 # X11 stack - Linux/X11 only
 set(HAVE_X11 FALSE)
@@ -289,6 +398,17 @@ if(NOT fmt_FOUND)
         endif()
     endif()
 endif()
+# Windows fallback: fetch fmt from source if no system package is available.
+if(NOT fmt_FOUND AND WINDOWS)
+    include(FetchContent)
+    FetchContent_Declare(fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG 11.0.2
+    )
+    set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(fmt)
+    set(fmt_FOUND TRUE)
+endif()
 if(NOT fmt_FOUND)
     message(FATAL_ERROR
         "fmt library not found. Install it using one of:\n"
@@ -328,6 +448,17 @@ if(NOT nlohmann_json_FOUND)
             set(nlohmann_json_FOUND TRUE)
         endif()
     endif()
+endif()
+if(NOT nlohmann_json_FOUND AND WINDOWS)
+    include(FetchContent)
+    FetchContent_Declare(nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    set(JSON_Install OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(nlohmann_json)
+    set(nlohmann_json_FOUND TRUE)
 endif()
 if(NOT nlohmann_json_FOUND)
     message(FATAL_ERROR
@@ -405,6 +536,7 @@ endif()
 # ==============================================================================
 # WAYLAND SUPPORT
 # ==============================================================================
+if(NOT WINDOWS)
 pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-protocols)
 pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
@@ -493,6 +625,19 @@ target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
 # native -shared link, which invokes the system linker (/usr/bin/ld) directly,
 # can pull members like the wayland interface objects without an LTO plugin.
 set_target_properties(wayland-protos PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+else()
+set(WAYLAND_LIBRARIES "")
+set(XKBCOMMON_LIBRARIES "")
+set(XKBCOMMON_INCLUDE_DIRS "")
+set(WAYLAND_FOUND FALSE)
+set(HAS_EXT_DATA_CONTROL FALSE)
+endif()
+# wayland-protos target only exists on non-Windows; expose a link-safe reference.
+if(WINDOWS)
+    set(HAVEL_WAYLAND_PROTOS_TARGET "")
+else()
+    set(HAVEL_WAYLAND_PROTOS_TARGET "wayland-protos")
+endif()
 
 # Audio: PulseAudio removed; ALSA (optional Linux-only)
 set(PULSEAUDIO_FOUND FALSE)
@@ -942,6 +1087,13 @@ if(NOT ENABLE_QT_UI_BACKEND)
     "src/modules/automation/PixelModule.cpp"
   )
   list(REMOVE_ITEM HOST_MODULES_SOURCES ${_QT_MODULES})
+  # Every remaining Qt-only module lives in a directory suffixed _gui
+  # (alt_tab_gui, file_automator_gui, map_manager_gui, screenshot_gui,
+  # system_monitor_gui, text_chunker_gui). Matched by convention instead of
+  # enumerated: a hand-kept list of paths drifts the moment someone adds a
+  # GUI module, and the failure mode is compiling Qt sources with no Qt on
+  # the include path, which is exactly what happens on a Windows build.
+  list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX "src/modules/.*_gui/")
 endif()
 
 # Explicitly add new modules (GLOB might not catch new files)
@@ -985,6 +1137,31 @@ if(NOT PCRE2_8_FOUND OR NOT PCRE2_16_FOUND)
         set(PCRE2_16_LIBRARIES ${PCRE2_16_LIB})
         set(PCRE2_8_INCLUDE_DIRS ${PCRE2_INCLUDE_DIR})
         set(PCRE2_16_INCLUDE_DIRS ${PCRE2_INCLUDE_DIR})
+    endif()
+endif()
+# Windows fallback: fetch PCRE2 from source if no system package is available.
+if((NOT PCRE2_8_FOUND OR NOT PCRE2_16_FOUND) AND WINDOWS)
+    include(FetchContent)
+    FetchContent_Declare(pcre2
+        GIT_REPOSITORY https://github.com/PCRE2Project/pcre2.git
+        GIT_TAG pcre2-10.44
+    )
+    set(PCRE2_BUILD_PCRE2_8 ON CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_PCRE2_16 ON CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_PCRE2_32 OFF CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBZ OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBBZ2 OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(pcre2)
+    if(TARGET pcre2-8)
+        set(PCRE2_8_FOUND TRUE)
+        set(PCRE2_8_LIBRARIES pcre2-8)
+        set(PCRE2_8_INCLUDE_DIRS ${pcre2_SOURCE_DIR}/src ${pcre2_BINARY_DIR})
+    endif()
+    if(TARGET pcre2-16)
+        set(PCRE2_16_FOUND TRUE)
+        set(PCRE2_16_LIBRARIES pcre2-16)
+        set(PCRE2_16_INCLUDE_DIRS ${pcre2_SOURCE_DIR}/src ${pcre2_BINARY_DIR})
     endif()
 endif()
 if(NOT PCRE2_8_FOUND OR NOT PCRE2_16_FOUND)
@@ -1284,8 +1461,8 @@ set_target_properties(havel_extension_runtime PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(havel_extension_runtime PRIVATE -fno-lto)
-target_link_options(havel_extension_runtime PRIVATE -fno-lto)
+target_compile_options(havel_extension_runtime PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(havel_extension_runtime PRIVATE ${HAVEL_NO_LTO_FLAG})
 
 # Image extension (OpenCV-based)
 if(OpenCV_FOUND)
@@ -1302,18 +1479,18 @@ target_link_libraries(image_extension PRIVATE
 set_target_properties(image_extension PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(image_extension PRIVATE -fno-lto)
-target_link_options(image_extension PRIVATE -fno-lto)
+target_compile_options(image_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(image_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
 target_compile_definitions(image_extension PRIVATE HAVE_OPENCV)
 endif()
 
 # Gamma ramp extension for brightness module
 add_library(gamma_ramp MODULE ${CMAKE_SOURCE_DIR}/src/core/brightness/gamma_ramp.c)
 target_include_directories(gamma_ramp PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(gamma_ramp PRIVATE havel_extension_runtime m)
+target_link_libraries(gamma_ramp PRIVATE havel_extension_runtime ${HAVEL_MATH_LIBS})
 set_target_properties(gamma_ramp PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
-target_compile_options(gamma_ramp PRIVATE -fno-lto -O3)
-target_link_options(gamma_ramp PRIVATE -fno-lto)
+target_compile_options(gamma_ramp PRIVATE ${HAVEL_NO_LTO_FLAG} -O3)
+target_link_options(gamma_ramp PRIVATE ${HAVEL_NO_LTO_FLAG})
 
 # Gamma ramp extension for brightness module.
 # Installed into the system library directory: modules/app/brightness.hv
@@ -1349,8 +1526,8 @@ set_target_properties(ocr_extension PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(ocr_extension PRIVATE -fno-lto)
-target_link_options(ocr_extension PRIVATE -fno-lto)
+target_compile_options(ocr_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(ocr_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
 endif()
 
 # GTK4 extension (GTK4-based UI)
@@ -1369,7 +1546,7 @@ target_include_directories(gtk_extension PRIVATE
 target_link_libraries(gtk_extension PRIVATE
     havel_extension_runtime
     ${GTK4_LIBRARIES}
-    dl
+    ${HAVEL_DL_LIBS}
 )
 target_compile_definitions(gtk_extension PRIVATE HAVE_GTK_BACKEND)
 set_target_properties(gtk_extension PROPERTIES
@@ -1381,8 +1558,8 @@ set_target_properties(gtk_extension PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(gtk_extension PRIVATE -fno-lto)
-target_link_options(gtk_extension PRIVATE -fno-lto)
+target_compile_options(gtk_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(gtk_extension PRIVATE ${HAVEL_NO_LTO_FLAG})
 
 # ImGui extension (Dear ImGui with GLFW/OpenGL)
 # Uses dynamic loading - no compile-time dependency on ImGui/GLFW/OpenGL
@@ -1399,7 +1576,7 @@ target_link_libraries(imgui_extension PRIVATE
   havel_extension_runtime
   ${GLFW3_LIBRARIES}
   OpenGL::GL
-  dl
+  ${HAVEL_DL_LIBS}
 )
 target_compile_definitions(imgui_extension PRIVATE HAVE_IMGUI_BACKEND)
 set_target_properties(imgui_extension PROPERTIES
@@ -1465,7 +1642,7 @@ havel_extension_runtime
 # The GUI window classes and pixel capture sources this plugin owns call
 # Xlib directly (same set havel_gui's consumers always linked).
 ${_HAVEL_X11_LIBS}
-dl
+${HAVEL_DL_LIBS}
 )
 target_compile_definitions(havel_toolkit_qt PRIVATE
 HAVE_QT_EXTENSION
@@ -1480,8 +1657,8 @@ CXX_VISIBILITY_PRESET default
 VISIBILITY_INLINES_HIDDEN OFF
 INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(havel_toolkit_qt PRIVATE -fno-lto)
-target_link_options(havel_toolkit_qt PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+target_compile_options(havel_toolkit_qt PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(havel_toolkit_qt PRIVATE ${HAVEL_NO_LTO_FLAG} ${HAVEL_ALLOW_UNRESOLVED})
 endif() # QT_BACKEND_AVAILABLE
 
 
@@ -1512,7 +1689,7 @@ set(_GTK_TK_LIBS ${GTK4_TOOLKIT_LIBRARIES})
 if(GTK_BACKEND_AVAILABLE)
     set(_GTK_TK_LIBS ${GTK4_LIBRARIES})
 endif()
-target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} havel_extension_runtime dl)
+target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} havel_extension_runtime ${HAVEL_DL_LIBS})
 target_compile_definitions(havel_toolkit_gtk PRIVATE
     HAVE_GTK_BACKEND
     HAVEL_MODULE_PLUGIN
@@ -1527,8 +1704,8 @@ set_target_properties(havel_toolkit_gtk PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(havel_toolkit_gtk PRIVATE -fno-lto)
-target_link_options(havel_toolkit_gtk PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+target_compile_options(havel_toolkit_gtk PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(havel_toolkit_gtk PRIVATE ${HAVEL_NO_LTO_FLAG} ${HAVEL_ALLOW_UNRESOLVED})
 endif()
 
 # ImGui toolkit plugin
@@ -1565,7 +1742,7 @@ target_link_libraries(havel_toolkit_imgui PRIVATE
     ${GLFW3_LIBRARIES}
     ${GLIB2_LIBRARIES}
     OpenGL::GL
-    dl
+    ${HAVEL_DL_LIBS}
 )
 target_compile_definitions(havel_toolkit_imgui PRIVATE
     HAVE_IMGUI_BACKEND
@@ -1581,8 +1758,8 @@ set_target_properties(havel_toolkit_imgui PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
     INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(havel_toolkit_imgui PRIVATE -fno-lto)
-target_link_options(havel_toolkit_imgui PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+target_compile_options(havel_toolkit_imgui PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(havel_toolkit_imgui PRIVATE ${HAVEL_NO_LTO_FLAG} ${HAVEL_ALLOW_UNRESOLVED})
 endif() # IMGUI_BACKEND_AVAILABLE
 
 # ==============================================================================
@@ -1598,7 +1775,7 @@ target_include_directories(havel_ui_shim PRIVATE
 )
 target_link_libraries(havel_ui_shim PRIVATE
 	havel_extension_runtime
-	dl
+	${HAVEL_DL_LIBS}
 )
 target_compile_definitions(havel_ui_shim PRIVATE
 	HAVEL_MODULE_PLUGIN
@@ -1612,8 +1789,8 @@ set_target_properties(havel_ui_shim PROPERTIES
 	VISIBILITY_INLINES_HIDDEN OFF
 	INTERPROCEDURAL_OPTIMIZATION OFF
 )
-target_compile_options(havel_ui_shim PRIVATE -fno-lto)
-target_link_options(havel_ui_shim PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+target_compile_options(havel_ui_shim PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(havel_ui_shim PRIVATE ${HAVEL_NO_LTO_FLAG} ${HAVEL_ALLOW_UNRESOLVED})
 
 # ==============================================================================
 # MAIN EXECUTABLE
@@ -1692,11 +1869,15 @@ foreach(lib ${COMMON_LIBS})
 endforeach()
 # Add system libraries that havel_core references but are only resolved
 # via ldconfig at link time (ldd-confirmed .so names).
-string(APPEND _NATIVE_LINK_FLAGS " -lX11 -lXext -lXtst")
-string(APPEND _NATIVE_LINK_FLAGS " -lreadline")
-string(APPEND _NATIVE_LINK_FLAGS " -lpipewire-0.3 -lasound")
-string(APPEND _NATIVE_LINK_FLAGS " -ltesseract -lleptonica")
-string(APPEND _NATIVE_LINK_FLAGS " -lopencv_core -lopencv_imgproc -lopencv_imgcodecs")
+if(NOT WINDOWS)
+    string(APPEND _NATIVE_LINK_FLAGS " -lX11 -lXext -lXtst")
+    string(APPEND _NATIVE_LINK_FLAGS " -lreadline")
+    string(APPEND _NATIVE_LINK_FLAGS " -lpipewire-0.3 -lasound")
+    string(APPEND _NATIVE_LINK_FLAGS " -ltesseract -lleptonica")
+    string(APPEND _NATIVE_LINK_FLAGS " -lopencv_core -lopencv_imgproc -lopencv_imgcodecs")
+else()
+    string(APPEND _NATIVE_LINK_FLAGS " ws2_32 wsock32 crypt32 bcrypt user32 gdi32 advapi32 shell32 ole32")
+endif()
 string(STRIP "${_NATIVE_LINK_FLAGS}" _NATIVE_LINK_FLAGS)
 set_property(TARGET havel_core APPEND PROPERTY
     COMPILE_DEFINITIONS "HAVEL_DEFAULT_NATIVE_LINK_FLAGS=\"${_NATIVE_LINK_FLAGS}\""
@@ -1717,7 +1898,7 @@ endif()
 # ImGuiBackend.cpp live in this archive and their consumers need them. Qt
 # enters the process at runtime through the toolkit plugin
 # (UIManager::ensureQtToolkit).
-target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${_HAVEL_NON_QT_COMMON_LIBS})
+target_link_libraries(havel_core PUBLIC fmt::fmt ${HAVEL_WAYLAND_PROTOS_TARGET} ${_HAVEL_NON_QT_COMMON_LIBS})
 target_include_directories(havel_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src/include
@@ -1786,11 +1967,11 @@ add_executable(havel
 )
 
 target_link_libraries(havel PRIVATE
--Wl,--start-group
+${HAVEL_LINK_GROUP_BEGIN}
 $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_runtime havel_compiler>
 havel_modules
 havel_core
--Wl,--end-group
+${HAVEL_LINK_GROUP_END}
 )
 
 # The Qt UI/toolkit side is not linked at all: the executable loads
@@ -1821,11 +2002,11 @@ havel_core
 # )
 #
 # target_link_libraries(havel-daemon PRIVATE
-# -Wl,--start-group
+# ${HAVEL_LINK_GROUP_BEGIN}
 # $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
 # havel_modules
 # havel_core
-# -Wl,--end-group
+# ${HAVEL_LINK_GROUP_END}
 # )
 #
 #
@@ -1876,10 +2057,10 @@ C_STANDARD 17
 C_STANDARD_REQUIRED ON
 )
 
-target_compile_options(havel-lsp PRIVATE -fno-lto)
-# link-level -fno-lto removed: the runtime archives contain LTO
+target_compile_options(havel-lsp PRIVATE ${HAVEL_NO_LTO_FLAG})
+# link-level ${HAVEL_NO_LTO_FLAG} removed: the runtime archives contain LTO
 # bitcode members; a non-LTO link skips them ("plugin needed to
-# handle lto object"). The compile-level -fno-lto stays.
+# handle lto object"). The compile-level ${HAVEL_NO_LTO_FLAG} stays.
 
 target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang/lexer
@@ -1921,8 +2102,8 @@ C_STANDARD 17
 C_STANDARD_REQUIRED ON
 )
 
-target_compile_options(hvtest PRIVATE -fno-lto)
-# Link WITHOUT -fno-lto: the release archives contain LTO bitcode members,
+target_compile_options(hvtest PRIVATE ${HAVEL_NO_LTO_FLAG})
+# Link WITHOUT ${HAVEL_NO_LTO_FLAG}: the release archives contain LTO bitcode members,
 # and a non-LTO link skips them ("plugin needed to handle lto object" —
 # observed: Scheduler symbols unresolved from havel_lang.a). Dropping the
 # flag lets the clang driver load the LTO plugin for the archives; the
@@ -1940,16 +2121,16 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 target_link_libraries(hvtest PRIVATE
-    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-    -Wl,--start-group
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+    ${HAVEL_LINK_GROUP_BEGIN}
     ${COMMON_LIBS}
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-    -Wl,--end-group
+    ${HAVEL_LINK_GROUP_END}
   )
 
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(hvtest PROPERTIES ENABLE_EXPORTS ON)
-target_link_options(hvtest PRIVATE -Wl,--export-dynamic)
+target_link_options(hvtest PRIVATE ${HAVEL_EXPORT_DYNAMIC})
 endif()
 
 # havel-hppc: Havel++ prototype compiler (TODO2.md #16 / #26 item 13).
@@ -1962,7 +2143,7 @@ set_target_properties(havel-hppc PROPERTIES
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
 )
-target_compile_options(havel-hppc PRIVATE -fno-lto)
+target_compile_options(havel-hppc PRIVATE ${HAVEL_NO_LTO_FLAG})
 # The release config's global flags break this standalone tool: it builds
 # as PIE, and vtable/iostream references to libstdc++ dynamic symbols
 # (_ZTV*, cout/cerr) emit R_X86_64_PC32 relocations that cannot resolve
@@ -1972,7 +2153,7 @@ target_compile_options(havel-hppc PRIVATE -fno-lto)
 # relocations for the dynamic data. The tool links no runtime, so the
 # default ABI/visibility is correct for it too.
 target_compile_options(havel-hppc PRIVATE
-  -fno-lto
+  ${HAVEL_NO_LTO_FLAG}
   -fPIC
   -fvisibility=default)
 # -fabi-version/-fgnu-unique are GCC-only (clang errors on them). They
@@ -1997,7 +2178,7 @@ set_target_properties(hpp_proto_test PROPERTIES
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
 )
-target_compile_options(hpp_proto_test PRIVATE -fno-lto)
+target_compile_options(hpp_proto_test PRIVATE ${HAVEL_NO_LTO_FLAG})
 target_compile_definitions(hpp_proto_test PRIVATE
   HAVEL_SRC_DIR="${CMAKE_SOURCE_DIR}"
   $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
@@ -2010,15 +2191,15 @@ target_include_directories(hpp_proto_test PRIVATE
 )
 target_link_libraries(hpp_proto_test PRIVATE
   GTest::gtest GTest::gtest_main
-  -Wl,--start-group havel_runtime havel_compiler havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-  -Wl,--start-group
+  ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+  ${HAVEL_LINK_GROUP_BEGIN}
   ${COMMON_LIBS}
   $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-  -Wl,--end-group
+  ${HAVEL_LINK_GROUP_END}
 )
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(hpp_proto_test PROPERTIES ENABLE_EXPORTS ON)
-target_link_options(hpp_proto_test PRIVATE -Wl,--export-dynamic)
+target_link_options(hpp_proto_test PRIVATE ${HAVEL_EXPORT_DYNAMIC})
 endif()
 endif() # ENABLE_TESTS
 
@@ -2028,10 +2209,10 @@ set_target_properties(havel_api_test PROPERTIES
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
 )
-target_compile_options(havel_api_test PRIVATE -fno-lto)
-# link-level -fno-lto removed: the runtime archives contain LTO
+target_compile_options(havel_api_test PRIVATE ${HAVEL_NO_LTO_FLAG})
+# link-level ${HAVEL_NO_LTO_FLAG} removed: the runtime archives contain LTO
 # bitcode members; a non-LTO link skips them ("plugin needed to
-# handle lto object"). The compile-level -fno-lto stays.
+# handle lto object"). The compile-level ${HAVEL_NO_LTO_FLAG} stays.
 target_compile_definitions(havel_api_test PRIVATE
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
@@ -2042,13 +2223,13 @@ target_include_directories(havel_api_test PRIVATE
 )
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
-target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
+target_link_options(havel_api_test PRIVATE ${HAVEL_EXPORT_DYNAMIC})
 endif()
 target_link_libraries(havel_api_test PRIVATE
-    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-    -Wl,--start-group
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+    ${HAVEL_LINK_GROUP_BEGIN}
     ${COMMON_LIBS}
-    -Wl,--end-group
+    ${HAVEL_LINK_GROUP_END}
   )
 
 # brightness_test disabled - replaced by modules/app/brightness/brightness.hv (FFI-based)
@@ -2109,8 +2290,8 @@ set_target_properties(hpkg PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
-target_compile_options(hpkg PRIVATE -fno-lto)
-target_link_options(hpkg PRIVATE -fno-lto)
+target_compile_options(hpkg PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_link_options(hpkg PRIVATE ${HAVEL_NO_LTO_FLAG})
 endif()
 
 # ==============================================================================
@@ -2129,14 +2310,14 @@ set_target_properties(hvdump PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
-target_compile_options(hvdb PRIVATE -fno-lto)
-target_compile_options(hvdump PRIVATE -fno-lto)
-# link-level -fno-lto removed: the runtime archives contain LTO
+target_compile_options(hvdb PRIVATE ${HAVEL_NO_LTO_FLAG})
+target_compile_options(hvdump PRIVATE ${HAVEL_NO_LTO_FLAG})
+# link-level ${HAVEL_NO_LTO_FLAG} removed: the runtime archives contain LTO
 # bitcode members; a non-LTO link skips them ("plugin needed to
-# handle lto object"). The compile-level -fno-lto stays.
-# link-level -fno-lto removed: the runtime archives contain LTO
+# handle lto object"). The compile-level ${HAVEL_NO_LTO_FLAG} stays.
+# link-level ${HAVEL_NO_LTO_FLAG} removed: the runtime archives contain LTO
 # bitcode members; a non-LTO link skips them ("plugin needed to
-# handle lto object"). The compile-level -fno-lto stays.
+# handle lto object"). The compile-level ${HAVEL_NO_LTO_FLAG} stays.
 target_include_directories(hvdb PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -2148,16 +2329,16 @@ target_include_directories(hvdump PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(hvdb PRIVATE
-    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-    -Wl,--start-group
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+    ${HAVEL_LINK_GROUP_BEGIN}
     ${COMMON_LIBS}
-    -Wl,--end-group
+    ${HAVEL_LINK_GROUP_END}
   )
 target_link_libraries(hvdump PRIVATE
-    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-    -Wl,--start-group
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+    ${HAVEL_LINK_GROUP_BEGIN}
     ${COMMON_LIBS}
-    -Wl,--end-group
+    ${HAVEL_LINK_GROUP_END}
   )
 
 target_compile_definitions(hvdb PRIVATE
@@ -2185,10 +2366,10 @@ set_target_properties(havel-dap PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
-target_compile_options(havel-dap PRIVATE -fno-lto)
-# link-level -fno-lto removed: the runtime archives contain LTO
+target_compile_options(havel-dap PRIVATE ${HAVEL_NO_LTO_FLAG})
+# link-level ${HAVEL_NO_LTO_FLAG} removed: the runtime archives contain LTO
 # bitcode members; a non-LTO link skips them ("plugin needed to
-# handle lto object"). The compile-level -fno-lto stays.
+# handle lto object"). The compile-level ${HAVEL_NO_LTO_FLAG} stays.
 target_include_directories(havel-dap PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -2200,10 +2381,10 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 target_link_libraries(havel-dap PRIVATE
     nlohmann_json::nlohmann_json
-    -Wl,--start-group havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-    -Wl,--start-group
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> ${HAVEL_LINK_GROUP_END}
+    ${HAVEL_LINK_GROUP_BEGIN}
     ${COMMON_LIBS}
-    -Wl,--end-group
+    ${HAVEL_LINK_GROUP_END}
   )
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(havel-dap PROPERTIES ENABLE_EXPORTS ON)
@@ -2240,7 +2421,7 @@ target_precompile_headers(havel PRIVATE
 )
 
 # Sanitizers - only for Debug builds to reduce binary size
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WINDOWS)
   if(ENABLE_TSAN)
     target_compile_options(havel PRIVATE -fsanitize=thread -fno-omit-frame-pointer -g)
     target_link_options(havel PRIVATE -fsanitize=thread)
@@ -2384,7 +2565,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # mapping". Linking non-PIE puts the binary at 0x400000, outside the
     # shadow, and keeps ASan usable on those kernels.
     if(ENABLE_ASAN)
-      target_link_options(havel PRIVATE -no-pie)
+      target_link_options(havel PRIVATE ${HAVEL_NO_PIE_FLAG})
     endif()
   endif()
 endif()
@@ -2466,7 +2647,7 @@ $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 #                   together with the language archives list
 #                   havel_runtime havel_compiler directly: CMake appends an
 #                   interface library's expansion *after* a literal
-#                   -Wl,--end-group, so `havel_lang` inside a group left
+#                   ${HAVEL_LINK_GROUP_END}, so `havel_lang` inside a group left
 #                   runtime/compiler outside it and the core<->language
 #                   symbol cycle (EventListener -> ExecutionEngine and back)
 #                   failed to resolve at link time.
@@ -2648,7 +2829,7 @@ HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
             set_target_properties(${_lang_target} PROPERTIES
                 INTERPROCEDURAL_OPTIMIZATION OFF
             )
-            target_compile_options(${_lang_target} PRIVATE -fno-lto)
+            target_compile_options(${_lang_target} PRIVATE ${HAVEL_NO_LTO_FLAG})
         endif()
     endfunction()
 
@@ -2735,8 +2916,8 @@ function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
     POSITION_INDEPENDENT_CODE ON
     INTERPROCEDURAL_OPTIMIZATION OFF
   )
-  target_compile_options(${MODULE_TARGET} PRIVATE -fno-lto)
-  target_link_options(${MODULE_TARGET} PRIVATE -fno-lto)
+  target_compile_options(${MODULE_TARGET} PRIVATE ${HAVEL_NO_LTO_FLAG})
+  target_link_options(${MODULE_TARGET} PRIVATE ${HAVEL_NO_LTO_FLAG})
   target_compile_definitions(${MODULE_TARGET} PRIVATE
     HAVEL_MODULE_PLUGIN
     ENABLE_HAVEL_LANG
@@ -2770,7 +2951,7 @@ function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
   )
   # Allow unresolved symbols at link time (resolved from main exe at runtime)
   target_link_options(${MODULE_TARGET} PRIVATE
-    -Wl,--allow-shlib-undefined
+    ${HAVEL_ALLOW_UNRESOLVED}
   )
   install(TARGETS ${MODULE_TARGET}
     LIBRARY DESTINATION lib/havel/modules
@@ -2879,7 +3060,10 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 )
 
 # Qt-dependent modules
-if(ENABLE_QT)
+# Gated on Qt6 actually being found, not just on ENABLE_QT: the body below
+# dereferences the Qt6::Core/Gui/Widgets imported targets, which do not exist
+# when the lookup failed (the normal state on a Windows build).
+if(ENABLE_QT AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
   # Qt-only GUI plugins (unconditional #include <QApplication> in their
   # sources) and the Qt-side sources of havel_mod_ui.
   add_havel_module_plugin(file_automator_gui ${CMAKE_SOURCE_DIR}/src/modules/file_automator_gui/FileAutomatorGuiModule.cpp EXTRA_DEFS HAVE_QT_EXTENSION)
@@ -2908,10 +3092,10 @@ endif()
 set_target_properties(havel PROPERTIES
   ENABLE_EXPORTS ON
 )
-target_link_options(havel PRIVATE -Wl,--export-dynamic)
+target_link_options(havel PRIVATE ${HAVEL_EXPORT_DYNAMIC})
 # -fvisibility=hidden + --gc-sections strips VM symbols that .so plugins need.
 # Remove gc-sections so dlopen(RTLD_NOW) can resolve them at runtime.
-target_link_options(havel PRIVATE -Wl,--no-gc-sections)
+target_link_options(havel PRIVATE ${HAVEL_NO_GC_SECTIONS})
 endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
@@ -2936,7 +3120,7 @@ if(ENABLE_HAVEL_LANG)
     set_target_properties(havel_aot_core_shim PROPERTIES
         INTERPROCEDURAL_OPTIMIZATION OFF
     )
-    target_compile_options(havel_aot_core_shim PRIVATE -fno-lto)
+    target_compile_options(havel_aot_core_shim PRIVATE ${HAVEL_NO_LTO_FLAG})
 endif()
 
 # ==============================================================================
@@ -3151,7 +3335,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
     # binary links them.
     target_link_libraries(capi_value_conversion_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group)
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END})
     add_test(NAME capi_value_conversion_test COMMAND capi_value_conversion_test)
 
     # IO::ParseKeyString - the pure tokenizer behind io.send's key syntax.
@@ -3177,11 +3361,11 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # havel_runtime's EventRuntime), so all three must be in one group;
         # havel_lang alone leaves those unresolved when core is scanned last.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
-        -Wl,--start-group
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        -Wl,--end-group
+        ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
 
@@ -3206,11 +3390,11 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # src/havel-lang/tools/HppCompiler.cpp, which defines its own main, and
         # with the archives first the linker resolves main from that instead.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
-        -Wl,--start-group
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        -Wl,--end-group
+        ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME pixel_provider_test COMMAND pixel_provider_test)
 
@@ -3239,13 +3423,13 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # -O3 -flto=thin -Wl,--gc-sections; an -O0 build does not, so the link
         # fails there. Link havel_gui under the same condition the executables
         # use (_LIBS) so the dependency is satisfied in every configuration.
-        -Wl,--start-group havel_runtime havel_compiler havel_core
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core
         $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
-        -Wl,--end-group
-        -Wl,--start-group
+        ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        -Wl,--end-group
+        ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME headless_sandbox_test COMMAND headless_sandbox_test)
 
@@ -3267,11 +3451,11 @@ if(ENABLE_TESTS AND GTest_FOUND)
         # gtest_main has to precede the havel archives, same reason as
         # pixel_provider_test above.
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
-        -Wl,--start-group
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        -Wl,--end-group
+        ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME brightness_ramp_test COMMAND brightness_ramp_test)
 
@@ -3290,11 +3474,11 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     target_link_libraries(clipboard_backend_test PRIVATE
         GTest::gtest GTest::gtest_main
-        -Wl,--start-group havel_runtime havel_compiler havel_core -Wl,--end-group
-        -Wl,--start-group
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
         ${COMMON_LIBS}
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        -Wl,--end-group
+        ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME clipboard_backend_test COMMAND clipboard_backend_test)
 endif()

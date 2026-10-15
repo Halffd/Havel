@@ -121,7 +121,7 @@ void VM::registerDefaultHostFunctions() {
       return resultArray;
     });
   }
-  // IO bridge functions — registered at startup so pure-Havel io module can
+  // IO bridge functions - registered at startup so pure-Havel io module can
   // reference them via the auto-export fallback (use "io" ->
   // host_function_globals_ has io.* entries)
   {
@@ -687,7 +687,7 @@ void VM::registerDefaultHostFunctions() {
                          });
   }
 
-  // EventListener bridge functions — registered at startup for pure-Havel
+  // EventListener bridge functions - registered at startup for pure-Havel
   // event_listener module
   {
     VMApi api(*this);
@@ -1484,7 +1484,7 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
-  // sleepUntil("13:10") / sleepUntil("thursday 8:00") — spec global
+  // sleepUntil("13:10") / sleepUntil("thursday 8:00") - spec global
   // (docs/specs/Havel.md "Available Globals"). Sleeps until the next
   // occurrence of the given wall-clock time, resuming after the computed
   // delay via the same fiber-suspension path as sleep().
@@ -1513,7 +1513,7 @@ void VM::registerDefaultHostFunctions() {
         return Value::makeNull();
       });
 
-  // __async_probe(ms) — fiber-suspending blocking call validation seam.
+  // __async_probe(ms) - fiber-suspending blocking call validation seam.
   // Simulates a blocking host op (sleeps on the worker thread) and
   // returns the wall-clock duration. In a goroutine context it must
   // suspend the fiber and resume with the value; at top level it runs
@@ -2724,7 +2724,7 @@ void VM::registerDefaultHostFunctions() {
             }
             // AWAIT, not THREAD_JOIN: a THREAD_JOIN suspension registers
             // the fiber in thread_wait_map_ keyed by the wg id, which
-            // collides with channel ids — resumeChannelWait(channel_id)
+            // collides with channel ids - resumeChannelWait(channel_id)
             // then woke the waiter spuriously (parallelMap's closer closed
             // the results channel before the last workers sent). The
             // EXTERNAL wait_handle + waitgroup.done's unpark is the resume

@@ -80,7 +80,7 @@ public:
     /**
      * Attach REPL to an existing VM and HostBridge
      * Use this when the REPL should share state with a previously executed script.
-     * Skips creating a new VM — reuses the provided one.
+     * Skips creating a new VM - reuses the provided one.
      * @param existingVM The VM that already executed the script (non-owning)
      * @param bridge The HostBridge installed on that VM (non-owning)
      * @param globals Global variable names already defined in the VM
@@ -246,7 +246,7 @@ private:
     bool replDebugMode_ = false;
     std::string currentCode_;
 
-    // Readline event hook — pumps events between keystrokes
+    // Readline event hook - pumps events between keystrokes
     static std::function<void()> pumpCallbackForHook_;
 
     // Callback-mode readline state

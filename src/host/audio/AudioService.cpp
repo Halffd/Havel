@@ -4,6 +4,7 @@
  * Pure C++ audio service implementation.
  */
 #include "AudioService.hpp"
+#include <algorithm>
 #include "core/media/AudioManager.hpp"
 
 namespace havel::host {
@@ -47,7 +48,7 @@ double AudioService::getActiveAppVolume() const {
     if (!m_manager) return 0.0;
     auto name = m_manager->getActiveApplicationName();
     if (name.empty()) {
-        // No active app — return master volume (NOT arbitrary apps[0])
+        // No active app - return master volume (NOT arbitrary apps[0])
         return m_manager->getVolume();
     }
     return m_manager->getApplicationVolume(name);
@@ -122,7 +123,7 @@ std::string AudioService::getBackendName() const {
   return m_manager ? std::string(m_manager->getBackend() == AudioBackend::PIPEWIRE ? "PipeWire" :
     m_manager->getBackend() == AudioBackend::PULSE ? "PulseAudio" :
     m_manager->getBackend() == AudioBackend::ALSA ? "ALSA" :
-    m_manager->getBackend() == AudioBackend::WINDOWS ? "Windows" : "unknown") : "";
+    m_manager->getBackend() == AudioBackend::WASAPI ? "Windows" : "unknown") : "";
 }
 
 bool AudioService::playTestSound() {

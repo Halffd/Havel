@@ -36,7 +36,7 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     // sidecar loadModule("math/math") must run while no other module load is
     // in progress: math/math.hv itself calls math.random(), which used to
     // trigger math plugin registration from inside that module's load and
-    // hit the circular-dependency guard — silently dropping randint/clamp/
+    // hit the circular-dependency guard - silently dropping randint/clamp/
     // lerp from the math namespace. Registered here (before any script
     // module load) the sidecar loads cleanly.
     {

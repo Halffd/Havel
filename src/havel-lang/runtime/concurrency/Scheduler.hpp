@@ -37,7 +37,7 @@ enum class FiberPriority : uint8_t {
 enum class HotkeyPolicy : uint8_t {
     Drop = 0,      // If goroutine is pending, skip this trigger (default for keys)
     Replace = 1,   // If goroutine is pending, reset it with fresh args and requeue
-    Queue = 2,     // Always spawn/requeue — old behavior (legacy)
+    Queue = 2,     // Always spawn/requeue - old behavior (legacy)
     Coalesce = 3   // If goroutine is pending, update its args in-place (for mouse/scroll)
 };
 
@@ -185,7 +185,7 @@ struct WaitHandle {
     Value hotkey_callable;
 
     // Execution identity (derived from `callable` by VM at resume time; cached
-    // here for JIT path and debug logs). Do NOT set directly — always populate
+    // here for JIT path and debug logs). Do NOT set directly - always populate
     // via VM::resolveCallable().
     uint32_t function_id = 0;          // Which function's bytecode (required)
     uint32_t closure_id = 0;           // Closure context (for upvalues)
@@ -230,7 +230,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Channel-iterator suspension marker (ITER_NEXT channel branch in
     // VMCollections.cpp pushes a Pending placeholder before parking).
     // deliverResumeValue scans the stack for that placeholder ONLY when
-    // this flag is set — unrelated Pending values (async host calls) on
+    // this flag is set - unrelated Pending values (async host calls) on
     // the stack of an ordinary channel receive must not be mistaken for
     // the iterator marker.
     bool channel_iter_pending = false;
@@ -325,7 +325,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
                  FiberPriority priority = FiberPriority::NORMAL);
 
   /**
-   * spawnHotkey — same as spawn() with HOTKEY priority (prepended to hotkey
+   * spawnHotkey - same as spawn() with HOTKEY priority (prepended to hotkey
    * queue for immediate execution on next pickNext()).
    */
   uint32_t spawnHotkey(Value callable, const std::vector<Value>& args,
@@ -334,7 +334,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   }
 
   /**
-   * Legacy spawnHotkey overloads — same bridge behavior as the legacy
+   * Legacy spawnHotkey overloads - same bridge behavior as the legacy
    * spawn(function_id, closure_id, ...) overload. Used by test_scheduler_rig.
    */
   uint32_t spawnHotkey(uint32_t function_id, const std::vector<Value>& args,
@@ -343,7 +343,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   }
 
   /**
-   * Legacy spawn (function_id + closure_id) — bridges to spawn(Value).
+   * Legacy spawn (function_id + closure_id) - bridges to spawn(Value).
    *
    * Builds a Value::makeFunctionObjId or Value::makeClosureId from the
    * numeric IDs and delegates. Prefer the Value-based spawn() in new code.
@@ -575,8 +575,8 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
     // Cheap pending check: true if the goroutine is already queued (Created),
     // about to run (Runnable), or executing (Running). Under bursty input
-    // (wheel storms) callers can coalesce a redundant trigger — a Drop-policy
-    // wakeHotkey would drop it anyway — without touching the run queues.
+    // (wheel storms) callers can coalesce a redundant trigger - a Drop-policy
+    // wakeHotkey would drop it anyway - without touching the run queues.
     bool isHotkeyPending(uint32_t gid) const;
 
     // Wake persistent hotkey goroutines matching the given alias
@@ -591,7 +591,7 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
     // Count suspended goroutines awaiting an event-driven resume that
     // still matters for script completion (async host calls, channel
-    // waits) — i.e. excluding persistent hotkey/update goroutines,
+    // waits) - i.e. excluding persistent hotkey/update goroutines,
     // which park forever by design and must not keep a finished
     // script's scheduler loop spinning.
     size_t suspendedAwaitingResume() const;
@@ -791,11 +791,11 @@ private:
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
   mutable std::mutex goroutines_mutex_;
   // Atomic: spawn() runs on the VM thread, but foreign threads can reach it
-  // too — a detached timer thread calling invokeCallback whose script body
+  // too - a detached timer thread calling invokeCallback whose script body
   // does `go { ... }` spawns from the timer thread. A plain uint32_t here
   // let two concurrent spawns read the same counter value: both got the
   // same gid, and goroutines_[gid] = std::move(g) in spawn() then silently
-  // overwrote the first goroutine — its raw pointer stayed in the run
+  // overwrote the first goroutine - its raw pointer stayed in the run
   // queues (pickNext/hasRunnableFibers) and the VM's current_, so the
   // first goroutine UAF'd and every hotkey-persistent goroutine that
   // collided died until restart.

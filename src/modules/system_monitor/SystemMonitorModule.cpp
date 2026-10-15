@@ -5,7 +5,12 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include "havel_platform.h"
+#if HAVEL_PLATFORM_WINDOWS
+#include <windows.h>
+#else
 #include <sys/statvfs.h>
+#endif
 
 namespace havel::modules {
 
@@ -92,14 +97,37 @@ static auto makeMemoryFunc(const VMApi& api) {
 static auto makeDiskFunc(const VMApi& api) {
     return [api](const std::vector<Value>& rawArgs) -> Value {
         auto args = stripReceiver(api, rawArgs);
-        std::string path = args.empty() ? "/" : (args[0].isStringValId() ? api.resolveString(args[0]) : "/");
+#if HAVEL_PLATFORM_WINDOWS
+        // "/" is not a valid path on Windows; C:\ is the analogous root.
+        const std::string kDefaultPath = "C:\\";
+#else
+        const std::string kDefaultPath = "/";
+#endif
+        std::string path = args.empty()
+            ? kDefaultPath
+            : (args[0].isStringValId() ? api.resolveString(args[0]) : kDefaultPath);
         
+#if HAVEL_PLATFORM_WINDOWS
+        // GetDiskFreeSpaceExW reports the same three figures statvfs does,
+        // for a path rather than a mounted filesystem.
+        if (path.empty()) path = "C:\\";
+        const std::wstring wpath(path.begin(), path.end());
+       ULARGE_INTEGER availToCaller{}, totalBytes{}, freeBytes{};
+        if (!::GetDiskFreeSpaceExW(wpath.c_str(), &availToCaller, &totalBytes,
+                                   &freeBytes)) {
+            return api.makeNull();
+        }
+        uint64_t total     = totalBytes.QuadPart;
+        uint64_t available = availToCaller.QuadPart;
+        uint64_t free      = freeBytes.QuadPart;
+#else
         struct statvfs fs;
         if (statvfs(path.c_str(), &fs) != 0) return api.makeNull();
         
         uint64_t total = fs.f_blocks * fs.f_frsize;
         uint64_t free = fs.f_bfree * fs.f_frsize;
         uint64_t available = fs.f_bavail * fs.f_frsize;
+#endif
         uint64_t used = total > free ? total - free : 0;
         
         auto result = api.makeObject();

@@ -62,7 +62,7 @@ bool UinputDevice::Setup() {
 #endif
 
     // Setup device. UI_DEV_SETUP takes struct uinput_setup (id first, name
-    // second) — NOT struct uinput_user_dev (the legacy write() layout).
+    // second) - NOT struct uinput_user_dev (the legacy write() layout).
     // Passing a uinput_user_dev here shifts every field by 8 bytes: the
     // kernel reads the id from the first 8 name bytes ("havel-vi" ->
     // Bus=0x6168, Vendor=0x6576, Product=0x2d6c) and the name from offset 8

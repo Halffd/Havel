@@ -424,7 +424,7 @@ void registerSysModule(const VMApi &api) {
   api.setGlobal("jit", jitObj);
 
   // ========================================================================
-  // system.detect — detect OS, display protocol, window manager, etc.
+  // system.detect - detect OS, display protocol, window manager, etc.
   // ========================================================================
   api.registerFunction("system.detect", [api](const std::vector<Value>&) {
     auto obj = api.makeObject();
@@ -548,7 +548,7 @@ void registerSysModule(const VMApi &api) {
   });
 
   // ========================================================================
-  // system.hardware — detect CPU, GPU, RAM, storage, etc.
+  // system.hardware - detect CPU, GPU, RAM, storage, etc.
   // ========================================================================
   api.registerFunction("system.hardware", [api](const std::vector<Value>&) {
     auto obj = api.makeObject();
@@ -716,7 +716,7 @@ void registerSysModule(const VMApi &api) {
   });
 
   // ========================================================================
-  // process.find — find PIDs by name
+  // process.find - find PIDs by name
   // ========================================================================
 api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     if (args.empty())
@@ -735,7 +735,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 });
 
   // ========================================================================
-  // process.exists — check if process is running (by name or PID)
+  // process.exists - check if process is running (by name or PID)
   // ========================================================================
   api.registerFunction("__proc.exists", [api](const std::vector<Value>& args) {
     if (args.empty())
@@ -753,7 +753,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
-  // process.kill — send signal to PID
+  // process.kill - send signal to PID
   // ========================================================================
   api.registerFunction("__proc.kill", [api](const std::vector<Value>& args) {
     if (args.size() < 2)
@@ -779,7 +779,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 #endif
   });
 
-  // process.getState — get process state (RUNNING, STOPPED, etc.)
+  // process.getState - get process state (RUNNING, STOPPED, etc.)
   // ========================================================================
   api.registerFunction("__proc.getState", [api](const std::vector<Value>& args) -> Value {
     if (args.size() < 1)
@@ -835,7 +835,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   // ========================================================================
 
   // ========================================================================
-  // process.nice — set nice value for PID
+  // process.nice - set nice value for PID
   // ========================================================================
   api.registerFunction("__proc.nice", [](const std::vector<Value>& args) -> Value {
     if (args.size() < 2)
@@ -858,7 +858,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
-  // process.run — run command synchronously, return {pid, exitCode, success, stdout, stderr, error}
+  // process.run - run command synchronously, return {pid, exitCode, success, stdout, stderr, error}
   // ========================================================================
   api.registerFunction("__proc.run", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
@@ -874,13 +874,13 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     api.setField(obj, "exitCode", Value::makeInt(static_cast<int64_t>(presult.exitCode)));
     api.setField(obj, "success", Value::makeBool(presult.success));
     api.setField(obj, "error", presult.success ? Value::makeNull() : api.makeString(presult.error));
-    api.setField(obj, "stdout", api.makeString(presult.stdout));
-    api.setField(obj, "stderr", api.makeString(presult.stderr));
+    api.setField(obj, "stdout", api.makeString(presult.out));
+    api.setField(obj, "stderr", api.makeString(presult.err));
     return obj;
   });
 
   // ========================================================================
-  // process.runDetached — run command without waiting, return pid
+  // process.runDetached - run command without waiting, return pid
   // ========================================================================
   api.registerFunction("__proc.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
@@ -906,7 +906,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
-  // process.wait — wait for spawned process to finish, update fields on object
+  // process.wait - wait for spawned process to finish, update fields on object
   // ========================================================================
   api.registerFunction("__proc.wait", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
@@ -957,7 +957,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
-  // process.killObj — kill spawned process (use process.kill(pid, sig) for PID)
+  // process.killObj - kill spawned process (use process.kill(pid, sig) for PID)
   // ========================================================================
   api.registerFunction("__proc.killObj", [api](const std::vector<Value>& args) {
     if (args.empty())
@@ -981,7 +981,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
-  // process.spawn — run command, return process object with .pid (data fields only)
+  // process.spawn - run command, return process object with .pid (data fields only)
   // ========================================================================
   api.registerFunction("__proc.spawn", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())

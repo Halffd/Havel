@@ -10,7 +10,13 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include "havel_platform.h"
+// evdev's eventfd. The header is included for the wakeup-counter idiom only;
+// the Windows input backends use a Win32 event handle instead, so the
+// include is withheld there rather than emulated.
+#if !HAVEL_PLATFORM_WINDOWS
 #include <sys/eventfd.h>
+#endif
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>

@@ -1,4 +1,4 @@
-// QtBridge.cpp — the Qt bridge: every host function whose implementation needs
+// QtBridge.cpp - the Qt bridge: every host function whose implementation needs
 // a Qt class.
 //
 // Compiled into havel_gui only. libhavel_core.a and libhavel_lang*.a are

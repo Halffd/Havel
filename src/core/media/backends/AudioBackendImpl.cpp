@@ -33,7 +33,7 @@ bool AudioBackendImpl::initialize() {
     if (initNativeAlsa()) { activeBackend = AudioBackend::ALSA; return true; }
 #endif
 #ifdef _WIN32
-    if (initNativeWindows()) { activeBackend = AudioBackend::WINDOWS; return true; }
+    if (initNativeWindows()) { activeBackend = AudioBackend::WASAPI; return true; }
 #endif
   }
 
@@ -45,7 +45,7 @@ bool AudioBackendImpl::initialize() {
   if (system("which amixer 2>/dev/null >/dev/null") == 0) { activeBackend = AudioBackend::ALSA; return true; }
 #endif
 #ifdef _WIN32
-  activeBackend = AudioBackend::WINDOWS;
+  activeBackend = AudioBackend::WASAPI;
   return true;
 #endif
   return false;
@@ -74,12 +74,12 @@ std::string AudioBackendImpl::getName() const {
   if (useCli_) return std::string("CLI/") + (
     activeBackend == AudioBackend::PIPEWIRE ? "PipeWire" :
     activeBackend == AudioBackend::PULSE ? "PulseAudio" :
-    activeBackend == AudioBackend::WINDOWS ? "Windows" : "ALSA");
+    activeBackend == AudioBackend::WASAPI ? "Windows" : "ALSA");
   switch (activeBackend) {
     case AudioBackend::PIPEWIRE: return "PipeWire";
     case AudioBackend::PULSE: return "PulseAudio";
     case AudioBackend::ALSA: return "ALSA";
-    case AudioBackend::WINDOWS: return "Windows";
+    case AudioBackend::WASAPI: return "Windows";
     default: return "unknown";
   }
 }
@@ -1257,7 +1257,7 @@ bool AudioBackendImpl::setVolume(const std::string &device, double volume) {
   case AudioBackend::ALSA: return alsaSetVolume(device, volume);
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: winSetVolume(device, static_cast<float>(volume)); return true;
+  case AudioBackend::WASAPI: winSetVolume(device, static_cast<float>(volume)); return true;
 #endif
   default: return false;
   }
@@ -1289,7 +1289,7 @@ double AudioBackendImpl::getVolume(const std::string &device) {
   case AudioBackend::ALSA: return alsaGetVolume(device);
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetVolume(device);
+  case AudioBackend::WASAPI: return winGetVolume(device);
 #endif
   default: return 1.0;
   }
@@ -1323,7 +1323,7 @@ bool AudioBackendImpl::setMute(const std::string &device, bool muted) {
   case AudioBackend::ALSA: return alsaSetMute(device, muted);
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: winSetMute(device, muted); return true;
+  case AudioBackend::WASAPI: winSetMute(device, muted); return true;
 #endif
   default: return false;
   }
@@ -1355,7 +1355,7 @@ bool AudioBackendImpl::isMuted(const std::string &device) {
   case AudioBackend::ALSA: return alsaGetMuted(device);
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetMuted(device);
+  case AudioBackend::WASAPI: return winGetMuted(device);
 #endif
   default: return false;
   }
@@ -1400,7 +1400,7 @@ void AudioBackendImpl::updateDeviceCache(std::vector<AudioDevice> &cache) const 
   }
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: {
+  case AudioBackend::WASAPI: {
     cache = const_cast<AudioBackendImpl *>(this)->winGetDevices(false);
     auto inputs = const_cast<AudioBackendImpl *>(this)->winGetDevices(true);
     cache.insert(cache.end(), inputs.begin(), inputs.end());
@@ -1424,7 +1424,7 @@ std::vector<AudioDevice> AudioBackendImpl::getDevices(bool input) const {
   case AudioBackend::ALSA: return const_cast<AudioBackendImpl *>(this)->alsaGetDevices(input);
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return const_cast<AudioBackendImpl *>(this)->winGetDevices(input);
+  case AudioBackend::WASAPI: return const_cast<AudioBackendImpl *>(this)->winGetDevices(input);
 #endif
   default: return {};
   }
@@ -1443,7 +1443,7 @@ std::string AudioBackendImpl::getDefaultOutput() const {
   case AudioBackend::ALSA: return alsa_default_playback ? alsa_default_playback->name : "default";
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetDefault(false);
+  case AudioBackend::WASAPI: return winGetDefault(false);
 #endif
   default: return "default";
   }
@@ -1462,7 +1462,7 @@ std::string AudioBackendImpl::getDefaultInput() const {
   case AudioBackend::ALSA: return alsa_default_capture ? alsa_default_capture->name : "default";
 #endif
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetDefault(true);
+  case AudioBackend::WASAPI: return winGetDefault(true);
 #endif
   default: return "default";
   }
@@ -1480,7 +1480,7 @@ bool AudioBackendImpl::setApplicationVolume(const std::string &appName, double v
 #endif
   case AudioBackend::ALSA: return false;
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winSetAppVolume(appName, vol);
+  case AudioBackend::WASAPI: return winSetAppVolume(appName, vol);
 #endif
   default: return false;
   }
@@ -1498,7 +1498,7 @@ double AudioBackendImpl::getApplicationVolume(const std::string &appName) const 
 #endif
   case AudioBackend::ALSA: return 1.0;
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetAppVolume(appName);
+  case AudioBackend::WASAPI: return winGetAppVolume(appName);
 #endif
   default: return 1.0;
   }
@@ -1516,7 +1516,7 @@ std::vector<AudioManager::ApplicationInfo> AudioBackendImpl::getApplications() c
 #endif
   case AudioBackend::ALSA: return {};
 #ifdef _WIN32
-  case AudioBackend::WINDOWS: return winGetApplications();
+  case AudioBackend::WASAPI: return winGetApplications();
 #endif
   default: return {};
   }

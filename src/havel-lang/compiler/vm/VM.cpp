@@ -1258,7 +1258,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
         return VMExecutionResult::Returned(ret_val);
       }
       current_executing_fiber_ = nullptr;
-      return VMExecutionResult::Yield(nullptr);
+      return VMExecutionResult::Yielded(nullptr);
     }
 
     // Get and execute instruction
@@ -1359,7 +1359,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
     // Return normal yield (instruction completed successfully)
     current_executing_fiber_ = nullptr;
-    return VMExecutionResult::Yield(nullptr);
+    return VMExecutionResult::Yielded(nullptr);
 
   } catch (const ScriptThrow &thrown) {
     // Handle script-thrown exceptions
@@ -1389,7 +1389,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     }
     // Exception was caught and handled
     current_executing_fiber_ = nullptr;
-    return VMExecutionResult::Yield(nullptr);
+    return VMExecutionResult::Yielded(nullptr);
 
   } catch (const std::runtime_error &e) {
     std::string msg = e.what();
@@ -1416,7 +1416,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
   }
 
   current_executing_fiber_ = nullptr;
-  return VMExecutionResult::Yield(nullptr);
+  return VMExecutionResult::Yielded(nullptr);
 }
 
 // ============================================================================

@@ -23,7 +23,7 @@ namespace havel {
 
 // Helper to run shell command safely
 static std::string runCommand(const char* cmd) {
-    FILE* pipe = popen(cmd, "r");
+    FILE* pipe = _popen(cmd, "r");
     if (!pipe) return "Unknown";
 
     char buffer[256];
@@ -33,7 +33,7 @@ static std::string runCommand(const char* cmd) {
         result = buffer;
     }
 
-    pclose(pipe);
+    _pclose(pipe);
 
     // Trim whitespace
     result.erase(result.find_last_not_of(" \n\r\t") + 1);
@@ -268,7 +268,7 @@ std::vector<HardwareDetector::HardwareInfo::StorageDevice> HardwareDetector::get
     
 #ifdef __linux__
     // Use lsblk for storage information
-    FILE* pipe = popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT,FSTYPE,AVAIL -b 2>/dev/null", "r");
+    FILE* pipe = _popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT,FSTYPE,AVAIL -b 2>/dev/null", "r");
     if (pipe) {
         char buffer[1024];
         while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
@@ -320,7 +320,7 @@ std::vector<HardwareDetector::HardwareInfo::StorageDevice> HardwareDetector::get
                 storage.push_back(device);
             }
         }
-        pclose(pipe);
+        _pclose(pipe);
     }
 #endif
     

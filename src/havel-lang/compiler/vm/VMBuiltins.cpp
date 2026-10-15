@@ -147,7 +147,7 @@ case OpCode::IMPORT: {
     // Check if module is already in globals (eager modules, previously loaded)
     // Only accept objects (namespace modules) and lazy proxies as pre-loaded.
     // Host functions with the same name as a module should NOT short-circuit
-    // the module loading — they are unrelated (e.g., a "debug" host function
+    // the module loading - they are unrelated (e.g., a "debug" host function
     // conflicts with the "debug" .hv module).
     // Lazy proxy objects must be activated before use, so skip the short-circuit.
     auto git = globals.find(path);
@@ -156,7 +156,7 @@ case OpCode::IMPORT: {
             if (preObj) {
             auto *preLazy = preObj->get("__lazy__");
             if (preLazy && preLazy->isBool() && preLazy->asBool()) {
-                // Lazy proxy — fall through to loadModule to activate it
+                // Lazy proxy - fall through to loadModule to activate it
             } else {
                 // A namespace object synthesized from dotted host functions
                 // (buildNamespaceGlobals) must NOT short-circuit when a
@@ -177,7 +177,7 @@ case OpCode::IMPORT: {
                     pushStack(git->second);
                     break;
                 }
-                // else fall through to loadModule — it merges the .hv
+                // else fall through to loadModule - it merges the .hv
                 // module exports into the existing namespace object.
             }
         } else {
@@ -190,7 +190,7 @@ case OpCode::IMPORT: {
     } else if (git != globals.end()) {
         // Not object, not null - log for debugging
     }
-    // Try capitalized variant — only match objects (module exports), not host functions
+    // Try capitalized variant - only match objects (module exports), not host functions
     std::string capPath = path;
     capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));
         git = globals.find(capPath);

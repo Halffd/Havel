@@ -89,6 +89,40 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals
   or the tiering system, run the full set deliberately.
+- **JIT/tiering verification protocol**: "compiles clean" is not
+  verification for JIT/tiering work. The default dev build (build-debug)
+  has NO JIT backend (`ENABLE_CRANELIFT` is off by default), so "tests
+  pass" against it is an interpreter-only claim — `--tiering` flags
+  included. Tiered runs self-declare: a run that never tiers prints
+  `[tiering] WARN: ... the JIT was not exercised` at shutdown.
+  To verify any change touching tiering, the JIT, the cranelift
+  backend, ORC tier-2, or anything the JIT calls (bridges, write
+  barriers, GC safe points), run exactly:
+  ```bash
+  scripts/ci/jit-parity-test.sh
+  ```
+  Not `make`, not `ctest`, not `./build-debug/havel script.hv`. The
+  wrapper runs each candidate smoke script interpreted AND tiered,
+  requires tier1 transitions > 0 (a "tiered" run that never tiers is a
+  FAIL), fails on tier-1 compile refusals that silently fall back to the
+  interpreter, diffs script-visible output between interpreter and JIT,
+  and puts every run under a timeout so a hung miscompile fails in
+  seconds. It exits 0 only when every script passes all of that.
+  Commit messages for JIT/tiering changes must paste the actual gate
+  output:
+  ```
+  Verification:
+    ran: scripts/ci/jit-parity-test.sh
+    output:
+      PASS for_loop_range (tier1=1)
+      ...
+      jit-parity: 6 passed, 0 failed
+    exit: 0
+  ```
+  If you skip this gate because it might fail, hang, or produce unclear
+  output: say so explicitly. Do not claim success on a subset without
+  naming the subset. Bad: "tests pass." Good: "Compiles. Did not run
+  scripts/ci/jit-parity-test.sh because <reason>; blocking on <what>."
 - **Brightness hardware test**: `brightness_test` — **NOT in ctest**. Applies real monitor changes.
   **Run manually only with visible monitor:**
   ```bash

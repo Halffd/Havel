@@ -56,15 +56,11 @@ do_while closure_loop_capture chunk_navigator"
 # Known failures: the gate reports these LOUDLY as skips with the bug
 # reference. They are never silently dropped. Remove the entry when the
 # bug is fixed and the gate will hold it from then on.
-# - chunk_navigator (2026-10-15, this gate's first catch): tier-1
-#   compile of chunkAt/chunkLeft refuses with "join depth conflict
-#   (1 vs 0)" (cranelift-backend/src/lib.rs ~911) and silently falls
-#   back to the interpreter. The default-arg prologue
-#   (DUP; JUMP_IF_NULL skip; POP; LOAD_GLOBAL; STORE_VAR) genuinely
-#   joins its two arms at different operand depths - benign under the
-#   interpreter's truncate-at-RETURN semantics, fatal to the model's
-#   depths-only-converge invariant. See benchmarks README known issues.
-KNOWN_FAILURES="chunk_navigator"
+# (none currently - the chunk_navigator depth-convergence catch was fixed
+# 2026-10-15: joins converge to the maximum depth with null pads on
+#  shallower arms, and the JIT call path now pads omitted default args
+#  the way the interpreter's local initialization does.)
+KNOWN_FAILURES=""
 
 # Strip ANSI color codes and runtime log lines (timestamp + [LEVEL]).
 # Script-owned output (print/FAIL/PASS lines) has no timestamp prefix.

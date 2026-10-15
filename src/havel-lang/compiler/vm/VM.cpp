@@ -1700,6 +1700,40 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 }
 
+// Materialize the JIT-path argument vector for `func`. The compiled code
+// seeds its params from args_ptr[0..param_count-1] unconditionally, so a
+// call that omits default-args must be padded to param_count exactly the
+// way the interpreter's local initialization does: default_values[i] when
+// present (fresh array for the `= []` sentinel), null otherwise. Without
+// this the compiled function reads past the caller's args array and
+// computes on garbage (observed: default-arg functions returning garbage
+// denormal doubles once tiered; scripts/smoke/chunk_navigator.hv).
+static std::vector<Value> jitCallArgs(const BytecodeFunction &func,
+                                      const std::vector<Value> &args,
+                                      GCHeap &heap) {
+  if (args.size() >= func.param_count) {
+    return args;
+  }
+  std::vector<Value> out(func.param_count);
+  for (uint32_t i = 0; i < func.param_count; ++i) {
+    if (i < args.size()) {
+      out[i] = args[i];
+    } else if (i < func.default_values.size() &&
+               func.default_values[i].has_value()) {
+      const auto &dv = func.default_values[i].value();
+      out[i] = dv.isDefaultArraySentinel()
+                   ? Value::makeArrayId(heap.allocateArray().id)
+                   : dv;
+    } else {
+      // Matches the interpreter: no arg and no literal default leaves the
+      // local null (non-literal defaults are a function prologue that
+      // tests exactly this null).
+      out[i] = Value::makeNull();
+    }
+  }
+  return out;
+}
+
 VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
                                                const std::vector<Value> &args) {
   // Clear VM state for fresh goroutine context
@@ -1849,7 +1883,8 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     try {
       Value jit_result;
-      if (backend_->execute(this, func->name, args, &jit_result)) {
+      const std::vector<Value> jit_args = jitCallArgs(*func, args, heap_);
+      if (backend_->execute(this, func->name, jit_args, &jit_result)) {
         setJITActiveClosurePublic(prev_jit_closure);
         return GoroutineCallResult::JITExecuted;
       }
@@ -3259,7 +3294,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     };
     try {
       Value result;
-      if (backend_->execute(this, callee->name, args, &result)) {
+      const std::vector<Value> jit_args = jitCallArgs(*callee, args, heap_);
+      if (backend_->execute(this, callee->name, jit_args, &result)) {
         setJITActiveClosurePublic(prev_jit_closure);
         jit_teardown();
         pushStack(result);

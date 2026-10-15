@@ -4,25 +4,21 @@ Working state and follow-ups. Dated entries; remove when done.
 
 ## open
 
-- [ ] 2026-10-15 — fix the tier-1 depth-model refusal in
-  `src/havel-lang/compiler/cranelift-backend/src/lib.rs` (~911):
-  `chunkAt`/`chunkLeft` in `scripts/smoke/chunk_navigator.hv` refuse
-  with "join depth conflict (1 vs 0)" and silently fall back to the
-  interpreter. The default-arg prologue
-  (`LOAD_VAR; DUP; JUMP_IF_NULL skip; POP; LOAD_GLOBAL; STORE_VAR`)
-  rejoins its arms at genuinely different operand depths — benign under
-  the interpreter's truncate-at-RETURN semantics. Fix: converge joins
-  to the maximum depth, synthesize null pads on shallower predecessor
-  edges. Then delete the `KNOWN_FAILURES` entry in
-  `scripts/ci/jit-parity-test.sh` — the gate holds the script from
-  then on. Full mechanism in `scripts/benchmarks/README.md`
-  ("Known open issue caught by the JIT parity gate").
-
 - [ ] deferred by user — Havel++ syntax discussion, until cleanup and
   phases end.
 
 ## done (kept for orientation)
 
+- [x] 2026-10-15 — chunk_navigator tier-1 refusal fixed, and a second
+  latent JIT bug it was masking fixed with it: (1) the cranelift
+  depth model now converges join depths to the maximum and pads nulls
+  under shallower arms (lib.rs) instead of refusing; (2) the JIT call
+  path now pads omitted default args to param_count exactly like the
+  interpreter's local init (VM.cpp jitCallArgs) — previously the
+  compiled code read past the caller's args array and computed on
+  garbage for any tiered function called with a default omitted.
+  Gate: jit-parity 7/7 twice (chunk_navigator tier1=5); autocall
+  smoke still PASS on build-debug.
 - [x] 2026-10-15 — clean full smoke gate after the orc quartet fix:
   `./build-debug/hvtest --smoke --slow-too` =
   **349 passed, 2 failed, 0 skipped | 351 files**; the only failures

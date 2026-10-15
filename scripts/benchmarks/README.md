@@ -248,27 +248,42 @@ likely exposed earlier by the already-committed dispatch-accounting
 change shifting allocation cadence — see the next section). Cargo 34/34,
 ctest 10/10, the three Cranelift GC smokes pass interpreted and tiered.
 
-## Known open issue caught by the JIT parity gate (2026-10-15)
+## Resolved: the two JIT bugs caught by the parity gate (2026-10-15)
 
 `scripts/ci/jit-parity-test.sh` (the enforced JIT verification gate -
 interpreted run + tiered run + tier1>0 assertion + output parity +
-compile-refusal check, per test, under timeout) caught its first real
-bug on its first run: `scripts/smoke/chunk_navigator.hv` tier-1
-compiles of `chunkAt`/`chunkLeft` refuse with
-`[hclb] compile chunkAt failed: instruction 7 (chunkAt): join depth
-conflict (1 vs 0)` (cranelift-backend/src/lib.rs ~911) and the script
-then "passes" by silently running interpreted - the exact silent-fallback
-pattern the gate exists to catch. Mechanism, verified by bytecode dump:
+compile-refusal check, per test, under timeout) caught two real bugs on
+its first runs, both now fixed; the gate holds chunk_navigator (7/7
+twice, chunk_navigator tier1=5).
+
+Catch 1 - the depth-model refusal. chunkAt/chunkLeft tier-1 compiles
+refused with `join depth conflict (1 vs 0)` and the script "passed" by
+silently running interpreted. Mechanism, verified by bytecode dump:
 the non-literal-default-arg prologue emits
 `LOAD_VAR size; DUP; JUMP_IF_NULL skip; ... POP; LOAD_GLOBAL <default>;
 STORE_VAR size` whose two arms rejoin at the body with genuinely
-different operand-stack depths (1 vs 0). That divergence is benign in
-the interpreter (RETURN truncates to the frame base, the leftover value
-is simply discarded), but the lowering model's "depths only converge"
-invariant refuses it. Fix direction: converge joins to the maximum
-depth and synthesize null pads for shallower predecessor edges (the pad
-values are never consumed; the epilogue truncates like the interpreter).
-The script stays a loud KNOWN_FAILURES entry in the gate until fixed.
+different operand-stack depths (1 vs 0) - benign in the interpreter
+(RETURN truncates to the frame base), fatal to the model's
+"depths only converge" invariant. Fix: the pre-pass converges join
+depths to the maximum and reprocesses the subtree; shallower arms pad
+NULL_TAGGED words under their values at every leader edge
+(padded_edge_args). The pads sit below values the interpreter would
+underflow before consuming, so they are never observable.
+
+Catch 2 - what the refusal was masking: the JIT call path did not
+apply default arguments. The compiled code seeds its params from
+args_ptr[0..param_count-1] unconditionally, but a call omitting a
+default passes a SHORTER args vector; the interpreter's doCall fills
+the missing local from func->default_values (or null), while
+backend_->execute handed the raw vector over - the compiled function
+read past the caller's args array and computed on garbage (observed:
+`z=1.58e-322`, `start=3.16e-322` - raw words read as denormal doubles,
+from tier-up onward, i.e. exactly the invocation where the test
+started exercising the JIT). Fix: jitCallArgs (VM.cpp) pads the args
+vector to param_count at both JIT execute sites, mirroring the
+interpreter's local initialization (default_values[i] when present,
+fresh array for the `= []` sentinel, null otherwise). The prologue's
+JUMP_IF_NULL then sees the same null the interpreter would have.
 
 Also structural, recorded by the same gate: the default dev build
 (build-debug) has no JIT backend at all (ENABLE_CRANELIFT is off by

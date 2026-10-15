@@ -490,7 +490,17 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
 
   // Execute the call
   doCall(fn, args);
+  // Same tick-budget hazard as VM::call (see the comment there): a host
+  // function's synchronous re-entry is not a time-slice point. With the
+  // goroutine tick budget still armed, an early return here leaves the
+  // callee's frame live; the result read below pops a mid-frame operand,
+  // and the state restores below discard the half-executed frame.
+  // Disarm for the nested loop; the outer armed loop still expires at
+  // its next checkpoint (the global dispatch counter keeps counting).
+  const uint64_t sync_saved_tick_budget = fast_tick_budget_;
+  fast_tick_budget_ = 0;
   runDispatchLoop(saved_frame_count);
+  fast_tick_budget_ = sync_saved_tick_budget;
 
   // Get result from stack top BEFORE restoring state
   Value result;
@@ -2715,9 +2725,29 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
   const uint32_t saved_coroutine = current_coroutine_id_;
 
   doCall(callee_value, args);
+  // A host function's nested dispatch (class.new -> init, when-watchers,
+  // finalizers, ...) is not a time-slice point: the goroutine tick budget
+  // expiring mid-callee here returns with the callee's frame still live
+  // above a C++ host frame no driver can resume. The caller then pops a
+  // mid-frame operand as the "return value", pushes its real result into
+  // the live frame's operand region, and the resumed callee's RETURN
+  // truncates that result away - observed as `c = Counter()` storing the
+  // init's int-0 return instead of the instance
+  // (scripts/smoke/test_issue_orc_object_get_autocall.hv).
+  //
+  // Disarm the budget for the nested loop so the callee runs to
+  // completion. Tick budgets are approximate by design (8192-instruction
+  // checkpoints, documented overshoot in dispatchTick); the global
+  // dispatch counter keeps incrementing, so the outer armed loop still
+  // expires at its very next checkpoint and time-slicing is preserved.
+  // The pump's own beginFastTick/endFastTick pairs inside
+  // periodicYieldCheck stay balanced within this window.
+  const uint64_t saved_tick_budget = fast_tick_budget_;
+  fast_tick_budget_ = 0;
   try {
     runDispatchLoop(base_depth);
   } catch (...) {
+    fast_tick_budget_ = saved_tick_budget;
     stack = saved_stack;
     locals = saved_locals;
     frame_count_ = base_depth;
@@ -2732,6 +2762,7 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
     last_suspension_context_ = nullptr;
     throw;
   }
+  fast_tick_budget_ = saved_tick_budget;
 
   if (stack.empty()) {
     return nullptr;

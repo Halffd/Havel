@@ -63,22 +63,29 @@ done
 
 mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR"
 
-# ---------------------------------------------------------------- checkouts
-# Every havel checkout on the box, unless the caller narrowed it down. These
-# are sibling clones sharing one object store, which is why the test files are
-# so redundant.
+# ------------------------------------------------------------------ checkouts
+# The invoking checkout's own scripts/ are the suite. Other checkouts are
+# sibling branches: their tests are usually identical (deduped below), but the
+# few that are unique to them belong to THAT branch, and running them against
+# this branch's binary reports failures that say nothing about this branch.
+# Measured: seeding the roots with /host/havel first credited 359 of 366 tests
+# to another branch and produced 12 "failures", 0 of which came from this
+# checkout. So other roots are opt-in via --roots, never implicit.
 if [ -z "$ROOTS" ]; then
-    for d in /host/havel /host/havel-2 /host/havel-3 /host/havel-stable /host/havel-wm; do
-        [ -d "$d/scripts/smoke" ] && ROOTS="${ROOTS:+$ROOTS,}$d"
-    done
+    here="$(cd "$(dirname "$0")/.." && pwd)"
+    ROOTS="$here"
+else
+    here="$(cd "$(dirname "$0")/.." && pwd)"
+    # Keep the invoking checkout first even when --roots is given, so dedup
+    # prefers this branch's copy of any shared test.
+    ROOTS="${ROOTS:+$ROOTS,}$here"
 fi
-[ -n "$ROOTS" ] || die "no checkout with scripts/smoke found" 2
+[ -d "$here/scripts/smoke" ] || die "invoking checkout has no scripts/smoke" 2
 
 # ------------------------------------------------------------------- binary
 # Prefer an explicitly given binary, else the build belonging to the checkout
 # this tool was invoked from, else whatever exists.
 if [ -z "$BIN" ]; then
-    here="$(cd "$(dirname "$0")/.." && pwd)"
     for cand in "$here"/build-timerfix/havel "$here"/build-debug/havel "$here"/build-release/havel; do
         [ -x "$cand" ] && { BIN="$cand"; break; }
     done

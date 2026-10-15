@@ -248,6 +248,36 @@ likely exposed earlier by the already-committed dispatch-accounting
 change shifting allocation cadence — see the next section). Cargo 34/34,
 ctest 10/10, the three Cranelift GC smokes pass interpreted and tiered.
 
+## Known open issue caught by the JIT parity gate (2026-10-15)
+
+`scripts/ci/jit-parity-test.sh` (the enforced JIT verification gate -
+interpreted run + tiered run + tier1>0 assertion + output parity +
+compile-refusal check, per test, under timeout) caught its first real
+bug on its first run: `scripts/smoke/chunk_navigator.hv` tier-1
+compiles of `chunkAt`/`chunkLeft` refuse with
+`[hclb] compile chunkAt failed: instruction 7 (chunkAt): join depth
+conflict (1 vs 0)` (cranelift-backend/src/lib.rs ~911) and the script
+then "passes" by silently running interpreted - the exact silent-fallback
+pattern the gate exists to catch. Mechanism, verified by bytecode dump:
+the non-literal-default-arg prologue emits
+`LOAD_VAR size; DUP; JUMP_IF_NULL skip; ... POP; LOAD_GLOBAL <default>;
+STORE_VAR size` whose two arms rejoin at the body with genuinely
+different operand-stack depths (1 vs 0). That divergence is benign in
+the interpreter (RETURN truncates to the frame base, the leftover value
+is simply discarded), but the lowering model's "depths only converge"
+invariant refuses it. Fix direction: converge joins to the maximum
+depth and synthesize null pads for shallower predecessor edges (the pad
+values are never consumed; the epilogue truncates like the interpreter).
+The script stays a loud KNOWN_FAILURES entry in the gate until fixed.
+
+Also structural, recorded by the same gate: the default dev build
+(build-debug) has no JIT backend at all (ENABLE_CRANELIFT is off by
+default) - every "tests pass" against it is an interpreter-only claim
+even with --tiering flags, and the ctest smoke gate therefore exercises
+the interpreter, not the JIT. The gate now self-declares: a tiered run
+with zero tier-1 transitions prints
+`[tiering] WARN: ... the JIT was not exercised` at shutdown.
+
 ## Resolved: the orc quartet (2026-10-15, commit 0a1e15f4e)
 
 `test_issue_orc_{object_get_autocall, object_subscript, classnew_field,

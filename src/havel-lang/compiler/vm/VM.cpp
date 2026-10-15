@@ -347,6 +347,17 @@ VM::~VM() {
                   "tier2_compiled={} tier2_dup_skipped={}",
                   tier1_transition_count_.load(), tier2_enqueue_count_.load(),
                   tier2_compile_count_.load(), tier2_skip_duplicate_count_.load());
+    // Self-declaration: a tiered run that never tiers is an interpreter
+    // run wearing the flag. Every log now either says the JIT ran or
+    // says it did not - no silent interpreter-only "passes" of
+    // tiering-flagged tests (see scripts/ci/jit-parity-test.sh, which
+    // turns this line into a hard gate failure).
+    if (tier1_transition_count_.load() == 0) {
+      ::havel::warning(
+          "[tiering] WARN: --tiering was set but no function reached "
+          "tier1; the JIT was not exercised (no backend built in, or "
+          "nothing crossed the threshold)");
+    }
   }
   // Runtime profiling summary (TODO #26): one line at shutdown so the
   // basic counters are observable in every run.

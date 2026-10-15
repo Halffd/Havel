@@ -1,0 +1,200 @@
+#!/bin/bash
+# havel-smoke-merged: one combined smoke suite across every havel checkout.
+#
+# Why this exists
+# ---------------
+# Every agent session has its own checkout (/host/havel, /host/havel-2,
+# /host/havel-3, /host/havel-stable, ...) and each one runs "its" smoke
+# suite independently. Those suites are not merely similar, they are mostly
+# byte-identical: measured on this box, all 359 files under havel/scripts/smoke
+# are identical to their havel-3 counterparts (0 differing). So N sessions mean
+# N copies of the same work, and on a 9p mount - where I/O is the bottleneck,
+# not CPU - that is what makes the machine crawl.
+#
+# What it does
+# ------------
+#   1. Collects the smoke tests from every checkout and dedups them by content
+#      hash, so an unchanged test is run once no matter how many checkouts
+#      carry it.
+#   2. Takes an exclusive lock. If another session is already running the
+#      merged suite, this exits immediately and points at that run's log
+#      instead of piling on a second full-suite pass.
+#   3. Writes a published summary that other sessions can read.
+#
+# It deliberately does not reimplement hvtest's runner. Each test is handed to
+# `hvtest --havel <bin> <file>`, which is hvtest's own single-file mode and so
+# keeps its per-test timeout handling.
+#
+# Usage:
+#   tools/havel-smoke-merged [--bin <havel>] [--roots a,b,c] [--timeout N]
+#                            [-j N] [--slow-too|--no-slow] [--status] [--list]
+#
+# Exit codes: 0 all passed (or nothing to do), 1 one or more failures,
+#             2 bad usage / no tests found, 3 another session holds the lock.
+
+set -uo pipefail
+
+STATE_DIR="${HAVEL_SMOKE_STATE:-/tmp/opencode/havel-smoke-merged}"
+LOCK_FILE="$STATE_DIR/lock"
+LOG_FILE="$STATE_DIR/latest.log"
+PER_TEST_TIMEOUT=90
+BIN=""
+ROOTS=""
+SLOW_TOO=1
+JOBS=1
+MODE=run
+
+die() { echo "havel-smoke-merged: $*" >&2; exit "${2:-2}"; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --bin)      BIN="${2:-}"; shift 2 ;;
+        --roots)    ROOTS="${2:-}"; shift 2 ;;
+        --timeout)  PER_TEST_TIMEOUT="${2:-}"; shift 2 ;;
+        -j|--jobs)  JOBS="${2:-}"; shift 2 ;;
+        --slow-too) SLOW_TOO=1; shift ;;
+        --no-slow)  SLOW_TOO=0; shift ;;
+        --status)   MODE=status; shift ;;
+        --list)     MODE=list; shift ;;
+        -h|--help)  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *)          die "unknown argument '$1'" ;;
+    esac
+done
+
+mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR"
+
+# ---------------------------------------------------------------- checkouts
+# Every havel checkout on the box, unless the caller narrowed it down. These
+# are sibling clones sharing one object store, which is why the test files are
+# so redundant.
+if [ -z "$ROOTS" ]; then
+    for d in /host/havel /host/havel-2 /host/havel-3 /host/havel-stable /host/havel-wm; do
+        [ -d "$d/scripts/smoke" ] && ROOTS="${ROOTS:+$ROOTS,}$d"
+    done
+fi
+[ -n "$ROOTS" ] || die "no checkout with scripts/smoke found" 2
+
+# ------------------------------------------------------------------- binary
+# Prefer an explicitly given binary, else the build belonging to the checkout
+# this tool was invoked from, else whatever exists.
+if [ -z "$BIN" ]; then
+    here="$(cd "$(dirname "$0")/.." && pwd)"
+    for cand in "$here"/build-timerfix/havel "$here"/build-debug/havel "$here"/build-release/havel; do
+        [ -x "$cand" ] && { BIN="$cand"; break; }
+    done
+fi
+[ -n "$BIN" ] && [ -x "$BIN" ] || die "no havel binary found (pass --bin)" 2
+
+# --------------------------------------------------------------- test set
+# Dedup by content hash: a test that is byte-identical across checkouts is the
+# same test and must only run once. First path wins, and the roots are ordered
+# so the invoking session's own checkout is preferred (its binary is the one
+# being tested).
+collect_tests() {
+    local root file hash
+    local -A seen=()
+    for root in ${ROOTS//,/ }; do
+        [ -d "$root/scripts/smoke" ] || continue
+        for file in "$root"/scripts/smoke/*.hv; do
+            [ -f "$file" ] || continue
+            if [ "$SLOW_TOO" -eq 0 ] && grep -qE '^// smoke: tier *= *slow' "$file"; then
+                continue
+            fi
+            hash="$(sha256sum "$file" | cut -d' ' -f1)"
+            if [ -n "${seen[$hash]:-}" ]; then continue; fi
+            seen[$hash]=1
+            echo "$file"
+        done
+    done
+}
+
+TESTS="$(collect_tests)"
+COUNT="$(printf '%s\n' "$TESTS" | grep -c . || true)"
+[ "$COUNT" -gt 0 ] || die "no smoke tests collected" 2
+
+if [ "$MODE" = list ]; then
+    printf '%s\n' "$TESTS"
+    exit 0
+fi
+
+# The lock fd is opened before --status is answered: flock needs a real open
+# descriptor, and without this the status check reports "held" always.
+exec 9>"$LOCK_FILE"
+
+# ------------------------------------------------------------------- status
+if [ "$MODE" = status ]; then
+    if flock -n 9; then
+        echo "lock: free"
+    else
+        echo "lock: held (pid $(cat "$STATE_DIR/lock.pid" 2>/dev/null || echo '?'))"
+    fi
+    echo "tests: $COUNT unique across ${ROOTS//,/, }"
+    [ -f "$LOG_FILE" ] && { echo "last log: $LOG_FILE"; tail -2 "$LOG_FILE"; }
+    exit 0
+fi
+
+# --------------------------------------------------------------------- lock
+# This is the point of the tool: a second concurrent full-suite pass is pure
+# waste on an I/O-bound box, so refuse rather than queue up behind it.
+if ! flock -n 9; then
+        echo "another session is already running the merged smoke suite."
+        echo "not starting a duplicate run. progress: $LOG_FILE"
+        tail -3 "$LOG_FILE" 2>/dev/null | sed 's/^/  /'
+        exit 3
+fi
+echo $$ > "$STATE_DIR/lock.pid"
+
+echo "binary : $BIN"
+echo "roots  : ${ROOTS//,/, }"
+echo "unique : $COUNT tests (deduped by content hash)"
+echo "log    : $LOG_FILE"
+echo
+
+: > "$LOG_FILE"
+start=$(date +%s)
+
+HVTEST_BIN="$(dirname "$BIN")/hvtest"
+[ -x "$HVTEST_BIN" ] || HVTEST_BIN="hvtest"
+
+run_one() {
+    local file="$1"
+    if timeout $((PER_TEST_TIMEOUT + 30)) "$HVTEST_BIN" --timeout "$PER_TEST_TIMEOUT" \
+            --havel "$BIN" "$file" 2>&1 | grep -q '^\[PASS\]'; then
+        echo "PASS $file"
+    else
+        echo "FAIL $file"
+    fi
+}
+export -f run_one
+export HVTEST_BIN BIN PER_TEST_TIMEOUT
+
+# Sequential by default. Parallelism is NOT how this tool saves I/O - the
+# dedup and the lock are - it only hides per-test process startup latency on an
+# I/O-bound mount. Kept low deliberately: this exists to stop the box from
+# thrashing, so raising -j to chase wall-clock would defeat it.
+printf '%s\n' "$TESTS" \
+    | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} > "$STATE_DIR/raw.txt"
+
+pass=$(grep -c '^PASS ' "$STATE_DIR/raw.txt" || true)
+fail=$(grep -c '^FAIL ' "$STATE_DIR/raw.txt" || true)
+failed_list=()
+while IFS= read -r line; do
+    [ -n "$line" ] && failed_list+=("${line#FAIL }")
+done < <(grep '^FAIL ' "$STATE_DIR/raw.txt" || true)
+
+elapsed=$(( $(date +%s) - start ))
+
+{
+    echo
+    echo "smoke-merged: $pass passed, $fail failed, 0 skipped | $COUNT tests, ${elapsed}s"
+    if [ "$fail" -gt 0 ]; then
+        echo "failed:"
+        printf '  %s\n' "${failed_list[@]}"
+    fi
+    echo "binary: $BIN"
+    echo "roots : ${ROOTS//,/, }"
+} >> "$LOG_FILE"
+
+tail -n 20 "$LOG_FILE"
+[ "$fail" -eq 0 ] || exit 1
+exit 0

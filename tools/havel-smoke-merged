@@ -174,8 +174,19 @@ HVTEST_BIN="$(dirname "$BIN")/hvtest"
 # --slow-too is passed so the slow tier is included; a bare `hvtest --smoke`
 # skips exactly the GC/tiering stress tests that catch the worst regressions.
 "$HVTEST_BIN" --smoke --slow-too --timeout "$PER_TEST_TIMEOUT" \
-    --havel "$BIN" --scripts-root "$PRIMARY_ROOT" > "$LOG_FILE" 2>&1
+    --havel "$BIN" --scripts-root "$PRIMARY_ROOT/scripts" > "$LOG_FILE" 2>&1
 suite_rc=$?
+
+# A suite that ran nothing is a failure of this runner, not a clean result.
+# Observed exactly that: --scripts-root was handed the checkout instead of its
+# scripts/ dir, hvtest looked in <checkout>/smoke, found nothing, and the
+# summary cheerfully reported "0 passed, 0 failed" with exit 0.
+if ! grep -q '^smoke:' "$LOG_FILE"; then
+    echo "havel-smoke-merged: the suite produced no summary line - aborting." >&2
+    echo "hvtest exit=$suite_rc; first lines of $LOG_FILE:" >&2
+    head -5 "$LOG_FILE" >&2
+    exit 2
+fi
 
 pass=$(grep -c '^\[PASS\]' "$LOG_FILE" || true)
 timeouts=$(grep -c '^\[FAIL\].*(timeout)' "$LOG_FILE" || true)

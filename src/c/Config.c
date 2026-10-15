@@ -239,7 +239,9 @@ static void init_pathMutex(void) {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  havel_mutex_init(&g_pathMutex);
+  /* havel_mutex_init() takes no attributes and would give a NORMAL mutex,
+     which deadlocks the moment mkdirRecursive re-enters. Pass attr here. */
+  pthread_mutex_init(&g_pathMutex, &attr);
   pthread_mutexattr_destroy(&attr);
 }
 static void __attribute__((constructor)) init_pathMutexCtor(void) {

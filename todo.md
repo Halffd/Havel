@@ -18,20 +18,18 @@ Working state and follow-ups. Dated entries; remove when done.
   then on. Full mechanism in `scripts/benchmarks/README.md`
   ("Known open issue caught by the JIT parity gate").
 
-- [ ] 2026-10-15 — re-run the full smoke gate
-  (`./build-debug/hvtest --smoke --slow-too`) on a quiet machine for a
-  clean suite number. The post-orc-quartet-fix run was polluted by
-  sibling-build contention: 317 passed, 34 failed, where all 34 were
-  33 timeouts of unrelated trivial scripts (time_*, bitwise_xor, ...)
-  at loadavg 12-14 plus the known qt baseline. The four orc quartet
-  tests passed in-gate and 2/2 standalone; expected clean result is
-  349/351 (repl + qt UI-backend baselines only).
-
 - [ ] deferred by user — Havel++ syntax discussion, until cleanup and
   phases end.
 
 ## done (kept for orientation)
 
+- [x] 2026-10-15 — clean full smoke gate after the orc quartet fix:
+  `./build-debug/hvtest --smoke --slow-too` =
+  **349 passed, 2 failed, 0 skipped | 351 files**; the only failures
+  are the two known pre-existing baselines, both exit=1 in their real
+  failure mode (no contention timeouts):
+  test_issue_repl_script_mode, test_issue_qt_namespace_restored
+  (UI-backend-absent). All four orc quartet tests pass in-gate.
 - [x] 2026-10-15 — orc quartet root-caused and fixed (0a1e15f4e):
   goroutine tick-budget expiry inside host-fn re-entries
   (VM::call / callFunctionSync) left callee frames live; now disarmed

@@ -177,22 +177,29 @@ HVTEST_BIN="$(dirname "$BIN")/hvtest"
     --havel "$BIN" --scripts-root "$PRIMARY_ROOT/scripts" > "$LOG_FILE" 2>&1
 suite_rc=$?
 
-# A suite that ran nothing is a failure of this runner, not a clean result.
-# Observed exactly that: --scripts-root was handed the checkout instead of its
-# scripts/ dir, hvtest looked in <checkout>/smoke, found nothing, and the
-# summary cheerfully reported "0 passed, 0 failed" with exit 0.
-if ! grep -q '^smoke:' "$LOG_FILE"; then
+# The smoke runner prints a [FAIL] line per failure but NO [PASS] line per
+# success - the pass count only exists in its `^smoke:` summary. Counting
+# [PASS] lines therefore always yielded 0, which is how a 356-pass run
+# reported "0 passed" here. Parse the summary for the totals and the log for
+# the names.
+summary="$(grep -m1 '^smoke:' "$LOG_FILE" || true)"
+if [ -z "$summary" ]; then
     echo "havel-smoke-merged: the suite produced no summary line - aborting." >&2
     echo "hvtest exit=$suite_rc; first lines of $LOG_FILE:" >&2
     head -5 "$LOG_FILE" >&2
     exit 2
 fi
 
-pass=$(grep -c '^\[PASS\]' "$LOG_FILE" || true)
+pass="$(printf '%s' "$summary" | sed -nE 's/^smoke: ([0-9]+) passed.*/\1/p')"
+suite_fail="$(printf '%s' "$summary" | sed -nE 's/.*, ([0-9]+) failed.*/\1/p')"
+COUNT="$(printf '%s' "$summary" | sed -nE 's/.*\| ([0-9]+) files.*/\1/p')"
+: "${pass:=0}" "${suite_fail:=0}" "${COUNT:=0}"
+
 timeouts=$(grep -c '^\[FAIL\].*(timeout)' "$LOG_FILE" || true)
-fail=$(grep -c '^\[FAIL\]' "$LOG_FILE" || true)
-timeouts=$((timeouts))
-fail=$((fail - timeouts))
+fail=$((suite_fail))
+# Timeouts are counted separately: they mean the per-test bound was too low
+# for this box, not that the branch is broken. Reporting them as failures
+# alongside real assertion failures hides both.
 failed_list=()
 while IFS= read -r line; do
     [ -n "$line" ] && failed_list+=("$line")

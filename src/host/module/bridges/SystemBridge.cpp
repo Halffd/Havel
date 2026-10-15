@@ -797,9 +797,9 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
             auto errRef = vm_->getHeap().allocateString(result->error);
             vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
         }
-        auto outRef = vm_->getHeap().allocateString(result->stdout);
+        auto outRef = vm_->getHeap().allocateString(result->out);
         vm_->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
-        auto errOutRef = vm_->getHeap().allocateString(result->stderr);
+        auto errOutRef = vm_->getHeap().allocateString(result->err);
         vm_->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
         return Value::makeObjectId(obj.id);
       });

@@ -189,8 +189,10 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string &keys) {
   return tokens;
 }
 
-// Batch write events with a single syscall
-void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
+// Batch write events with a single syscall. Takes the platform-neutral
+// KeyEventRequest the IOBackend interface declares, and translates to the
+// evdev codes this implementation writes.
+void IO::SendBatchedKeyEvents(const std::vector<KeyEventRequest> &events) {
   if (events.empty())
     return;
 
@@ -198,7 +200,8 @@ void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
   if (eventListener) {
     eventListener->BeginUinputBatch();
     for (const auto &ev : events) {
-      eventListener->QueueUinputEvent(ev.type, ev.code, ev.value);
+      const int value = (ev.action == KeyEventRequest::Action::Press) ? 1 : 0;
+      eventListener->QueueUinputEvent(EV_KEY, ev.keycode, value);
     }
     eventListener->EndUinputBatch();
   }

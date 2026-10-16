@@ -565,6 +565,8 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Re-enqueue an existing goroutine to front of its priority queue
     // Used by persistent hotkey goroutines to avoid per-press allocation
     void requeueFront(Goroutine* g);
+  // Re-queue without a state change (see the .cpp for why Created matters).
+  void requeuePreservingState(Goroutine* g);
 
     // Wake a persistent hotkey goroutine according to its policy
     // Returns true if the goroutine was woken/requeued, false if dropped.

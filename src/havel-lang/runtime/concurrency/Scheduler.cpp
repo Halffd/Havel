@@ -600,6 +600,30 @@ void Scheduler::enqueue(Goroutine* g) {
     notifyWakeup();
 }
 
+// Put a goroutine back on its priority queue WITHOUT changing its state.
+// yield() would promote Created to Runnable, and the pump dispatches a
+// Created goroutine through startGoroutineCall() (which resolves the chunk
+// and locals) rather than loadFiberStatePublic(). A persistent hotkey sits in
+// Created from requeueFront() until its body finishes, so a second pick in
+// the same pass has to put it back exactly as it was.
+void Scheduler::requeuePreservingState(Goroutine* g) {
+  if (!g) return;
+  if (g->state == GoroutineState::Done) return;
+  {
+    std::lock_guard lock(priority_mutex_);
+    removeFromQueues(g);
+    g->queued_at = std::chrono::steady_clock::now();
+    if (g->priority == FiberPriority::HOTKEY) {
+      hotkey_queue_.push_front(g);
+    } else if (g->priority == FiberPriority::BACKGROUND) {
+      background_queue_.push_front(g);
+    } else {
+      runnable_queue_.push_front(g);
+    }
+  }
+  notifyWakeup();
+}
+
 void Scheduler::requeueFront(Goroutine* g) {
   if (!g) return;
   // Defense in depth: a Done goroutine must not be resurrected. Persistent

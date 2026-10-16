@@ -1389,7 +1389,8 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       vm_->endFastTick();
       if (failing_g) {
         failing_g->state = compiler::Scheduler::GoroutineState::Done;
-        if (failing_g->fiber) failing_g->fiber->state = compiler::FiberState::DONE;
+        if (failing_g->fiber)
+          failing_g->fiber->state = compiler::FiberState::DONE;
       }
       // Reset inline_yield_active_ so scheduling isn't frozen.
     }
@@ -1399,11 +1400,23 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     // (their tick ended in a wait) and Done goroutines are already parked
     // by their outcome handling. Runs after the catch too, so an exception
     // in one sibling's dispatch cannot strand the held ones.
-    for (auto* h : held) {
-      if (h && (h->state == compiler::Scheduler::GoroutineState::Runnable ||
-                h->state == compiler::Scheduler::GoroutineState::Running)) {
-        if (h->fiber) vm_->saveFiberStatePublic(h->fiber);
-        sched->yield(h);
+    for (auto *h : held) {
+      // Runnable and Running are re-queued. Created must be too: a persistent
+      // hotkey sits in Created from requeueFront() until its body finishes,
+      // so a second pick inside the same pass puts it here while still
+      // Created - and dropping it left the goroutine in no queue at all, so
+      // pickNext() never offered it again and the hotkey died permanently
+      // (test_hk_starvation_repeated: 1 of 10 triggers fired). Suspended and
+      // Done are excluded: their outcome handling already parked them.
+      if (h && h->state != compiler::Scheduler::GoroutineState::Suspended &&
+          h->state != compiler::Scheduler::GoroutineState::Done) {
+        if (h->fiber)
+          vm_->saveFiberStatePublic(h->fiber);
+        if (h->state == compiler::Scheduler::GoroutineState::Created) {
+          sched->requeuePreservingState(h);
+        } else {
+          sched->yield(h);
+        }
       }
     }
     held.clear();

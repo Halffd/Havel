@@ -185,14 +185,12 @@ pub struct LoweringError(pub String);
 // full param count. The pads sit below the arm's live values - the
 // interpreter would underflow its own frame before consuming them and
 // RETURN truncates to the frame base, so they are never observable.
-fn padded_edge_args(
-    depth: usize,
-    stack: &[Value],
-    b: &mut FunctionBuilder,
-) -> Vec<BlockArg> {
+fn padded_edge_args(depth: usize, stack: &[Value], b: &mut FunctionBuilder) -> Vec<BlockArg> {
     let mut args: Vec<BlockArg> = Vec::new();
     for _ in 0..depth.saturating_sub(stack.len()) {
-        args.push(BlockArg::Value(b.ins().iconst(types::I64, NULL_TAGGED as i64)));
+        args.push(BlockArg::Value(
+            b.ins().iconst(types::I64, NULL_TAGGED as i64),
+        ));
     }
     args.extend(stack.iter().map(|v| BlockArg::Value(*v)));
     args
@@ -2263,11 +2261,8 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                let args_s1 = padded_edge_args(
-                                    entry_depth[else_idx],
-                                    &vstack,
-                                    &mut builder,
-                                );
+                                let args_s1 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
                                 builder.ins().brif(truthy, else_blk, &args_s1, taken, &[]);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
@@ -2283,23 +2278,13 @@ impl CraneliftBackend {
                                     &vstack,
                                 );
                             } else {
-                                let args_a1 = padded_edge_args(
-                                    entry_depth[else_idx],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                let args_b1 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                builder.ins().brif(
-                                    truthy,
-                                    else_blk,
-                                    &args_a1,
-                                    then_blk,
-                                    &args_b1,
-                                );
+                                let args_a1 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                let args_b1 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, else_blk, &args_a1, then_blk, &args_b1);
                             }
                         } else {
                             // No fall-through instruction: both arms exit
@@ -2309,11 +2294,8 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                let args_s2 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
+                                let args_s2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
                                 builder.ins().brif(truthy, then_blk, &args_s2, taken, &[]);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
@@ -2329,23 +2311,13 @@ impl CraneliftBackend {
                                     &vstack,
                                 );
                             } else {
-                                let args_a2 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                let args_b2 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &args_a2,
-                                    then_blk,
-                                    &args_b2,
-                                );
+                                let args_a2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a2, then_blk, &args_b2);
                             }
                         }
                         terminated = true;
@@ -2369,11 +2341,8 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                let args_s3 = padded_edge_args(
-                                    entry_depth[else_idx],
-                                    &vstack,
-                                    &mut builder,
-                                );
+                                let args_s3 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
                                 builder.ins().brif(truthy, taken, &[], else_blk, &args_s3);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
@@ -2389,23 +2358,13 @@ impl CraneliftBackend {
                                     &vstack,
                                 );
                             } else {
-                                let args_a3 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                let args_b3 = padded_edge_args(
-                                    entry_depth[else_idx],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &args_a3,
-                                    else_blk,
-                                    &args_b3,
-                                );
+                                let args_a3 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b3 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a3, else_blk, &args_b3);
                             }
                         } else {
                             if target < cur {
@@ -2413,11 +2372,8 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                let args_s4 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
+                                let args_s4 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
                                 builder.ins().brif(truthy, taken, &[], then_blk, &args_s4);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
@@ -2433,23 +2389,13 @@ impl CraneliftBackend {
                                     &vstack,
                                 );
                             } else {
-                                let args_a2 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                let args_b2 = padded_edge_args(
-                                    entry_depth[target],
-                                    &vstack,
-                                    &mut builder,
-                                );
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &args_a2,
-                                    then_blk,
-                                    &args_b2,
-                                );
+                                let args_a2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a2, then_blk, &args_b2);
                             }
                         }
                         terminated = true;
@@ -2480,11 +2426,8 @@ impl CraneliftBackend {
                                 &vstack,
                             );
                         } else {
-                            let jump_args = padded_edge_args(
-                                entry_depth[target],
-                                &vstack,
-                                &mut builder,
-                            );
+                            let jump_args =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
                             builder.ins().jump(blk, &jump_args);
                         }
                         terminated = true;
@@ -2900,29 +2843,21 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
-                            let args_jn1 = padded_edge_args(
-                                entry_depth[target],
-                                &vstack,
-                                &mut builder,
-                            );
-                            let args_jn2 = padded_edge_args(
-                                entry_depth[else_idx],
-                                &vstack,
-                                &mut builder,
-                            );
-                            builder.ins().brif(is_null, then_blk, &args_jn1, else_blk, &args_jn2);
+                            let args_jn1 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            let args_jn2 =
+                                padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                            builder
+                                .ins()
+                                .brif(is_null, then_blk, &args_jn1, else_blk, &args_jn2);
                         } else {
-                            let args_jn3 = padded_edge_args(
-                                entry_depth[target],
-                                &vstack,
-                                &mut builder,
-                            );
-                            let args_jn4 = padded_edge_args(
-                                entry_depth[target],
-                                &vstack,
-                                &mut builder,
-                            );
-                            builder.ins().brif(is_null, then_blk, &args_jn3, then_blk, &args_jn4);
+                            let args_jn3 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            let args_jn4 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            builder
+                                .ins()
+                                .brif(is_null, then_blk, &args_jn3, then_blk, &args_jn4);
                         }
                         terminated = true;
                     }
@@ -4305,7 +4240,17 @@ pub extern "C" fn hclb_create_with_symbols(
 pub extern "C" fn hclb_destroy(handle: *mut c_void) {
     if !handle.is_null() {
         unsafe {
-            drop(Box::from_raw(handle as *mut CraneliftBackend));
+            let CraneliftBackend { module, .. } = *Box::from_raw(handle as *mut CraneliftBackend);
+            // cranelift-jit leaks its executable memory on drop on purpose -
+            // `impl Drop for Memory` mem::forgets the regions so function
+            // pointers stay valid, and the docs say it stays leaked unless
+            // free_memory() is called. Dropping the box alone therefore left
+            // ~24KB of JIT image reported by LSan on every tiered run, which
+            // failed scripts/ci/jit-parity-test.sh on all candidates. This
+            // runs from ~CraneliftBackend, after the VM joined its tier2
+            // worker and while nothing can still execute JIT code, which is
+            // exactly the condition free_memory() requires.
+            module.free_memory();
         }
     }
 }

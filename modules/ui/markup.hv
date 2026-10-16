@@ -190,7 +190,7 @@ fn _applyPatch(node, p) {
       cp = cpList[j]
       if cp.type == "APPEND" {
         node.children.push(cp.node)
-} else if cp.type == "REMOVE_AT" {
+      } else if cp.type == "REMOVE_AT" {
           idx = cp.index
           newChildren = []
           ci = 0

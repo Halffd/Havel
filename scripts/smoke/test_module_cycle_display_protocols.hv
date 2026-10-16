@@ -1,0 +1,25 @@
+// Regression: display <-> protocols was a direct module cycle.
+//
+// protocols.hv imported display (for its lazy X connection) while
+// display.hv imported protocols (for getWindowProp/getStringProp). The cycle
+// only fired when display was reached through a third module first:
+// `use display` alone succeeded, but
+//     use display
+//     use mode          // mode -> window -> display -> protocols -> display
+// died at shutdown with
+//     Execution error: Circular dependency detected: protocols
+// because by then the display module was already in-progress and could not be
+// re-entered.
+//
+// protocols now opens its own connection through x11 (XOpenDisplay(NULL),
+// i.e. $DISPLAY) and caches it, so the edge protocols -> display is gone.
+// display still passes its own _dpy in explicitly, so nothing else changed.
+//
+// The pairs below each failed before the fix; headless-safe (module load only,
+// no display is opened).
+
+use display
+use mode
+
+print "PASS: display_mode_no_cycle"
+process.exit(0)

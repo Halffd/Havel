@@ -3,7 +3,6 @@
 // for EWMH-compliant window manager communication
 
 use x11
-use display
 use ffi
 
 // EWMH state operations
@@ -18,9 +17,23 @@ SOURCE_PAGER = 2
 
 // Cached display and atoms (lazily initialized)
 _atoms_cache = {}
+_dpy = 0
 
+// Own connection, opened through x11 rather than the display module.
+//
+// display.hv uses protocols.getWindowProp/getStringProp and passes its own
+// display in explicitly, so importing display here made the two modules a
+// direct cycle (protocols -> display -> protocols). That only bit scripts that
+// reached display through a third module first: `use display` alone survived,
+// while `use mode` (mode -> window -> display -> protocols -> display) failed
+// with "Circular dependency detected: protocols" at shutdown.
 fn _ensureDpy() {
-    display.open()
+    if _dpy == 0 {
+        // null display name means XOpenDisplay(NULL), i.e. $DISPLAY - the same
+        // connection display.open() resolves, without the cycle.
+        _dpy = x11.open(null)
+    }
+    _dpy
 }
 
 fn _atom(name) {

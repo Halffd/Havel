@@ -364,14 +364,16 @@ extern "C" uint64_t havel_vm_eq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
     auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
-    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
-    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
-    if (l_is_str || r_is_str) {
-      if (l_is_str && r_is_str) {
-        return Value::makeBool(vm->stringsEqualPublic(l, r)).rawBits();
-      }
-      return Value::makeBool(false).rawBits();
-    }
+    // Structural operands go through the interpreter's own rule
+    // (valuesEqualDeep: strings by content, arrays/objects/sets
+    // element-wise). Numeric coercion cannot express it: two array refs
+    // coerce to NaN and always read "not equal", so tiered code returned
+    // true for `a != [3,1,2]` on an equal array - test_sorted_bare_global.
+    // Scalars keep the inline numeric path.
+    const bool l_scalar = lv.isNull() || lv.isBool() || lv.isInt() || lv.isDouble();
+    const bool r_scalar = rv.isNull() || rv.isBool() || rv.isInt() || rv.isDouble();
+    if (!l_scalar || !r_scalar)
+      return Value::makeBool(vm->valuesEqualDeepPublic(lv, rv)).rawBits();
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
@@ -386,14 +388,15 @@ extern "C" uint64_t havel_vm_neq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
     auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
-    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
-    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
-    if (l_is_str || r_is_str) {
-      if (l_is_str && r_is_str) {
-        return Value::makeBool(!vm->stringsEqualPublic(l, r)).rawBits();
-      }
-      return Value::makeBool(true).rawBits();
-    }
+    // Mirror of havel_vm_eq_vm: non-scalar operands follow the
+    // interpreter's valuesEqualDeep, not numeric coercion (two array
+    // refs coerce to NaN, so `a != [3,1,2]` in tiered code read true
+    // for an equal array - test_sorted_bare_global). Scalars keep the
+    // inline numeric path.
+    const bool l_scalar = lv.isNull() || lv.isBool() || lv.isInt() || lv.isDouble();
+    const bool r_scalar = rv.isNull() || rv.isBool() || rv.isInt() || rv.isDouble();
+    if (!l_scalar || !r_scalar)
+      return Value::makeBool(!vm->valuesEqualDeepPublic(lv, rv)).rawBits();
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))

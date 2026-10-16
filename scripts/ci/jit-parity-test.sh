@@ -49,9 +49,11 @@ fi
 # binop feedback, invocation counts) actually cross the tier-1
 # threshold, plus the tier-1 lowerings (div/mod/negate/bitwise) inside
 # loop bodies. Straight-line scripts never tier and cannot be JIT
-# tests.
+# tests. test_sorted_bare_global tiers through repeated assertEq calls
+# and locks the EQ/NEQ bridge's non-scalar path (array equality via
+# valuesEqualDeep, not numeric coercion).
 CANDIDATES="for_loop_range for_loop_array for_loop_break loop_with_break \
-do_while closure_loop_capture chunk_navigator"
+do_while closure_loop_capture chunk_navigator test_sorted_bare_global"
 
 # Known failures: the gate reports these LOUDLY as skips with the bug
 # reference. They are never silently dropped. Remove the entry when the

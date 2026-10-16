@@ -55,7 +55,6 @@ generated
 scripts/user
 src/wm/
 havel-wm
-havel.cfgvscode-extension/node_modules/
 vscode-extension/out/
 *.vsix
 .crush
@@ -106,3 +105,23 @@ src/havel-lang/compiler/cranelift-backend/target/
 src/havel-lang/compiler/cranelift-backend/Cargo.lock
 vscode-extension/node_modules/
 vscode-extension/out/
+site/
+
+# Build artifacts not covered above.
+# dist/ and *.so are deliberately absent: dist/ holds tracked release
+# artifacts (SHA256SUMS, .deb, .rpm) and *.so matches committed smoke-suite
+# fixtures (scripts/smoke/arithmetic_*.so, modules/app/libgamma_ramp.so).
+node_modules/
+target/
+*.a
+*.dylib
+*.exe
+__pycache__/
+*.pyc
+.vs/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+CMakeSettings.json
+.cmake/

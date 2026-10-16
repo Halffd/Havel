@@ -494,32 +494,27 @@ fn keyCount() {
 // alias were allowed into the reverse maps it would displace the primary and
 // break evdevToString/x11ToString/windowsToString (evdev 12 would come back as
 // "-" instead of "minus", 125 as "super" instead of "win", and so on).
-// Index-based iteration, not for-in: inside module bodies executed via
-// vm.loadModule() during Havel::initialize (REPL, script+repl, daemon
-// startup) a for-in over this object produced zero iterations - the
-// C++ side received an empty table and those modes ran unhydrated,
-// silently breaking every hotkey binding. _init()'s while-over-array
-// pattern works in the same contexts, so this loop uses keyNames() the
-// same way.
+// for-in over _name_to_key, NOT keyNames(): keyNames() only lists the
+// 262 primary names, so a keyNames()-driven loop silently dropped all
+// 63 alias rows - C++ keyed its maps off `name`, aliases stopped
+// resolving, and '; => {}' (an alias hotkey) stopped parsing. Iterating
+// _name_to_key yields every row including aliases (probed: 325 vs 262).
+// In repl-mode processes the for-in currently produces zero iterations
+// due to an upstream module-context lookup bug - see the shared
+// coordination note; that is the remaining blocker for repl hydration,
+// not this loop.
 fn allEntries() {
   _out = []
-  _names = keyNames()
-  _i = 0
-  _len = #_names
-  while _i < _len {
-    _name = _names[_i]
+  for _name in _name_to_key {
     _e = _name_to_key[_name]
-    if _e != null {
-      _out.push({
-        name: _name,
-        evdev: _e.evdev,
-        x11: _e.x11,
-        win: _e.win,
-        aliases: _e.aliases,
-        isAlias: _alias_names[_name],
-      })
-    }
-    _i = _i + 1
+    _out.push({
+      name: _name,
+      evdev: _e.evdev,
+      x11: _e.x11,
+      win: _e.win,
+      aliases: _e.aliases,
+      isAlias: _alias_names[_name],
+    })
   }
   _out
 }

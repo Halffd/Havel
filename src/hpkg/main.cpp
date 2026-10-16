@@ -719,7 +719,7 @@ static std::string selected_toolchain() {
 static int cmd_toolchain(const std::vector<std::string> &args) {
   if (args.empty()) {
     std::cerr << "hpkg toolchain: specify a subcommand "
-                 "(install, list, use, current, remove, run, which, regress)"
+                              "(install, list, use, current, remove, run, which, tags, regress)"
               << std::endl;
     return 1;
   }
@@ -989,6 +989,97 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
     return 0;
   }
 
+  // ------------------------------------------------------------------- tags
+  // Every tag in the repository with the commit it points at, most recent
+  // first, annotated with whether that commit is already installed. This is
+  // how you discover what versions exist before installing one: `install`
+  // resolves a tag through git rev-parse <ref>^{commit}, so any name listed
+  // here is directly installable.
+  if (sub == "tags") {
+    fs::path repo;
+    int limit = 0;
+    bool all = false;
+    for (size_t i = 0; i < rest.size(); ++i) {
+      if (rest[i] == "--repo" && i + 1 < rest.size()) {
+        repo = rest[++i];
+      } else if (rest[i] == "--limit" && i + 1 < rest.size()) {
+        limit = std::stoi(rest[++i]);
+      } else if (rest[i] == "--all") {
+        all = true;
+      } else if (rest[i][0] == '-') {
+        std::cerr << "hpkg toolchain tags: unknown option " << rest[i] << std::endl;
+        return 1;
+      }
+    }
+    if (repo.empty()) repo = repo_root_from_cwd();
+    if (repo.empty()) {
+      std::cerr << "hpkg toolchain tags: not inside a git repository; pass --repo <path>"
+                << std::endl;
+      return 1;
+    }
+
+    std::string out;
+    std::string q = "git -C '" + repo.string() +
+                    "' for-each-ref --format='%(refname:short) %(objectname) %(creatordate:short)' "
+                    "refs/tags";
+    if (run_capture(q, &out) != 0) {
+      std::cerr << "hpkg toolchain tags: cannot read tags from " << repo.string() << std::endl;
+      return 1;
+    }
+
+    struct TagRow {
+      std::string name;
+      std::string commit;
+      std::string date;
+    };
+    std::vector<TagRow> rows;
+    std::istringstream lines(out);
+    std::string line;
+    while (std::getline(lines, line)) {
+      line = trim(line);
+      if (line.empty()) continue;
+      std::istringstream parts(line);
+      TagRow row;
+      if (!(parts >> row.name >> row.commit >> row.date)) continue;
+      // An annotated tag object name is not the commit it points at; peel it.
+      if (row.commit.size() == 40) {
+        std::string peeled;
+        if (run_capture("git -C '" + repo.string() + "' rev-parse '" + row.commit +
+                            "^{commit}'",
+                        &peeled) == 0) {
+          row.commit = trim(peeled);
+        }
+      }
+      rows.push_back(row);
+    }
+    // git lists tags lexicographically, so v0.10 would sort before v0.9. Sort
+    // by date descending, falling back to name for tags sharing a date.
+    std::sort(rows.begin(), rows.end(), [](const TagRow &a, const TagRow &b) {
+      if (a.date != b.date) return a.date > b.date;
+      return a.name < b.name;
+    });
+
+    fs::path root = get_toolchains_dir();
+    size_t shown = 0;
+    for (const auto &row : rows) {
+      if (limit > 0 && shown >= (size_t)limit) break;
+      std::cout << row.name;
+      if (row.commit.size() >= 12) std::cout << "  " << row.commit.substr(0, 12);
+      std::cout << "  " << (row.date.empty() ? "unknown-date" : row.date);
+      if (fs::is_directory(root / row.commit)) {
+        std::cout << "  [installed]";
+      } else if (!all) {
+        std::cout << "  (install with: hpkg toolchain install " << row.name << ")";
+      }
+      std::cout << std::endl;
+      shown++;
+    }
+    if (shown == 0) {
+      std::cout << "no tags in " << repo.string() << std::endl;
+    }
+    return 0;
+  }
+
   // ------------------------------------------------------------------ which
   if (sub == "which") {
     if (rest.empty()) {
@@ -1113,6 +1204,8 @@ static void print_usage(const char *prog) {
         "  toolchain current    print the selected toolchain\n"
         "  toolchain remove <ref>  uninstall a toolchain\n"
         "  toolchain which <ref>   print the binary path for a toolchain\n"
+        "  toolchain tags [--repo <path>] [--limit N]\n"
+        "                       list the repo's tags with the commit each points at\n"
         "  toolchain run <ref> <args...>  run that toolchain's havel\n"
         "  toolchain regress <ref...> -- <cmd...>  run <cmd> under each toolchain\n"
         "\n"

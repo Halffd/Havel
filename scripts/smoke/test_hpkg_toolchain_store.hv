@@ -108,6 +108,45 @@ fs.write(FAILFIX, "process.exit(3)\n")
 r = process.run(env_prefix + " " + HPKG + " toolchain regress " + head + " -- run " + FAILFIX)
 check("regress reports a failing toolchain", r.exitCode == 1 && r.stdout.includes("failed:"))
 
+// --- tags: every tag in the repo with the commit it points at, newest first,
+// and an [installed] marker once that commit is in the store.
+r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo .")
+check("tags exits 0 on a repository", r.exitCode == 0)
+tagRows = r.stdout.trim().split("\n")
+check("tags lists the repository's tags", #tagRows > 0)
+
+// Every listed name must be a real tag, and the listing must not drop any.
+r = process.run("git tag")
+gitTags = r.stdout.trim().split("\n")
+missing = 0
+for t in gitTags {
+    if t == "" { continue }
+    found = 0
+    for row in tagRows {
+        parts = row.split(" ")
+        if parts[0] == t || parts[0] == "tags/" + t { found = 1 }
+    }
+    if found == 0 { missing = missing + 1 }
+}
+check("every git tag appears in the listing", missing == 0)
+
+// An installed tag must be marked. Any tag will do: --from registers the
+// CURRENT binary under the commit that tag resolves to, which is exactly the
+// store bookkeeping this exercises (no build, no download).
+if #gitTags > 0 && gitTags[0] != "" {
+    someTag = gitTags[0]
+    r = process.run(env_prefix + " " + HPKG + " toolchain install " + someTag + " --from " + BUILD_DIR)
+    check("a tag resolves and installs", r.exitCode == 0 && r.stdout.includes("installed toolchain"))
+    r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo . --all")
+    check("installed tag is marked in the listing", r.stdout.includes("[installed]"))
+} else {
+    print("SKIP installed-tag marker (this checkout has no tags)")
+}
+
+// tags outside a repository must be refused, not crash.
+r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo /nonexistent-repo-dir")
+check("tags refuses a non-repository path", r.exitCode == 1 && r.stderr.includes("cannot read tags"))
+
 // --- error paths
 r = process.run(env_prefix + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
 check("run refuses an uninstalled ref", r.exitCode == 1 && r.stderr.includes("not installed"))

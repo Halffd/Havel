@@ -6,6 +6,7 @@
  * registry (elements_/widgets_) keyed by ElementId.
  */
 #include "GtkBackend.hpp"
+#include "utils/Logger.hpp"
 
 #ifdef HAVE_GTK_BACKEND
 
@@ -81,11 +82,23 @@ bool GtkBackend::isAvailable() const {
 }
 
 bool GtkBackend::initialize() {
-  if (initialized_) return true;
-  if (!gtk_init_check()) return false;
+  if (initialized_)
+    return true;
+  if (!gtk_init_check())
+    return false;
+  // gtk_init_check() reports success whenever GDK can reach ANY display, and
+  // libwayland falls back to the default "wayland-0" socket when WAYLAND_DISPLAY
+  // is unset. Log which display was actually attached: a caller that meant to
+  // run display-less (a stripped environment) and still gets a live display is
+  // exactly the case this line makes visible.
+  if (auto *display = gdk_display_get_default()) {
+    ::havel::debug("[GtkBackend] initialized on display '{}'",
+                   gdk_display_get_name(display) ? gdk_display_get_name(display) : "(unnamed)");
+  }
 
   app_ = gtk_application_new(appId_.c_str(), G_APPLICATION_DEFAULT_FLAGS);
-  if (!app_) return false;
+  if (!app_)
+    return false;
 
   setupSignalHandlers();
   // Notification delivery requires the GApplication to be registered.

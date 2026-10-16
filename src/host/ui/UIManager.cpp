@@ -33,6 +33,16 @@ static std::string g_preferred_backend;
 
 void UIManager::setPreferredBackend(const std::string &apiName) {
     g_preferred_backend = apiName;
+    // Startup creates a backend before the launcher reaches its own backend
+    // check (module/toolkit loading touches UIManager), so a preference set
+    // afterwards would never be applied: backend() only re-selects while
+    // backend_ is null. Switch now if one already exists and differs, so
+    // `--ui gtk` really runs on GTK even when Qt was auto-detected first.
+    if (instance().backend_ && instance().currentApiName() != apiName &&
+        apiName != "auto" && apiName != "AUTO" && apiName != "Auto") {
+        instance().initialized_ = true;
+        instance().setBackend(apiName);
+    }
 }
 
 std::string UIManager::preferredBackend() {
@@ -94,7 +104,19 @@ bool UIManager::setBackend(const std::string& apiName) {
 UIBackend* UIManager::backend() {
     if (!backend_ && !initialized_) {
         initialized_ = true;
-        setBackend(detectBestBackend());
+        // Honour an explicit --ui <name> first. The preference was set by the
+        // launcher but never read here, so `--ui gtk` silently ran on whatever
+        // detectBestBackend() picked - with an offscreen-capable Qt present, a
+        // display-less GTK request succeeded on Qt and the caller never
+        // reached its "No UI backend available" path. A requested backend that
+        // fails to initialize is NOT retried as auto: the caller reports the
+        // refusal instead of quietly running on a different toolkit.
+        if (!g_preferred_backend.empty() && g_preferred_backend != "auto" &&
+            g_preferred_backend != "AUTO" && g_preferred_backend != "Auto") {
+            setBackend(g_preferred_backend);
+        } else {
+            setBackend(detectBestBackend());
+        }
     }
     return backend_.get();
 }

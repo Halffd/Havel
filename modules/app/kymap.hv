@@ -494,18 +494,32 @@ fn keyCount() {
 // alias were allowed into the reverse maps it would displace the primary and
 // break evdevToString/x11ToString/windowsToString (evdev 12 would come back as
 // "-" instead of "minus", 125 as "super" instead of "win", and so on).
+// Index-based iteration, not for-in: inside module bodies executed via
+// vm.loadModule() during Havel::initialize (REPL, script+repl, daemon
+// startup) a for-in over this object produced zero iterations - the
+// C++ side received an empty table and those modes ran unhydrated,
+// silently breaking every hotkey binding. _init()'s while-over-array
+// pattern works in the same contexts, so this loop uses keyNames() the
+// same way.
 fn allEntries() {
   _out = []
-  for _name in _name_to_key {
+  _names = keyNames()
+  _i = 0
+  _len = #_names
+  while _i < _len {
+    _name = _names[_i]
     _e = _name_to_key[_name]
-    _out.push({
-      name: _name,
-      evdev: _e.evdev,
-      x11: _e.x11,
-      win: _e.win,
-      aliases: _e.aliases,
-      isAlias: _alias_names[_name],
-    })
+    if _e != null {
+      _out.push({
+        name: _name,
+        evdev: _e.evdev,
+        x11: _e.x11,
+        win: _e.win,
+        aliases: _e.aliases,
+        isAlias: _alias_names[_name],
+      })
+    }
+    _i = _i + 1
   }
   _out
 }
@@ -532,3 +546,12 @@ fn isMouseButton(evdev) {
 fn isJoystickButton(evdev) {
   evdev >= 288 && evdev <= 318
 }
+
+// Hand the resolved table to the C++ KeyMap at module load. Calling the
+// host function from the module body passes the rows as a HOST ARGUMENT,
+// which is pinned by the host-calling machinery in every context; the old
+// C++-side callFunctionSync(allEntries()) return path came back empty in
+// Havel::initialize contexts (REPL, script+repl, daemon) while the same
+// call worked from HavelEngine, leaving those modes with an unhydrated
+// KeyMap and hotkeys that never matched physical keys.
+keymap.installRows(allEntries())

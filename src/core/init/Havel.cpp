@@ -1,4 +1,5 @@
 #include "core/init/Havel.hpp"
+#include "core/io/KeyMapModule.hpp"
 #include <cstdio>
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/events/EventRuntime.hpp"
@@ -54,13 +55,8 @@ constexpr int CONFIG_CHECK_INTERVAL_S = 5;
 Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
              const std::vector<std::string> &args, bool headless)
     : lastCheck(std::chrono::steady_clock::now()),
-      lastWindowCheck(std::chrono::steady_clock::now()),
-      guiMode(gui),
-      replMode(repl),
-      headlessMode(headless),
-      scriptFile(scriptFile),
-      commandLineArgs(args) {
-
+      lastWindowCheck(std::chrono::steady_clock::now()), guiMode(gui), replMode(repl),
+      headlessMode(headless), scriptFile(scriptFile), commandLineArgs(args) {
   if (instance) {
     throw std::runtime_error("Havel instance already exists");
   }
@@ -83,67 +79,72 @@ Havel::~Havel() {
   if (instance == this) {
     instance = nullptr;
   }
-  if (debugging::debug_io) debug("Havel destroyed");
+  if (debugging::debug_io)
+    debug("Havel destroyed");
 }
 
 void Havel::initialize(bool isStartup) {
-    if (debugging::debug_io) debug("Initializing HvC components...");
-    if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
-    if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
+  if (debugging::debug_io)
+    debug("Initializing HvC components...");
+  if (debugging::debug_io)
+    debug("isStartup: " + std::to_string(isStartup));
+  if (debugging::debug_io)
+    debug("GUI: " + std::to_string(guiMode));
 
-    auto t0 = havel::startup_now();
+  auto t0 = havel::startup_now();
 
-    // Initialize in dependency order
-    io = std::make_shared<IO>();
-    if (headlessMode) {
-      io->SetHeadlessMode(true);
-      DisplayManager::SetHeadlessMode(true);
-      ::setenv("HAVEL_HEADLESS", "1", 1);
-    }
-    if (replMode) {
-      io->SetEventListenerThreaded(false);
-    }
-    auto t = havel::startup_now();
-    havel::startup_timing_report("IO-create", t0);
+  // Initialize in dependency order
+  io = std::make_shared<IO>();
+  if (headlessMode) {
+    io->SetHeadlessMode(true);
+    DisplayManager::SetHeadlessMode(true);
+    ::setenv("HAVEL_HEADLESS", "1", 1);
+  }
+  if (replMode) {
+    io->SetEventListenerThreaded(false);
+  }
+  auto t = havel::startup_now();
+  havel::startup_timing_report("IO-create", t0);
   if (!io) {
     throw std::runtime_error("Failed to create IO manager");
   }
 
-    // Create HotkeyManager (depends on IO)
-    hotkeyManager = std::make_shared<HotkeyManager>(io);
-    havel::startup_timing_report("HotkeyManager-create", t);
-    t = havel::startup_now();
-    if (!hotkeyManager) {
-        throw std::runtime_error("Failed to create HotkeyManager");
-    }
+  // Create HotkeyManager (depends on IO)
+  hotkeyManager = std::make_shared<HotkeyManager>(io);
+  havel::startup_timing_report("HotkeyManager-create", t);
+  t = havel::startup_now();
+  if (!hotkeyManager) {
+    throw std::runtime_error("Failed to create HotkeyManager");
+  }
 
-    if (!headlessMode) {
-        windowManager = std::make_shared<WindowManager>();
-        havel::startup_timing_report("WindowManager-create", t);
-        t = havel::startup_now();
-    }
-    audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
-    havel::startup_timing_report("AudioManager-init", t);
+  if (!headlessMode) {
+    windowManager = std::make_shared<WindowManager>();
+    havel::startup_timing_report("WindowManager-create", t);
     t = havel::startup_now();
+  }
+  audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
+  havel::startup_timing_report("AudioManager-init", t);
+  t = havel::startup_now();
 
-    automationManager = std::make_shared<automation::AutomationManager>(io);
-    havel::startup_timing_report("AutomationManager-create", t);
+  automationManager = std::make_shared<automation::AutomationManager>(io);
+  havel::startup_timing_report("AutomationManager-create", t);
+  t = havel::startup_now();
+
+  if (!headlessMode) {
+    brightnessManager = std::make_shared<BrightnessManager>();
+    havel::startup_timing_report("BrightnessManager-create", t);
     t = havel::startup_now();
+  }
 
-    if (!headlessMode) {
-        brightnessManager = std::make_shared<BrightnessManager>();
-        havel::startup_timing_report("BrightnessManager-create", t);
-        t = havel::startup_now();
-    }
-
-    // Initialize NetworkManager (singleton)
-    networkManager = std::shared_ptr<net::NetworkManager>(
-        &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
-    havel::startup_timing_report("NetworkManager-init", t);
-    t = havel::startup_now();
+  // Initialize NetworkManager (singleton)
+  networkManager = std::shared_ptr<net::NetworkManager>(&net::NetworkManager::getInstance(),
+                                                        [](net::NetworkManager *) {});
+  havel::startup_timing_report("NetworkManager-init", t);
+  t = havel::startup_now();
 
 #ifdef ENABLE_HAVEL_LANG
-  if (debugging::debug_io) debug("Initializing bytecode VM and HostBridge...");
+  if (debugging::debug_io)
+    debug("Initializing bytecode VM and HostBridge...");
 
   // Create host context
   hostContext = std::make_unique<HostContext>();
@@ -154,36 +155,36 @@ void Havel::initialize(bool isStartup) {
   hostContext->networkManager = networkManager.get();
   hostContext->brightnessManager = brightnessManager.get();
 
-    // Create VM
-        bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
-        hostContext->vm = bytecodeVM.get();
-        havel::startup_timing_report("VM-create", t);
-    t = havel::startup_now();
+  // Create VM
+  bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
+  hostContext->vm = bytecodeVM.get();
+  havel::startup_timing_report("VM-create", t);
+  t = havel::startup_now();
 
 #ifdef HAVEL_ENABLE_LLVM
   // Initialize JIT if enabled
   bool useJIT = Configs::Get().Get<bool>("Compiler.JIT", true) ||
-                (std::getenv("HAVEL_TIERING") &&
-                 std::string(std::getenv("HAVEL_TIERING")) != "0");
+                (std::getenv("HAVEL_TIERING") && std::string(std::getenv("HAVEL_TIERING")) != "0");
   // Override with CLI config if present (assuming this->commandLineArgs or similar)
-  // For now we check the instance-level config if we had it, but Havre uses LaunchConfig in Launcher.
-  // We'll trust the ConfigManager which should be updated by Launcher.
-  
+  // For now we check the instance-level config if we had it, but Havre uses LaunchConfig in
+  // Launcher. We'll trust the ConfigManager which should be updated by Launcher.
+
   if (useJIT) {
-    if (debugging::debug_io) debug("JIT compilation enabled");
+    if (debugging::debug_io)
+      debug("JIT compilation enabled");
     auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
     jit->setCompilationVM(bytecodeVM.get());
-    
+
     // Check for debug JIT
     if (Configs::Get().Get<bool>("Compiler.DebugJIT", false)) {
       jit->setDebugMode(true);
     }
-    
+
     // Check for assembly dumping
     if (Configs::Get().Get<bool>("Compiler.OutputAsm", false)) {
       jit->setDumpAsmToFile(true);
     }
-    
+
     // Check for IR dumping
     if (Configs::Get().Get<bool>("Compiler.DumpIR", false)) {
       jit->setDumpIR(true);
@@ -206,379 +207,412 @@ void Havel::initialize(bool isStartup) {
     }
 
     // Hook up to VM
-  bytecodeVM->setHotFunctionCallback([](const compiler::BytecodeFunction& func) {
-    // JIT compilation will be handled by the VM's tiering system
-  });
-  bytecodeVM->setHotTraceCallback([jitPtr = jit.get()](const compiler::BytecodeFunction& func,
-                                                      uint32_t start_ip,
-                                                      uint64_t hot_count) {
-    if (jitPtr) {
-      jitPtr->compileTrace(func, start_ip, hot_count);
-    }
-  });
-  bytecodeVM->setJITCompiler(std::move(jit));
+    bytecodeVM->setHotFunctionCallback([](const compiler::BytecodeFunction &func) {
+      // JIT compilation will be handled by the VM's tiering system
+    });
+    bytecodeVM->setHotTraceCallback([jitPtr = jit.get()](const compiler::BytecodeFunction &func,
+                                                         uint32_t start_ip, uint64_t hot_count) {
+      if (jitPtr) {
+        jitPtr->compileTrace(func, start_ip, hot_count);
+      }
+    });
+    bytecodeVM->setJITCompiler(std::move(jit));
   }
 #endif
 
-
-        // Set search paths BEFORE modules_->install() so eager plugin
-        // registration (registerBitModule → vm.loadModule("bit/bit"))
-        // can resolve sidecar .hv files. Bytecode caches live only in
-        // ~/.cache/havel; these paths are for source resolution.
-{
+  // Set search paths BEFORE modules_->install() so eager plugin
+  // registration (registerBitModule → vm.loadModule("bit/bit"))
+  // can resolve sidecar .hv files. Bytecode caches live only in
+  // ~/.cache/havel; these paths are for source resolution.
+  {
     std::string stdlibPath;
-    const char* envStdlib = std::getenv("HAVEL_STDLIB");
+    const char *envStdlib = std::getenv("HAVEL_STDLIB");
     if (envStdlib && envStdlib[0] != '\0') {
-        stdlibPath = envStdlib;
+      stdlibPath = envStdlib;
     } else {
-        auto exePath = Env::executable();
-        if (!exePath.empty()) {
-        stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
-            } else {
-                stdlibPath = "./modules/std";
-            }
-        }
-        bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
+      auto exePath = Env::executable();
+      if (!exePath.empty()) {
+        stdlibPath =
+            (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+      } else {
+        stdlibPath = "./modules/std";
+      }
     }
+    bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
+  }
 
-    {
-        auto exePath = Env::executable();
-        if (!exePath.empty()) {
-            auto modulesPath = std::filesystem::path(exePath).parent_path().parent_path()
-                / "modules";
-            if (std::filesystem::exists(modulesPath)) {
-                // Add source directory search paths for hierarchical module resolution
-                // These are needed for both self-hosted and native module resolution
-                auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+  {
+    auto exePath = Env::executable();
+    if (!exePath.empty()) {
+      auto modulesPath = std::filesystem::path(exePath).parent_path().parent_path() / "modules";
+      if (std::filesystem::exists(modulesPath)) {
+        // Add source directory search paths for hierarchical module resolution
+        // These are needed for both self-hosted and native module resolution
+        auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
+        bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+        bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
+        bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
+        bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
 
-                // Also add scripts directory as a search path for user scripts
-                auto scriptsPath = std::filesystem::path(modulesPath).parent_path() / "scripts";
-                if (std::filesystem::exists(scriptsPath)) {
-                    auto canonicalScripts = std::filesystem::canonical(scriptsPath).string();
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalScripts);
-                }
-
-                // Add module .so paths for havel_mod_<name>.so discovery
-                // Try sibling modules/ first (build-debug/modules/) then ../modules/
-                auto siblingModulesDir = std::filesystem::path(exePath).parent_path() / "modules";
-                if (std::filesystem::exists(siblingModulesDir)) {
-                    bytecodeVM->moduleLoader().addModuleSoPath(
-                        std::filesystem::canonical(siblingModulesDir).string());
-                }
-                auto modulesDir = std::filesystem::path(exePath).parent_path() / ".." / "modules";
-                if (std::filesystem::exists(modulesDir)) {
-                    bytecodeVM->moduleLoader().addModuleSoPath(
-                        std::filesystem::canonical(modulesDir).string());
-                }
-                // System install: lib/havel/modules
-                if (auto mpRoot = install_paths::modulePluginRoot(); !mpRoot.empty()) {
-                    bytecodeVM->moduleLoader().addModuleSoPath(mpRoot.string());
-                }
-            }
+        // Also add scripts directory as a search path for user scripts
+        auto scriptsPath = std::filesystem::path(modulesPath).parent_path() / "scripts";
+        if (std::filesystem::exists(scriptsPath)) {
+          auto canonicalScripts = std::filesystem::canonical(scriptsPath).string();
+          bytecodeVM->moduleLoader().addSearchPath(canonicalScripts);
         }
+
+        // Add module .so paths for havel_mod_<name>.so discovery
+        // Try sibling modules/ first (build-debug/modules/) then ../modules/
+        auto siblingModulesDir = std::filesystem::path(exePath).parent_path() / "modules";
+        if (std::filesystem::exists(siblingModulesDir)) {
+          bytecodeVM->moduleLoader().addModuleSoPath(
+              std::filesystem::canonical(siblingModulesDir).string());
+        }
+        auto modulesDir = std::filesystem::path(exePath).parent_path() / ".." / "modules";
+        if (std::filesystem::exists(modulesDir)) {
+          bytecodeVM->moduleLoader().addModuleSoPath(
+              std::filesystem::canonical(modulesDir).string());
+        }
+        // System install: lib/havel/modules
+        if (auto mpRoot = install_paths::modulePluginRoot(); !mpRoot.empty()) {
+          bytecodeVM->moduleLoader().addModuleSoPath(mpRoot.string());
+        }
+      }
     }
+  }
 
-        // Create Modules
-        modules_ = havel::createModules(*hostContext);
-        hostContext->modules = modules_.get();
-        havel::startup_timing_report("Modules-create", t);
-        t = havel::startup_now();
+  // Create Modules
+  modules_ = havel::createModules(*hostContext);
+  hostContext->modules = modules_.get();
+  havel::startup_timing_report("Modules-create", t);
+  t = havel::startup_now();
 
-        // Register stdlib + install (also flushes options_.host_functions
-        // onto the VM and runs buildNamespaceGlobals before returning).
-        modules_->install();
-        havel::startup_timing_report("Modules-install", t);
-        t = havel::startup_now();
-        // NOTE: Modules::install() already flushes options_.host_functions
-        // onto the same VM (hostContext->vm === bytecodeVM). The extra loop
-        // here was a source of duplicate host function registrations.
-        // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
-        modules_->runVmSetupCallbacks(*bytecodeVM);
-        havel::startup_timing_report("host-functions-register", t);
-        t = havel::startup_now();
+  // Register stdlib + install (also flushes options_.host_functions
+  // onto the VM and runs buildNamespaceGlobals before returning).
+  modules_->install();
+  havel::startup_timing_report("Modules-install", t);
+  t = havel::startup_now();
+  // NOTE: Modules::install() already flushes options_.host_functions
+  // onto the same VM (hostContext->vm === bytecodeVM). The extra loop
+  // here was a source of duplicate host function registrations.
+  // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
+  modules_->runVmSetupCallbacks(*bytecodeVM);
+  havel::startup_timing_report("host-functions-register", t);
+  t = havel::startup_now();
 
-
-scheduler = &compiler::Scheduler::instance();
+  scheduler = &compiler::Scheduler::instance();
   if (!scheduler) {
     throw std::runtime_error("Failed to create Scheduler");
   }
   scheduler->start();
 
   // EventQueue is created by ConcurrencyBridge during modules_->install()
-        compiler::EventQueue* eventQueue = hostContext->eventQueue;
-        if (!eventQueue) {
-            throw std::runtime_error("Failed to get EventQueue from Modules");
-        }
+  compiler::EventQueue *eventQueue = hostContext->eventQueue;
+  if (!eventQueue) {
+    throw std::runtime_error("Failed to get EventQueue from Modules");
+  }
 
   // Create ExecutionEngine for main loop integration
-	executionEngine = std::make_unique<compiler::ExecutionEngine>(
-		bytecodeVM.get(), scheduler, eventQueue);
-	if (!executionEngine) {
-		throw std::runtime_error("Failed to create ExecutionEngine");
-	}
+  executionEngine =
+      std::make_unique<compiler::ExecutionEngine>(bytecodeVM.get(), scheduler, eventQueue);
+  if (!executionEngine) {
+    throw std::runtime_error("Failed to create ExecutionEngine");
+  }
 
-	// Wire VM to WatcherRegistry and Scheduler for reactive when
-	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
-	bytecodeVM->setScheduler(scheduler);
+  // Wire VM to WatcherRegistry and Scheduler for reactive when
+  bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
+  bytecodeVM->setScheduler(scheduler);
 
-	// Synchronous hotkey condition re-evaluation on variable change
-	bytecodeVM->setOnVarChangedSync([this](const std::string& var_name) {
-		if (!scheduler || !bytecodeVM) return;
-		auto* vm_ = bytecodeVM.get();
-		if (auto* watcherRegistry = executionEngine->getWatcherRegistry()) {
-			auto fired = watcherRegistry->onVariableChanged(
-				var_name,
-				[vm_, watcherRegistry](uint32_t wid) -> bool {
-				const auto* w = watcherRegistry->getWatcher(wid);
-				if (!w) return false;
-				const compiler::BytecodeChunk* saved_chunk = nullptr;
-				bool set_chunk = false;
-				if (w->condition_chunk) {
-					saved_chunk = vm_->getCurrentChunk();
-					vm_->setCurrentChunkPublic(w->condition_chunk);
-					set_chunk = true;
-				}
-				auto tracker = std::make_shared<compiler::DependencyTracker>();
-				compiler::DependencyTrackerScope scope(tracker);
-				bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-				if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
-				auto newDeps = tracker->getGlobalDependencies();
-				auto fieldDeps = tracker->getFieldDependencies();
-				newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-				watcherRegistry->mergeDependencies(wid, newDeps);
-				return result;
-			},
-				[vm_](uint32_t cleanup_func_id, uint32_t) {
-				try {
-					compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
-					vm_->call(cleanup_func, {});
-				} catch (...) {}
-			});
-			for (auto* fiber : fired) {
-				if (fiber) {
-					try {
-						compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
-						vm_->call(body_func, {});
-					} catch (...) {}
-				}
-			}
-			vm_->processSignalBindings(var_name);
-		}
-		scheduler->forEachConditionalHotkey(
-			[vm_, this, &var_name](compiler::Scheduler::Goroutine* g) {
-			if (!g) return;
-			// Conditional hotkeys park in one of two states:
-			//   HotkeyWait+Suspended (never triggered yet, or non-conditional)
-			//   HotkeyWait+Created (recycled after first trigger via
-			//   ExecutionEngine::handleReturned so the condition check
-			//   in pickNext re-evaluates on the next wake). Both must still
-			//   re-evaluate the grab state here when one of their deps
-			//   changes.
-			auto st = g->state.load(std::memory_order_acquire);
-			if (st != compiler::Scheduler::GoroutineState::Suspended &&
-			    st != compiler::Scheduler::GoroutineState::Created) return;
-			if (g->suspension_reason.load(std::memory_order_acquire)
-				!= compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-			if (g->hotkey_condition_deps.empty() ||
-				g->hotkey_condition_deps.count(var_name) == 0) return;
-			auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-			if (!condVal) return;
-			auto tracker = std::make_shared<compiler::DependencyTracker>();
-			compiler::DependencyTrackerScope scope(tracker);
-			bool conditionMet = false;
-			try {
-				compiler::Value result = vm_->callFunctionSync(*condVal, {});
-				conditionMet = vm_->toBool(result);
-			} catch (...) {}
-			auto newDeps = tracker->getGlobalDependencies();
-			auto fieldDeps = tracker->getFieldDependencies();
-			newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-			// Union-merge: keep previously-tracked deps so short-circuited
-			// branches' globals remain tracked across re-evaluations. A plain
-			// replace drops un-evaluated-side globals once `||`/`&&` short-
-			// circuits, after which their VAR_CHANGED events no longer
-			// trigger re-eval (the condition goes stale).
-			g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
-			bool prev = g->hotkey_condition_last_result;
-			g->hotkey_condition_last_result = conditionMet;
-			if (prev == conditionMet) return;
-			if (conditionMet) {
-				if (!g->hotkey_condition_alias.empty()) {
-					if (hotkeyManager) hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, true);
-					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
-				}
-			} else {
-				if (!g->hotkey_condition_alias.empty()) {
-					if (hotkeyManager) hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, false);
-					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
-				}
-			}
-		});
-	});
+  // Synchronous hotkey condition re-evaluation on variable change
+  bytecodeVM->setOnVarChangedSync([this](const std::string &var_name) {
+    if (!scheduler || !bytecodeVM)
+      return;
+    auto *vm_ = bytecodeVM.get();
+    if (auto *watcherRegistry = executionEngine->getWatcherRegistry()) {
+      auto fired = watcherRegistry->onVariableChanged(
+          var_name,
+          [vm_, watcherRegistry](uint32_t wid) -> bool {
+            const auto *w = watcherRegistry->getWatcher(wid);
+            if (!w)
+              return false;
+            const compiler::BytecodeChunk *saved_chunk = nullptr;
+            bool set_chunk = false;
+            if (w->condition_chunk) {
+              saved_chunk = vm_->getCurrentChunk();
+              vm_->setCurrentChunkPublic(w->condition_chunk);
+              set_chunk = true;
+            }
+            auto tracker = std::make_shared<compiler::DependencyTracker>();
+            compiler::DependencyTrackerScope scope(tracker);
+            bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+            if (set_chunk)
+              vm_->setCurrentChunkPublic(saved_chunk);
+            auto newDeps = tracker->getGlobalDependencies();
+            auto fieldDeps = tracker->getFieldDependencies();
+            newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+            watcherRegistry->mergeDependencies(wid, newDeps);
+            return result;
+          },
+          [vm_](uint32_t cleanup_func_id, uint32_t) {
+            try {
+              compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
+              vm_->call(cleanup_func, {});
+            } catch (...) {
+            }
+          });
+      for (auto *fiber : fired) {
+        if (fiber) {
+          try {
+            compiler::Value body_func =
+                compiler::Value::makeFunctionObjId(fiber->current_function_id);
+            vm_->call(body_func, {});
+          } catch (...) {
+          }
+        }
+      }
+      vm_->processSignalBindings(var_name);
+    }
+    scheduler->forEachConditionalHotkey([vm_, this, &var_name](compiler::Scheduler::Goroutine *g) {
+      if (!g)
+        return;
+      // Conditional hotkeys park in one of two states:
+      //   HotkeyWait+Suspended (never triggered yet, or non-conditional)
+      //   HotkeyWait+Created (recycled after first trigger via
+      //   ExecutionEngine::handleReturned so the condition check
+      //   in pickNext re-evaluates on the next wake). Both must still
+      //   re-evaluate the grab state here when one of their deps
+      //   changes.
+      auto st = g->state.load(std::memory_order_acquire);
+      if (st != compiler::Scheduler::GoroutineState::Suspended &&
+          st != compiler::Scheduler::GoroutineState::Created)
+        return;
+      if (g->suspension_reason.load(std::memory_order_acquire) !=
+          compiler::Scheduler::SuspensionReason::HotkeyWait)
+        return;
+      if (g->hotkey_condition_deps.empty() || g->hotkey_condition_deps.count(var_name) == 0)
+        return;
+      auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+      if (!condVal)
+        return;
+      auto tracker = std::make_shared<compiler::DependencyTracker>();
+      compiler::DependencyTrackerScope scope(tracker);
+      bool conditionMet = false;
+      try {
+        compiler::Value result = vm_->callFunctionSync(*condVal, {});
+        conditionMet = vm_->toBool(result);
+      } catch (...) {
+      }
+      auto newDeps = tracker->getGlobalDependencies();
+      auto fieldDeps = tracker->getFieldDependencies();
+      newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+      // Union-merge: keep previously-tracked deps so short-circuited
+      // branches' globals remain tracked across re-evaluations. A plain
+      // replace drops un-evaluated-side globals once `||`/`&&` short-
+      // circuits, after which their VAR_CHANGED events no longer
+      // trigger re-eval (the condition goes stale).
+      g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
+      bool prev = g->hotkey_condition_last_result;
+      g->hotkey_condition_last_result = conditionMet;
+      if (prev == conditionMet)
+        return;
+      if (conditionMet) {
+        if (!g->hotkey_condition_alias.empty()) {
+          if (hotkeyManager)
+            hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, true);
+          ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
+        }
+      } else {
+        if (!g->hotkey_condition_alias.empty()) {
+          if (hotkeyManager)
+            hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, false);
+          ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
+        }
+      }
+    });
+  });
 
+  if (hotkeyManager) {
+    hotkeyManager->setEventQueue(eventQueue);
 
- if (hotkeyManager) {
- hotkeyManager->setEventQueue(eventQueue);
-
-
- if (debugging::debug_io) debug("Reactive hotkey system initialized");
+    if (debugging::debug_io)
+      debug("Reactive hotkey system initialized");
   }
 
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {
-            io->GetEventListener()->setModules(modules_.get());
-            io->GetEventListener()->setDeferredSendFlush([ioPtr = io.get()](){
-                ioPtr->FlushPendingSends();
-            });
-  if (executionEngine) {
-    io->GetEventListener()->setExecutionEngine(executionEngine.get());
-    if (debugging::debug_io) debug("ExecutionEngine integrated into EventListener main loop");
+    io->GetEventListener()->setModules(modules_.get());
+    io->GetEventListener()->setDeferredSendFlush(
+        [ioPtr = io.get()]() { ioPtr->FlushPendingSends(); });
+    if (executionEngine) {
+      io->GetEventListener()->setExecutionEngine(executionEngine.get());
+      if (debugging::debug_io)
+        debug("ExecutionEngine integrated into EventListener main loop");
+    }
   }
-}
 #else
   info("Havel language disabled");
 #endif
-    if (WindowManagerDetector::IsX11()) {
-        Display *display = DisplayManager::GetDisplay();
-        if (!display) {
-            // The session declares X11 but the server is unreachable (stale
-            // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
-            // Throwing here killed REPL, script+repl and the daemon outright
-            // — while the Wayland-session path (IsX11() false) already runs
-            // full initialization with a null display as a supported state.
-            // Degrade the same way: X11-bound features (window management,
-            // X11 hotkey grabs, brightness) fail at their use sites; evdev
-            // input and everything display-independent keep working.
-            const char *declared = std::getenv("DISPLAY");
-            warning("X11 display '{}' is unreachable — continuing without "
-                    "X11 (window management and X11 hotkey grabs disabled; "
-                    "unset DISPLAY or start Xorg to enable them)",
-                    declared ? declared : ":0");
-        }
+  // Hydrate the key table (modules/app/kymap.hv -> KeyMap::) as the last
+  // Havel-init step, outside the #ifdef: all module installs are complete
+  // here, so the module's allEntries() for-in sees fully-installed ambient
+  // globals (called earlier inside the block it returned 325 keys via
+  // keyCount but zero rows from allEntries). Without this, pipeline-loaded
+  // modes that do not go through HavelEngine (REPL, script+repl, daemon)
+  // run with an unhydrated KeyMap: hotkey registration falls back to raw X
+  // keycodes where evdev codes belong, so physical key events never match
+  // the binding and hotkeys never fire. HavelEngine::initializeFull calls
+  // the same loader; this is the Havel-side equivalent the KeyMap.cpp
+  // comment has claimed exists since the table moved out of C++.
+#ifdef ENABLE_HAVEL_LANG
+  havel::loadKeyMapFromHavelModule(*bytecodeVM);
+#endif
+  if (WindowManagerDetector::IsX11()) {
+    Display *display = DisplayManager::GetDisplay();
+    if (!display) {
+      // The session declares X11 but the server is unreachable (stale
+      // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
+      // Throwing here killed REPL, script+repl and the daemon outright
+      // — while the Wayland-session path (IsX11() false) already runs
+      // full initialization with a null display as a supported state.
+      // Degrade the same way: X11-bound features (window management,
+      // X11 hotkey grabs, brightness) fail at their use sites; evdev
+      // input and everything display-independent keep working.
+      const char *declared = std::getenv("DISPLAY");
+      warning("X11 display '{}' is unreachable — continuing without "
+              "X11 (window management and X11 hotkey grabs disabled; "
+              "unset DISPLAY or start Xorg to enable them)",
+              declared ? declared : ":0");
     }
-    // Guard with the live singleton: main() runs runExitCleanups() after the
-    // stack Havel instance is destroyed (destructor already ran cleanup()),
-    // so a raw `this` capture would re-run cleanup on freed memory and
-    // double-join the periodic timer thread.
-    havel::registerExitCleanup([]() {
-      if (auto *inst = Havel::getInstance()) {
-        inst->performCleanup();
+  }
+  // Guard with the live singleton: main() runs runExitCleanups() after the
+  // stack Havel instance is destroyed (destructor already ran cleanup()),
+  // so a raw `this` capture would re-run cleanup on freed memory and
+  // double-join the periodic timer thread.
+  havel::registerExitCleanup([]() {
+    if (auto *inst = Havel::getInstance()) {
+      inst->performCleanup();
+    }
+  });
+  havel::startup_timing_report("Havel::initialize TOTAL", t0);
+  if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+    std::thread([this]() {
+      auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+      std::this_thread::sleep_for(std::chrono::seconds(s));
+      if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+        return;
       }
-    });
-havel::startup_timing_report("Havel::initialize TOTAL", t0);
-if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
-		std::thread([this]() {
-			auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-			std::this_thread::sleep_for(std::chrono::seconds(s));
-			if(!Configs::Get().Get<bool>("Debug.AutoExit", false)){
-				return;
-			}
-			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
-			this->exit();
-		}).detach();
-	}
+      if (debugging::debug_io)
+        debug("AutoExit enabled - exiting after {} seconds", s);
+      this->exit();
+    }).detach();
+  }
 }
 
 void Havel::cleanup() noexcept {
   try {
-  std::call_once(cleanupOnce, [this]() {
-  if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
+    std::call_once(cleanupOnce, [this]() {
+      if (debugging::debug_io)
+        debug("Havel::cleanup() - starting cleanup");
 
-  // Force save config before everything else
-  try {
-    Configs::Get().ForceSave();
-    if (debugging::debug_io) debug("Havel::cleanup() - config saved");
-  } catch (...) {}
+      // Force save config before everything else
+      try {
+        Configs::Get().ForceSave();
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - config saved");
+      } catch (...) {
+      }
 
-  // Stop timer first
-  stopPeriodicTimer();
+      // Stop timer first
+      stopPeriodicTimer();
 
-  // Stop EventListener FIRST
-  if (io && io->GetEventListener()) {
-    if (debugging::debug_io) debug("Havel::cleanup() - stopping EventListener");
-    io->GetEventListener()->Stop();
-  }
+      // Stop EventListener FIRST
+      if (io && io->GetEventListener()) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - stopping EventListener");
+        io->GetEventListener()->Stop();
+      }
 
-  // Destroy hotkeyManager
-  if (hotkeyManager) {
-    if (debugging::debug_io) debug("Havel::cleanup() - destroying HotkeyManager");
-    hotkeyManager->cleanup();
-    hotkeyManager.reset();
-  }
+      // Destroy hotkeyManager
+      if (hotkeyManager) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - destroying HotkeyManager");
+        hotkeyManager->cleanup();
+        hotkeyManager.reset();
+      }
 
+      // Stop ExecutionEngine and Scheduler BEFORE destroying VM
+      if (executionEngine) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - shutting down ExecutionEngine");
+        executionEngine->shutdown();
+        executionEngine.reset();
+      }
+      auto &scheduler = compiler::Scheduler::instance();
+      if (scheduler.isRunning()) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - stopping Scheduler");
+        scheduler.stop();
+      }
 
+      // Destroy VM
+      if (bytecodeVM) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - destroying VM");
+        bytecodeVM.reset();
+      }
 
- // Stop ExecutionEngine and Scheduler BEFORE destroying VM
- if (executionEngine) {
- if (debugging::debug_io) debug("Havel::cleanup() - shutting down ExecutionEngine");
- executionEngine->shutdown();
- executionEngine.reset();
- }
- auto& scheduler = compiler::Scheduler::instance();
- if (scheduler.isRunning()) {
- if (debugging::debug_io) debug("Havel::cleanup() - stopping Scheduler");
- scheduler.stop();
- }
-
- // Destroy VM
- if (bytecodeVM) {
- if (debugging::debug_io) debug("Havel::cleanup() - destroying VM");
- bytecodeVM.reset();
- }
-
-        // Destroy Modules
-        if (modules_) {
-            if (debugging::debug_io) debug("Havel::cleanup() - destroying Modules");
-            modules_->shutdown();
-            // Delete the generic event bus (created with raw new in
-            // Modules::initBridges). The full-Havel path has no HavelEngine
-            // whose shutdown() would take that ownership (the minimal path's
-            // HavelEngine::shutdown does it), so delete it here, after the
-            // bridges that dispatch into it are gone and while the VM that
-            // could still reach it is already destroyed. Without this the
-            // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
-            // the report (~16s with llvm-symbolizer) and exits 1, which made
-            // every child-process REPL smoke test time out or fail.
-            if (hostContext && hostContext->eventRuntime) {
-                delete hostContext->eventRuntime;
-                hostContext->eventRuntime = nullptr;
-            }
-            modules_.reset();
+      // Destroy Modules
+      if (modules_) {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - destroying Modules");
+        modules_->shutdown();
+        // Delete the generic event bus (created with raw new in
+        // Modules::initBridges). The full-Havel path has no HavelEngine
+        // whose shutdown() would take that ownership (the minimal path's
+        // HavelEngine::shutdown does it), so delete it here, after the
+        // bridges that dispatch into it are gone and while the VM that
+        // could still reach it is already destroyed. Without this the
+        // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
+        // the report (~16s with llvm-symbolizer) and exits 1, which made
+        // every child-process REPL smoke test time out or fail.
+        if (hostContext && hostContext->eventRuntime) {
+          delete hostContext->eventRuntime;
+          hostContext->eventRuntime = nullptr;
         }
+        modules_.reset();
+      }
 
-  // Destroy other components
-  if (automationManager) {
-    automationManager.reset();
-  }
-  if (audioManager) {
-    audioManager.reset();
-  }
-  if (windowManager) {
-    windowManager.reset();
-  }
+      // Destroy other components
+      if (automationManager) {
+        automationManager.reset();
+      }
+      if (audioManager) {
+        audioManager.reset();
+      }
+      if (windowManager) {
+        windowManager.reset();
+      }
 
-  // Release ImageService handles (prevents leak when scripts don't call image.release)
-  auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
-  // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
-  if (imgSvc) {
-    imgSvc->releaseAll();
+      // Release ImageService handles (prevents leak when scripts don't call image.release)
+      auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+      // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
+      if (imgSvc) {
+        imgSvc->releaseAll();
+      }
+
+      // Destroy IO LAST
+      if (io) {
+        io->cleanup();
+        io.reset();
+      }
+
+      DisplayManager::Close();
+
+      if (debugging::debug_io)
+        debug("Havel::cleanup() - cleanup complete");
+    }); // std::call_once
+  } catch (...) {
   }
-
-  // Destroy IO LAST
-  if (io) {
-    io->cleanup();
-    io.reset();
-  }
-
-  DisplayManager::Close();
-
-  if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
-  }); // std::call_once
-  } catch (...) {}
 }
 
 void Havel::gracefulExit(int code, bool fromSignal) {
@@ -621,13 +655,14 @@ void Havel::setupSignalHandling() {
       sigemptyset(&sa.sa_mask);
       sa.sa_handler = [](int sig) {
         int code = (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
-        bool crash = (sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE);
-        havel::exit(crash ? ExitReason::SignalCrash
-                     : sig == SIGINT  ? ExitReason::SignalInt
-                     : sig == SIGTERM ? ExitReason::SignalTerm
-                     : sig == SIGQUIT ? ExitReason::SignalQuit
-                     : sig == SIGHUP  ? ExitReason::SignalHup
-                     : ExitReason::Forced,
+        bool crash =
+            (sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE);
+        havel::exit(crash            ? ExitReason::SignalCrash
+                    : sig == SIGINT  ? ExitReason::SignalInt
+                    : sig == SIGTERM ? ExitReason::SignalTerm
+                    : sig == SIGQUIT ? ExitReason::SignalQuit
+                    : sig == SIGHUP  ? ExitReason::SignalHup
+                                     : ExitReason::Forced,
                     code);
       };
       sigaction(SIGINT, &sa, nullptr);
@@ -635,15 +670,16 @@ void Havel::setupSignalHandling() {
       sigaction(SIGABRT, &sa, nullptr);
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
-      sigaction(SIGHUP,  &sa, nullptr);
+      sigaction(SIGHUP, &sa, nullptr);
 
-  if (debugging::debug_io) debug("Signal handling initialized - fallback handlers for REPL mode");
-  } else {
-  if (debugging::debug_io) debug("Signal handling initialized - EventListener manages signals");
+      if (debugging::debug_io)
+        debug("Signal handling initialized - fallback handlers for REPL mode");
+    } else {
+      if (debugging::debug_io)
+        debug("Signal handling initialized - EventListener manages signals");
     }
   } catch (const std::exception &e) {
-    throw std::runtime_error("Failed to set up signal handling: " +
-                             std::string(e.what()));
+    throw std::runtime_error("Failed to set up signal handling: " + std::string(e.what()));
   }
 }
 
@@ -655,16 +691,16 @@ void Havel::startPeriodicTimer() {
 
       // Window check (only if timer is still running)
       if (timerRunning &&
-          std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck)
-              .count() >= WINDOW_CHECK_INTERVAL_MS) {
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >=
+              WINDOW_CHECK_INTERVAL_MS) {
         if (timerRunning && hotkeyManager) {
         }
         lastWindowCheck = now;
       }
 
       // Config check
-      if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck)
-              .count() >= CONFIG_CHECK_INTERVAL_S) {
+      if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >=
+          CONFIG_CHECK_INTERVAL_S) {
         lastCheck = now;
       }
 

@@ -547,6 +547,8 @@ inline constexpr const char *kHostFunctionNames[] = {
     "keyboard.reset",
     "keyboard.setLock",
     "keyboard.state",
+    "keymap",
+    "keymap.installRows",
     "len",
     "load",
     "load_closure",

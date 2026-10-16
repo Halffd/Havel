@@ -1,0 +1,135 @@
+// Regression: hpkg's toolchain store (per-commit havel binaries).
+//
+// The version manager keeps one directory per commit under
+// ~/.havel/toolchains/<commit>/ with the binary, the test runner and a .info
+// sidecar, and resolves a ref (tag, branch, short sha) to that directory.
+// `regress` runs the same command under several toolchains and reports
+// pass/fail per commit - the reason the store exists.
+//
+// Exercised here through the real binary with --from pointing at this build,
+// so no build is triggered: install, list, use, current, which, run, regress,
+// remove, plus the error paths. Set HAVEL_TOOLCHAIN_STORE to redirect the
+// store so a developer's real ~/.havel/toolchains is never touched.
+//
+// Expected: PASS, exit 0. Fails if any subcommand regresses, if a copied
+// binary cannot start (missing runtime .so beside it), or if selection
+// precedence between HAVEL_TOOLCHAIN and the default file breaks.
+
+use "fs"
+use "process"
+use "sys"
+
+HPKG = ""
+candidates = ["${sys.cwd()}/build-debug/hpkg", "${sys.cwd()}/build-release/hpkg",
+              "${sys.cwd()}/out/bin/hpkg"]
+for c in candidates {
+    if fs.exists(c) {
+        HPKG = c
+        break
+    }
+}
+if HPKG == "" {
+    print("SKIP toolchain_store: hpkg binary not built in this configuration")
+    process.exit(0)
+}
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+BUILD_DIR = ""
+for c in candidates {
+    if !fs.exists(c) { continue }
+    d = c.substr(0, c.len() - 5)
+    if fs.exists(d + "/havel") {
+        BUILD_DIR = d
+        break
+    }
+}
+if BUILD_DIR == "" {
+    print("SKIP toolchain_store: no build dir with a havel binary")
+    process.exit(0)
+}
+
+STORE = "${sys.tmpdir()}/havel_tc_store_${sys.pid()}"
+// process.run execs directly (no shell), so the env assignment goes
+// through env(1) rather than a VAR=value prefix.
+env_prefix = "env HAVEL_TOOLCHAIN_STORE=" + STORE
+
+// --- the store path is taken from the environment so this test is isolated.
+r = process.run(env_prefix + " " + HPKG + " toolchain list")
+check("list on an empty store succeeds", r.exitCode == 0 && r.stdout.includes("no toolchains installed"))
+
+// --- install the current commit, plus an older one, via --from.
+head = process.run("git rev-parse HEAD").stdout.trim()
+check("HEAD is resolvable in this repo", head != "" && #head >= 40)
+
+r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR)
+check("install registers the current commit", r.exitCode == 0 && r.stdout.includes("installed toolchain"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain list")
+check("list shows the installed commit", r.stdout.includes(head.substr(0, 12)))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR)
+check("installing the same commit twice is a no-op", r.stdout.includes("already installed"))
+
+// --- which / use / current
+r = process.run(env_prefix + " " + HPKG + " toolchain which " + head)
+// The store is relocated by HAVEL_TOOLCHAIN_STORE, so assert on the binary
+// filename rather than on the default ~/.havel/toolchains location.
+check("which prints a path to the binary", r.exitCode == 0 && r.stdout.trim().endsWith("/havel"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain use " + head)
+check("use sets the default", r.exitCode == 0 && r.stdout.includes("default toolchain set"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain current")
+check("current reports the selection", r.exitCode == 0 && r.stdout.includes(head.substr(0, 12)))
+
+// --- run: the copied binary must actually start. A binary copied without its
+// runtime .so files dies 127 here, which is the whole point of copying them.
+FIXTURE = "${sys.tmpdir()}/havel_tc_script_${sys.pid()}.hv"
+fs.write(FIXTURE, "print(\"TOOLCHAIN_RAN\")\n")
+r = process.run(env_prefix + " " + HPKG + " toolchain run " + head + " run " + FIXTURE)
+check("run executes the stored binary", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
+
+// --- regress: same command under the selected toolchain, pass and fail.
+r = process.run(env_prefix + " " + HPKG + " toolchain regress " + head + " -- run " + FIXTURE)
+check("regress reports the passing toolchain", r.exitCode == 0 && r.stdout.includes("passed:"))
+
+FAILFIX = "${sys.tmpdir()}/havel_tc_fail_${sys.pid()}.hv"
+fs.write(FAILFIX, "process.exit(3)\n")
+r = process.run(env_prefix + " " + HPKG + " toolchain regress " + head + " -- run " + FAILFIX)
+check("regress reports a failing toolchain", r.exitCode == 1 && r.stdout.includes("failed:"))
+
+// --- error paths
+r = process.run(env_prefix + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
+check("run refuses an uninstalled ref", r.exitCode == 1 && r.stderr.includes("not installed"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain install nosuchrefatall")
+check("install refuses an unknown ref", r.exitCode == 1 && r.stderr.includes("ref not found"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --no-build")
+check("--no-build without --from is rejected", r.exitCode == 1 && r.stderr.includes("--no-build requires --from"))
+
+r = process.run(env_prefix + " " + HPKG + " toolchain remove " + head)
+check("remove refuses to drop the default", r.exitCode == 1 && r.stderr.includes("default"))
+
+// --- clean up
+r = process.run(env_prefix + " " + HPKG + " toolchain use " + head)
+fs.remove_all(STORE)
+fs.remove(FIXTURE)
+fs.remove(FAILFIX)
+
+if failures > 0 {
+    print("FAIL toolchain_store: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS toolchain_store")
+process.exit(0)

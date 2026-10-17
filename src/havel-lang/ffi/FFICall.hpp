@@ -91,6 +91,11 @@ public:
 
 private:
 	static std::unordered_map<void*, std::string> libraries_;
+	// path -> handle, so repeated requests for one library do not re-dlopen
+	// and re-log. Every ffi call site re-resolves its libraries, and a config
+	// importing ffi plus a dozen host modules asked for libX11.so.6 ten times
+	// in a single startup.
+	static std::unordered_map<std::string, void*> path_cache_;
 	static std::mutex library_mutex_;
 	static thread_local int last_errno_;
 	static std::mutex callback_mutex_;

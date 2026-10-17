@@ -961,9 +961,13 @@ if(ENABLE_TESTS)
     # the HAVEL_VERSION_STRING/UI_BACKEND definitions) instead of compiling
     # the full app sources, which the test loop cannot provide definitions
     # for.
-    list(REMOVE_ITEM TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/tests/cranelift_proto_driver.cpp"
-        "${CMAKE_SOURCE_DIR}/tests/hpp_proto_test.cpp")
+    # Match on filename, not full path: file(GLOB_RECURSE) with a relative
+    # pattern yields source-relative paths, which never string-equal the
+    # ${CMAKE_SOURCE_DIR}-prefixed entries below, silently keeping them in
+    # the list (and the explicit registrations then collide as CMP0002
+    # duplicate targets).
+    list(FILTER TEST_SOURCES EXCLUDE REGEX
+        "/(cranelift_proto_driver|hpp_proto_test|window_manager_detector_test)\\.cpp$")
 endif()
 
 
@@ -1992,6 +1996,17 @@ endif()
 # the target was not found".
 if(ENABLE_TESTS)
 add_executable(hpp_proto_test tests/hpp_proto_test.cpp)
+
+# window_manager_detector_test: standalone gtest for the pure env-var
+# predicate CheckEnvironmentVar (inline in the header). Registered outside
+# the TEST_SOURCES loop: the loop compiles full CORE_SOURCES which pulls
+# in wayland/media sources whose generated protocol and dbus headers the
+# test include set does not carry, causing link failures.
+add_executable(window_manager_detector_test tests/window_manager_detector_test.cpp)
+target_include_directories(window_manager_detector_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(window_manager_detector_test PRIVATE cxx_std_23)
+target_link_libraries(window_manager_detector_test PRIVATE GTest::gtest GTest::gtest_main)
+add_test(NAME window_manager_detector_test COMMAND window_manager_detector_test)
 set_target_properties(hpp_proto_test PROPERTIES
   CXX_STANDARD 23
   CXX_STANDARD_REQUIRED ON

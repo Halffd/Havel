@@ -15,11 +15,11 @@ struct XkbCharMapping {
 };
 
 namespace ModifierMasks {
-constexpr int SHIFT   = (1 << 0);
+constexpr int SHIFT = (1 << 0);
 constexpr int CONTROL = (1 << 1);
-constexpr int ALT     = (1 << 2);
-constexpr int META    = (1 << 3);
-constexpr int LOCK    = (1 << 4);
+constexpr int ALT = (1 << 2);
+constexpr int META = (1 << 3);
+constexpr int LOCK = (1 << 4);
 constexpr int NUMLOCK = (1 << 5);
 }
 
@@ -71,8 +71,10 @@ public:
    */
   virtual void SendBatchedKeyEvents(const std::vector<KeyEventRequest> &events) {
     for (const KeyEventRequest &e : events) {
-      if (e.action == KeyEventRequest::Action::Press) PressKey(e.keycode);
-      else ReleaseKey(e.keycode);
+      if (e.action == KeyEventRequest::Action::Press)
+        PressKey(e.keycode);
+      else
+        ReleaseKey(e.keycode);
     }
   }
 

@@ -36,46 +36,42 @@ WindowManagerDetector::WMType WindowManagerDetector::DetectOnce() noexcept {
     const char *desktopEnv = std::getenv("XDG_CURRENT_DESKTOP");
     const char *sessionTypeEnv = std::getenv("XDG_SESSION_TYPE");
     const char *sessionNameEnv = std::getenv("DESKTOP_SESSION");
-    if (desktopEnv) wmName = std::string(desktopEnv);
-    if (sessionTypeEnv) sessionType = std::string(sessionTypeEnv);
-    if (sessionNameEnv) sessionName = std::string(sessionNameEnv);
+    if (desktopEnv)
+      wmName = std::string(desktopEnv);
+    if (sessionTypeEnv)
+      sessionType = std::string(sessionTypeEnv);
+    if (sessionNameEnv)
+      sessionName = std::string(sessionNameEnv);
 
     // Check Desktop Environments first
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "GNOME") ||
-        CheckProcess("gnome-shell"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "GNOME") || CheckProcess("gnome-shell"))
       return WMType::GNOME;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "KDE") ||
-        CheckProcess("plasmashell"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "KDE") || CheckProcess("plasmashell"))
       return WMType::KDE;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "XFCE") ||
-        CheckProcess("xfce4-session"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "XFCE") || CheckProcess("xfce4-session"))
       return WMType::XFCE;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "MATE") ||
-        CheckProcess("mate-session"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "MATE") || CheckProcess("mate-session"))
       return WMType::MATE;
+    // "cinnamon" is the compositor binary itself; "cinnamon-session" is the
+    // session wrapper a display manager launches. Probing only the wrapper
+    // missed sessions started outside a display manager (startx/tty).
     if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "X-Cinnamon") ||
-        CheckProcess("cinnamon-session"))
+        CheckProcess("cinnamon-session") || CheckProcess("cinnamon"))
       return WMType::CINNAMON;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "LXDE") ||
-        CheckProcess("lxsession"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "LXDE") || CheckProcess("lxsession"))
       return WMType::LXDE;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "LXQt") ||
-        CheckProcess("lxqt-session"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "LXQt") || CheckProcess("lxqt-session"))
       return WMType::LXQT;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Budgie") ||
-        CheckProcess("budgie-wm"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Budgie") || CheckProcess("budgie-wm"))
       return WMType::BUDGIE;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Deepin") ||
-        CheckProcess("deepin-wm"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Deepin") || CheckProcess("deepin-wm"))
       return WMType::DEEPIN;
-    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Pantheon") ||
-        CheckProcess("gala"))
+    if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Pantheon") || CheckProcess("gala"))
       return WMType::PANTHEON;
 
     // Check Window Managers
     // Prioritize Wayland compositors first to avoid false positives
-    if (CheckProcess("Hyprland") ||
-        CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Hyprland"))
+    if (CheckProcess("Hyprland") || CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "Hyprland"))
       return WMType::HYPRLAND;
     if (CheckProcess("sway"))
       return WMType::SWAY;
@@ -204,9 +200,8 @@ bool WindowManagerDetector::IsWayland() noexcept {
     }
 
     // Secondary: Check for running Wayland compositors
-    if (CheckProcess("Hyprland") || CheckProcess("sway") ||
-        CheckProcess("wayfire") || CheckProcess("river") ||
-        CheckProcess("weston") || CheckProcess("kwin_wayland")) {
+    if (CheckProcess("Hyprland") || CheckProcess("sway") || CheckProcess("wayfire") ||
+        CheckProcess("river") || CheckProcess("weston") || CheckProcess("kwin_wayland")) {
       return true;
     }
 
@@ -254,8 +249,7 @@ bool WindowManagerDetector::IsX11() noexcept {
   }
 }
 
-bool WindowManagerDetector::CheckProcess(
-    const std::string &processName) noexcept {
+bool WindowManagerDetector::CheckProcess(const std::string &processName) noexcept {
 #ifdef __linux__
   // One /proc cmdline snapshot per process, shared by every CheckProcess
   // call. Detect() cascades through up to ~30 CheckProcess probes and the
@@ -302,13 +296,11 @@ bool WindowManagerDetector::CheckProcess(
         // First null-separated token = executable path; store its
         // basename so probes match "cinnamon" for "/usr/bin/cinnamon".
         const char *exe = buffer.data();
-        const char *end = static_cast<const char *>(
-            memchr(exe, '\0', bytes));
+        const char *end = static_cast<const char *>(memchr(exe, '\0', bytes));
         size_t exeLen = end ? static_cast<size_t>(end - exe) : bytes;
         if (exeLen == 0)
           continue;
-        const char *slash = static_cast<const char *>(
-            memrchr(exe, '/', exeLen));
+        const char *slash = static_cast<const char *>(memrchr(exe, '/', exeLen));
         const char *base = slash ? slash + 1 : exe;
         size_t baseLen = slash ? exeLen - static_cast<size_t>(base - exe) : exeLen;
         if (baseLen > 0) {
@@ -332,18 +324,34 @@ bool WindowManagerDetector::CheckProcess(
 #endif
 }
 
-bool WindowManagerDetector::CheckEnvironmentVar(
-    const std::string &varName, const std::string &value) noexcept {
+bool WindowManagerDetector::CheckEnvironmentVar(const std::string &varName,
+                                                const std::string &value) noexcept {
   try {
     const char *env = std::getenv(varName.c_str());
-    return env && std::string(env) == value;
+    if (!env)
+      return false;
+
+    // XDG_CURRENT_DESKTOP is spec'd as a colon-separated list, not a
+    // single value: "ubuntu:GNOME", "X-Cinnamon:GNOME", "sway:sway-plasma".
+    // Exact equality missed every multi-entry value, so all 13 desktop-
+    // environment probes fell through to the bare process checks.
+    std::string list(env);
+    size_t start = 0;
+    while (start <= list.size()) {
+      size_t end = list.find(':', start);
+      if (end == std::string::npos)
+        end = list.size();
+      if (list.compare(start, end - start, value) == 0)
+        return true;
+      start = end + 1;
+    }
+    return false;
   } catch (...) {
     return false;
   }
 }
 
-bool WindowManagerDetector::CheckXProperty(
-    const std::string &property) noexcept {
+bool WindowManagerDetector::CheckXProperty(const std::string &property) noexcept {
   try {
     Display *display = havel::DisplayManager::GetDisplay();
     if (!display)

@@ -51,6 +51,10 @@ public:
   static std::string GetWMName() noexcept;
   static bool IsWayland() noexcept;
   static bool IsX11() noexcept;
+  // Pure predicate over the environment: no state, no X11 connection.
+  // Public so the colon-list matching it performs can be tested directly
+  // - Detect() is memoized in a magic static and cannot be re-driven.
+  static bool CheckEnvironmentVar(const std::string &varName, const std::string &value) noexcept;
   static std::string sessionType;
   static std::string wmName;
   static std::string sessionName;
@@ -58,7 +62,6 @@ public:
 private:
   static WMType DetectOnce() noexcept;
   static bool CheckProcess(const std::string &processName) noexcept;
-  static bool CheckEnvironmentVar(const std::string &varName,
-                                  const std::string &value) noexcept;
+  static bool CheckEnvironmentVar(const std::string &varName, const std::string &value) noexcept;
   static bool CheckXProperty(const std::string &property) noexcept;
 };

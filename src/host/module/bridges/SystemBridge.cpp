@@ -50,8 +50,7 @@ void SystemBridge::install(PipelineOptions &options) {
     // process.getState() then no-opped with no error. Mirror the `system`
     // merge above: fill only missing or host-function slots.
     auto procIt = allGlobals.find("process");
-    bool hasExistingProc =
-        procIt != allGlobals.end() && procIt->second.isObjectId();
+    bool hasExistingProc = procIt != allGlobals.end() && procIt->second.isObjectId();
     compiler::ObjectRef procObj{};
     if (hasExistingProc) {
       procObj = ObjectRef{procIt->second.asObjectId(), true};
@@ -72,19 +71,13 @@ void SystemBridge::install(PipelineOptions &options) {
       }
     };
     // Bridge-owned process.* host functions.
-    setProcField("find",
-                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
-    setProcField(
-        "exists", Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
-    setProcField("kill",
-                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
-    setProcField("nice",
-                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
-    setProcField("run",
-                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
-    setProcField(
-        "runDetached",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
+    setProcField("find", Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
+    setProcField("exists", Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
+    setProcField("kill", Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
+    setProcField("nice", Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
+    setProcField("run", Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
+    setProcField("runDetached",
+                 Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
     // Cross-module functions from the sys stdlib plugin. Guarded: the
     // plugin may not be loaded in every embedding. (The old code used
     // getHostFunctionIndex("process.spawn") etc., which registered PHANTOM
@@ -127,254 +120,199 @@ void SystemBridge::install(PipelineOptions &options) {
     // Extension object
     auto extensionObj = vm->createHostObject();
     auto extensionObjGuard = vm->makeRoot(Value::makeObjectId(extensionObj.id));
-    vm->setHostObjectField(
-        extensionObj, "load",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.load")));
-    vm->setHostObjectField(
-        extensionObj, "isLoaded",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.isLoaded")));
-    vm->setHostObjectField(
-        extensionObj, "list",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.list")));
+    vm->setHostObjectField(extensionObj, "load",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("extension.load")));
+    vm->setHostObjectField(extensionObj, "isLoaded",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("extension.isLoaded")));
+    vm->setHostObjectField(extensionObj, "list",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("extension.list")));
     vm->setHostObjectField(
         extensionObj, "addSearchPath",
         Value::makeHostFuncId(vm->getHostFunctionIndex("extension.addSearchPath")));
     vm->setGlobal("extension", Value::makeObjectId(extensionObj.id));
 
-  // Mouse object
+    // Mouse object
     auto mouseObj = vm->createHostObject();
     auto mouseObjGuard = vm->makeRoot(Value::makeObjectId(mouseObj.id));
+    vm->setHostObjectField(mouseObj, "click",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.click")));
+    vm->setHostObjectField(mouseObj, "down",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.down")));
+    vm->setHostObjectField(mouseObj, "up",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.up")));
+    vm->setHostObjectField(mouseObj, "move",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.move")));
+    vm->setHostObjectField(mouseObj, "moveRel",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.moveRel")));
+    vm->setHostObjectField(mouseObj, "scroll",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+    vm->setHostObjectField(mouseObj, "pos",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.pos")));
+    vm->setHostObjectField(mouseObj, "setSpeed",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setSpeed")));
+    vm->setHostObjectField(mouseObj, "setAccel",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setAccel")));
+    vm->setHostObjectField(mouseObj, "setDPI",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
+    vm->setHostObjectField(mouseObj, "state",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io._mouseState")));
+    vm->setHostObjectField(mouseObj, "lastButton",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButton")));
     vm->setHostObjectField(
- mouseObj, "click",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.click")));
- vm->setHostObjectField(
- mouseObj, "down",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.down")));
- vm->setHostObjectField(
- mouseObj, "up",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.up")));
- vm->setHostObjectField(
- mouseObj, "move",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.move")));
- vm->setHostObjectField(
- mouseObj, "moveRel",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.moveRel")));
- vm->setHostObjectField(
- mouseObj, "scroll",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
- vm->setHostObjectField(
- mouseObj, "pos",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.pos")));
- vm->setHostObjectField(
- mouseObj, "setSpeed",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setSpeed")));
- vm->setHostObjectField(
- mouseObj, "setAccel",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setAccel")));
-  vm->setHostObjectField(
-  mouseObj, "setDPI",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
-vm->setHostObjectField(
-    mouseObj, "state",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io._mouseState")));
-vm->setHostObjectField(
-    mouseObj, "lastButton",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButton")));
-vm->setHostObjectField(
-    mouseObj, "lastState",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButtonState")));
-vm->setHostObjectField(
-    mouseObj, "buttons",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.buttons")));
-  vm->setHostObjectField(
-mouseObj, "scroll",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
-  vm->setHostObjectField(
-    mouseObj, "reset",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.releaseAll")));
-  vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
+        mouseObj, "lastState",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButtonState")));
+    vm->setHostObjectField(mouseObj, "buttons",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.buttons")));
+    vm->setHostObjectField(mouseObj, "scroll",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+    vm->setHostObjectField(mouseObj, "reset",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.releaseAll")));
+    vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
-  // IO object - pure send/receive verbs plus clipboard and executor control.
+    // IO object - pure send/receive verbs plus clipboard and executor control.
     // Keyboard state queries live on the `keyboard` object, input-device
     // management on `devices`, and mouse ops on `mouse` (io used to carry
     // duplicates of all three surfaces).
     auto ioObj = vm->createHostObject();
     auto ioObjGuard = vm->makeRoot(Value::makeObjectId(ioObj.id));
-    vm->setHostObjectField(
- ioObj, "send",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.send")));
- vm->setHostObjectField(
- ioObj, "sendKey",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendKey")));
- vm->setHostObjectField(
- ioObj, "sendText",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendText")));
- vm->setHostObjectField(
- ioObj, "wait",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.wait")));
-    vm->setHostObjectField(
-        ioObj, "sendModifiers",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendModifiers")));
- vm->setHostObjectField(
- ioObj, "suspend",
- Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
-    vm->setHostObjectField(
-        ioObj, "getClipboard",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
-    vm->setHostObjectField(
-        ioObj, "getExecutorMode",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.getExecutorMode")));
-    vm->setHostObjectField(
-        ioObj, "setExecutorMode",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.setExecutorMode")));
-   vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+    vm->setHostObjectField(ioObj, "send",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.send")));
+    vm->setHostObjectField(ioObj, "sendKey",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendKey")));
+    vm->setHostObjectField(ioObj, "sendText",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendText")));
+    vm->setHostObjectField(ioObj, "wait",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.wait")));
+    vm->setHostObjectField(ioObj, "sendModifiers",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendModifiers")));
+    vm->setHostObjectField(ioObj, "suspend",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
+    vm->setHostObjectField(ioObj, "getClipboard",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
+    vm->setHostObjectField(ioObj, "getExecutorMode",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.getExecutorMode")));
+    vm->setHostObjectField(ioObj, "setExecutorMode",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.setExecutorMode")));
+    vm->setGlobal("io", Value::makeObjectId(ioObj.id));
 
-  // Keyboard object: key state queries and lock-key control.
-  auto keyboardObj = vm->createHostObject();
-  auto keyboardObjGuard = vm->makeRoot(Value::makeObjectId(keyboardObj.id));
-  vm->setHostObjectField(
-  keyboardObj, "getKey",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.getKey")));
-  vm->setHostObjectField(
-  keyboardObj, "isKeyPressed",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("io.isKeyPressed")));
-  vm->setHostObjectField(
-    keyboardObj, "state",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
-  vm->setHostObjectField(
-    keyboardObj, "keys",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.keys")));
-  vm->setHostObjectField(
-    keyboardObj, "lastKey",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKey")));
-  vm->setHostObjectField(
-    keyboardObj, "lastKeys",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKeys")));
-  vm->setHostObjectField(
-    keyboardObj, "lastState",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastState")));
-  vm->setHostObjectField(
-    keyboardObj, "modifiers",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.modifiers")));
-  vm->setHostObjectField(
-    keyboardObj, "lastModifiers",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastModifiers")));
-  vm->setHostObjectField(
-    keyboardObj, "locks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.locks")));
-  vm->setHostObjectField(
-    keyboardObj, "lastLocks",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastLocks")));
-  vm->setHostObjectField(
-    keyboardObj, "setLock",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.setLock")));
-  vm->setHostObjectField(
-    keyboardObj, "reset",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.reset")));
-  vm->setGlobal("keyboard", Value::makeObjectId(keyboardObj.id));
+    // Keyboard object: key state queries and lock-key control.
+    auto keyboardObj = vm->createHostObject();
+    auto keyboardObjGuard = vm->makeRoot(Value::makeObjectId(keyboardObj.id));
+    vm->setHostObjectField(keyboardObj, "getKey",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.getKey")));
+    vm->setHostObjectField(keyboardObj, "isKeyPressed",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.isKeyPressed")));
+    vm->setHostObjectField(keyboardObj, "state",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
+    vm->setHostObjectField(keyboardObj, "keys",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.keys")));
+    vm->setHostObjectField(keyboardObj, "lastKey",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKey")));
+    vm->setHostObjectField(keyboardObj, "lastKeys",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastKeys")));
+    vm->setHostObjectField(keyboardObj, "lastState",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastState")));
+    vm->setHostObjectField(keyboardObj, "modifiers",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.modifiers")));
+    vm->setHostObjectField(
+        keyboardObj, "lastModifiers",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastModifiers")));
+    vm->setHostObjectField(keyboardObj, "locks",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.locks")));
+    vm->setHostObjectField(keyboardObj, "lastLocks",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.lastLocks")));
+    vm->setHostObjectField(keyboardObj, "setLock",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.setLock")));
+    vm->setHostObjectField(keyboardObj, "reset",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("keyboard.reset")));
+    vm->setGlobal("keyboard", Value::makeObjectId(keyboardObj.id));
 
-  // Devices object: input device enumeration and routing.
-  auto devicesObj = vm->createHostObject();
-  auto devicesObjGuard = vm->makeRoot(Value::makeObjectId(devicesObj.id));
-  vm->setHostObjectField(
-    devicesObj, "setDevice",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.add")));
-  vm->setHostObjectField(
-    devicesObj, "device",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.list")));
-  vm->setHostObjectField(
-    devicesObj, "lastDevice",
-    Value::makeHostFuncId(vm->getHostFunctionIndex("devices.lastDevice")));
-  vm->setGlobal("devices", Value::makeObjectId(devicesObj.id));
+    // Devices object: input device enumeration and routing.
+    auto devicesObj = vm->createHostObject();
+    auto devicesObjGuard = vm->makeRoot(Value::makeObjectId(devicesObj.id));
+    vm->setHostObjectField(devicesObj, "setDevice",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("devices.add")));
+    vm->setHostObjectField(devicesObj, "device",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("devices.list")));
+    vm->setHostObjectField(devicesObj, "lastDevice",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("devices.lastDevice")));
+    vm->setGlobal("devices", Value::makeObjectId(devicesObj.id));
 
+    // altTab object
+    auto altTabObj = vm->createHostObject();
+    auto altTabObjGuard = vm->makeRoot(Value::makeObjectId(altTabObj.id));
+    vm->setHostObjectField(altTabObj, "show",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._show")));
+    vm->setHostObjectField(altTabObj, "hide",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._hide")));
+    vm->setHostObjectField(altTabObj, "toggle",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._toggle")));
+    vm->setHostObjectField(altTabObj, "next",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._next")));
+    vm->setHostObjectField(altTabObj, "prev",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._prev")));
+    vm->setHostObjectField(altTabObj, "select",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._select")));
+    vm->setHostObjectField(altTabObj, "refresh",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._refresh")));
+    vm->setHostObjectField(altTabObj, "getWindows",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindows")));
+    vm->setHostObjectField(
+        altTabObj, "getWindowCount",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindowCount")));
+    vm->setHostObjectField(
+        altTabObj, "setThumbnailSize",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setThumbnailSize")));
+    vm->setHostObjectField(
+        altTabObj, "getThumbnailWidth",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailWidth")));
+    vm->setHostObjectField(
+        altTabObj, "getThumbnailHeight",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailHeight")));
+    vm->setHostObjectField(
+        altTabObj, "setMaxVisibleWindows",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setMaxVisibleWindows")));
+    vm->setHostObjectField(
+        altTabObj, "getMaxVisibleWindows",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getMaxVisibleWindows")));
+    vm->setHostObjectField(
+        altTabObj, "setAnimationsEnabled",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setAnimationsEnabled")));
+    vm->setHostObjectField(
+        altTabObj, "isAnimationsEnabled",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._isAnimationsEnabled")));
+    vm->setGlobal("altTab", Value::makeObjectId(altTabObj.id));
 
-  // altTab object
-  auto altTabObj = vm->createHostObject();
-  auto altTabObjGuard = vm->makeRoot(Value::makeObjectId(altTabObj.id));
-  vm->setHostObjectField(
-      altTabObj, "show",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._show")));
-  vm->setHostObjectField(
-      altTabObj, "hide",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._hide")));
-  vm->setHostObjectField(
-      altTabObj, "toggle",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._toggle")));
-  vm->setHostObjectField(
-      altTabObj, "next",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._next")));
-  vm->setHostObjectField(
-      altTabObj, "prev",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._prev")));
-  vm->setHostObjectField(
-      altTabObj, "select",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._select")));
-  vm->setHostObjectField(
-      altTabObj, "refresh",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._refresh")));
-  vm->setHostObjectField(
-      altTabObj, "getWindows",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindows")));
-  vm->setHostObjectField(
-      altTabObj, "getWindowCount",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindowCount")));
-  vm->setHostObjectField(
-      altTabObj, "setThumbnailSize",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setThumbnailSize")));
-  vm->setHostObjectField(
-      altTabObj, "getThumbnailWidth",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailWidth")));
-  vm->setHostObjectField(
-      altTabObj, "getThumbnailHeight",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailHeight")));
-  vm->setHostObjectField(
-      altTabObj, "setMaxVisibleWindows",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setMaxVisibleWindows")));
-  vm->setHostObjectField(
-      altTabObj, "getMaxVisibleWindows",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getMaxVisibleWindows")));
-  vm->setHostObjectField(
-      altTabObj, "setAnimationsEnabled",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setAnimationsEnabled")));
-  vm->setHostObjectField(
-      altTabObj, "isAnimationsEnabled",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._isAnimationsEnabled")));
-  vm->setGlobal("altTab", Value::makeObjectId(altTabObj.id));
-
-  // automation object
-  auto automationObj = vm->createHostObject();
-  auto automationObjGuard = vm->makeRoot(Value::makeObjectId(automationObj.id));
-  vm->setHostObjectField(
-      automationObj, "createAutoClicker",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoClicker")));
-  vm->setHostObjectField(
-      automationObj, "createAutoRunner",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoRunner")));
-  vm->setHostObjectField(
-      automationObj, "createAutoKeyPresser",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoKeyPresser")));
-  vm->setHostObjectField(
-      automationObj, "hasTask",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.hasTask")));
-  vm->setHostObjectField(
-      automationObj, "removeTask",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.removeTask")));
-  vm->setHostObjectField(
-      automationObj, "stopAll",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.stopAll")));
-  vm->setHostObjectField(
-      automationObj, "getTaskNames",
-      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.getTaskNames")));
-  vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
-  vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
-    vm->setGlobal("scroll",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+    // automation object
+    auto automationObj = vm->createHostObject();
+    auto automationObjGuard = vm->makeRoot(Value::makeObjectId(automationObj.id));
+    vm->setHostObjectField(
+        automationObj, "createAutoClicker",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoClicker")));
+    vm->setHostObjectField(
+        automationObj, "createAutoRunner",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoRunner")));
+    vm->setHostObjectField(
+        automationObj, "createAutoKeyPresser",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoKeyPresser")));
+    vm->setHostObjectField(automationObj, "hasTask",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("automation.hasTask")));
+    vm->setHostObjectField(
+        automationObj, "removeTask",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("automation.removeTask")));
+    vm->setHostObjectField(automationObj, "stopAll",
+                           Value::makeHostFuncId(vm->getHostFunctionIndex("automation.stopAll")));
+    vm->setHostObjectField(
+        automationObj, "getTaskNames",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("automation.getTaskNames")));
+    vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
+    vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
+    vm->setGlobal("scroll", Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   };
 
   options.host_functions["runOnce"] =
       [ctx = ctx_,
-       seen = std::make_shared<
-           std::pair<std::mutex, std::unordered_set<std::string>>>()](
+       seen = std::make_shared<std::pair<std::mutex, std::unordered_set<std::string>>>()](
           const std::vector<Value> &args) -> Value {
     if (args.size() < 2) {
       return Value::makeBool(false);
@@ -453,8 +391,7 @@ mouseObj, "scroll",
   options.host_functions["process.run"] = [ctx = ctx_](const auto &args) {
     return handleProcessRun(args, ctx);
   };
-  options.host_functions["process.runDetached"] = [ctx =
-                                                       ctx_](const auto &args) {
+  options.host_functions["process.runDetached"] = [ctx = ctx_](const auto &args) {
     return handleProcessRunDetached(args, ctx);
   };
   // Global aliases for convenience
@@ -472,10 +409,7 @@ mouseObj, "scroll",
   };
 }
 
-
-Value
-SystemBridge::handleFileRead(const std::vector<Value> &args,
-                             const HostContext *ctx) {
+Value SystemBridge::handleFileRead(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("readFile() requires a file path");
   }
@@ -498,10 +432,7 @@ SystemBridge::handleFileRead(const std::vector<Value> &args,
   return Value::makeStringId(outRef.id);
 }
 
-
-Value
-SystemBridge::handleFileWrite(const std::vector<Value> &args,
-                              const HostContext *ctx) {
+Value SystemBridge::handleFileWrite(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.size() < 2) {
     throw std::runtime_error("writeFile() requires path and content");
   }
@@ -525,10 +456,7 @@ SystemBridge::handleFileWrite(const std::vector<Value> &args,
   return Value::makeBool(fs.writeFile(path, content));
 }
 
-
-Value
-SystemBridge::handleFileExists(const std::vector<Value> &args,
-                               const HostContext *ctx) {
+Value SystemBridge::handleFileExists(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("fileExists() requires a file path");
   }
@@ -546,10 +474,7 @@ SystemBridge::handleFileExists(const std::vector<Value> &args,
   return Value::makeBool(fs.exists(path));
 }
 
-
-Value
-SystemBridge::handleFileSize(const std::vector<Value> &args,
-                             const HostContext *ctx) {
+Value SystemBridge::handleFileSize(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("fileSize() requires a file path");
   }
@@ -570,10 +495,7 @@ SystemBridge::handleFileSize(const std::vector<Value> &args,
   return Value::makeInt(fs.getFileSize(path));
 }
 
-
-Value
-SystemBridge::handleFileDelete(const std::vector<Value> &args,
-                               const HostContext *ctx) {
+Value SystemBridge::handleFileDelete(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("deleteFile() requires a file path");
   }
@@ -591,10 +513,7 @@ SystemBridge::handleFileDelete(const std::vector<Value> &args,
   return Value::makeBool(fs.deleteFile(path));
 }
 
-
-Value
-SystemBridge::handleProcessExecute(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
+Value SystemBridge::handleProcessExecute(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("execute() requires a command");
   }
@@ -614,30 +533,19 @@ SystemBridge::handleProcessExecute(const std::vector<Value> &args,
   return Value::makeStringId(outRef.id);
 }
 
-
-Value
-SystemBridge::handleProcessGetPid(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
+Value SystemBridge::handleProcessGetPid(const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return Value::makeInt(
-      static_cast<int64_t>(::havel::host::ProcessService::getCurrentPid()));
+  return Value::makeInt(static_cast<int64_t>(::havel::host::ProcessService::getCurrentPid()));
 }
 
-
-Value
-SystemBridge::handleProcessGetPpid(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
+Value SystemBridge::handleProcessGetPpid(const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return Value::makeInt(
-      static_cast<int64_t>(::havel::host::ProcessService::getParentPid()));
+  return Value::makeInt(static_cast<int64_t>(::havel::host::ProcessService::getParentPid()));
 }
 
-
-Value
-SystemBridge::handleProcessFind(const std::vector<Value> &args,
-                                const HostContext *ctx) {
+Value SystemBridge::handleProcessFind(const std::vector<Value> &args, const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("process.find() requires a process name");
   }
@@ -660,10 +568,7 @@ SystemBridge::handleProcessFind(const std::vector<Value> &args,
   return Value::makeArrayId(arr.id);
 }
 
-
-Value
-SystemBridge::handleProcessExists(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
+Value SystemBridge::handleProcessExists(const std::vector<Value> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.exists() requires a process name or PID");
@@ -682,10 +587,7 @@ SystemBridge::handleProcessExists(const std::vector<Value> &args,
   return Value(::havel::host::ProcessService::processExists(name));
 }
 
-
-Value
-SystemBridge::handleProcessKill(const std::vector<Value> &args,
-                                const HostContext *ctx) {
+Value SystemBridge::handleProcessKill(const std::vector<Value> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("process.kill() requires PID and signal");
@@ -702,8 +604,7 @@ SystemBridge::handleProcessKill(const std::vector<Value> &args,
     signal_num = static_cast<int>(args[1].asInt());
   } else if (args[1].isStringValId() || args[1].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    std::string sig = vm ? vm->resolveStringKey(args[1])
-                         : strVal(args[1], ctx ? ctx->vm : nullptr);
+    std::string sig = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
     auto mapped = ::havel::host::ProcessService::signalFromName(sig);
     if (!mapped) {
       // Previously unknown names silently fell through to SIGTERM, so
@@ -715,14 +616,10 @@ SystemBridge::handleProcessKill(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.kill() requires a string or number signal");
   }
-  return Value::makeBool(
-      ::havel::host::ProcessService::sendSignal(pid, signal_num));
+  return Value::makeBool(::havel::host::ProcessService::sendSignal(pid, signal_num));
 }
 
-
-Value
-SystemBridge::handleProcessNice(const std::vector<Value> &args,
-                                const HostContext *ctx) {
+Value SystemBridge::handleProcessNice(const std::vector<Value> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("process.nice() requires PID and nice value");
@@ -741,17 +638,12 @@ SystemBridge::handleProcessNice(const std::vector<Value> &args,
   }
   // Nice range: -20 (highest priority) to 19 (lowest)
   if (nice < -20 || nice > 19) {
-    throw std::runtime_error(
-        "process.nice() nice value must be between -20 and 19");
+    throw std::runtime_error("process.nice() nice value must be between -20 and 19");
   }
-  return Value::makeBool(
-      ::havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
+  return Value::makeBool(::havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
 }
 
-
-Value
-SystemBridge::handleProcessRun(const std::vector<Value> &args,
-                               const HostContext *ctx) {
+Value SystemBridge::handleProcessRun(const std::vector<Value> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.run() requires a command");
@@ -784,18 +676,17 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
             std::make_shared<::havel::ProcessResult>(std::move(result)));
       },
       [vm_](const compiler::AsyncCxxResult &cell) -> Value {
-        auto result =
-            std::static_pointer_cast<::havel::ProcessResult>(cell);
+        auto result = std::static_pointer_cast<::havel::ProcessResult>(cell);
         auto obj = vm_->createHostObject();
         auto guard = vm_->makeRoot(Value::makeObjectId(obj.id));
         vm_->setHostObjectField(obj, "pid", Value::makeInt(result->pid));
         vm_->setHostObjectField(obj, "exitCode", Value::makeInt(result->exitCode));
         vm_->setHostObjectField(obj, "success", Value::makeBool(result->success));
         if (result->error.empty()) {
-            vm_->setHostObjectField(obj, "error", Value::makeNull());
+          vm_->setHostObjectField(obj, "error", Value::makeNull());
         } else {
-            auto errRef = vm_->getHeap().allocateString(result->error);
-            vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
+          auto errRef = vm_->getHeap().allocateString(result->error);
+          vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
         }
         auto outRef = vm_->getHeap().allocateString(result->out);
         vm_->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
@@ -805,10 +696,8 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
       });
 }
 
-
-Value
-SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
-                                       const HostContext *ctx) {
+Value SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
+                                            const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("runCapture() requires a command");
   }
@@ -835,8 +724,7 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
   return api.runBlocking(
       [cmd]() -> compiler::AsyncCxxResult {
         auto result = ::havel::Launcher::runSync(cmd);
-        return std::static_pointer_cast<void>(
-            std::make_shared<std::string>(std::move(result.out)));
+        return std::static_pointer_cast<void>(std::make_shared<std::string>(std::move(result.out)));
       },
       [vm_](const compiler::AsyncCxxResult &cell) -> Value {
         auto out = std::static_pointer_cast<std::string>(cell);
@@ -845,10 +733,8 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
       });
 }
 
-
-Value
-SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
-                                       const HostContext *ctx) {
+Value SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
+                                             const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.runDetached() requires a command");
@@ -874,11 +760,8 @@ SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
   return Value::makeInt(result.pid);
 }
 
-
 // Alias implementations - forward to appropriate bridge handlers
-Value
-SystemBridge::handleMediaPlay(const std::vector<Value> &args,
-                              const HostContext *ctx) {
+Value SystemBridge::handleMediaPlay(const std::vector<Value> &args, const HostContext *ctx) {
   return MediaBridge::handleMediaPlay(args, ctx);
 }
 
@@ -886,57 +769,54 @@ SystemBridge::handleMediaPlay(const std::vector<Value> &args,
 // System Detection Implementation
 // ============================================================================
 
+Value SystemBridge::handleSystemDetect(const std::vector<Value> &args, const HostContext *ctx) {
+  (void)args;
+  if (debugging::debug_io)
+    ::havel::warn("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void *>(ctx),
+                  ctx ? static_cast<const void *>(ctx->vm) : nullptr);
 
-Value
-SystemBridge::handleSystemDetect(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-    (void)args;
-    if (debugging::debug_io) ::havel::warn("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
-        ctx ? static_cast<const void*>(ctx->vm) : nullptr);
-
-    if (!ctx || !ctx->vm) {
-        return Value::makeNull();
-    }
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
 
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();
   auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
 
   auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    if (debugging::debug_io) ::havel::warn("[SystemDetect] detected OS={}", sysInfo.os);
+  if (debugging::debug_io)
+    ::havel::warn("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {
-    if (s.empty()) return Value::makeNull();
+    if (s.empty())
+      return Value::makeNull();
     auto ref = vm->getHeap().allocateString(s);
     return Value::makeStringId(ref.id);
   };
 
-    vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    if (debugging::debug_io) ::havel::warn("[SystemDetect] set os field");
-    vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
-    vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
-    vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
-    vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    if (debugging::debug_io) ::havel::warn("[SystemDetect] all fields set, returning");
+  vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
+  if (debugging::debug_io)
+    ::havel::warn("[SystemDetect] set os field");
+  vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
+  vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
+  vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
+  vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
+  if (debugging::debug_io)
+    ::havel::warn("[SystemDetect] all fields set, returning");
 
   // Linux-specific fields (always set, even if empty)
-  vm->setHostObjectField(obj, "displayProtocol",
-                         makeStr(sysInfo.displayProtocol));
+  vm->setHostObjectField(obj, "displayProtocol", makeStr(sysInfo.displayProtocol));
   vm->setHostObjectField(obj, "display", makeStr(sysInfo.display));
   const std::string window_manager =
       sysInfo.windowManager.empty() ? "unknown" : sysInfo.windowManager;
   vm->setHostObjectField(obj, "windowManager", makeStr(window_manager));
-  vm->setHostObjectField(obj, "desktopEnv",
-                         makeStr(sysInfo.desktopEnv));
+  vm->setHostObjectField(obj, "desktopEnv", makeStr(sysInfo.desktopEnv));
 
   return Value::makeObjectId(obj.id);
 }
 
-
-Value
-SystemBridge::handleSystemHardware(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
+Value SystemBridge::handleSystemHardware(const std::vector<Value> &args, const HostContext *ctx) {
   (void)args;
 
   if (!ctx || !ctx->vm) {
@@ -952,44 +832,34 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 
   // Helper to create string or null
   auto makeStr = [vm](const std::string &s) -> Value {
-    if (s.empty()) return Value::makeNull();
+    if (s.empty())
+      return Value::makeNull();
     auto ref = vm->getHeap().allocateString(s);
     return Value::makeStringId(ref.id);
   };
 
   vm->setHostObjectField(obj, "cpu", makeStr(hwInfo.cpu));
-  vm->setHostObjectField(obj, "cpuCores",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.cpuCores)));
-  vm->setHostObjectField(
-      obj, "cpuThreads",
-      Value::makeInt(static_cast<int64_t>(hwInfo.cpuThreads)));
-  vm->setHostObjectField(obj, "cpuFrequency",
-                         Value::makeDouble(hwInfo.cpuFrequency));
+  vm->setHostObjectField(obj, "cpuCores", Value::makeInt(static_cast<int64_t>(hwInfo.cpuCores)));
+  vm->setHostObjectField(obj, "cpuThreads",
+                         Value::makeInt(static_cast<int64_t>(hwInfo.cpuThreads)));
+  vm->setHostObjectField(obj, "cpuFrequency", Value::makeDouble(hwInfo.cpuFrequency));
   vm->setHostObjectField(obj, "cpuUsage", Value::makeDouble(hwInfo.cpuUsage));
   vm->setHostObjectField(obj, "gpu", makeStr(hwInfo.gpu));
-  vm->setHostObjectField(obj, "gpuTemperature",
-                         Value::makeDouble(hwInfo.gpuTemperature));
+  vm->setHostObjectField(obj, "gpuTemperature", Value::makeDouble(hwInfo.gpuTemperature));
 
   // Memory info (all in bytes)
-  vm->setHostObjectField(obj, "ramTotal",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.ramTotal)));
-  vm->setHostObjectField(obj, "ramUsed",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.ramUsed)));
-  vm->setHostObjectField(obj, "ramFree",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.ramFree)));
+  vm->setHostObjectField(obj, "ramTotal", Value::makeInt(static_cast<int64_t>(hwInfo.ramTotal)));
+  vm->setHostObjectField(obj, "ramUsed", Value::makeInt(static_cast<int64_t>(hwInfo.ramUsed)));
+  vm->setHostObjectField(obj, "ramFree", Value::makeInt(static_cast<int64_t>(hwInfo.ramFree)));
 
   // Swap info (in bytes)
-  vm->setHostObjectField(obj, "swapTotal",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.swapTotal)));
-  vm->setHostObjectField(obj, "swapUsed",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.swapUsed)));
-  vm->setHostObjectField(obj, "swapFree",
-                         Value::makeInt(static_cast<int64_t>(hwInfo.swapFree)));
+  vm->setHostObjectField(obj, "swapTotal", Value::makeInt(static_cast<int64_t>(hwInfo.swapTotal)));
+  vm->setHostObjectField(obj, "swapUsed", Value::makeInt(static_cast<int64_t>(hwInfo.swapUsed)));
+  vm->setHostObjectField(obj, "swapFree", Value::makeInt(static_cast<int64_t>(hwInfo.swapFree)));
 
   vm->setHostObjectField(obj, "motherboard", makeStr(hwInfo.motherboard));
   vm->setHostObjectField(obj, "bios", makeStr(hwInfo.bios));
-  vm->setHostObjectField(obj, "cpuTemperature",
-                         Value::makeDouble(hwInfo.cpuTemperature));
+  vm->setHostObjectField(obj, "cpuTemperature", Value::makeDouble(hwInfo.cpuTemperature));
 
   // Storage array
   auto storageArr = vm->createHostArray();
@@ -999,17 +869,12 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
     auto storageObjGuard = vm->makeRoot(Value::makeObjectId(storageObj.id));
     vm->setHostObjectField(storageObj, "name", makeStr(device.name));
     vm->setHostObjectField(storageObj, "model", makeStr(device.model));
-    vm->setHostObjectField(storageObj, "size",
-                           Value::makeInt(static_cast<int64_t>(device.size)));
-    vm->setHostObjectField(storageObj, "used",
-                           Value::makeInt(static_cast<int64_t>(device.used)));
-    vm->setHostObjectField(storageObj, "free",
-                           Value::makeInt(static_cast<int64_t>(device.free)));
+    vm->setHostObjectField(storageObj, "size", Value::makeInt(static_cast<int64_t>(device.size)));
+    vm->setHostObjectField(storageObj, "used", Value::makeInt(static_cast<int64_t>(device.used)));
+    vm->setHostObjectField(storageObj, "free", Value::makeInt(static_cast<int64_t>(device.free)));
     vm->setHostObjectField(storageObj, "type", makeStr(device.type));
-    vm->setHostObjectField(storageObj, "mountPoint",
-                           makeStr(device.mountPoint));
-    vm->setHostObjectField(storageObj, "filesystem",
-                           makeStr(device.filesystem));
+    vm->setHostObjectField(storageObj, "mountPoint", makeStr(device.mountPoint));
+    vm->setHostObjectField(storageObj, "filesystem", makeStr(device.filesystem));
     vm->pushHostArrayValue(storageArr, Value::makeObjectId(storageObj.id));
   }
   vm->setHostObjectField(obj, "storage", Value::makeArrayId(storageArr.id));

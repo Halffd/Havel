@@ -23,335 +23,349 @@
 
 namespace havel::host {
 
-UIManager& UIManager::instance() {
-    static UIManager inst;
-    return inst;
+UIManager &UIManager::instance() {
+  static UIManager inst;
+  return inst;
 }
 
 // Preferred backend requested via --ui (see setPreferredBackend).
 static std::string g_preferred_backend;
 
 void UIManager::setPreferredBackend(const std::string &apiName) {
-    g_preferred_backend = apiName;
-    // Startup creates a backend before the launcher reaches its own backend
-    // check (module/toolkit loading touches UIManager), so a preference set
-    // afterwards would never be applied: backend() only re-selects while
-    // backend_ is null. Switch now if one already exists and differs, so
-    // `--ui gtk` really runs on GTK even when Qt was auto-detected first.
-    if (instance().backend_ && instance().currentApiName() != apiName &&
-        apiName != "auto" && apiName != "AUTO" && apiName != "Auto") {
-        instance().initialized_ = true;
-        instance().setBackend(apiName);
-    }
+  g_preferred_backend = apiName;
+  // Startup creates a backend before the launcher reaches its own backend
+  // check (module/toolkit loading touches UIManager), so a preference set
+  // afterwards would never be applied: backend() only re-selects while
+  // backend_ is null. Switch now if one already exists and differs, so
+  // `--ui gtk` really runs on GTK even when Qt was auto-detected first.
+  if (instance().backend_ && instance().currentApiName() != apiName &&
+      apiName != "auto" && apiName != "AUTO" && apiName != "Auto") {
+    instance().initialized_ = true;
+    instance().setBackend(apiName);
+  }
 }
 
 std::string UIManager::preferredBackend() {
-    return g_preferred_backend;
+  return g_preferred_backend;
 }
 
 void UIManager::destroyBackend() {
-    if (!backend_) return;
-    if (auto fn = backend_->getDestroyFn()) {
-        fn(backend_.get());
-        backend_.release();
-    }
-    backend_.reset();
+  if (!backend_)
+    return;
+  if (auto fn = backend_->getDestroyFn()) {
+    fn(backend_.get());
+    backend_.release();
+  }
+  backend_.reset();
 }
 
 bool UIManager::setBackend(UIBackend::Api api) {
-    if (api == UIBackend::Api::AUTO) {
-        api = detectBestBackend();
-    }
+  if (api == UIBackend::Api::AUTO) {
+    api = detectBestBackend();
+  }
 
-    if (currentApi_ == api && backend_) {
-        return true;
-    }
-
-    if (backend_) {
-        backend_->shutdown();
-        destroyBackend();
-    }
-
-    backend_ = createBackend(api);
-    if (!backend_) {
-        initialized_ = true;
-        return false;
-    }
-
-    if (!backend_->initialize()) {
-        destroyBackend();
-        return false;
-    }
-
-    currentApi_ = api;
-    initialized_ = true;
+  if (currentApi_ == api && backend_) {
     return true;
-}
+  }
 
-bool UIManager::setBackend(const std::string& apiName) {
-    if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
-        return setBackend(UIBackend::Api::QT);
-    } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
-        return setBackend(UIBackend::Api::GTK);
-    } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
-        return setBackend(UIBackend::Api::IMGUI);
-    } else if (apiName == "auto" || apiName == "AUTO" || apiName == "Auto") {
-        return setBackend(UIBackend::Api::AUTO);
-    }
+  if (backend_) {
+    backend_->shutdown();
+    destroyBackend();
+  }
+
+  backend_ = createBackend(api);
+  if (!backend_) {
+    initialized_ = true;
     return false;
+  }
+
+  if (!backend_->initialize()) {
+    destroyBackend();
+    return false;
+  }
+
+  currentApi_ = api;
+  initialized_ = true;
+  return true;
 }
 
-UIBackend* UIManager::backend() {
-    if (!backend_ && !initialized_) {
-        initialized_ = true;
-        // Honour an explicit --ui <name> first. The preference was set by the
-        // launcher but never read here, so `--ui gtk` silently ran on whatever
-        // detectBestBackend() picked - with an offscreen-capable Qt present, a
-        // display-less GTK request succeeded on Qt and the caller never
-        // reached its "No UI backend available" path. A requested backend that
-        // fails to initialize is NOT retried as auto: the caller reports the
-        // refusal instead of quietly running on a different toolkit.
-        if (!g_preferred_backend.empty() && g_preferred_backend != "auto" &&
-            g_preferred_backend != "AUTO" && g_preferred_backend != "Auto") {
-            setBackend(g_preferred_backend);
-        } else {
-            setBackend(detectBestBackend());
-        }
+bool UIManager::setBackend(const std::string &apiName) {
+  if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
+    return setBackend(UIBackend::Api::QT);
+  } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
+    return setBackend(UIBackend::Api::GTK);
+  } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
+    return setBackend(UIBackend::Api::IMGUI);
+  } else if (apiName == "auto" || apiName == "AUTO" || apiName == "Auto") {
+    return setBackend(UIBackend::Api::AUTO);
+  }
+  return false;
+}
+
+UIBackend *UIManager::backend() {
+  if (!backend_ && !initialized_) {
+    initialized_ = true;
+    // Honour an explicit --ui <name> first. preferredBackend() was set by
+    // the launcher but never read here, so `--ui gtk` silently ran on
+    // whatever detectBestBackend() picked - with an offscreen-capable Qt
+    // present, a display-less GTK request succeeded on Qt and the caller
+    // never reached its "No UI backend available" path. A requested
+    // backend that fails to initialize is NOT retried as auto: the caller
+    // reports the refusal instead of quietly running on a different
+    // toolkit than the one asked for.
+    if (!g_preferred_backend.empty() && g_preferred_backend != "auto" &&
+        g_preferred_backend != "AUTO" && g_preferred_backend != "Auto") {
+      setBackend(g_preferred_backend);
+    } else {
+      setBackend(detectBestBackend());
     }
-    return backend_.get();
+  }
+  return backend_.get();
 }
 
 UIBackend::Api UIManager::currentApi() const {
-    return currentApi_;
+  return currentApi_;
 }
 
 std::string UIManager::currentApiName() const {
-    if (!backend_) {
-        return "none";
-    }
-    return backend_.get()->getApiName();
+  if (!backend_) {
+    return "none";
+  }
+  return backend_.get()->getApiName();
 }
 
 bool UIManager::isBackendAvailable(UIBackend::Api api) const {
-    if (tryLoadToolkit(api)) {
-        return true;
-    }
+  if (tryLoadToolkit(api)) {
+    return true;
+  }
 
-    switch (api) {
-    case UIBackend::Api::QT:
-        // Qt availability is a runtime property now: the target that owns Qt
-        // registers a factory, so a Qt-free build reports "unavailable" by
-        // having no factory rather than by an undefined macro.
-        return hasUIBackendFactory(UIBackend::Api::QT);
-    case UIBackend::Api::GTK:
+  switch (api) {
+  case UIBackend::Api::QT:
+    // Qt availability is a runtime property now: the target that owns Qt
+    // registers a factory, so a Qt-free build reports "unavailable" by
+    // having no factory rather than by an undefined macro.
+    return hasUIBackendFactory(UIBackend::Api::QT);
+  case UIBackend::Api::GTK:
 #ifdef HAVE_GTK_BACKEND
-        return true;
+    return true;
 #else
-        return false;
-#endif
-    case UIBackend::Api::IMGUI:
-#ifdef HAVE_IMGUI_BACKEND
-        return true;
-#else
-        return false;
-#endif
-    case UIBackend::Api::AUTO:
-        return true;
-    }
     return false;
+#endif
+  case UIBackend::Api::IMGUI:
+#ifdef HAVE_IMGUI_BACKEND
+    return true;
+#else
+    return false;
+#endif
+  case UIBackend::Api::AUTO:
+    return true;
+  }
+  return false;
 }
 
-bool UIManager::isBackendAvailable(const std::string& apiName) const {
-    if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
-        return isBackendAvailable(UIBackend::Api::QT);
-    } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
-        return isBackendAvailable(UIBackend::Api::GTK);
-    } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
-        return isBackendAvailable(UIBackend::Api::IMGUI);
-    }
-    return false;
+bool UIManager::isBackendAvailable(const std::string &apiName) const {
+  if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
+    return isBackendAvailable(UIBackend::Api::QT);
+  } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
+    return isBackendAvailable(UIBackend::Api::GTK);
+  } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
+    return isBackendAvailable(UIBackend::Api::IMGUI);
+  }
+  return false;
 }
 
 UIBackend::Api UIManager::detectBestBackend() const {
-    const std::string preferred = preferredBackend();
-    if (!preferred.empty() && preferred != "auto") {
-        UIBackend::Api api = UIBackend::Api::AUTO;
-        if (preferred == "qt") api = UIBackend::Api::QT;
-        else if (preferred == "gtk") api = UIBackend::Api::GTK;
-        else if (preferred == "imgui") api = UIBackend::Api::IMGUI;
-        if (api != UIBackend::Api::AUTO && isBackendAvailable(api)) {
-            return api;
-        }
-        // Requested but unavailable: fall back to the auto order below so
-        // a bad --ui value degrades instead of killing the app.
+  const std::string preferred = preferredBackend();
+  if (!preferred.empty() && preferred != "auto") {
+    UIBackend::Api api = UIBackend::Api::AUTO;
+    if (preferred == "qt")
+      api = UIBackend::Api::QT;
+    else if (preferred == "gtk")
+      api = UIBackend::Api::GTK;
+    else if (preferred == "imgui")
+      api = UIBackend::Api::IMGUI;
+    if (api != UIBackend::Api::AUTO && isBackendAvailable(api)) {
+      return api;
     }
-    if (isBackendAvailable(UIBackend::Api::QT)) {
-        return UIBackend::Api::QT;
-    }
-    if (isBackendAvailable(UIBackend::Api::GTK)) {
-        return UIBackend::Api::GTK;
-    }
-    if (isBackendAvailable(UIBackend::Api::IMGUI)) {
-        return UIBackend::Api::IMGUI;
-    }
+    // Requested but unavailable: fall back to the auto order below so
+    // a bad --ui value degrades instead of killing the app.
+  }
+  if (isBackendAvailable(UIBackend::Api::QT)) {
     return UIBackend::Api::QT;
+  }
+  if (isBackendAvailable(UIBackend::Api::GTK)) {
+    return UIBackend::Api::GTK;
+  }
+  if (isBackendAvailable(UIBackend::Api::IMGUI)) {
+    return UIBackend::Api::IMGUI;
+  }
+  return UIBackend::Api::QT;
 }
 
 void UIManager::shutdown() {
-    if (backend_) {
-        backend_->shutdown();
-        backend_.reset();
-    }
-    initialized_ = false;
-    currentApi_ = UIBackend::Api::AUTO;
+  if (backend_) {
+    backend_->shutdown();
+    backend_.reset();
+  }
+  initialized_ = false;
+  currentApi_ = UIBackend::Api::AUTO;
 }
 
 bool UIManager::isInitialized() const {
-    return initialized_;
+  return initialized_;
 }
 
 std::string UIManager::toolkitNameForApi(UIBackend::Api api) const {
-    switch (api) {
-    case UIBackend::Api::QT: return "qt";
-    case UIBackend::Api::GTK: return "gtk";
-    case UIBackend::Api::IMGUI: return "imgui";
-    default: return "";
-    }
+  switch (api) {
+  case UIBackend::Api::QT:
+    return "qt";
+  case UIBackend::Api::GTK:
+    return "gtk";
+  case UIBackend::Api::IMGUI:
+    return "imgui";
+  default:
+    return "";
+  }
 }
 
 std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const {
-    std::string name = toolkitNameForApi(api);
-    if (name.empty()) return std::nullopt;
+  std::string name = toolkitNameForApi(api);
+  if (name.empty())
+    return std::nullopt;
 
-    static Loader loader;
-    static bool paths_added = false;
-    if (!paths_added) {
-        loader.addToolkitPaths();
-        paths_added = true;
-    }
+  static Loader loader;
+  static bool paths_added = false;
+  if (!paths_added) {
+    loader.addToolkitPaths();
+    paths_added = true;
+  }
 
-    return loader.loadToolkitPlugin(name);
+  return loader.loadToolkitPlugin(name);
 }
 
 const HavelToolkitABI *UIManager::ensureQtToolkit() {
-    // dlopen at most once per process: havel_gui's static initializer also
-    // ran exactly once, before main(). On failure the loader already logged
-    // the dlopen error; the in-process factory slots simply stay empty and
-    // the Qt-backed features degrade instead of the binary failing to boot.
-    static std::once_flag once;
-    static const HavelToolkitABI *abi = nullptr;
-    std::call_once(once, [] {
-        auto toolkit = UIManager::instance().tryLoadToolkit(UIBackend::Api::QT);
-        if (!toolkit || !toolkit->abi) return;
-        abi = toolkit->abi;
-        UIManager::instance().loadedToolkitAbi_ = abi;
-        if (abi->install_factories) {
-            abi->install_factories();
-        }
-        havel::info("Qt toolkit loaded: {} {}", abi->name ? abi->name : "qt",
-                    abi->version ? abi->version : "");
-    });
-    return abi;
+  // dlopen at most once per process: havel_gui's static initializer also
+  // ran exactly once, before main(). On failure the loader already logged
+  // the dlopen error; the in-process factory slots simply stay empty and
+  // the Qt-backed features degrade instead of the binary failing to boot.
+  static std::once_flag once;
+  static const HavelToolkitABI *abi = nullptr;
+  std::call_once(once, [] {
+    auto toolkit = UIManager::instance().tryLoadToolkit(UIBackend::Api::QT);
+    if (!toolkit || !toolkit->abi)
+      return;
+    abi = toolkit->abi;
+    UIManager::instance().loadedToolkitAbi_ = abi;
+    if (abi->install_factories) {
+      abi->install_factories();
+    }
+    havel::info("Qt toolkit loaded: {} {}", abi->name ? abi->name : "qt",
+                abi->version ? abi->version : "");
+  });
+  return abi;
 }
 
 void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
-    if (!toolkit.abi || !toolkit.abi->register_extension_functions) return;
-    // Pass the real global C-API table: it is a static dispatch struct that
-    // exists before any engine or VM, and registration only fills the
-    // extension-function registry (drained by Modules::install). The old
-    // nullptr call crashed toolkit plugins that dereferenced it and left
-    // qt.* permanently unregistered.
-    toolkit.abi->register_extension_functions(havel_get_global_c_api());
+  if (!toolkit.abi || !toolkit.abi->register_extension_functions)
+    return;
+  // Pass the real global C-API table: it is a static dispatch struct that
+  // exists before any engine or VM, and registration only fills the
+  // extension-function registry (drained by Modules::install). The old
+  // nullptr call crashed toolkit plugins that dereferenced it and left
+  // qt.* permanently unregistered.
+  toolkit.abi->register_extension_functions(havel_get_global_c_api());
 }
 
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
-    auto toolkit = tryLoadToolkit(api);
-    if (toolkit && toolkit->abi->create_ui_backend && toolkit->abi->destroy_ui_backend) {
-        void *raw = toolkit->abi->create_ui_backend();
-        if (!raw) return nullptr;
+  auto toolkit = tryLoadToolkit(api);
+  if (toolkit && toolkit->abi->create_ui_backend && toolkit->abi->destroy_ui_backend) {
+    void *raw = toolkit->abi->create_ui_backend();
+    if (!raw)
+      return nullptr;
 
-        auto *destroy_fn = toolkit->abi->destroy_ui_backend;
-        UIBackend *backend = castUIBackend(raw);
-        backend->setDestroyFn(destroy_fn);
+    auto *destroy_fn = toolkit->abi->destroy_ui_backend;
+    UIBackend *backend = castUIBackend(raw);
+    backend->setDestroyFn(destroy_fn);
 
-        registerToolkitExtensions(*toolkit);
+    registerToolkitExtensions(*toolkit);
 
-        // The plugin is the Qt half of the process now: the executable no
-        // longer links havel_gui, so nothing else registers the in-process
-        // UI/screenshot/clipboard factories, the pixel service or the screen
-        // provider. install_factories is idempotent.
-        loadedToolkitAbi_ = toolkit->abi;
-        if (toolkit->abi->install_factories) {
-            toolkit->abi->install_factories();
-        }
-
-        return std::unique_ptr<UIBackend>(backend);
+    // The plugin is the Qt half of the process now: the executable no
+    // longer links havel_gui, so nothing else registers the in-process
+    // UI/screenshot/clipboard factories, the pixel service or the screen
+    // provider. install_factories is idempotent.
+    loadedToolkitAbi_ = toolkit->abi;
+    if (toolkit->abi->install_factories) {
+      toolkit->abi->install_factories();
     }
 
-    switch (api) {
-    case UIBackend::Api::QT:
-        // The in-process Qt path has always installed the in-process screenshot
-        // backend as a side effect of building the UI backend, so keep that.
-        installToolkitBackendsInProcess("qt");
-        // Constructed by havel_gui, not here: this file is in libhavel_core.a
-        // and a Qt-free host must link it without pulling in Qt.
-        return createRegisteredUIBackend(UIBackend::Api::QT);
-    case UIBackend::Api::GTK:
+    return std::unique_ptr<UIBackend>(backend);
+  }
+
+  switch (api) {
+  case UIBackend::Api::QT:
+    // The in-process Qt path has always installed the in-process screenshot
+    // backend as a side effect of building the UI backend, so keep that.
+    installToolkitBackendsInProcess("qt");
+    // Constructed by havel_gui, not here: this file is in libhavel_core.a
+    // and a Qt-free host must link it without pulling in Qt.
+    return createRegisteredUIBackend(UIBackend::Api::QT);
+  case UIBackend::Api::GTK:
 #ifdef HAVE_GTK_BACKEND
-        return std::make_unique<GtkBackend>();
+    return std::make_unique<GtkBackend>();
 #else
-        return nullptr;
+    return nullptr;
 #endif
-    case UIBackend::Api::IMGUI:
+  case UIBackend::Api::IMGUI:
 #ifdef HAVE_IMGUI_BACKEND
-        return std::make_unique<ImGuiBackend>();
+    return std::make_unique<ImGuiBackend>();
 #else
-        return nullptr;
+    return nullptr;
 #endif
-    default:
-        return nullptr;
-    }
+  default:
+    return nullptr;
+  }
 }
 
 bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
-    // No Qt here: this only calls the toolkit ABI and Qt-free service setters,
-    // so it must not be gated on the build having a Qt extension.
-    if (!abi) return false;
-    bool any = false;
+  // No Qt here: this only calls the toolkit ABI and Qt-free service setters,
+  // so it must not be gated on the build having a Qt extension.
+  if (!abi)
+    return false;
+  bool any = false;
 
-    if (abi->create_screenshot_backend) {
-        auto *raw = abi->create_screenshot_backend();
-        auto *backend = castScreenshotBackend(raw);
-        havel::host::ScreenshotService::getInstance().setBackend(
-            std::unique_ptr<havel::host::IScreenshotBackend>(backend));
-        any = true;
-    }
+  if (abi->create_screenshot_backend) {
+    auto *raw = abi->create_screenshot_backend();
+    auto *backend = castScreenshotBackend(raw);
+    havel::host::ScreenshotService::getInstance().setBackend(
+        std::unique_ptr<havel::host::IScreenshotBackend>(backend));
+    any = true;
+  }
 
-    if (abi->create_alttab_backend) {
-        auto *raw = abi->create_alttab_backend();
-        auto *backend = castAltTabBackend(raw);
-        havel::AltTabService::instance().setBackend(std::unique_ptr<havel::IAltTabBackend>(backend));
-        any = true;
-    }
+  if (abi->create_alttab_backend) {
+    auto *raw = abi->create_alttab_backend();
+    auto *backend = castAltTabBackend(raw);
+    havel::AltTabService::instance().setBackend(std::unique_ptr<havel::IAltTabBackend>(backend));
+    any = true;
+  }
 
-    if (abi->create_clipboard_backend) {
-        auto *raw = abi->create_clipboard_backend();
-        auto *backend = castClipboardBackend(raw);
-        (void)backend;
-        any = true;
-    }
+  if (abi->create_clipboard_backend) {
+    auto *raw = abi->create_clipboard_backend();
+    auto *backend = castClipboardBackend(raw);
+    (void)backend;
+    any = true;
+  }
 
-    return any;
+  return any;
 }
 
 bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) {
-    auto backend = createRegisteredScreenshotBackend(toolkitName);
-    if (!backend) {
-        return false;
-    }
-    havel::host::ScreenshotService::getInstance().setBackend(std::move(backend));
-    // AltTab backend created lazily on first use (after QApplication exists)
-    return true;
+  auto backend = createRegisteredScreenshotBackend(toolkitName);
+  if (!backend) {
+    return false;
+  }
+  havel::host::ScreenshotService::getInstance().setBackend(std::move(backend));
+  // AltTab backend created lazily on first use (after QApplication exists)
+  return true;
 }
 
 } // namespace havel::host

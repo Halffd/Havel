@@ -1068,6 +1068,10 @@ std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
   return host_function_names_[index];
 }
 
+void VM::trackExternalRoot(uint64_t root_id) {
+    if (root_id != 0) tracked_external_roots_.push_back(root_id);
+}
+
 uint64_t VM::pinExternalRoot(const Value &value) {
   return heap_.pinExternalRoot(value);
 }

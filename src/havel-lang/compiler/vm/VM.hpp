@@ -362,7 +362,9 @@ public:
   // The wrapper NAME is an ambiguous concatenation ($module_fn_<key>_<field>),
   // so serializeGlobals must NOT re-parse it; it reads this table instead.
   std::unordered_map<std::string, std::pair<std::string, std::string>> host_module_wrapper_meta_;
-  std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
+  std::unordered_map<std::string, uint64_t> host_function_gc_roots_;
+  // Roots owned by the VM for its whole lifetime, released at shutdown.
+  std::vector<uint64_t> tracked_external_roots_; // Name -> pinned GC root ID
   std::unordered_map<std::string, uint64_t>
       module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
   // Persistent class registry: class name -> class prototype object
@@ -499,9 +501,8 @@ public:
   // its frames are flagged !ambient_cached and their ambients are
   // dropped at pop (the sidecar is the synced authority) instead of
   // parked - parking a post-steal ambient would poison the cache.
-  bool installModuleGlobals(
-      const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
-      bool push = true, bool use_cache = true) {
+  bool installModuleGlobals(const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
+                            bool push = true, bool use_cache = true) {
     if (!target || target == globals_identity_) {
       return false;
     }
@@ -651,26 +652,26 @@ public:
   std::unordered_map<uint32_t, Value> timeout_results_;
   std::unordered_map<uint32_t, Value> interval_results_;
 
-// Closures captured by timer/thread callbacks (invisible to GC otherwise)
-    std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
-    
-    // Track suspended VM fibers waiting on channel receive
-    // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
-    std::unordered_map<uint32_t, Fiber*> channel_wait_map_;
-    mutable std::shared_mutex channel_wait_mutex_;
-	
-class EventQueue* event_queue_ = nullptr;
-struct PendingTimerCallback {
-  // Either an external-root callback id (has_callback_id) or a closure
-  // Value pushed by the Value-form timer producers. See TimerFirePayload.
-  CallbackId callback_id = INVALID_CALLBACK_ID;
-  Value closure;
-  uint32_t timer_id = 0;
-  bool is_timeout = false;
-  bool has_callback_id = false;
-};
+  // Closures captured by timer/thread callbacks (invisible to GC otherwise)
+  std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
+
+  // Track suspended VM fibers waiting on channel receive
+  // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
+  std::unordered_map<uint32_t, Fiber *> channel_wait_map_;
+  mutable std::shared_mutex channel_wait_mutex_;
+
+  class EventQueue *event_queue_ = nullptr;
+  struct PendingTimerCallback {
+    // Either an external-root callback id (has_callback_id) or a closure
+    // Value pushed by the Value-form timer producers. See TimerFirePayload.
+    CallbackId callback_id = INVALID_CALLBACK_ID;
+    Value closure;
+    uint32_t timer_id = 0;
+    bool is_timeout = false;
+    bool has_callback_id = false;
+  };
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;
@@ -1117,7 +1118,7 @@ public:
   // condition, and two `when` branches on one key then both ran.
   bool hotkeyConditionAllows(compiler::Scheduler::Goroutine *g);
 
-  const BytecodeFunction* currentFunction() const {
+  const BytecodeFunction *currentFunction() const {
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
@@ -1665,7 +1666,6 @@ public:
         // the backend's compiled code.
         func.jit_compiled = true;
       }
-
     }
 
     // Tier 2 queueing: only small, very hot functions qualify. Re-checked
@@ -1816,6 +1816,15 @@ public:
   const VMConfig &vmConfig() const { return vm_config_; }
   uint64_t getMemoryUsage() const { return heap_.approxHeapBytes(); }
   uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
+
+  // Own a pinned root for the VM's lifetime.
+  //
+  // pinExternalRoot() returns an id the caller must keep to release it. Several
+  // call sites dropped the id on the floor - notably InputBridge's hotkey
+  // registration - which pinned one root per hotkey binding that no shutdown
+  // path could ever release. This records the id so the existing shutdown loop
+  // can release it alongside host_function_gc_roots_.
+  void trackExternalRoot(uint64_t root_id);
 
   void setEventQueue(class EventQueue *eq);
   class EventQueue *getEventQueue() { return event_queue_; }

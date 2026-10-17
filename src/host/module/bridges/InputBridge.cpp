@@ -127,7 +127,11 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         "Hotkey registered via hotkey.register", callbackId, true);
 
     if (hotkeyContext.isObjectId()) {
-        vm->pinExternalRoot(hotkeyContext);
+        // The id was dropped here before: pinExternalRoot returns the only
+        // handle that can release the root, so discarding it pinned one root
+        // per hotkey binding for the whole process (318 of them for a large
+        // config). trackExternalRoot hands it to the VM shutdown drain.
+        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
     }
 
     // Always create a persistent goroutine for the hotkey callback.
@@ -224,7 +228,11 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
         "Conditional hotkey", actionCb, false, conditionCb);
 
     if (hotkeyContext.isObjectId()) {
-        vm->pinExternalRoot(hotkeyContext);
+        // The id was dropped here before: pinExternalRoot returns the only
+        // handle that can release the root, so discarding it pinned one root
+        // per hotkey binding for the whole process (318 of them for a large
+        // config). trackExternalRoot hands it to the VM shutdown drain.
+        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
     }
 
     uint32_t persistentGid = vm->createPersistentHotkeyCallback(

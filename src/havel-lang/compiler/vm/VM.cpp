@@ -373,6 +373,10 @@ VM::~VM() {
     unpinExternalRoot(rootId);
   }
   module_cache_gc_roots_.clear();
+  for (uint64_t rootId : tracked_external_roots_) {
+    unpinExternalRoot(rootId);
+  }
+  tracked_external_roots_.clear();
   imported_module_globals_.clear();
 
   if (heap_.externalRootCount() > 0) {

@@ -6711,6 +6711,12 @@ load_from_source:
   if (resolved->type != ModuleLoader::ResolvedModule::BytecodeCache) {
     // Read source file and compile
     std::ifstream file(resolved->canonicalPath);
+    // Name the actual file in every failure below. The module spec alone
+    // ("Module start ...") leaves the reported line unattributable, and a
+    // reader checking line 4 of the *importing* script rather than the module
+    // is exactly the wrong-file report this addresses.
+    const std::string _mod_file =
+        !resolved->sourcePath.empty() ? resolved->sourcePath : resolved->canonicalPath;
     if (!file.is_open()) {
       moduleLoadDone(canonicalKey);
       COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
@@ -6736,23 +6742,23 @@ load_from_source:
     case SourceCompileStatus::LexError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " lexer error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") lexer error: " + compiled.error);
     case SourceCompileStatus::ParseError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " parse error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") parse error: " + compiled.error);
     case SourceCompileStatus::ParseFailed:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " failed to parse: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") failed to parse: " + compiled.error);
     case SourceCompileStatus::CompileError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " compilation error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compilation error: " + compiled.error);
     case SourceCompileStatus::NullChunk:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " compiler returned null chunk");
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compiler returned null chunk");
     case SourceCompileStatus::NoCompiler:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
@@ -6762,7 +6768,7 @@ load_from_source:
       // Defensive: hook reported Ok without a chunk.
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " compiler returned null chunk");
+      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compiler returned null chunk");
     }
 
     // Auto-cache compiled chunk to ~/.cache/havel. Module compiles run the

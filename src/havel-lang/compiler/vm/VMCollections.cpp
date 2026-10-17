@@ -1883,7 +1883,12 @@ if (!modName.empty()) {
 		// an object usually means a captured receiver resolved to null.
 		const char *tname = object.isNull() ? "null" : object.isInt() ? "int"
 		                   : object.isDouble() ? "double" : "other";
-		COMPILER_THROW(std::string("OBJECT_SET expects object container, got ") + tname);
+		// Location matters here. Without it this error surfaced against the
+		// importing script's `use` line - the consumer, not the module that
+		// actually performed the failing assignment - which sent debugging a
+		// 2000-line config away from a one-line module bug.
+		COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname,
+		                  instruction);
 	}
 
         // _G globals mirror: writing to _G also updates the globals map

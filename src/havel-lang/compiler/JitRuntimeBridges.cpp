@@ -441,6 +441,56 @@ extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
   return Value::makeBool(ld >= rd).rawBits();
 }
 
+// VM-aware ordering bridges: the pure word variants above coerce to
+// double, so two string operands become NaN-vs-NaN and every ordering
+// reads false. The interpreter orders strings lexicographically
+// (VMArithmetic's string path), and tier-compiled Havel code relies on
+// it - json.hv's `_isDigit(ch)` guards with `ch >= "0"`, so the tiered
+// parseNumber's digit loop never ran and json.parse returned null
+// (test_json_stringify under HAVEL_TIERING=1). Both operands
+// string-ish -> lexicographic compare via the VM seam; anything else
+// keeps the numeric path (same mixed-type stance as havel_vm_eq_vm).
+static bool bothStrings(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (!vm_ptr)
+    return false;
+  Value lv = Value::fromRawBits(l);
+  Value rv = Value::fromRawBits(r);
+  return (lv.isStringId() || lv.isStringValId() || lv.isRegexValId()) &&
+         (rv.isStringId() || rv.isStringValId() || rv.isRegexValId());
+}
+
+extern "C" uint64_t havel_vm_lt_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) < 0).rawBits();
+  }
+  return havel_vm_lt(l, r);
+}
+
+extern "C" uint64_t havel_vm_lte_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) <= 0).rawBits();
+  }
+  return havel_vm_lte(l, r);
+}
+
+extern "C" uint64_t havel_vm_gt_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) > 0).rawBits();
+  }
+  return havel_vm_gt(l, r);
+}
+
+extern "C" uint64_t havel_vm_gte_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) >= 0).rawBits();
+  }
+  return havel_vm_gte(l, r);
+}
+
 // Truthiness of a raw Value word (Runtime ABI): null falsy, bool by
 // payload, int48 non-zero, raw double non-zero/non-NaN, refs truthy.
 extern "C" HAVEL_NAN_SAFE int havel_vm_is_truthy(uint64_t v) {

@@ -499,9 +499,8 @@ public:
   // its frames are flagged !ambient_cached and their ambients are
   // dropped at pop (the sidecar is the synced authority) instead of
   // parked - parking a post-steal ambient would poison the cache.
-  bool installModuleGlobals(
-      const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
-      bool push = true, bool use_cache = true) {
+  bool installModuleGlobals(const std::shared_ptr<std::unordered_map<std::string, Value>> &target,
+                            bool push = true, bool use_cache = true) {
     if (!target || target == globals_identity_) {
       return false;
     }
@@ -651,26 +650,26 @@ public:
   std::unordered_map<uint32_t, Value> timeout_results_;
   std::unordered_map<uint32_t, Value> interval_results_;
 
-// Closures captured by timer/thread callbacks (invisible to GC otherwise)
-    std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
-    std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
-    
-    // Track suspended VM fibers waiting on channel receive
-    // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
-    std::unordered_map<uint32_t, Fiber*> channel_wait_map_;
-    mutable std::shared_mutex channel_wait_mutex_;
-	
-class EventQueue* event_queue_ = nullptr;
-struct PendingTimerCallback {
-  // Either an external-root callback id (has_callback_id) or a closure
-  // Value pushed by the Value-form timer producers. See TimerFirePayload.
-  CallbackId callback_id = INVALID_CALLBACK_ID;
-  Value closure;
-  uint32_t timer_id = 0;
-  bool is_timeout = false;
-  bool has_callback_id = false;
-};
+  // Closures captured by timer/thread callbacks (invisible to GC otherwise)
+  std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
+  std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
+
+  // Track suspended VM fibers waiting on channel receive
+  // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
+  std::unordered_map<uint32_t, Fiber *> channel_wait_map_;
+  mutable std::shared_mutex channel_wait_mutex_;
+
+  class EventQueue *event_queue_ = nullptr;
+  struct PendingTimerCallback {
+    // Either an external-root callback id (has_callback_id) or a closure
+    // Value pushed by the Value-form timer producers. See TimerFirePayload.
+    CallbackId callback_id = INVALID_CALLBACK_ID;
+    Value closure;
+    uint32_t timer_id = 0;
+    bool is_timeout = false;
+    bool has_callback_id = false;
+  };
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;
@@ -1117,7 +1116,7 @@ public:
   // condition, and two `when` branches on one key then both ran.
   bool hotkeyConditionAllows(compiler::Scheduler::Goroutine *g);
 
-  const BytecodeFunction* currentFunction() const {
+  const BytecodeFunction *currentFunction() const {
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
@@ -1665,7 +1664,6 @@ public:
         // the backend's compiled code.
         func.jit_compiled = true;
       }
-
     }
 
     // Tier 2 queueing: only small, very hot functions qualify. Re-checked
@@ -1929,6 +1927,29 @@ public:
       return false;
     auto rs = valueAsString(r);
     return rs.has_value() && *ls == *rs;
+  }
+
+  // Runtime-ABI seam (JitRuntimeBridges lt/lte/gt/gte): the interpreter
+  // orders string operands lexicographically (VMArithmetic's string path
+  // resolves both sides and does a std::string compare); the pure word
+  // bridges coerce to double, so a string ordering comparison in JIT'd
+  // code became NaN-vs-NaN and always read false. json.hv's parseNumber
+  // died on exactly that: `_isDigit` guards with `ch >= "0"`, the tiered
+  // callee answered false, the digit loop never ran, and parse returned
+  // null (test_json_stringify under HAVEL_TIERING). Returns -1/0/1;
+  // callers only reach this when both operands are string-ish.
+  int stringComparePublic(uint64_t l_bits, uint64_t r_bits) const {
+    Value l = Value::fromRawBits(l_bits);
+    Value r = Value::fromRawBits(r_bits);
+    auto ls = valueAsString(l);
+    auto rs = valueAsString(r);
+    if (!ls || !rs)
+      return 0;
+    if (*ls < *rs)
+      return -1;
+    if (*ls > *rs)
+      return 1;
+    return 0;
   }
 
   bool resolveGlobalPublic(const std::string &name, Value *out) {

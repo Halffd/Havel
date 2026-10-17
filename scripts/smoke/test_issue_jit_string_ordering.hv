@@ -1,0 +1,51 @@
+// Regression: ordering comparisons (< <= > >=) on strings inside
+// tier-1-compiled code must agree with the interpreter.
+//
+// The JIT routed LT/LTE/GT/GTE through the pure word bridges, which
+// coerce both operands to double: two strings become NaN-vs-NaN and
+// every ordering reads false. The interpreter orders strings
+// lexicographically (VMArithmetic's string path). Caught by the full
+// tiered sweep via test_json_stringify: json.hv's parseNumber guards
+// its digit loop with `_isDigit(ch)` where isDigit does `ch >= "0"`,
+// the tiered callee answered false, the loop never ran, and
+// json.parse returned null.
+//
+// Pure data, headless-safe: no IO, no hotkeys, no display.
+fn gte_digit(ch) { ch >= "0" }
+fn nine_max(ch) { ch <= "9" }
+fn lt_sep(ch) { ch < "," }
+fn gt_mark(ch) { ch > "!" }
+
+// Calls each comparator on ch through the (hot) callees, 20 times so
+// they tier, then reports the last observed matrix.
+fn matrix(src) {
+  i = 0
+  g = false
+  n = false
+  l = false
+  gt = false
+  while i < 20 {
+    ch = src[0:1]
+    g = gte_digit(ch)
+    n = nine_max(ch)
+    l = lt_sep(ch)
+    gt = gt_mark(ch)
+    i = i + 1
+  }
+  [g, n, l, gt]
+}
+
+// Expected lexicographic results, mirroring the interpreter (ASCII:
+// '!'=33 < ','=44 < '0'=48 < '1'=49 < '9'=57 < 'a'=97):
+// "1" is between "0" and "9", above "," and "!"; "a" is above "0",
+// ",", and "!", but above "9" too.
+want_digit = [true, true, false, true]
+want_letter = [true, false, false, true]
+
+got_digit = matrix("1")
+got_letter = matrix("a")
+
+if got_digit != want_digit || got_letter != want_letter {
+  print("FAIL jit-string-ordering: tiered string comparisons disagree with the interpreter (digit=$got_digit letter=$got_letter)")
+  process.exit(255)
+}

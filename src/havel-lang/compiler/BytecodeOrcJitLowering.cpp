@@ -2495,40 +2495,51 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     }
 
     // Math intrinsics
+    // Math intrinsics: the vstack holds NaN-boxed i64 values, so the operand
+    // must be bitcast to f64 before the intrinsic and the f64 result bitcast
+    // back to i64. Passing the raw boxed i64 made CreateUnaryIntrinsic deduce
+    // a nonexistent llvm.<op>.i64 overload (and the {f64}-typed family emitted
+    // calls with i64 args), which failed the verifier in the AOT pipeline.
     case OpCode::MATH_SIN: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sin, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::sin, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_COS: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cos, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::cos, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_TAN: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tan, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::tan, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_ASIN: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::asin, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::asin, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_ACOS: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::acos, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::acos, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_ATAN: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::atan, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_ATAN2: {
@@ -2536,55 +2547,66 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
       vstack.pop_back();
       llvm::Value *x = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateBinaryIntrinsic(llvm::Intrinsic::atan2, x, y));
+      llvm::Value *d = B.CreateBinaryIntrinsic(llvm::Intrinsic::atan2, B.CreateBitCast(x, f64),
+                                               B.CreateBitCast(y, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_SINH: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sinh, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::sinh, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_COSH: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cosh, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::cosh, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_TANH: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tanh, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::tanh, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_SQRT: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::sqrt, {f64}, {arg}));
+      llvm::Value *d = B.CreateIntrinsic(llvm::Intrinsic::sqrt, {f64}, {B.CreateBitCast(arg, f64)});
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_LOG: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log, {f64}, {arg}));
+      llvm::Value *d = B.CreateIntrinsic(llvm::Intrinsic::log, {f64}, {B.CreateBitCast(arg, f64)});
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_LOG2: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log2, {f64}, {arg}));
+      llvm::Value *d = B.CreateIntrinsic(llvm::Intrinsic::log2, {f64}, {B.CreateBitCast(arg, f64)});
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_LOG10: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::log10, {f64}, {arg}));
+      llvm::Value *d =
+          B.CreateIntrinsic(llvm::Intrinsic::log10, {f64}, {B.CreateBitCast(arg, f64)});
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_EXP: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateIntrinsic(llvm::Intrinsic::exp, {f64}, {arg}));
+      llvm::Value *d = B.CreateIntrinsic(llvm::Intrinsic::exp, {f64}, {B.CreateBitCast(arg, f64)});
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
     case OpCode::MATH_CEIL: {
@@ -2595,7 +2617,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         fnCeil = llvm::Function::Create(llvm::FunctionType::get(f64, {f64}, false),
                                         llvm::Function::ExternalLinkage, "ceil", &module);
       }
-      vstack.push_back(B.CreateCall(fnCeil, {arg}));
+      vstack.push_back(B.CreateBitCast(B.CreateCall(fnCeil, {B.CreateBitCast(arg, f64)}), i64));
       break;
     }
     case OpCode::MATH_FLOOR: {
@@ -2606,7 +2628,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         fnFloor = llvm::Function::Create(llvm::FunctionType::get(f64, {f64}, false),
                                          llvm::Function::ExternalLinkage, "floor", &module);
       }
-      vstack.push_back(B.CreateCall(fnFloor, {arg}));
+      vstack.push_back(B.CreateBitCast(B.CreateCall(fnFloor, {B.CreateBitCast(arg, f64)}), i64));
       break;
     }
     case OpCode::MATH_ROUND: {
@@ -2618,13 +2640,14 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
             llvm::Function::Create(llvm::FunctionType::get(f64, {f64}, false),
                                    llvm::Function::ExternalLinkage, "llvm.round.f64", &module);
       }
-      vstack.push_back(B.CreateCall(fnRound, {arg}));
+      vstack.push_back(B.CreateBitCast(B.CreateCall(fnRound, {B.CreateBitCast(arg, f64)}), i64));
       break;
     }
     case OpCode::MATH_ABS: {
       llvm::Value *arg = vstack.back();
       vstack.pop_back();
-      vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, arg));
+      llvm::Value *d = B.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, B.CreateBitCast(arg, f64));
+      vstack.push_back(B.CreateBitCast(d, i64));
       break;
     }
 

@@ -332,16 +332,6 @@ bool WindowManagerDetector::CheckProcess(
 #endif
 }
 
-bool WindowManagerDetector::CheckEnvironmentVar(
-    const std::string &varName, const std::string &value) noexcept {
-  try {
-    const char *env = std::getenv(varName.c_str());
-    return env && std::string(env) == value;
-  } catch (...) {
-    return false;
-  }
-}
-
 bool WindowManagerDetector::CheckXProperty(
     const std::string &property) noexcept {
   try {

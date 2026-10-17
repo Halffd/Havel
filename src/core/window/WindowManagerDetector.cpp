@@ -341,7 +341,9 @@ bool WindowManagerDetector::CheckEnvironmentVar(const std::string &varName,
       size_t end = list.find(':', start);
       if (end == std::string::npos)
         end = list.size();
-      if (list.compare(start, end - start, value) == 0)
+      // Skip empty entries: a trailing or doubled separator ("ubuntu:", or
+      // "a::b") must not make the empty token a member of the list.
+      if (end > start && list.compare(start, end - start, value) == 0)
         return true;
       start = end + 1;
     }

@@ -3038,9 +3038,13 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           opt.MCOptions.OutputAsmVariant = 1;
         }
 
-        auto targetMachine =
-            target->createTargetMachine(targetTriple, llvm::sys::getHostCPUName(),
-                                        "", opt, llvm::Reloc::PIC_);
+        // Owned: createTargetMachine returns a raw pointer. Leaking it kept
+        // its whole subtarget/TTI chain alive (LSan: 677KB indirect leak via
+        // X86TargetMachine::getSubtargetImpl), which made every AOT compile
+        // exit non-zero in ASAN builds and made hvtest --compare's AOT probe
+        // report the column unavailable even in an ENABLE_LLVM build.
+        std::unique_ptr<llvm::TargetMachine> targetMachine(target->createTargetMachine(
+            targetTriple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_));
 
         module->setDataLayout(targetMachine->createDataLayout());
 
@@ -3494,8 +3498,9 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         }
 
         llvm::TargetOptions opt;
-        auto targetMachine = target->createTargetMachine(
-            targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
+        // Owned: same LSan rationale as the native path above.
+        std::unique_ptr<llvm::TargetMachine> targetMachine(
+            target->createTargetMachine(targetTriple, "generic", "", opt, llvm::Reloc::PIC_));
 
         module->setDataLayout(targetMachine->createDataLayout());
 

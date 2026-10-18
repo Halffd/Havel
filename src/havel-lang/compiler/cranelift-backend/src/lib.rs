@@ -179,8 +179,21 @@ pub struct LoweringError(pub String);
 
 // Edge arguments: block params on CFG edges are BlockArg; the subset only
 // ever passes plain Values (no try_call exception args).
-fn edge_args(stack: &[Value]) -> Vec<BlockArg> {
-    stack.iter().map(|v| BlockArg::Value(*v)).collect()
+// Edge args for a jump to a leader block whose entry depth is `depth`:
+// when the pre-pass converged a join upward, a shallower predecessor
+// pads nulls UNDER its stack values so every arm passes the block's
+// full param count. The pads sit below the arm's live values - the
+// interpreter would underflow its own frame before consuming them and
+// RETURN truncates to the frame base, so they are never observable.
+fn padded_edge_args(depth: usize, stack: &[Value], b: &mut FunctionBuilder) -> Vec<BlockArg> {
+    let mut args: Vec<BlockArg> = Vec::new();
+    for _ in 0..depth.saturating_sub(stack.len()) {
+        args.push(BlockArg::Value(
+            b.ins().iconst(types::I64, NULL_TAGGED as i64),
+        ));
+    }
+    args.extend(stack.iter().map(|v| BlockArg::Value(*v)));
+    args
 }
 
 // Static stack effect of one subset instruction: (pops, pushes) beyond the
@@ -586,9 +599,14 @@ mod fallback_shims {
             "havel_vm_call" => Some(shim_call as *const u8),
             // VM-aware equality falls back to the pure int shims: the
             // standalone harness has no heap, so int operands are all it
-            // can answer (mirrors havel_vm_eq_vm's non-string path).
+            // can answer (mirrors havel_vm_eq_vm's non-string path). The
+            // VM-aware ordering bridges fall back the same way.
             "havel_vm_eq_vm" => Some(shim_eq as *const u8),
             "havel_vm_neq_vm" => Some(shim_neq as *const u8),
+            "havel_vm_lt_vm" => Some(shim_lt as *const u8),
+            "havel_vm_lte_vm" => Some(shim_lte as *const u8),
+            "havel_vm_gt_vm" => Some(shim_gt as *const u8),
+            "havel_vm_gte_vm" => Some(shim_gte as *const u8),
             "havel_vm_not" => Some(shim_not as *const u8),
             "havel_vm_bit_and" => Some(shim_bit_and as *const u8),
             "havel_vm_bit_or" => Some(shim_bit_or as *const u8),
@@ -902,15 +920,21 @@ impl CraneliftBackend {
                         depth_at[t] = dep;
                         work.push(t);
                     }
-                    prev if prev == dep => {}
-                    // Depths only converge: a fork pushing less is a
-                    // different-shaped stream than the static model (the
-                    // interpreter would underflow one arm).
-                    prev => {
-                        return Err(err(format!(
-                            "instruction {t} ({name}): join depth conflict ({prev} vs {dep})"
-                        )))
+                    // Join-depth convergence: the interpreter's frames
+                    // truncate at RETURN, so CFG arms may legally rejoin
+                    // at different operand depths (the default-arg
+                    // prologue's DUP; JUMP_IF_NULL shape does exactly
+                    // this). Converge the join upward to the maximum and
+                    // reprocess the subtree; shallower arms then pad
+                    // nulls under their values at emission
+                    // (padded_edge_args). The old refusal here silently
+                    // dropped such functions to the interpreter while
+                    // the smoke test still "passed".
+                    prev if prev < dep => {
+                        depth_at[t] = dep;
+                        work.push(t);
                     }
+                    _ => {}
                 }
             }
         }
@@ -1008,8 +1032,18 @@ impl CraneliftBackend {
         // VM-aware equality bridges: (vm, l, r) -> result. EQ/NEQ may compare
         // string CONTENT (heap StringId vs chunk-local StringValId) via the
         // heap, so the pure word bridges are not enough - mirror the ORC
-        // lowering, which routes EQ/NEQ slow paths through these.
-        for sym in ["havel_vm_eq_vm", "havel_vm_neq_vm"] {
+        // lowering, which routes EQ/NEQ slow paths through these. The
+        // ordering _vm bridges share the shape: string ordering is
+        // lexicographic in the interpreter, NaN-false in the pure word
+        // variants.
+        for sym in [
+            "havel_vm_eq_vm",
+            "havel_vm_neq_vm",
+            "havel_vm_lt_vm",
+            "havel_vm_lte_vm",
+            "havel_vm_gt_vm",
+            "havel_vm_gte_vm",
+        ] {
             let s = bridge_sig.clone();
             let id = self
                 .module
@@ -1767,7 +1801,12 @@ impl CraneliftBackend {
                 builder
                     .ins()
                     .call(gc_reg_ref, &[vm, null_ptr, null_ptr, zero_count]);
-                builder.ins().jump(first, &[]);
+                // A loop-to-entry edge may have raised instruction 0's
+                // join depth; the function entry then supplies null pads
+                // for the block params (first entry runs at depth 0 in
+                // the interpreter - the pads are never consumed).
+                let entry_args = padded_edge_args(entry_depth[0], &[], &mut builder);
+                builder.ins().jump(first, &entry_args);
             }
             let declare_local = |operand: u32,
                                  var_of: &mut HashMap<u32, Variable>,
@@ -1888,23 +1927,26 @@ impl CraneliftBackend {
                     OP_ADD => "havel_vm_add",
                     OP_SUB => "havel_vm_sub",
                     OP_MUL => "havel_vm_mul",
-                    OP_LT => "havel_vm_lt",
                     // EQ/NEQ may compare string CONTENT across
                     // representations (heap StringId vs chunk-local
                     // StringValId) via the heap, so the pure word bridges
                     // are not enough: route through the vm-aware bridges,
                     // mirroring the ORC lowering's EQ/NEQ slow path.
+                    // Ordering comparisons route the same way: the pure
+                    // word variants coerce to double, so two string
+                    // operands became NaN-vs-NaN and every ordering read
+                    // false (tiered json.hv parseNumber died on
+                    // `ch >= "0"` in _isDigit - test_json_stringify).
                     OP_EQ => "havel_vm_eq_vm",
                     OP_NEQ => "havel_vm_neq_vm",
-                    OP_LTE => "havel_vm_lte",
-                    OP_GT => "havel_vm_gt",
-                    _ => "havel_vm_gte",
+                    OP_LT => "havel_vm_lt_vm",
+                    OP_LTE => "havel_vm_lte_vm",
+                    OP_GT => "havel_vm_gt_vm",
+                    _ => "havel_vm_gte_vm",
                 };
-                // Arithmetic and EQ/NEQ bridges take (vm, l, r); ordering
-                // comparisons are pure word semantics and take (l, r) per
-                // RuntimeABI.
+                // Arithmetic and comparison bridges all take (vm, l, r)
+                // per RuntimeABI.
                 let func_ref = *bridge_refs.get(bridge_name).expect("bridge declared above");
-                let is_pure_comparison = matches!(op, OP_LT | OP_LTE | OP_GT | OP_GTE);
 
                 // Diamond: both-int takes the inline result straight into
                 // the merge; the slow path pays the bridge call. The merged
@@ -1917,10 +1959,7 @@ impl CraneliftBackend {
                 b.ins()
                     .brif(is_int, merge_blk, &[BlockArg::Value(on)], bridge_blk, &[]);
                 b.switch_to_block(bridge_blk);
-                let bridged = if is_pure_comparison {
-                    let call = b.ins().call(func_ref, &[l, r]);
-                    b.inst_results(call)[0]
-                } else {
+                let bridged = {
                     let call = b.ins().call(func_ref, &[vm, l, r]);
                     b.inst_results(call)[0]
                 };
@@ -1959,6 +1998,7 @@ impl CraneliftBackend {
                                       ip: usize,
                                       counter: Variable,
                                       target: Block,
+                                      target_depth: usize,
                                       stack: &[Value]| {
                 let c = b.use_var(counter);
                 let c1 = b.ins().iadd(c, one64);
@@ -1966,7 +2006,8 @@ impl CraneliftBackend {
                 let m = b.ins().band(c1, stride_mask);
                 let fire = b.ins().icmp_imm(IntCC::Equal, m, 0);
                 let hook_blk = b.create_block();
-                b.ins().brif(fire, hook_blk, &[], target, &edge_args(stack));
+                let fast_args = padded_edge_args(target_depth, stack, b);
+                b.ins().brif(fire, hook_blk, &[], target, &fast_args);
                 b.switch_to_block(hook_blk);
                 // Hoisted iconsts: builder.ins() borrows builder mutably.
                 let ip_w = b.ins().iconst(int32, ip as i64);
@@ -1994,7 +2035,8 @@ impl CraneliftBackend {
                 let roots_ptr = b.ins().stack_addr(pointer_ty, roots_slot, 0);
                 let count_w = b.ins().iconst(int32, n_roots as i64);
                 b.ins().call(gc_hook, &[vm, roots_ptr, count_w]);
-                b.ins().jump(target, &edge_args(stack));
+                let hook_args = padded_edge_args(target_depth, stack, b);
+                b.ins().jump(target, &hook_args);
             };
 
             // Straight-line lowering. The virtual stack flows across block
@@ -2011,9 +2053,11 @@ impl CraneliftBackend {
                     let blk = block_of[cur].ok_or_else(|| err("missing leader block".into()))?;
                     if !terminated {
                         // Fall-through edge into this leader: pass the
-                        // current stack (the pre-pass guarantees its depth
-                        // equals the target's entry depth).
-                        builder.ins().jump(blk, &edge_args(&vstack));
+                        // current stack; the pre-pass converges join
+                        // depths to the maximum, so a shallower arm pads
+                        // nulls under its values.
+                        let ft_args = padded_edge_args(entry_depth[cur], &vstack, &mut builder);
+                        builder.ins().jump(blk, &ft_args);
                     }
                     builder.switch_to_block(blk);
                     vstack = stack_params[cur].clone();
@@ -2232,13 +2276,9 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                builder.ins().brif(
-                                    truthy,
-                                    else_blk,
-                                    &edge_args(&vstack),
-                                    taken,
-                                    &[],
-                                );
+                                let args_s1 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                builder.ins().brif(truthy, else_blk, &args_s1, taken, &[]);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
                                     &mut builder,
@@ -2249,16 +2289,17 @@ impl CraneliftBackend {
                                     cur,
                                     counter,
                                     then_blk,
+                                    entry_depth[target],
                                     &vstack,
                                 );
                             } else {
-                                builder.ins().brif(
-                                    truthy,
-                                    else_blk,
-                                    &edge_args(&vstack),
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_a1 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                let args_b1 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, else_blk, &args_a1, then_blk, &args_b1);
                             }
                         } else {
                             // No fall-through instruction: both arms exit
@@ -2268,13 +2309,9 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                    taken,
-                                    &[],
-                                );
+                                let args_s2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder.ins().brif(truthy, then_blk, &args_s2, taken, &[]);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
                                     &mut builder,
@@ -2285,16 +2322,17 @@ impl CraneliftBackend {
                                     cur,
                                     counter,
                                     then_blk,
+                                    entry_depth[target],
                                     &vstack,
                                 );
                             } else {
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_a2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a2, then_blk, &args_b2);
                             }
                         }
                         terminated = true;
@@ -2318,13 +2356,9 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                builder.ins().brif(
-                                    truthy,
-                                    taken,
-                                    &[],
-                                    else_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_s3 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                builder.ins().brif(truthy, taken, &[], else_blk, &args_s3);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
                                     &mut builder,
@@ -2335,16 +2369,17 @@ impl CraneliftBackend {
                                     cur,
                                     counter,
                                     then_blk,
+                                    entry_depth[target],
                                     &vstack,
                                 );
                             } else {
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                    else_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_a3 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b3 =
+                                    padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a3, else_blk, &args_b3);
                             }
                         } else {
                             if target < cur {
@@ -2352,13 +2387,9 @@ impl CraneliftBackend {
                                     .get(&cur)
                                     .expect("backward-jump site from pre-pass");
                                 let taken = builder.create_block();
-                                builder.ins().brif(
-                                    truthy,
-                                    taken,
-                                    &[],
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_s4 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder.ins().brif(truthy, taken, &[], then_blk, &args_s4);
                                 builder.switch_to_block(taken);
                                 emit_backedge_edge(
                                     &mut builder,
@@ -2369,16 +2400,17 @@ impl CraneliftBackend {
                                     cur,
                                     counter,
                                     then_blk,
+                                    entry_depth[target],
                                     &vstack,
                                 );
                             } else {
-                                builder.ins().brif(
-                                    truthy,
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                    then_blk,
-                                    &edge_args(&vstack),
-                                );
+                                let args_a2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                let args_b2 =
+                                    padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                                builder
+                                    .ins()
+                                    .brif(truthy, then_blk, &args_a2, then_blk, &args_b2);
                             }
                         }
                         terminated = true;
@@ -2405,10 +2437,13 @@ impl CraneliftBackend {
                                 cur,
                                 counter,
                                 blk,
+                                entry_depth[target],
                                 &vstack,
                             );
                         } else {
-                            builder.ins().jump(blk, &edge_args(&vstack));
+                            let jump_args =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            builder.ins().jump(blk, &jump_args);
                         }
                         terminated = true;
                     }
@@ -2775,9 +2810,9 @@ impl CraneliftBackend {
                             throw_dispatch,
                             // No block params on either edge: the
                             // subset only passes plain Values.
-                            &edge_args(&[]),
+                            &[],
                             throw_unwind,
-                            &edge_args(&[]),
+                            &[],
                         );
                         // Throw dispatch: switch on catch_ip to handler blocks
                         builder.switch_to_block(throw_dispatch);
@@ -2823,21 +2858,21 @@ impl CraneliftBackend {
                         if else_idx < n && leader[else_idx] {
                             let else_blk = block_of[else_idx]
                                 .ok_or_else(|| err("fall-through has no block".into()))?;
-                            builder.ins().brif(
-                                is_null,
-                                then_blk,
-                                &edge_args(&vstack),
-                                else_blk,
-                                &edge_args(&vstack),
-                            );
+                            let args_jn1 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            let args_jn2 =
+                                padded_edge_args(entry_depth[else_idx], &vstack, &mut builder);
+                            builder
+                                .ins()
+                                .brif(is_null, then_blk, &args_jn1, else_blk, &args_jn2);
                         } else {
-                            builder.ins().brif(
-                                is_null,
-                                then_blk,
-                                &edge_args(&vstack),
-                                then_blk,
-                                &edge_args(&vstack),
-                            );
+                            let args_jn3 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            let args_jn4 =
+                                padded_edge_args(entry_depth[target], &vstack, &mut builder);
+                            builder
+                                .ins()
+                                .brif(is_null, then_blk, &args_jn3, then_blk, &args_jn4);
                         }
                         terminated = true;
                     }
@@ -4220,7 +4255,17 @@ pub extern "C" fn hclb_create_with_symbols(
 pub extern "C" fn hclb_destroy(handle: *mut c_void) {
     if !handle.is_null() {
         unsafe {
-            drop(Box::from_raw(handle as *mut CraneliftBackend));
+            let CraneliftBackend { module, .. } = *Box::from_raw(handle as *mut CraneliftBackend);
+            // cranelift-jit leaks its executable memory on drop on purpose -
+            // `impl Drop for Memory` mem::forgets the regions so function
+            // pointers stay valid, and the docs say it stays leaked unless
+            // free_memory() is called. Dropping the box alone therefore left
+            // ~24KB of JIT image reported by LSan on every tiered run, which
+            // failed scripts/ci/jit-parity-test.sh on all candidates. This
+            // runs from ~CraneliftBackend, after the VM joined its tier2
+            // worker and while nothing can still execute JIT code, which is
+            // exactly the condition free_memory() requires.
+            module.free_memory();
         }
     }
 }

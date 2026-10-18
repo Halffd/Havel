@@ -324,36 +324,8 @@ bool WindowManagerDetector::CheckProcess(const std::string &processName) noexcep
 #endif
 }
 
-bool WindowManagerDetector::CheckEnvironmentVar(const std::string &varName,
-                                                const std::string &value) noexcept {
-  try {
-    const char *env = std::getenv(varName.c_str());
-    if (!env)
-      return false;
-
-    // XDG_CURRENT_DESKTOP is spec'd as a colon-separated list, not a
-    // single value: "ubuntu:GNOME", "X-Cinnamon:GNOME", "sway:sway-plasma".
-    // Exact equality missed every multi-entry value, so all 13 desktop-
-    // environment probes fell through to the bare process checks.
-    std::string list(env);
-    size_t start = 0;
-    while (start <= list.size()) {
-      size_t end = list.find(':', start);
-      if (end == std::string::npos)
-        end = list.size();
-      // Skip empty entries: a trailing or doubled separator ("ubuntu:", or
-      // "a::b") must not make the empty token a member of the list.
-      if (end > start && list.compare(start, end - start, value) == 0)
-        return true;
-      start = end + 1;
-    }
-    return false;
-  } catch (...) {
-    return false;
-  }
-}
-
-bool WindowManagerDetector::CheckXProperty(const std::string &property) noexcept {
+bool WindowManagerDetector::CheckXProperty(
+    const std::string &property) noexcept {
   try {
     Display *display = havel::DisplayManager::GetDisplay();
     if (!display)

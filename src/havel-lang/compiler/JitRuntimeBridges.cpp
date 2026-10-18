@@ -364,14 +364,16 @@ extern "C" uint64_t havel_vm_eq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
     auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
-    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
-    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
-    if (l_is_str || r_is_str) {
-      if (l_is_str && r_is_str) {
-        return Value::makeBool(vm->stringsEqualPublic(l, r)).rawBits();
-      }
-      return Value::makeBool(false).rawBits();
-    }
+    // Structural operands go through the interpreter's own rule
+    // (valuesEqualDeep: strings by content, arrays/objects/sets
+    // element-wise). Numeric coercion cannot express it: two array refs
+    // coerce to NaN and always read "not equal", so tiered code returned
+    // true for `a != [3,1,2]` on an equal array - test_sorted_bare_global.
+    // Scalars keep the inline numeric path.
+    const bool l_scalar = lv.isNull() || lv.isBool() || lv.isInt() || lv.isDouble();
+    const bool r_scalar = rv.isNull() || rv.isBool() || rv.isInt() || rv.isDouble();
+    if (!l_scalar || !r_scalar)
+      return Value::makeBool(vm->valuesEqualDeepPublic(lv, rv)).rawBits();
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
@@ -386,14 +388,15 @@ extern "C" uint64_t havel_vm_neq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
     auto *vm = static_cast<VM *>(vm_ptr);
     Value lv = Value::fromRawBits(l);
     Value rv = Value::fromRawBits(r);
-    const bool l_is_str = lv.isStringId() || lv.isStringValId() || lv.isRegexValId();
-    const bool r_is_str = rv.isStringId() || rv.isStringValId() || rv.isRegexValId();
-    if (l_is_str || r_is_str) {
-      if (l_is_str && r_is_str) {
-        return Value::makeBool(!vm->stringsEqualPublic(l, r)).rawBits();
-      }
-      return Value::makeBool(true).rawBits();
-    }
+    // Mirror of havel_vm_eq_vm: non-scalar operands follow the
+    // interpreter's valuesEqualDeep, not numeric coercion (two array
+    // refs coerce to NaN, so `a != [3,1,2]` in tiered code read true
+    // for an equal array - test_sorted_bare_global). Scalars keep the
+    // inline numeric path.
+    const bool l_scalar = lv.isNull() || lv.isBool() || lv.isInt() || lv.isDouble();
+    const bool r_scalar = rv.isNull() || rv.isBool() || rv.isInt() || rv.isDouble();
+    if (!l_scalar || !r_scalar)
+      return Value::makeBool(!vm->valuesEqualDeepPublic(lv, rv)).rawBits();
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
@@ -436,6 +439,56 @@ extern "C" HAVEL_NAN_SAFE uint64_t havel_vm_gte(uint64_t l, uint64_t r) {
   if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
     return Value::makeBool(false).rawBits();
   return Value::makeBool(ld >= rd).rawBits();
+}
+
+// VM-aware ordering bridges: the pure word variants above coerce to
+// double, so two string operands become NaN-vs-NaN and every ordering
+// reads false. The interpreter orders strings lexicographically
+// (VMArithmetic's string path), and tier-compiled Havel code relies on
+// it - json.hv's `_isDigit(ch)` guards with `ch >= "0"`, so the tiered
+// parseNumber's digit loop never ran and json.parse returned null
+// (test_json_stringify under HAVEL_TIERING=1). Both operands
+// string-ish -> lexicographic compare via the VM seam; anything else
+// keeps the numeric path (same mixed-type stance as havel_vm_eq_vm).
+static bool bothStrings(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (!vm_ptr)
+    return false;
+  Value lv = Value::fromRawBits(l);
+  Value rv = Value::fromRawBits(r);
+  return (lv.isStringId() || lv.isStringValId() || lv.isRegexValId()) &&
+         (rv.isStringId() || rv.isStringValId() || rv.isRegexValId());
+}
+
+extern "C" uint64_t havel_vm_lt_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) < 0).rawBits();
+  }
+  return havel_vm_lt(l, r);
+}
+
+extern "C" uint64_t havel_vm_lte_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) <= 0).rawBits();
+  }
+  return havel_vm_lte(l, r);
+}
+
+extern "C" uint64_t havel_vm_gt_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) > 0).rawBits();
+  }
+  return havel_vm_gt(l, r);
+}
+
+extern "C" uint64_t havel_vm_gte_vm(void *vm_ptr, uint64_t l, uint64_t r) {
+  if (bothStrings(vm_ptr, l, r)) {
+    auto *vm = static_cast<VM *>(vm_ptr);
+    return Value::makeBool(vm->stringComparePublic(l, r) >= 0).rawBits();
+  }
+  return havel_vm_gte(l, r);
 }
 
 // Truthiness of a raw Value word (Runtime ABI): null falsy, bool by

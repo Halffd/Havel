@@ -1940,6 +1940,29 @@ public:
     return rs.has_value() && *ls == *rs;
   }
 
+  // Runtime-ABI seam (JitRuntimeBridges lt/lte/gt/gte): the interpreter
+  // orders string operands lexicographically (VMArithmetic's string path
+  // resolves both sides and does a std::string compare); the pure word
+  // bridges coerce to double, so a string ordering comparison in JIT'd
+  // code became NaN-vs-NaN and always read false. json.hv's parseNumber
+  // died on exactly that: `_isDigit` guards with `ch >= "0"`, the tiered
+  // callee answered false, the digit loop never ran, and parse returned
+  // null (test_json_stringify under HAVEL_TIERING). Returns -1/0/1;
+  // callers only reach this when both operands are string-ish.
+  int stringComparePublic(uint64_t l_bits, uint64_t r_bits) const {
+    Value l = Value::fromRawBits(l_bits);
+    Value r = Value::fromRawBits(r_bits);
+    auto ls = valueAsString(l);
+    auto rs = valueAsString(r);
+    if (!ls || !rs)
+      return 0;
+    if (*ls < *rs)
+      return -1;
+    if (*ls > *rs)
+      return 1;
+    return 0;
+  }
+
   bool resolveGlobalPublic(const std::string &name, Value *out) {
     auto it = globals.find(name);
     if (it != globals.end()) {

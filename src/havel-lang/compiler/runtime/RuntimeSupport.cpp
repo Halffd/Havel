@@ -15,6 +15,7 @@
 #include <optional>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 #include "utils/StartupTiming.hpp"
 #include <sys/mman.h>
 #include <fcntl.h>

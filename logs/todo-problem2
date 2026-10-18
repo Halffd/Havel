@@ -1,0 +1,501 @@
+                                                                  Loaded: Display.DefaultBrightness = "0.85"
+                             Loaded: Display.GammaAmount = "200"
+                                                                Loaded: Display.StartupBrightness = "0.4"
+                          Loaded: Display.StartupTemperature = "6500"
+                                                                     Found section: [General]
+              Loaded: General.GamingApps = "steam_app_default,retroarch,ryujinx,pcsx2,dolphin-emu,rpcs3,cemu,yuzu,duckstation,ppsspp,xemu,ffxiv_dx11.exe,ffxiv,wine,lutris,heroic,gamescope,games,minecraft,Mesen,mesen,nierautomata,1.12.2,Fabric,Forge,1.10,1.11,1.7,1.8,1.9,1.20,1.21,1.22,1.13,1.14,1.15,1.16,1.17,1.18,1.19,All The Fabric v5 - 1.20.1,All The Fabric,1.20.1,simcity,Simcity,SimCity,simcity 4.exe,Simcity 4.exe,sameboy"
+                                   Loaded: General.Terminal = "alacritty"
+                                                                         Found section: [IO]
+             Loaded: IO.UseNewEventListener = "1"
+                                                 Found section: [Mouse]
+                                                                       Loaded: Mouse.Sensitivity = "0.2"
+                         Loaded: Mouse.SensitivityIncrement = "0.02"
+                                                                    Loaded: Mouse.ScrollSpeed = "1.0"
+                      Config loading complete. Loaded 17 settings from config/havel.cfg
+        All loaded keys:
+                          Mouse.ScrollSpeed = "1.0"
+                                                     Mouse.SensitivityIncrement = "0.02"
+           Mouse.Sensitivity = "0.2"
+                                      Debug.VerboseConditionLogging = "0"
+                                                                           Debug.VerboseWindowLogging = "0"
+                              Device.Mouse = "OPTICAL"
+                                                        IO.UseNewEventListener = "1"
+       Debug.VerboseKeyLogging = "1"
+                                      Device.Keyboard = "INSTANT.*USB.*Keyboard$"
+    Display.BrightnessAmount = "0.05"
+                                       Display.StartupTemperature = "6500"
+                                                                            Device.IgnoreMouse = "0"
+                       Display.DefaultBrightness = "0.85"
+                                                           Display.GammaAmount = "200"
+         Display.StartupBrightness = "0.4"
+                                            General.Terminal = "alacritty"
+                                                                            General.GamingApps = "steam_app_default,retroarch,ryujinx,pcsx2,dolphin-emu,rpcs3,cemu,yuzu,duckstation,ppsspp,xemu,ffxiv_dx11.exe,ffxiv,wine,lutris,heroic,gamescope,games,minecraft,Mesen,mesen,nierautomata,1.12.2,Fabric,Forge,1.10,1.11,1.7,1.8,1.9,1.20,1.21,1.22,1.13,1.14,1.15,1.16,1.17,1.18,1.19,All The Fabric v5 - 1.20.1,All The Fabric,1.20.1,simcity,Simcity,SimCity,simcity 4.exe,Simcity 4.exe,sameboy"
+          2025-11-25 19:35:17.414 [INFO] Config path: config/havel.cfg
+                                                                      2025-11-25 19:35:17.755 [INFO] Signal handling initialized
+                                                 2025-11-25 19:35:18.146 [INFO] System tray icon created
+                         2025-11-25 19:35:18.146 [INFO] Initializing HvC components...
+       2025-11-25 19:35:18.146 [INFO] IO constructor called
+                                                           Found monitor: DVI-D-0 (1366x768 at 0,312)
+                      Found monitor: HDMI-0 (1920x1080 at 1366,0) [PRIMARY]
+                                                                           Initializing key map
+                2025-11-25 19:35:18.147 [INFO] Using new unified EventListener
+                                                                              2025-11-25 19:35:18.148 [INFO] ✅ Selected keyboard: 'Logitech USB Keyboard' -> /dev/input/event4 (confidence: 30.0%)
+                                     2025-11-25 19:35:18.149 [INFO] ✅ Selected mouse: 'USB OPTICAL MOUSE ' -> /dev/input/event3 (confidence: 30.0%)
+                                                                     2025-11-25 19:35:18.149 [INFO] Adding keyboard device: /dev/input/event4
+                                                              2025-11-25 19:35:18.149 [INFO] Adding mouse device: /dev/input/event3
+                                                    2025-11-25 19:35:18.150 [INFO] Uinput device created successfully
+                                      2025-11-25 19:35:18.150 [INFO] Successfully grabbed device: Logitech USB Keyboard (/dev/input/event4)
+                                                            2025-11-25 19:35:18.150 [INFO] Opened input device: Logitech USB Keyboard (/dev/input/event4)
+                                                                          2025-11-25 19:35:18.150 [INFO] Successfully grabbed device: USB OPTICAL MOUSE  (/dev/input/event3)
+              2025-11-25 19:35:18.150 [INFO] Opened input device: USB OPTICAL MOUSE  (/dev/input/event3)
+                         2025-11-25 19:35:18.150 [INFO] Successfully started unified EventListener with 2 devices
+                                  2025-11-25 19:35:18.150 [INFO] EventListener: Starting event loop
+                    Initializing MPV controller
+                                               Connected to MPV socket
+                                                                      2025-11-25 19:35:18.191 [INFO] [AudioManager] Using PulseAudio backend
+                                                             2025-11-25 19:35:18.191 [INFO] [BrightnessManager] Brightness for DVI-D-0: 0.499992
+                                                                 2025-11-25 19:35:18.191 [INFO] [BrightnessManager] Temperature for DVI-D-0: 6500
+                                                                  2025-11-25 19:35:18.192 [INFO] [BrightnessManager] Brightness for HDMI-0: 0.499992
+                                                                     2025-11-25 19:35:18.192 [INFO] [BrightnessManager] Temperature for HDMI-0: 6500
+                                                                     Warning: AutomationSuite::Instance called with null IO
+                                            Clipboard instance obtained
+                                                                       Clipboard signal connection succeeded
+                             Loaded 317 history items from "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                                   2025-11-25 19:35:18.466 [INFO] [BrightnessManager] Brightness for DVI-D-0: 0.499992
+                                                       2025-11-25 19:35:18.466 [INFO] [BrightnessManager] Temperature for DVI-D-0: 6500
+                                                        2025-11-25 19:35:18.467 [INFO] [BrightnessManager] Brightness for HDMI-0: 0.499992
+                                                           2025-11-25 19:35:18.467 [INFO] [BrightnessManager] Temperature for HDMI-0: 6500
+                                                           QLayout: Attempting to add QLayout "" to havel::BrightnessPanel "", which already has a layout
+                                                                          2025-11-25 19:35:18.504 [INFO] Loading debug settings from config
+                                                            2025-11-25 19:35:18.504 [INFO] Debug settings: KeyLogging=1, WindowLogging=0, ConditionLogging=0
+                                                                             2025-11-25 19:35:18.504 [INFO] Verbose key logging is enabled
+                                                           2025-11-25 19:35:18.504 [INFO] Loading debug settings from config
+                                             2025-11-25 19:35:18.504 [INFO] Debug settings: KeyLogging=1, WindowLogging=0, ConditionLogging=0
+                                                              2025-11-25 19:35:18.504 [INFO] Verbose key logging is enabled
+                                            2025-11-25 19:35:18.504 [INFO] Ungrabbing hotkey: @lwin
+                    2025-11-25 19:35:18.504 [INFO] Successfully ungrabbed hotkey: @lwin
+        2025-11-25 19:35:18.504 [INFO] Ungrabbing hotkey: u
+                                                           2025-11-25 19:35:18.504 [INFO] Successfully ungrabbed hotkey: u
+                                           Invalid key: 'l ' in hotkey: l
+                                                                          Invalid key: ' g' in hotkey:  g
+                          Invalid key: 's ' in hotkey: s
+                                                         Invalid key: ' g' in hotkey:  g
+         Invalid key: 'h ' in hotkey: h
+                                        Invalid key: ' g' in hotkey:  g
+                                                                       2025-11-25 19:35:18.505 [INFO] Ungrabbing hotkey: @y
+                                            2025-11-25 19:35:18.505 [INFO] Successfully ungrabbed hotkey: @y
+                             2025-11-25 19:35:18.505 [INFO] Ungrabbing hotkey: '
+ 2025-11-25 19:35:18.505 [INFO] Successfully ungrabbed hotkey: '
+                                                                2025-11-25 19:35:18.505 [INFO] Ungrabbing hotkey: /
+                                    2025-11-25 19:35:18.505 [INFO] Successfully ungrabbed hotkey: /
+                    Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                 2025-11-25 19:35:18.506 [INFO] Ungrabbing hotkey: Enter
+                                                                        2025-11-25 19:35:18.506 [INFO] Successfully ungrabbed hotkey: Enter
+                                                            2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: f
+                                2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: f
+                2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: ~space
+                                                                        2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: ~space
+                                                             2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: ~space:up
+                                         2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: ~space:up
+                                 2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: enter
+         2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: enter
+                                                                            2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +s
+                                                 2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +s
+                                  2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +0
+       2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +0
+                                                                       2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +9
+                                            2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +9
+                             2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +-
+  2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +-
+                                                                  2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: @|rctrl
+                                            2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: @|rctrl
+                                  2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +Esc
+         2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +Esc
+                                                                           2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +PgUp
+                                                   2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +PgUp
+                                       2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +PgDn
+               2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +PgDn
+   2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: o
+                                                      2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: o
+                                      2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: p
+          2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: p
+                                                                         2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +o
+                                              2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +o
+                               2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +p
+    2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +p
+                                                                    2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: |n
+                                         2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: |n
+                          2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: +|n
+2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: +|n
+                                                                 2025-11-25 19:35:18.507 [INFO] Ungrabbing hotkey: 7
+                                     2025-11-25 19:35:18.507 [INFO] Successfully ungrabbed hotkey: 7
+                     2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: 8
+                                                                        2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: 8
+                                                        2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: +z
+                             2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: +z
+              2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: +x
+                                                                  2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: +x
+                                                   2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: 9
+                       2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: 9
+       2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: 0
+                                                          2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: 0
+                                          2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: +c
+               2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: +c
+2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: minus
+                                                       2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: minus
+                                           2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: equal
+                   2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: equal
+       2025-11-25 19:35:18.508 [INFO] Ungrabbing hotkey: <
+                                                          2025-11-25 19:35:18.508 [INFO] Successfully ungrabbed hotkey: <
+                                          2025-11-25 19:35:18.509 [INFO] Ungrabbing hotkey: slash
+                  2025-11-25 19:35:18.509 [INFO] Successfully ungrabbed hotkey: slash
+      2025-11-25 19:35:18.509 [INFO] Ungrabbing hotkey: @rshift
+                                                               2025-11-25 19:35:18.509 [INFO] Successfully ungrabbed hotkey: @rshift
+                                                     2025-11-25 19:35:18.509 [INFO] Loading hotkey configurations...
+                                     No changes detected, skipping save
+                                                                       Clipboard instance obtained
+                   Clipboard signal connection succeeded
+                                                        Loaded 317 history items from "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                                                              Successfully registered Alt+V hotkey with IO system
+                                                  Successfully registered hotkey for "^+1"
+           Successfully registered hotkey for "^+2"
+                                                   Successfully registered hotkey for "^+3"
+            Successfully registered hotkey for "^+4"
+                                                    Successfully registered hotkey for "^+5"
+             Successfully registered hotkey for "^+6"
+                                                     Successfully registered hotkey for "^+7"
+              Successfully registered hotkey for "^+8"
+                                                      Successfully registered hotkey for "^+9"
+               Successfully registered ^+0 hotkey
+                                                 2025-11-25 19:35:18.725 [INFO] === Hotkey Status Report #1 ===
+                                2025-11-25 19:35:18.725 [INFO] Hotkey[172] alias='^+0' key=11 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.725 [INFO] Hotkey[171] alias='^+9' key=10 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                            2025-11-25 19:35:18.725 [INFO] Hotkey[170] alias='^+8' key=9 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                 2025-11-25 19:35:18.725 [INFO] Hotkey[169] alias='^+7' key=8 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                      2025-11-25 19:35:18.725 [INFO] Hotkey[168] alias='^+6' key=7 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                           2025-11-25 19:35:18.725 [INFO] Hotkey[167] alias='^+5' key=6 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                2025-11-25 19:35:18.725 [INFO] Hotkey[166] alias='^+4' key=5 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                     2025-11-25 19:35:18.727 [INFO] Hotkey[165] alias='^+3' key=4 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                          2025-11-25 19:35:18.727 [INFO] Hotkey[164] alias='^+2' key=3 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+2025-11-25 19:35:18.727 [INFO] Hotkey[163] alias='^+1' key=2 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+     2025-11-25 19:35:18.727 [INFO] Hotkey[162] alias='!c' key=46 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+          2025-11-25 19:35:18.727 [INFO] Hotkey[161] alias='@^!minus' key=12 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                     2025-11-25 19:35:18.728 [INFO] Hotkey[160] alias='@^!equal' key=13 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                2025-11-25 19:35:18.728 [INFO] Hotkey[159] alias='@^!r' key=19 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                       2025-11-25 19:35:18.728 [INFO] Hotkey[158] alias='@^!i' key=23 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                              2025-11-25 19:35:18.728 [INFO] Hotkey[157] alias='@^!p' key=25 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.728 [INFO] Hotkey[156] alias='@^!n' key=49 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                            2025-11-25 19:35:18.728 [INFO] Hotkey[155] alias='@^!v' key=47 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                   2025-11-25 19:35:18.728 [INFO] Hotkey[154] alias='@^!c' key=46 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                          2025-11-25 19:35:18.728 [INFO] Hotkey[153] alias='!delete' key=111 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+      2025-11-25 19:35:18.728 [INFO] Hotkey[152] alias='^!d' key=32 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+            2025-11-25 19:35:18.728 [INFO] Hotkey[151] alias='!+i' key=23 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                  2025-11-25 19:35:18.728 [INFO] Hotkey[150] alias='#2' key=3 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                      2025-11-25 19:35:18.728 [INFO] Hotkey[149] alias='#!d' key=32 mod=12 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                             2025-11-25 19:35:18.728 [INFO] Hotkey[148] alias='+!Esc' key=1 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                    2025-11-25 19:35:18.738 [INFO] Hotkey[147] alias='#l' key=38 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                         2025-11-25 19:35:18.738 [INFO] Hotkey[146] alias='!a' key=30 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                              2025-11-25 19:35:18.738 [INFO] Hotkey[145] alias='!+Right' key=106 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.738 [INFO] Hotkey[144] alias='!+Left' key=105 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                   2025-11-25 19:35:18.738 [INFO] Hotkey[143] alias='!+Down' key=108 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                             2025-11-25 19:35:18.738 [INFO] Hotkey[142] alias='+!Up' key=103 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+      2025-11-25 19:35:18.738 [INFO] Hotkey[141] alias='^!Right' key=106 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                 2025-11-25 19:35:18.738 [INFO] Hotkey[140] alias='^!Left' key=105 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                           2025-11-25 19:35:18.738 [INFO] Hotkey[139] alias='^!Down' key=108 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                     2025-11-25 19:35:18.738 [INFO] Hotkey[138] alias='^!Up' key=103 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                             2025-11-25 19:35:18.738 [INFO] Hotkey[10022] alias='<' key=86 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                   2025-11-25 19:35:18.738 [INFO] Hotkey[10021] alias='equal' key=13 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                             2025-11-25 19:35:18.738 [INFO] Hotkey[10020] alias='minus' key=12 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                       2025-11-25 19:35:18.738 [INFO] Hotkey[10019] alias='+c' key=46 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                              2025-11-25 19:35:18.738 [INFO] Hotkey[10018] alias='0' key=11 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+     2025-11-25 19:35:18.738 [INFO] Hotkey[10017] alias='9' key=10 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+           2025-11-25 19:35:18.738 [INFO] Hotkey[10016] alias='+x' key=45 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                  2025-11-25 19:35:18.738 [INFO] Hotkey[10015] alias='+z' key=44 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                         2025-11-25 19:35:18.738 [INFO] Hotkey[10014] alias='8' key=9 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                              2025-11-25 19:35:18.738 [INFO] Hotkey[10013] alias='7' key=8 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                   2025-11-25 19:35:18.738 [INFO] Hotkey[10012] alias='+|n' key=49 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                           2025-11-25 19:35:18.738 [INFO] Hotkey[10011] alias='|n' key=49 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                  2025-11-25 19:35:18.738 [INFO] Hotkey[1015] alias='@rshift' key=54 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                             2025-11-25 19:35:18.738 [INFO] Hotkey[10010] alias='+p' key=25 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                    2025-11-25 19:35:18.738 [INFO] Hotkey[1014] alias='slash' key=53 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                             2025-11-25 19:35:18.738 [INFO] Hotkey[10009] alias='+o' key=24 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+     2025-11-25 19:35:18.738 [INFO] Hotkey[137] alias='!+g' key=34 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+           2025-11-25 19:35:18.738 [INFO] Hotkey[10008] alias='p' key=25 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                 2025-11-25 19:35:18.738 [INFO] Hotkey[1013] alias='+s' key=31 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                       2025-11-25 19:35:18.738 [INFO] Hotkey[10007] alias='o' key=24 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                             2025-11-25 19:35:18.738 [INFO] Hotkey[1012] alias='enter' key=28 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.739 [INFO] Hotkey[10006] alias='+PgDn' key=109 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                 2025-11-25 19:35:18.739 [INFO] Hotkey[1011] alias='~space:up' key=57 mod=0 action='' enabled=N grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                              2025-11-25 19:35:18.739 [INFO] Hotkey[10005] alias='+PgUp' key=104 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                         2025-11-25 19:35:18.739 [INFO] Hotkey[1010] alias='~space' key=57 mod=0 action='' enabled=N grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+    2025-11-25 19:35:18.739 [INFO] Hotkey[10004] alias='+Esc' key=1 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+            2025-11-25 19:35:18.739 [INFO] Hotkey[1009] alias='f' key=33 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                 2025-11-25 19:35:18.739 [INFO] Hotkey[10003] alias='@|rctrl' key=97 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                             2025-11-25 19:35:18.739 [INFO] Hotkey[1008] alias='Enter' key=28 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.739 [INFO] Hotkey[136] alias='^,' key=51 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                           2025-11-25 19:35:18.739 [INFO] Hotkey[135] alias='^.' key=52 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                2025-11-25 19:35:18.739 [INFO] Hotkey[10002] alias='+-' key=12 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                       2025-11-25 19:35:18.739 [INFO] Hotkey[1007] alias='/' key=53 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                            2025-11-25 19:35:18.739 [INFO] Hotkey[134] alias='!delete' key=111 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                       2025-11-25 19:35:18.739 [INFO] Hotkey[10001] alias='+9' key=10 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                              2025-11-25 19:35:18.739 [INFO] Hotkey[1006] alias=''' key=40 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+    2025-11-25 19:35:18.739 [INFO] Hotkey[10000] alias='+0' key=11 mod=2 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+           2025-11-25 19:35:18.739 [INFO] Hotkey[1005] alias='@y' key=21 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                 2025-11-25 19:35:18.739 [INFO] Hotkey[133] alias='!d' key=32 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                      2025-11-25 19:35:18.739 [INFO] Hotkey[132] alias='@numpad9:up' key=73 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                    2025-11-25 19:35:18.739 [INFO] Hotkey[131] alias='@numpad8:up' key=72 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                  2025-11-25 19:35:18.739 [INFO] Hotkey[130] alias='@numpad7:up' key=71 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                2025-11-25 19:35:18.739 [INFO] Hotkey[129] alias='@numpad6:up' key=77 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                              2025-11-25 19:35:18.739 [INFO] Hotkey[128] alias='@numpad4:up' key=75 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+             2025-11-25 19:35:18.739 [INFO] Hotkey[127] alias='@numpad3:up' key=81 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                           2025-11-25 19:35:18.739 [INFO] Hotkey[126] alias='@numpad2:up' key=80 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                         2025-11-25 19:35:18.739 [INFO] Hotkey[125] alias='@numpad1:up' key=79 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                       2025-11-25 19:35:18.739 [INFO] Hotkey[124] alias='@numpad9' key=73 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                  2025-11-25 19:35:18.739 [INFO] Hotkey[123] alias='@numpad8' key=72 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                             2025-11-25 19:35:18.739 [INFO] Hotkey[54] alias='^!f8' key=66 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+    2025-11-25 19:35:18.739 [INFO] Hotkey[53] alias='^f8' key=66 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+         2025-11-25 19:35:18.739 [INFO] Hotkey[52] alias='f8' key=66 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+             2025-11-25 19:35:18.739 [INFO] Hotkey[51] alias='^f7' key=65 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                  2025-11-25 19:35:18.739 [INFO] Hotkey[50] alias='f7' key=65 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                      2025-11-25 19:35:18.739 [INFO] Hotkey[49] alias='^f3' key=61 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                           2025-11-25 19:35:18.740 [INFO] Hotkey[48] alias='+f3' key=61 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                2025-11-25 19:35:18.740 [INFO] Hotkey[47] alias='f3' key=61 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                    2025-11-25 19:35:18.740 [INFO] Hotkey[46] alias='^#esc' key=1 mod=9 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                          2025-11-25 19:35:18.740 [INFO] Hotkey[45] alias='#Esc' key=1 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                               2025-11-25 19:35:18.740 [INFO] Hotkey[44] alias='^!t' key=20 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                    2025-11-25 19:35:18.740 [INFO] Hotkey[43] alias='$f9' key=67 mod=0 action='' enabled=Y grab=Y succ=Y susp=Y repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.740 [INFO] Hotkey[42] alias='#right' key=106 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                  2025-11-25 19:35:18.740 [INFO] Hotkey[41] alias='#left' key=105 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                          2025-11-25 19:35:18.740 [INFO] Hotkey[40] alias='@kc89' key=89 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+  2025-11-25 19:35:18.740 [INFO] Hotkey[39] alias='!^k' key=37 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.740 [INFO] Hotkey[38] alias='!f' key=33 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+           2025-11-25 19:35:18.740 [INFO] Hotkey[37] alias='!^f' key=33 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                2025-11-25 19:35:18.740 [INFO] Hotkey[36] alias='^f10' key=68 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                      2025-11-25 19:35:18.740 [INFO] Hotkey[35] alias='+!k' key=37 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                           2025-11-25 19:35:18.740 [INFO] Hotkey[34] alias='!f10' key=68 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                 2025-11-25 19:35:18.740 [INFO] Hotkey[33] alias='+!l' key=38 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.740 [INFO] Hotkey[32] alias='!l' key=38 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                          2025-11-25 19:35:18.740 [INFO] Hotkey[31] alias='+f1' key=59 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                               2025-11-25 19:35:18.740 [INFO] Hotkey[30] alias='^f1' key=59 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                    2025-11-25 19:35:18.740 [INFO] Hotkey[29] alias='@+numpad5' key=76 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                               2025-11-25 19:35:18.740 [INFO] Hotkey[28] alias='@+numpad1' key=79 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                          2025-11-25 19:35:18.740 [INFO] Hotkey[27] alias='@+numpad7' key=71 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+      2025-11-25 19:35:18.740 [INFO] Hotkey[26] alias='~Button2' key=273 mod=0 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                 2025-11-25 19:35:18.740 [INFO] Hotkey[13] alias='^+!a' key=30 mod=7 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                       2025-11-25 19:35:18.740 [INFO] Hotkey[12] alias='^+d' key=32 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                            2025-11-25 19:35:18.740 [INFO] Hotkey[11] alias='^+s' key=31 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                 2025-11-25 19:35:18.740 [INFO] Hotkey[10] alias='^+a' key=30 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.740 [INFO] Hotkey[9] alias='^+!a' key=30 mod=7 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                           2025-11-25 19:35:18.740 [INFO] Hotkey[8] alias='numpaddiv' key=98 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.740 [INFO] Hotkey[7] alias='#f3' key=61 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.740 [INFO] Hotkey[6] alias='#f2' key=60 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                             2025-11-25 19:35:18.741 [INFO] Hotkey[5] alias='#f1' key=59 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                 2025-11-25 19:35:18.741 [INFO] Hotkey[4] alias='#!Esc' key=1 mod=12 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                       2025-11-25 19:35:18.741 [INFO] Hotkey[3] alias='!Esc' key=1 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                           2025-11-25 19:35:18.741 [INFO] Hotkey[2] alias='^!r' key=19 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+2025-11-25 19:35:18.741 [INFO] Hotkey[1004] alias='!x' key=45 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+      2025-11-25 19:35:18.741 [INFO] Hotkey[115] alias='@+numpaddec' key=83 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                    2025-11-25 19:35:18.741 [INFO] Hotkey[1] alias='^!g' key=34 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                        2025-11-25 19:35:18.741 [INFO] Hotkey[14] alias='^numpadsub' key=74 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                    2025-11-25 19:35:18.741 [INFO] Hotkey[1000] alias='@|~lwin' key=125 mod=0 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                2025-11-25 19:35:18.741 [INFO] Hotkey[111] alias='@numpadenter:up' key=96 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                  2025-11-25 19:35:18.741 [INFO] Hotkey[15] alias='^numpadadd' key=78 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                              2025-11-25 19:35:18.741 [INFO] Hotkey[1001] alias='@lwin' key=125 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+         2025-11-25 19:35:18.741 [INFO] Hotkey[112] alias='@numpad0' key=82 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                    2025-11-25 19:35:18.741 [INFO] Hotkey[16] alias='^numpad0' key=82 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                              2025-11-25 19:35:18.741 [INFO] Hotkey[1002] alias='@|lwin:up' key=125 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                            2025-11-25 19:35:18.741 [INFO] Hotkey[113] alias='@numpaddec' key=83 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.741 [INFO] Hotkey[17] alias='+numpadsub' key=74 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                     2025-11-25 19:35:18.741 [INFO] Hotkey[1003] alias='u' key=22 mod=0 action='' enabled=N grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                          2025-11-25 19:35:18.741 [INFO] Hotkey[114] alias='@!numpad0' key=82 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.741 [INFO] Hotkey[18] alias='+numpadadd' key=78 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                   2025-11-25 19:35:18.741 [INFO] Hotkey[19] alias='+numpad0' key=82 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                             2025-11-25 19:35:18.741 [INFO] Hotkey[20] alias='@numpadsub' key=74 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                         2025-11-25 19:35:18.741 [INFO] Hotkey[21] alias='@numpadadd' key=78 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.741 [INFO] Hotkey[22] alias='f6' key=64 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.741 [INFO] Hotkey[23] alias='@|rwin' key=126 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                  2025-11-25 19:35:18.741 [INFO] Hotkey[24] alias='@|ralt' key=100 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                           2025-11-25 19:35:18.741 [INFO] Hotkey[25] alias='~Button1' key=272 mod=0 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.741 [INFO] Hotkey[55] alias='^!f7' key=65 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+             2025-11-25 19:35:18.741 [INFO] Hotkey[56] alias='@!f7' key=65 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                   2025-11-25 19:35:18.741 [INFO] Hotkey[57] alias='@!f8' key=66 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                         2025-11-25 19:35:18.741 [INFO] Hotkey[58] alias='@^f9' key=67 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                               2025-11-25 19:35:18.741 [INFO] Hotkey[59] alias='@^f10' key=68 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.741 [INFO] Hotkey[60] alias='@^+f9' key=67 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                             2025-11-25 19:35:18.741 [INFO] Hotkey[61] alias='@^+f10' key=68 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.741 [INFO] Hotkey[62] alias='@#f7' key=65 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                           2025-11-25 19:35:18.741 [INFO] Hotkey[63] alias='@#f8' key=66 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                 2025-11-25 19:35:18.741 [INFO] Hotkey[64] alias='@+f9' key=67 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                       2025-11-25 19:35:18.741 [INFO] Hotkey[65] alias='@+f10' key=68 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                              2025-11-25 19:35:18.741 [INFO] Hotkey[66] alias='@!+f10' key=68 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.741 [INFO] Hotkey[67] alias='!+f9' key=67 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+             2025-11-25 19:35:18.741 [INFO] Hotkey[68] alias='+f7' key=65 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                  2025-11-25 19:35:18.741 [INFO] Hotkey[69] alias='^+f7' key=65 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                        2025-11-25 19:35:18.741 [INFO] Hotkey[70] alias='^!+f7' key=65 mod=7 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                               2025-11-25 19:35:18.741 [INFO] Hotkey[71] alias='+f8' key=66 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                    2025-11-25 19:35:18.741 [INFO] Hotkey[72] alias='^+f8' key=66 mod=3 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                          2025-11-25 19:35:18.741 [INFO] Hotkey[73] alias='^!+f8' key=66 mod=7 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                 2025-11-25 19:35:18.741 [INFO] Hotkey[74] alias='@!WheelUp' key=0 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                           2025-11-25 19:35:18.741 [INFO] Hotkey[75] alias='@RShift & WheelUp' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                             2025-11-25 19:35:18.741 [INFO] Hotkey[76] alias='@!WheelDown' key=0 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+          2025-11-25 19:35:18.741 [INFO] Hotkey[77] alias='@RShift & WheelDown' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                              2025-11-25 19:35:18.741 [INFO] Hotkey[78] alias='@LButton & RButton::90000' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=90000 combo=500 repeatInterval=90000 comboTimeWindow=500
+                                                                2025-11-25 19:35:18.741 [INFO] Hotkey[79] alias='@RButton & LButton::90000' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=90000 combo=500 repeatInterval=90000 comboTimeWindow=500
+                   2025-11-25 19:35:18.741 [INFO] Hotkey[80] alias='@RButton & WheelUp::90000' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=90000 combo=500 repeatInterval=90000 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.741 [INFO] Hotkey[81] alias='@RButton & WheelDown::90000' key=0 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=90000 combo=500 repeatInterval=90000 comboTimeWindow=500
+          2025-11-25 19:35:18.741 [INFO] Hotkey[82] alias='@~^l & g' key=94060223126320 mod=1 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                2025-11-25 19:35:18.741 [INFO] Hotkey[83] alias='@~^s & g' key=94060223126320 mod=1 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                      2025-11-25 19:35:18.741 [INFO] Hotkey[84] alias='@~^h & g' key=94060223126320 mod=1 action='' enabled=Y grab=N succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                            2025-11-25 19:35:18.741 [INFO] Hotkey[85] alias='@!-' key=12 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+  2025-11-25 19:35:18.741 [INFO] Hotkey[86] alias='@!=' key=13 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.741 [INFO] Hotkey[87] alias='#a' key=30 mod=8 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+           2025-11-25 19:35:18.741 [INFO] Hotkey[88] alias='@^!+#Esc' key=1 mod=15 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                     2025-11-25 19:35:18.741 [INFO] Hotkey[89] alias='@+#Esc' key=1 mod=10 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                             2025-11-25 19:35:18.741 [INFO] Hotkey[90] alias='@!Home' key=102 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                      2025-11-25 19:35:18.741 [INFO] Hotkey[91] alias='@^!Home' key=102 mod=5 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                2025-11-25 19:35:18.741 [INFO] Hotkey[92] alias='!5' key=6 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                   2025-11-25 19:35:18.741 [INFO] Hotkey[93] alias='!6' key=7 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                      2025-11-25 19:35:18.741 [INFO] Hotkey[94] alias='!7' key=8 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                         2025-11-25 19:35:18.741 [INFO] Hotkey[95] alias='!8' key=9 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                            2025-11-25 19:35:18.741 [INFO] Hotkey[96] alias='!+5' key=6 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                2025-11-25 19:35:18.741 [INFO] Hotkey[97] alias='!+6' key=7 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                    2025-11-25 19:35:18.741 [INFO] Hotkey[98] alias='!+7' key=8 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                        2025-11-25 19:35:18.742 [INFO] Hotkey[99] alias='!+8' key=9 mod=6 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                            2025-11-25 19:35:18.742 [INFO] Hotkey[100] alias='!9' key=10 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+  2025-11-25 19:35:18.742 [INFO] Hotkey[101] alias='@!3' key=4 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+       2025-11-25 19:35:18.742 [INFO] Hotkey[102] alias='@!4' key=5 mod=4 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+            2025-11-25 19:35:18.742 [INFO] Hotkey[103] alias='@^Print' key=99 mod=1 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                      2025-11-25 19:35:18.742 [INFO] Hotkey[104] alias='@Print' key=99 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                               2025-11-25 19:35:18.742 [INFO] Hotkey[105] alias='@Pause' key=119 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                         2025-11-25 19:35:18.742 [INFO] Hotkey[106] alias='@|numpad5' key=76 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                     2025-11-25 19:35:18.742 [INFO] Hotkey[107] alias='@numpad5:up' key=76 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                   2025-11-25 19:35:18.742 [INFO] Hotkey[108] alias='@numpadmult' key=55 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+  2025-11-25 19:35:18.742 [INFO] Hotkey[109] alias='@numpadmult:up' key=55 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                   2025-11-25 19:35:18.742 [INFO] Hotkey[110] alias='@numpadenter+' key=96 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                   2025-11-25 19:35:18.742 [INFO] Hotkey[116] alias='@+numpad0' key=82 mod=2 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                               2025-11-25 19:35:18.742 [INFO] Hotkey[117] alias='@numpad1' key=79 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                          2025-11-25 19:35:18.742 [INFO] Hotkey[118] alias='@numpad2' key=80 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                                                     2025-11-25 19:35:18.742 [INFO] Hotkey[119] alias='@numpad3' key=81 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+ 2025-11-25 19:35:18.742 [INFO] Hotkey[120] alias='@numpad4' key=75 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+            2025-11-25 19:35:18.742 [INFO] Hotkey[121] alias='@numpad6' key=77 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                       2025-11-25 19:35:18.742 [INFO] Hotkey[122] alias='@numpad7' key=71 mod=0 action='' enabled=Y grab=Y succ=Y susp=N repeat=0 combo=500 repeatInterval=0 comboTimeWindow=500
+                                  2025-11-25 19:35:18.742 [INFO] -------------------------------------
+                       2025-11-25 19:35:18.742 [INFO] ==== FAILED HOTKEYS ====
+
+                                                                              2025-11-25 19:35:18.742 [INFO] Failed hotkeys:
+                                              2025-11-25 19:35:18.742 [INFO] Working hotkeys: ^+0 ^+9 ^+8 ^+7 ^+6 ^+5 ^+4 ^+3 ^+2 ^+1 !c @^!minus @^!equal @^!r @^!i @^!p @^!n @^!v @^!c !delete ^!d !+i #2 #!d +!Esc #l !a !+Right !+Left !+Down +!Up ^!Right ^!Left ^!Down ^!Up < equal minus +c 0 9 +x +z 8 7 +|n |n @rshift +p slash +o !+g p +s o enter +PgDn ~space:up +PgUp ~space +Esc f @|rctrl Enter ^, ^. +- / !delete +9 ' +0 @y !d @numpad9:up @numpad8:up @numpad7:up @numpad6:up @numpad4:up @numpad3:up @numpad2:up @numpad1:up @numpad9 @numpad8 ^!f8 ^f8 f8 ^f7 f7 ^f3 +f3 f3 ^#esc #Esc ^!t $f9 #right #left @kc89 !^k !f !^f ^f10 +!k !f10 +!l !l +f1 ^f1 @+numpad5 @+numpad1 @+numpad7 ~Button2 ^+!a ^+d ^+s ^+a ^+!a numpaddiv #f3 #f2 #f1 #!Esc !Esc ^!r !x @+numpaddec ^!g ^numpadsub @|~lwin @numpadenter:up ^numpadadd @lwin @numpad0 ^numpad0 @|lwin:up @numpaddec +numpadsub u @!numpad0 +numpadadd +numpad0 @numpadsub @numpadadd f6 @|rwin @|ralt ~Button1 ^!f7 @!f7 @!f8 @^f9 @^f10 @^+f9 @^+f10 @#f7 @#f8 @+f9 @+f10 @!+f10 !+f9 +f7 ^+f7 ^!+f7 +f8 ^+f8 ^!+f8 @!WheelUp @RShift & WheelUp @!WheelDown @RShift & WheelDown @LButton & RButton::90000 @RButton & LButton::90000 @RButton & WheelUp::90000 @RButton & WheelDown::90000 @~^l & g @~^s & g @~^h & g @!- @!= #a @^!+#Esc @+#Esc @!Home @^!Home !5 !6 !7 !8 !+5 !+6 !+7 !+8 !9 @!3 @!4 @^Print @Print @Pause @|numpad5 @numpad5:up @numpadmult @numpadmult:up @numpadenter+ @+numpad0 @numpad1 @numpad2 @numpad3 @numpad4 @numpad6 @numpad7
+                                                       2025-11-25 19:35:18.742 [INFO] === End Hotkey Report ===
+                                2025-11-25 19:35:18.742 [INFO] Initializing ClipboardManager...
+                Clipboard instance obtained
+                                           Clipboard signal connection succeeded
+ Loaded 317 history items from "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                       Successfully registered Alt+V hotkey with IO system
+                                                                          Successfully registered hotkey for "^+1"
+                                   Successfully registered hotkey for "^+2"
+                                                                           Successfully registered hotkey for "^+3"
+                                    Successfully registered hotkey for "^+4"
+                                                                            Successfully registered hotkey for "^+5"
+                                     Successfully registered hotkey for "^+6"
+                                                                             Successfully registered hotkey for "^+7"
+                                      Successfully registered hotkey for "^+8"
+                                                                              Successfully registered hotkey for "^+9"
+                                       Successfully registered ^+0 hotkey
+                                                                         Successfully registered Alt+V hotkey with IO system
+                                             Successfully registered hotkey for "^+1"
+      Successfully registered hotkey for "^+2"
+                                              Successfully registered hotkey for "^+3"
+       Successfully registered hotkey for "^+4"
+                                               Successfully registered hotkey for "^+5"
+        Successfully registered hotkey for "^+6"
+                                                Successfully registered hotkey for "^+7"
+         Successfully registered hotkey for "^+8"
+                                                 Successfully registered hotkey for "^+9"
+          Successfully registered ^+0 hotkey
+                                            2025-11-25 19:35:18.831 [INFO] ClipboardManager initialized successfully
+                                     2025-11-25 19:35:18.831 [INFO] All components initialized successfully
+                            2025-11-25 19:35:18.831 [INFO] Periodic timer started
+  2025-11-25 19:35:18.831 [INFO] HavelApp initialized successfully
+                                                                  2025-11-25 19:35:18.831 [INFO] Havel started successfully - running in system tray
+                                                                     2025-11-25 19:35:22.083 [INFO] Hotkey pressed: @|rwin
+                                           2025-11-25 19:35:22.083 [INFO] {meta, rmeta}
+        2025-11-25 19:35:22.083 [INFO] Releasing modifier: meta
+                                                               2025-11-25 19:35:22.083 [INFO] Sending key: LMeta (0) code: 125
+                                               2025-11-25 19:35:22.083 [INFO] Releasing modifier: rmeta
+                        2025-11-25 19:35:22.083 [INFO] Sending key: RMeta (0) code: 126
+        2025-11-25 19:35:22.083 [INFO] Sending key: LAlt (1) code: 56
+                                                                     2025-11-25 19:35:22.084 [INFO] Sending key: backspace
+                                           2025-11-25 19:35:22.084 [INFO] Sending key: backspace (1) code: 14
+                              2025-11-25 19:35:22.084 [INFO] Sending key: backspace (0) code: 14
+                 2025-11-25 19:35:22.084 [INFO] Releasing modifier: alt
+                                                                       2025-11-25 19:35:22.084 [INFO] Sending key: LAlt (0) code: 56
+                                                     2025-11-25 19:35:23.535 [INFO] Hotkey pressed: @|rwin
+                           2025-11-25 19:35:23.535 [INFO] {meta, rmeta}
+                                                                       2025-11-25 19:35:23.535 [INFO] Releasing modifier: meta
+                                               2025-11-25 19:35:23.535 [INFO] Sending key: LMeta (0) code: 125
+                               2025-11-25 19:35:23.535 [INFO] Releasing modifier: rmeta
+        2025-11-25 19:35:23.535 [INFO] Sending key: RMeta (0) code: 126
+                                                                       2025-11-25 19:35:23.535 [INFO] Sending key: LAlt (1) code: 56
+                                                     2025-11-25 19:35:23.535 [INFO] Sending key: backspace
+                           2025-11-25 19:35:23.535 [INFO] Sending key: backspace (1) code: 14
+              2025-11-25 19:35:23.538 [INFO] Sending key: backspace (0) code: 14
+ 2025-11-25 19:35:23.538 [INFO] Releasing modifier: alt
+                                                       2025-11-25 19:35:23.538 [INFO] Sending key: LAlt (0) code: 56
+                                     2025-11-25 19:35:24.401 [INFO] Hotkey pressed: f7
+       2025-11-25 19:35:24.402 [INFO] Decreasing brightness
+                                                           2025-11-25 19:35:24.403 [INFO] Current brightness: 0.224989
+                                       2025-11-25 19:35:24.899 [INFO] Hotkey pressed: f8
+         2025-11-25 19:35:24.899 [INFO] Increasing brightness
+                                                             2025-11-25 19:35:24.900 [INFO] Current brightness: 0.249989
+                                         2025-11-25 19:35:25.170 [INFO] Hotkey pressed: f8
+           2025-11-25 19:35:25.170 [INFO] Increasing brightness
+                                                               2025-11-25 19:35:25.171 [INFO] Current brightness: 0.274989
+                                           2025-11-25 19:35:25.194 [INFO] Hotkey pressed: f8
+             2025-11-25 19:35:25.194 [INFO] Increasing brightness
+                                                                 2025-11-25 19:35:25.194 [INFO] Current brightness: 0.299989
+                                             2025-11-25 19:35:25.237 [INFO] Hotkey pressed: f8
+               2025-11-25 19:35:25.238 [INFO] Increasing brightness
+                                                                   2025-11-25 19:35:25.240 [INFO] Current brightness: 0.324989
+                                               2025-11-25 19:35:25.262 [INFO] Hotkey pressed: f8
+                 2025-11-25 19:35:25.263 [INFO] Increasing brightness
+                                                                     2025-11-25 19:35:25.276 [INFO] Current brightness: 0.349989
+                                                 Clipboard changed signal received
+   Processing clipboard content...
+                                  === Processing clipboard content ===
+                                                                      Has text: true Has HTML: false Has image: false Has URLs: false
+                                                      Processing text content, length: 113152
+              Saved 318 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                         Finished processing clipboard content
+                                                              Clipboard changed signal received
+                Processing clipboard content...
+                                               === Processing clipboard content ===
+    Has text: true Has HTML: false Has image: false Has URLs: false
+                                                                   Processing text content, length: 113152
+                           Saved 318 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                      Finished processing clipboard content
+                                                                           Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                       Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                    Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Alacritty
+                                         Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                      Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                                 Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                                              2025-11-25 19:38:09.140 [INFO] Hotkey pressed: ^!Left
+                                    2025-11-25 19:38:10.364 [INFO] Hotkey pressed: ^!Right
+           2025-11-25 19:38:11.380 [INFO] Hotkey pressed: @|ralt
+                                                                2025-11-25 19:38:16.132 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                                    2025-11-25 19:38:16.132 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                                              2025-11-25 19:38:16.133 [INFO] Button1
+                                     2025-11-25 19:38:17.004 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                         2025-11-25 19:38:17.005 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                   2025-11-25 19:38:17.005 [INFO] Button1
+          2025-11-25 19:38:34.725 [INFO] Hotkey pressed: !Esc
+                                                             2025-11-25 19:38:34.725 [INFO] Quitting application
+                                 No changes detected, skipping save
+                                                                   Shutting down MPV controller
+                IO destructor called
+                                    IO cleanup completed
+                                                        2025-11-25 19:38:34.751 [INFO] EventListener: Waiting for 0 callbacks
+                                              2025-11-25 19:38:34.751 [INFO] EventListener: Stopped
+                    2025-11-25 19:38:34.774 [INFO] HavelApp cleanup complete
+                                                                            [SignalWatcher] Received signal: SIGTERM (15)
+                                          ^C^[^[^[^[/home/all/scripts/hvc.sh: line 6: 3826222 Killed                     ./build-release/havel "$@"
+             

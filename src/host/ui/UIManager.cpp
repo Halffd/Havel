@@ -38,8 +38,8 @@ void UIManager::setPreferredBackend(const std::string &apiName) {
   // afterwards would never be applied: backend() only re-selects while
   // backend_ is null. Switch now if one already exists and differs, so
   // `--ui gtk` really runs on GTK even when Qt was auto-detected first.
-  if (instance().backend_ && instance().currentApiName() != apiName &&
-      apiName != "auto" && apiName != "AUTO" && apiName != "Auto") {
+  if (instance().backend_ && instance().currentApiName() != apiName && apiName != "auto" &&
+      apiName != "AUTO" && apiName != "Auto") {
     instance().initialized_ = true;
     instance().setBackend(apiName);
   }

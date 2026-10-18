@@ -248,20 +248,92 @@ likely exposed earlier by the already-committed dispatch-accounting
 change shifting allocation cadence — see the next section). Cargo 34/34,
 ctest 10/10, the three Cranelift GC smokes pass interpreted and tiered.
 
-## Known open issue surfaced by this work: the orc quartet
+## Resolved: the two JIT bugs caught by the parity gate (2026-10-15)
+
+`scripts/ci/jit-parity-test.sh` (the enforced JIT verification gate -
+interpreted run + tiered run + tier1>0 assertion + output parity +
+compile-refusal check, per test, under timeout) caught two real bugs on
+its first runs, both now fixed; the gate holds chunk_navigator (7/7
+twice, chunk_navigator tier1=5).
+
+Catch 1 - the depth-model refusal. chunkAt/chunkLeft tier-1 compiles
+refused with `join depth conflict (1 vs 0)` and the script "passed" by
+silently running interpreted. Mechanism, verified by bytecode dump:
+the non-literal-default-arg prologue emits
+`LOAD_VAR size; DUP; JUMP_IF_NULL skip; ... POP; LOAD_GLOBAL <default>;
+STORE_VAR size` whose two arms rejoin at the body with genuinely
+different operand-stack depths (1 vs 0) - benign in the interpreter
+(RETURN truncates to the frame base), fatal to the model's
+"depths only converge" invariant. Fix: the pre-pass converges join
+depths to the maximum and reprocesses the subtree; shallower arms pad
+NULL_TAGGED words under their values at every leader edge
+(padded_edge_args). The pads sit below values the interpreter would
+underflow before consuming, so they are never observable.
+
+Catch 2 - what the refusal was masking: the JIT call path did not
+apply default arguments. The compiled code seeds its params from
+args_ptr[0..param_count-1] unconditionally, but a call omitting a
+default passes a SHORTER args vector; the interpreter's doCall fills
+the missing local from func->default_values (or null), while
+backend_->execute handed the raw vector over - the compiled function
+read past the caller's args array and computed on garbage (observed:
+`z=1.58e-322`, `start=3.16e-322` - raw words read as denormal doubles,
+from tier-up onward, i.e. exactly the invocation where the test
+started exercising the JIT). Fix: jitCallArgs (VM.cpp) pads the args
+vector to param_count at both JIT execute sites, mirroring the
+interpreter's local initialization (default_values[i] when present,
+fresh array for the `= []` sentinel, null otherwise). The prologue's
+JUMP_IF_NULL then sees the same null the interpreter would have.
+
+Also structural, recorded by the same gate: the default dev build
+(build-debug) has no JIT backend at all (ENABLE_CRANELIFT is off by
+default) - every "tests pass" against it is an interpreter-only claim
+even with --tiering flags, and the ctest smoke gate therefore exercises
+the interpreter, not the JIT. The gate now self-declares: a tiered run
+with zero tier-1 transitions prints
+`[tiering] WARN: ... the JIT was not exercised` at shutdown.
+
+## Resolved: the orc quartet (2026-10-15, commit 0a1e15f4e)
 
 `test_issue_orc_{object_get_autocall, object_subscript, classnew_field,
-array_hof_gc_safe}` are flaky on current HEAD: `object_get_autocall`
-fails deterministically at k=829 in a plain interpreted run on a clean
-tree (stash-verified), the other three pass 3/3 in quiet direct runs
-and fail under gate timing. Suspected area: incremental-GC mark/sweep
-interaction with the tiered inline caches or the write-barrier shape
-(f51c99b8d marks only the stored VALUE where the interpreter's
-OBJECT_SET site marks the container too) — allocation-cadence changes
-(a09c032f4's honest instruction counting changed tier-up timing) move
-the failure onset around. This is its own investigation; the globals
-work is not the cause (clean-tree A/B) but the gate result above
-records it.
+array_hof_gc_safe}` — root cause was never the GC or tiering: the
+goroutine pump arms a 65536-instruction tick budget around each
+dispatch tick, and a budget expiring inside a nested dispatch loop
+driven by a host function's re-entry (VM::call from class.new running
+the init, or callFunctionSync from the array map/filter/reduce
+bridges) returned with the callee's frame still live. VM::call then
+popped a mid-frame operand as the "return value", the host function
+pushed its real result into the still-live frame's operand region,
+and the resumed callee's RETURN truncated the stack to its frame
+base — wiping the result and exposing the callee's own return value
+instead (`c = Counter()` yielding the init's int-0 implicit return at
+a deterministic per-script iteration; the per-script k moved with any
+allocation/instruction-cadence change, which is why probes shifted or
+dodged it). Fix: VM::call and callFunctionSync disarm the tick budget
+around their nested loops (exception-safe restore); a host function's
+re-entry is not a time-slice point because no driver can resume a C++
+host frame. The global dispatch counter keeps counting, so the outer
+armed loop still expires at its next checkpoint. Previously suspected
+(write-barrier shape, incremental-GC interaction) — disproven by
+probes: class.new returned objects 3000/3000, the push was never
+suppressed, GC and the yield pump never mutated the stack at any
+bracketed point; the one firing condition was budget=65536
+consumed=65536 with every other exit flag zero.
+
+## Historical: the orc quartet as previously recorded (open issue, pre-fix)
+
+`test_issue_orc_{object_get_autocall, object_subscript, classnew_field,
+array_hof_gc_safe}` were flaky on HEAD before 0a1e15f4e:
+`object_get_autocall` failed deterministically at k=829 in a plain
+interpreted run on a clean tree (stash-verified), the other three
+passed 3/3 in quiet direct runs and failed under gate timing. Suspected
+area then: incremental-GC mark/sweep interaction with the tiered
+inline caches or the write-barrier shape (f51c99b8d marks only the
+stored VALUE where the interpreter's OBJECT_SET site marks the
+container too) — allocation-cadence changes (a09c032f4's honest
+instruction counting changed tier-up timing) moved the failure onset
+around. That suspicion was wrong in mechanism but right in shape: the
+cadence sensitivity came from the tick-budget counter, not the GC.
 
 ## Measurement-validity note (the shared-cache incident)
 

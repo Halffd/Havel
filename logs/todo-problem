@@ -1,0 +1,1206 @@
+: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                                   2025-11-25 05:19:54.460 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 05:19:54.460 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 05:19:54.460 [INFO] Button1
+                  2025-11-25 05:29:23.182 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 05:29:23.182 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 05:29:23.183 [INFO] Button1
+ Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                                  2025-11-25 05:29:24.734 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+               2025-11-25 05:29:24.735 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 05:29:24.735 [INFO] Button1
+                 Updated previous active window to: 153092428Title: Ryujinx 1.3.3+b5bb28c287be54233d485bca2caf7566a5ff4ffa - Pokémon Legends: Arceus v1.0.0 (01001F5010DFA000) (64-bit) Class: Ryujinx
+                                             2025-11-25 05:29:24.770 [INFO] [1764059364] [MODE_SWITCH] default → gaming
+                 2025-11-25 05:29:24.770 [INFO] Ungrabbing hotkey: @|~lwin
+                       2025-11-25 05:29:24.770 [INFO] Successfully ungrabbed hotkey: @|~lwin
+                                         Successfully grabbed hotkey: @lwin
+                        2025-11-25 05:29:24.770 [INFO] Ungrabbing hotkey: @|lwin:up
+                                2025-11-25 05:29:24.770 [INFO] Successfully ungrabbed hotkey: @|lwin:up
+ Successfully grabbed hotkey: u
+                               Successfully grabbed hotkey: @y
+           Successfully grabbed hotkey: '
+                                         Successfully grabbed hotkey: /
+                    Successfully grabbed hotkey: +0
+Successfully grabbed hotkey: +9
+                               Successfully grabbed hotkey: +-
+           Successfully grabbed hotkey: @|rctrl
+                                               Successfully grabbed hotkey: +Esc
+                             Successfully grabbed hotkey: +PgUp
+            Successfully grabbed hotkey: +PgDn
+                                              Successfully grabbed hotkey: o
+                         Successfully grabbed hotkey: p
+    Successfully grabbed hotkey: +o
+                                   Successfully grabbed hotkey: +p
+               Successfully grabbed hotkey: |n
+                                              Successfully grabbed hotkey: +|n
+                           Successfully grabbed hotkey: 7
+      Successfully grabbed hotkey: 8
+                                    Successfully grabbed hotkey: +z
+                Successfully grabbed hotkey: +x
+                                               Successfully grabbed hotkey: 9
+                          Successfully grabbed hotkey: 0
+     Successfully grabbed hotkey: +c
+                                    Successfully grabbed hotkey: minus
+                   Successfully grabbed hotkey: equal
+  Successfully grabbed hotkey: <
+                                Successfully grabbed hotkey: slash
+               Successfully grabbed hotkey: @rshift
+2025-11-25 05:29:37.335 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                2025-11-25 05:29:37.335 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                               2025-11-25 05:29:37.335 [INFO] Button1
+                                  2025-11-25 05:29:39.407 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+               2025-11-25 05:29:39.407 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 05:29:39.407 [INFO] Button1
+                 2025-11-25 05:29:39.422 [INFO] [1764059379] [MODE_SWITCH] gaming → default
+                                        Successfully grabbed hotkey: @|~lwin
+                         2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: @lwin
+                             2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: @lwin
+                                             Successfully grabbed hotkey: @|lwin:up
+                                2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: u
+                                2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: u
+                                            2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: @y
+                                             2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: @y
+       2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: '
+       2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: '
+                   2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: /
+                   2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: /
+                               2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +0
+                                2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +0
+                                             2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +9
+                                              2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +9
+        2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +-
+         2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +-
+                      2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: @|rctrl
+                            2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: @|rctrl
+                                              2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +Esc
+                                                 2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +Esc
+             2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +PgUp
+                 2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +PgUp
+                                 2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +PgDn
+                                     2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +PgDn
+  2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: o
+  2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: o
+              2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: p
+              2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: p
+                          2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +o
+                           2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +o
+                                        2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +p
+                                         2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +p
+   2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: |n
+    2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: |n
+                 2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +|n
+                   2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +|n
+                                 2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: 7
+                                 2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: 7
+                                             2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: 8
+                                             2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: 8
+      2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +z
+       2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +z
+                    2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: +x
+                     2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: +x
+                                  2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: 9
+                                  2025-11-25 05:29:39.422 [INFO] Successfully ungrabbed hotkey: 9
+                                              2025-11-25 05:29:39.422 [INFO] Ungrabbing hotkey: 0
+                                              2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: 0
+       2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: +c
+        2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: +c
+                     2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: minus
+                         2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: minus
+                                         2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: equal
+                                             2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: equal
+          2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: <
+          2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: <
+                      2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: slash
+                          2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: slash
+                                          2025-11-25 05:29:39.423 [INFO] Ungrabbing hotkey: @rshift
+                                                2025-11-25 05:29:39.423 [INFO] Successfully ungrabbed hotkey: @rshift
+               Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                                                2025-11-25 05:29:40.177 [INFO] [1764059380] [MODE_SWITCH] default → gaming
+                    2025-11-25 05:29:40.177 [INFO] Ungrabbing hotkey: @|~lwin
+                          2025-11-25 05:29:40.177 [INFO] Successfully ungrabbed hotkey: @|~lwin
+                                            Successfully grabbed hotkey: @lwin
+                           2025-11-25 05:29:40.177 [INFO] Ungrabbing hotkey: @|lwin:up
+                                   2025-11-25 05:29:40.177 [INFO] Successfully ungrabbed hotkey: @|lwin:up
+    Successfully grabbed hotkey: u
+                                  Successfully grabbed hotkey: @y
+              Successfully grabbed hotkey: '
+                                            Successfully grabbed hotkey: /
+                       Successfully grabbed hotkey: +0
+   Successfully grabbed hotkey: +9
+                                  Successfully grabbed hotkey: +-
+              Successfully grabbed hotkey: @|rctrl
+                                                  Successfully grabbed hotkey: +Esc
+                                Successfully grabbed hotkey: +PgUp
+               Successfully grabbed hotkey: +PgDn
+                                                 Successfully grabbed hotkey: o
+                            Successfully grabbed hotkey: p
+       Successfully grabbed hotkey: +o
+                                      Successfully grabbed hotkey: +p
+                  Successfully grabbed hotkey: |n
+                                                 Successfully grabbed hotkey: +|n
+                              Successfully grabbed hotkey: 7
+         Successfully grabbed hotkey: 8
+                                       Successfully grabbed hotkey: +z
+                   Successfully grabbed hotkey: +x
+                                                  Successfully grabbed hotkey: 9
+                             Successfully grabbed hotkey: 0
+        Successfully grabbed hotkey: +c
+                                       Successfully grabbed hotkey: minus
+                      Successfully grabbed hotkey: equal
+     Successfully grabbed hotkey: <
+                                   Successfully grabbed hotkey: slash
+                  Successfully grabbed hotkey: @rshift
+   Updated previous active window to: 153092428Title: Ryujinx 1.3.3+b5bb28c287be54233d485bca2caf7566a5ff4ffa - Pokémon Legends: Arceus v1.0.0 (01001F5010DFA000) (64-bit) Class: Ryujinx
+                               2025-11-25 05:29:40.578 [INFO] [1764059380] [MODE_SWITCH] gaming → default
+   Successfully grabbed hotkey: @|~lwin
+                                       2025-11-25 05:29:40.578 [INFO] Ungrabbing hotkey: @lwin
+                                           2025-11-25 05:29:40.578 [INFO] Successfully ungrabbed hotkey: @lwin
+        Successfully grabbed hotkey: @|lwin:up
+                                              2025-11-25 05:29:40.578 [INFO] Ungrabbing hotkey: u
+                                              2025-11-25 05:29:40.578 [INFO] Successfully ungrabbed hotkey: u
+       2025-11-25 05:29:40.578 [INFO] Ungrabbing hotkey: @y
+        2025-11-25 05:29:40.578 [INFO] Successfully ungrabbed hotkey: @y
+                     2025-11-25 05:29:40.578 [INFO] Ungrabbing hotkey: '
+                     2025-11-25 05:29:40.578 [INFO] Successfully ungrabbed hotkey: '
+                                 2025-11-25 05:29:40.578 [INFO] Ungrabbing hotkey: /
+                                 2025-11-25 05:29:40.578 [INFO] Successfully ungrabbed hotkey: /
+                                             Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: Ryujinx
+                               Updated previous active window to: 153092428Title: Ryujinx 1.3.3+b5bb28c287be54233d485bca2caf7566a5ff4ffa - Pokémon Legends: Arceus v1.0.0 (01001F5010DFA000) (64-bit) Class: Ryujinx
+        2025-11-25 05:29:40.580 [INFO] Ungrabbing hotkey: +0
+         2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +0
+                      2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +9
+                       2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +9
+                                    2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +-
+                                     2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +-
+                                                  2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: @|rctrl
+     2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: @|rctrl
+                       2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +Esc
+                          2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +Esc
+                                         2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +PgUp
+                                             2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +PgUp
+          2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +PgDn
+              2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +PgDn
+                              2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: o
+                              2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: o
+                                          2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: p
+                                          2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: p
+   2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +o
+    2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +o
+                 2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +p
+                  2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +p
+                               2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: |n
+                                2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: |n
+                                             2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +|n
+                                               2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +|n
+          2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: 7
+          2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: 7
+                      2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: 8
+                      2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: 8
+                                  2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +z
+                                   2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +z
+                                                2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +x
+                                                 2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +x
+           2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: 9
+           2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: 9
+                       2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: 0
+                       2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: 0
+                                   2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: +c
+                                    2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: +c
+                                                 2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: minus
+  2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: minus
+                  2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: equal
+                      2025-11-25 05:29:40.581 [INFO] Successfully ungrabbed hotkey: equal
+                                      2025-11-25 05:29:40.581 [INFO] Ungrabbing hotkey: <
+                                      2025-11-25 05:29:40.582 [INFO] Successfully ungrabbed hotkey: <
+                                                  2025-11-25 05:29:40.582 [INFO] Ungrabbing hotkey: slash
+   2025-11-25 05:29:40.582 [INFO] Successfully ungrabbed hotkey: slash
+                   2025-11-25 05:29:40.582 [INFO] Ungrabbing hotkey: @rshift
+                         2025-11-25 05:29:40.582 [INFO] Successfully ungrabbed hotkey: @rshift
+                                           2025-11-25 05:29:40.582 [INFO] [1764059380] [MODE_SWITCH] default → gaming
+               2025-11-25 05:29:40.582 [INFO] Ungrabbing hotkey: @|~lwin
+                     2025-11-25 05:29:40.582 [INFO] Successfully ungrabbed hotkey: @|~lwin
+                                       Successfully grabbed hotkey: @lwin
+                      2025-11-25 05:29:40.582 [INFO] Ungrabbing hotkey: @|lwin:up
+                              2025-11-25 05:29:40.582 [INFO] Successfully ungrabbed hotkey: @|lwin:up
+                                                  Successfully grabbed hotkey: u
+                             Successfully grabbed hotkey: @y
+         Successfully grabbed hotkey: '
+                                       Successfully grabbed hotkey: /
+                  Successfully grabbed hotkey: +0
+                                                 Successfully grabbed hotkey: +9
+                             Successfully grabbed hotkey: +-
+         Successfully grabbed hotkey: @|rctrl
+                                             Successfully grabbed hotkey: +Esc
+                           Successfully grabbed hotkey: +PgUp
+          Successfully grabbed hotkey: +PgDn
+                                            Successfully grabbed hotkey: o
+                       Successfully grabbed hotkey: p
+  Successfully grabbed hotkey: +o
+                                 Successfully grabbed hotkey: +p
+             Successfully grabbed hotkey: |n
+                                            Successfully grabbed hotkey: +|n
+                         Successfully grabbed hotkey: 7
+    Successfully grabbed hotkey: 8
+                                  Successfully grabbed hotkey: +z
+              Successfully grabbed hotkey: +x
+                                             Successfully grabbed hotkey: 9
+                        Successfully grabbed hotkey: 0
+   Successfully grabbed hotkey: +c
+                                  Successfully grabbed hotkey: minus
+                 Successfully grabbed hotkey: equal
+Successfully grabbed hotkey: <
+                              Successfully grabbed hotkey: slash
+             Successfully grabbed hotkey: @rshift
+                                                 Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                               2025-11-25 05:29:40.860 [INFO] [1764059380] [MODE_SWITCH] gaming → default
+   Successfully grabbed hotkey: @|~lwin
+                                       2025-11-25 05:29:40.860 [INFO] Ungrabbing hotkey: @lwin
+                                           2025-11-25 05:29:40.860 [INFO] Successfully ungrabbed hotkey: @lwin
+        Successfully grabbed hotkey: @|lwin:up
+                                              2025-11-25 05:29:40.860 [INFO] Ungrabbing hotkey: u
+                                              2025-11-25 05:29:40.860 [INFO] Successfully ungrabbed hotkey: u
+       2025-11-25 05:29:40.860 [INFO] Ungrabbing hotkey: @y
+        2025-11-25 05:29:40.860 [INFO] Successfully ungrabbed hotkey: @y
+                     2025-11-25 05:29:40.860 [INFO] Ungrabbing hotkey: '
+                     2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: '
+                                 2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: /
+                                 2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: /
+                                             2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +0
+                                              2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +0
+        2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +9
+         2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +9
+                      2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +-
+                       2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +-
+                                    2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: @|rctrl
+                                          2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: @|rctrl
+         2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +Esc
+            2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +Esc
+                           2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +PgUp
+                               2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +PgUp
+                                               2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +PgDn
+2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +PgDn
+                2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: o
+                2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: o
+                            2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: p
+                            2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: p
+                                        2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +o
+                                         2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +o
+   2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +p
+    2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +p
+                 2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: |n
+                  2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: |n
+                               2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +|n
+                                 2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +|n
+                                               2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: 7
+                                               2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: 7
+        2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: 8
+        2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: 8
+                    2025-11-25 05:29:40.861 [INFO] Ungrabbing hotkey: +z
+                     2025-11-25 05:29:40.861 [INFO] Successfully ungrabbed hotkey: +z
+                                  2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: +x
+                                   2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: +x
+                                                2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: 9
+                                                2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: 9
+         2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: 0
+         2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: 0
+                     2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: +c
+                      2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: +c
+                                   2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: minus
+                                       2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: minus
+    2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: equal
+        2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: equal
+                        2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: <
+                        2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: <
+                                    2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: slash
+                                        2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: slash
+     2025-11-25 05:29:40.862 [INFO] Ungrabbing hotkey: @rshift
+           2025-11-25 05:29:40.862 [INFO] Successfully ungrabbed hotkey: @rshift
+                             Updated previous active window to: 153092428Title: Ryujinx 1.3.3+b5bb28c287be54233d485bca2caf7566a5ff4ffa - Pokémon Legends: Arceus v1.0.0 (01001F5010DFA000) (64-bit) Class: Ryujinx
+      2025-11-25 05:29:41.311 [INFO] [1764059381] [MODE_SWITCH] default → gaming
+                             2025-11-25 05:29:41.311 [INFO] Ungrabbing hotkey: @|~lwin
+                                   2025-11-25 05:29:41.311 [INFO] Successfully ungrabbed hotkey: @|~lwin
+  Successfully grabbed hotkey: @lwin
+                                    2025-11-25 05:29:41.311 [INFO] Ungrabbing hotkey: @|lwin:up
+                                            2025-11-25 05:29:41.311 [INFO] Successfully ungrabbed hotkey: @|lwin:up
+             Successfully grabbed hotkey: u
+                                           Successfully grabbed hotkey: @y
+                       Successfully grabbed hotkey: '
+  Successfully grabbed hotkey: /
+                                Successfully grabbed hotkey: +0
+            Successfully grabbed hotkey: +9
+                                           Successfully grabbed hotkey: +-
+                       Successfully grabbed hotkey: @|rctrl
+        Successfully grabbed hotkey: +Esc
+                                         Successfully grabbed hotkey: +PgUp
+                        Successfully grabbed hotkey: +PgDn
+       Successfully grabbed hotkey: o
+                                     Successfully grabbed hotkey: p
+                Successfully grabbed hotkey: +o
+                                               Successfully grabbed hotkey: +p
+                           Successfully grabbed hotkey: |n
+       Successfully grabbed hotkey: +|n
+                                       Successfully grabbed hotkey: 7
+                  Successfully grabbed hotkey: 8
+                                                Successfully grabbed hotkey: +z
+                            Successfully grabbed hotkey: +x
+        Successfully grabbed hotkey: 9
+                                      Successfully grabbed hotkey: 0
+                 Successfully grabbed hotkey: +c
+                                                Successfully grabbed hotkey: minus
+                               Successfully grabbed hotkey: equal
+              Successfully grabbed hotkey: <
+                                            Successfully grabbed hotkey: slash
+                           Successfully grabbed hotkey: @rshift
+            Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                 2025-11-25 05:29:41.631 [INFO] [1764059381] [MODE_SWITCH] gaming → default
+                                        Successfully grabbed hotkey: @|~lwin
+                         2025-11-25 05:29:41.631 [INFO] Ungrabbing hotkey: @lwin
+                             2025-11-25 05:29:41.631 [INFO] Successfully ungrabbed hotkey: @lwin
+                                             Successfully grabbed hotkey: @|lwin:up
+                                2025-11-25 05:29:41.631 [INFO] Ungrabbing hotkey: u
+                                2025-11-25 05:29:41.631 [INFO] Successfully ungrabbed hotkey: u
+                                            2025-11-25 05:29:41.631 [INFO] Ungrabbing hotkey: @y
+                                             2025-11-25 05:29:41.631 [INFO] Successfully ungrabbed hotkey: @y
+       2025-11-25 05:29:41.631 [INFO] Ungrabbing hotkey: '
+       2025-11-25 05:29:41.631 [INFO] Successfully ungrabbed hotkey: '
+                   2025-11-25 05:29:41.631 [INFO] Ungrabbing hotkey: /
+                   2025-11-25 05:29:41.631 [INFO] Successfully ungrabbed hotkey: /
+                               2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +0
+                                2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +0
+                                             2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +9
+                                              2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +9
+        2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +-
+         2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +-
+                      2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: @|rctrl
+                            2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: @|rctrl
+                                              2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +Esc
+                                                 2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +Esc
+             2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +PgUp
+                 2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +PgUp
+                                 2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: +PgDn
+                                     2025-11-25 05:29:41.636 [INFO] Successfully ungrabbed hotkey: +PgDn
+  2025-11-25 05:29:41.636 [INFO] Ungrabbing hotkey: o
+  2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: o
+              2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: p
+              2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: p
+                          2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +o
+                           2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +o
+                                        2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +p
+                                         2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +p
+   2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: |n
+    2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: |n
+                 2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +|n
+                   2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +|n
+                                 2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: 7
+                                 2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: 7
+                                             2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: 8
+                                             2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: 8
+      2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +z
+       2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +z
+                    2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +x
+                     2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +x
+                                  2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: 9
+                                  2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: 9
+                                              2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: 0
+                                              2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: 0
+       2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: +c
+        2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: +c
+                     2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: minus
+                         2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: minus
+                                         2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: equal
+                                             2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: equal
+          2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: <
+          2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: <
+                      2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: slash
+                          2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: slash
+                                          2025-11-25 05:29:41.637 [INFO] Ungrabbing hotkey: @rshift
+                                                2025-11-25 05:29:41.637 [INFO] Successfully ungrabbed hotkey: @rshift
+               Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                        Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                      Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                           Updated previous active window to: 35651589Title: Alacritty Class: Thorium-browser
+       Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+            Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                     Clipboard changed signal received
+                   Processing clipboard content...
+                                                  === Processing clipboard content ===
+                                   Has text: true Has HTML: false Has image: false Has URLs: false
+                                               Processing text content, length: 3701
+                                 Saved 312 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                     Finished processing clipboard content
+       Clipboard changed signal received
+                                        Processing clipboard content...
+                    === Processing clipboard content ===
+     Has text: true Has HTML: false Has image: false Has URLs: false
+                 Processing text content, length: 3701
+   Saved 312 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                          Finished processing clipboard content
+                            Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                                 Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+       Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Alacritty
+      Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                               Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                                    Updated previous active window to: 35651589Title: Alacritty Class: Thorium-browser
+                Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                     2025-11-25 05:31:34.263 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+  2025-11-25 05:31:34.263 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                 2025-11-25 05:31:34.263 [INFO] Button1
+    Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                             Clipboard changed signal received
+           Processing clipboard content...
+                                          === Processing clipboard content ===
+                           Has text: true Has HTML: false Has image: false Has URLs: false
+                                       Processing text content, length: 10812
+                          Saved 313 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+              Finished processing clipboard content
+Clipboard changed signal received
+                                 Processing clipboard content...
+             === Processing clipboard content ===
+                                                 Has text: true Has HTML: false Has image: false Has URLs: false
+          Processing text content, length: 10812
+                                                Saved 313 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                    Finished processing clipboard content
+                      Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                           Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+ Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                                  2025-11-25 05:36:49.401 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+               2025-11-25 05:36:49.401 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 05:36:49.401 [INFO] Button1
+                 Updated previous active window to: 153092428Title: Ryujinx 1.3.3+b5bb28c287be54233d485bca2caf7566a5ff4ffa - Pokémon Legends: Arceus v1.0.0 (01001F5010DFA000) (64-bit) Class: Ryujinx
+                                             2025-11-25 05:36:49.434 [INFO] [1764059809] [MODE_SWITCH] default → gaming
+                 2025-11-25 05:36:49.434 [INFO] Ungrabbing hotkey: @|~lwin
+                       2025-11-25 05:36:49.434 [INFO] Successfully ungrabbed hotkey: @|~lwin
+                                         Successfully grabbed hotkey: @lwin
+                        2025-11-25 05:36:49.435 [INFO] Ungrabbing hotkey: @|lwin:up
+                                2025-11-25 05:36:49.435 [INFO] Successfully ungrabbed hotkey: @|lwin:up
+ Successfully grabbed hotkey: u
+                               Successfully grabbed hotkey: @y
+           Successfully grabbed hotkey: '
+                                         Successfully grabbed hotkey: /
+                    Successfully grabbed hotkey: +0
+Successfully grabbed hotkey: +9
+                               Successfully grabbed hotkey: +-
+           Successfully grabbed hotkey: @|rctrl
+                                               Successfully grabbed hotkey: +Esc
+                             Successfully grabbed hotkey: +PgUp
+            Successfully grabbed hotkey: +PgDn
+                                              Successfully grabbed hotkey: o
+                         Successfully grabbed hotkey: p
+    Successfully grabbed hotkey: +o
+                                   Successfully grabbed hotkey: +p
+               Successfully grabbed hotkey: |n
+                                              Successfully grabbed hotkey: +|n
+                           Successfully grabbed hotkey: 7
+      Successfully grabbed hotkey: 8
+                                    Successfully grabbed hotkey: +z
+                Successfully grabbed hotkey: +x
+                                               Successfully grabbed hotkey: 9
+                          Successfully grabbed hotkey: 0
+     Successfully grabbed hotkey: +c
+                                    Successfully grabbed hotkey: minus
+                   Successfully grabbed hotkey: equal
+  Successfully grabbed hotkey: <
+                                Successfully grabbed hotkey: slash
+               Successfully grabbed hotkey: @rshift
+2025-11-25 05:36:59.809 [INFO] Hotkey pressed: @|rctrl
+   2025-11-25 05:36:59.809 [INFO] rctrl PlayPause
+                                                 MPV response: {"data":null,"request_id":0,"error":"success"}
+       {"event":"seek"}
+                       {"event":"playback-restart"}
+{"event":"seek"}
+                {"event":"playback-restart"}
+                                            {"event":"seek"}
+         {"event":"playback-restart"}
+                                     {"event":"seek"}
+  {"event":"playback-restart"}
+                              {"event":"seek"}
+                                              {"event":"playback-restart"}
+                       {"event":"seek"}
+                                       {"event":"playback-restart"}
+                {"event":"seek"}
+                                {"event":"playback-restart"}
+         {"event":"seek"}
+                         {"event":"playback-restart"}
+  {"event":"seek"}
+                  {"event":"playback-restart"}
+
+                                              2025-11-25 05:37:08.609 [INFO] Hotkey pressed: @lwin
+                                               MPV response: {"data":null,"request_id":0,"error":"success"}
+
+     2025-11-25 05:37:24.986 [INFO] Hotkey pressed: @y
+   2025-11-25 05:37:24.986 [INFO] Gaming hotkey: Holding 'w' key down
+                  2025-11-25 05:37:24.986 [INFO] {}
+2025-11-25 05:37:24.986 [INFO] Sending key: w (1) code: 17
+       2025-11-25 05:37:24.986 [INFO] {}
+                                        2025-11-25 05:37:24.986 [INFO] Sending key: w (0) code: 17
+                                               2025-11-25 05:37:24.986 [INFO] W key released
+                                         2025-11-25 05:37:25.817 [INFO] Hotkey pressed: @y
+                                       2025-11-25 05:37:25.817 [INFO] Gaming hotkey: Holding 'w' key down
+   2025-11-25 05:37:25.817 [INFO] {}
+                                    2025-11-25 05:37:25.817 [INFO] Sending key: w (1) code: 17
+                                           2025-11-25 05:37:25.817 [INFO] W key pressed and held down
+                                                  2025-11-25 05:37:30.681 [INFO] Hotkey pressed: @lwin
+MPV response: {"data":null,"request_id":0,"error":"success"}
+
+         2025-11-25 05:37:48.970 [INFO] Hotkey pressed: @lwin
+          MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                   2025-11-25 05:37:52.922 [INFO] Hotkey pressed: @lwin
+                    MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                             2025-11-25 05:38:04.170 [INFO] Hotkey pressed: @lwin
+                              MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                                       2025-11-25 05:38:08.082 [INFO] Hotkey pressed: @lwin
+                                        MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                                                 2025-11-25 05:38:32.874 [INFO] Hotkey pressed: @lwin
+                                                  MPV response: {"data":null,"request_id":0,"error":"success"}
+
+        2025-11-25 05:38:37.354 [INFO] Hotkey pressed: @lwin
+         MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                  2025-11-25 05:40:25.899 [INFO] Hotkey pressed: @|ralt
+                    2025-11-25 05:40:29.587 [INFO] Hotkey pressed: @lwin
+                     MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                              2025-11-25 05:40:44.619 [INFO] Hotkey pressed: @lwin
+                               MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                                        2025-11-25 05:40:53.339 [INFO] Hotkey pressed: @lwin
+                                         MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                                                  2025-11-25 05:40:55.787 [INFO] Hotkey pressed: o
+                                               MPV response: {"data":null,"request_id":0,"error":"success"}
+
+     2025-11-25 05:41:04.915 [INFO] Hotkey pressed: @lwin
+      MPV response: {"data":null,"request_id":0,"error":"success"}
+               {"event":"seek"}
+                               {"event":"playback-restart"}
+
+        2025-11-25 05:41:08.491 [INFO] Hotkey pressed: @lwin
+         MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                  2025-11-25 05:41:09.459 [INFO] Hotkey pressed: @lwin
+                   MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                            2025-11-25 05:41:21.955 [INFO] Hotkey pressed: @lwin
+                             MPV response: {"data":null,"request_id":0,"error":"success"}
+
+                                      Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                    2025-11-25 05:41:47.846 [INFO] [1764060107] [MODE_SWITCH] gaming → default
+                                           Successfully grabbed hotkey: @|~lwin
+                            2025-11-25 05:41:47.846 [INFO] Ungrabbing hotkey: @lwin
+                                2025-11-25 05:41:47.846 [INFO] Successfully ungrabbed hotkey: @lwin
+                                                Successfully grabbed hotkey: @|lwin:up
+                                   2025-11-25 05:41:47.846 [INFO] Ungrabbing hotkey: u
+                                   2025-11-25 05:41:47.846 [INFO] Successfully ungrabbed hotkey: u
+                                               2025-11-25 05:41:47.846 [INFO] Ungrabbing hotkey: @y
+                                                2025-11-25 05:41:47.846 [INFO] Successfully ungrabbed hotkey: @y
+          2025-11-25 05:41:47.846 [INFO] Ungrabbing hotkey: '
+          2025-11-25 05:41:47.846 [INFO] Successfully ungrabbed hotkey: '
+                      2025-11-25 05:41:47.846 [INFO] Ungrabbing hotkey: /
+                      2025-11-25 05:41:47.846 [INFO] Successfully ungrabbed hotkey: /
+                                  2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +0
+                                   2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +0
+                                                2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +9
+                                                 2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +9
+           2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +-
+            2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +-
+                         2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: @|rctrl
+                               2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: @|rctrl
+                                                 2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +Esc
+ 2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +Esc
+                2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +PgUp
+                    2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +PgUp
+                                    2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: +PgDn
+                                        2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: +PgDn
+     2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: o
+     2025-11-25 05:41:47.847 [INFO] Successfully ungrabbed hotkey: o
+                 2025-11-25 05:41:47.847 [INFO] Ungrabbing hotkey: p
+                 2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: p
+                             2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +o
+                              2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +o
+                                           2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +p
+                                            2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +p
+      2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: |n
+       2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: |n
+                    2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +|n
+                      2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +|n
+                                    2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: 7
+                                    2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: 7
+                                                2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: 8
+                                                2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: 8
+         2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +z
+          2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +z
+                       2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +x
+                        2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +x
+                                     2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: 9
+                                     2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: 9
+                                                 2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: 0
+                                                 2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: 0
+          2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: +c
+           2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: +c
+                        2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: minus
+                            2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: minus
+                                            2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: equal
+                                                2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: equal
+             2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: <
+             2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: <
+                         2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: slash
+                             2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: slash
+                                             2025-11-25 05:41:47.848 [INFO] Ungrabbing hotkey: @rshift
+2025-11-25 05:41:47.848 [INFO] Successfully ungrabbed hotkey: @rshift
+                  2025-11-25 05:42:09.963 [INFO] Hotkey pressed: !l
+                2025-11-25 05:42:19.419 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                2025-11-25 05:42:19.419 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+            2025-11-25 05:42:19.419 [INFO] Button1
+                                                  Clipboard changed signal received
+                                Processing clipboard content...
+            === Processing clipboard content ===
+                                                Has text: true Has HTML: false Has image: false Has URLs: false
+         Processing text content, length: 76
+                                            Saved 314 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                Finished processing clipboard content
+                  Clipboard changed signal received
+Processing clipboard content...
+                               === Processing clipboard content ===
+                Has text: true Has HTML: false Has image: false Has URLs: false
+                            Processing text content, length: 76
+            Saved 314 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+Finished processing clipboard content
+                                     Clipboard changed signal received
+                   Processing clipboard content...
+                                                  === Processing clipboard content ===
+                                   Has text: true Has HTML: false Has image: false Has URLs: false
+                                               Processing text content, length: 76
+                               Skipping duplicate text content
+           Finished processing clipboard content
+                                                Clipboard changed signal received
+                              Processing clipboard content...
+          === Processing clipboard content ===
+                                              Has text: true Has HTML: false Has image: false Has URLs: false
+       Processing text content, length: 76
+                                          Skipping duplicate text content
+                      Finished processing clipboard content
+        Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+           Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/ironmouse\ - mpv Class: mpv
+    Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+       Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/ironmouse\ - mpv Class: mpv
+Updated previous active window to: 113246210Title: Watashi ni Tenshi ga Maiorita! - 1x09 - Please Stay Until I Fall Asleep [BD-1080p x265 FLAC2.0] [Smoke] [CD8CF6E7].mkv - mpv Class: mpv
+                                 Updated previous active window to: 100663324Title: img-app-fosjn8v.web.app - Thorium Class: Thorium-browser
+                                      Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+            Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                   Updated previous active window to: 100663300Title: DeepSeek - Into the Unknown - Thorium Class: Thorium-browser
+                            Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: Thorium-browser
+                                           Updated previous active window to: 100663300Title: DeepSeek - Into the Unknown - Thorium Class: Thorium-browser
+ 2025-11-25 05:43:25.132 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 05:43:25.133 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 05:43:25.133 [INFO] Button1
+                                   2025-11-25 05:43:25.820 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 05:43:25.820 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 05:43:25.820 [INFO] Button1
+                  2025-11-25 05:43:49.332 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 05:43:49.332 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 05:43:49.332 [INFO] Button1
+ Clipboard changed signal received
+                                  Processing clipboard content...
+              === Processing clipboard content ===
+                                                  Has text: true Has HTML: false Has image: false Has URLs: false
+           Processing text content, length: 37
+                                              Saved 315 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                  Finished processing clipboard content
+                    Clipboard changed signal received
+  Processing clipboard content...
+                                 === Processing clipboard content ===
+                  Has text: true Has HTML: false Has image: false Has URLs: false
+                              Processing text content, length: 37
+              Saved 315 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+  Finished processing clipboard content
+                                       Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+                                          Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                                                 Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                       Updated previous active window to: 100663300Title: Send Home Button via ADB Commands - DeepSeek - Thorium Class: Alacritty
+                                           Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                 Updated previous active window to: 100663300Title: Send Home Button via ADB Commands - DeepSeek - Thorium Class: Thorium-browser
+                                           Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                                                  Updated previous active window to: 100663431Title: _crx_mjaenpbpnfdldgejgeilanilbgikkcoe Class: Thorium-browser
+        Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+               Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                        Updated previous active window to: 100663431Title: Yomitan Search Class: Alacritty
+                    Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                             Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                               Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+     2025-11-25 05:46:16.181 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                     2025-11-25 05:46:16.181 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+ 2025-11-25 05:46:16.181 [INFO] Button1
+                                       ^[[1;3BUpdated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+      Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                           Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                                                  Updated previous active window to: 100663300Title: Send Home Button via ADB Commands - DeepSeek - Thorium Class: Thorium-browser
+                         Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+                            Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+  Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+     Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                              Updated previous active window to: 100663300Title: Send Home Button via ADB Commands - DeepSeek - Thorium Class: Thorium-browser
+     Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+            Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                                 Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: Thorium-browser
+             Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                                  2025-11-25 05:47:22.630 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                               2025-11-25 05:47:22.642 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                              2025-11-25 05:47:22.642 [INFO] Button1
+                                 Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+                                    Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                      Updated previous active window to: 134217730Title: memanshinngggg again 2025-11-25 05:42 - mpv Class: mpv
+                         X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+   X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                  Updated previous active window to: 130023426Title: 【おうち3D】3Dライブ振り返り💙雑談／freetalk【水宮枢／ホロライブDEV_IS】 2025-11-25 06:39 - mpv Class: mpv
+                       Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+         Updated previous active window to: 130023426Title: 【ARC Raiders】Imagine / 想像してごらん【ホロライブ/兎田ぺこら】 2025-11-25 08:46 - mpv Class: mpv
+      Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/ksonsouchou\ - mpv Class: mpv
+ Updated previous active window to: 130023426Title: 【ARC Raiders】Imagine / 想像してごらん【ホロライブ/兎田ぺこら】 2025-11-25 08:46 - mpv Class: mpv
+                                                 Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/sayu\ - mpv Class: mpv
+                                     Updated previous active window to: 130023426Title: 【ARC Raiders】Imagine / 想像してごらん【ホロライブ/兎田ぺこら】 2025-11-25 08:46 - mpv Class: mpv
+                                  Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/nagisekaied\ - mpv Class: mpv
+                             Updated previous active window to: 130023426Title: Olha a treta rolando!! - React HEXATOMBE Ep. 5 2025-11-25 13:51 - mpv Class: mpv
+       Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/vedal987\ - mpv Class: mpv
+                                                  Updated previous active window to: 130023426Title: Olha a treta rolando!! - React HEXATOMBE Ep. 5 2025-11-25 13:51 - mpv Class: mpv
+                            Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/cottontailva\ - mpv Class: mpv
+                        Updated previous active window to: 130023426Title: 【PORTAL】Croc stuck?? 2025-11-25 18:40 - mpv Class: mpv
+                             Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/cottontailva\ - mpv Class: mpv
+                         Updated previous active window to: 130023426Title: 【ARC Raiders】朝から稼ぎに行ったっていいですにゃ 【ホロライブ/ ロボ子さん】 2025-11-25 19:08 - mpv Class: mpv
+                                  2025-11-25 19:10:20.090 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+               2025-11-25 19:10:20.096 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:10:20.096 [INFO] Button2
+                 2025-11-25 19:10:23.578 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                                 2025-11-25 19:10:23.579 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+             2025-11-25 19:10:23.579 [INFO] Button2
+2025-11-25 19:10:39.801 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                2025-11-25 19:10:39.803 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                               2025-11-25 19:10:39.803 [INFO] Button2
+                                  2025-11-25 19:10:41.909 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+               2025-11-25 19:10:41.910 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:10:41.910 [INFO] Button2
+                 2025-11-25 19:10:43.161 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                                 2025-11-25 19:10:43.161 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+             2025-11-25 19:10:43.161 [INFO] Button2
+Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/cottontailva\ - mpv Class: mpv
+                                               Updated previous active window to: 130023426Title: 【ARC Raiders】朝から稼ぎに行ったっていいですにゃ 【ホロライブ/ ロボ子さん】 2025-11-25 19:08 - mpv Class: mpv
+     Updated previous active window to: 121634818Title: Unknown Author - No Category - Unknown Title -:-::https://twitch.tv/cottontailva\ - mpv Class: mpv
+ Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                      Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                                             Updated previous active window to: 100663300Title: Send Home Button via ADB Commands - DeepSeek - Thorium Class: Thorium-browser
+                    Updated previous active window to: 130023426Title: 【ARC Raiders】朝から稼ぎに行ったっていいですにゃ 【ホロライブ/ ロボ子さん】 2025-11-25 19:08 - mpv Class: mpv
+                            Updated previous active window to: 100663408Title: Desuarchive » Global Search » Searching for posts that contain ‘"textview"’. - Thorium Class: Thorium-browser
+                                   2025-11-25 19:11:13.908 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 19:11:13.909 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 19:11:13.909 [INFO] Button1
+                  2025-11-25 19:11:14.977 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 19:11:14.980 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 19:11:14.980 [INFO] Button1
+ 2025-11-25 19:11:15.713 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:11:15.715 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:11:15.715 [INFO] Button1
+                                   Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                       2025-11-25 19:11:20.929 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                    2025-11-25 19:11:20.930 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                   2025-11-25 19:11:20.930 [INFO] Button1
+                      2025-11-25 19:11:24.874 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+   2025-11-25 19:11:24.878 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                  2025-11-25 19:11:24.878 [INFO] Button1
+     2025-11-25 19:11:25.681 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                     2025-11-25 19:11:25.683 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+ 2025-11-25 19:11:25.683 [INFO] Button1
+                                       2025-11-25 19:11:38.220 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                    2025-11-25 19:11:38.221 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                   2025-11-25 19:11:38.221 [INFO] Button1
+                      2025-11-25 19:11:40.048 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+   2025-11-25 19:11:40.049 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                  2025-11-25 19:11:40.049 [INFO] Button1
+     2025-11-25 19:12:12.547 [INFO] Hotkey pressed: @|~lwin
+        2025-11-25 19:12:12.562 [INFO] Hotkey pressed: @|lwin:up
+             2025-11-25 19:12:13.002 [INFO] Hotkey pressed: @|lwin:up
+                  2025-11-25 19:12:13.043 [INFO] Hotkey pressed: @|~lwin
+                     Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+2025-11-25 19:12:23.647 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                2025-11-25 19:12:23.647 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                               2025-11-25 19:12:23.647 [INFO] Button1
+                                  Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                      2025-11-25 19:12:24.814 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                   2025-11-25 19:12:24.814 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                  2025-11-25 19:12:24.814 [INFO] Button1
+                     2025-11-25 19:12:26.906 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+  2025-11-25 19:12:26.910 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                 2025-11-25 19:12:26.910 [INFO] Button1
+    2025-11-25 19:12:34.098 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                    2025-11-25 19:12:34.099 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+2025-11-25 19:12:34.099 [INFO] Button1
+                                      2025-11-25 19:12:39.594 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                   2025-11-25 19:12:39.594 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                  2025-11-25 19:12:39.594 [INFO] Button1
+                     2025-11-25 19:12:42.957 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+  2025-11-25 19:12:42.957 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                 2025-11-25 19:12:42.957 [INFO] Button1
+    2025-11-25 19:12:51.095 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                    2025-11-25 19:12:51.107 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+2025-11-25 19:12:51.107 [INFO] Button1
+                                      2025-11-25 19:12:54.714 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                   2025-11-25 19:12:54.715 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                  2025-11-25 19:12:54.715 [INFO] Button1
+                     2025-11-25 19:12:57.485 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+  2025-11-25 19:12:57.485 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                 2025-11-25 19:12:57.485 [INFO] Button1
+    2025-11-25 19:13:09.586 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                    2025-11-25 19:13:09.590 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+2025-11-25 19:13:09.590 [INFO] Button1
+                                      2025-11-25 19:13:40.188 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                   2025-11-25 19:13:40.227 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                  2025-11-25 19:13:40.227 [INFO] Button1
+                     2025-11-25 19:13:44.386 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+  2025-11-25 19:13:44.454 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                 2025-11-25 19:13:44.454 [INFO] Button1
+    2025-11-25 19:13:44.946 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                    2025-11-25 19:13:44.947 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+2025-11-25 19:13:44.947 [INFO] Button1
+                                      2025-11-25 19:13:46.770 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                   2025-11-25 19:13:46.770 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                  2025-11-25 19:13:46.771 [INFO] Button1
+                     2025-11-25 19:14:48.338 [INFO] Hotkey pressed: @|~lwin
+                        2025-11-25 19:14:48.507 [INFO] Hotkey pressed: @|lwin:up
+                             Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+        Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+            Updated previous active window to: 136314884Title: Windsurf - Next Class: Windsurf - Next
+                                                  2025-11-25 19:15:21.403 [INFO] Hotkey pressed: !x
+                                                Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+ Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Thorium-browser
+                       Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                           Updated previous active window to: 155189253Title: Alacritty Class: Alacritty
+  2025-11-25 19:15:25.065 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                  2025-11-25 19:15:25.065 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                 2025-11-25 19:15:25.065 [INFO] Button1
+                                    Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                        2025-11-25 19:16:56.948 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                     2025-11-25 19:16:56.968 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                    2025-11-25 19:16:56.968 [INFO] Button1
+                       Clipboard changed signal received
+     Processing clipboard content...
+                                    === Processing clipboard content ===
+                     Has text: true Has HTML: false Has image: false Has URLs: false
+                                 Processing text content, length: 613
+                  Cleaned HTML from text, new length: 375
+      Saved 316 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                             Finished processing clipboard content
+                               Clipboard changed signal received
+             Processing clipboard content...
+                                            === Processing clipboard content ===
+                             Has text: true Has HTML: false Has image: false Has URLs: false
+                                         Processing text content, length: 613
+                          Cleaned HTML from text, new length: 375
+              Saved 316 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+  Finished processing clipboard content
+                                       2025-11-25 19:18:17.861 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                    2025-11-25 19:18:17.862 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                   2025-11-25 19:18:17.862 [INFO] Button1
+                      Clipboard changed signal received
+    Processing clipboard content...
+                                   === Processing clipboard content ===
+                    Has text: true Has HTML: true Has image: false Has URLs: false
+                               Processing HTML content, length: 5846
+                 Adding new HTML content to history
+Saved 317 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                       Finished processing clipboard content
+                         Clipboard changed signal received
+       Processing clipboard content...
+                                      === Processing clipboard content ===
+                       Has text: true Has HTML: true Has image: false Has URLs: false
+                                  Processing HTML content, length: 5846
+                    Adding new HTML content to history
+   Saved 317 items to "/home/half-arch/.local/share/havel/ClipboardManager/clipboard_history"
+                                          Finished processing clipboard content
+                            Clipboard changed signal received
+          Processing clipboard content...
+                                         === Processing clipboard content ===
+                          Has text: true Has HTML: true Has image: false Has URLs: false
+                                     Processing HTML content, length: 5846
+                       Skipping duplicate HTML content
+   Finished processing clipboard content
+                                        Clipboard changed signal received
+                      Processing clipboard content...
+  === Processing clipboard content ===
+                                      Has text: true Has HTML: true Has image: false Has URLs: false
+                                                 Processing HTML content, length: 5846
+                                   Skipping duplicate HTML content
+               Finished processing clipboard content
+ 2025-11-25 19:19:47.480 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:19:47.480 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:19:47.480 [INFO] Button1
+                                   2025-11-25 19:19:47.954 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 19:19:47.954 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 19:19:47.954 [INFO] Button1
+                  2025-11-25 19:19:49.202 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 19:19:49.203 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 19:19:49.203 [INFO] Button1
+ 2025-11-25 19:19:49.522 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:19:49.522 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:19:49.522 [INFO] Button1
+                                   2025-11-25 19:19:51.293 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 19:19:51.293 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 19:19:51.293 [INFO] Button1
+                  2025-11-25 19:19:52.163 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 19:19:52.187 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 19:19:52.188 [INFO] Button1
+ 2025-11-25 19:21:40.390 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:21:40.390 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:21:40.390 [INFO] Button1
+                                   2025-11-25 19:21:42.486 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 19:21:42.486 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 19:21:42.486 [INFO] Button1
+                  2025-11-25 19:25:36.899 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 19:25:36.902 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 19:25:36.902 [INFO] Button1
+ 2025-11-25 19:25:39.307 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:25:39.396 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:25:39.396 [INFO] Button1
+                                   2025-11-25 19:25:42.341 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                2025-11-25 19:25:42.341 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                               2025-11-25 19:25:42.342 [INFO] Button1
+                  Updated previous active window to: 155189253Title: Alacritty Class: Alacritty
+                                            Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Alacritty
+                                          Updated previous active window to: 155189253Title: Alacritty Class: Alacritty
+                 X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                              X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                        Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                            2025-11-25 19:25:55.579 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+         2025-11-25 19:25:55.579 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                        2025-11-25 19:25:55.579 [INFO] Button1
+           Updated previous active window to: 100663431Title: Yomitan Search Class: Thorium-browser
+                                                Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+ 2025-11-25 19:26:15.944 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                 2025-11-25 19:26:15.944 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                2025-11-25 19:26:15.944 [INFO] Button1
+                                   Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+      2025-11-25 19:26:17.641 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                      2025-11-25 19:26:17.642 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+  2025-11-25 19:26:17.642 [INFO] Button1
+                                        2025-11-25 19:26:25.056 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                     2025-11-25 19:26:25.074 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                    2025-11-25 19:26:25.074 [INFO] Button1
+                       2025-11-25 19:26:27.493 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+    2025-11-25 19:26:27.520 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                   2025-11-25 19:26:27.520 [INFO] Button1
+      2025-11-25 19:27:01.517 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                      2025-11-25 19:27:01.519 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+  2025-11-25 19:27:01.519 [INFO] Button1
+                                        2025-11-25 19:27:07.648 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                     2025-11-25 19:27:07.648 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                    2025-11-25 19:27:07.648 [INFO] Button1
+                       2025-11-25 19:27:18.872 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+    2025-11-25 19:27:18.876 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                   2025-11-25 19:27:18.876 [INFO] Button1
+      Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+          2025-11-25 19:27:30.096 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                          2025-11-25 19:27:30.188 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+      2025-11-25 19:27:30.199 [INFO] Button1
+                                            Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Alacritty
+         Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                  Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+     Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                              2025-11-25 19:27:54.467 [INFO] Hotkey pressed: ^!Right
+                                 2025-11-25 19:27:57.803 [INFO] Hotkey pressed: ^!Right
+                                    2025-11-25 19:27:58.520 [INFO] Hotkey pressed: ^!Right
+                                       2025-11-25 19:27:59.145 [INFO] Hotkey pressed: ^!Right
+                                          2025-11-25 19:27:59.887 [INFO] Hotkey pressed: ^!Right
+                                             2025-11-25 19:28:04.224 [INFO] Hotkey pressed: @|ralt
+                                               2025-11-25 19:28:06.450 [INFO] Hotkey pressed: ^!Right
+                                                  2025-11-25 19:28:10.332 [INFO] Hotkey pressed: @|~lwin
+  2025-11-25 19:28:10.536 [INFO] Hotkey pressed: @|lwin:up
+       2025-11-25 19:28:10.920 [INFO] Hotkey pressed: @|~lwin
+          Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+                                        2025-11-25 19:28:11.152 [INFO] Hotkey pressed: @|lwin:up
+                                             Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                   2025-11-25 19:28:13.488 [INFO] Hotkey pressed: ^!Right
+                      2025-11-25 19:28:15.090 [INFO] Hotkey pressed: ^!Left
+                        2025-11-25 19:28:15.341 [INFO] Hotkey pressed: ^!Left
+                          2025-11-25 19:28:16.255 [INFO] Hotkey pressed: ^!Up
+                          2025-11-25 19:28:16.784 [INFO] Hotkey pressed: ^!Down
+                            2025-11-25 19:28:17.921 [INFO] Hotkey pressed: ^,
+                          2025-11-25 19:28:18.172 [INFO] Volume for Alacritty: 0%
+                              2025-11-25 19:28:18.599 [INFO] Hotkey pressed: @|ralt
+                                2025-11-25 19:28:21.361 [INFO] Hotkey pressed: ^!Right
+                                   2025-11-25 19:28:22.433 [INFO] Hotkey pressed: ^!Left
+                                     2025-11-25 19:28:22.686 [INFO] Hotkey pressed: ^!Left
+                                       2025-11-25 19:28:23.533 [INFO] Hotkey pressed: ^!Left
+                                         2025-11-25 19:28:25.057 [INFO] Hotkey pressed: ^.
+                                       2025-11-25 19:28:25.081 [INFO] Hotkey pressed: @|ralt
+                                         2025-11-25 19:28:25.267 [INFO] Volume for Alacritty: 0%
+                                             2025-11-25 19:28:28.400 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                          2025-11-25 19:28:28.401 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                         2025-11-25 19:28:28.401 [INFO] Button1
+                            2025-11-25 19:28:29.985 [INFO] Hotkey pressed: ^!Left
+                              2025-11-25 19:28:30.535 [INFO] Hotkey pressed: ^!Left
+                                2025-11-25 19:28:30.964 [INFO] Hotkey pressed: ^!Left
+                                  2025-11-25 19:28:32.289 [INFO] Hotkey pressed: @|ralt
+                                    2025-11-25 19:28:36.833 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                 2025-11-25 19:28:36.833 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                2025-11-25 19:28:36.833 [INFO] Button1
+                   2025-11-25 19:28:37.939 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+2025-11-25 19:28:37.939 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+               2025-11-25 19:28:37.939 [INFO] Button1
+  2025-11-25 19:28:38.417 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                  2025-11-25 19:28:38.417 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                                 2025-11-25 19:28:38.418 [INFO] Button1
+                                    2025-11-25 19:28:51.057 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                 2025-11-25 19:28:51.061 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                2025-11-25 19:28:51.063 [INFO] Button1
+                   2025-11-25 19:28:55.335 [INFO] Hotkey pressed: ^!Right
+                      2025-11-25 19:28:55.582 [INFO] Hotkey pressed: ^!Right
+                         2025-11-25 19:28:55.622 [INFO] Hotkey pressed: ^!Right
+                            2025-11-25 19:28:56.517 [INFO] Hotkey pressed: ^!Left
+                              2025-11-25 19:28:56.734 [INFO] Hotkey pressed: ^!Left
+                                2025-11-25 19:28:56.824 [INFO] Hotkey pressed: ^!Left
+                                  2025-11-25 19:29:05.978 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+               2025-11-25 19:29:05.978 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:29:05.978 [INFO] Button2
+                 2025-11-25 19:29:07.425 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                                 2025-11-25 19:29:07.425 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+             2025-11-25 19:29:07.425 [INFO] Button2
+2025-11-25 19:29:08.970 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                2025-11-25 19:29:08.971 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                               2025-11-25 19:29:08.971 [INFO] Button2
+                                  2025-11-25 19:29:12.329 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+               2025-11-25 19:29:12.329 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:29:12.329 [INFO] Button1
+                 2025-11-25 19:29:29.097 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                                 2025-11-25 19:29:29.097 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+             2025-11-25 19:29:29.098 [INFO] Button2
+2025-11-25 19:29:33.537 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                2025-11-25 19:29:33.541 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                               2025-11-25 19:29:33.541 [INFO] Button1
+                                  2025-11-25 19:29:33.850 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+               2025-11-25 19:29:33.855 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:29:33.855 [INFO] Button1
+                 Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                                       Updated previous active window to: 29378086Title:  Class:
+                                              2025-11-25 19:29:40.754 [INFO] Hotkey pressed: @|~lwin
+                                                 2025-11-25 19:29:40.878 [INFO] Hotkey pressed: @|lwin:up
+   2025-11-25 19:29:42.052 [INFO] Hotkey pressed: @|ralt
+     2025-11-25 19:29:42.457 [INFO] Hotkey pressed: @|rwin
+       2025-11-25 19:29:42.457 [INFO] {ctrl, meta, rctrl, rmeta}
+             2025-11-25 19:29:42.457 [INFO] Releasing modifier: ctrl
+                 2025-11-25 19:29:42.458 [INFO] Sending key: LCtrl (0) code: 29
+                            2025-11-25 19:29:42.458 [INFO] Releasing modifier: meta
+                                2025-11-25 19:29:42.458 [INFO] Sending key: LMeta (0) code: 125
+                                            2025-11-25 19:29:42.458 [INFO] Releasing modifier: rctrl
+                                                 2025-11-25 19:29:42.458 [INFO] Sending key: RCtrl (0) code: 97
+         2025-11-25 19:29:42.458 [INFO] Releasing modifier: rmeta
+              2025-11-25 19:29:42.458 [INFO] Sending key: RMeta (0) code: 126
+                          2025-11-25 19:29:42.458 [INFO] Sending key: LAlt (1) code: 56
+                                    2025-11-25 19:29:42.458 [INFO] Sending key: backspace
+                                      2025-11-25 19:29:42.458 [INFO] Sending key: backspace (1) code: 14
+  2025-11-25 19:29:42.458 [INFO] Sending key: backspace (0) code: 14
+                 2025-11-25 19:29:42.458 [INFO] Releasing modifier: alt
+                    2025-11-25 19:29:42.458 [INFO] Sending key: LAlt (0) code: 56
+                              2025-11-25 19:29:44.200 [INFO] Hotkey pressed: @|rwin
+                                2025-11-25 19:29:44.201 [INFO] {ctrl, meta, rctrl, rmeta}
+                                      2025-11-25 19:29:44.201 [INFO] Releasing modifier: ctrl
+                                          2025-11-25 19:29:44.201 [INFO] Sending key: LCtrl (0) code: 29
+  2025-11-25 19:29:44.201 [INFO] Releasing modifier: meta
+      2025-11-25 19:29:44.201 [INFO] Sending key: LMeta (0) code: 125
+                  2025-11-25 19:29:44.201 [INFO] Releasing modifier: rctrl
+                       2025-11-25 19:29:44.201 [INFO] Sending key: RCtrl (0) code: 97
+                                  2025-11-25 19:29:44.201 [INFO] Releasing modifier: rmeta
+                                       2025-11-25 19:29:44.201 [INFO] Sending key: RMeta (0) code: 126
+2025-11-25 19:29:44.201 [INFO] Sending key: LAlt (1) code: 56
+          2025-11-25 19:29:44.201 [INFO] Sending key: backspace
+            2025-11-25 19:29:44.201 [INFO] Sending key: backspace (1) code: 14
+                           2025-11-25 19:29:44.202 [INFO] Sending key: backspace (0) code: 14
+                                          2025-11-25 19:29:44.202 [INFO] Releasing modifier: alt
+                                             2025-11-25 19:29:44.202 [INFO] Sending key: LAlt (0) code: 56
+    Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Alacritty
+                    Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                             Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                2025-11-25 19:29:47.737 [INFO] Hotkey pressed: @|ralt
+                  2025-11-25 19:29:48.426 [INFO] Hotkey pressed: @|ralt
+                    Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                             2025-11-25 19:29:51.290 [INFO] Hotkey pressed: @|ralt
+                                               2025-11-25 19:29:59.703 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                            2025-11-25 19:29:59.704 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                           2025-11-25 19:29:59.704 [INFO] Button1
+                              Updated previous active window to: 29378086Title:  Class:
+                                     X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+               X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                            Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                  2025-11-25 19:30:07.882 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                  2025-11-25 19:30:07.882 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+              2025-11-25 19:30:07.882 [INFO] Button1
+ 2025-11-25 19:30:09.035 [INFO] Hotkey pressed: ^numpad0
+     2025-11-25 19:30:09.515 [INFO] Hotkey pressed: ^!Right
+        2025-11-25 19:30:09.954 [INFO] Hotkey pressed: ^!Right
+           2025-11-25 19:30:11.193 [INFO] Hotkey pressed: ^!Left
+             2025-11-25 19:30:11.447 [INFO] Hotkey pressed: ^!Left
+               2025-11-25 19:30:11.986 [INFO] Hotkey pressed: ^!Right
+                  Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                                        Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+              2025-11-25 19:30:14.506 [INFO] Hotkey pressed: @|ralt
+                2025-11-25 19:30:16.963 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                2025-11-25 19:30:16.963 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+            2025-11-25 19:30:16.963 [INFO] Button1
+                                                  2025-11-25 19:30:18.936 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                               2025-11-25 19:30:18.936 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                              2025-11-25 19:30:18.936 [INFO] Button1
+                                 2025-11-25 19:30:26.577 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+              2025-11-25 19:30:26.578 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                             2025-11-25 19:30:26.578 [INFO] Button1
+                2025-11-25 19:30:36.034 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                2025-11-25 19:30:36.034 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+            2025-11-25 19:30:36.034 [INFO] Button1
+2025-11-25 19:30:41.910 [INFO] Hotkey pressed: ^!Right
+                                                      2025-11-25 19:30:44.315 [INFO] Hotkey pressed: ^!Right
+2025-11-25 19:30:59.194 [INFO] Hotkey pressed: @|ralt
+cc^C^C2025-11-25 19:31:11.218 [INFO] Hotkey pressed: !^k
+                                                        X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                    X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                                                                X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                                            X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                        X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                    X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                                                                X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                                            X11 Error: BadWindow (invalid Window parameter) (code: 3, request: 20, minor: 0)
+                                                        Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                                                                                Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                                                      Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+          Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Windsurf - Next
+                Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                                        Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                              2025-11-25 19:31:18.177 [INFO] Hotkey pressed: @|~lwin
+2025-11-25 19:31:18.322 [INFO] Hotkey pressed: @|lwin:up
+                                                        Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+                                     2025-11-25 19:31:19.546 [INFO] Hotkey pressed: @|~lwin
+                                                                                           2025-11-25 19:31:19.650 [INFO] Hotkey pressed: @|lwin:up
+                                               Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                     Updated previous active window to: 136314884Title: all (Workspace) - Windsurf - Next - ChatScreen.tsx Class: Windsurf - Next
+                                                                             Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                                                   2025-11-25 19:31:25.504 [INFO] Hotkey pressed: @|~lwin
+                                     2025-11-25 19:31:25.627 [INFO] Hotkey pressed: @|lwin:up
+                                                                                             Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+                                                                          2025-11-25 19:31:27.258 [INFO] Hotkey pressed: @|~lwin
+                            2025-11-25 19:31:27.411 [INFO] Hotkey pressed: @|lwin:up
+                                                                                    Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                                                          2025-11-25 19:31:28.394 [INFO] Mouse button hotkey: '~Button2' button=273 down=true
+                                                                         2025-11-25 19:31:28.415 [INFO] Hotkey pressed: ~Button2 | Modifiers: 0 | Key: Button2 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                                         2025-11-25 19:31:28.415 [INFO] Button2
+                                                                               2025-11-25 19:31:30.882 [INFO] Mouse button hotkey: '~Button1' button=272 down=true
+                                                              2025-11-25 19:31:30.882 [INFO] Hotkey pressed: ~Button1 | Modifiers: 0 | Key: Button1 | Event Type: Down | Grab: false | Suspend: false | Repeat: true | Wildcard: false
+                              2025-11-25 19:31:30.882 [INFO] Button1
+                                                                    2025-11-25 19:31:33.907 [INFO] Hotkey pressed: @|~lwin
+                      2025-11-25 19:31:34.034 [INFO] Hotkey pressed: @|lwin:up
+                                                                              Updated previous active window to: 20971573Title: Whisker Menu Class: Wrapper-2.0
+                                                           Updated previous active window to: 100663323Title: Sala de Aula | Estacio - Thorium Class: Thorium-browser
+                                                                 Updated previous active window to: 35651589Title: Alacritty Class: Alacritty
+                                         /home/all/scripts/hvc.sh: line 6: 1370694 Killed                     ./build-release/havel "$@"
+                                    %                                          

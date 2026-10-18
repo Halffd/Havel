@@ -116,10 +116,13 @@ fn _connect() {
     }
     _buf = ffi.allocBytes(4096)
     // Bound the blocking read in ipcSend(): timeval {tv_sec, tv_usec} = 20ms.
+    // fd, not _sockfd: the member is assigned only below, so the old call
+    // configured fd 0 (stdin) and ipcSend() could block forever on a
+    // stalled magnifier.
     _tv = ffi.allocBytes(16)
     ffi.set_i64(_tv, 0)
     ffi.set_i64(ffi.ptr_add(_tv, 8), 20000)
-    ffi.call(_symSetsockopt, "int32", ["int32", "int32", "int32", "pointer", "int32"], _sockfd, 1, 20, _tv, 16)
+    ffi.call(_symSetsockopt, "int32", ["int32", "int32", "int32", "pointer", "int32"], fd, 1, 20, _tv, 16)
     ffi.free(_tv)
     _sockfd = fd
     true

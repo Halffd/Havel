@@ -1,4 +1,4 @@
-// FileWatcher — the Linux (inotify) file event backend.
+// FileWatcher - the Linux (inotify) file event backend.
 //
 // Dependency direction (architecture doc, never reversed):
 //   EventSource (core) <- FileWatcher (host/platform) <- inotify
@@ -10,7 +10,7 @@
 // Watch lifecycle belongs to the subscription: the EventBridge calls
 // watch(path) per subscription and unwatch(id) when it dies.
 //
-// Glob patterns: `on file.created("./plugins/*.hv")` — the pattern's
+// Glob patterns: `on file.created("./plugins/*.hv")` - the pattern's
 // directory part is the inotify watch; the basename pattern filters the
 // events (fnmatch). Non-glob paths watch the file/dir as-is.
 

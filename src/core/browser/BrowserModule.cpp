@@ -181,9 +181,9 @@ std::string BrowserModule::sendCdpCommandWebSocket(const std::string &wsUrl,
   // Clean up temp file
   std::remove(tempFile.c_str());
 
-  if (result.success && !result.stdout.empty()) {
-    if (debugging::debug_io) debug("CDP WebSocket: Received: {}", result.stdout);
-    return result.stdout;
+  if (result.success && !result.out.empty()) {
+    if (debugging::debug_io) debug("CDP WebSocket: Received: {}", result.out);
+    return result.out;
   }
 
   error("BrowserModule: WebSocket CDP failed");
@@ -947,8 +947,8 @@ BrowserInstance BrowserModule::getDefaultBrowser() {
 std::string BrowserModule::getDefaultBrowserPath() {
   // Check xdg-settings for default browser
   auto result = Launcher::runShell("xdg-settings get default-web-browser");
-  if (result.success && !result.stdout.empty()) {
-    std::string desktop = result.stdout;
+  if (result.success && !result.out.empty()) {
+    std::string desktop = result.out;
     // Remove .desktop extension and newline
     desktop.erase(desktop.find(".desktop"));
     desktop.erase(desktop.find_last_not_of(" \t\n\r") + 1);
@@ -1237,8 +1237,8 @@ BrowserModule::findBrowserProcesses(const std::string &processName) {
 
   // Use pgrep to find processes
   auto result = Launcher::runShell("pgrep -x " + processName);
-  if (result.success && !result.stdout.empty()) {
-    std::istringstream iss(result.stdout);
+  if (result.success && !result.out.empty()) {
+    std::istringstream iss(result.out);
     std::string line;
     while (std::getline(iss, line)) {
       try {

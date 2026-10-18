@@ -53,7 +53,7 @@ static Clipboard::Method parseMethod(const std::string& s) {
  if (s == "x11") return Clipboard::Method::X11;
  if (s == "wayland") return Clipboard::Method::WAYLAND;
  if (s == "external") return Clipboard::Method::EXTERNAL;
- if (s == "windows") return Clipboard::Method::WINDOWS;
+ if (s == "windows") return Clipboard::Method::WIN32_API;
  if (s == "macos") return Clipboard::Method::MACOS;
  return Clipboard::Method::AUTO;
 }
@@ -64,7 +64,7 @@ static const char* methodToString(Clipboard::Method m) {
  case Clipboard::Method::X11: return "x11";
  case Clipboard::Method::WAYLAND: return "wayland";
  case Clipboard::Method::EXTERNAL: return "external";
- case Clipboard::Method::WINDOWS: return "windows";
+ case Clipboard::Method::WIN32_API: return "windows";
  case Clipboard::Method::MACOS: return "macos";
  default: return "auto";
  }

@@ -71,13 +71,13 @@ std::string bindingKindName(ResolvedBindingKind kind) {
 // Load the modules a script's `use x` statements name, BEFORE the semantic
 // pass. Lazy modules only register their functions when loaded, so bare
 // calls to their exports (regex_match, regex_escape, ...) are unknown to
-// strict-mode resolution unless the module loads first — the same load the
+// strict-mode resolution unless the module loads first - the same load the
 // IMPORT opcode performs at runtime, just earlier, so the names are in
 // knownGlobals by the time the resolver runs.
 //
 // ensureModuleLoaded, NOT loadModule: loadModule gives the module a fresh
 // scope with globals.clear(), which would wipe the init-established global
-// state (math's sidecar constants, namespace objects) — observed as
+// state (math's sidecar constants, namespace objects) - observed as
 // physics/random smoke tests losing math.C. ensureModuleLoaded runs the lazy
 // initFn (plugin register_fn), which only registers host functions.
 // Without a VM there is nothing to load against; the runtime IMPORT still

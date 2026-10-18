@@ -55,7 +55,7 @@ void FileWatcher::start(EventRuntime &runtime) {
 
 void FileWatcher::stop() {
     running_.store(false);
-    // Always join: a thread whose loop exited early is still joinable —
+    // Always join: a thread whose loop exited early is still joinable -
     // destroying a joinable thread is std::terminate.
     if (thread_.joinable()) {
         thread_.join();

@@ -261,7 +261,7 @@ void registerObjectModule(const VMApi &api) {
           if (name.empty() || name[0] == '_') continue;
           // The objVal namespace carries a "set" field (object.set host fn).
           // Publishing it as a bare global pollutes the name "set", which is
-          // the math/set namespace AND the set-type name — scripts then
+          // the math/set namespace AND the set-type name - scripts then
           // resolve `set` to <fn object.set> and set()/set([..]) break.
           if (name == "set") continue;
           // Mirror the ArrayModule rule: never clobber a name that is already

@@ -23,27 +23,26 @@ namespace havel::compiler {
 /// RAII: pins a Value under the GC root so it survives allocations during a call,
 /// and automatically unpins on scope exit (including exception unwind).
 struct PinnedRootGuard {
-    GCHeap& heap_;
-    uint64_t id_ = 0;
-    PinnedRootGuard(GCHeap& heap, const Value& value) : heap_(heap), id_(0) {
-        id_ = heap_.pinExternalRoot(value);
-    }
-    ~PinnedRootGuard() {
-        if (id_ != 0) heap_.unpinExternalRoot(id_);
-    }
-    PinnedRootGuard(const PinnedRootGuard&) = delete;
-    PinnedRootGuard& operator=(const PinnedRootGuard&) = delete;
-    PinnedRootGuard(PinnedRootGuard&&) = delete;
-    PinnedRootGuard& operator=(PinnedRootGuard&&) = delete;
+  GCHeap &heap_;
+  uint64_t id_ = 0;
+  PinnedRootGuard(GCHeap &heap, const Value &value) : heap_(heap), id_(0) {
+    id_ = heap_.pinExternalRoot(value);
+  }
+  ~PinnedRootGuard() {
+    if (id_ != 0)
+      heap_.unpinExternalRoot(id_);
+  }
+  PinnedRootGuard(const PinnedRootGuard &) = delete;
+  PinnedRootGuard &operator=(const PinnedRootGuard &) = delete;
+  PinnedRootGuard(PinnedRootGuard &&) = delete;
+  PinnedRootGuard &operator=(PinnedRootGuard &&) = delete;
 };
 
-
 bool VM::execCollectionOp(const Instruction &instruction) {
-	switch (instruction.opcode) {
+  switch (instruction.opcode) {
   case OpCode::ARRAY_NEW: {
-    
     Value arr = Value::makeArrayId(heap_.allocateArray().id);
-    
+
     pushStack(arr);
     maybeCollectGarbage();
     break;
@@ -98,31 +97,56 @@ bool VM::execCollectionOp(const Instruction &instruction) {
 
     if (!container.isArrayId()) {
       std::string typeInfo = "unknown";
-      if (container.isNull()) typeInfo = "null";
-      else if (container.isInt()) typeInfo = "int";
-      else if (container.isDouble()) typeInfo = "double";
-      else if (container.isBool()) typeInfo = "bool";
-      else if (container.isStringId()) typeInfo = "string_id";
-      else if (container.isStringValId()) typeInfo = "string_val_id";
-      else if (container.isObjectId()) typeInfo = "object_id";
-      else if (container.isArrayId()) typeInfo = "array_id";
-      else if (container.isFunctionObjId()) typeInfo = "function_obj_id";
-      else if (container.isClosureId()) typeInfo = "closure_id";
-      else if (container.isHostFuncId()) typeInfo = "host_func_id";
-      else if (container.isBoundMethodId()) typeInfo = "bound_method_id";
-      else if (container.isCoroutineId()) typeInfo = "coroutine_id";
-      else if (container.isIntervalId()) typeInfo = "interval_id";
-      else if (container.isTimeoutId()) typeInfo = "timeout_id";
-      else if (container.isThreadId()) typeInfo = "thread_id";
-      else if (container.isSetId()) typeInfo = "set_id";
-      else if (container.isRangeId()) typeInfo = "range_id";
-      else if (container.isEnumId()) typeInfo = "enum_id";
-      else if (container.isIteratorId()) typeInfo = "iterator_id";
-      else if (container.isStringCursorId()) typeInfo = "string_cursor_id";
-      else if (container.isErrorId()) typeInfo = "error_id";
-      else if (container.isWaitGroupId()) typeInfo = "waitgroup_id";
-      else if (container.isChannelId()) typeInfo = "channel_id";
-      else if (container.isPtr()) typeInfo = "ptr";
+      if (container.isNull())
+        typeInfo = "null";
+      else if (container.isInt())
+        typeInfo = "int";
+      else if (container.isDouble())
+        typeInfo = "double";
+      else if (container.isBool())
+        typeInfo = "bool";
+      else if (container.isStringId())
+        typeInfo = "string_id";
+      else if (container.isStringValId())
+        typeInfo = "string_val_id";
+      else if (container.isObjectId())
+        typeInfo = "object_id";
+      else if (container.isArrayId())
+        typeInfo = "array_id";
+      else if (container.isFunctionObjId())
+        typeInfo = "function_obj_id";
+      else if (container.isClosureId())
+        typeInfo = "closure_id";
+      else if (container.isHostFuncId())
+        typeInfo = "host_func_id";
+      else if (container.isBoundMethodId())
+        typeInfo = "bound_method_id";
+      else if (container.isCoroutineId())
+        typeInfo = "coroutine_id";
+      else if (container.isIntervalId())
+        typeInfo = "interval_id";
+      else if (container.isTimeoutId())
+        typeInfo = "timeout_id";
+      else if (container.isThreadId())
+        typeInfo = "thread_id";
+      else if (container.isSetId())
+        typeInfo = "set_id";
+      else if (container.isRangeId())
+        typeInfo = "range_id";
+      else if (container.isEnumId())
+        typeInfo = "enum_id";
+      else if (container.isIteratorId())
+        typeInfo = "iterator_id";
+      else if (container.isStringCursorId())
+        typeInfo = "string_cursor_id";
+      else if (container.isErrorId())
+        typeInfo = "error_id";
+      else if (container.isWaitGroupId())
+        typeInfo = "waitgroup_id";
+      else if (container.isChannelId())
+        typeInfo = "channel_id";
+      else if (container.isPtr())
+        typeInfo = "ptr";
       COMPILER_THROW("ARRAY_PUSH expects array container, got " + typeInfo);
     }
     uint32_t id = container.asArrayId();
@@ -140,31 +164,32 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-	case OpCode::ARRAY_LEN: {
-	Value container = popStack();
-	if (container.isArrayId()) {
-		uint32_t id = container.asArrayId();
-		auto *array = heap_.array(id);
-		if (!array) {
-			COMPILER_THROW("ARRAY_LEN unknown array id");
-		}
-		pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
-	} else if (container.isStringValId()) {
-		if (!current_chunk) {
-			COMPILER_THROW("ARRAY_LEN: no current chunk for string length");
-		}
-		pushStack(Value::makeInt(static_cast<int64_t>(current_chunk->getString(container.asStringValId()).size())));
-	} else if (container.isStringId()) {
-		const std::string *str = heap_.string(container.asStringId());
-		if (!str) {
-			COMPILER_THROW("ARRAY_LEN unknown string id");
-		}
-		pushStack(Value::makeInt(static_cast<int64_t>(str->size())));
-	} else {
-		COMPILER_THROW("ARRAY_LEN expects array or string");
-	}
-	break;
-	}
+  case OpCode::ARRAY_LEN: {
+    Value container = popStack();
+    if (container.isArrayId()) {
+      uint32_t id = container.asArrayId();
+      auto *array = heap_.array(id);
+      if (!array) {
+        COMPILER_THROW("ARRAY_LEN unknown array id");
+      }
+      pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
+    } else if (container.isStringValId()) {
+      if (!current_chunk) {
+        COMPILER_THROW("ARRAY_LEN: no current chunk for string length");
+      }
+      pushStack(Value::makeInt(
+          static_cast<int64_t>(current_chunk->getString(container.asStringValId()).size())));
+    } else if (container.isStringId()) {
+      const std::string *str = heap_.string(container.asStringId());
+      if (!str) {
+        COMPILER_THROW("ARRAY_LEN unknown string id");
+      }
+      pushStack(Value::makeInt(static_cast<int64_t>(str->size())));
+    } else {
+      COMPILER_THROW("ARRAY_LEN expects array or string");
+    }
+    break;
+  }
 
   case OpCode::ARRAY_FREEZE: {
     Value container = popStack();
@@ -181,37 +206,37 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-  // Range creation: start..end or start..step..end
-	case OpCode::RANGE_NEW: {
-	Value endVal = popStack();
-	Value startVal = popStack();
-	if (!startVal.isInt() || !endVal.isInt()) {
-		COMPILER_THROW("RANGE_NEW expects integers");
-	}
-	int64_t end = endVal.asInt();
-	int64_t start = startVal.asInt();
-	RangeRef rangeRef = heap_.allocateRange(start, end, 1);
-	pushStack(Value::makeRangeId(rangeRef.id));
-	break;
-	}
+    // Range creation: start..end or start..step..end
+  case OpCode::RANGE_NEW: {
+    Value endVal = popStack();
+    Value startVal = popStack();
+    if (!startVal.isInt() || !endVal.isInt()) {
+      COMPILER_THROW("RANGE_NEW expects integers");
+    }
+    int64_t end = endVal.asInt();
+    int64_t start = startVal.asInt();
+    RangeRef rangeRef = heap_.allocateRange(start, end, 1);
+    pushStack(Value::makeRangeId(rangeRef.id));
+    break;
+  }
 
-	case OpCode::RANGE_STEP_NEW: {
-	Value stepVal = popStack();
-	Value endVal = popStack();
-	Value startVal = popStack();
-	if (!startVal.isInt() || !endVal.isInt() || !stepVal.isInt()) {
-		COMPILER_THROW("RANGE_STEP_NEW expects integers");
-	}
-	int64_t step = stepVal.asInt();
-	int64_t end = endVal.asInt();
-	int64_t start = startVal.asInt();
-	if (step == 0) {
-		COMPILER_THROW("RANGE_STEP_NEW step cannot be zero");
-	}
-	RangeRef rangeRef = heap_.allocateRange(start, end, step);
-	pushStack(Value::makeRangeId(rangeRef.id));
-	break;
-	}
+  case OpCode::RANGE_STEP_NEW: {
+    Value stepVal = popStack();
+    Value endVal = popStack();
+    Value startVal = popStack();
+    if (!startVal.isInt() || !endVal.isInt() || !stepVal.isInt()) {
+      COMPILER_THROW("RANGE_STEP_NEW expects integers");
+    }
+    int64_t step = stepVal.asInt();
+    int64_t end = endVal.asInt();
+    int64_t start = startVal.asInt();
+    if (step == 0) {
+      COMPILER_THROW("RANGE_STEP_NEW step cannot be zero");
+    }
+    RangeRef rangeRef = heap_.allocateRange(start, end, step);
+    pushStack(Value::makeRangeId(rangeRef.id));
+    break;
+  }
 
   // Enum operations
   case OpCode::ENUM_NEW: {
@@ -234,28 +259,28 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-	case OpCode::ENUM_PAYLOAD: {
-	Value indexVal = popStack();
-	Value enumVal = popStack();
-	if (!enumVal.isEnumId() || !indexVal.isInt()) {
-		COMPILER_THROW("ENUM_PAYLOAD expects enum and int index");
-	}
-	auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
-	int64_t idx = indexVal.asInt();
-	if (idx < 0) {
-		COMPILER_THROW("ENUM_PAYLOAD index must be non-negative");
-	}
-	size_t index = static_cast<size_t>(idx);
-	auto it = heap_.enums_.find(enumRef.id);
-	if (it == heap_.enums_.end()) {
-		COMPILER_THROW("ENUM_PAYLOAD unknown enum id");
-	}
-	if (index >= it->second.second.size()) {
-		COMPILER_THROW("ENUM_PAYLOAD index out of bounds");
-	}
-	pushStack(it->second.second.at(index));
-	break;
-	}
+  case OpCode::ENUM_PAYLOAD: {
+    Value indexVal = popStack();
+    Value enumVal = popStack();
+    if (!enumVal.isEnumId() || !indexVal.isInt()) {
+      COMPILER_THROW("ENUM_PAYLOAD expects enum and int index");
+    }
+    auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
+    int64_t idx = indexVal.asInt();
+    if (idx < 0) {
+      COMPILER_THROW("ENUM_PAYLOAD index must be non-negative");
+    }
+    size_t index = static_cast<size_t>(idx);
+    auto it = heap_.enums_.find(enumRef.id);
+    if (it == heap_.enums_.end()) {
+      COMPILER_THROW("ENUM_PAYLOAD unknown enum id");
+    }
+    if (index >= it->second.second.size()) {
+      COMPILER_THROW("ENUM_PAYLOAD index out of bounds");
+    }
+    pushStack(it->second.second.at(index));
+    break;
+  }
 
   case OpCode::ENUM_MATCH: {
     // Pop: enum ref, expected tag
@@ -266,8 +291,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     int64_t expectedTag = tagVal.asInt();
-    pushStack(Value::makeBool(getEnumTag(enumRef) ==
-                              static_cast<uint32_t>(expectedTag)));
+    pushStack(Value::makeBool(getEnumTag(enumRef) == static_cast<uint32_t>(expectedTag)));
     break;
   }
 
@@ -311,30 +335,28 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     uint32_t id = iterator_val.asIteratorId();
 
     // Channel iterators: `for v in ch` must receive through the channel
-    // (suspending the fiber when empty — same as channel.receive). The
+    // (suspending the fiber when empty - same as channel.receive). The
     // generic GCHeap::iteratorNext cannot do this: channel queues live in
     // the ConcurrencyBridge, not the heap, and suspension needs VM context.
     // Iteration ends when the channel is closed AND drained.
     {
       auto *iter = heap_.iterator(id);
       if (iter && iter->iterable.isChannelId()) {
-        Value recv = invokeHostFunctionDirect("channel.receive",
-                                              {iter->iterable});
+        Value recv = invokeHostFunctionDirect("channel.receive", {iter->iterable});
         if (suspension_requested_ || last_suspension_reason_ != 0) {
           // channel.receive parked the fiber on an empty channel. Push a
           // Pending marker as the placeholder: the CHANNEL_RECV resume path
           // (processGoroutines / resumeGoroutine) recognizes the marker on
           // the suspended stack and swaps it for a WRAPPED {first,second,
           // done:false} iterator-result object carrying the received value
-          // — a plain replaceStackTop would leave the raw value on the
+          // - a plain replaceStackTop would leave the raw value on the
           // stack and the loop's `result.done` read would see null.
           // Flag the goroutine so deliverResumeValue scans for the marker
           // only for this suspension (unrelated Pending values elsewhere
           // on the stack must not be mistaken for it).
           pushStack(Value::makePending(0));
           if (scheduler_ && scheduler_->current()) {
-            std::lock_guard<std::mutex> wm(
-                scheduler_->current()->wait_handle_mutex_);
+            std::lock_guard<std::mutex> wm(scheduler_->current()->wait_handle_mutex_);
             scheduler_->current()->channel_iter_pending = true;
           }
           break;
@@ -352,7 +374,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
         {
           // Value in BOTH first and second: the self-hosted emitter's
           // single-var loop reads result.second, but the C++ compiler's
-          // fallback path (non-array/string/range iterables — including
+          // fallback path (non-array/string/range iterables - including
           // channels) reads result.first. Channels have no keys, so
           // mirroring the value into first is unambiguous.
           auto resultObj = heap_.allocateObject();
@@ -380,93 +402,116 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-case OpCode::ARRAY_GET: {
-  Value index_or_key = popStack();
-  Value container = popStack();
+  case OpCode::ARRAY_GET: {
+    Value index_or_key = popStack();
+    Value container = popStack();
 
-  if (hot_func_cb_) {
-    auto &frame = currentFrame();
-    if (frame.ip < frame.function->type_feedback.size()) {
-      auto &fb = frame.function->type_feedback[frame.ip];
-      fb.execution_count++;
-      fb.left_type_mask |= getFeedbackMask(container);
-      fb.right_type_mask |= getFeedbackMask(index_or_key);
-      if (fb.execution_count == 1000) {
-        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(container);
+        fb.right_type_mask |= getFeedbackMask(index_or_key);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction *>(frame.function));
+        }
       }
     }
-  }
 
-  if (container.isStringId() || container.isStringValId()) {
-            auto index = indexFromValue(index_or_key);
-            if (!index) {
-                COMPILER_THROW("STRING_GET expects integer index");
-            }
-            std::string s;
-            if (container.isStringId()) {
-                auto *sp = heap_.string(container.asStringId());
-                if (sp) s = *sp;
-            } else if (container.isStringValId() && current_chunk) {
-                s = current_chunk->getString(container.asStringValId());
-            }
-            int64_t numCodepoints = 0;
-            size_t bytePos = 0;
-            while (bytePos < s.size()) {
-                unsigned char c = static_cast<unsigned char>(s[bytePos]);
-                size_t cpLen = 1;
-                if (c < 0x80) { cpLen = 1; }
-                else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-                else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-                else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-                if (bytePos + cpLen > s.size()) { cpLen = 1; }
-                numCodepoints++;
-                bytePos += cpLen;
-            }
-            int64_t idx = *index;
-            if (idx < 0) idx = numCodepoints + idx;
-            if (idx < 0 || idx >= numCodepoints) {
-                pushStack(Value::makeNull());
-            } else {
-                size_t targetByte = 0;
-                int64_t cpIdx = 0;
-                while (cpIdx < idx && targetByte < s.size()) {
-                    unsigned char c = static_cast<unsigned char>(s[targetByte]);
-                    size_t cpLen = 1;
-                    if (c < 0x80) { cpLen = 1; }
-                    else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-                    else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-                    else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-                    if (targetByte + cpLen > s.size()) { cpLen = 1; }
-                    targetByte += cpLen;
-                    cpIdx++;
-                }
-                size_t cpLen = 1;
-                if (targetByte < s.size()) {
-                    unsigned char c = static_cast<unsigned char>(s[targetByte]);
-                    if (c < 0x80) { cpLen = 1; }
-                    else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-                    else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-                    else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-                    if (targetByte + cpLen > s.size()) { cpLen = 1; }
-                }
-                auto ref = heap_.allocateString(s.substr(targetByte, cpLen));
-                pushStack(Value::makeStringId(ref.id));
-            }
-            break;
+    if (container.isStringId() || container.isStringValId()) {
+      auto index = indexFromValue(index_or_key);
+      if (!index) {
+        COMPILER_THROW("STRING_GET expects integer index");
+      }
+      std::string s;
+      if (container.isStringId()) {
+        auto *sp = heap_.string(container.asStringId());
+        if (sp)
+          s = *sp;
+      } else if (container.isStringValId() && current_chunk) {
+        s = current_chunk->getString(container.asStringValId());
+      }
+      int64_t numCodepoints = 0;
+      size_t bytePos = 0;
+      while (bytePos < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[bytePos]);
+        size_t cpLen = 1;
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
         }
+        if (bytePos + cpLen > s.size()) {
+          cpLen = 1;
+        }
+        numCodepoints++;
+        bytePos += cpLen;
+      }
+      int64_t idx = *index;
+      if (idx < 0)
+        idx = numCodepoints + idx;
+      if (idx < 0 || idx >= numCodepoints) {
+        pushStack(Value::makeNull());
+      } else {
+        size_t targetByte = 0;
+        int64_t cpIdx = 0;
+        while (cpIdx < idx && targetByte < s.size()) {
+          unsigned char c = static_cast<unsigned char>(s[targetByte]);
+          size_t cpLen = 1;
+          if (c < 0x80) {
+            cpLen = 1;
+          } else if ((c & 0xE0) == 0xC0) {
+            cpLen = 2;
+          } else if ((c & 0xF0) == 0xE0) {
+            cpLen = 3;
+          } else if ((c & 0xF8) == 0xF0) {
+            cpLen = 4;
+          }
+          if (targetByte + cpLen > s.size()) {
+            cpLen = 1;
+          }
+          targetByte += cpLen;
+          cpIdx++;
+        }
+        size_t cpLen = 1;
+        if (targetByte < s.size()) {
+          unsigned char c = static_cast<unsigned char>(s[targetByte]);
+          if (c < 0x80) {
+            cpLen = 1;
+          } else if ((c & 0xE0) == 0xC0) {
+            cpLen = 2;
+          } else if ((c & 0xF0) == 0xE0) {
+            cpLen = 3;
+          } else if ((c & 0xF8) == 0xF0) {
+            cpLen = 4;
+          }
+          if (targetByte + cpLen > s.size()) {
+            cpLen = 1;
+          }
+        }
+        auto ref = heap_.allocateString(s.substr(targetByte, cpLen));
+        pushStack(Value::makeStringId(ref.id));
+      }
+      break;
+    }
 
-        if (container.isArrayId()) {
-            auto index = indexFromValue(index_or_key);
-            if (!index) {
-                COMPILER_THROW("ARRAY_GET expects integer index");
-            }
-            uint32_t array_id = container.asArrayId();
-            auto *array = heap_.array(array_id);
-            if (!array) {
-                COMPILER_THROW("ARRAY_GET unknown array id");
-            }
-            // Handle negative indices: -1 = last element, -2 = second to last, etc.
-            int64_t idx = *index;
+    if (container.isArrayId()) {
+      auto index = indexFromValue(index_or_key);
+      if (!index) {
+        COMPILER_THROW("ARRAY_GET expects integer index");
+      }
+      uint32_t array_id = container.asArrayId();
+      auto *array = heap_.array(array_id);
+      if (!array) {
+        COMPILER_THROW("ARRAY_GET unknown array id");
+      }
+      // Handle negative indices: -1 = last element, -2 = second to last, etc.
+      int64_t idx = *index;
 
       if (idx < 0) {
         idx = static_cast<int64_t>(array->size()) + idx;
@@ -478,7 +523,7 @@ case OpCode::ARRAY_GET: {
         // Use inline cache for fast array access
         auto &frame = currentFrame();
         auto &cache = getArrayInlineCache(container.asArrayId(), frame.ip);
-        
+
         if (!cache.is_valid || cache.array_ptr != array) {
           // Cache miss - populate cache
           cache.invalidate();
@@ -490,7 +535,7 @@ case OpCode::ARRAY_GET: {
         } else {
           cache.hits++;
         }
-        
+
         // Bounds check
         if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
           result = Value::makeNull();
@@ -498,56 +543,57 @@ case OpCode::ARRAY_GET: {
           result = (*array)[static_cast<size_t>(idx)];
         }
       }
-      
-  if (hot_func_cb_) {
-    auto &frame2 = currentFrame();
-    if (frame2.ip < frame2.function->type_feedback.size()) {
-      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
-    }
-  }
-  trackFieldAccess("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
-  pushStack(result);
-  break;
-}
 
-if (container.isSetId()) {
-  auto key = resolveKey(index_or_key);
-  if (!key) {
-    COMPILER_THROW(
-      "SET membership expects string/number/bool key");
-  }
-  auto *set = heap_.set(container.asSetId());
-  if (!set) {
-    COMPILER_THROW("ARRAY_GET unknown set id");
-  }
-  Value result = Value::makeBool(set->find(*key) != set->end());
-  if (hot_func_cb_) {
-    auto &frame2 = currentFrame();
-    if (frame2.ip < frame2.function->type_feedback.size()) {
-      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+      if (hot_func_cb_) {
+        auto &frame2 = currentFrame();
+        if (frame2.ip < frame2.function->type_feedback.size()) {
+          frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+        }
+      }
+      trackFieldAccess("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) +
+                       "]");
+      pushStack(result);
+      break;
     }
-  }
+
+    if (container.isSetId()) {
+      auto key = resolveKey(index_or_key);
+      if (!key) {
+        COMPILER_THROW("SET membership expects string/number/bool key");
+      }
+      auto *set = heap_.set(container.asSetId());
+      if (!set) {
+        COMPILER_THROW("ARRAY_GET unknown set id");
+      }
+      Value result = Value::makeBool(set->find(*key) != set->end());
+      if (hot_func_cb_) {
+        auto &frame2 = currentFrame();
+        if (frame2.ip < frame2.function->type_feedback.size()) {
+          frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+        }
+      }
       pushStack(result);
       break;
     }
 
     if (container.isObjectId()) {
-        // Operator overloading: check for op_index method
-        {
-		Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
-		if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
-			{
-				// Pin the op_index method during callFunction - auto-unpinned on scope exit
-				// even if callFunction throws (COMPILER_THROW, etc.)
-				PinnedRootGuard rootGuard(heap_, opIndex);
-				Value result = callFunction(opIndex, {container, index_or_key});
-				pushStack(result);
-			}  // PinnedRootGuard destructor unpins here even on exception
-			break;
-		}
+      // Operator overloading: check for op_index method
+      {
+        Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
+        if (!opIndex.isNull() &&
+            (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
+          {
+            // Pin the op_index method during callFunction - auto-unpinned on scope exit
+            // even if callFunction throws (COMPILER_THROW, etc.)
+            PinnedRootGuard rootGuard(heap_, opIndex);
+            Value result = callFunction(opIndex, {container, index_or_key});
+            pushStack(result);
+          } // PinnedRootGuard destructor unpins here even on exception
+          break;
         }
-        // _G globals mirror: resolve from live globals maps
-        if (container.asObjectId() == globals_mirror_object_id_) {
+      }
+      // _G globals mirror: resolve from live globals maps
+      if (container.asObjectId() == globals_mirror_object_id_) {
         auto key = resolveKey(index_or_key);
         if (!key) {
           COMPILER_THROW("OBJECT index expects string/number/bool key");
@@ -559,49 +605,62 @@ if (container.isSetId()) {
         } else {
           auto hostIt = host_function_globals_.find(*key);
           if (hostIt != host_function_globals_.end()) {
-      result = hostIt->second;
+            result = hostIt->second;
+          }
+        }
+        if (hot_func_cb_) {
+          auto &frame2 = currentFrame();
+          if (frame2.ip < frame2.function->type_feedback.size()) {
+            frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+          }
+        }
+        pushStack(result);
+        break;
       }
-    }
-    if (hot_func_cb_) {
-      auto &frame2 = currentFrame();
-      if (frame2.ip < frame2.function->type_feedback.size()) {
-        frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
-      }
-    }
-    pushStack(result);
-    break;
-  }
-  auto key = resolveKey(index_or_key);
+      auto key = resolveKey(index_or_key);
       if (!key) {
         std::string typeInfo = "unknown";
-        if (index_or_key.isNull()) typeInfo = "null";
-        else if (index_or_key.isInt()) typeInfo = "int";
-        else if (index_or_key.isDouble()) typeInfo = "double";
-        else if (index_or_key.isBool()) typeInfo = "bool";
-        else if (index_or_key.isStringId()) typeInfo = "string_id";
-        else if (index_or_key.isStringValId()) typeInfo = "string_val_id";
-        else if (index_or_key.isObjectId()) typeInfo = "object_id";
-        else if (index_or_key.isArrayId()) typeInfo = "array_id";
-        else if (index_or_key.isFunctionObjId()) typeInfo = "function_obj_id";
-        else if (index_or_key.isClosureId()) typeInfo = "closure_id";
-        else if (index_or_key.isHostFuncId()) typeInfo = "host_func_id";
-        else if (index_or_key.isBoundMethodId()) typeInfo = "bound_method_id";
-        else if (index_or_key.isCoroutineId()) typeInfo = "coroutine_id";
+        if (index_or_key.isNull())
+          typeInfo = "null";
+        else if (index_or_key.isInt())
+          typeInfo = "int";
+        else if (index_or_key.isDouble())
+          typeInfo = "double";
+        else if (index_or_key.isBool())
+          typeInfo = "bool";
+        else if (index_or_key.isStringId())
+          typeInfo = "string_id";
+        else if (index_or_key.isStringValId())
+          typeInfo = "string_val_id";
+        else if (index_or_key.isObjectId())
+          typeInfo = "object_id";
+        else if (index_or_key.isArrayId())
+          typeInfo = "array_id";
+        else if (index_or_key.isFunctionObjId())
+          typeInfo = "function_obj_id";
+        else if (index_or_key.isClosureId())
+          typeInfo = "closure_id";
+        else if (index_or_key.isHostFuncId())
+          typeInfo = "host_func_id";
+        else if (index_or_key.isBoundMethodId())
+          typeInfo = "bound_method_id";
+        else if (index_or_key.isCoroutineId())
+          typeInfo = "coroutine_id";
         COMPILER_THROW("OBJECT index expects string/number/bool key (got " + typeInfo + ")");
       }
       auto *object = heap_.object(container.asObjectId());
       if (!object) {
         COMPILER_THROW("ARRAY_GET unknown object id");
       }
-  auto kv = object->find(*key);
-  Value result = (kv == object->end() ? Value::makeNull() : kv->second);
-  if (hot_func_cb_) {
-    auto &frame2 = currentFrame();
-    if (frame2.ip < frame2.function->type_feedback.size()) {
-      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
-    }
-  }
-  pushStack(result);
+      auto kv = object->find(*key);
+      Value result = (kv == object->end() ? Value::makeNull() : kv->second);
+      if (hot_func_cb_) {
+        auto &frame2 = currentFrame();
+        if (frame2.ip < frame2.function->type_feedback.size()) {
+          frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+        }
+      }
+      pushStack(result);
       break;
     }
 
@@ -625,54 +684,54 @@ if (container.isSetId()) {
       if (array->frozen) {
         COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
-  // Handle negative indices for ARRAY_SET: -1 = last element, -2 = second to last
-  int64_t idx = *index;
-  if (idx < 0) {
-    idx = static_cast<int64_t>(array->size()) + idx;
-    if (idx < 0) {
-      COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
-    }
-  }
-  const auto idx_size = static_cast<size_t>(idx);
-  if (idx_size >= 100'000'000) {
-    COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
-  }
-  auto old_size = array->size();
-  if (idx_size >= old_size) {
-    array->resize(idx_size + 1, Value::makeNull());
-  }
-  
-  // Use inline cache for fast array access
-  auto &frame = currentFrame();
-  auto &cache = getArrayInlineCache(container.asArrayId(), frame.ip);
-  
-  if (!cache.is_valid || cache.array_ptr != array) {
-    // Cache miss - populate cache
-    cache.invalidate();
-    cache.is_valid = true;
-    cache.is_array = true;
-    cache.array_ptr = array;
-    cache.array_frozen = array->frozen;
-    cache.misses++;
-  } else {
-    cache.hits++;
-  }
-  
-  (*array)[idx_size] = value;
-  heap_.writeArrayBarrier(array->data, value);
-  heap_.bumpArrayVersion(container.asArrayId());
-  emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
-  if (old_size != array->size()) {
-    emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
-  }
+      // Handle negative indices for ARRAY_SET: -1 = last element, -2 = second to last
+      int64_t idx = *index;
+      if (idx < 0) {
+        idx = static_cast<int64_t>(array->size()) + idx;
+        if (idx < 0) {
+          COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
+        }
+      }
+      const auto idx_size = static_cast<size_t>(idx);
+      if (idx_size >= 100'000'000) {
+        COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
+      }
+      auto old_size = array->size();
+      if (idx_size >= old_size) {
+        array->resize(idx_size + 1, Value::makeNull());
+      }
+
+      // Use inline cache for fast array access
+      auto &frame = currentFrame();
+      auto &cache = getArrayInlineCache(container.asArrayId(), frame.ip);
+
+      if (!cache.is_valid || cache.array_ptr != array) {
+        // Cache miss - populate cache
+        cache.invalidate();
+        cache.is_valid = true;
+        cache.is_array = true;
+        cache.array_ptr = array;
+        cache.array_frozen = array->frozen;
+        cache.misses++;
+      } else {
+        cache.hits++;
+      }
+
+      (*array)[idx_size] = value;
+      heap_.writeArrayBarrier(array->data, value);
+      heap_.bumpArrayVersion(container.asArrayId());
+      emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":[" +
+                          std::to_string(idx) + "]");
+      if (old_size != array->size()) {
+        emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
+      }
       break;
     }
 
     if (container.isSetId()) {
       auto key = resolveKey(index_or_key);
       if (!key) {
-        COMPILER_THROW(
-            "SET assignment expects string/number/bool key");
+        COMPILER_THROW("SET assignment expects string/number/bool key");
       }
       auto *set = heap_.set(container.asSetId());
       if (!set) {
@@ -686,8 +745,7 @@ if (container.isSetId()) {
       } else if (value.isDouble()) {
         present = value.asDouble() != 0.0;
       } else {
-        COMPILER_THROW(
-            "SET assignment value must be bool/number to indicate presence");
+        COMPILER_THROW("SET assignment value must be bool/number to indicate presence");
       }
       if (present) {
         (*set)[*key] = Value::makeNull();
@@ -701,33 +759,35 @@ if (container.isSetId()) {
     }
 
     if (container.isObjectId()) {
-        // Operator overloading: check for op_index_set method
-        {
-            Value opIndexSet = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index_set");
-            if (!opIndexSet.isNull() && (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() || opIndexSet.isHostFuncId())) {
-                callFunction(opIndexSet, {container, index_or_key, value});
-                pushStack(container);
-                break;
-            }
+      // Operator overloading: check for op_index_set method
+      {
+        Value opIndexSet =
+            getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index_set");
+        if (!opIndexSet.isNull() && (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() ||
+                                     opIndexSet.isHostFuncId())) {
+          callFunction(opIndexSet, {container, index_or_key, value});
+          pushStack(container);
+          break;
         }
-        auto key = resolveKey(index_or_key);
-		if (!key) {
-			COMPILER_THROW("OBJECT index assignment expects valid key");
-		}
-		if (container.asObjectId() == globals_mirror_object_id_) {
-			auto *object = heap_.object(container.asObjectId());
-			if (!object) {
-				COMPILER_THROW("ARRAY_SET unknown object id");
-			}
-			(*object)[*key] = value;
-			globals[*key] = value;
-			break;
-		}
-		auto *object = heap_.object(container.asObjectId());
-		if (!object) {
-			COMPILER_THROW("ARRAY_SET unknown object id");
-		}
-(*object)[*key] = value;
+      }
+      auto key = resolveKey(index_or_key);
+      if (!key) {
+        COMPILER_THROW("OBJECT index assignment expects valid key");
+      }
+      if (container.asObjectId() == globals_mirror_object_id_) {
+        auto *object = heap_.object(container.asObjectId());
+        if (!object) {
+          COMPILER_THROW("ARRAY_SET unknown object id");
+        }
+        (*object)[*key] = value;
+        globals[*key] = value;
+        break;
+      }
+      auto *object = heap_.object(container.asObjectId());
+      if (!object) {
+        COMPILER_THROW("ARRAY_SET unknown object id");
+      }
+      (*object)[*key] = value;
       heap_.writeObjectBarrier(object->data, *key, value);
       break;
     }
@@ -738,8 +798,7 @@ if (container.isSetId()) {
   case OpCode::ARRAY_GET_FAST: {
     // Fast path for array get with inline cache
     // Operands: [array_id (int), instruction_ip (int)]
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isInt() ||
+    if (instruction.operands.size() != 2 || !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
       COMPILER_THROW("ARRAY_GET_FAST expects operands: <array_id, instruction_ip>");
     }
@@ -778,8 +837,7 @@ if (container.isSetId()) {
     // Fast path for array set with inline cache
     // Operands: [array_id (int), instruction_ip (int)]
     // Stack: value, index
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isInt() ||
+    if (instruction.operands.size() != 2 || !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
       COMPILER_THROW("ARRAY_SET_FAST expects operands: <array_id, instruction_ip>");
     }
@@ -830,8 +888,7 @@ if (container.isSetId()) {
   case OpCode::STRING_GET_FAST: {
     // Fast path for string get with inline cache
     // Operands: [string_id (int), instruction_ip (int)]
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isInt() ||
+    if (instruction.operands.size() != 2 || !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
       COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
     }
@@ -858,16 +915,24 @@ if (container.isSetId()) {
     while (bytePos < str->size()) {
       unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (bytePos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       numCodepoints++;
       bytePos += cpLen;
     }
 
-    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0)
+      idx = numCodepoints + idx;
     if (idx < 0 || idx >= numCodepoints) {
       pushStack(Value::makeNull());
     } else {
@@ -877,22 +942,36 @@ if (container.isSetId()) {
       while (cpIdx < idx && targetByte < str->size()) {
         unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
         size_t cpLen = 1;
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
         targetByte += cpLen;
         cpIdx++;
       }
       size_t cpLen = 1;
       if (targetByte < str->size()) {
         unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-        if (c < 0x80) { cpLen = 1; }
-        else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-        else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-        else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-        if (targetByte + cpLen > str->size()) { cpLen = 1; }
+        if (c < 0x80) {
+          cpLen = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+          cpLen = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+          cpLen = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+          cpLen = 4;
+        }
+        if (targetByte + cpLen > str->size()) {
+          cpLen = 1;
+        }
       }
       auto ref = heap_.allocateString(str->substr(targetByte, cpLen));
       pushStack(Value::makeStringId(ref.id));
@@ -904,8 +983,7 @@ if (container.isSetId()) {
     // Fast path for string set with inline cache
     // Operands: [string_id (int), instruction_ip (int)]
     // Stack: value, index
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isInt() ||
+    if (instruction.operands.size() != 2 || !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
       COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
     }
@@ -947,16 +1025,24 @@ if (container.isSetId()) {
     while (bytePos < str->size()) {
       unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (bytePos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       numCodepoints++;
       bytePos += cpLen;
     }
 
-    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0)
+      idx = numCodepoints + idx;
     if (idx < 0 || idx >= numCodepoints) {
       COMPILER_THROW("STRING_SET_FAST index out of bounds");
     }
@@ -967,22 +1053,36 @@ if (container.isSetId()) {
     while (cpIdx < idx && targetByte < str->size()) {
       unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (targetByte + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (targetByte + cpLen > str->size()) {
+        cpLen = 1;
+      }
       targetByte += cpLen;
       cpIdx++;
     }
     size_t cpLen = 1;
     if (targetByte < str->size()) {
       unsigned char c = static_cast<unsigned char>((*str)[targetByte]);
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (targetByte + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (targetByte + cpLen > str->size()) {
+        cpLen = 1;
+      }
     }
 
     // Replace the codepoint
@@ -994,8 +1094,7 @@ if (container.isSetId()) {
 
   case OpCode::STRING_CURSOR_NEW: {
     // Create a cursor from a string: string_id -> cursor
-    if (instruction.operands.size() != 1 ||
-        !instruction.operands[0].isInt()) {
+    if (instruction.operands.size() != 1 || !instruction.operands[0].isInt()) {
       COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
     }
     uint32_t string_id = instruction.operands[0].asInt();
@@ -1026,11 +1125,18 @@ if (container.isSetId()) {
       // Get the codepoint at current position
       unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (cursor->byte_pos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
       pushStack(Value::makeStringId(ref.id));
     }
@@ -1059,11 +1165,18 @@ if (container.isSetId()) {
       // Advance by one codepoint
       unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (cursor->byte_pos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       cursor->byte_pos += cpLen;
       cursor->codepoint_index++;
       pushStack(Value::makeBool(true));
@@ -1092,11 +1205,18 @@ if (container.isSetId()) {
     } else {
       unsigned char c = static_cast<unsigned char>((*str)[cursor->byte_pos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (cursor->byte_pos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (cursor->byte_pos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       auto ref = heap_.allocateString(str->substr(cursor->byte_pos, cpLen));
       pushStack(Value::makeStringId(ref.id));
     }
@@ -1169,11 +1289,18 @@ if (container.isSetId()) {
     while (bytePos < new_pos && bytePos < str->size()) {
       unsigned char c = static_cast<unsigned char>((*str)[bytePos]);
       size_t cpLen = 1;
-      if (c < 0x80) { cpLen = 1; }
-      else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
-      else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
-      else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
-      if (bytePos + cpLen > str->size()) { cpLen = 1; }
+      if (c < 0x80) {
+        cpLen = 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        cpLen = 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        cpLen = 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        cpLen = 4;
+      }
+      if (bytePos + cpLen > str->size()) {
+        cpLen = 1;
+      }
       bytePos += cpLen;
       cursor->codepoint_index++;
     }
@@ -1202,7 +1329,8 @@ if (container.isSetId()) {
       auto key = resolveKey(key_value);
       if (key && (*key == "stop" || *key == "cancel")) {
         auto bmRef = heap_.allocateBoundMethod(
-            Value::makeHostFuncId(getHostFunctionIndex(object.isIntervalId() ? "interval.stop" : "timeout.stop")),
+            Value::makeHostFuncId(
+                getHostFunctionIndex(object.isIntervalId() ? "interval.stop" : "timeout.stop")),
             object);
         pushStack(Value::makeBoundMethodId(bmRef.id));
       } else {
@@ -1215,14 +1343,14 @@ if (container.isSetId()) {
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();
       auto key = resolveKey(key_value);
-      
+
       // First check for user-defined properties
       if (key) {
         auto propIt = function_properties_.find(funcIdx);
         if (propIt != function_properties_.end()) {
-          auto* props = heap_.object(propIt->second.id);
+          auto *props = heap_.object(propIt->second.id);
           if (props) {
-            auto* val = props->get(*key);
+            auto *val = props->get(*key);
             if (val) {
               pushStack(*val);
               break;
@@ -1230,10 +1358,10 @@ if (container.isSetId()) {
           }
         }
       }
-      
+
       // Then check built-in properties
       if (current_chunk) {
-        const auto* func = current_chunk->getFunction(funcIdx);
+        const auto *func = current_chunk->getFunction(funcIdx);
         if (key && func) {
           if (*key == "name") {
             pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
@@ -1243,8 +1371,8 @@ if (container.isSetId()) {
             break;
           } else if (*key == "params") {
             auto arrRef = heap_.allocateArray();
-            auto* arr = heap_.array(arrRef.id);
-            for (const auto& p : func->param_names) {
+            auto *arr = heap_.array(arrRef.id);
+            for (const auto &p : func->param_names) {
               arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
             }
             pushStack(Value::makeArrayId(arrRef.id));
@@ -1252,89 +1380,89 @@ if (container.isSetId()) {
           }
         }
       }
-        pushStack(Value::makeNull());
-        break;
+      pushStack(Value::makeNull());
+      break;
     }
 
     // Handle closure objects - support closure.name, closure.arity, closure.prop
     if (object.isClosureId()) {
-        uint32_t closureId = object.asClosureId();
-        auto key = resolveKey(key_value);
+      uint32_t closureId = object.asClosureId();
+      auto key = resolveKey(key_value);
 
-        // First check for user-defined properties
-        if (key) {
-            auto propIt = closure_properties_.find(closureId);
-            if (propIt != closure_properties_.end()) {
-                auto* props = heap_.object(propIt->second.id);
-                if (props) {
-                    auto* val = props->get(*key);
-                    if (val) {
-                        pushStack(*val);
-                        break;
-                    }
-                }
+      // First check for user-defined properties
+      if (key) {
+        auto propIt = closure_properties_.find(closureId);
+        if (propIt != closure_properties_.end()) {
+          auto *props = heap_.object(propIt->second.id);
+          if (props) {
+            auto *val = props->get(*key);
+            if (val) {
+              pushStack(*val);
+              break;
             }
+          }
         }
+      }
 
-        // Then check built-in properties from underlying function
-        auto* closure = heap_.closure(closureId);
-        if (closure && current_chunk && key) {
-            if (closure->function_index < current_chunk->getFunctionCount()) {
-                const auto* func = current_chunk->getFunction(closure->function_index);
-                if (func) {
-                    if (*key == "name") {
-                        pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
-                        break;
-                    } else if (*key == "arity") {
-                        pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
-                        break;
-                    }
-                }
+      // Then check built-in properties from underlying function
+      auto *closure = heap_.closure(closureId);
+      if (closure && current_chunk && key) {
+        if (closure->function_index < current_chunk->getFunctionCount()) {
+          const auto *func = current_chunk->getFunction(closure->function_index);
+          if (func) {
+            if (*key == "name") {
+              pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
+              break;
+            } else if (*key == "arity") {
+              pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
+              break;
             }
+          }
         }
-        pushStack(Value::makeNull());
-        break;
+      }
+      pushStack(Value::makeNull());
+      break;
     }
 
     // Handle host function objects - support hostfn.name, hostfn.prop
     if (object.isHostFuncId()) {
-        uint32_t hostIdx = object.asHostFuncId();
-        auto key = resolveKey(key_value);
+      uint32_t hostIdx = object.asHostFuncId();
+      auto key = resolveKey(key_value);
 
-        // First check for user-defined properties
-        if (key) {
-            auto propIt = hostfunc_properties_.find(hostIdx);
-            if (propIt != hostfunc_properties_.end()) {
-                auto* props = heap_.object(propIt->second.id);
-                if (props) {
-                    auto* val = props->get(*key);
-                    if (val) {
-                        pushStack(*val);
-                        break;
-                    }
-                }
+      // First check for user-defined properties
+      if (key) {
+        auto propIt = hostfunc_properties_.find(hostIdx);
+        if (propIt != hostfunc_properties_.end()) {
+          auto *props = heap_.object(propIt->second.id);
+          if (props) {
+            auto *val = props->get(*key);
+            if (val) {
+              pushStack(*val);
+              break;
             }
+          }
         }
+      }
 
-        // Then check built-in properties
-        if (key) {
-            if (*key == "name") {
-                if (hostIdx < host_function_names_.size()) {
-                    pushStack(Value::makeStringId(heap_.allocateString(host_function_names_[hostIdx]).id));
-                    break;
-                }
-            } else if (*key == "arity") {
-                pushStack(Value::makeInt(-1));
-                break;
-            }
+      // Then check built-in properties
+      if (key) {
+        if (*key == "name") {
+          if (hostIdx < host_function_names_.size()) {
+            pushStack(Value::makeStringId(heap_.allocateString(host_function_names_[hostIdx]).id));
+            break;
+          }
+        } else if (*key == "arity") {
+          pushStack(Value::makeInt(-1));
+          break;
         }
-        pushStack(Value::makeNull());
-        break;
+      }
+      pushStack(Value::makeNull());
+      break;
     }
 
     // Handle class/struct prototype objects - support Class.name, Class.methods, Class.fields
     if (object.isObjectId()) {
-      auto* obj = heap_.object(object.asObjectId());
+      auto *obj = heap_.object(object.asObjectId());
       if (obj) {
         // Check if this is a class/struct prototype (has __is_class or __is_struct marker)
         bool isClass = false;
@@ -1345,17 +1473,20 @@ if (container.isSetId()) {
           auto key = resolveKey(key_value);
           if (key) {
             if (*key == "name") {
-              auto* nameVal = obj->get("__name");
-              if (nameVal) { pushStack(*nameVal); break; }
+              auto *nameVal = obj->get("__name");
+              if (nameVal) {
+                pushStack(*nameVal);
+                break;
+              }
               pushStack(Value::makeNull());
               break;
             } else if (*key == "methods") {
               // Collect method names from the prototype
               auto arrRef = heap_.allocateArray();
-              auto* arr = heap_.array(arrRef.id);
+              auto *arr = heap_.array(arrRef.id);
               auto keys = obj->getKeys();
-              for (const auto& k : keys) {
-                auto* val = obj->get(k);
+              for (const auto &k : keys) {
+                auto *val = obj->get(k);
                 if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
                   arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
                 }
@@ -1363,16 +1494,16 @@ if (container.isSetId()) {
               pushStack(Value::makeArrayId(arrRef.id));
               break;
             } else if (*key == "fields") {
-              auto* fieldsVal = obj->get("__fields");
+              auto *fieldsVal = obj->get("__fields");
               if (fieldsVal && fieldsVal->isArrayId()) {
                 pushStack(*fieldsVal);
               } else {
                 // Collect from default null fields
                 auto arrRef = heap_.allocateArray();
-                auto* arr = heap_.array(arrRef.id);
+                auto *arr = heap_.array(arrRef.id);
                 auto keys = obj->getKeys();
-                for (const auto& k : keys) {
-                  auto* val = obj->get(k);
+                for (const auto &k : keys) {
+                  auto *val = obj->get(k);
                   if (val && val->isNull()) {
                     arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
                   }
@@ -1386,12 +1517,10 @@ if (container.isSetId()) {
       }
     }
 
-
-
     // Handle arrays - look up prototype methods OR numeric indices
     if (object.isArrayId()) {
       auto *array = heap_.array(object.asArrayId());
-      
+
       // Check for numeric index first
       if (key_value.isInt() && array) {
         int64_t index = key_value.asInt();
@@ -1405,56 +1534,59 @@ if (container.isSetId()) {
         }
         break;
       }
-      
-        // Then check for prototype methods
-        auto key = resolveKey(key_value);
-        if (key) {
-            // "length" is a property, not a method: the spec reads
-            // `windows.length > 0` and `names.sort((a, b) => a.length - b.length)`.
-            // Only "len" resolves through the prototype table to `array.len`,
-            // which is what keeps `arr.length()` (a method call, compiled to
-            // CALL_METHOD and never routed through here) working.
-            if ((*key == "len" || *key == "length") && array) {
-                pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
-                trackFieldAccess("@A" + std::to_string(object.asArrayId()) + ":" + *key);
-                break;
-            }
-            auto method = getPrototypeMethod(object, *key);
-            if (method) {
-                auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), Value::makeArrayId(object.asArrayId()));
-                pushStack(Value::makeBoundMethodId(bmRef.id));
-                break;
-            }
+
+      // Then check for prototype methods
+      auto key = resolveKey(key_value);
+      if (key) {
+        // "length" is a property, not a method: the spec reads
+        // `windows.length > 0` and `names.sort((a, b) => a.length - b.length)`.
+        // Only "len" resolves through the prototype table to `array.len`,
+        // which is what keeps `arr.length()` (a method call, compiled to
+        // CALL_METHOD and never routed through here) working.
+        if ((*key == "len" || *key == "length") && array) {
+          pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
+          trackFieldAccess("@A" + std::to_string(object.asArrayId()) + ":" + *key);
+          break;
         }
-        pushStack(Value::makeNull());
-        break;
+        auto method = getPrototypeMethod(object, *key);
+        if (method) {
+          auto bmRef = heap_.allocateBoundMethod(
+              Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])),
+              Value::makeArrayId(object.asArrayId()));
+          pushStack(Value::makeBoundMethodId(bmRef.id));
+          break;
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
     }
 
     // Handle strings - look up prototype methods
     if (object.isStringId() || object.isStringValId()) {
-        // Promote StringValId to StringId if needed
-        Value stringVal = object;
-        std::string actualStr;
-        if (object.isStringValId() && current_chunk) {
-            actualStr = current_chunk->getString(object.asStringValId());
-            auto strRef = heap_.allocateString(actualStr);
-            stringVal = Value::makeStringId(strRef.id);
-        } else if (object.isStringId()) {
-            auto *s = heap_.string(object.asStringId());
-            if (s) actualStr = *s;
+      // Promote StringValId to StringId if needed
+      Value stringVal = object;
+      std::string actualStr;
+      if (object.isStringValId() && current_chunk) {
+        actualStr = current_chunk->getString(object.asStringValId());
+        auto strRef = heap_.allocateString(actualStr);
+        stringVal = Value::makeStringId(strRef.id);
+      } else if (object.isStringId()) {
+        auto *s = heap_.string(object.asStringId());
+        if (s)
+          actualStr = *s;
+      }
+      auto key = resolveKey(key_value);
+      if (key) {
+        if (*key == "len" || *key == "length") {
+          pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
+          break;
         }
-        auto key = resolveKey(key_value);
-        if (key) {
-            if (*key == "len" || *key == "length") {
-                pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
-                break;
-            }
-                auto method = getPrototypeMethod(stringVal, *key);
-                if (method) {
-                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(*method), stringVal);
-                    pushStack(Value::makeBoundMethodId(bmRef.id));
-                    break;
-                }
+        auto method = getPrototypeMethod(stringVal, *key);
+        if (method) {
+          auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(*method), stringVal);
+          pushStack(Value::makeBoundMethodId(bmRef.id));
+          break;
+        }
       }
       pushStack(Value::makeNull());
       break;
@@ -1504,10 +1636,11 @@ if (container.isSetId()) {
         auto *set = heap_.set(object.asSetId());
         pushStack(Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0));
       } else if (key) {
-                auto method = getPrototypeMethod(object, *key);
-                if (method) {
-                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), object);
-                    pushStack(Value::makeBoundMethodId(bmRef.id));
+        auto method = getPrototypeMethod(object, *key);
+        if (method) {
+          auto bmRef = heap_.allocateBoundMethod(
+              Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), object);
+          pushStack(Value::makeBoundMethodId(bmRef.id));
         } else {
           pushStack(Value::makeNull());
         }
@@ -1522,123 +1655,125 @@ if (container.isSetId()) {
       break;
     }
 
-	// _G globals mirror: delegate property access to the live globals maps
-	if (object.asObjectId() == globals_mirror_object_id_) {
-		// Numeric index on _G: index into sorted list of global keys
-		if (key_value.isInt()) {
-			std::vector<std::string> allKeys;
-			std::set<std::string> seen;
-			for (const auto& [name, _] : globals) {
-				if (seen.insert(name).second) allKeys.push_back(name);
-			}
-			for (const auto& [name, _] : host_function_globals_) {
-				if (seen.insert(name).second) allKeys.push_back(name);
-			}
-			int64_t index = key_value.asInt();
-			if (index < 0) {
-				index = static_cast<int64_t>(allKeys.size()) + index;
-			}
-			if (index >= 0 && static_cast<size_t>(index) < allKeys.size()) {
-				const std::string& keyName = allKeys[static_cast<size_t>(index)];
-				pushStack(Value::makeStringId(heap_.allocateString(keyName).id));
-			} else {
-				pushStack(Value::makeNull());
-			}
-			break;
-		}
-		auto key = resolveKey(key_value);
-		if (!key) {
-			COMPILER_THROW("OBJECT_GET expects string/number/bool key");
-		}
-		auto it = globals.find(*key);
-		if (it != globals.end()) {
-                if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
-                    auto bmRef = heap_.allocateBoundMethod(it->second, object);
-                    pushStack(Value::makeBoundMethodId(bmRef.id));
-			} else {
-				pushStack(it->second);
-			}
-			break;
-		}
-		auto hostIt = host_function_globals_.find(*key);
-		if (hostIt != host_function_globals_.end()) {
-                if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
-                    auto bmRef = heap_.allocateBoundMethod(hostIt->second, object);
-                    pushStack(Value::makeBoundMethodId(bmRef.id));
-                } else {
-				pushStack(hostIt->second);
-			}
-			break;
-		}
-	pushStack(Value::makeNull());
-			break;
-		}
-
-        auto objRef = ObjectRef{object.asObjectId(), true};
-        auto *obj = heap_.object(objRef.id);
-        if (!obj) {
-            auto stats = heap_.stats();
-            ::havel::error(
-                "[GC] OBJECT_GET unknown object id {} (heap: {} objects "
-                "cached, {} old objects, {} closures, {} collections; "
-                "external roots pinned: {}; gc epoch: {}; current fn: {})",
-                objRef.id, heap_.cachedObjectCount(), heap_.oldObjectCount(),
-                heap_.closures().size(), stats.collections,
-                heap_.externalRootCount(), heap_.gcEpoch(),
-                currentFrame().function ? currentFrame().function->name
-                                        : std::string("?"));
-            COMPILER_THROW("OBJECT_GET unknown object id");
+    // _G globals mirror: delegate property access to the live globals maps
+    if (object.asObjectId() == globals_mirror_object_id_) {
+      // Numeric index on _G: index into sorted list of global keys
+      if (key_value.isInt()) {
+        std::vector<std::string> allKeys;
+        std::set<std::string> seen;
+        for (const auto &[name, _] : globals) {
+          if (seen.insert(name).second)
+            allKeys.push_back(name);
         }
-
-  // Lazy module proxy trap: if object has __lazy__ flag,
-  // trigger module initialization and replace with real namespace
-  auto *lazyFlag = obj->get("__lazy__");
-  if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-    auto *modNameVal = obj->get("__module__");
-    std::string modName;
-    if (modNameVal) {
-      if (modNameVal->isStringId()) {
-        if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
-      } else if (modNameVal->isStringValId() && current_chunk) {
-        modName = current_chunk->getString(modNameVal->asStringValId());
+        for (const auto &[name, _] : host_function_globals_) {
+          if (seen.insert(name).second)
+            allKeys.push_back(name);
+        }
+        int64_t index = key_value.asInt();
+        if (index < 0) {
+          index = static_cast<int64_t>(allKeys.size()) + index;
+        }
+        if (index >= 0 && static_cast<size_t>(index) < allKeys.size()) {
+          const std::string &keyName = allKeys[static_cast<size_t>(index)];
+          pushStack(Value::makeStringId(heap_.allocateString(keyName).id));
+        } else {
+          pushStack(Value::makeNull());
+        }
+        break;
       }
+      auto key = resolveKey(key_value);
+      if (!key) {
+        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+      }
+      auto it = globals.find(*key);
+      if (it != globals.end()) {
+        if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
+          auto bmRef = heap_.allocateBoundMethod(it->second, object);
+          pushStack(Value::makeBoundMethodId(bmRef.id));
+        } else {
+          pushStack(it->second);
+        }
+        break;
+      }
+      auto hostIt = host_function_globals_.find(*key);
+      if (hostIt != host_function_globals_.end()) {
+        if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() ||
+            hostIt->second.isHostFuncId()) {
+          auto bmRef = heap_.allocateBoundMethod(hostIt->second, object);
+          pushStack(Value::makeBoundMethodId(bmRef.id));
+        } else {
+          pushStack(hostIt->second);
+        }
+        break;
+      }
+      pushStack(Value::makeNull());
+      break;
     }
-if (!modName.empty()) {
-      ensureModuleLoaded(modName);
-      auto git = globals.find(modName);
-      if (git != globals.end() && git->second.isObjectId()) {
-        auto *proxyObj = heap_.object(git->second.asObjectId());
-        if (proxyObj) {
-          auto *lf = proxyObj->get("__lazy__");
-          if (lf && lf->isBool() && lf->asBool()) {
-            globals.erase(git);
+
+    auto objRef = ObjectRef{object.asObjectId(), true};
+    auto *obj = heap_.object(objRef.id);
+    if (!obj) {
+      auto stats = heap_.stats();
+      ::havel::error("[GC] OBJECT_GET unknown object id {} (heap: {} objects "
+                     "cached, {} old objects, {} closures, {} collections; "
+                     "external roots pinned: {}; gc epoch: {}; current fn: {})",
+                     objRef.id, heap_.cachedObjectCount(), heap_.oldObjectCount(),
+                     heap_.closures().size(), stats.collections, heap_.externalRootCount(),
+                     heap_.gcEpoch(),
+                     currentFrame().function ? currentFrame().function->name : std::string("?"));
+      COMPILER_THROW("OBJECT_GET unknown object id");
+    }
+
+    // Lazy module proxy trap: if object has __lazy__ flag,
+    // trigger module initialization and replace with real namespace
+    auto *lazyFlag = obj->get("__lazy__");
+    if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+      auto *modNameVal = obj->get("__module__");
+      std::string modName;
+      if (modNameVal) {
+        if (modNameVal->isStringId()) {
+          if (auto *s = heap_.string(modNameVal->asStringId()))
+            modName = *s;
+        } else if (modNameVal->isStringValId() && current_chunk) {
+          modName = current_chunk->getString(modNameVal->asStringValId());
+        }
+      }
+      if (!modName.empty()) {
+        ensureModuleLoaded(modName);
+        auto git = globals.find(modName);
+        if (git != globals.end() && git->second.isObjectId()) {
+          auto *proxyObj = heap_.object(git->second.asObjectId());
+          if (proxyObj) {
+            auto *lf = proxyObj->get("__lazy__");
+            if (lf && lf->isBool() && lf->asBool()) {
+              globals.erase(git);
+            }
+          }
+        }
+        git = globals.find(modName);
+        if (git != globals.end() && git->second.isObjectId()) {
+          obj = heap_.object(git->second.asObjectId());
+          if (!obj) {
+            pushStack(Value::makeNull());
+            break;
+          }
+        } else {
+          std::string capModName = modName;
+          capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+          git = globals.find(capModName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            globals[modName] = git->second;
+            obj = heap_.object(git->second.asObjectId());
+            if (!obj) {
+              pushStack(Value::makeNull());
+              break;
+            }
           }
         }
       }
-      git = globals.find(modName);
-            if (git != globals.end() && git->second.isObjectId()) {
-                obj = heap_.object(git->second.asObjectId());
-                if (!obj) {
-                    pushStack(Value::makeNull());
-                    break;
-                }
-            } else {
-                std::string capModName = modName;
-                capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
-                git = globals.find(capModName);
-                if (git != globals.end() && git->second.isObjectId()) {
-                    globals[modName] = git->second;
-                    obj = heap_.object(git->second.asObjectId());
-                    if (!obj) {
-                        pushStack(Value::makeNull());
-                        break;
-                    }
-                }
-            }
-        }
-        }
+    }
 
-        // Check for numeric index (obj[0], obj[-1])
+    // Check for numeric index (obj[0], obj[-1])
     if (key_value.isInt()) {
       int64_t index = key_value.asInt();
       auto keys = obj->getKeys();
@@ -1661,7 +1796,7 @@ if (!modName.empty()) {
 
     auto key = resolveKey(key_value);
     if (!key) {
-        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+      COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
 
     trackFieldAccess("@O" + std::to_string(object.asObjectId()) + ":" + *key);
@@ -1684,7 +1819,8 @@ if (!modName.empty()) {
             Value r = callHostFunction(Value::makeHostFuncId(*getter), {object});
             pushStack(std::move(r));
             break;
-          } catch (...) {}
+          } catch (...) {
+          }
         }
       }
     }
@@ -1701,10 +1837,13 @@ if (!modName.empty()) {
         break;
       }
       // Check prototypes: __proto first (Lua-style), then __class, __struct, __parent
-      auto* parent_val = current_obj->get("__proto");
-      if (!parent_val) parent_val = current_obj->get("__class");
-      if (!parent_val) parent_val = current_obj->get("__struct");
-      if (!parent_val) parent_val = current_obj->get("__parent");
+      auto *parent_val = current_obj->get("__proto");
+      if (!parent_val)
+        parent_val = current_obj->get("__class");
+      if (!parent_val)
+        parent_val = current_obj->get("__struct");
+      if (!parent_val)
+        parent_val = current_obj->get("__parent");
 
       if (parent_val && parent_val->isObjectId()) {
         current_obj = heap_.object(parent_val->asObjectId());
@@ -1713,92 +1852,94 @@ if (!modName.empty()) {
       }
     }
 
-        if (!found_val.isNull()) {
-            // Property getter: bare access to a zero-arg method found on the
-            // class prototype auto-calls it (self = receiver). Instance fields
-            // holding functions are untouched, so `obj.callback` still returns
-            // the fn value for passing around.
-            if (found_on_prototype &&
-                (found_val.isFunctionObjId() || found_val.isClosureId())) {
-              uint32_t fi = found_val.isFunctionObjId()
-                                ? found_val.asFunctionObjId()
-                                : (heap_.closure(found_val.asClosureId())
-                                       ? heap_.closure(found_val.asClosureId())
-                                             ->function_index
-                                       : UINT32_MAX);
-              const BytecodeFunction *bf = nullptr;
-              const BytecodeChunk *fn_chunk = current_chunk;
-              if (found_val.isClosureId()) {
-                auto *closure = heap_.closure(found_val.asClosureId());
-                if (closure && closure->chunk) fn_chunk = closure->chunk;
-              }
-              auto resolveFn = [&](const BytecodeChunk *ch) -> const BytecodeFunction * {
-                return (ch && fi != UINT32_MAX) ? ch->getFunction(fi) : nullptr;
-              };
-              bf = resolveFn(fn_chunk);
-              if (!bf) bf = resolveFn(main_chunk_.get());
-              if (!bf) {
-                for (auto &pc : persistent_chunks_)
-                  if (!bf) bf = resolveFn(pc.get());
-              }
-              if (!bf) {
-                for (auto &[_, mc] : module_chunks_)
-                  if (!bf) bf = resolveFn(mc.get());
-              }
-              if (bf && bf->param_count <= 1 &&
-                  (bf->param_count == 0 ||
-                   (!bf->param_names.empty() && bf->param_names[0] == "self"))) {
-                doCall(found_val, {object});
-                break;
-              }
-            }
-            pushStack(found_val);
-    } else {
-        // Built-in .len property returns key count for objects
-        if (*key == "len") {
-            auto keys = obj->getKeys();
-            pushStack(Value::makeInt(static_cast<int64_t>(keys.size())));
-        } else {
-            // Check built-in prototype methods (for strings, arrays, etc.)
-            auto method = getPrototypeMethod(object, *key);
-            if (method) {
-                auto boundObj = heap_.allocateObject();
-                auto *bObj = heap_.object(boundObj.id);
-                (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-                (*bObj)["self"] = object;
-                pushStack(Value::makeObjectId(boundObj.id));
-            } else {
-                // Autovivification: if object has true/truthy __vivify, auto-create sub-object
-                auto* vivify = obj->get("__vivify");
-                if (vivify && !vivify->isNull() && (!vivify->isBool() || vivify->asBool())) {
-                    // Create a new sub-object with same __vivify marker
-                    auto subRef = heap_.allocateObject();
-                    auto *subObj = heap_.object(subRef.id);
-                    (*subObj)["__vivify"] = *vivify;
-                    // Also propagate __autosave_root if present
-                    auto* autoSaveRoot = obj->get("__autosave_root");
-                    if (autoSaveRoot) {
-                        (*subObj)["__autosave_root"] = *autoSaveRoot;
-                    }
-                    // Propagate __cfg_path for nested path tracking
-                    auto* parentPath = obj->get("__cfg_path");
-                    std::string childPath;
-                    if (parentPath && parentPath->isStringValId()) {
-                        auto* parentStr = heap_.string(parentPath->asStringValId());
-                        childPath = parentStr ? (*parentStr + "." + *key) : *key;
-                    } else {
-                        childPath = *key;
-                    }
-                    auto pathRef = heap_.allocateString(childPath);
-                    (*subObj)["__cfg_path"] = Value::makeStringValId(pathRef.id);
-                    // Store sub-object on parent so it persists
-                    obj->set(*key, Value::makeObjectId(subRef.id));
-                    pushStack(Value::makeObjectId(subRef.id));
-                } else {
-                    pushStack(Value::makeNull());
-                }
-            }
+    if (!found_val.isNull()) {
+      // Property getter: bare access to a zero-arg method found on the
+      // class prototype auto-calls it (self = receiver). Instance fields
+      // holding functions are untouched, so `obj.callback` still returns
+      // the fn value for passing around.
+      if (found_on_prototype && (found_val.isFunctionObjId() || found_val.isClosureId())) {
+        uint32_t fi = found_val.isFunctionObjId()
+                          ? found_val.asFunctionObjId()
+                          : (heap_.closure(found_val.asClosureId())
+                                 ? heap_.closure(found_val.asClosureId())->function_index
+                                 : UINT32_MAX);
+        const BytecodeFunction *bf = nullptr;
+        const BytecodeChunk *fn_chunk = current_chunk;
+        if (found_val.isClosureId()) {
+          auto *closure = heap_.closure(found_val.asClosureId());
+          if (closure && closure->chunk)
+            fn_chunk = closure->chunk;
         }
+        auto resolveFn = [&](const BytecodeChunk *ch) -> const BytecodeFunction * {
+          return (ch && fi != UINT32_MAX) ? ch->getFunction(fi) : nullptr;
+        };
+        bf = resolveFn(fn_chunk);
+        if (!bf)
+          bf = resolveFn(main_chunk_.get());
+        if (!bf) {
+          for (auto &pc : persistent_chunks_)
+            if (!bf)
+              bf = resolveFn(pc.get());
+        }
+        if (!bf) {
+          for (auto &[_, mc] : module_chunks_)
+            if (!bf)
+              bf = resolveFn(mc.get());
+        }
+        if (bf && bf->param_count <= 1 &&
+            (bf->param_count == 0 || (!bf->param_names.empty() && bf->param_names[0] == "self"))) {
+          doCall(found_val, {object});
+          break;
+        }
+      }
+      pushStack(found_val);
+    } else {
+      // Built-in .len property returns key count for objects
+      if (*key == "len") {
+        auto keys = obj->getKeys();
+        pushStack(Value::makeInt(static_cast<int64_t>(keys.size())));
+      } else {
+        // Check built-in prototype methods (for strings, arrays, etc.)
+        auto method = getPrototypeMethod(object, *key);
+        if (method) {
+          auto boundObj = heap_.allocateObject();
+          auto *bObj = heap_.object(boundObj.id);
+          (*bObj)["fn"] =
+              Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
+          (*bObj)["self"] = object;
+          pushStack(Value::makeObjectId(boundObj.id));
+        } else {
+          // Autovivification: if object has true/truthy __vivify, auto-create sub-object
+          auto *vivify = obj->get("__vivify");
+          if (vivify && !vivify->isNull() && (!vivify->isBool() || vivify->asBool())) {
+            // Create a new sub-object with same __vivify marker
+            auto subRef = heap_.allocateObject();
+            auto *subObj = heap_.object(subRef.id);
+            (*subObj)["__vivify"] = *vivify;
+            // Also propagate __autosave_root if present
+            auto *autoSaveRoot = obj->get("__autosave_root");
+            if (autoSaveRoot) {
+              (*subObj)["__autosave_root"] = *autoSaveRoot;
+            }
+            // Propagate __cfg_path for nested path tracking
+            auto *parentPath = obj->get("__cfg_path");
+            std::string childPath;
+            if (parentPath && parentPath->isStringValId()) {
+              auto *parentStr = heap_.string(parentPath->asStringValId());
+              childPath = parentStr ? (*parentStr + "." + *key) : *key;
+            } else {
+              childPath = *key;
+            }
+            auto pathRef = heap_.allocateString(childPath);
+            (*subObj)["__cfg_path"] = Value::makeStringValId(pathRef.id);
+            // Store sub-object on parent so it persists
+            obj->set(*key, Value::makeObjectId(subRef.id));
+            pushStack(Value::makeObjectId(subRef.id));
+          } else {
+            pushStack(Value::makeNull());
+          }
+        }
+      }
     }
     break;
   }
@@ -1815,91 +1956,99 @@ if (!modName.empty()) {
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
 
-        // Safety: reject __ prefixed keys (reserved for internal use)
-        // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
-        // for decorator metadata preservation (Python convention)
-            bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() || object.isBoundMethodId();
-            bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
-            bool isKwargsMarker = *keyStr == "__kwargs" && object.isObjectId();
-            if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
-                !(isCallable && isAllowedDunder) && !isKwargsMarker) {
-                COMPILER_THROW(
-                    "OBJECT_SET: keys starting with '__' are reserved");
-            }
+    // Safety: reject __ prefixed keys (reserved for internal use)
+    // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
+    // for decorator metadata preservation (Python convention)
+    bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() ||
+                      object.isBoundMethodId();
+    bool isAllowedDunder =
+        *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
+    bool isKwargsMarker = *keyStr == "__kwargs" && object.isObjectId();
+    if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
+        !(isCallable && isAllowedDunder) && !isKwargsMarker) {
+      COMPILER_THROW("OBJECT_SET: keys starting with '__' are reserved");
+    }
 
     // Handle function objects - support fn.prop = value
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();
-      
+
       // Get or create properties object for this function
-      auto& propRef = function_properties_[funcIdx];
+      auto &propRef = function_properties_[funcIdx];
       if (propRef.id == 0) {
         propRef = heap_.allocateObject(true); // Create sorted object for properties
       }
-      
-      auto* props = heap_.object(propRef.id);
+
+      auto *props = heap_.object(propRef.id);
       if (!props) {
         COMPILER_THROW("OBJECT_SET: failed to get function properties object");
       }
-        props->set(*keyStr, std::move(value));
-        pushStack(object); // Return the function object for chaining
-        break;
+      props->set(*keyStr, std::move(value));
+      pushStack(object); // Return the function object for chaining
+      break;
     }
 
     // Handle closure objects - support closure.prop = value
     if (object.isClosureId()) {
-        uint32_t closureId = object.asClosureId();
-        auto& propRef = closure_properties_[closureId];
-        if (propRef.id == 0) {
-            propRef = heap_.allocateObject(true);
-        }
-        auto* props = heap_.object(propRef.id);
-        if (!props) {
-            COMPILER_THROW("OBJECT_SET: failed to get closure properties object");
-        }
-        props->set(*keyStr, std::move(value));
-        pushStack(object);
-        break;
+      uint32_t closureId = object.asClosureId();
+      auto &propRef = closure_properties_[closureId];
+      if (propRef.id == 0) {
+        propRef = heap_.allocateObject(true);
+      }
+      auto *props = heap_.object(propRef.id);
+      if (!props) {
+        COMPILER_THROW("OBJECT_SET: failed to get closure properties object");
+      }
+      props->set(*keyStr, std::move(value));
+      pushStack(object);
+      break;
     }
 
     // Handle host function objects - support hostfn.prop = value
     if (object.isHostFuncId()) {
-        uint32_t hostIdx = object.asHostFuncId();
-        auto& propRef = hostfunc_properties_[hostIdx];
-        if (propRef.id == 0) {
-            propRef = heap_.allocateObject(true);
-        }
-        auto* props = heap_.object(propRef.id);
-        if (!props) {
-            COMPILER_THROW("OBJECT_SET: failed to get host func properties object");
-        }
-        props->set(*keyStr, std::move(value));
-        pushStack(object);
-        break;
+      uint32_t hostIdx = object.asHostFuncId();
+      auto &propRef = hostfunc_properties_[hostIdx];
+      if (propRef.id == 0) {
+        propRef = heap_.allocateObject(true);
+      }
+      auto *props = heap_.object(propRef.id);
+      if (!props) {
+        COMPILER_THROW("OBJECT_SET: failed to get host func properties object");
+      }
+      props->set(*keyStr, std::move(value));
+      pushStack(object);
+      break;
     }
 
-	if (!object.isObjectId()) {
-		// Diagnose the common @-in-closure failure: a container that is not
-		// an object usually means a captured receiver resolved to null.
-		const char *tname = object.isNull() ? "null" : object.isInt() ? "int"
-		                   : object.isDouble() ? "double" : "other";
-		COMPILER_THROW(std::string("OBJECT_SET expects object container, got ") + tname);
-	}
+    if (!object.isObjectId()) {
+      // Diagnose the common @-in-closure failure: a container that is not
+      // an object usually means a captured receiver resolved to null.
+      const char *tname = object.isNull()     ? "null"
+                          : object.isInt()    ? "int"
+                          : object.isDouble() ? "double"
+                                              : "other";
+      // Location matters here. Without it the error surfaced against the
+      // importing script's `use` line - the consumer, not the module that
+      // actually performed the failing assignment - which sent debugging a
+      // 2000-line config away from a 1-line module bug.
+      COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname,
+                        instruction);
+    }
 
-        // _G globals mirror: writing to _G also updates the globals map
-  if (object.asObjectId() == globals_mirror_object_id_) {
+    // _G globals mirror: writing to _G also updates the globals map
+    if (object.asObjectId() == globals_mirror_object_id_) {
+      auto *obj = heap_.object(object.asObjectId());
+      if (!obj) {
+        COMPILER_THROW("OBJECT_SET unknown object id");
+      }
+      obj->set(*keyStr, value);
+      globals[*keyStr] = value;
+      emitVariableChanged(*keyStr);
+      pushStack(object);
+      break;
+    }
+
     auto *obj = heap_.object(object.asObjectId());
-    if (!obj) {
-      COMPILER_THROW("OBJECT_SET unknown object id");
-    }
-    obj->set(*keyStr, value);
-    globals[*keyStr] = value;
-    emitVariableChanged(*keyStr);
-    pushStack(object);
-    break;
-  }
-
-  auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
@@ -1916,7 +2065,8 @@ if (!modName.empty()) {
         if (setter) {
           try {
             callHostFunction(Value::makeHostFuncId(*setter), {object, value});
-          } catch (...) {}
+          } catch (...) {
+          }
           pushStack(object);
           break;
         }
@@ -1927,49 +2077,53 @@ if (!modName.empty()) {
     emitVariableChanged("@O" + std::to_string(object.asObjectId()) + ":" + *keyStr);
 
     // Auto-save: if object has __autosave_root, persist to config store
-    auto* autoSaveRoot = obj->get("__autosave_root");
+    auto *autoSaveRoot = obj->get("__autosave_root");
     if (autoSaveRoot && !autoSaveRoot->isNull()) {
-        auto* cfgPathVal = obj->get("__cfg_path");
-        if (cfgPathVal && cfgPathVal->isStringValId()) {
-            auto* pathStr = heap_.string(cfgPathVal->asStringValId());
-            if (pathStr) {
-                std::string fullKey = *pathStr + "." + *keyStr;
-                // Resolve value to string for config storage
-                std::string valStr;
-                if (value.isBool()) valStr = value.asBool() ? "true" : "false";
-                else if (value.isInt()) valStr = std::to_string(value.asInt());
-                else if (value.isDouble()) valStr = std::to_string(value.asDouble());
-                else if (value.isStringValId()) {
-                    auto* s = heap_.string(value.asStringValId());
-                    valStr = s ? *s : "";
-                } else if (value.isStringId()) {
-                    auto* s = heap_.string(value.asStringId());
-                    valStr = s ? *s : "";
-                } else {
-                    valStr = "";
-                }
-                
-                if (!valStr.empty() || value.isBool() || value.isInt() || value.isDouble()) {
-                    auto &config = Configs::Get();
-                    config.Set(fullKey, valStr, true);
-                    // havel::debug("VM Auto-save: {} = {}", fullKey, valStr);
-                }
-            }
+      auto *cfgPathVal = obj->get("__cfg_path");
+      if (cfgPathVal && cfgPathVal->isStringValId()) {
+        auto *pathStr = heap_.string(cfgPathVal->asStringValId());
+        if (pathStr) {
+          std::string fullKey = *pathStr + "." + *keyStr;
+          // Resolve value to string for config storage
+          std::string valStr;
+          if (value.isBool())
+            valStr = value.asBool() ? "true" : "false";
+          else if (value.isInt())
+            valStr = std::to_string(value.asInt());
+          else if (value.isDouble())
+            valStr = std::to_string(value.asDouble());
+          else if (value.isStringValId()) {
+            auto *s = heap_.string(value.asStringValId());
+            valStr = s ? *s : "";
+          } else if (value.isStringId()) {
+            auto *s = heap_.string(value.asStringId());
+            valStr = s ? *s : "";
+          } else {
+            valStr = "";
+          }
+
+          if (!valStr.empty() || value.isBool() || value.isInt() || value.isDouble()) {
+            auto &config = Configs::Get();
+            config.Set(fullKey, valStr, true);
+            // havel::debug("VM Auto-save: {} = {}", fullKey, valStr);
+          }
         }
+      }
     }
 
     pushStack(object); // Return the object for chaining
     break;
   }
 
-	case OpCode::OBJECT_GET_RAW: {
-		Value key_value = popStack();
-		Value object = popStack();
+  case OpCode::OBJECT_GET_RAW: {
+    Value key_value = popStack();
+    Value object = popStack();
 
-if (object.isIntervalId()) {
+    if (object.isIntervalId()) {
       auto key = resolveKey(key_value);
       if (key && (*key == "stop" || *key == "cancel")) {
-        auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex("interval.stop")), object);
+        auto bmRef = heap_.allocateBoundMethod(
+            Value::makeHostFuncId(getHostFunctionIndex("interval.stop")), object);
         pushStack(Value::makeBoundMethodId(bmRef.id));
       } else {
         pushStack(Value::makeNull());
@@ -1980,7 +2134,8 @@ if (object.isIntervalId()) {
     if (object.isTimeoutId()) {
       auto key = resolveKey(key_value);
       if (key && (*key == "stop" || *key == "cancel")) {
-        auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex("timeout.stop")), object);
+        auto bmRef = heap_.allocateBoundMethod(
+            Value::makeHostFuncId(getHostFunctionIndex("timeout.stop")), object);
         pushStack(Value::makeBoundMethodId(bmRef.id));
       } else {
         pushStack(Value::makeNull());
@@ -1989,51 +2144,52 @@ if (object.isIntervalId()) {
     }
 
     if (!object.isObjectId()) {
-			pushStack(Value::makeNull());
-			break;
-		}
+      pushStack(Value::makeNull());
+      break;
+    }
 
-		auto key = resolveKey(key_value);
-		if (!key) {
-			pushStack(Value::makeNull());
-			break;
-		}
+    auto key = resolveKey(key_value);
+    if (!key) {
+      pushStack(Value::makeNull());
+      break;
+    }
 
-		if (object.asObjectId() == globals_mirror_object_id_) {
-			auto it = globals.find(*key);
-			if (it != globals.end()) {
-				pushStack(it->second);
-				break;
-			}
-			auto hostIt = host_function_globals_.find(*key);
-			if (hostIt != host_function_globals_.end()) {
-				pushStack(hostIt->second);
-				break;
-			}
-			pushStack(Value::makeNull());
-			break;
-		}
+    if (object.asObjectId() == globals_mirror_object_id_) {
+      auto it = globals.find(*key);
+      if (it != globals.end()) {
+        pushStack(it->second);
+        break;
+      }
+      auto hostIt = host_function_globals_.find(*key);
+      if (hostIt != host_function_globals_.end()) {
+        pushStack(hostIt->second);
+        break;
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
 
-		GCHeap::ObjectEntry *current_obj = heap_.object(object.asObjectId());
-		while (current_obj) {
-			auto *val = current_obj->get(*key);
-			if (val) {
-				pushStack(*val);
-				break;
-			}
-			auto* parent_val = current_obj->get("__class");
-			if (!parent_val) parent_val = current_obj->get("__parent");
-			if (parent_val && parent_val->isObjectId()) {
-				current_obj = heap_.object(parent_val->asObjectId());
-			} else {
-				current_obj = nullptr;
-			}
-		}
-		if (!current_obj) {
-			pushStack(Value::makeNull());
-		}
-		break;
-	}
+    GCHeap::ObjectEntry *current_obj = heap_.object(object.asObjectId());
+    while (current_obj) {
+      auto *val = current_obj->get(*key);
+      if (val) {
+        pushStack(*val);
+        break;
+      }
+      auto *parent_val = current_obj->get("__class");
+      if (!parent_val)
+        parent_val = current_obj->get("__parent");
+      if (parent_val && parent_val->isObjectId()) {
+        current_obj = heap_.object(parent_val->asObjectId());
+      } else {
+        current_obj = nullptr;
+      }
+    }
+    if (!current_obj) {
+      pushStack(Value::makeNull());
+    }
+    break;
+  }
 
   // Object intrinsics (VM-level operations)
   case OpCode::OBJECT_KEYS: {
@@ -2161,7 +2317,8 @@ if (object.isIntervalId()) {
         COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
       int64_t idx = *index;
-      if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
+      if (idx < 0)
+        idx = static_cast<int64_t>(array->size()) + idx;
       if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
         pushStack(Value::makeBool(false));
       } else {
@@ -2180,7 +2337,8 @@ if (object.isIntervalId()) {
         COMPILER_THROW("ARRAY_DEL expects integer index for string");
       }
       int64_t idx = *index;
-      if (idx < 0) idx = static_cast<int64_t>(s->size()) + idx;
+      if (idx < 0)
+        idx = static_cast<int64_t>(s->size()) + idx;
       if (idx >= 0 && static_cast<size_t>(idx) < s->size()) {
         s->erase(static_cast<size_t>(idx), 1);
       }
@@ -2192,7 +2350,8 @@ if (object.isIntervalId()) {
         COMPILER_THROW("ARRAY_DEL expects integer index for string");
       }
       int64_t idx = *index;
-      if (idx < 0) idx = static_cast<int64_t>(s.size()) + idx;
+      if (idx < 0)
+        idx = static_cast<int64_t>(s.size()) + idx;
       if (idx >= 0 && static_cast<size_t>(idx) < s.size()) {
         s.erase(static_cast<size_t>(idx), 1);
       }
@@ -2331,47 +2490,47 @@ if (object.isIntervalId()) {
       COMPILER_THROW("ARRAY_MAP expects function/closure");
     }
 
- 	auto resultRef = heap_.allocateArray();
-	auto *result = heap_.array(resultRef.id);
-	PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
-	PinnedRootGuard srcGuard(heap_, array);
+    auto resultRef = heap_.allocateArray();
+    auto *result = heap_.array(resultRef.id);
+    PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
+    PinnedRootGuard srcGuard(heap_, array);
 
-	for (size_t i = 0; i < arr->size(); i++) {
-		Value mapped = callFunctionSync(fn, {(*arr)[i]});
-		arr = heap_.array(array.asArrayId());
-		result->push_back(mapped);
-	}
+    for (size_t i = 0; i < arr->size(); i++) {
+      Value mapped = callFunctionSync(fn, {(*arr)[i]});
+      arr = heap_.array(array.asArrayId());
+      result->push_back(mapped);
+    }
 
-	pushStack(Value::makeArrayId(resultRef.id));
-	break;
-	}
+    pushStack(Value::makeArrayId(resultRef.id));
+    break;
+  }
 
-	case OpCode::ARRAY_FILTER: {
-	Value fn = popStack();
-	Value array = popStack();
-	if (!array.isArrayId()) {
-		COMPILER_THROW("ARRAY_FILTER expects array");
-	}
-	auto *arr = heap_.array(array.asArrayId());
-	if (!arr) {
-		pushStack(Value::makeNull());
-		break;
-	}
+  case OpCode::ARRAY_FILTER: {
+    Value fn = popStack();
+    Value array = popStack();
+    if (!array.isArrayId()) {
+      COMPILER_THROW("ARRAY_FILTER expects array");
+    }
+    auto *arr = heap_.array(array.asArrayId());
+    if (!arr) {
+      pushStack(Value::makeNull());
+      break;
+    }
 
-	auto resultRef = heap_.allocateArray();
-	auto *result = heap_.array(resultRef.id);
-	{
-		PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
-		PinnedRootGuard srcGuard(heap_, array);
+    auto resultRef = heap_.allocateArray();
+    auto *result = heap_.array(resultRef.id);
+    {
+      PinnedRootGuard resultGuard(heap_, Value::makeArrayId(resultRef.id));
+      PinnedRootGuard srcGuard(heap_, array);
 
-		for (size_t i = 0; i < arr->size(); i++) {
-			Value predResult = callFunctionSync(fn, {(*arr)[i]});
-			arr = heap_.array(array.asArrayId());
-			if (predResult.isBool() && predResult.asBool()) {
-				result->push_back((*arr)[i]);
-			}
-		}
-	}  // guards destruct here, unpinning even after exceptions
+      for (size_t i = 0; i < arr->size(); i++) {
+        Value predResult = callFunctionSync(fn, {(*arr)[i]});
+        arr = heap_.array(array.asArrayId());
+        if (predResult.isBool() && predResult.asBool()) {
+          result->push_back((*arr)[i]);
+        }
+      }
+    } // guards destruct here, unpinning even after exceptions
     pushStack(Value::makeArrayId(resultRef.id));
     break;
   }
@@ -2389,38 +2548,38 @@ if (object.isIntervalId()) {
       break;
     }
 
-		PinnedRootGuard srcGuard(heap_, array);
-		Value acc = initial;
-		for (size_t i = 0; i < arr->size(); i++) {
-			acc = callFunctionSync(fn, {acc, (*arr)[i]});
-			arr = heap_.array(array.asArrayId());
-		}
+    PinnedRootGuard srcGuard(heap_, array);
+    Value acc = initial;
+    for (size_t i = 0; i < arr->size(); i++) {
+      acc = callFunctionSync(fn, {acc, (*arr)[i]});
+      arr = heap_.array(array.asArrayId());
+    }
 
-	pushStack(acc);
-	break;
-	}
+    pushStack(acc);
+    break;
+  }
 
-	case OpCode::ARRAY_FOREACH: {
-	Value fn = popStack();
-	Value array = popStack();
-	if (!array.isArrayId()) {
-		COMPILER_THROW("ARRAY_FOREACH expects array");
-	}
-	auto *arr = heap_.array(array.asArrayId());
-	if (!arr) {
-		pushStack(Value::makeNull());
-		break;
-	}
+  case OpCode::ARRAY_FOREACH: {
+    Value fn = popStack();
+    Value array = popStack();
+    if (!array.isArrayId()) {
+      COMPILER_THROW("ARRAY_FOREACH expects array");
+    }
+    auto *arr = heap_.array(array.asArrayId());
+    if (!arr) {
+      pushStack(Value::makeNull());
+      break;
+    }
 
-		PinnedRootGuard srcGuard(heap_, array);
-		for (size_t i = 0; i < arr->size(); i++) {
-			(void)callFunctionSync(fn, {(*arr)[i]});
-			arr = heap_.array(array.asArrayId());
-		}
+    PinnedRootGuard srcGuard(heap_, array);
+    for (size_t i = 0; i < arr->size(); i++) {
+      (void)callFunctionSync(fn, {(*arr)[i]});
+      arr = heap_.array(array.asArrayId());
+    }
 
-	pushStack(Value::makeNull());
-	break;
-	}
+    pushStack(Value::makeNull());
+    break;
+  }
 
   // String intrinsics (VM-level operations)
   case OpCode::STRING_LEN: {
@@ -2488,8 +2647,7 @@ if (object.isIntervalId()) {
     }
     const std::string &s = current_chunk->getString(str.asStringValId());
     const std::string &pre = current_chunk->getString(prefix.asStringValId());
-    pushStack(Value::makeBool(s.size() >= pre.size() &&
-                       s.compare(0, pre.size(), pre) == 0));
+    pushStack(Value::makeBool(s.size() >= pre.size() && s.compare(0, pre.size(), pre) == 0));
     break;
   }
 
@@ -2505,7 +2663,7 @@ if (object.isIntervalId()) {
     const std::string &s = current_chunk->getString(str.asStringValId());
     const std::string &suf = current_chunk->getString(suffix.asStringValId());
     pushStack(Value::makeBool(s.size() >= suf.size() &&
-                       s.compare(s.size() - suf.size(), suf.size(), suf) == 0));
+                              s.compare(s.size() - suf.size(), suf.size(), suf) == 0));
     break;
   }
 
@@ -2521,175 +2679,197 @@ if (object.isIntervalId()) {
           pushStack(elem);
         }
       }
-	} else if (value.isStringValId()) {
-		if (!current_chunk) {
-			COMPILER_THROW("SPREAD: no current chunk for string spread");
-		}
-		const std::string &str = current_chunk->getString(value.asStringValId());
-		for (char c : str) {
-			auto charRef = createRuntimeString(std::string(1, c));
-			pushStack(Value::makeStringId(charRef.id));
-		}
-	} else if (value.isStringId()) {
-		const std::string *str = heap_.string(value.asStringId());
-		if (str) {
-			for (char c : *str) {
-				auto charRef = createRuntimeString(std::string(1, c));
-				pushStack(Value::makeStringId(charRef.id));
-			}
-		}
+    } else if (value.isStringValId()) {
+      if (!current_chunk) {
+        COMPILER_THROW("SPREAD: no current chunk for string spread");
+      }
+      const std::string &str = current_chunk->getString(value.asStringValId());
+      for (char c : str) {
+        auto charRef = createRuntimeString(std::string(1, c));
+        pushStack(Value::makeStringId(charRef.id));
+      }
+    } else if (value.isStringId()) {
+      const std::string *str = heap_.string(value.asStringId());
+      if (str) {
+        for (char c : *str) {
+          auto charRef = createRuntimeString(std::string(1, c));
+          pushStack(Value::makeStringId(charRef.id));
+        }
+      }
     }
     break;
   }
 
-  // Spread in function call
-    case OpCode::SPREAD_CALL: {
-        // Similar to SPREAD but marks arguments for spread in CALL
-        Value value = popStack();
-        if (value.isArrayId()) {
-            auto arrRef = ArrayRef{value.asArrayId()};
-            auto *arr = heap_.array(arrRef.id);
-            if (arr) {
-                for (auto &elem : *arr) {
-                    pushStack(elem);
-                }
-            }
+    // Spread in function call
+  case OpCode::SPREAD_CALL: {
+    // Similar to SPREAD but marks arguments for spread in CALL
+    Value value = popStack();
+    if (value.isArrayId()) {
+      auto arrRef = ArrayRef{value.asArrayId()};
+      auto *arr = heap_.array(arrRef.id);
+      if (arr) {
+        for (auto &elem : *arr) {
+          pushStack(elem);
         }
-        break;
+      }
     }
+    break;
+  }
 
-    // Object intrinsics
-    case OpCode::OBJECT_FREEZE: {
-        Value v = popStack();
-        if (v.isObjectId()) setHostObjectFrozen(ObjectRef{v.asObjectId(), true}, true);
-        pushStack(v);
-        break;
+  // Object intrinsics
+  case OpCode::OBJECT_FREEZE: {
+    Value v = popStack();
+    if (v.isObjectId())
+      setHostObjectFrozen(ObjectRef{v.asObjectId(), true}, true);
+    pushStack(v);
+    break;
+  }
+  case OpCode::OBJECT_SEAL: {
+    Value v = popStack();
+    if (v.isObjectId())
+      setHostObjectSealed(ObjectRef{v.asObjectId(), true}, true);
+    pushStack(v);
+    break;
+  }
+  case OpCode::OBJECT_IS_FROZEN: {
+    Value v = popStack();
+    bool frozen =
+        v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__frozen__");
+    pushStack(Value::makeBool(frozen));
+    break;
+  }
+  case OpCode::OBJECT_IS_SEALED: {
+    Value v = popStack();
+    bool sealed =
+        v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__sealed__");
+    pushStack(Value::makeBool(sealed));
+    break;
+  }
+  case OpCode::OBJECT_SIZE: {
+    Value v = popStack();
+    if (!v.isObjectId()) {
+      pushStack(Value::makeInt(0));
+      break;
     }
-    case OpCode::OBJECT_SEAL: {
-        Value v = popStack();
-        if (v.isObjectId()) setHostObjectSealed(ObjectRef{v.asObjectId(), true}, true);
-        pushStack(v);
-        break;
+    auto *obj = heap_.object(v.asObjectId());
+    pushStack(Value::makeInt(obj ? static_cast<int64_t>(obj->size()) : 0));
+    break;
+  }
+  case OpCode::OBJECT_ASSIGN: {
+    Value src = popStack();
+    Value dst = popStack();
+    if (!dst.isObjectId() || !src.isObjectId()) {
+      pushStack(dst);
+      break;
     }
-    case OpCode::OBJECT_IS_FROZEN: {
-        Value v = popStack();
-        bool frozen = v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__frozen__");
-        pushStack(Value::makeBool(frozen));
-        break;
+    auto *dstObj = heap_.object(dst.asObjectId());
+    auto *srcObj = heap_.object(src.asObjectId());
+    if (dstObj && srcObj) {
+      for (const auto &kv : *srcObj) {
+        (*dstObj)[kv.first] = kv.second;
+      }
     }
-    case OpCode::OBJECT_IS_SEALED: {
-        Value v = popStack();
-        bool sealed = v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__sealed__");
-        pushStack(Value::makeBool(sealed));
-        break;
-    }
-    case OpCode::OBJECT_SIZE: {
-        Value v = popStack();
-        if (!v.isObjectId()) { pushStack(Value::makeInt(0)); break; }
-        auto *obj = heap_.object(v.asObjectId());
-        pushStack(Value::makeInt(obj ? static_cast<int64_t>(obj->size()) : 0));
-        break;
-    }
-    case OpCode::OBJECT_ASSIGN: {
-        Value src = popStack();
-        Value dst = popStack();
-        if (!dst.isObjectId() || !src.isObjectId()) { pushStack(dst); break; }
-        auto *dstObj = heap_.object(dst.asObjectId());
-        auto *srcObj = heap_.object(src.asObjectId());
-        if (dstObj && srcObj) {
-            for (const auto &kv : *srcObj) {
-                (*dstObj)[kv.first] = kv.second;
-            }
-        }
-        pushStack(dst);
-        break;
-    }
+    pushStack(dst);
+    break;
+  }
 
-    // String intrinsics
-    case OpCode::STRING_REVERSE: {
-        Value v = popStack();
-        std::string s = toString(v);
-        std::reverse(s.begin(), s.end());
-        auto ref = createRuntimeString(std::move(s));
-        pushStack(Value::makeStringId(ref.id));
-        break;
+  // String intrinsics
+  case OpCode::STRING_REVERSE: {
+    Value v = popStack();
+    std::string s = toString(v);
+    std::reverse(s.begin(), s.end());
+    auto ref = createRuntimeString(std::move(s));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
+  case OpCode::STRING_REPEAT: {
+    Value count = popStack();
+    Value v = popStack();
+    std::string s = toString(v);
+    int64_t n = toInt(count);
+    if (n <= 0) {
+      auto ref = createRuntimeString("");
+      pushStack(Value::makeStringId(ref.id));
+      break;
     }
-    case OpCode::STRING_REPEAT: {
-        Value count = popStack();
-        Value v = popStack();
-        std::string s = toString(v);
-        int64_t n = toInt(count);
-        if (n <= 0) { auto ref = createRuntimeString(""); pushStack(Value::makeStringId(ref.id)); break; }
-        std::string out;
-        out.reserve(s.size() * static_cast<size_t>(n));
-        for (int64_t i = 0; i < n; i++) out += s;
-        auto ref = createRuntimeString(std::move(out));
-        pushStack(Value::makeStringId(ref.id));
-        break;
+    std::string out;
+    out.reserve(s.size() * static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; i++)
+      out += s;
+    auto ref = createRuntimeString(std::move(out));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
+  case OpCode::STRING_TRIM_START: {
+    Value v = popStack();
+    std::string s = toString(v);
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos)
+      start = s.size();
+    auto ref = createRuntimeString(s.substr(start));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
+  case OpCode::STRING_TRIM_END: {
+    Value v = popStack();
+    std::string s = toString(v);
+    size_t end = s.find_last_not_of(" \t\n\r");
+    if (end == std::string::npos) {
+      auto ref = createRuntimeString("");
+      pushStack(Value::makeStringId(ref.id));
+      break;
     }
-    case OpCode::STRING_TRIM_START: {
-        Value v = popStack();
-        std::string s = toString(v);
-        size_t start = s.find_first_not_of(" \t\n\r");
-        if (start == std::string::npos) start = s.size();
-        auto ref = createRuntimeString(s.substr(start));
-        pushStack(Value::makeStringId(ref.id));
-        break;
+    auto ref = createRuntimeString(s.substr(0, end + 1));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
+  case OpCode::STRING_INCLUDES: {
+    Value substr = popStack();
+    Value str = popStack();
+    std::string s = toString(str);
+    std::string sub = toString(substr);
+    pushStack(Value::makeBool(s.find(sub) != std::string::npos));
+    break;
+  }
+  case OpCode::STRING_PAD_START: {
+    Value padVal = popStack();
+    Value widthVal = popStack();
+    Value strVal = popStack();
+    std::string s = toString(strVal);
+    int64_t width = toInt(widthVal);
+    std::string pad = toString(padVal);
+    if (pad.empty())
+      pad = " ";
+    while (static_cast<int64_t>(s.size()) < width) {
+      size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
+      s = pad.substr(0, std::min(needed, pad.size())) + s;
     }
-    case OpCode::STRING_TRIM_END: {
-        Value v = popStack();
-        std::string s = toString(v);
-        size_t end = s.find_last_not_of(" \t\n\r");
-        if (end == std::string::npos) { auto ref = createRuntimeString(""); pushStack(Value::makeStringId(ref.id)); break; }
-        auto ref = createRuntimeString(s.substr(0, end + 1));
-        pushStack(Value::makeStringId(ref.id));
-        break;
+    auto ref = createRuntimeString(std::move(s));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
+  case OpCode::STRING_PAD_END: {
+    Value padVal = popStack();
+    Value widthVal = popStack();
+    Value strVal = popStack();
+    std::string s = toString(strVal);
+    int64_t width = toInt(widthVal);
+    std::string pad = toString(padVal);
+    if (pad.empty())
+      pad = " ";
+    while (static_cast<int64_t>(s.size()) < width) {
+      size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
+      s += pad.substr(0, std::min(needed, pad.size()));
     }
-    case OpCode::STRING_INCLUDES: {
-        Value substr = popStack();
-        Value str = popStack();
-        std::string s = toString(str);
-        std::string sub = toString(substr);
-        pushStack(Value::makeBool(s.find(sub) != std::string::npos));
-        break;
-    }
-    case OpCode::STRING_PAD_START: {
-        Value padVal = popStack();
-        Value widthVal = popStack();
-        Value strVal = popStack();
-        std::string s = toString(strVal);
-        int64_t width = toInt(widthVal);
-        std::string pad = toString(padVal);
-        if (pad.empty()) pad = " ";
-        while (static_cast<int64_t>(s.size()) < width) {
-            size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
-            s = pad.substr(0, std::min(needed, pad.size())) + s;
-        }
-        auto ref = createRuntimeString(std::move(s));
-        pushStack(Value::makeStringId(ref.id));
-        break;
-    }
-    case OpCode::STRING_PAD_END: {
-        Value padVal = popStack();
-        Value widthVal = popStack();
-        Value strVal = popStack();
-        std::string s = toString(strVal);
-        int64_t width = toInt(widthVal);
-        std::string pad = toString(padVal);
-        if (pad.empty()) pad = " ";
-        while (static_cast<int64_t>(s.size()) < width) {
-            size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
-            s += pad.substr(0, std::min(needed, pad.size()));
-        }
-        auto ref = createRuntimeString(std::move(s));
-        pushStack(Value::makeStringId(ref.id));
-        break;
-    }
+    auto ref = createRuntimeString(std::move(s));
+    pushStack(Value::makeStringId(ref.id));
+    break;
+  }
 
-	default:
-		return false;
-	}
-	return true;
+  default:
+    return false;
+  }
+  return true;
 }
 
 } // namespace havel::compiler

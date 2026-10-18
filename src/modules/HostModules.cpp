@@ -72,7 +72,12 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
   }
 
 
-if (registry.shouldRegister("clipboard", includes, excludes)) {
+// ClipboardService and MonitoringClipboard are X11 clipboard implementations:
+// their headers, and the declareService calls above, are both behind HAVE_X11.
+// Registering them ungated referenced types that do not exist on a Windows
+// build, so the registration follows the same gate as the declaration.
+#ifdef HAVE_X11
+	if (registry.shouldRegister("clipboard", includes, excludes)) {
 		auto clipboardService = std::make_shared<havel::host::ClipboardService>();
 		registry.registerService<havel::host::ClipboardService>(clipboardService);
 	}
@@ -81,6 +86,7 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		auto monitoringClipboard = std::make_shared<havel::host::MonitoringClipboard>();
 		registry.registerService<havel::host::MonitoringClipboard>(monitoringClipboard);
 	}
+#endif
 
 
 	if (registry.shouldRegister("map-manager", includes, excludes)) {

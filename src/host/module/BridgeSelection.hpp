@@ -1,4 +1,4 @@
-// BridgeSelection.hpp — explicit host-side selection of optional bridges.
+// BridgeSelection.hpp - explicit host-side selection of optional bridges.
 //
 // libhavel_core.a and libhavel_lang.a are embedded by Qt-free hosts (havel-wm,
 // the cranelift shim, the AOT runtime), so the core must not contain, call

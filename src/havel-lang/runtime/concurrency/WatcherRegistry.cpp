@@ -98,7 +98,7 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
  return fired_fibers; // No watchers for this variable
  }
 
-// Copy the list — evaluator may call mergeDependencies which modifies var_to_watchers_
+// Copy the list - evaluator may call mergeDependencies which modifies var_to_watchers_
   auto watcher_ids = var_it->second;
 
 // Re-evaluate each watcher that depends on this variable
@@ -118,7 +118,7 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
             watcher.last_result = new_result;
             fired_fibers.push_back(watcher.fiber);
         } else if (watcher.last_result && !new_result) {
-            // Cleanup: true→false transition — fire cleanup function
+            // Cleanup: true→false transition - fire cleanup function
             watcher.last_result = new_result;
             if (cleanup && watcher.cleanup_func_id != 0) {
                 cleanup(watcher.cleanup_func_id, watcher.cleanup_ip);

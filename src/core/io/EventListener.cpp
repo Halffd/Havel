@@ -26,7 +26,7 @@
 #include <vector>
 
 // No Qt in this TU: including qt.hpp pulls QtCore headers, which emit an
-// undefined qt_version_tag reference in every object — forcing every consumer
+// undefined qt_version_tag reference in every object - forcing every consumer
 // (the Qt-free executable, havel-lsp, embedders) to link libQt6Core.
 
 namespace havel {
@@ -922,7 +922,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   // Only the X11 backend reads its own injected events back (XTest events
   // are delivered to the same client connection). The evdev backend excludes
   // the havel-virtual-device from the read set, so injected events never
-  // loop back here — filtering in that mode would swallow genuine physical
+  // loop back here - filtering in that mode would swallow genuine physical
   // key events (e.g. a physical key-up arriving right after a hotkey's
   // send() released the same modifier) and leave key/modifier state stuck.
   bool loopbackBackend = backend_ &&
@@ -932,7 +932,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       // Only the X11 backend reads its own injected events back (XTest
       // events are delivered to the same client connection). Filter those
       // echoes out. The evdev backend excludes the havel-virtual-device
-      // from the read set, so injected events never loop back here —
+      // from the read set, so injected events never loop back here -
       // filtering in that mode would swallow genuine physical key events
       // (e.g. a physical key-up arriving right after a hotkey's send()
       // released the same modifier) and leave key/modifier state stuck.
@@ -1720,7 +1720,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
       }
     }
 #ifdef REL_WHEEL_HI_RES
-    // High-resolution wheel events — handled above in sync with REL_WHEEL
+    // High-resolution wheel events - handled above in sync with REL_WHEEL
     else if (ev.code == REL_WHEEL_HI_RES || ev.code == REL_HWHEEL_HI_RES) {
       // Ignored here because EvdevAdapter buffers and delegates to the main
       // REL_WHEEL event

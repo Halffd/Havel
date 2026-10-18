@@ -358,7 +358,7 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
     vm.registerPrototypeMethodByName("object", "running", "object.running");
 };
 
-// "await" keyword compiles to FIBER_AWAIT opcode — no host function stub needed
+// "await" keyword compiles to FIBER_AWAIT opcode - no host function stub needed
 
 options.host_functions["sleep"] = [&](const std::vector<Value> &args) {
  return Value::makeNull();
@@ -383,7 +383,7 @@ options.host_functions["thread"] = [&](const std::vector<Value> &args) {
     return Value::makeObjectId(obj.id);
 };
 
-// thread.spawn(closure) — called by block-sugar "thread { ... }" via LOAD_GLOBAL + CALL
+// thread.spawn(closure) - called by block-sugar "thread { ... }" via LOAD_GLOBAL + CALL
 // Args: [closure] (no receiver prepended since it's not CALL_METHOD)
 options.host_functions["thread.spawn"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty()) {
@@ -473,7 +473,7 @@ cb_idx = 2;
  return Value::makeObjectId(obj.id);
  };
 
-// interval.start(ms, closure) — called by block-sugar "interval N { ... }" via LOAD_GLOBAL + CALL
+// interval.start(ms, closure) - called by block-sugar "interval N { ... }" via LOAD_GLOBAL + CALL
 // Args: [delay, closure] (no receiver prepended)
  options.host_functions["interval.start"] = [&](const std::vector<Value> &args) {
  if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval.start requires delay + callback");
@@ -546,7 +546,7 @@ options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
     timeout_running[key] = false;
     return Value(true);
 };
-// timeout.start(ms, closure) — called by block-sugar "timeout N { ... }" via LOAD_GLOBAL + CALL
+// timeout.start(ms, closure) - called by block-sugar "timeout N { ... }" via LOAD_GLOBAL + CALL
 // Args: [delay, closure] (no receiver prepended)
  options.host_functions["timeout.start"] = [&](const std::vector<Value> &args) {
  if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout.start requires delay + callback");

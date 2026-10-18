@@ -281,7 +281,7 @@ int runAsyncCase(const std::string &name, const std::string &source,
 
 options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
 
-// "await" keyword compiles to FIBER_AWAIT opcode — no host function stub needed
+// "await" keyword compiles to FIBER_AWAIT opcode - no host function stub needed
 
 options.host_functions["thread"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty()) {

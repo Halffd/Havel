@@ -491,7 +491,7 @@ std::string Clipboard::getImage() const {
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:
-  case Method::WINDOWS:
+  case Method::WIN32_API:
   case Method::MACOS:
   case Method::AUTO:
   default:
@@ -507,7 +507,7 @@ bool Clipboard::setImage(const std::string &base64Png) {
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:
-  case Method::WINDOWS:
+  case Method::WIN32_API:
   case Method::MACOS:
   case Method::AUTO:
   default:

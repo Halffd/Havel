@@ -136,7 +136,7 @@ void HavelLogger_clearOriginFilter(HavelLogger* logger);
 // Check if a log origin matches the current filter
 bool HavelLogger_originMatchesFilter(const HavelLogOrigin* origin);
 
-// Convenience macros — work in both C and C++
+// Convenience macros - work in both C and C++
 // Usage: HAVEL_LOG_DEBUG("message") or HAVEL_LOGF_DEBUG("count: %d", n)
 #define HAVEL_LOG_DEBUG(msg)   HavelLogger_debug(HavelLogger_getInstance(), msg)
 #define HAVEL_LOG_INFO(msg)    HavelLogger_info(HavelLogger_getInstance(), msg)

@@ -835,7 +835,7 @@ for (const auto &statement : program.body) {
         continue;
     }
 
-    // REGISTER_EVENT: `on <event> { ... }` — the handler fn was compiled
+    // REGISTER_EVENT: `on <event> { ... }` - the handler fn was compiled
     // before __main__; this calls event.subscribe(name, handler, [arg]).
     if (statement->kind == ast::NodeType::OnEventStatement) {
         const auto &onEvent =
@@ -860,7 +860,7 @@ for (const auto &statement : program.body) {
         continue;
     }
 
-    // `emit <name> [payload]` — sugar over the event.publish host function.
+    // `emit <name> [payload]` - sugar over the event.publish host function.
     if (statement->kind == ast::NodeType::EmitStatement) {
         const auto &emitStmt = static_cast<const ast::EmitStatement &>(*statement);
         uint32_t publish_sid = addStringConstant("event.publish");
@@ -1392,7 +1392,7 @@ current_class_name_ = type_it->second;
 
 // Collect default parameter values and variadic info.
 // Defaults that are not simple literals (e.g. `size = CHUNK_SIZE`) can't
-// be materialized by the compiler — they are evaluated at call time by a
+// be materialized by the compiler - they are evaluated at call time by a
 // prologue emitted after this loop.
 std::vector<std::pair<uint32_t, const ast::Expression *>> pending_default_evals;
 for (size_t i = 0; i < function.parameters.size(); i++) {
@@ -1492,7 +1492,7 @@ for (const auto &pending : pending_default_evals) {
  if (function.body) {
     const auto &stmts = function.body->body;
     if (!stmts.empty()) {
-      // Function declarations are hoisted — they don't produce a return value.
+      // Function declarations are hoisted - they don't produce a return value.
       // Find the last non-FunctionDeclaration statement for implicit return.
       // Compile everything in order, but only apply tail position to the last
       // meaningful statement. The RETURN must come after all side-effecting code
@@ -1561,7 +1561,7 @@ for (const auto &pending : pending_default_evals) {
           compileStatement(*stmts[i]);
         }
 
-        // Emit RETURN at the very end — after all fn declarations are registered
+        // Emit RETURN at the very end - after all fn declarations are registered
         if (needsExplicitReturn) {
           if (lastMeaningful < stmts.size() &&
               stmts[lastMeaningful] &&
@@ -1574,7 +1574,7 @@ for (const auto &pending : pending_default_evals) {
           }
         }
       } else {
-        // All statements are function declarations — compile them, return null
+        // All statements are function declarations - compile them, return null
         for (size_t i = 0; i < stmts.size(); i++) {
           compileStatement(*stmts[i]);
         }
@@ -3596,7 +3596,7 @@ case ast::NodeType::ImplDeclaration: {
       } else if (case_node->body) {
         compileStatement(*case_node->body);
       }
-      // Case body didn't emit tail call — emit RETURN (implicit return)
+      // Case body didn't emit tail call - emit RETURN (implicit return)
       if (was_tail && !body_was_tail) {
         emit(OpCode::RETURN);
       }
@@ -4614,7 +4614,7 @@ break;
     // If resolver gave Global but we're in a class context and the name
     // matches a class field/method, treat it as class member access.
     // Local bindings (parameters, locals shadowing a field) are trusted as
-    // locals — they must not be converted to field access (e.g. `@x = x`
+    // locals - they must not be converted to field access (e.g. `@x = x`
     // where `x` is both a param and a field).
     warnIfBareClassMemberLost(binding->name);
     if (binding->kind == ResolvedBindingKind::Global &&
@@ -4698,7 +4698,7 @@ case ast::NodeType::AtExpression: {
         // @ alone - compile as loading 'this' (self-reference)
         const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
         if (!atExpr.field) {
-            // Standalone @ — just load 'this'
+            // Standalone @ - just load 'this'
             if (!current_class_name_.empty()) {
                 emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
             } else {
@@ -5045,7 +5045,7 @@ case ast::NodeType::CastExpression: {
       compileExpression(*cast.expr);
       in_tail_position_ = saved_tail;
       if (type_check_result_.provablySafeCast.count(&cast)) {
-        // TypeChecker proved this cast always succeeds — skip PROT_CAST
+        // TypeChecker proved this cast always succeeds - skip PROT_CAST
       } else {
         uint32_t sid = addStringConstant(cast.targetType);
         emit(OpCode::PROT_CAST, Value::makeStringValId(sid));
@@ -5080,7 +5080,7 @@ case ast::NodeType::CastExpression: {
       COMPILER_THROW("Pipeline expression has no stages");
     }
 
-    // Compile first stage normally — leaves result on stack
+    // Compile first stage normally - leaves result on stack
     if (pipeline.stages[0]->kind == ast::NodeType::CallExpression) {
       const auto &call =
           static_cast<const ast::CallExpression &>(*pipeline.stages[0]);
@@ -5132,7 +5132,7 @@ case ast::NodeType::CastExpression: {
           // whatever bare global shadows it (object.filter throws on arrays).
           // The third operand marks this as a pipe-stage call: the VM only
           // applies the script-global fallback (receiver passed as first arg)
-          // to pipe stages, never to `x.method(y)` member calls — otherwise a
+          // to pipe stages, never to `x.method(y)` member calls - otherwise a
           // method name matching a global host function (e.g. `image.load`
           // where `image` is a bool) silently re-dispatches to the global with
           // the receiver prepended and blows an arity check.
@@ -5173,7 +5173,7 @@ case ast::NodeType::CastExpression: {
           // The third operand marks this as a pipe stage: CALL_METHOD may
           // then fall back to a same-named script-global function with the
           // receiver as first argument (`data |> doubled` where doubled is a
-          // script fn — the array has no such method).
+          // script fn - the array has no such method).
           emit(OpCode::LOAD_VAR, pipe_temp);
           uint32_t method_sid = addStringConstant(ident.symbol);
           emit(OpCode::CALL_METHOD, std::vector<Value>{
@@ -5380,7 +5380,7 @@ case ast::NodeType::CastExpression: {
     if (rhs_is_missing) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     } else {
-      // Assignment RHS must NOT be in tail position — the result is consumed
+      // Assignment RHS must NOT be in tail position - the result is consumed
       // by the store operation. TAIL_CALL would RETURN before STORE_GLOBAL.
       bool saved_tail = in_tail_position_;
       in_tail_position_ = false;
@@ -5637,7 +5637,7 @@ auto emitCompound = [&](OpCode math_op) {
             emit(OpCode::DUP);
             uint32_t fallback_jump = emitJump(OpCode::JUMP_IF_NULL);
 
-            // op_iadd succeeded — the object mutated in place.
+            // op_iadd succeeded - the object mutated in place.
             // Don't store the return value; the variable already holds the object.
             // Just pop the result and leave the original value on the stack.
             emit(OpCode::POP);
@@ -5645,7 +5645,7 @@ auto emitCompound = [&](OpCode math_op) {
             uint32_t end_jump = emitJump(OpCode::JUMP);
 
             // Fallback: JUMP_IF_NULL popped the DUP'd null; the other copy
-            // stays on the stack, so pop it before the desugared load —
+            // stays on the stack, so pop it before the desugared load -
             // otherwise one slot leaks per iteration in loops.
             // Do the desugared form: load + op + store
             patchJump(fallback_jump, static_cast<uint32_t>(current_function->instructions.size()));
@@ -6301,7 +6301,7 @@ case ast::NodeType::UnaryExpression: {
   }
 
   case ast::NodeType::OnEventExpression: {
-    // `let w = on <event> { ... }` — REGISTER_EVENT inline; the
+    // `let w = on <event> { ... }` - REGISTER_EVENT inline; the
     // subscription id is the value.
     compileOnEventExprRegistration(
         static_cast<const ast::OnEventExpression &>(expression));
@@ -6630,7 +6630,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
     // into a WaitGroupExpression node; emitting that node followed by the
     // generic member-call path produced WAITGROUP_NEW + CALL_METHOD "new",
     // and the bogus method call (waitgroup has no `new` prototype method)
-    // replaced the fresh WaitGroupId with null — every wg.add/done/wait
+    // replaced the fresh WaitGroupId with null - every wg.add/done/wait
     // after that silently no-op'd (parallelMap lost items).
     if (property->symbol == "new" &&
         member.object->kind == ast::NodeType::WaitGroupExpression) {
@@ -6651,7 +6651,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
     }
 
  // Namespace/module call: window.activeTitle(), system.detect(), etc.
- // Always emit LOAD_GLOBAL + CALL_METHOD — the VM dispatches at runtime.
+ // Always emit LOAD_GLOBAL + CALL_METHOD - the VM dispatches at runtime.
  // Host namespace objects (window, system, etc.) have HostFuncId fields
  // which CALL_METHOD handles natively.
  if (auto *objIdent =
@@ -6685,7 +6685,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             return;
         }
 
-        // super.method(args) — call parent class method with current self
+        // super.method(args) - call parent class method with current self
         if (objIdent->symbol == "super") {
             if (current_parent_class_name_.empty()) {
                 COMPILER_THROW("super call used outside a derived class method");
@@ -6994,7 +6994,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             return;
   }
 
-  // Handle @method() — equivalent to self.method(), use CALL_METHOD
+  // Handle @method() - equivalent to self.method(), use CALL_METHOD
   if (expression.callee->kind == ast::NodeType::AtExpression) {
     const auto &atExpr = static_cast<const ast::AtExpression &>(*expression.callee);
     auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
@@ -7043,7 +7043,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
  if (!binding) {
-            // Unknown identifier — try as global function call (runtime will throw if not found)
+            // Unknown identifier - try as global function call (runtime will throw if not found)
             uint32_t strId = addStringConstant(callee_id.symbol);
             emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
             uint32_t totalArgs = 0;
@@ -8239,7 +8239,7 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
   // In tail position, a block whose last statement is a plain expression
   // leaves that value on the stack (ExpressionStatement skips its POP in
   // tail position). Emit RETURN so callers (function bodies, clause bodies)
-  // return the value instead of null. Not after a tail call — the caller's
+  // return the value instead of null. Not after a tail call - the caller's
   // wasTailCall() contract owns that path.
   if (saved_tail && stmts.back() &&
       stmts.back()->kind == ast::NodeType::ExpressionStatement &&
@@ -8282,7 +8282,7 @@ void ByteCompiler::collectOnEventStatements(
   case ast::NodeType::ExpressionStatement:
   case ast::NodeType::AssignmentExpression: {
     // `w = on <event> { ... }` at statement level: the OnEventExpression
-    // inside is collected by collectOnEventExpressions (the second scan) —
+    // inside is collected by collectOnEventExpressions (the second scan) -
     // nothing for this vector here.
     break;
   }
@@ -9277,7 +9277,7 @@ void ByteCompiler::compileWithMemberLookup(const ResolvedBinding &binding) {
     }
   }
   // After all owners: if the member was found, done. If null (missing on
-  // every owner), fall back to the bare name as a global — host functions
+  // every owner), fall back to the bare name as a global - host functions
   // (print, sleep, ...) live as globals and must keep working inside
   // with-blocks; a truly unknown name still errors at runtime.
   emit(OpCode::DUP);
@@ -9795,7 +9795,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
  for (const auto &cmd : statement.commands) {
  switch (cmd.type) {
  case ast::InputCommand::SendText:
- // io.send(cmd.text) — or io.send(<interpolated>) when the string was an
+ // io.send(cmd.text) - or io.send(<interpolated>) when the string was an
  // InterpolatedString: the DSL form `=> "hi ${name}"` must type the
  // interpolated text, not the raw \x01/\x02 marker form the lexer puts
  // in cmd.text. The concatenation chain is the same shape the normal
@@ -10215,7 +10215,7 @@ void ByteCompiler::collectUpvaluesFromExpr(const ast::Expression &expr, std::vec
       }
       return;
     }
-    // No direct binding — search by name in enclosing scope
+    // No direct binding - search by name in enclosing scope
     for (const auto &[idNode, bnd] : lexical_resolution_.identifier_bindings) {
       if (idNode && idNode->symbol == id.symbol) {
         if (bnd.kind == ResolvedBindingKind::Local || bnd.kind == ResolvedBindingKind::Upvalue) {
@@ -10323,7 +10323,7 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   // compileCallExpression is invoked INSIDE the closure, so all identifier
   // bindings (Function, Global, HostFunction) resolve correctly at closure-creation
   // time.  Local bindings in args would NOT work because the closure has no shared
-  // frame — this path is used for simple named-function calls.
+  // frame - this path is used for simple named-function calls.
   const auto &call = static_cast<const ast::CallExpression &>(*statement.call);
   // `this` is the method body's slot 0; the wrapper is a new frame, so it has
   // to capture it before the inner lambda can. Appending keeps every

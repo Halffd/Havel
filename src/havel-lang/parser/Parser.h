@@ -270,14 +270,14 @@ private:
   std::unique_ptr<ast::Statement> parseForStatement();
   std::unique_ptr<ast::Statement> parseLoopStatement();
   std::unique_ptr<ast::Statement> parseSwitchStatement();
-  // `case <expr> of { <pat> -> <body> }` (TODO #3 Erlang variant) — same
+  // `case <expr> of { <pat> -> <body> }` (TODO #3 Erlang variant) - same
   // subject/case-list shape as switch; `of` is lexed as an Identifier (no
   // Of keyword exists). Shares parseSwitchCaseList with switch.
   std::unique_ptr<ast::Statement> parseCaseOfStatement();
   // Shared brace-delimited case list: `pat -> body` / `pat => body` /
   // `else` / `_` wildcard tests, newline-separated cases.
   std::vector<std::unique_ptr<ast::SwitchCase>> parseSwitchCaseList();
-  // `on <dotted-name-or-string> [(arg)] [where <expr>] { body }` — a generic
+  // `on <dotted-name-or-string> [(arg)] [where <expr>] { body }` - a generic
   // event subscription (architecture doc: `on` as syntax sugar over
   // subscriptions).
   std::unique_ptr<ast::Statement> parseOnEventStatement();
@@ -289,7 +289,7 @@ private:
                          std::unique_ptr<ast::Expression> &argOut,
                          std::unique_ptr<ast::Expression> &filterOut,
                          std::unique_ptr<ast::Statement> &bodyOut);
-  // `emit <name-or-string> [payload]` — syntax sugar over event.publish.
+  // `emit <name-or-string> [payload]` - syntax sugar over event.publish.
   std::unique_ptr<ast::Statement> parseEmitStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <array>
+#include <vector>
 #include <atomic>
 #include <filesystem>
 #include <mutex>

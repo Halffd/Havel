@@ -45,7 +45,7 @@ public:
       // Idempotent: the FIRST close wins. A cell can be closed twice when a
       // goroutine spawn closes its captured cells at spawn time (their abs
       // region belongs to the spawning frame), and the spawning frame's
-      // later return runs closeFrameUpvalues over the same region — whose
+      // later return runs closeFrameUpvalues over the same region - whose
       // slots may since have been reused by other goroutine frames (the VM
       // locals array is shared, and goroutines start with locals_base 0).
       // Overwriting here would replace the captured value with unrelated

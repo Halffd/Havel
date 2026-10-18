@@ -251,7 +251,7 @@ void WindowsAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready)
     (void)ready;
 #ifdef _WIN32
     // No pollable input fd. Hooks fire via the message queue on this thread;
-    // drain without blocking — EventListener owns the wait.
+    // drain without blocking - EventListener owns the wait.
     MSG msg;
     while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);

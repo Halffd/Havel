@@ -1,4 +1,4 @@
-// BridgeSelection.cpp — the registration slot declared in BridgeSelection.hpp.
+// BridgeSelection.cpp - the registration slot declared in BridgeSelection.hpp.
 //
 // Lives in the core (and is Qt-free) because both sides need it: the app
 // writes the slot, the bridges read it.

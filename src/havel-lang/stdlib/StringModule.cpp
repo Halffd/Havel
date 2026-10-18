@@ -335,7 +335,7 @@ void registerStringModule(VMApi &api) {
         // The cursor's string id must resolve through heap_.string() in
         // cursor_current/advance/peek/reset. Heap strings (isStringId)
         // resolve directly; chunk-pool literals (StringValId) are NOT heap
-        // strings — VM::getStringId returns 0 for them, so the cursor got
+        // strings - VM::getStringId returns 0 for them, so the cursor got
         // string_id=0 and every cursor read threw "string not found".
         // Heap-intern the resolved text whenever the argument is not
         // already a heap string.

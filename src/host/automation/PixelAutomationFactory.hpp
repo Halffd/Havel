@@ -1,10 +1,10 @@
-// PixelAutomationFactory.hpp — registration slot for the optional pixel service.
+// PixelAutomationFactory.hpp - registration slot for the optional pixel service.
 //
 // The concrete PixelAutomationService uses Qt (QApplication for the screen,
 // QImage for PNG output) and therefore lives in havel_gui. Core-facing callers
 // (HostModules.cpp, PixelModule.cpp) must not name it: a single reference in
-// libhavel_core.a forces every embedder — havel-wm, the cranelift AOT shim, the
-// AOT runtime — to link Qt.
+// libhavel_core.a forces every embedder - havel-wm, the cranelift AOT shim, the
+// AOT runtime - to link Qt.
 //
 // So construction moves behind this slot, exactly like UIBackendFactory.hpp
 // does for the UI backends. havel_gui registers the factory during start-up;

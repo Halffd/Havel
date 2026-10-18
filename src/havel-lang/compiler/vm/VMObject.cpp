@@ -26,7 +26,7 @@ void VM::registerHostFunction(const std::string &name,
         // strings via the stdlib copy until they were unified).
         havel::debug(
             "duplicate host function registration for '" + name +
-            "' — overwriting previous implementation");
+            "' - overwriting previous implementation");
         auto rootIt = host_function_gc_roots_.find(name);
         if (rootIt != host_function_gc_roots_.end()) {
             unpinExternalRoot(rootIt->second);
@@ -1066,6 +1066,10 @@ std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
     return std::nullopt;
   }
   return host_function_names_[index];
+}
+
+void VM::trackExternalRoot(uint64_t root_id) {
+    if (root_id != 0) tracked_external_roots_.push_back(root_id);
 }
 
 uint64_t VM::pinExternalRoot(const Value &value) {

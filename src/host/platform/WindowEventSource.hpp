@@ -1,4 +1,4 @@
-// WindowEventSource — the X11 window event backend.
+// WindowEventSource - the X11 window event backend.
 //
 // Dependency direction (architecture doc, never reversed):
 //   EventSource (core) <- WindowEventSource (host/platform) <- X11

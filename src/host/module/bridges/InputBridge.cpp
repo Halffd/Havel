@@ -1,4 +1,4 @@
-// InputBridge implementation — extracted from ModularHostBridges.cpp when
+// InputBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -127,7 +127,11 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         "Hotkey registered via hotkey.register", callbackId, true);
 
     if (hotkeyContext.isObjectId()) {
-        vm->pinExternalRoot(hotkeyContext);
+        // The id was dropped here before: pinExternalRoot returns the only
+        // handle that can release the root, so discarding it pinned one root
+        // per hotkey binding for the whole process (318 of them for a large
+        // config). trackExternalRoot hands it to the VM shutdown drain.
+        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
     }
 
     // Always create a persistent goroutine for the hotkey callback.
@@ -224,7 +228,11 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
         "Conditional hotkey", actionCb, false, conditionCb);
 
     if (hotkeyContext.isObjectId()) {
-        vm->pinExternalRoot(hotkeyContext);
+        // The id was dropped here before: pinExternalRoot returns the only
+        // handle that can release the root, so discarding it pinned one root
+        // per hotkey binding for the whole process (318 of them for a large
+        // config). trackExternalRoot hands it to the VM shutdown drain.
+        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
     }
 
     uint32_t persistentGid = vm->createPersistentHotkeyCallback(
@@ -279,7 +287,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
             auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
-                // Conditional hotkeys are always Drop-policy — coalesce
+                // Conditional hotkeys are always Drop-policy - coalesce
                 // redundant triggers on an already queued/running fiber.
                 if (sched->isHotkeyPending(persistentGid)) return;
                 auto *g = sched->get(persistentGid);

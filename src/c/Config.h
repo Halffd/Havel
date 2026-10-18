@@ -43,15 +43,15 @@ void HavelConfig_setDouble(HavelConfig* cfg, const char* key, double value, bool
 bool HavelConfig_has(const HavelConfig* cfg, const char* key);
 bool HavelConfig_remove(HavelConfig* cfg, const char* key);
 
-// Key enumeration — caller frees each entry and the array with HavelConfig_freeKeys
+// Key enumeration - caller frees each entry and the array with HavelConfig_freeKeys
 size_t HavelConfig_getAllKeys(const HavelConfig* cfg, char*** outKeys);
 void   HavelConfig_freeKeys(char** keys, size_t count);
 
-// Config as key=value pairs — caller frees with HavelConfig_freeKeys
+// Config as key=value pairs - caller frees with HavelConfig_freeKeys
 size_t HavelConfig_getConfigs(const HavelConfig* cfg, char*** outEntries);
 void   HavelConfig_freeEntries(char** entries, size_t count);
 
-// Path getter — returns pointer valid until next config operation
+// Path getter - returns pointer valid until next config operation
 const char* HavelConfig_getPath(const HavelConfig* cfg);
 void        HavelConfig_setPath(const char* newPath);
 
@@ -64,7 +64,7 @@ bool HavelConfig_getVerboseConditionLogging(const HavelConfig* cfg);
 void HavelConfig_startFileWatching(HavelConfig* cfg, const char* filename);
 void HavelConfig_stopFileWatching(HavelConfig* cfg);
 
-// Watch callback — receives key and user data
+// Watch callback - receives key and user data
 typedef void (*HavelConfig_WatchCallback)(const char* key, const char* value, void* userData);
 void HavelConfig_watch(HavelConfig* cfg, const char* key, HavelConfig_WatchCallback cb, void* userData);
 

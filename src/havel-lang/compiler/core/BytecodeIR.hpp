@@ -915,7 +915,7 @@ public:
   uint32_t addString(std::string str) {
     // O(1) dedupe via the index map; the vector keeps registration order for
     // serialization. History: this was a linear scan over strings for every
-    // add (O(n^2) total — profiled at 24.8% of a 10k-function build, the
+    // add (O(n^2) total - profiled at 24.8% of a 10k-function build, the
     // super-linear bend in the compile-scaling benchmark).
     auto it = string_index_.find(str);
     if (it != string_index_.end()) return it->second;

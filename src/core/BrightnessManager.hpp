@@ -1,6 +1,9 @@
-#include <X11/Xlib.h>
-#include <X11/extensions/Xrandr.h>
 #pragma once
+#include "havel_platform.h"
+// x11.h gates the Xlib/Xrandr includes behind !HAVEL_PLATFORM_WINDOWS and
+// supplies x11:: aliases where X11 exists. On Windows it contributes nothing
+// that needs Xlib, so every declaration below naming an X11 type is gated.
+#include "x11.h"
 #include "core/config/ConfigManager.hpp"
 #include "../utils/Logger.hpp"
 #include <cstdlib>
@@ -42,6 +45,12 @@ struct zxdg_output_v1;
 #include <memory>
 #include <array>
 #include <cmath>
+// This header declares mutable map<string, ...> members below, and says
+// `using namespace std`, so it needs <map> itself. It used to arrive
+// transitively through <X11/Xlib.h>; now that the X11 include is behind x11.h
+// and is empty on Windows, nothing supplies it and every consumer that
+// includes this header without <map> already in scope fails.
+#include <map>
 #include <regex>
 #include <string>
 #include <vector>
@@ -98,8 +107,13 @@ public:
     bool decreaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
     bool increaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
     bool setBrightnessBacklight(const std::string& monitor_name, double brightness);
+#if !HAVEL_PLATFORM_WINDOWS
+    // Both walk a live Xrandr gamma ramp, and one takes an XRRCrtcGamma. That
+    // type has no Windows spelling and neither has a caller there, so they are
+    // withheld rather than retyped against an invented stand-in struct.
     double getCurrentBrightnessX11(const std::string& monitor_name);
     double extractBrightnessFromGammaRamp(XRRCrtcGamma* gamma, const std::string& monitor_name) const;
+#endif
 
     // === COMBINED OPERATIONS ===
     bool setBrightnessAndRGB(double brightness, double red, double green, double blue);
@@ -155,8 +169,14 @@ public:
     // Per-monitor shadow lift storage
     static std::unordered_map<std::string, double> monitorShadowLifts;
     private:
+#if !HAVEL_PLATFORM_WINDOWS
+    // An X11 Display and root Window have no Windows equivalent. Windows
+    // enumerates monitors through DisplayManager::GetMonitors() and drives the
+    // ramp through SetDeviceGammaRamp, so neither field is needed there and
+    // neither is stubbed to void*.
     Display* x11_display;
     Window x11_root;
+#endif
     
     // Wayland specific members
     #ifdef __WAYLAND__
@@ -211,14 +231,22 @@ public:
     int rgbToKelvin(const RGBColor& rgb) const;
     
     // === BACKEND IMPLEMENTATIONS ===
+#if !HAVEL_PLATFORM_WINDOWS
+    // Direct Xrandr and sysfs access. Windows has neither an XRR interface nor
+    // a /sys/class/backlight tree, so these exist only where they apply.
     bool setBrightnessXrandr(const string& monitor, double brightness);
     bool setBrightnessXrandr(double brightness);
     double getBrightnessXrandr(const string& monitor);
     double getBrightnessSysfs(const string& monitor);
+    double getGammaXrandr(const string& monitor);
+#endif
     
+    // These three only record the requested values and then call
+    // applyAllSettings, which is the single platform seam: XRRSetCrtcGamma on
+    // X11, SetDeviceGammaRamp on Windows. The Xrandr in the name records where
+    // the values historically came from, not the path they now take.
     bool setGammaXrandrRGB(const string& monitor, double red, double green, double blue);
     bool setGammaXrandrRGB(double red, double green, double blue);
-    double getGammaXrandr(const string& monitor);
     RGBColor getGammaXrandrRGB(const string& monitor) const;
     
     bool setBrightnessWayland(const string& monitor, double brightness);

@@ -60,7 +60,7 @@ void EventRuntime::dispatch() {
     while (!local.empty()) {
         QueuedEvent event = std::move(local.front());
         local.pop_front();
-        // The matching handlers were snapshotted at publish time — a
+        // The matching handlers were snapshotted at publish time - a
         // cancel after publish cannot retroactively drop the event.
         for (auto &handler : event.handlers) {
             if (handler) {

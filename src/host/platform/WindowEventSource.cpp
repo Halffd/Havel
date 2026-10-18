@@ -20,7 +20,7 @@ void WindowEventSource::start(EventRuntime &runtime) {
 void WindowEventSource::stop() {
     running_.store(false);
     // Always join: a thread whose loop exited early (e.g. XOpenDisplay
-    // failed in a headless session) is still joinable — destroying a
+    // failed in a headless session) is still joinable - destroying a
     // joinable thread is std::terminate.
     if (thread_.joinable()) {
         thread_.join();
@@ -33,7 +33,7 @@ void WindowEventSource::loop() {
     // the two loops independent (X11 allows per-connection select masks).
     Display *display = XOpenDisplay(nullptr);
     if (!display) {
-        ::havel::error("[WindowEventSource] XOpenDisplay failed — window "
+        ::havel::error("[WindowEventSource] XOpenDisplay failed - window "
                        "events disabled (headless?)");
         running_.store(false);
         return;
@@ -56,7 +56,7 @@ void WindowEventSource::loop() {
             continue;
         }
         if (XNextEvent(display, &event) != 0) {
-            ::havel::error("[WindowEventSource] XNextEvent failed — X11 "
+            ::havel::error("[WindowEventSource] XNextEvent failed - X11 "
                            "connection error");
             break;
         }

@@ -2,8 +2,17 @@
 #include "utils/ExitHandler.hpp"
 #include "utils/HeadlessRuntime.hpp"
 #include "utils/Logger.hpp"
+#include "havel_platform.h"
+#if HAVEL_PLATFORM_WINDOWS
+#include "havel-lang/compiler/platform/file.hpp"
+#endif
+#if HAVEL_PLATFORM_POSIX
 #include "x11.h"
 #include <X11/extensions/Xrandr.h>
+#endif
+#if HAVEL_PLATFORM_WINDOWS
+#include <windows.h>
+#endif
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -17,8 +26,10 @@
 #endif
 
 namespace havel {
+#if HAVEL_PLATFORM_POSIX
 Display *DisplayManager::display = nullptr;
 ::Window DisplayManager::root = 0;
+#endif
 bool DisplayManager::initialized = false;
 bool DisplayManager::headlessMode = false;
 std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
@@ -31,6 +42,13 @@ void DisplayManager::Initialize() {
   // session. HAVEL_HEADLESS is in the environment from the process's first
   // instruction, so treat it as authoritative.
   if (headlessMode || isHeadlessRuntime()) return;
+#if HAVEL_PLATFORM_WINDOWS
+  // Windows has no Display connection to make. Monitor enumeration goes
+  // through EnumDisplayMonitors, which needs no setup, so being "initialized"
+  // means only that headless was not requested.
+  initialized = true;
+  registerExitCleanup([]() { DisplayManager::Close(); });
+#else
   const char* displayName = std::getenv("DISPLAY");
     if (!displayName || displayName[0] == '\0') {
       displayName = ":0";
@@ -50,8 +68,10 @@ void DisplayManager::Initialize() {
         DisplayManager::Close();
       });
     }
+#endif
 }
 
+#if HAVEL_PLATFORM_POSIX
 void DisplayManager::Close() {
   if (display) {
     XUngrabKeyboard(display, CurrentTime);
@@ -65,7 +85,9 @@ void DisplayManager::Close() {
     cached_monitors.clear();
   }
 }
+#endif
 
+#if HAVEL_PLATFORM_POSIX
 Display *DisplayManager::GetDisplay() {
   Initialize();
   if (!display || display == (Display *)0xbebebebebebebebe) {
@@ -74,7 +96,9 @@ Display *DisplayManager::GetDisplay() {
   }
   return display;
 }
+#endif
 
+#if HAVEL_PLATFORM_POSIX
 ::Window DisplayManager::GetRootWindow() {
   Initialize();
   if (!display) {
@@ -82,8 +106,15 @@ Display *DisplayManager::GetDisplay() {
   }
   return root;
 }
+#endif
 
+#if HAVEL_PLATFORM_POSIX
 bool DisplayManager::IsInitialized() { return display != nullptr; }
+#else
+// No connection to hold: on Windows "initialized" is the flag Initialize()
+// sets once headless mode has been ruled out.
+bool DisplayManager::IsInitialized() { return initialized; }
+#endif
 
 // ===== MONITOR MANAGEMENT METHODS =====
 
@@ -179,10 +210,15 @@ void DisplayManager::RefreshMonitorCache() {
 #endif
   }
 
+#if HAVEL_PLATFORM_WINDOWS
+  cached_monitors = GetMonitorsWindows();
+#else
   // Fall back to X11
   cached_monitors = GetMonitorsX11();
+#endif
 }
 
+#if HAVEL_PLATFORM_POSIX
 std::vector<DisplayManager::MonitorInfo> DisplayManager::GetMonitorsX11() {
   std::vector<MonitorInfo> monitors;
 
@@ -280,14 +316,59 @@ int DisplayManager::X11ErrorHandler(Display *display, XErrorEvent *event) {
   return 0; // Continue execution
 }
 
+#endif  // HAVEL_PLATFORM_POSIX
+
+#if HAVEL_PLATFORM_WINDOWS
+
+namespace {
+struct MonitorEnumCtx {
+  std::vector<DisplayManager::MonitorInfo> *list;
+};
+
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT rect, LPARAM param) {
+  auto *ctx = reinterpret_cast<MonitorEnumCtx *>(param);
+  DisplayManager::MonitorInfo info{};
+  MONITORINFOEXW mi{};
+  mi.cbSize = sizeof(mi);
+  if (::GetMonitorInfoW(hMonitor, &mi)) {
+    info.name      = platform::wide_to_utf8(std::wstring(mi.szDevice));
+    info.isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+  }
+  if (rect) {
+    info.x      = rect->left;
+    info.y      = rect->top;
+    info.width  = rect->right  - rect->left;
+    info.height = rect->bottom - rect->top;
+  }
+  // HMONITOR is the monitor identity on Windows; XRandR output/crtc have no
+  // counterpart, so both fields carry the handle.
+  info.id      = reinterpret_cast<wID>(hMonitor);
+  info.crtc_id = reinterpret_cast<wID>(hMonitor);
+  ctx->list->push_back(info);
+  return TRUE;
+}
+}  // namespace
+
+std::vector<DisplayManager::MonitorInfo> DisplayManager::GetMonitorsWindows() {
+  std::vector<MonitorInfo> monitors;
+  MonitorEnumCtx ctx{&monitors};
+  ::EnumDisplayMonitors(nullptr, nullptr, MonitorEnumProc,
+                        reinterpret_cast<LPARAM>(&ctx));
+  return monitors;
+}
+
+#endif  // HAVEL_PLATFORM_WINDOWS
+
 // ===== CLEANUP =====
 
 DisplayManager::Cleanup::~Cleanup() {
+#if HAVEL_PLATFORM_POSIX
   if (display) {
     XCloseDisplay(display);
     display = nullptr;
     initialized = false;
   }
+#endif
 }
 std::vector<std::string> DisplayManager::GetMonitorNames() {
   auto monitors = GetMonitors();

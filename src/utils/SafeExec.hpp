@@ -1,4 +1,6 @@
 #pragma once
+// pid_t has no MSVC spelling; havel_platform.h supplies the typedef where it does.
+#include "havel_platform.h"
 
 #include "havel-lang/common/Export.hpp"
 #include <string>

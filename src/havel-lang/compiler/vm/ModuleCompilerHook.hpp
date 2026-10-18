@@ -4,7 +4,7 @@
 //
 // The VM must never include Parser/ByteCompiler directly: a runtime-only
 // build (no SDK) has to link and run. Every dynamic compile the VM needs
-// — module `use` loads, loadScript, eval, runInContext — goes through
+// - module `use` loads, loadScript, eval, runInContext - goes through
 // this process-wide hook. SDK hosts register SourceModuleCompilerHook at
 // startup (registerSourceModuleCompilerHook); runtime-only hosts register
 // a bytecode loader or nothing, in which case source imports fail with a

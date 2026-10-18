@@ -132,19 +132,19 @@ struct VMExecutionResult {
     YIELD,      // Instruction completed normally, return value on stack
     SUSPENDED,  // Fiber suspended (waiting for event), state frozen
     RETURNED,   // Function returned, value in result_value
-    ERROR,      // Exception thrown, message in error_message
+    THREW,      // Exception thrown, message in error_message
     DEBUG_BREAK // Breakpoint hit, debugger should take control
   };
 
   Type type;
   Value result_value;        // For YIELD or RETURNED
-  std::string error_message; // For ERROR
+  std::string error_message; // For THREW
 
   // Default constructor
   VMExecutionResult();
 
   // Convenience constructors
-  static VMExecutionResult Yield(const Value &value) {
+  static VMExecutionResult Yielded(const Value &value) {
     VMExecutionResult r;
     r.type = YIELD;
     r.result_value = value;
@@ -167,7 +167,7 @@ struct VMExecutionResult {
 
   static VMExecutionResult Error(const std::string &msg) {
     VMExecutionResult r;
-    r.type = ERROR;
+    r.type = THREW;
     r.error_message = msg;
     r.result_value = Value();
     return r;
@@ -362,7 +362,9 @@ public:
   // The wrapper NAME is an ambiguous concatenation ($module_fn_<key>_<field>),
   // so serializeGlobals must NOT re-parse it; it reads this table instead.
   std::unordered_map<std::string, std::pair<std::string, std::string>> host_module_wrapper_meta_;
-  std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
+  std::unordered_map<std::string, uint64_t> host_function_gc_roots_;
+  // Roots owned by the VM for its whole lifetime, released at shutdown.
+  std::vector<uint64_t> tracked_external_roots_; // Name -> pinned GC root ID
   std::unordered_map<std::string, uint64_t>
       module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
   // Persistent class registry: class name -> class prototype object
@@ -1814,6 +1816,15 @@ public:
   const VMConfig &vmConfig() const { return vm_config_; }
   uint64_t getMemoryUsage() const { return heap_.approxHeapBytes(); }
   uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
+
+  // Own a pinned root for the VM's lifetime.
+  //
+  // pinExternalRoot() returns an id the caller must keep to release it. Several
+  // call sites dropped the id on the floor - notably InputBridge's hotkey
+  // registration - which pinned one root per hotkey binding that no shutdown
+  // path could ever release. This records the id so the existing shutdown loop
+  // can release it alongside host_function_gc_roots_.
+  void trackExternalRoot(uint64_t root_id);
 
   void setEventQueue(class EventQueue *eq);
   class EventQueue *getEventQueue() { return event_queue_; }

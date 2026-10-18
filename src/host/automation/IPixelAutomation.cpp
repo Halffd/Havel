@@ -1,4 +1,4 @@
-// IPixelAutomation.cpp — Qt-free half of the pixel service surface.
+// IPixelAutomation.cpp - Qt-free half of the pixel service surface.
 //
 // The value types (Color, Region, ImageMatch) are used by the pixel module in
 // havel_modules, which must not pull havel_gui. Their out-of-line methods
@@ -27,10 +27,10 @@ std::string Color::toHex() const {
     return c.toHex();
 }
 
-bool Color::near(const Color& other, int tolerance) const {
+bool Color::IsNear(const Color& other, int tolerance) const {
     havel::Color c1(r, g, b, a);
     havel::Color c2(other.r, other.g, other.b, other.a);
-    return c1.near(c2, tolerance);
+    return c1.IsNear(c2, tolerance);
 }
 
 // ============================================================================

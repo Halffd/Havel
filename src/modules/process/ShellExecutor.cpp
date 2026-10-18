@@ -7,14 +7,61 @@
 #include "ShellExecutor.hpp"
 #include "core/process/Launcher.hpp"
 #include "utils/Logger.hpp"
+#include "havel_platform.h"
+#include "havel-lang/compiler/platform/file.hpp"
+#include "havel-lang/compiler/platform/platform_win.hpp"
+#if HAVEL_PLATFORM_POSIX
 #include <unistd.h>
 #include <sys/wait.h>
+#endif
 #include <cstring>
 #include <cerrno>
 #include <vector>
 #include <string>
 
 namespace havel {
+
+#if HAVEL_PLATFORM_WINDOWS
+namespace {
+// Win32 command-line quoting, matching what CommandLineToArgvW parses back.
+// An argument is quoted when it is empty or contains whitespace or a double
+// quote; a run of backslashes is doubled when it precedes a quote or the
+// closing quote, and otherwise copied through.
+//
+// The conversion to UTF-16 happens first and the quoting is done on the wide
+// string, so a multi-byte UTF-8 argument is never split mid-character.
+std::wstring quoteForWindows(const std::string& arg) {
+  const std::wstring w = platform::utf8_to_wide(arg);
+  if (w.find_first_of(L" \t\n\v\f\"") == std::wstring::npos) return w;
+
+  std::wstring out;
+  out.push_back(L'"');
+  size_t backslashes = 0;
+  for (const wchar_t c : w) {
+    if (c == L'\\') {
+      ++backslashes;
+      continue;
+    }
+    if (c == L'"') {
+      out.append(backslashes * 2 + 1, L'\\');
+    } else {
+      out.append(backslashes, L'\\');
+    }
+    out.push_back(c);
+    backslashes = 0;
+  }
+  // Trailing backslashes precede the closing quote, so they must be doubled.
+  out.append(backslashes * 2, L'\\');
+  out.push_back(L'"');
+  return out;
+}
+
+std::string lastErrorText(const char* what) {
+  return std::string(what) + " failed (Win32 error " +
+         std::to_string(static_cast<unsigned long>(::GetLastError())) + ")";
+}
+}  // namespace
+#endif  // HAVEL_PLATFORM_WINDOWS
 
 // Whitelist of allowed commands for shell execution
 static const std::vector<std::string> ALLOWED_COMMANDS = {
@@ -100,8 +147,8 @@ ShellResult ShellExecutor::execute(const std::string& executable,
     auto result = Launcher::run(executable, args);
 
     ShellResult shellResult;
-    shellResult.stdout = result.stdout;
-    shellResult.stderr = result.stderr;
+    shellResult.out = result.out;
+    shellResult.err = result.err;
     shellResult.exitCode = result.exitCode;
     shellResult.success = result.success;
     shellResult.error = result.error;
@@ -133,6 +180,7 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
         }
     }
     
+    #if HAVEL_PLATFORM_POSIX
     // Implement proper Unix pipes with pipe()/fork()/dup2()/exec()
     // Pipeline: cmd1 | cmd2 | cmd3 | ... | cmdN
     
@@ -252,7 +300,7 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
     char buffer[4096];
     ssize_t bytesRead;
     while ((bytesRead = read(outputPipe[0], buffer, sizeof(buffer))) > 0) {
-        result.stdout.append(buffer, bytesRead);
+        result.out.append(buffer, bytesRead);
     }
     close(outputPipe[0]);
     
@@ -271,6 +319,164 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
     result.success = (lastExitCode == 0);
     
     return result;
+#else  // HAVEL_PLATFORM_POSIX
+    // Windows pipeline: CreatePipe plus one CreateProcessW per command, with
+    // the three std handles wired through STARTF_USESTDHANDLES. That is the
+    // direct counterpart of pipe()/fork()/dup2()/execvp()/waitpid() above,
+    // and it keeps the same semantics: only the last command's stdout and
+    // stderr are captured, every earlier command's stderr stays on the
+    // process's own stderr, and the exit code reported is the last one's.
+    const int numCommands = static_cast<int>(commands.size());
+
+    // Command i reads stdin from readHandle[i - 1] and writes stdout to
+    // writeHandle[i]; the last command writes both stdout and stderr to the
+    // capture pipe.
+    std::vector<HANDLE> readHandle(numCommands, INVALID_HANDLE_VALUE);
+    std::vector<HANDLE> writeHandle(numCommands, INVALID_HANDLE_VALUE);
+    HANDLE outRead = INVALID_HANDLE_VALUE;
+    HANDLE outWrite = INVALID_HANDLE_VALUE;
+
+    SECURITY_ATTRIBUTES inheritable{};
+    inheritable.nLength = sizeof(inheritable);
+    inheritable.bInheritHandle = TRUE;
+
+    auto closeAll = [&]() {
+        if (outRead != INVALID_HANDLE_VALUE) ::CloseHandle(outRead);
+        if (outWrite != INVALID_HANDLE_VALUE) ::CloseHandle(outWrite);
+        for (HANDLE h : readHandle) if (h != INVALID_HANDLE_VALUE) ::CloseHandle(h);
+        for (HANDLE h : writeHandle) if (h != INVALID_HANDLE_VALUE) ::CloseHandle(h);
+        outRead = outWrite = INVALID_HANDLE_VALUE;
+        for (HANDLE& h : readHandle) h = INVALID_HANDLE_VALUE;
+        for (HANDLE& h : writeHandle) h = INVALID_HANDLE_VALUE;
+    };
+
+    auto fail = [&](const char* what) {
+        result.success = false;
+        result.error = lastErrorText(what);
+        result.exitCode = 1;
+        closeAll();
+    };
+
+    if (!::CreatePipe(&outRead, &outWrite, &inheritable, 0)) { fail("CreatePipe"); return result; }
+    // Nothing but this process reads the capture pipe. A child holding its read
+    // end open would keep the write end from ever signalling EOF below.
+    ::SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
+
+    for (int i = 0; i < numCommands - 1; ++i) {
+        if (!::CreatePipe(&readHandle[i], &writeHandle[i], &inheritable, 0)) {
+            fail("CreatePipe");
+            return result;
+        }
+        // Only the command that consumes this pipe needs the read end.
+        ::SetHandleInformation(readHandle[i], HANDLE_FLAG_INHERIT, 0);
+    }
+
+    // Inheritance is toggled per child rather than set once for every pipe.
+    // Leaving all ends inheritable lets an early command hold open the write
+    // end of a later pipe, so that pipe never reaches EOF and the read loop
+    // below blocks until every child exits - which a long pipeline can
+    // deadlock on.
+    auto setInheritable = [](HANDLE h, bool on) {
+        if (h == INVALID_HANDLE_VALUE || h == nullptr) return;
+        ::SetHandleInformation(h, HANDLE_FLAG_INHERIT,
+                               on ? HANDLE_FLAG_INHERIT : 0);
+    };
+
+    std::vector<HANDLE> processes;
+    std::vector<HANDLE> threads;
+
+    for (int i = 0; i < numCommands; ++i) {
+        const auto args = parseCommandArgs(commands[i]);
+        if (args.empty()) {
+            fail("CreateProcess");
+            result.exitCode = 127;
+            return result;
+        }
+
+        std::wstring commandLine;
+        for (size_t k = 0; k < args.size(); ++k) {
+            if (k) commandLine.push_back(L' ');
+            commandLine += quoteForWindows(args[k]);
+        }
+        std::vector<wchar_t> mutableCommandLine(commandLine.begin(), commandLine.end());
+        mutableCommandLine.push_back(L'\0');
+
+        HANDLE hIn  = (i > 0)               ? readHandle[i - 1] : ::GetStdHandle(STD_INPUT_HANDLE);
+        HANDLE hOut = (i < numCommands - 1) ? writeHandle[i]   : outWrite;
+        HANDLE hErr = (i < numCommands - 1) ? ::GetStdHandle(STD_ERROR_HANDLE) : outWrite;
+
+        setInheritable(hIn, true);
+        setInheritable(hOut, true);
+        setInheritable(hErr, true);
+
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = hIn;
+        startup.hStdOutput = hOut;
+        startup.hStdError = hErr;
+
+        PROCESS_INFORMATION pi{};
+        // lpApplicationName is null so CreateProcessW searches PATH, which is
+        // what execvp did. CREATE_NO_WINDOW keeps a console flash out of a
+        // background service.
+        const BOOL created = ::CreateProcessW(nullptr, mutableCommandLine.data(),
+                                             nullptr, nullptr, TRUE,
+                                             CREATE_NO_WINDOW, nullptr, nullptr,
+                                             &startup, &pi);
+
+        setInheritable(hIn, false);
+        setInheritable(hOut, false);
+        setInheritable(hErr, false);
+
+        if (!created) {
+            const std::string why = lastErrorText("CreateProcess");
+            // Reap whatever already started before reporting the failure.
+            for (HANDLE p : processes) {
+                ::WaitForSingleObject(p, 2000);
+                ::CloseHandle(p);
+            }
+            for (HANDLE t : threads) ::CloseHandle(t);
+            fail("CreateProcess");
+            result.error = why;
+            return result;
+        }
+        processes.push_back(pi.hProcess);
+        threads.push_back(pi.hThread);
+    }
+
+    // The parent must drop every pipe end it no longer needs, or the capture
+    // pipe never reaches EOF.
+    for (HANDLE h : writeHandle) if (h != INVALID_HANDLE_VALUE) ::CloseHandle(h);
+    for (HANDLE h : readHandle) if (h != INVALID_HANDLE_VALUE) ::CloseHandle(h);
+    ::CloseHandle(outWrite);
+    outWrite = INVALID_HANDLE_VALUE;
+
+    char buffer[4096];
+    DWORD bytesRead = 0;
+    while (::ReadFile(outRead, buffer, sizeof(buffer), &bytesRead, nullptr) &&
+           bytesRead > 0) {
+        result.out.append(buffer, bytesRead);
+    }
+    ::CloseHandle(outRead);
+    outRead = INVALID_HANDLE_VALUE;
+
+    int lastExitCode = 0;
+    for (size_t k = 0; k < processes.size(); ++k) {
+        ::WaitForSingleObject(processes[k], INFINITE);
+        DWORD code = 0;
+        if (::GetExitCodeProcess(processes[k], &code)) {
+            lastExitCode = static_cast<int>(code);
+        }
+        ::CloseHandle(processes[k]);
+        ::CloseHandle(threads[k]);
+    }
+
+    result.exitCode = lastExitCode;
+    result.success = (lastExitCode == 0);
+
+    return result;
+#endif  // HAVEL_PLATFORM_POSIX
 }
 
 std::vector<std::string> ShellExecutor::splitPipes(const std::string& command) {
@@ -329,8 +535,8 @@ ShellResult ShellExecutor::executeSingle(const std::string& command, bool useShe
     
     if (useShell) {
         auto launcherResult = Launcher::runShell(command);
-        result.stdout = launcherResult.stdout;
-        result.stderr = launcherResult.stderr;
+        result.out = launcherResult.out;
+        result.err = launcherResult.err;
         result.exitCode = launcherResult.exitCode;
         result.success = launcherResult.success;
         result.error = launcherResult.error;
@@ -346,8 +552,8 @@ ShellResult ShellExecutor::executeSingle(const std::string& command, bool useShe
         
         auto launcherResult = Launcher::run(args[0], 
                                             std::vector<std::string>(args.begin() + 1, args.end()));
-        result.stdout = launcherResult.stdout;
-        result.stderr = launcherResult.stderr;
+        result.out = launcherResult.out;
+        result.err = launcherResult.err;
         result.exitCode = launcherResult.exitCode;
         result.success = launcherResult.success;
         result.error = launcherResult.error;

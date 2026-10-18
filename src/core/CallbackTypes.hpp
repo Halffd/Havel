@@ -1,5 +1,13 @@
 #pragma once
+#include "havel_platform.h"
+// evdev's input_event/input_event codes. Nothing in this header actually
+// refers to them - InputEvent and InputEventKind are declared below in
+// terms of plain ints - so on Windows this include is simply absent rather
+// than replaced. Kept (gated, not deleted) because Linux input paths
+// include this header and may come to rely on it.
+#if !HAVEL_PLATFORM_WINDOWS
 #include <linux/input.h>
+#endif
 #include <functional>
 #include <string>
 

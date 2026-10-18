@@ -4,9 +4,7 @@
 #include <vector>
 #include "havel_platform.h"
 
-#if HAVEL_PLATFORM_LINUX
-#  include <linux/input-event-codes.h>
-#endif
+#include "input_event_codes.hpp"
 
 #if HAVEL_PLATFORM_WINDOWS
 #include <windows.h>

@@ -1,5 +1,6 @@
+#include "havel_platform.h"
+#include "x11.h"
 #include "core/display/DisplayManager.hpp"
-#include <X11/Xatom.h>
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
@@ -7,17 +8,24 @@
 #include "../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "window/WindowManagerDetector.hpp"
-#include <X11/Xlib.h>
-#include <X11/extensions/Xrandr.h>
 #include <algorithm>
 #include <cmath>
 
 #ifdef __WAYLAND__
 #include <wayland-client.h>
 #endif
+#if HAVEL_PLATFORM_POSIX
+// Backlight sysfs access. Windows drives the panel through the GDI gamma ramp
+// instead, so none of these exist there.
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
+// GDI gamma ramp access. The shim is what defines NOMINMAX: a plain
+// <windows.h> defines min/max macros that turn every std::min/std::max in this
+// file into std::( and MSVC rejects it. The shim also guards itself, so this is
+// safe to include unconditionally.
+#include "havel-lang/compiler/platform/platform_win.hpp"
 
 #ifdef __WAYLAND__
 // Wayland protocols
@@ -57,6 +65,29 @@ static std::mutex wayland_mutex;
 
 namespace havel {
 
+#if HAVEL_PLATFORM_WINDOWS
+namespace {
+
+// GDI ramps are a fixed 3 x WORD table, 256 entries per channel.
+constexpr int kWinGammaSize = 256;
+
+// Opens a display DC for a monitor named the way DisplayManager::GetMonitorNames()
+// names them: the UTF-8 form of GetMonitorInfoW szDevice, e.g. "\\.\DISPLAY1".
+// That is the same string CreateDCW wants, so one identifier covers both.
+// An empty name opens the primary display, which is what the all-monitor
+// overloads use. Returns null when there is no display device at all, which
+// is the normal case under the headless sandbox.
+HDC openMonitorDC(const std::string &monitor) {
+  if (monitor.empty()) {
+    return ::CreateDCW(nullptr, nullptr, nullptr, nullptr);
+  }
+  const std::wstring device(monitor.begin(), monitor.end());
+  return ::CreateDCW(nullptr, device.c_str(), nullptr, nullptr);
+}
+
+}  // namespace
+#endif  // HAVEL_PLATFORM_WINDOWS
+
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
   // Check if we're running under Wayland
@@ -76,11 +107,24 @@ BrightnessManager::BrightnessManager() {
     } catch (const std::exception &e) {
       error("Failed to initialize Wayland backend: " + std::string(e.what()));
       // Fall back to X11
+#if !HAVEL_PLATFORM_WINDOWS
       x11_display = DisplayManager::GetDisplay();
       x11_root = DisplayManager::GetRootWindow();
       displayMethod = "x11";
+#endif
     }
   } else {
+#if HAVEL_PLATFORM_WINDOWS
+    // Windows has no X11 display to probe and no WAYLAND_DISPLAY to honour.
+    // Enumerate through DisplayManager and drive each panel through the GDI
+    // gamma ramp; "none" means no display device, which is expected headless.
+    DisplayManager::Initialize();
+    displayMethod = "gdi";
+    if (DisplayManager::GetMonitors().empty()) {
+      displayMethod = "none";
+      debug("No display devices available; brightness control is inactive");
+    }
+#else
     // Default to X11. GetDisplay() returns null under the headless sandbox
     // instead of throwing, but GetRootWindow() does throw -- and an
     // unconstructed BrightnessManager cannot serve the display-independent
@@ -94,6 +138,7 @@ BrightnessManager::BrightnessManager() {
       displayMethod = "none";
       debug("No X11 display available; brightness control is inactive");
     }
+#endif
   }
 
   vector<string> monitors = getConnectedMonitors();
@@ -376,6 +421,15 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() const {
     return std::vector<std::string>(monitors);
   }
 
+#if HAVEL_PLATFORM_WINDOWS
+  // DisplayManager already enumerates through EnumDisplayMonitors and yields
+  // GetMonitorInfoW szDevice names, which is what CreateDCW wants.
+  monitors.clear();
+  for (const auto &name : DisplayManager::GetMonitorNames()) {
+    monitors.push_back(name);
+  }
+  return monitors;
+#else
   if (displayMethod == "wayland") {
 #ifdef __WAYLAND__
     // Lock the mutex to safely access wayland_outputs
@@ -433,6 +487,7 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() const {
     XRRFreeScreenResources(screen_res);
     return monitors;
   }
+#endif
 }
 // Shadow lift with highlight protection and midtone bias
 BrightnessManager::RGBColor BrightnessManager::applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
@@ -542,6 +597,7 @@ double BrightnessManager::getShadowLift() const {
   }
   return getShadowLift(primaryMonitor);
 }
+#if !HAVEL_PLATFORM_WINDOWS
 double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
   if (!x11_display)
     return 1.0;
@@ -566,7 +622,7 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
             XRRGetCrtcGamma(x11_display, output_info->crtc);
         if (crtc_gamma) {
           // Brightness estimate: the ramp's TOP value IS the applied
-          // brightness — the SET path writes
+          // brightness - the SET path writes
           // value = brightness * tint * 65535 at j = gamma_size-1 (the
           // gamma curve term is pow(1, ...) = 1 at the top). Averaging the
           // whole ramp returned HALF the actual brightness for a linear
@@ -595,6 +651,28 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
   XRRFreeScreenResources(screen_res);
   return brightness;
 }
+#else
+// Windows: the live ramp is read straight from the display device. The top
+// entry IS the applied brightness for the same reason it is on X11: the set
+// path writes brightness * tint * 65535 there, because the gamma curve term
+// is pow(1, ...) == 1 at the top. Averaging the ramp instead would read back
+// half the real value for a linear ramp.
+double BrightnessManager::getBrightnessGamma(const std::string &monitor) const {
+  HDC dc = openMonitorDC(monitor);
+  if (!dc) {
+    return 1.0;
+  }
+  std::array<WORD, 3 * kWinGammaSize> ramp{};
+  const BOOL ok = ::GetDeviceGammaRamp(dc, ramp.data());
+  ::DeleteDC(dc);
+  if (!ok) {
+    return 1.0;
+  }
+  const double top =
+      static_cast<double>(ramp[0 * kWinGammaSize + (kWinGammaSize - 1)]) / 65535.0;
+  return std::clamp(top, 0.0, 1.0);
+}
+#endif
 
 /**
  * Safely extracts brightness value from gamma ramp using proper bounds checking
@@ -623,6 +701,7 @@ double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
  * @param monitor_name - Monitor identifier for logging purposes
  * @return brightness value [0.0, 1.0] or -1.0 on error
  */
+#if !HAVEL_PLATFORM_WINDOWS
 double BrightnessManager::extractBrightnessFromGammaRamp(
     XRRCrtcGamma *gamma, const std::string &monitor_name) const {
   // Validate input parameters
@@ -673,11 +752,13 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
 
   return clamped_brightness;
 }
+#endif
 
 /**
  * Gets current brightness for specified monitor using X11/XRandR
  * Handles all resource cleanup automatically via RAII wrapper
  */
+#if !HAVEL_PLATFORM_WINDOWS
 double
 BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
   if (!x11_display) {
@@ -770,6 +851,8 @@ BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
 
   return brightness;
 }
+#endif
+#if !HAVEL_PLATFORM_WINDOWS
 bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
                                             double brightness) {
   if (!x11_display)
@@ -845,9 +928,15 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
   XRRFreeScreenResources(screen_res);
   return success;
 }
+#endif
 bool BrightnessManager::setBrightnessGamma(const std::string &monitor, double brightness) {
+#if HAVEL_PLATFORM_WINDOWS
+  // Nothing to guard: SetDeviceGammaRamp needs no connection state. The
+  // X11 branch below still returns false with no display.
+#else
   if (!x11_display)
       return false;
+#endif
 
   brightness = std::clamp(brightness, 0.0, 2.0);
   
@@ -858,8 +947,11 @@ bool BrightnessManager::setBrightnessGamma(const std::string &monitor, double br
 }
 
 bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor, double red, double green, double blue) {
+#if HAVEL_PLATFORM_WINDOWS
+#else
   if (!x11_display)
       return false;
+#endif
 
   red = std::clamp(red, 0.1, 10.0);
   green = std::clamp(green, 0.1, 10.0);
@@ -872,6 +964,7 @@ bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor, double red
 }
 
 // New helper function that combines all settings
+#if !HAVEL_PLATFORM_WINDOWS
 bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   if (!x11_display)
       return false;
@@ -951,6 +1044,54 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   XRRFreeScreenResources(screen_res);
   return success;
 }
+#else
+// Windows: the same inputs and the same combination order as the XRR path
+// below - gamma curve, then temperature tint, then brightness - written into
+// the fixed 256-entry GDI ramp.
+bool BrightnessManager::applyAllSettings(const std::string &monitor) {
+  HDC dc = openMonitorDC(monitor);
+  if (!dc) {
+    error("applyAllSettings: no display device for monitor '" + monitor + "'");
+    return false;
+  }
+
+  const double currentBrightness =
+      brightness.count(monitor) ? brightness[monitor] : 1.0;
+  const RGBColor currentGamma = gammaRGB.count(monitor)
+                                     ? gammaRGB[monitor]
+                                     : RGBColor{1.0, 1.0, 1.0};
+  RGBColor tint = {1.0, 1.0, 1.0};
+  if (temperature.count(monitor)) {
+    tint = kelvinToRGB(temperature[monitor]);
+  }
+
+  std::array<WORD, 3 * kWinGammaSize> ramp{};
+  for (int j = 0; j < kWinGammaSize; ++j) {
+    const double normalized = static_cast<double>(j) / (kWinGammaSize - 1);
+    const double rv = std::pow(normalized, 1.0 / currentGamma.red) * tint.red *
+                      currentBrightness;
+    const double gv = std::pow(normalized, 1.0 / currentGamma.green) * tint.green *
+                      currentBrightness;
+    const double bv = std::pow(normalized, 1.0 / currentGamma.blue) * tint.blue *
+                      currentBrightness;
+    ramp[0 * kWinGammaSize + j] =
+        static_cast<WORD>(std::clamp(rv * 65535.0, 0.0, 65535.0));
+    ramp[1 * kWinGammaSize + j] =
+        static_cast<WORD>(std::clamp(gv * 65535.0, 0.0, 65535.0));
+    ramp[2 * kWinGammaSize + j] =
+        static_cast<WORD>(std::clamp(bv * 65535.0, 0.0, 65535.0));
+  }
+
+  const BOOL ok = ::SetDeviceGammaRamp(dc, ramp.data());
+  ::DeleteDC(dc);
+  if (!ok) {
+    error("applyAllSettings: SetDeviceGammaRamp failed for monitor '" +
+          monitor + "'");
+    return false;
+  }
+  return true;
+}
+#endif
 
 // Helper: get monitor name by index (for hotkeys script compatibility)
 string BrightnessManager::getMonitorByIndex(size_t index) const {
@@ -1369,6 +1510,7 @@ bool BrightnessManager::increaseGamma(const string& monitor, int amount) {
 }
 
 // === SYSFS BRIGHTNESS FALLBACK ===
+#if !HAVEL_PLATFORM_WINDOWS
     double
     BrightnessManager::getBrightnessSysfs(const std::string &monitor) {
   // Try common backlight paths
@@ -1394,8 +1536,10 @@ bool BrightnessManager::increaseGamma(const string& monitor, int amount) {
 
   return 0.0; // Couldn't read
 }
+#endif
 
 // === X11 GAMMA GETTER ===
+#if !HAVEL_PLATFORM_WINDOWS
 double BrightnessManager::getGammaXrandr(const std::string &monitor) {
   if (!x11_display)
     return 1.0;
@@ -1452,6 +1596,7 @@ double BrightnessManager::getGammaXrandr(const std::string &monitor) {
   XRRFreeScreenResources(screen_res);
   return gamma;
 }
+#endif
 
 // === RGB TO KELVIN CONVERSION ===
 int BrightnessManager::rgbToKelvin(const RGBColor &rgb) const {
@@ -1493,6 +1638,7 @@ BrightnessManager::RGBColor BrightnessManager::getGammaRGB(const std::string& mo
   return {1.0, 1.0, 1.0}; // neutral
 }
 
+#if !HAVEL_PLATFORM_WINDOWS
 BrightnessManager::RGBColor BrightnessManager::getGammaXrandrRGB(const std::string& monitor) const {
   // Similar to getGammaX11 but returns RGB components separately
   if (!x11_display)
@@ -1537,6 +1683,29 @@ BrightnessManager::RGBColor BrightnessManager::getGammaXrandrRGB(const std::stri
   XRRFreeScreenResources(screen_res);
   return rgb;
 }
+#else
+// Windows: same sampling point as the XRR reader, the midpoint of each
+// channel of the live ramp.
+BrightnessManager::RGBColor
+BrightnessManager::getGammaXrandrRGB(const std::string &monitor) const {
+  HDC dc = openMonitorDC(monitor);
+  if (!dc) {
+    return {1.0, 1.0, 1.0};
+  }
+  std::array<WORD, 3 * kWinGammaSize> ramp{};
+  const BOOL ok = ::GetDeviceGammaRamp(dc, ramp.data());
+  ::DeleteDC(dc);
+  if (!ok) {
+    return {1.0, 1.0, 1.0};
+  }
+  const int mid = kWinGammaSize / 2;
+  RGBColor rgb;
+  rgb.red = static_cast<double>(ramp[0 * kWinGammaSize + mid]) / 65535.0;
+  rgb.green = static_cast<double>(ramp[1 * kWinGammaSize + mid]) / 65535.0;
+  rgb.blue = static_cast<double>(ramp[2 * kWinGammaSize + mid]) / 65535.0;
+  return rgb;
+}
+#endif
 bool BrightnessManager::increaseBrightness(double amount) {
   // Per-monitor increment: each monitor moves by `amount` from ITS current
   // value, preserving relative differences. The old primary-based
@@ -1562,10 +1731,17 @@ bool BrightnessManager::increaseBrightness(double amount) {
           " set=" + (set ? "true" : "false"));
     if (set) success = true;
   }
-  if (connected.empty())
-    debug("  no monitors: displayMethod=" + displayMethod +
-          " x11_display=" + (x11_display ? "set" : "null") +
-          " x11_root=" + std::to_string(x11_root));
+  if (connected.empty()) {
+    // displayMethod is the part that matters on every platform: it is what
+    // says whether there was a display to talk to at all. The X11 handle
+    // detail only exists where there is an X11 handle.
+    std::string detail = "  no monitors: displayMethod=" + displayMethod;
+#if !HAVEL_PLATFORM_WINDOWS
+    detail += " x11_display=" + std::string(x11_display ? "set" : "null") +
+              " x11_root=" + std::to_string(x11_root);
+#endif
+    debug(detail);
+  }
   return success;
 }
 
@@ -1611,6 +1787,7 @@ bool BrightnessManager::decreaseTemperature(const std::string &monitor,
 }
 
 // === X11/WAYLAND BACKEND WRAPPERS ===
+#if !HAVEL_PLATFORM_WINDOWS
 bool BrightnessManager::setBrightnessXrandr(double brightness) {
   auto monitors = getConnectedMonitors();
   if (monitors.empty())
@@ -1624,6 +1801,7 @@ bool BrightnessManager::setBrightnessXrandr(double brightness) {
   }
   return success;
 }
+#endif
 
 #ifdef __WAYLAND__
 bool BrightnessManager::setBrightnessWayland(double brightness) {

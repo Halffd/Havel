@@ -18,14 +18,14 @@ public:
     ReplInputQueue(ReplInputQueue&&) = delete;
     ReplInputQueue& operator=(ReplInputQueue&&) = delete;
 
-    // Called by REPL thread (producer) — never blocks except on mutex
+    // Called by REPL thread (producer) - never blocks except on mutex
     void push(std::string line) {
         std::lock_guard<std::mutex> lock(mtx_);
         queue_.push_back(std::move(line));
         cv_.notify_one();
     }
 
-    // Called by VM thread (consumer) in bc.tick() — non-blocking
+    // Called by VM thread (consumer) in bc.tick() - non-blocking
     std::optional<std::string> try_pop() {
         std::lock_guard<std::mutex> lock(mtx_);
         if (queue_.empty()) return std::nullopt;

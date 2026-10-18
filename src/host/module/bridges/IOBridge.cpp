@@ -1,4 +1,4 @@
-// IOBridge implementation — extracted from ModularHostBridges.cpp when
+// IOBridge implementation - extracted from ModularHostBridges.cpp when
 // the file was split per-domain. No behavior change.
 
 #include "../ModularHostBridges.hpp"
@@ -168,7 +168,7 @@ Value IOBridge::handleWait(const std::vector<Value> &args,
         return Value::makeBool(false);
     }
     int64_t ms = args[0].asInt();
-    // io.wait: same semantics as timer.after — sleep on a worker so
+    // io.wait: same semantics as timer.after - sleep on a worker so
     // goroutines park; top-level blocks inline exactly as before.
     if (!ctx || !ctx->vm) {
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));

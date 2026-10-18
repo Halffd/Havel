@@ -1,4 +1,4 @@
-// PixelAutomationFactory.cpp — the Qt-free registration slot.
+// PixelAutomationFactory.cpp - the Qt-free registration slot.
 //
 // Deliberately tiny and dependency-free: it is the only symbol the core needs
 // to resolve a pixel service, and it must not drag anything out of havel_gui.

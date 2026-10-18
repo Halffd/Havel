@@ -9,8 +9,16 @@
 #include <unordered_map>
 #include <memory>
 #include <utility>
+#include "havel_platform.h"
+#if !HAVEL_PLATFORM_WINDOWS
+// eventfd is a Linux interface with no Windows spelling: it turns a signal
+// into a readable fd, which is how the main loop waits for a cross-thread
+// wakeup. Windows uses a Win32 event object for the same job.
 #include <sys/eventfd.h>
 #include <unistd.h>
+#else
+#include <windows.h>
+#endif
 #include <atomic>
 
 #include "utils/LockFreeQueue.hpp"
@@ -215,7 +223,13 @@ public:
         return events_.unsafe_size();
     }
 
+#if !HAVEL_PLATFORM_WINDOWS
     int wakeupFd() const { return wakeupFd_; }
+#else
+    // The Win32 counterpart of wakeupFd(). Returned as void* so this header
+    // stays free of HANDLE for callers that never touch it.
+    void* wakeupHandle() const { return wakeupEvent_; }
+#endif
 
     void drainWakeup();
     
@@ -237,7 +251,11 @@ private:
     utils::LockFreeQueue<Event> events_;
     std::unordered_map<uint8_t, EventHandler> handlers_;
     mutable std::mutex handlers_mutex_;
+#if !HAVEL_PLATFORM_WINDOWS
     int wakeupFd_ = -1;
+#else
+    HANDLE wakeupEvent_ = nullptr;
+#endif
     void signalWakeup();
     
     // Worker thread pool for executing callbacks asynchronously

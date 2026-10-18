@@ -21,6 +21,7 @@ namespace havel::ffi {
 
 std::unordered_map<void*, std::string> FFICall::libraries_;
 std::mutex FFICall::library_mutex_;
+std::unordered_map<std::string, void*> FFICall::path_cache_;
 std::mutex FFICall::callback_mutex_;
 std::unordered_map<void*, std::unique_ptr<FFICall::CallbackData>> FFICall::callbacks_;
 std::mutex FFICall::cif_mutex_;
@@ -57,6 +58,16 @@ ffi_type* FFICall::to_ffi_type(std::shared_ptr<FFIType> type) {
 }
 
 void* FFICall::load_library(const std::string& path) {
+    {
+        // Cache hit first, before any logging or dlopen. dlopen of an already
+        // loaded object is itself cheap, but this path runs per ffi call site
+        // per call and the two formatted INFO lines dominated startup.
+        std::lock_guard<std::mutex> lock(library_mutex_);
+        auto cached = path_cache_.find(path);
+        if (cached != path_cache_.end()) {
+            return cached->second;
+        }
+    }
 #ifndef _WIN32
     ::havel::info("FFICall: attempting to load {}", path);
 	int flags = RTLD_NOW;
@@ -71,6 +82,7 @@ void* FFICall::load_library(const std::string& path) {
 	} else {
 		std::lock_guard<std::mutex> lock(library_mutex_);
 		libraries_[handle] = path;
+		path_cache_[path] = handle;
         ::havel::info("FFICall: successfully loaded {} -> {}", path, handle);
 	}
 	return handle;
@@ -90,6 +102,7 @@ void* FFICall::load_library(const std::string& path) {
 	void* rawHandle = reinterpret_cast<void*>(handle);
 	std::lock_guard<std::mutex> lock(library_mutex_);
 	libraries_[rawHandle] = path;
+	path_cache_[path] = rawHandle;
 	return rawHandle;
 #endif
 }
@@ -102,6 +115,12 @@ void FFICall::unload_library(void* handle) {
 		FreeLibrary(reinterpret_cast<HMODULE>(handle));
 #endif
 		std::lock_guard<std::mutex> lock(library_mutex_);
+		for (auto it = path_cache_.begin(); it != path_cache_.end(); ++it) {
+			if (it->second == handle) {
+				path_cache_.erase(it);
+				break;
+			}
+		}
 		libraries_.erase(handle);
 	}
 }

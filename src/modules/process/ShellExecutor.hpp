@@ -14,8 +14,8 @@ namespace havel {
 
 // Shell execution result
 struct ShellResult {
-    std::string stdout;
-    std::string stderr;
+    std::string out;
+    std::string err;
     int exitCode;
     bool success;
     std::string error;

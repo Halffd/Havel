@@ -13,7 +13,7 @@ namespace havel::compiler {
 // ============================================================================
 // SuspensionReason conversion: Fiber::SuspensionReason → Scheduler::SuspensionReason
 // These enums have DIFFERENT ordinal values (historical divergence).
-// Direct static_cast produces wrong values — must map explicitly.
+// Direct static_cast produces wrong values - must map explicitly.
 // ============================================================================
 static Scheduler::SuspensionReason toSchedulerReason(uint8_t fiberReason) {
   using F = SuspensionReason;
@@ -282,7 +282,7 @@ vm_->saveFiberState(g->fiber);
                     }
 					g->fiber->had_error = true;
 					g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
-					result.type = VMExecutionResult::ERROR;
+					result.type = VMExecutionResult::THREW;
 					result.error_message = g->fiber->error_message;
 				}
         } else {
@@ -291,7 +291,7 @@ vm_->saveFiberState(g->fiber);
                 }
 			}
 
- if (result.type != VMExecutionResult::ERROR) {
+ if (result.type != VMExecutionResult::THREW) {
  result.type = VMExecutionResult::RETURNED;
  }
  g->fiber->state = FiberState::DONE;
@@ -301,7 +301,7 @@ vm_->saveFiberState(g->fiber);
         // (normal completion), SUSPENDED (sleep/channel/timer), RETURNED, or ERROR.
         // Previously we ran ONE instruction per executeFrame() call, which meant
         // every instruction paid the cost of saveFiberState/loadFiberState/handleYield/
-        // requeue — making a 50-instruction hotkey callback take ~50 round trips
+        // requeue - making a 50-instruction hotkey callback take ~50 round trips
         // through the event loop. Now we loop until the goroutine needs a real
         // scheduler action or exhausts its time slice.
 
@@ -345,7 +345,7 @@ vm_->saveFiberState(g->fiber);
 // STEP 5: Save VM state back to fiber
 // CRITICAL: If exit was requested during executeOneStep, the scheduler's
 // stop() has already destroyed all goroutines (including g). Do NOT
-// touch g->fiber — it's freed memory.
+// touch g->fiber - it's freed memory.
 if (vm_->exit_requested_.load()) {
 stats_.frames_executed++;
 return false;
@@ -357,19 +357,19 @@ vm_->saveFiberState(g->fiber);
 // STEP 6: Handle execution result
 switch (result.type) {
     case VMExecutionResult::YIELD:
-        // Budget expired mid-execution — yield to scheduler, will resume next tick
+        // Budget expired mid-execution - yield to scheduler, will resume next tick
         handleYield(g);
         break;
 
   case VMExecutionResult::SUSPENDED: {
-      // Fiber already suspended by VM::executeOneStep() — it called
+      // Fiber already suspended by VM::executeOneStep() - it called
       // fiber->suspend() which set state=SUSPENDED and saved reason/context.
-      // Do NOT call fiber->suspend() again — that would throw since the
+      // Do NOT call fiber->suspend() again - that would throw since the
       // fiber is already SUSPENDED.
       //
       // NOTE: We read reason/context from g->fiber, NOT from vm_->isSuspensionRequested().
       // executeOneStep clears suspension_requested_ before returning (VM.cpp:575),
-      // so vm_->isSuspensionRequested() is always false here — the old code was dead.
+      // so vm_->isSuspensionRequested() is always false here - the old code was dead.
       auto fiber_reason = g->fiber ? g->fiber->suspended_reason : SuspensionReason::NONE;
       void* context = g->fiber ? g->fiber->suspension_context : nullptr;
       uint8_t reason = static_cast<uint8_t>(fiber_reason);
@@ -412,7 +412,7 @@ switch (result.type) {
         stats_.goroutines_completed++;
         break;
         
-      case VMExecutionResult::ERROR:
+      case VMExecutionResult::THREW:
         // Exception occurred
         handleError(g, result.error_message);
         break;
@@ -482,7 +482,7 @@ void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Goroutine yielded, returning to runnable queue\n";
     }
-    // Fiber was RUNNING, now returning to scheduler queue — set RUNNABLE
+    // Fiber was RUNNING, now returning to scheduler queue - set RUNNABLE
     if (g->fiber && g->fiber->state == FiberState::RUNNING) {
         g->fiber->state = FiberState::RUNNABLE;
     }
@@ -913,7 +913,7 @@ void ExecutionEngine::processGoroutinesInline() {
     // processGoroutinesInline is the pipeline's yield callback, invoked from
     // inside the user script's bytecode dispatch loop. It must NOT block.
     // The previous code spun here on `runnable==0 && suspended>0` waiting for
-    // a wake event — which froze the user script's own bytecode (e.g. after a
+    // a wake event - which froze the user script's own bytecode (e.g. after a
     // `when.register` registering a non-firing watcher, or a non-runnable
     // goroutine that just sleeps). The IO scheduler thread handles wakeups;
     // our job here is a quick pump only.
@@ -959,7 +959,7 @@ void ExecutionEngine::processGoroutinesInline() {
         main_g->fiber = main_script_fiber_.get();
         main_g->state = Scheduler::GoroutineState::Suspended;  // Picked up by outer runDispatchLoop, not by scheduler.
         
-        // Register in scheduler (goroutine map only — DO NOT enqueue).
+        // Register in scheduler (goroutine map only - DO NOT enqueue).
         scheduler_->registerGoroutine(main_g);
         scheduler_->setCurrent(main_g);
         main_goroutine_registered = true;
@@ -1060,7 +1060,7 @@ void ExecutionEngine::processGoroutinesInline() {
                         }
                         break;
                     }
-                    case VMExecutionResult::ERROR:
+                    case VMExecutionResult::THREW:
                         handleError(g, result.error_message);
                         break;
                     default:

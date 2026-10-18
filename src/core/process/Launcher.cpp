@@ -505,8 +505,8 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
       }
 
       // Store the captured output
-      result.stdout = stdout_data;
-      result.stderr = stderr_data;
+      result.out = stdout_data;
+      result.err = stderr_data;
     } else {
       // For detached processes, just wait normally
       if (params.timeoutMs > 0) {
@@ -693,8 +693,8 @@ ProcessResult Launcher::executeShell(const std::string &command,
 
   // For Windows, we currently don't capture stdout/stderr
   // Future implementation would need to use CreatePipe and redirect handles
-  result.stdout = "";
-  result.stderr = "";
+  result.out = "";
+  result.err = "";
 
 #else
   // Unix implementation with proper shell support
@@ -779,7 +779,7 @@ ProcessResult Launcher::executeShell(const std::string &command,
   // Always inherit the parent environment. An earlier version passed an
   // empty envp for detached children, which stripped PATH/HOME/DISPLAY/
   // DBUS_SESSION_BUS_ADDRESS and made every session-dependent command
-  // (notify-send, media players, …) silently fail — "runDetached does
+  // (notify-send, media players, …) silently fail - "runDetached does
   // nothing".
   int spawn_result = posix_spawnp(&pid, "/bin/sh", &actions, &attr,
                                   argv.data(), environ);
@@ -908,8 +908,8 @@ ProcessResult Launcher::executeShell(const std::string &command,
     }
 
     // Store the captured output
-    result.stdout = stdout_data;
-    result.stderr = stderr_data;
+    result.out = stdout_data;
+    result.err = stderr_data;
 
     // Clean up pipes
     close(pipe_stdin[1]);

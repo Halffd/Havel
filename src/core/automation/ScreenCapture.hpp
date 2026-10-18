@@ -1,4 +1,4 @@
-// ScreenCapture.hpp — the platform half of pixel automation.
+// ScreenCapture.hpp - the platform half of pixel automation.
 //
 // PixelAutomation used to call QGuiApplication::primaryScreen() and
 // grabWindow() directly, which is why src/core/automation/PixelAutomation.cpp
@@ -32,7 +32,7 @@ struct ScreenBounds {
 struct ScreenPixels {
     int w = 0;
     int h = 0;
-    // Tightly packed, 4 bytes per pixel, BGRA order — the layout
+    // Tightly packed, 4 bytes per pixel, BGRA order - the layout
     // cv::COLOR_BGRA2BGR expects. w * h * 4 bytes.
     std::vector<unsigned char> bgra;
 };

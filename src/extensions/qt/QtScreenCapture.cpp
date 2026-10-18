@@ -1,4 +1,4 @@
-// QtScreenCapture.cpp — the Qt half of pixel automation.
+// QtScreenCapture.cpp - the Qt half of pixel automation.
 //
 // Compiled into havel_gui only. The core asks for screen pixels through
 // core/automation/ScreenCapture.hpp; this is what answers. The body is the code

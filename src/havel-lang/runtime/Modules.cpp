@@ -232,7 +232,7 @@ void Modules::installHostFunctions() {
             if (!vm) return Value::makeBool(false);
 
             // Native module plugins (havel_mod_<name>.so) register through
-            // the VM's own VMApi and set their global object — the working
+            // the VM's own VMApi and set their global object - the working
             // path, so prefer them and return that object. C-ABI extensions
             // (havel_extension_init) would receive the zero-initialized API
             // table from the old getHavelAPI stub (the C API host side is
@@ -250,7 +250,7 @@ void Modules::installHostFunctions() {
             if (globalIt != vm->getGlobals().end() && globalIt->second.isObjectId()) {
                 return globalIt->second;
             }
-            // C-ABI extension fallback: load WITHOUT calling init — a stub
+            // C-ABI extension fallback: load WITHOUT calling init - a stub
             // API would crash it. The extension loads inertly; its
             // functions stay unreachable until the C API host side is
             // implemented.
@@ -270,7 +270,7 @@ void Modules::installHostFunctions() {
             if (!vm) return Value::makeNull();
             auto arr = vm->createHostArray();
             for (const auto &name : names) {
-                // Push the actual extension name — the old code discarded it
+                // Push the actual extension name - the old code discarded it
                 // ((void)name) and pushed null for every entry.
                 auto ref = vm->createRuntimeString(name);
                 vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
@@ -501,7 +501,7 @@ void Modules::installStdLib() {
 
     // Register host functions on the VM before vm_setup_callbacks run.
     // vm_setup_callbacks (e.g. hotkey object wiring) call getHostFunctionIndex
-    // to resolve function names to indices — this requires the functions to
+    // to resolve function names to indices - this requires the functions to
     // already be registered on the VM. Without this, hotkey.list() etc. are
     // never set on the hotkey global object.
     for (const auto &[name, fn] : options_.host_functions) {

@@ -7,14 +7,39 @@
 #include <cstdlib>
 #include <string>
 #include <utility>
+#include "havel_platform.h"
+#if HAVEL_PLATFORM_WINDOWS
+#include "havel-lang/compiler/platform/platform_win.hpp"
+#else
+#include <cerrno>
+#include <sys/eventfd.h>
+#include <unistd.h>
+#endif
 
 namespace havel::compiler {
 
 EventQueue::EventQueue() {
+#if HAVEL_PLATFORM_WINDOWS
+    // Windows has no eventfd and, more to the point, no file descriptor to
+    // put in a select()/poll() set. An auto-reset event carries the same
+    // "poke the loop, it is only ever a hint" semantics: SetEvent releases
+    // one waiter and the handle clears itself, so a burst of pushes
+    // collapses into one wakeup exactly as the eventfd counter draining
+    // does. Manual-reset would need an explicit ResetEvent in drainWakeup()
+    // and would lose signals if the loop was not waiting.
+    HANDLE ev = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!ev) {
+        ::havel::error("[EventQueue] Failed to create wakeup event: {}", ::GetLastError());
+    } else {
+        wakeupEvent_ = ev;
+    }
+    // wakeupFd_ stays -1: see wakeupHandle() in the header.
+#else
     wakeupFd_ = eventfd(0, EFD_NONBLOCK);
     if (wakeupFd_ < 0) {
         ::havel::error("[EventQueue] Failed to create wakeup eventfd: {}", strerror(errno));
     }
+#endif
     // Worker count override for scripts with many concurrent blocked
     // host calls. Default 4 covers realistic goroutine IO overlap; X11
     // serializes server-side anyway.
@@ -38,16 +63,23 @@ void EventQueue::postToWorker(Callback cb) {
 EventQueue::~EventQueue() {
     shutdown_workers_.store(true, std::memory_order_release);
     clear();
+#if HAVEL_PLATFORM_WINDOWS
+    if (wakeupEvent_) {
+        ::CloseHandle(static_cast<HANDLE>(wakeupEvent_));
+        wakeupEvent_ = nullptr;
+    }
+#else
     if (wakeupFd_ >= 0) {
         close(wakeupFd_);
         wakeupFd_ = -1;
     }
+#endif
     shutdownWorkers();
 }
 
 void EventQueue::push(const Event& event) {
     if (shutdown_workers_.load(std::memory_order_acquire)) {
-        // Teardown: drop the event, but free owned payloads — raw new'd
+        // Teardown: drop the event, but free owned payloads - raw new'd
         // pointers would otherwise leak on the drop path (TIMER_FIRE was
         // leaking here before ASYNC_HOST_COMPLETE made the case explicit).
         if (event.ptr) {
@@ -84,6 +116,11 @@ void EventQueue::push(Callback cb) {
 }
 
 void EventQueue::signalWakeup() {
+#if HAVEL_PLATFORM_WINDOWS
+    if (wakeupEvent_) {
+        ::SetEvent(static_cast<HANDLE>(wakeupEvent_));
+    }
+#else
     if (wakeupFd_ >= 0) {
         uint64_t val = 1;
         ssize_t ret = write(wakeupFd_, &val, sizeof(val));
@@ -91,15 +128,26 @@ void EventQueue::signalWakeup() {
             ::havel::error("[EventQueue] wakeup write failed: {}", strerror(errno));
         }
     }
+#endif
 }
 
 void EventQueue::drainWakeup() {
+#if HAVEL_PLATFORM_WINDOWS
+    if (wakeupEvent_) {
+        // Auto-reset event: a zero-timeout wait consumes the pending signal
+        // if one is set and leaves it alone otherwise. That is the direct
+        // counterpart of the eventfd read-until-EAGAIN loop below, and like
+        // it, draining is advisory - the real work is in events_.
+        ::WaitForSingleObject(static_cast<HANDLE>(wakeupEvent_), 0);
+    }
+#else
     if (wakeupFd_ >= 0) {
         uint64_t val;
         while (read(wakeupFd_, &val, sizeof(val)) == sizeof(val)) {
             // drain all pending signals
         }
     }
+#endif
 }
 
 void EventQueue::onEvent(EventType type, EventHandler handler) {

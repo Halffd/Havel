@@ -452,306 +452,306 @@ void Havel::initialize(bool isStartup) {
 #else
   info("Havel language disabled");
 #endif
-  // Hydrate the key table (modules/app/kymap.hv -> KeyMap::) as the last
-  // Havel-init step, outside the #ifdef: all module installs are complete
-  // here, so the module's allEntries() for-in sees fully-installed ambient
-  // globals (called earlier inside the block it returned 325 keys via
-  // keyCount but zero rows from allEntries). Without this, pipeline-loaded
-  // modes that do not go through HavelEngine (REPL, script+repl, daemon)
-  // run with an unhydrated KeyMap: hotkey registration falls back to raw X
-  // keycodes where evdev codes belong, so physical key events never match
-  // the binding and hotkeys never fire. HavelEngine::initializeFull calls
-  // the same loader; this is the Havel-side equivalent the KeyMap.cpp
-  // comment has claimed exists since the table moved out of C++.
+    // Hydrate the key table (modules/app/kymap.hv -> KeyMap::) as the last
+    // Havel-init step, outside the #ifdef: all module installs are complete
+    // here, so the module's allEntries() for-in sees fully-installed ambient
+    // globals (called earlier inside the block it returned 325 keys via
+    // keyCount but zero rows from allEntries). Without this, pipeline-loaded
+    // modes that do not go through HavelEngine (REPL, script+repl, daemon)
+    // run with an unhydrated KeyMap: hotkey registration falls back to raw X
+    // keycodes where evdev codes belong, so physical key events never match
+    // the binding and hotkeys never fire. HavelEngine::initializeFull calls
+    // the same loader; this is the Havel-side equivalent the KeyMap.cpp
+    // comment has claimed exists since the table moved out of C++.
 #ifdef ENABLE_HAVEL_LANG
-  // Register builtin prototypes (array.push, string.len, ...) on bytecodeVM
-  // before ANY module body runs. execute() does this via
-  // registerDefaultHostGlobals(), but the REPL / script+repl / daemon paths
-  // use executePersistent(), which skips it. Without the registration every
-  // method call made from a module body during hydration (e.g.
-  // allEntries()'s result.push(...) in kymap.hv) falls into CALL_METHOD's
-  // silent-null arm: the mutation vanishes without an error, the module
-  // loads with empty data, and subscript ops keep working - which is why
-  // the loss looked like a "state split" instead of a missing dispatch.
-  // Idempotent: registerDefaultPrototypes() guards on prototypes_registered_.
-  bytecodeVM->registerDefaultPrototypes();
-  havel::loadKeyMapFromHavelModule(*bytecodeVM);
+    // Register builtin prototypes (array.push, string.len, ...) on bytecodeVM
+    // before ANY module body runs. execute() does this via
+    // registerDefaultHostGlobals(), but the REPL / script+repl / daemon paths
+    // use executePersistent(), which skips it. Without the registration every
+    // method call made from a module body during hydration (e.g.
+    // allEntries()'s result.push(...) in kymap.hv) falls into CALL_METHOD's
+    // silent-null arm: the mutation vanishes without an error, the module
+    // loads with empty data, and subscript ops keep working - which is why
+    // the loss looked like a "state split" instead of a missing dispatch.
+    // Idempotent: registerDefaultPrototypes() guards on prototypes_registered_.
+    bytecodeVM->registerDefaultPrototypes();
+    havel::loadKeyMapFromHavelModule(*bytecodeVM);
 #endif
-  if (WindowManagerDetector::IsX11()) {
-    Display *display = DisplayManager::GetDisplay();
-    if (!display) {
-      // The session declares X11 but the server is unreachable (stale
-      // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
-      // Throwing here killed REPL, script+repl and the daemon outright
-      // — while the Wayland-session path (IsX11() false) already runs
-      // full initialization with a null display as a supported state.
-      // Degrade the same way: X11-bound features (window management,
-      // X11 hotkey grabs, brightness) fail at their use sites; evdev
-      // input and everything display-independent keep working.
-      const char *declared = std::getenv("DISPLAY");
-      warning("X11 display '{}' is unreachable — continuing without "
-              "X11 (window management and X11 hotkey grabs disabled; "
-              "unset DISPLAY or start Xorg to enable them)",
-              declared ? declared : ":0");
+    if (WindowManagerDetector::IsX11()) {
+      Display *display = DisplayManager::GetDisplay();
+      if (!display) {
+        // The session declares X11 but the server is unreachable (stale
+        // DISPLAY after the desktop moved to Wayland, Xorg crashed, ...).
+        // Throwing here killed REPL, script+repl and the daemon outright
+        // — while the Wayland-session path (IsX11() false) already runs
+        // full initialization with a null display as a supported state.
+        // Degrade the same way: X11-bound features (window management,
+        // X11 hotkey grabs, brightness) fail at their use sites; evdev
+        // input and everything display-independent keep working.
+        const char *declared = std::getenv("DISPLAY");
+        warning("X11 display '{}' is unreachable — continuing without "
+                "X11 (window management and X11 hotkey grabs disabled; "
+                "unset DISPLAY or start Xorg to enable them)",
+                declared ? declared : ":0");
+      }
     }
-  }
-  // Guard with the live singleton: main() runs runExitCleanups() after the
-  // stack Havel instance is destroyed (destructor already ran cleanup()),
-  // so a raw `this` capture would re-run cleanup on freed memory and
-  // double-join the periodic timer thread.
-  havel::registerExitCleanup([]() {
-    if (auto *inst = Havel::getInstance()) {
-      inst->performCleanup();
-    }
-  });
-  havel::startup_timing_report("Havel::initialize TOTAL", t0);
-  if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
-    std::thread([this]() {
-      auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-      std::this_thread::sleep_for(std::chrono::seconds(s));
-      if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
-        return;
+    // Guard with the live singleton: main() runs runExitCleanups() after the
+    // stack Havel instance is destroyed (destructor already ran cleanup()),
+    // so a raw `this` capture would re-run cleanup on freed memory and
+    // double-join the periodic timer thread.
+    havel::registerExitCleanup([]() {
+      if (auto *inst = Havel::getInstance()) {
+        inst->performCleanup();
       }
-      if (debugging::debug_io)
-        debug("AutoExit enabled - exiting after {} seconds", s);
-      this->exit();
-    }).detach();
-  }
-}
-
-void Havel::cleanup() noexcept {
-  try {
-    std::call_once(cleanupOnce, [this]() {
-      if (debugging::debug_io)
-        debug("Havel::cleanup() - starting cleanup");
-
-      // Force save config before everything else
-      try {
-        Configs::Get().ForceSave();
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - config saved");
-      } catch (...) {
-      }
-
-      // Stop timer first
-      stopPeriodicTimer();
-
-      // Stop EventListener FIRST
-      if (io && io->GetEventListener()) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - stopping EventListener");
-        io->GetEventListener()->Stop();
-      }
-
-      // Destroy hotkeyManager
-      if (hotkeyManager) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - destroying HotkeyManager");
-        hotkeyManager->cleanup();
-        hotkeyManager.reset();
-      }
-
-      // Stop ExecutionEngine and Scheduler BEFORE destroying VM
-      if (executionEngine) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - shutting down ExecutionEngine");
-        executionEngine->shutdown();
-        executionEngine.reset();
-      }
-      auto &scheduler = compiler::Scheduler::instance();
-      if (scheduler.isRunning()) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - stopping Scheduler");
-        scheduler.stop();
-      }
-
-      // Destroy VM
-      if (bytecodeVM) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - destroying VM");
-        bytecodeVM.reset();
-      }
-
-      // Destroy Modules
-      if (modules_) {
-        if (debugging::debug_io)
-          debug("Havel::cleanup() - destroying Modules");
-        modules_->shutdown();
-        // Delete the generic event bus (created with raw new in
-        // Modules::initBridges). The full-Havel path has no HavelEngine
-        // whose shutdown() would take that ownership (the minimal path's
-        // HavelEngine::shutdown does it), so delete it here, after the
-        // bridges that dispatch into it are gone and while the VM that
-        // could still reach it is already destroyed. Without this the
-        // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
-        // the report (~16s with llvm-symbolizer) and exits 1, which made
-        // every child-process REPL smoke test time out or fail.
-        if (hostContext && hostContext->eventRuntime) {
-          delete hostContext->eventRuntime;
-          hostContext->eventRuntime = nullptr;
+    });
+    havel::startup_timing_report("Havel::initialize TOTAL", t0);
+    if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+      std::thread([this]() {
+        auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+        std::this_thread::sleep_for(std::chrono::seconds(s));
+        if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+          return;
         }
-        modules_.reset();
-      }
-
-      // Destroy other components
-      if (automationManager) {
-        automationManager.reset();
-      }
-      if (audioManager) {
-        audioManager.reset();
-      }
-      if (windowManager) {
-        windowManager.reset();
-      }
-
-      // Release ImageService handles (prevents leak when scripts don't call image.release)
-      auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
-      // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
-      if (imgSvc) {
-        imgSvc->releaseAll();
-      }
-
-      // Destroy IO LAST
-      if (io) {
-        io->cleanup();
-        io.reset();
-      }
-
-      DisplayManager::Close();
-
-      if (debugging::debug_io)
-        debug("Havel::cleanup() - cleanup complete");
-    }); // std::call_once
-  } catch (...) {
-  }
-}
-
-void Havel::gracefulExit(int code, bool fromSignal) {
-  havel::exit(fromSignal ? ExitReason::SignalInt : ExitReason::Normal, code);
-}
-
-void Havel::performCleanup() {
-  if (shutdownRequested) {
-    return;
-  }
-  shutdownRequested = true;
-  info("Exit requested - starting graceful shutdown");
-
-  if (io && io->GetEventListener()) {
-    info("Stopping EventListener before exit...");
-    io->GetEventListener()->Stop();
-    info("EventListener stopped");
-  }
-
-  cleanup();
-}
-
-void Havel::exit() {
-  performCleanup();
-  havel::exit(ExitReason::Normal, 0);
-}
-
-void Havel::setShutdownCallback(std::function<void(int)> cb) {
-  if (io && io->GetEventListener()) {
-    io->GetEventListener()->SetShutdownCallback(std::move(cb));
-  }
-}
-
-void Havel::setupSignalHandling() {
-  try {
-    // Set up fallback signal handlers for REPL mode
-    if (!guiMode) {
-      struct sigaction sa;
-      sa.sa_flags = 0;
-      sigemptyset(&sa.sa_mask);
-      sa.sa_handler = [](int sig) {
-        int code = (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
-        bool crash =
-            (sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE);
-        havel::exit(crash            ? ExitReason::SignalCrash
-                    : sig == SIGINT  ? ExitReason::SignalInt
-                    : sig == SIGTERM ? ExitReason::SignalTerm
-                    : sig == SIGQUIT ? ExitReason::SignalQuit
-                    : sig == SIGHUP  ? ExitReason::SignalHup
-                                     : ExitReason::Forced,
-                    code);
-      };
-      sigaction(SIGINT, &sa, nullptr);
-      sigaction(SIGTERM, &sa, nullptr);
-      sigaction(SIGABRT, &sa, nullptr);
-      sigaction(SIGSEGV, &sa, nullptr);
-      sigaction(SIGQUIT, &sa, nullptr);
-      sigaction(SIGHUP, &sa, nullptr);
-
-      if (debugging::debug_io)
-        debug("Signal handling initialized - fallback handlers for REPL mode");
-    } else {
-      if (debugging::debug_io)
-        debug("Signal handling initialized - EventListener manages signals");
+        if (debugging::debug_io)
+          debug("AutoExit enabled - exiting after {} seconds", s);
+        this->exit();
+      }).detach();
     }
-  } catch (const std::exception &e) {
-    throw std::runtime_error("Failed to set up signal handling: " + std::string(e.what()));
   }
-}
 
-void Havel::startPeriodicTimer() {
-  timerRunning = true;
-  timerThread = std::make_unique<std::thread>([this]() {
-    while (timerRunning) {
-      auto now = std::chrono::steady_clock::now();
+  void Havel::cleanup() noexcept {
+    try {
+      std::call_once(cleanupOnce, [this]() {
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - starting cleanup");
 
-      // Window check (only if timer is still running)
-      if (timerRunning &&
-          std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >=
-              WINDOW_CHECK_INTERVAL_MS) {
-        if (timerRunning && hotkeyManager) {
+        // Force save config before everything else
+        try {
+          Configs::Get().ForceSave();
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - config saved");
+        } catch (...) {
         }
-        lastWindowCheck = now;
-      }
 
-      // Config check
-      if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >=
-          CONFIG_CHECK_INTERVAL_S) {
-        lastCheck = now;
-      }
+        // Stop timer first
+        stopPeriodicTimer();
 
-      // Wait for interval or stop signal
-      std::unique_lock<std::mutex> lock(timerMutex);
-      timerCv.wait_for(lock, std::chrono::milliseconds(PERIODIC_INTERVAL_MS),
-                       [this]() { return !timerRunning.load(); });
+        // Stop EventListener FIRST
+        if (io && io->GetEventListener()) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - stopping EventListener");
+          io->GetEventListener()->Stop();
+        }
+
+        // Destroy hotkeyManager
+        if (hotkeyManager) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - destroying HotkeyManager");
+          hotkeyManager->cleanup();
+          hotkeyManager.reset();
+        }
+
+        // Stop ExecutionEngine and Scheduler BEFORE destroying VM
+        if (executionEngine) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - shutting down ExecutionEngine");
+          executionEngine->shutdown();
+          executionEngine.reset();
+        }
+        auto &scheduler = compiler::Scheduler::instance();
+        if (scheduler.isRunning()) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - stopping Scheduler");
+          scheduler.stop();
+        }
+
+        // Destroy VM
+        if (bytecodeVM) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - destroying VM");
+          bytecodeVM.reset();
+        }
+
+        // Destroy Modules
+        if (modules_) {
+          if (debugging::debug_io)
+            debug("Havel::cleanup() - destroying Modules");
+          modules_->shutdown();
+          // Delete the generic event bus (created with raw new in
+          // Modules::initBridges). The full-Havel path has no HavelEngine
+          // whose shutdown() would take that ownership (the minimal path's
+          // HavelEngine::shutdown does it), so delete it here, after the
+          // bridges that dispatch into it are gone and while the VM that
+          // could still reach it is already destroyed. Without this the
+          // REPL/needsUI full path leaks it: LeakSanitizer then symbolizes
+          // the report (~16s with llvm-symbolizer) and exits 1, which made
+          // every child-process REPL smoke test time out or fail.
+          if (hostContext && hostContext->eventRuntime) {
+            delete hostContext->eventRuntime;
+            hostContext->eventRuntime = nullptr;
+          }
+          modules_.reset();
+        }
+
+        // Destroy other components
+        if (automationManager) {
+          automationManager.reset();
+        }
+        if (audioManager) {
+          audioManager.reset();
+        }
+        if (windowManager) {
+          windowManager.reset();
+        }
+
+        // Release ImageService handles (prevents leak when scripts don't call image.release)
+        auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+        // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
+        if (imgSvc) {
+          imgSvc->releaseAll();
+        }
+
+        // Destroy IO LAST
+        if (io) {
+          io->cleanup();
+          io.reset();
+        }
+
+        DisplayManager::Close();
+
+        if (debugging::debug_io)
+          debug("Havel::cleanup() - cleanup complete");
+      }); // std::call_once
+    } catch (...) {
     }
-  });
-}
+  }
 
-void Havel::stopPeriodicTimer() {
-  timerRunning = false;
-  timerCv.notify_one();
-  if (timerThread) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
-    if (timerThread->joinable()) {
-      timerThread->join();
-    } else {
-      warn("Periodic timer thread already exited");
+  void Havel::gracefulExit(int code, bool fromSignal) {
+    havel::exit(fromSignal ? ExitReason::SignalInt : ExitReason::Normal, code);
+  }
+
+  void Havel::performCleanup() {
+    if (shutdownRequested) {
+      return;
+    }
+    shutdownRequested = true;
+    info("Exit requested - starting graceful shutdown");
+
+    if (io && io->GetEventListener()) {
+      info("Stopping EventListener before exit...");
+      io->GetEventListener()->Stop();
+      info("EventListener stopped");
+    }
+
+    cleanup();
+  }
+
+  void Havel::exit() {
+    performCleanup();
+    havel::exit(ExitReason::Normal, 0);
+  }
+
+  void Havel::setShutdownCallback(std::function<void(int)> cb) {
+    if (io && io->GetEventListener()) {
+      io->GetEventListener()->SetShutdownCallback(std::move(cb));
     }
   }
-  timerThread.reset();
-}
 
-void Havel::runScript(const std::string &scriptFile) {
-  // Script execution via VM
-  if (!bytecodeVM) {
-    throw std::runtime_error("VM not initialized");
-  }
-  // Implementation would call VM to execute script
-  info("Running script: " + scriptFile);
-}
+  void Havel::setupSignalHandling() {
+    try {
+      // Set up fallback signal handlers for REPL mode
+      if (!guiMode) {
+        struct sigaction sa;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_handler = [](int sig) {
+          int code = (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+          bool crash =
+              (sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE);
+          havel::exit(crash            ? ExitReason::SignalCrash
+                      : sig == SIGINT  ? ExitReason::SignalInt
+                      : sig == SIGTERM ? ExitReason::SignalTerm
+                      : sig == SIGQUIT ? ExitReason::SignalQuit
+                      : sig == SIGHUP  ? ExitReason::SignalHup
+                                       : ExitReason::Forced,
+                      code);
+        };
+        sigaction(SIGINT, &sa, nullptr);
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGQUIT, &sa, nullptr);
+        sigaction(SIGHUP, &sa, nullptr);
 
-void Havel::runREPL() {
-  if (!bytecodeVM) {
-    throw std::runtime_error("VM not initialized");
+        if (debugging::debug_io)
+          debug("Signal handling initialized - fallback handlers for REPL mode");
+      } else {
+        if (debugging::debug_io)
+          debug("Signal handling initialized - EventListener manages signals");
+      }
+    } catch (const std::exception &e) {
+      throw std::runtime_error("Failed to set up signal handling: " + std::string(e.what()));
+    }
   }
-  info("Starting REPL...");
-  // REPL implementation would go here
-}
+
+  void Havel::startPeriodicTimer() {
+    timerRunning = true;
+    timerThread = std::make_unique<std::thread>([this]() {
+      while (timerRunning) {
+        auto now = std::chrono::steady_clock::now();
+
+        // Window check (only if timer is still running)
+        if (timerRunning &&
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >=
+                WINDOW_CHECK_INTERVAL_MS) {
+          if (timerRunning && hotkeyManager) {
+          }
+          lastWindowCheck = now;
+        }
+
+        // Config check
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >=
+            CONFIG_CHECK_INTERVAL_S) {
+          lastCheck = now;
+        }
+
+        // Wait for interval or stop signal
+        std::unique_lock<std::mutex> lock(timerMutex);
+        timerCv.wait_for(lock, std::chrono::milliseconds(PERIODIC_INTERVAL_MS),
+                         [this]() { return !timerRunning.load(); });
+      }
+    });
+  }
+
+  void Havel::stopPeriodicTimer() {
+    timerRunning = false;
+    timerCv.notify_one();
+    if (timerThread) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
+      if (timerThread->joinable()) {
+        timerThread->join();
+      } else {
+        warn("Periodic timer thread already exited");
+      }
+    }
+    timerThread.reset();
+  }
+
+  void Havel::runScript(const std::string &scriptFile) {
+    // Script execution via VM
+    if (!bytecodeVM) {
+      throw std::runtime_error("VM not initialized");
+    }
+    // Implementation would call VM to execute script
+    info("Running script: " + scriptFile);
+  }
+
+  void Havel::runREPL() {
+    if (!bytecodeVM) {
+      throw std::runtime_error("VM not initialized");
+    }
+    info("Starting REPL...");
+    // REPL implementation would go here
+  }
 
 } // namespace havel

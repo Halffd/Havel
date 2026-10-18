@@ -1,4 +1,4 @@
-// ClipboardBackendFactory.hpp — the registry that keeps Qt out of Clipboard.
+// ClipboardBackendFactory.hpp - the registry that keeps Qt out of Clipboard.
 //
 // Clipboard (host/clipboard) used to carry its Qt implementation inline behind
 // HAVE_QT_EXTENSION, which dragged Qt headers and symbols into libhavel_core.a.

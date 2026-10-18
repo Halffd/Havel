@@ -367,10 +367,9 @@ VM::~VM() {
     // tiering-flagged tests (see scripts/ci/jit-parity-test.sh, which
     // turns this line into a hard gate failure).
     if (tier1_transition_count_.load() == 0) {
-      ::havel::warning(
-          "[tiering] WARN: --tiering was set but no function reached "
-          "tier1; the JIT was not exercised (no backend built in, or "
-          "nothing crossed the threshold)");
+      ::havel::warning("[tiering] WARN: --tiering was set but no function reached "
+                       "tier1; the JIT was not exercised (no backend built in, or "
+                       "nothing crossed the threshold)");
     }
   }
   // Runtime profiling summary (TODO #26): one line at shutdown so the
@@ -605,8 +604,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   // restores this frame, so the entry frame below is untouched.
   if (function_name != "__on_start__") {
     if (const auto *onStartFn = chunk.getFunction("__on_start__")) {
-      callFunctionSync(
-          Value::makeFunctionObjId(chunk.getFunctionIndex(onStartFn)), {});
+      callFunctionSync(Value::makeFunctionObjId(chunk.getFunctionIndex(onStartFn)), {});
       current_chunk = &chunk;
     } else {
     }
@@ -903,7 +901,8 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
           scheduler_->clearCurrent();
       } else {
         cur->state = Scheduler::GoroutineState::Done;
-        if (cur->fiber) cur->fiber->state = FiberState::DONE;
+        if (cur->fiber)
+          cur->fiber->state = FiberState::DONE;
         // Main script completed: unwound the execute() scheduler loop here
         // instead of idling below. Live goroutines the script left behind
         // (timers, worker loops, hotkey handlers) are exactly the things a
@@ -1755,8 +1754,7 @@ void VM::saveFiberState(Fiber *fiber) {
 // this the compiled function reads past the caller's args array and
 // computes on garbage (observed: default-arg functions returning garbage
 // denormal doubles once tiered; scripts/smoke/chunk_navigator.hv).
-static std::vector<Value> jitCallArgs(const BytecodeFunction &func,
-                                      const std::vector<Value> &args,
+static std::vector<Value> jitCallArgs(const BytecodeFunction &func, const std::vector<Value> &args,
                                       GCHeap &heap) {
   if (args.size() >= func.param_count) {
     return args;
@@ -1765,12 +1763,9 @@ static std::vector<Value> jitCallArgs(const BytecodeFunction &func,
   for (uint32_t i = 0; i < func.param_count; ++i) {
     if (i < args.size()) {
       out[i] = args[i];
-    } else if (i < func.default_values.size() &&
-               func.default_values[i].has_value()) {
+    } else if (i < func.default_values.size() && func.default_values[i].has_value()) {
       const auto &dv = func.default_values[i].value();
-      out[i] = dv.isDefaultArraySentinel()
-                   ? Value::makeArrayId(heap.allocateArray().id)
-                   : dv;
+      out[i] = dv.isDefaultArraySentinel() ? Value::makeArrayId(heap.allocateArray().id) : dv;
     } else {
       // Matches the interpreter: no arg and no literal default leaves the
       // local null (non-literal defaults are a function prologue that
@@ -2144,10 +2139,12 @@ Fiber *VM::resumeChannelWait(uint32_t channel_id) {
 }
 
 bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
-  if (!g || !g->persistent || g->hotkey_condition_callback_id == 0) return true;
+  if (!g || !g->persistent || g->hotkey_condition_callback_id == 0)
+    return true;
 
   auto condVal = externalRootValue(g->hotkey_condition_callback_id);
-  if (!condVal) return true;
+  if (!condVal)
+    return true;
 
   g->hotkey_condition_last_result = false;
   bool conditionMet = false;
@@ -2157,7 +2154,8 @@ bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
     Value result = callFunctionSync(*condVal, {});
     conditionMet = toBool(result);
   } catch (const std::exception &e) {
-    ::havel::error("[VM] conditional hotkey '{}' condition threw: {}", g->hotkey_condition_alias, e.what());
+    ::havel::error("[VM] conditional hotkey '{}' condition threw: {}", g->hotkey_condition_alias,
+                   e.what());
     conditionMet = false;
   }
 
@@ -3820,8 +3818,7 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
     // stack frame this activation already owns). Copy-managed lineages
     // (module-fn wrapper) keep the copy install; their pop drops the
     // map and the wrapper epilogue keeps the sidecar authoritative.
-    const bool tail_cached =
-        !globals_stack_.empty() && globals_stack_.back().ambient_cached;
+    const bool tail_cached = !globals_stack_.empty() && globals_stack_.back().ambient_cached;
     if (tail_cached && globals_identity_) {
       ambient_cache_[globals_identity_].swap(globals);
     }
@@ -4899,7 +4896,8 @@ void VM::tickScheduler(bool wait_for_sleepers) {
     saveFiberStatePublic(g->fiber);
     g->state = Scheduler::GoroutineState::Runnable;
     sched->enqueue(g);
-    if (sched->current() == g) sched->clearCurrent();
+    if (sched->current() == g)
+      sched->clearCurrent();
     restore_caller();
     return;
   }
@@ -5131,8 +5129,7 @@ Value VM::deepWrapModuleFunctions(
          fnCapturedField, wantsSelf, depth, visited](const std::vector<Value> &args) -> Value {
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
-          bool isVariadic = preCheckCallee &&
-                            preCheckCallee->variadic_param_index != UINT32_MAX;
+          bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
           // The erase drops a prepended RECEIVER that is not the function's
           // self (e.g. the module object pushed by the member-call path for
           // plain module fns). For CLASS METHODS called through a class
@@ -5143,12 +5140,12 @@ Value VM::deepWrapModuleFunctions(
           bool firstArgIsSelfInstance = false;
           if (!callArgs.empty() && callArgs[0].isObjectId()) {
             auto *o0 = heap_.object(callArgs[0].asObjectId());
-            firstArgIsSelfInstance = o0 && (o0->get("__class") != nullptr ||
-                                            o0->get("__is_class") != nullptr ||
-                                            o0->get("__struct") != nullptr);
+            firstArgIsSelfInstance =
+                o0 && (o0->get("__class") != nullptr || o0->get("__is_class") != nullptr ||
+                       o0->get("__struct") != nullptr);
           }
-          if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 &&
-              wantsSelf && !firstArgIsSelfInstance) {
+          if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 && wantsSelf &&
+              !firstArgIsSelfInstance) {
             callArgs.erase(callArgs.begin());
           }
           auto *savedChunk = current_chunk;
@@ -5174,9 +5171,8 @@ Value VM::deepWrapModuleFunctions(
           // move-assigns the ambient into the sidecar before popping,
           // so its frames are flagged !ambient_cached and the pop drops
           // the moved-from map instead of parking it.
-          bool wrapper_pushed_globals =
-              installModuleGlobals(moduleGlobals, /*push=*/true,
-                                   /*use_cache=*/false);
+          bool wrapper_pushed_globals = installModuleGlobals(moduleGlobals, /*push=*/true,
+                                                             /*use_cache=*/false);
           auto savedMirrorId = globals_mirror_object_id_;
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);
@@ -5723,8 +5719,7 @@ bool VM::isCallableNamespaceObject(Value value) const {
   bool sawCallable = false;
   for (const auto &[k, v] : *obj) {
     (void)k;
-    if (v.isHostFuncId() || v.isFunctionObjId() || v.isClosureId() ||
-        v.isBoundMethodId()) {
+    if (v.isHostFuncId() || v.isFunctionObjId() || v.isClosureId() || v.isBoundMethodId()) {
       sawCallable = true;
     } else if (!v.isObjectId()) {
       // Scalars/strings in the namespace shape mean this is user data,
@@ -6591,9 +6586,8 @@ Value VM::loadModule(const std::string &path) {
       }
     }
     current_script_dir_ =
-        std::filesystem::path(!resolved->sourcePath.empty()
-                                  ? resolved->sourcePath
-                                  : resolved->canonicalPath)
+        std::filesystem::path(!resolved->sourcePath.empty() ? resolved->sourcePath
+                                                            : resolved->canonicalPath)
             .parent_path()
             .string();
 
@@ -6797,9 +6791,8 @@ load_from_source:
 
     // Set script directory for relative imports within the module
     current_script_dir_ =
-        std::filesystem::path(!resolved->sourcePath.empty()
-                                  ? resolved->sourcePath
-                                  : resolved->canonicalPath)
+        std::filesystem::path(!resolved->sourcePath.empty() ? resolved->sourcePath
+                                                            : resolved->canonicalPath)
             .parent_path()
             .string();
 
@@ -7987,9 +7980,8 @@ Value VM::loadScript(const std::string &path) {
   }
   std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   current_script_dir_ =
-      std::filesystem::path(!resolved->sourcePath.empty()
-                                ? resolved->sourcePath
-                                : resolved->canonicalPath)
+      std::filesystem::path(!resolved->sourcePath.empty() ? resolved->sourcePath
+                                                          : resolved->canonicalPath)
           .parent_path()
           .string();
 

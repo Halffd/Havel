@@ -63,12 +63,12 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     Value set_val = popStack();
 
     if (!set_val.isSetId()) {
-      COMPILER_THROW_AT("SET_SET expects set container", instruction);
+      COMPILER_THROW("SET_SET expects set container");
     }
     uint32_t id = set_val.asSetId();
     auto *set = heap_.set(id);
     if (!set) {
-      COMPILER_THROW_AT("SET_SET unknown set id", instruction);
+      COMPILER_THROW("SET_SET unknown set id");
     }
 
     std::string keyStr;
@@ -78,12 +78,12 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       if (auto *s = heap_.string(key.asStringId())) {
         keyStr = *s;
       } else {
-        COMPILER_THROW_AT("SET_SET expects string key", instruction);
+        COMPILER_THROW("SET_SET expects string key");
       }
     } else if (key.isInt()) {
       keyStr = std::to_string(key.asInt());
     } else {
-      COMPILER_THROW_AT("SET_SET expects string/number key", instruction);
+      COMPILER_THROW("SET_SET expects string/number key");
     }
 
     (*set)[keyStr] = value;
@@ -123,15 +123,15 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       else if (container.isWaitGroupId()) typeInfo = "waitgroup_id";
       else if (container.isChannelId()) typeInfo = "channel_id";
       else if (container.isPtr()) typeInfo = "ptr";
-      COMPILER_THROW_AT("ARRAY_PUSH expects array container, got " + typeInfo, instruction);
+      COMPILER_THROW("ARRAY_PUSH expects array container, got " + typeInfo);
     }
     uint32_t id = container.asArrayId();
     auto *array = heap_.array(id);
     if (!array) {
-      COMPILER_THROW_AT("ARRAY_PUSH unknown array id", instruction);
+      COMPILER_THROW("ARRAY_PUSH unknown array id");
     }
     if (array->frozen) {
-      COMPILER_THROW_AT("Cannot modify frozen array (tuple)", instruction);
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
     }
     array->push_back(value);
     heap_.bumpArrayVersion(id);
@@ -146,22 +146,22 @@ bool VM::execCollectionOp(const Instruction &instruction) {
 		uint32_t id = container.asArrayId();
 		auto *array = heap_.array(id);
 		if (!array) {
-			COMPILER_THROW_AT("ARRAY_LEN unknown array id", instruction);
+			COMPILER_THROW("ARRAY_LEN unknown array id");
 		}
 		pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
 	} else if (container.isStringValId()) {
 		if (!current_chunk) {
-			COMPILER_THROW_AT("ARRAY_LEN: no current chunk for string length", instruction);
+			COMPILER_THROW("ARRAY_LEN: no current chunk for string length");
 		}
 		pushStack(Value::makeInt(static_cast<int64_t>(current_chunk->getString(container.asStringValId()).size())));
 	} else if (container.isStringId()) {
 		const std::string *str = heap_.string(container.asStringId());
 		if (!str) {
-			COMPILER_THROW_AT("ARRAY_LEN unknown string id", instruction);
+			COMPILER_THROW("ARRAY_LEN unknown string id");
 		}
 		pushStack(Value::makeInt(static_cast<int64_t>(str->size())));
 	} else {
-		COMPILER_THROW_AT("ARRAY_LEN expects array or string", instruction);
+		COMPILER_THROW("ARRAY_LEN expects array or string");
 	}
 	break;
 	}
@@ -169,12 +169,12 @@ bool VM::execCollectionOp(const Instruction &instruction) {
   case OpCode::ARRAY_FREEZE: {
     Value container = popStack();
     if (!container.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_FREEZE expects array container", instruction);
+      COMPILER_THROW("ARRAY_FREEZE expects array container");
     }
     uint32_t id = container.asArrayId();
     auto *array = heap_.array(id);
     if (!array) {
-      COMPILER_THROW_AT("ARRAY_FREEZE unknown array id", instruction);
+      COMPILER_THROW("ARRAY_FREEZE unknown array id");
     }
     array->frozen = true;
     pushStack(container);
@@ -186,7 +186,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
 	Value endVal = popStack();
 	Value startVal = popStack();
 	if (!startVal.isInt() || !endVal.isInt()) {
-		COMPILER_THROW_AT("RANGE_NEW expects integers", instruction);
+		COMPILER_THROW("RANGE_NEW expects integers");
 	}
 	int64_t end = endVal.asInt();
 	int64_t start = startVal.asInt();
@@ -200,13 +200,13 @@ bool VM::execCollectionOp(const Instruction &instruction) {
 	Value endVal = popStack();
 	Value startVal = popStack();
 	if (!startVal.isInt() || !endVal.isInt() || !stepVal.isInt()) {
-		COMPILER_THROW_AT("RANGE_STEP_NEW expects integers", instruction);
+		COMPILER_THROW("RANGE_STEP_NEW expects integers");
 	}
 	int64_t step = stepVal.asInt();
 	int64_t end = endVal.asInt();
 	int64_t start = startVal.asInt();
 	if (step == 0) {
-		COMPILER_THROW_AT("RANGE_STEP_NEW step cannot be zero", instruction);
+		COMPILER_THROW("RANGE_STEP_NEW step cannot be zero");
 	}
 	RangeRef rangeRef = heap_.allocateRange(start, end, step);
 	pushStack(Value::makeRangeId(rangeRef.id));
@@ -227,7 +227,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
   case OpCode::ENUM_TAG: {
     Value enumVal = popStack();
     if (!enumVal.isEnumId()) {
-      COMPILER_THROW_AT("ENUM_TAG expects enum", instruction);
+      COMPILER_THROW("ENUM_TAG expects enum");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     pushStack(Value::makeInt(static_cast<int64_t>(getEnumTag(enumRef))));
@@ -238,20 +238,20 @@ bool VM::execCollectionOp(const Instruction &instruction) {
 	Value indexVal = popStack();
 	Value enumVal = popStack();
 	if (!enumVal.isEnumId() || !indexVal.isInt()) {
-		COMPILER_THROW_AT("ENUM_PAYLOAD expects enum and int index", instruction);
+		COMPILER_THROW("ENUM_PAYLOAD expects enum and int index");
 	}
 	auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
 	int64_t idx = indexVal.asInt();
 	if (idx < 0) {
-		COMPILER_THROW_AT("ENUM_PAYLOAD index must be non-negative", instruction);
+		COMPILER_THROW("ENUM_PAYLOAD index must be non-negative");
 	}
 	size_t index = static_cast<size_t>(idx);
 	auto it = heap_.enums_.find(enumRef.id);
 	if (it == heap_.enums_.end()) {
-		COMPILER_THROW_AT("ENUM_PAYLOAD unknown enum id", instruction);
+		COMPILER_THROW("ENUM_PAYLOAD unknown enum id");
 	}
 	if (index >= it->second.second.size()) {
-		COMPILER_THROW_AT("ENUM_PAYLOAD index out of bounds", instruction);
+		COMPILER_THROW("ENUM_PAYLOAD index out of bounds");
 	}
 	pushStack(it->second.second.at(index));
 	break;
@@ -262,7 +262,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     Value tagVal = popStack();
     Value enumVal = popStack();
     if (!enumVal.isEnumId() || !tagVal.isInt()) {
-      COMPILER_THROW_AT("ENUM_MATCH expects enum and int tag", instruction);
+      COMPILER_THROW("ENUM_MATCH expects enum and int tag");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     int64_t expectedTag = tagVal.asInt();
@@ -305,7 +305,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
   case OpCode::ITER_NEXT: {
     Value iterator_val = popStack();
     if (!iterator_val.isIteratorId()) {
-      COMPILER_THROW_AT("ITER_NEXT expects iterator", instruction);
+      COMPILER_THROW("ITER_NEXT expects iterator");
     }
 
     uint32_t id = iterator_val.asIteratorId();
@@ -400,7 +400,7 @@ case OpCode::ARRAY_GET: {
   if (container.isStringId() || container.isStringValId()) {
             auto index = indexFromValue(index_or_key);
             if (!index) {
-                COMPILER_THROW_AT("STRING_GET expects integer index", instruction);
+                COMPILER_THROW("STRING_GET expects integer index");
             }
             std::string s;
             if (container.isStringId()) {
@@ -458,12 +458,12 @@ case OpCode::ARRAY_GET: {
         if (container.isArrayId()) {
             auto index = indexFromValue(index_or_key);
             if (!index) {
-                COMPILER_THROW_AT("ARRAY_GET expects integer index", instruction);
+                COMPILER_THROW("ARRAY_GET expects integer index");
             }
             uint32_t array_id = container.asArrayId();
             auto *array = heap_.array(array_id);
             if (!array) {
-                COMPILER_THROW_AT("ARRAY_GET unknown array id", instruction);
+                COMPILER_THROW("ARRAY_GET unknown array id");
             }
             // Handle negative indices: -1 = last element, -2 = second to last, etc.
             int64_t idx = *index;
@@ -513,12 +513,12 @@ case OpCode::ARRAY_GET: {
 if (container.isSetId()) {
   auto key = resolveKey(index_or_key);
   if (!key) {
-    COMPILER_THROW_AT(
-      "SET membership expects string/number/bool key", instruction);
+    COMPILER_THROW(
+      "SET membership expects string/number/bool key");
   }
   auto *set = heap_.set(container.asSetId());
   if (!set) {
-    COMPILER_THROW_AT("ARRAY_GET unknown set id", instruction);
+    COMPILER_THROW("ARRAY_GET unknown set id");
   }
   Value result = Value::makeBool(set->find(*key) != set->end());
   if (hot_func_cb_) {
@@ -550,7 +550,7 @@ if (container.isSetId()) {
         if (container.asObjectId() == globals_mirror_object_id_) {
         auto key = resolveKey(index_or_key);
         if (!key) {
-          COMPILER_THROW_AT("OBJECT index expects string/number/bool key", instruction);
+          COMPILER_THROW("OBJECT index expects string/number/bool key");
         }
         Value result = Value::makeNull();
         auto it = globals.find(*key);
@@ -587,11 +587,11 @@ if (container.isSetId()) {
         else if (index_or_key.isHostFuncId()) typeInfo = "host_func_id";
         else if (index_or_key.isBoundMethodId()) typeInfo = "bound_method_id";
         else if (index_or_key.isCoroutineId()) typeInfo = "coroutine_id";
-        COMPILER_THROW_AT("OBJECT index expects string/number/bool key (got " + typeInfo + ")", instruction);
+        COMPILER_THROW("OBJECT index expects string/number/bool key (got " + typeInfo + ")");
       }
       auto *object = heap_.object(container.asObjectId());
       if (!object) {
-        COMPILER_THROW_AT("ARRAY_GET unknown object id", instruction);
+        COMPILER_THROW("ARRAY_GET unknown object id");
       }
   auto kv = object->find(*key);
   Value result = (kv == object->end() ? Value::makeNull() : kv->second);
@@ -605,7 +605,7 @@ if (container.isSetId()) {
       break;
     }
 
-    COMPILER_THROW_AT("ARRAY_GET expects array/set/object container", instruction);
+    COMPILER_THROW("ARRAY_GET expects array/set/object container");
   }
 
   case OpCode::ARRAY_SET: {
@@ -616,26 +616,26 @@ if (container.isSetId()) {
     if (container.isArrayId()) {
       auto index = indexFromValue(index_or_key);
       if (!index) {
-        COMPILER_THROW_AT("ARRAY_SET expects integer index", instruction);
+        COMPILER_THROW("ARRAY_SET expects integer index");
       }
       auto *array = heap_.array(container.asArrayId());
       if (!array) {
-        COMPILER_THROW_AT("ARRAY_SET unknown array id", instruction);
+        COMPILER_THROW("ARRAY_SET unknown array id");
       }
       if (array->frozen) {
-        COMPILER_THROW_AT("Cannot modify frozen array (tuple)", instruction);
+        COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
   // Handle negative indices for ARRAY_SET: -1 = last element, -2 = second to last
   int64_t idx = *index;
   if (idx < 0) {
     idx = static_cast<int64_t>(array->size()) + idx;
     if (idx < 0) {
-      COMPILER_THROW_AT("ARRAY_SET index out of bounds: " + std::to_string(*index), instruction);
+      COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
     }
   }
   const auto idx_size = static_cast<size_t>(idx);
   if (idx_size >= 100'000'000) {
-    COMPILER_THROW_AT("ARRAY_SET index too large: " + std::to_string(idx), instruction);
+    COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
   }
   auto old_size = array->size();
   if (idx_size >= old_size) {
@@ -671,12 +671,12 @@ if (container.isSetId()) {
     if (container.isSetId()) {
       auto key = resolveKey(index_or_key);
       if (!key) {
-        COMPILER_THROW_AT(
-            "SET assignment expects string/number/bool key", instruction);
+        COMPILER_THROW(
+            "SET assignment expects string/number/bool key");
       }
       auto *set = heap_.set(container.asSetId());
       if (!set) {
-        COMPILER_THROW_AT("ARRAY_SET unknown set id", instruction);
+        COMPILER_THROW("ARRAY_SET unknown set id");
       }
       bool present = false;
       if (value.isBool()) {
@@ -686,8 +686,8 @@ if (container.isSetId()) {
       } else if (value.isDouble()) {
         present = value.asDouble() != 0.0;
       } else {
-        COMPILER_THROW_AT(
-            "SET assignment value must be bool/number to indicate presence", instruction);
+        COMPILER_THROW(
+            "SET assignment value must be bool/number to indicate presence");
       }
       if (present) {
         (*set)[*key] = Value::makeNull();
@@ -712,12 +712,12 @@ if (container.isSetId()) {
         }
         auto key = resolveKey(index_or_key);
 		if (!key) {
-			COMPILER_THROW_AT("OBJECT index assignment expects valid key", instruction);
+			COMPILER_THROW("OBJECT index assignment expects valid key");
 		}
 		if (container.asObjectId() == globals_mirror_object_id_) {
 			auto *object = heap_.object(container.asObjectId());
 			if (!object) {
-				COMPILER_THROW_AT("ARRAY_SET unknown object id", instruction);
+				COMPILER_THROW("ARRAY_SET unknown object id");
 			}
 			(*object)[*key] = value;
 			globals[*key] = value;
@@ -725,14 +725,14 @@ if (container.isSetId()) {
 		}
 		auto *object = heap_.object(container.asObjectId());
 		if (!object) {
-			COMPILER_THROW_AT("ARRAY_SET unknown object id", instruction);
+			COMPILER_THROW("ARRAY_SET unknown object id");
 		}
 (*object)[*key] = value;
       heap_.writeObjectBarrier(object->data, *key, value);
       break;
     }
 
-    COMPILER_THROW_AT("ARRAY_SET expects array/set/object container", instruction);
+    COMPILER_THROW("ARRAY_SET expects array/set/object container");
   }
 
   case OpCode::ARRAY_GET_FAST: {
@@ -741,7 +741,7 @@ if (container.isSetId()) {
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
-      COMPILER_THROW_AT("ARRAY_GET_FAST expects operands: <array_id, instruction_ip>", instruction);
+      COMPILER_THROW("ARRAY_GET_FAST expects operands: <array_id, instruction_ip>");
     }
     uint32_t array_id = instruction.operands[0].asInt();
     uint32_t instruction_ip = instruction.operands[1].asInt();
@@ -750,13 +750,13 @@ if (container.isSetId()) {
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-      COMPILER_THROW_AT("ARRAY_GET_FAST expects integer index", instruction);
+      COMPILER_THROW("ARRAY_GET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     auto *array = heap_.array(array_id);
     if (!array) {
-      COMPILER_THROW_AT("ARRAY_GET_FAST unknown array id", instruction);
+      COMPILER_THROW("ARRAY_GET_FAST unknown array id");
     }
 
     // Handle negative indices
@@ -781,7 +781,7 @@ if (container.isSetId()) {
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
-      COMPILER_THROW_AT("ARRAY_SET_FAST expects operands: <array_id, instruction_ip>", instruction);
+      COMPILER_THROW("ARRAY_SET_FAST expects operands: <array_id, instruction_ip>");
     }
     uint32_t array_id = instruction.operands[0].asInt();
     uint32_t instruction_ip = instruction.operands[1].asInt();
@@ -790,28 +790,28 @@ if (container.isSetId()) {
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-      COMPILER_THROW_AT("ARRAY_SET_FAST expects integer index", instruction);
+      COMPILER_THROW("ARRAY_SET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     auto *array = heap_.array(array_id);
     if (!array) {
-      COMPILER_THROW_AT("ARRAY_SET_FAST unknown array id", instruction);
+      COMPILER_THROW("ARRAY_SET_FAST unknown array id");
     }
     if (array->frozen) {
-      COMPILER_THROW_AT("Cannot modify frozen array (tuple)", instruction);
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
     }
 
     // Handle negative indices
     if (idx < 0) {
       idx = static_cast<int64_t>(array->size()) + idx;
       if (idx < 0) {
-        COMPILER_THROW_AT("ARRAY_SET_FAST index out of bounds: " + std::to_string(*index), instruction);
+        COMPILER_THROW("ARRAY_SET_FAST index out of bounds: " + std::to_string(*index));
       }
     }
     const auto idx_size = static_cast<size_t>(idx);
     if (idx_size >= 100'000'000) {
-      COMPILER_THROW_AT("ARRAY_SET index too large: " + std::to_string(idx), instruction);
+      COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
     }
     auto old_size = array->size();
     if (idx_size >= old_size) {
@@ -833,7 +833,7 @@ if (container.isSetId()) {
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
-      COMPILER_THROW_AT("STRING_GET_FAST expects operands: <string_id, instruction_ip>", instruction);
+      COMPILER_THROW("STRING_GET_FAST expects operands: <string_id, instruction_ip>");
     }
     uint32_t string_id = instruction.operands[0].asInt();
     uint32_t instruction_ip = instruction.operands[1].asInt();
@@ -842,14 +842,14 @@ if (container.isSetId()) {
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-      COMPILER_THROW_AT("STRING_GET_FAST expects integer index", instruction);
+      COMPILER_THROW("STRING_GET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     // Get string from heap
     const std::string *str = heap_.string(string_id);
     if (!str) {
-      COMPILER_THROW_AT("STRING_GET_FAST unknown string id", instruction);
+      COMPILER_THROW("STRING_GET_FAST unknown string id");
     }
 
     // Count codepoints to handle negative indices
@@ -907,7 +907,7 @@ if (container.isSetId()) {
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isInt() ||
         !instruction.operands[1].isInt()) {
-      COMPILER_THROW_AT("STRING_SET_FAST expects operands: <string_id, instruction_ip>", instruction);
+      COMPILER_THROW("STRING_SET_FAST expects operands: <string_id, instruction_ip>");
     }
     uint32_t string_id = instruction.operands[0].asInt();
     uint32_t instruction_ip = instruction.operands[1].asInt();
@@ -916,29 +916,29 @@ if (container.isSetId()) {
     Value index_val = popStack();
     auto index = indexFromValue(index_val);
     if (!index) {
-      COMPILER_THROW_AT("STRING_SET_FAST expects integer index", instruction);
+      COMPILER_THROW("STRING_SET_FAST expects integer index");
     }
     int64_t idx = *index;
 
     // Get string from heap
     auto *str_obj = heap_.object(string_id);
     if (!str_obj) {
-      COMPILER_THROW_AT("STRING_SET_FAST unknown string id", instruction);
+      COMPILER_THROW("STRING_SET_FAST unknown string id");
     }
     // Strings are stored as objects with a __string_value field
     auto *val = str_obj->get("__string_value");
     if (!val || !val->isStringId()) {
-      COMPILER_THROW_AT("STRING_SET_FAST invalid string object", instruction);
+      COMPILER_THROW("STRING_SET_FAST invalid string object");
     }
     std::string *str = heap_.string(val->asStringId());
     if (!str) {
-      COMPILER_THROW_AT("STRING_SET_FAST string not found in heap", instruction);
+      COMPILER_THROW("STRING_SET_FAST string not found in heap");
     }
 
     // Convert value to string
     std::string new_char = toString(value);
     if (new_char.size() != 1) {
-      COMPILER_THROW_AT("STRING_SET_FAST value must be a single character", instruction);
+      COMPILER_THROW("STRING_SET_FAST value must be a single character");
     }
 
     // Count codepoints to handle negative indices
@@ -958,7 +958,7 @@ if (container.isSetId()) {
 
     if (idx < 0) idx = numCodepoints + idx;
     if (idx < 0 || idx >= numCodepoints) {
-      COMPILER_THROW_AT("STRING_SET_FAST index out of bounds", instruction);
+      COMPILER_THROW("STRING_SET_FAST index out of bounds");
     }
 
     // Find the byte position of the codepoint
@@ -996,7 +996,7 @@ if (container.isSetId()) {
     // Create a cursor from a string: string_id -> cursor
     if (instruction.operands.size() != 1 ||
         !instruction.operands[0].isInt()) {
-      COMPILER_THROW_AT("STRING_CURSOR_NEW expects operand: <string_id>", instruction);
+      COMPILER_THROW("STRING_CURSOR_NEW expects operand: <string_id>");
     }
     uint32_t string_id = instruction.operands[0].asInt();
     auto cursorRef = heap_.allocateStringCursor(string_id);
@@ -1009,16 +1009,16 @@ if (container.isSetId()) {
     // Stack: cursor
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_CURRENT expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_CURRENT expects string cursor");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_CURRENT unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_CURRENT unknown cursor id");
     }
     const std::string *str = heap_.string(cursor->string_id);
     if (!str) {
-      COMPILER_THROW_AT("STRING_CURSOR_CURRENT string not found", instruction);
+      COMPILER_THROW("STRING_CURSOR_CURRENT string not found");
     }
     if (cursor->byte_pos >= str->size()) {
       pushStack(Value::makeNull());
@@ -1042,16 +1042,16 @@ if (container.isSetId()) {
     // Stack: cursor
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_ADVANCE expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_ADVANCE expects string cursor");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_ADVANCE unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_ADVANCE unknown cursor id");
     }
     const std::string *str = heap_.string(cursor->string_id);
     if (!str) {
-      COMPILER_THROW_AT("STRING_CURSOR_ADVANCE string not found", instruction);
+      COMPILER_THROW("STRING_CURSOR_ADVANCE string not found");
     }
     if (cursor->byte_pos >= str->size()) {
       pushStack(Value::makeBool(false));
@@ -1076,16 +1076,16 @@ if (container.isSetId()) {
     // Stack: cursor
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_PEEK expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_PEEK expects string cursor");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_PEEK unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_PEEK unknown cursor id");
     }
     const std::string *str = heap_.string(cursor->string_id);
     if (!str) {
-      COMPILER_THROW_AT("STRING_CURSOR_PEEK string not found", instruction);
+      COMPILER_THROW("STRING_CURSOR_PEEK string not found");
     }
     if (cursor->byte_pos >= str->size()) {
       pushStack(Value::makeNull());
@@ -1108,12 +1108,12 @@ if (container.isSetId()) {
     // Stack: cursor
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_RESET expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_RESET expects string cursor");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_RESET unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_RESET unknown cursor id");
     }
     cursor->byte_pos = 0;
     cursor->codepoint_index = 0;
@@ -1126,12 +1126,12 @@ if (container.isSetId()) {
     // Stack: cursor
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_GET_POS expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_GET_POS expects string cursor");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_GET_POS unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_GET_POS unknown cursor id");
     }
     pushStack(Value::makeInt(static_cast<int64_t>(cursor->byte_pos)));
     break;
@@ -1143,20 +1143,20 @@ if (container.isSetId()) {
     Value pos_val = popStack();
     Value cursor_val = popStack();
     if (!cursor_val.isStringCursorId()) {
-      COMPILER_THROW_AT("STRING_CURSOR_SET_POS expects string cursor", instruction);
+      COMPILER_THROW("STRING_CURSOR_SET_POS expects string cursor");
     }
     auto pos = indexFromValue(pos_val);
     if (!pos) {
-      COMPILER_THROW_AT("STRING_CURSOR_SET_POS expects integer position", instruction);
+      COMPILER_THROW("STRING_CURSOR_SET_POS expects integer position");
     }
     uint32_t cursor_id = cursor_val.asStringCursorId();
     auto *cursor = heap_.stringCursor(cursor_id);
     if (!cursor) {
-      COMPILER_THROW_AT("STRING_CURSOR_SET_POS unknown cursor id", instruction);
+      COMPILER_THROW("STRING_CURSOR_SET_POS unknown cursor id");
     }
     const std::string *str = heap_.string(cursor->string_id);
     if (!str) {
-      COMPILER_THROW_AT("STRING_CURSOR_SET_POS string not found", instruction);
+      COMPILER_THROW("STRING_CURSOR_SET_POS string not found");
     }
     size_t new_pos = static_cast<size_t>(*pos);
     if (new_pos > str->size()) {
@@ -1548,7 +1548,7 @@ if (container.isSetId()) {
 		}
 		auto key = resolveKey(key_value);
 		if (!key) {
-			COMPILER_THROW_AT("OBJECT_GET expects string/number/bool key", instruction);
+			COMPILER_THROW("OBJECT_GET expects string/number/bool key");
 		}
 		auto it = globals.find(*key);
 		if (it != globals.end()) {
@@ -1587,7 +1587,7 @@ if (container.isSetId()) {
                 heap_.externalRootCount(), heap_.gcEpoch(),
                 currentFrame().function ? currentFrame().function->name
                                         : std::string("?"));
-            COMPILER_THROW_AT("OBJECT_GET unknown object id", instruction);
+            COMPILER_THROW("OBJECT_GET unknown object id");
         }
 
   // Lazy module proxy trap: if object has __lazy__ flag,
@@ -1661,7 +1661,7 @@ if (!modName.empty()) {
 
     auto key = resolveKey(key_value);
     if (!key) {
-        COMPILER_THROW_AT("OBJECT_GET expects string/number/bool key", instruction);
+        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
 
     trackFieldAccess("@O" + std::to_string(object.asObjectId()) + ":" + *key);
@@ -1812,7 +1812,7 @@ if (!modName.empty()) {
 
     auto keyStr = resolveKey(key);
     if (!keyStr) {
-      COMPILER_THROW_AT("OBJECT_SET expects string/number/bool key", instruction);
+      COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
 
         // Safety: reject __ prefixed keys (reserved for internal use)
@@ -1823,8 +1823,8 @@ if (!modName.empty()) {
             bool isKwargsMarker = *keyStr == "__kwargs" && object.isObjectId();
             if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
                 !(isCallable && isAllowedDunder) && !isKwargsMarker) {
-                COMPILER_THROW_AT(
-                    "OBJECT_SET: keys starting with '__' are reserved", instruction);
+                COMPILER_THROW(
+                    "OBJECT_SET: keys starting with '__' are reserved");
             }
 
     // Handle function objects - support fn.prop = value
@@ -1839,7 +1839,7 @@ if (!modName.empty()) {
       
       auto* props = heap_.object(propRef.id);
       if (!props) {
-        COMPILER_THROW_AT("OBJECT_SET: failed to get function properties object", instruction);
+        COMPILER_THROW("OBJECT_SET: failed to get function properties object");
       }
         props->set(*keyStr, std::move(value));
         pushStack(object); // Return the function object for chaining
@@ -1855,7 +1855,7 @@ if (!modName.empty()) {
         }
         auto* props = heap_.object(propRef.id);
         if (!props) {
-            COMPILER_THROW_AT("OBJECT_SET: failed to get closure properties object", instruction);
+            COMPILER_THROW("OBJECT_SET: failed to get closure properties object");
         }
         props->set(*keyStr, std::move(value));
         pushStack(object);
@@ -1871,7 +1871,7 @@ if (!modName.empty()) {
         }
         auto* props = heap_.object(propRef.id);
         if (!props) {
-            COMPILER_THROW_AT("OBJECT_SET: failed to get host func properties object", instruction);
+            COMPILER_THROW("OBJECT_SET: failed to get host func properties object");
         }
         props->set(*keyStr, std::move(value));
         pushStack(object);
@@ -1883,14 +1883,14 @@ if (!modName.empty()) {
 		// an object usually means a captured receiver resolved to null.
 		const char *tname = object.isNull() ? "null" : object.isInt() ? "int"
 		                   : object.isDouble() ? "double" : "other";
-		COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname, instruction);
+		COMPILER_THROW(std::string("OBJECT_SET expects object container, got ") + tname);
 	}
 
         // _G globals mirror: writing to _G also updates the globals map
   if (object.asObjectId() == globals_mirror_object_id_) {
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      COMPILER_THROW_AT("OBJECT_SET unknown object id", instruction);
+      COMPILER_THROW("OBJECT_SET unknown object id");
     }
     obj->set(*keyStr, value);
     globals[*keyStr] = value;
@@ -1901,7 +1901,7 @@ if (!modName.empty()) {
 
   auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      COMPILER_THROW_AT("OBJECT_SET unknown object id", instruction);
+      COMPILER_THROW("OBJECT_SET unknown object id");
     }
 
     // Property setter interception: if object has __class and prototype
@@ -2039,11 +2039,11 @@ if (object.isIntervalId()) {
   case OpCode::OBJECT_KEYS: {
     Value object = popStack();
     if (!object.isObjectId()) {
-      COMPILER_THROW_AT("OBJECT_KEYS expects object", instruction);
+      COMPILER_THROW("OBJECT_KEYS expects object");
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      COMPILER_THROW_AT("OBJECT_KEYS unknown object id", instruction);
+      COMPILER_THROW("OBJECT_KEYS unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
@@ -2058,11 +2058,11 @@ if (object.isIntervalId()) {
   case OpCode::OBJECT_VALUES: {
     Value object = popStack();
     if (!object.isObjectId()) {
-      COMPILER_THROW_AT("OBJECT_VALUES expects object", instruction);
+      COMPILER_THROW("OBJECT_VALUES expects object");
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      COMPILER_THROW_AT("OBJECT_VALUES unknown object id", instruction);
+      COMPILER_THROW("OBJECT_VALUES unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
@@ -2080,11 +2080,11 @@ if (object.isIntervalId()) {
   case OpCode::OBJECT_ENTRIES: {
     Value object = popStack();
     if (!object.isObjectId()) {
-      COMPILER_THROW_AT("OBJECT_ENTRIES expects object", instruction);
+      COMPILER_THROW("OBJECT_ENTRIES expects object");
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      COMPILER_THROW_AT("OBJECT_ENTRIES unknown object id", instruction);
+      COMPILER_THROW("OBJECT_ENTRIES unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto keys = obj->getKeys();
@@ -2109,11 +2109,11 @@ if (object.isIntervalId()) {
     Value keyValue = popStack();
     Value object = popStack();
     if (!object.isObjectId()) {
-      COMPILER_THROW_AT("OBJECT_HAS expects object", instruction);
+      COMPILER_THROW("OBJECT_HAS expects object");
     }
     auto key = resolveKey(keyValue);
     if (!key) {
-      COMPILER_THROW_AT("OBJECT_HAS expects string/number/bool key", instruction);
+      COMPILER_THROW("OBJECT_HAS expects string/number/bool key");
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
@@ -2151,14 +2151,14 @@ if (object.isIntervalId()) {
     if (container.isArrayId()) {
       auto index = indexFromValue(keyValue);
       if (!index) {
-        COMPILER_THROW_AT("ARRAY_DEL expects integer index", instruction);
+        COMPILER_THROW("ARRAY_DEL expects integer index");
       }
       auto *array = heap_.array(container.asArrayId());
       if (!array) {
-        COMPILER_THROW_AT("ARRAY_DEL unknown array id", instruction);
+        COMPILER_THROW("ARRAY_DEL unknown array id");
       }
       if (array->frozen) {
-        COMPILER_THROW_AT("Cannot modify frozen array (tuple)", instruction);
+        COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
       int64_t idx = *index;
       if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
@@ -2173,11 +2173,11 @@ if (object.isIntervalId()) {
     } else if (container.isStringId()) {
       auto *s = heap_.string(container.asStringId());
       if (!s) {
-        COMPILER_THROW_AT("ARRAY_DEL unknown string id", instruction);
+        COMPILER_THROW("ARRAY_DEL unknown string id");
       }
       auto index = indexFromValue(keyValue);
       if (!index) {
-        COMPILER_THROW_AT("ARRAY_DEL expects integer index for string", instruction);
+        COMPILER_THROW("ARRAY_DEL expects integer index for string");
       }
       int64_t idx = *index;
       if (idx < 0) idx = static_cast<int64_t>(s->size()) + idx;
@@ -2189,7 +2189,7 @@ if (object.isIntervalId()) {
       std::string s = current_chunk->getString(container.asStringValId());
       auto index = indexFromValue(keyValue);
       if (!index) {
-        COMPILER_THROW_AT("ARRAY_DEL expects integer index for string", instruction);
+        COMPILER_THROW("ARRAY_DEL expects integer index for string");
       }
       int64_t idx = *index;
       if (idx < 0) idx = static_cast<int64_t>(s.size()) + idx;
@@ -2210,11 +2210,11 @@ if (object.isIntervalId()) {
     } else if (container.isSetId()) {
       auto *set = heap_.set(container.asSetId());
       if (!set) {
-        COMPILER_THROW_AT("ARRAY_DEL unknown set id", instruction);
+        COMPILER_THROW("ARRAY_DEL unknown set id");
       }
       auto key = resolveKey(keyValue);
       if (!key) {
-        COMPILER_THROW_AT("ARRAY_DEL expects string/number key for set", instruction);
+        COMPILER_THROW("ARRAY_DEL expects string/number key for set");
       }
       bool removed = set->erase(*key) > 0;
       if (removed) {
@@ -2222,7 +2222,7 @@ if (object.isIntervalId()) {
       }
       pushStack(Value::makeBool(removed));
     } else {
-      COMPILER_THROW_AT("ARRAY_DEL expects array/set/object/string container", instruction);
+      COMPILER_THROW("ARRAY_DEL expects array/set/object/string container");
     }
     break;
   }
@@ -2231,15 +2231,15 @@ if (object.isIntervalId()) {
     Value keyValue = popStack();
     Value setVal = popStack();
     if (!setVal.isSetId()) {
-      COMPILER_THROW_AT("SET_DEL expects set container", instruction);
+      COMPILER_THROW("SET_DEL expects set container");
     }
     auto *set = heap_.set(setVal.asSetId());
     if (!set) {
-      COMPILER_THROW_AT("SET_DEL unknown set id", instruction);
+      COMPILER_THROW("SET_DEL unknown set id");
     }
     auto key = resolveKey(keyValue);
     if (!key) {
-      COMPILER_THROW_AT("SET_DEL expects string/number key", instruction);
+      COMPILER_THROW("SET_DEL expects string/number key");
     }
     bool removed = set->erase(*key) > 0;
     if (removed) {
@@ -2253,13 +2253,13 @@ if (object.isIntervalId()) {
   case OpCode::ARRAY_POP: {
     Value array = popStack();
     if (!array.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_POP expects array", instruction);
+      COMPILER_THROW("ARRAY_POP expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
       pushStack(Value::makeNull());
     } else if (arr->frozen) {
-      COMPILER_THROW_AT("Cannot modify frozen array (tuple)", instruction);
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
     } else if (arr->empty()) {
       pushStack(Value::makeNull());
     } else {
@@ -2275,7 +2275,7 @@ if (object.isIntervalId()) {
     Value value = popStack();
     Value array = popStack();
     if (!array.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_HAS expects array", instruction);
+      COMPILER_THROW("ARRAY_HAS expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
@@ -2297,7 +2297,7 @@ if (object.isIntervalId()) {
     Value value = popStack();
     Value array = popStack();
     if (!array.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_FIND expects array", instruction);
+      COMPILER_THROW("ARRAY_FIND expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
@@ -2320,7 +2320,7 @@ if (object.isIntervalId()) {
     Value fn = popStack();
     Value array = popStack();
     if (!array.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_MAP expects array", instruction);
+      COMPILER_THROW("ARRAY_MAP expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
@@ -2328,7 +2328,7 @@ if (object.isIntervalId()) {
       break;
     }
     if (!fn.isFunctionObjId() && !fn.isClosureId()) {
-      COMPILER_THROW_AT("ARRAY_MAP expects function/closure", instruction);
+      COMPILER_THROW("ARRAY_MAP expects function/closure");
     }
 
  	auto resultRef = heap_.allocateArray();
@@ -2350,7 +2350,7 @@ if (object.isIntervalId()) {
 	Value fn = popStack();
 	Value array = popStack();
 	if (!array.isArrayId()) {
-		COMPILER_THROW_AT("ARRAY_FILTER expects array", instruction);
+		COMPILER_THROW("ARRAY_FILTER expects array");
 	}
 	auto *arr = heap_.array(array.asArrayId());
 	if (!arr) {
@@ -2381,7 +2381,7 @@ if (object.isIntervalId()) {
     Value fn = popStack();
     Value array = popStack();
     if (!array.isArrayId()) {
-      COMPILER_THROW_AT("ARRAY_REDUCE expects array", instruction);
+      COMPILER_THROW("ARRAY_REDUCE expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
@@ -2404,7 +2404,7 @@ if (object.isIntervalId()) {
 	Value fn = popStack();
 	Value array = popStack();
 	if (!array.isArrayId()) {
-		COMPILER_THROW_AT("ARRAY_FOREACH expects array", instruction);
+		COMPILER_THROW("ARRAY_FOREACH expects array");
 	}
 	auto *arr = heap_.array(array.asArrayId());
 	if (!arr) {
@@ -2466,10 +2466,10 @@ if (object.isIntervalId()) {
     Value substr = popStack();
     Value str = popStack();
     if (!str.isStringValId() || !substr.isStringValId()) {
-      COMPILER_THROW_AT("STRING_HAS expects strings", instruction);
+      COMPILER_THROW("STRING_HAS expects strings");
     }
     if (!current_chunk) {
-      COMPILER_THROW_AT("STRING_HAS: no current chunk", instruction);
+      COMPILER_THROW("STRING_HAS: no current chunk");
     }
     const std::string &s = current_chunk->getString(str.asStringValId());
     const std::string &sub = current_chunk->getString(substr.asStringValId());
@@ -2481,10 +2481,10 @@ if (object.isIntervalId()) {
     Value prefix = popStack();
     Value str = popStack();
     if (!str.isStringValId() || !prefix.isStringValId()) {
-      COMPILER_THROW_AT("STRING_STARTS expects strings", instruction);
+      COMPILER_THROW("STRING_STARTS expects strings");
     }
     if (!current_chunk) {
-      COMPILER_THROW_AT("STRING_STARTS: no current chunk", instruction);
+      COMPILER_THROW("STRING_STARTS: no current chunk");
     }
     const std::string &s = current_chunk->getString(str.asStringValId());
     const std::string &pre = current_chunk->getString(prefix.asStringValId());
@@ -2497,10 +2497,10 @@ if (object.isIntervalId()) {
     Value suffix = popStack();
     Value str = popStack();
     if (!str.isStringValId() || !suffix.isStringValId()) {
-      COMPILER_THROW_AT("STRING_ENDS expects strings", instruction);
+      COMPILER_THROW("STRING_ENDS expects strings");
     }
     if (!current_chunk) {
-      COMPILER_THROW_AT("STRING_ENDS: no current chunk", instruction);
+      COMPILER_THROW("STRING_ENDS: no current chunk");
     }
     const std::string &s = current_chunk->getString(str.asStringValId());
     const std::string &suf = current_chunk->getString(suffix.asStringValId());
@@ -2523,7 +2523,7 @@ if (object.isIntervalId()) {
       }
 	} else if (value.isStringValId()) {
 		if (!current_chunk) {
-			COMPILER_THROW_AT("SPREAD: no current chunk for string spread", instruction);
+			COMPILER_THROW("SPREAD: no current chunk for string spread");
 		}
 		const std::string &str = current_chunk->getString(value.asStringValId());
 		for (char c : str) {

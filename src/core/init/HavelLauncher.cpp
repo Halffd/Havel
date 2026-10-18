@@ -2828,6 +2828,84 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       knownGlobals.insert("sys");
       knownGlobals.insert("shell");
       knownGlobals.insert("_nativeTokenize");
+      // Sidecar-module globals (G, force, momentum, ...) are declared in
+      // modules/lang/**.hv and registered on the VM when its stdlib modules
+      // load their sidecars. The script pipeline seeds the resolver from the
+      // live VM (options.vm_override->getAllGlobals()); the build path has no
+      // VM, so construct one and take the same universe. Without this, strict
+      // lexical resolution rejects any script touching sidecar globals
+      // (e.g. `G` from modules/lang/math/physics.hv) in --target aot builds
+      // even though --run accepts them.
+      try {
+        havel::compiler::VM probeVm;
+        // Configure module source resolution the same way engine startup does
+        // (Havel.cpp): without these paths loadModule("math/physics") throws
+        // "Module not found" and the sidecar globals (G, force, ...) never
+        // register. Must happen BEFORE registerPureStdLib, which loads the
+        // math sidecars during registration.
+        {
+          const char *envStdlib = std::getenv("HAVEL_STDLIB");
+          std::string stdlibPath;
+          if (envStdlib && envStdlib[0] != '\0') {
+            stdlibPath = envStdlib;
+          } else {
+            std::string exePath = Env::executable();
+            if (!exePath.empty()) {
+              stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std")
+                               .string();
+            } else {
+              stdlibPath = "./modules/std";
+            }
+          }
+          probeVm.moduleLoader().setStdlibPath(stdlibPath);
+          std::string exePath = Env::executable();
+          if (!exePath.empty()) {
+            auto modulesPath =
+                std::filesystem::path(exePath).parent_path().parent_path() / "modules";
+            std::error_code ec;
+            if (std::filesystem::exists(modulesPath, ec)) {
+              auto canonicalRoot = std::filesystem::canonical(modulesPath, ec).string();
+              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+              probeVm.moduleLoader().addSearchPath(canonicalRoot);
+            }
+          }
+        }
+        havel::registerPureStdLib(probeVm);
+        // Stdlib modules registered lazily only register their host-function
+        // table until first use; force-load the ones whose sidecar modules
+        // declare bare globals (G, force, ...) so getAllGlobals() sees them.
+        for (const char *modName : {"math", "physics", "array", "object", "string"}) {
+          try {
+            probeVm.ensureModuleLoaded(modName);
+          } catch (...) {
+          }
+        }
+        for (const auto &hfName : probeVm.getHostFunctionNames()) {
+          if (hfName.empty())
+            continue;
+          knownGlobals.insert(hfName);
+          auto dotPos = hfName.find('.');
+          if (dotPos != std::string::npos) {
+            knownGlobals.insert(hfName.substr(0, dotPos));
+          }
+        }
+        for (const auto &[globalName, val] : probeVm.getAllGlobals()) {
+          (void)val;
+          if (globalName.empty())
+            continue;
+          knownGlobals.insert(globalName);
+          auto dotPos = globalName.find('.');
+          if (dotPos != std::string::npos) {
+            knownGlobals.insert(globalName.substr(0, dotPos));
+          }
+        }
+      } catch (const std::exception &e) {
+        warn("AOT: could not probe VM globals for strict-mode seeding ({}); "
+             "sidecar-module globals may not resolve",
+             e.what());
+      }
       compiler.setKnownGlobals(knownGlobals);
     }
     try {

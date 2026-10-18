@@ -212,11 +212,13 @@ public:
                          optimizing_->name());
           return true;
         }
-        if (fast_ && fast_->compile(func)) {
-          ::havel::debug("[backend] tier2 {} via {} (optimizing declined)",
-                         func.name, fast_->name());
-          return true;
-        }
+        // No optimizing backend (or it declined). Do NOT fall back to
+        // the fast tier: the function already runs fast-tier code from
+        // its tier-1 compile, and re-defining the same name in the same
+        // backend module can only fail with DuplicateDefinition - the
+        // noisy [hclb] compile failures observed on tier-2 promotion in
+        // no-LLVM builds. The promotion is a no-op: the request is
+        // satisfied by the code already installed.
         return false;
       default:
         return compile(func);

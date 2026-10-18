@@ -549,29 +549,4 @@ fn isJoystickButton(evdev) {
 // Havel::initialize contexts (REPL, script+repl, daemon) while the same
 // call worked from HavelEngine, leaving those modes with an unhydrated
 // KeyMap and hotkeys that never matched physical keys.
-// TEMP PROBE (repl-hydration-body-mutation-loss investigation) - remove after
-fn probeIterInternals() {
-  _ints = []
-  _ints.push(1)
-  _n1 = #_ints
-  a = _ints
-  a.push(2)
-  _n2 = #a
-  _ints[0] = 9
-  _v = _ints[0]
-  _before = 0
-  _after = 0
-  _g = []
-  _g.push(7)
-  _ng = #_g
-  for _k in _name_to_key {
-    _before = #_ints
-    _ints.push(5)
-    _after = #_ints
-    break
-  }
-  str(_n1) + ":" + str(_n2) + ":" + str(_v) + ":" + str(_ng) + ":" + str(_before) + ":" + str(_after)
-}
-
-bodyProbe = probeIterInternals()
 keymap.installRows(allEntries())

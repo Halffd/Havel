@@ -464,6 +464,17 @@ void Havel::initialize(bool isStartup) {
   // the same loader; this is the Havel-side equivalent the KeyMap.cpp
   // comment has claimed exists since the table moved out of C++.
 #ifdef ENABLE_HAVEL_LANG
+  // Register builtin prototypes (array.push, string.len, ...) on bytecodeVM
+  // before ANY module body runs. execute() does this via
+  // registerDefaultHostGlobals(), but the REPL / script+repl / daemon paths
+  // use executePersistent(), which skips it. Without the registration every
+  // method call made from a module body during hydration (e.g.
+  // allEntries()'s result.push(...) in kymap.hv) falls into CALL_METHOD's
+  // silent-null arm: the mutation vanishes without an error, the module
+  // loads with empty data, and subscript ops keep working - which is why
+  // the loss looked like a "state split" instead of a missing dispatch.
+  // Idempotent: registerDefaultPrototypes() guards on prototypes_registered_.
+  bytecodeVM->registerDefaultPrototypes();
   havel::loadKeyMapFromHavelModule(*bytecodeVM);
 #endif
   if (WindowManagerDetector::IsX11()) {

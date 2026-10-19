@@ -270,6 +270,28 @@ bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
     case OpCode::STRING_INCLUDES:
     case OpCode::STRING_REVERSE:
     case OpCode::STRING_TRIM_START:
+    // Bit ops other than POPCOUNT: no lowering.
+    case OpCode::BIT_CLZ:
+    case OpCode::BIT_CTZ:
+    case OpCode::BIT_BSWAP:
+    case OpCode::BIT_ROTL:
+    case OpCode::BIT_ROTR:
+    case OpCode::FORMAT_BASE64_DECODE:
+    case OpCode::FORMAT_UNHEX:
+    case OpCode::STRING_PAD_START:
+    case OpCode::STRING_PAD_END:
+    case OpCode::STRING_REPEAT:
+    case OpCode::STRING_TRIM_END:
+    case OpCode::OBJECT_ASSIGN:
+    case OpCode::OBJECT_SEAL:
+    case OpCode::OBJECT_IS_SEALED:
+    case OpCode::OBJECT_IS_FROZEN:
+    // Goroutine groups: JIT frames cannot await across these.
+    case OpCode::WAITGROUP_NEW:
+    case OpCode::WAITGROUP_ADD:
+    case OpCode::WAITGROUP_WAIT:
+    case OpCode::WAITGROUP_DONE:
+    case OpCode::DEFER_PUSH:
       return true;
     default:
       break;

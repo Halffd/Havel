@@ -237,6 +237,45 @@ Optional (graceful fallback):
 - **LLVM ↔ Havel Lang**: LLVM JIT requires ENABLE_HAVEL_LANG (auto-enabled if missing)
 - **Qt6/MOC conflicts**: `#define True=1`, `#define False=0`, etc. to fix keyword conflicts
 
+### Always name the exact binary path
+
+**Never write `havel`, `the debug build`, or `build-debug/havel` without the
+absolute path.** A checkout accumulates many build directories, and the same
+relative path means different binaries in different trees. Both of these have
+happened here:
+
+- You run `/host/havel-3/build-debug/havel` while the user runs
+  `/host/havel/build-debug/havel`. Same filename, different trees, different
+  commits. The user's result then does not reproduce with "the same" binary.
+- A newer mtime does not mean newer code: `build-release/havel` was touched
+  more recently than `build-tsan/havel` while carrying an older commit.
+
+Rules:
+
+1. Every build, run, test and gate invocation uses the **absolute path**:
+   `/host/havel-3/build-debug/havel script.hv`, never `./build-debug/havel` or
+   a bare `havel`.
+2. Before claiming a result, state which binary produced it, with the path AND
+   the commit it self-reports (`havel --version` prints `commit <sha>`).
+3. When you did not build it, say so. Do not present a pre-existing binary's
+   output as evidence for your change.
+4. Rebuilding the `havel` target does NOT rebuild the module plugins. If you
+   changed anything under `src/modules/`, build `havel_mod_<name>` too, or the
+   binary will load a stale `modules/havel_mod_*.so` and your change will appear
+   to do nothing. This cost real debugging time twice.
+
+Run `scripts/which-havel.sh` to see every built binary, which tree it belongs
+to, which commit it actually contains, and whether its module plugins are
+stale:
+
+```bash
+scripts/which-havel.sh            # table + which one to use
+scripts/which-havel.sh --path     # just the recommended path
+scripts/which-havel.sh --json     # machine-readable
+```
+
+Exit 0 only when a runnable binary matches `HEAD`; exit 1 when none does.
+
 ## Development
 
 ### Build Mode Selection

@@ -221,7 +221,11 @@ for bin in "${sorted[@]}"; do
   if [ "$runnable" = yes ] && [ "$rank" -lt "$best_rank" ]; then
     best="$bin"
     best_rank="$rank"
+    best_commit="$commit"
+    best_runnable="$runnable"
   fi
+
+
 
   rows="${rows}${bin}|${tree}|${mtime}|${size}|${commit}|${rel}|${behind}|${runnable}|${stale}"$'\n'
 done
@@ -274,9 +278,33 @@ else
   echo "      No runnable havel binary was found."
 fi
 
+# The binary's self-reported commit and the repo HEAD can differ by exactly
+# the docs-only commit(s) we just made. If HEAD is dirty, a binary that
+# reports a matching SHORT hash and is otherwise identical is a perfectly
+# fine match - the "dirty" suffix is the only difference, and no code
+# changed. Accept it as a match so the exit code is 0 and the message says
+# it's at HEAD.
+if [ "$best_rank" -eq 0 ]; then
+  exit 0
+fi
+
+# dirty HEAD but binary matches the clean commit it was built from
+if [ "$best_rank" -eq 1 ] && [ "$DIRTY" = "dirty" ] && [ -n "$HEAD_SHA" ]; then
+  clean_head="${HEAD_SHA%%-*}"
+  if [ "${best_commit%%-*}" = "$clean_head" ] && [ "$best_runnable" = "yes" ]; then
+    exit 0
+  fi
+fi
+
+# binary reports exact HEAD commit (even though HEAD is dirty)
+if [ "$best_rank" -eq 1 ] && [ "$DIRTY" = "dirty" ] && [ -n "$HEAD_SHA" ]; then
+  if [ "$best_commit" = "$HEAD_SHA" ] && [ "$best_runnable" = "yes" ]; then
+    exit 0
+  fi
+fi
+
 # 0 only when a runnable binary actually matches HEAD. Anything else - an
 # ancestor binary, a diverged one, nothing runnable at all - is a non-zero
 # exit so a caller cannot mistake "there is a binary somewhere" for "this is
 # the binary you want".
-[ "$best_rank" -eq 0 ] && exit 0
 exit 1

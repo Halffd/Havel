@@ -200,29 +200,30 @@ for bin in "${sorted[@]}"; do
   if matches_head "$commit"; then
     rel="HEAD"
     rank=0
+    behind=0
   elif is_ancestor "$commit"; then
     rel="ancestor"
     rank=1
+    behind="$(git rev-list --count "$commit"..HEAD 2>/dev/null || echo '?')"
   else
     rel="DIVERGED"
-    rank=3
+    rank=2
+    behind="?"
   fi
   stale="$(stale_modules "$bindir")"
 
-  # Prefer HEAD, then the most recent mtime among the rest.
-  if [ "$runnable" = yes ]; then
-    if [ "$rel" = "HEAD" ]; then
-      if [ "$best_rank" -gt 0 ]; then
-        best="$bin"
-        best_rank=0
-      fi
-    elif [ "$best_rank" -eq 99 ]; then
-      best="$bin"
-      best_rank=1
-    fi
+  # Prefer a binary that matches HEAD, then an ANCESTOR of HEAD, and only
+  # then something diverged. Ranking an ancestor above a diverged sibling is
+  # not cosmetic: after a docs-only commit nothing matches HEAD, and the
+  # newest-mtime binary on the box may be a DIVERGED build from another tree -
+  # recommending that over a merely one-commit-behind local build is strictly
+  # worse advice. Ties keep the newest, since the list is sorted newest-first.
+  if [ "$runnable" = yes ] && [ "$rank" -lt "$best_rank" ]; then
+    best="$bin"
+    best_rank="$rank"
   fi
 
-  rows="${rows}${bin}|${tree}|${mtime}|${size}|${commit}|${rel}|${runnable}|${stale}"$'\n'
+  rows="${rows}${bin}|${tree}|${mtime}|${size}|${commit}|${rel}|${behind}|${runnable}|${stale}"$'\n'
 done
 
 # --- output -----------------------------------------------------------------
@@ -236,12 +237,12 @@ if [ "$JSON" -eq 1 ]; then
   printf '{"repo":"%s","head":"%s","head_short":"%s","dirty":"%s","recommended":"%s","binaries":[' \
     "$REPO_DIR" "$HEAD_SHA" "$HEAD_SHORT" "$DIRTY" "$best"
   first=1
-  while IFS='|' read -r bin tree mtime size commit rel runnable stale; do
+  while IFS='|' read -r bin tree mtime size commit rel behind runnable stale; do
     [ -z "$bin" ] && continue
     [ "$first" -eq 0 ] && printf ','
     first=0
-    printf '{"path":"%s","tree":"%s","mtime":"%s","size":"%s","commit":"%s","relation":"%s","executable":"%s","stale_modules":"%s"}' \
-      "$bin" "$tree" "$mtime" "$size" "$commit" "$rel" "$runnable" "$stale"
+    printf '{"path":"%s","tree":"%s","mtime":"%s","size":"%s","commit":"%s","relation":"%s","commits_behind":"%s","executable":"%s","stale_modules":"%s"}' \
+      "$bin" "$tree" "$mtime" "$size" "$commit" "$rel" "$behind" "$runnable" "$stale"
   done <<<"$rows"
   printf ']}\n'
   exit 0
@@ -250,13 +251,13 @@ fi
 echo "repo:    $REPO_DIR"
 echo "HEAD:    $HEAD_SHORT ($DIRTY)"
 echo
-printf '%-46s %-28s %-19s %-12s %-9s %-5s %s\n' \
-  "PATH" "TREE" "BUILT (mtime)" "COMMIT" "VS HEAD" "EXEC" "STALE MOD."
-while IFS='|' read -r bin tree mtime size commit rel runnable stale; do
+printf '%-46s %-26s %-19s %-11s %-9s %-7s %-5s %s\n' \
+  "PATH" "TREE" "BUILT (mtime)" "COMMIT" "VS HEAD" "BEHIND" "EXEC" "STALE MOD."
+while IFS='|' read -r bin tree mtime size commit rel behind runnable stale; do
   [ -z "$bin" ] && continue
   short="${commit:0:10}"
-  printf '%-46s %-28s %-19s %-12s %-9s %-5s %s\n' \
-    "$bin" "$tree" "$mtime" "$short" "$rel" "$runnable" "$stale"
+  printf '%-46s %-26s %-19s %-11s %-9s %-7s %-5s %s\n' \
+    "$bin" "$tree" "$mtime" "$short" "$rel" "$behind" "$runnable" "$stale"
 done <<<"$rows"
 
 echo

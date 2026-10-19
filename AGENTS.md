@@ -3,23 +3,62 @@
 
 ## Build System
 
-Primary build: `./build.sh [mode] [command]`
+Primary build: `./build.sh [--mode N] <command>`. Modes 0-20 are unchanged
+(`5 build` still means full release with LLVM); what changed is everything
+around them. Full help: `./build.sh help`.
 
-| Mode | Type | Tests | Havel Lang | LLVM | Build Dir |
-|------|------|-------|------------|------|-----------|
-| 0 | Debug | ✓ | ✓ | ✓ | build-debug |
-| 5 | Release | ✓ | ✓ | ✓ | build-release |
-| 6 | Debug | ✓ | ✓ | ✗ | build-debug (default) |
-| 8 | Debug | ✗ | ✓ | ✗ | build-debug |
-| 9 | Release | ✓ | ✓ | ✗ | build-release |
+```bash
+# lifecycle (mode default 6 = Debug+Tests+Lang, no LLVM)
+./build.sh build
+./build.sh rebuild              # clean + build
+./build.sh 5 build              # full release with LLVM
+./build.sh run script.hv        # runs the built binary, prints its commit
 
-Other modes (1-4, 7, 10-13) exist in build.sh BUILD_CONFIGS; the table lists the common ones.
+# tests - four kinds, the distinction matters
+./build.sh test --kind quick    # seconds: the two fast gtest targets
+./build.sh test --kind gate     # THE pre-merge gate: hvtest --smoke --slow-too
+./build.sh test --kind smoke    # hvtest --smoke only
+./build.sh test --kind ctest    # full ctest
 
-Common commands:
+# fleet - every sibling checkout (/host/havel, /host/havel-2, ...)
+./build.sh fleet status         # what is built where, commits, staleness, sizes
+./build.sh fleet build          # build all workspaces
+./build.sh fleet test           # test all workspaces
+
+# disk - 23G of build dirs across trees; dry-run by default
+./build.sh gc                           # report only
+./build.sh gc --prune --older-than 14d --yes
+./build.sh gc --hardlink --yes          # dedupe identical plugin .so
+./build.sh gc --ccache-zero --yes
+
+# resource limits (persisted in ~/.cache/havel-build/limits.conf)
+./build.sh limit show
+./build.sh limit set max-parallel 2
+./build.sh limit set ccache-size 8G     # applies to ccache immediately
+
+# live processes (any agent's builds) + timing history
+./build.sh jobs
+./build.sh pause <pid> | resume <pid> | stop <pid>
+./build.sh report                # avg/min/max per workspace, mode, command
+./build.sh doctor
+```
+
+Conventions that are now script-enforced:
+
+- Every build/test run records duration and exit status to
+  `~/.cache/havel-build/times.jsonl`; `report` reads it. Check `report`
+  before claiming a build is "usually fast".
+- `status` and `which` never trust file mtimes: they ask each binary what
+  commit it contains. See the "Always name the exact binary path" rule below.
+- `pause`/`resume`/`stop` signal a process and its descendants, never the
+  process group - a build inherits the caller's pgid, so a group signal
+  freezes the shell that started it.
+- `gc --prune` and `--hardlink` are no-ops without `--yes`.
+
+Common commands (legacy forms still work):
 - `./build.sh 5 build` - Full release with LLVM
 - `./build.sh 6 build` - Fast debug (no LLVM)
-- `./build.sh test` - Run all tests
-- `./build.sh detect` - Show system dependencies
+- `./build.sh detect` - environment check (now `doctor`)
 
 ## Executables
 

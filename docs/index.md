@@ -11,13 +11,18 @@ description: "Havel — a systems scripting language for desktop automation, win
 
 ```bash
 # Build (debug, no LLVM — fastest iteration)
-./build.sh 6 build
+./build.sh build
 
 # Run a script
-./build-debug/havel script.hv
+./build.sh run script.hv
 
-# Start REPL
-./build-debug/havel --repl
+# Fast test subset (seconds), or the full pre-merge gate
+./build.sh test --kind quick
+./build.sh test --kind gate
+
+# Which binary is current, across all checkouts on this machine
+./build.sh which
+./build.sh status
 ```
 
 ```hv

@@ -64,11 +64,10 @@ makepkg -si
 git clone https://github.com/Halffd/Havel
 cd Havel
 
-# Detect system dependencies
-./build.sh detect
+# Check the toolchain (cmake, clang, LLVM, ccache, disk)
+./build.sh doctor
 
-# Build modes (see Build System for full table)
-# Default (mode 6): Debug, tests, Havel Lang, no LLVM
+# Default build (mode 6): Debug, tests, Havel Lang, no LLVM
 ./build.sh build
 
 # Full release with LLVM JIT (mode 5)
@@ -104,10 +103,53 @@ cd Havel
 ./build.sh 16 build
 ```
 
+### Tests
+
+```bash
+./build.sh test --kind quick    # seconds - fast gtest subset, inner loop
+./build.sh test --kind gate     # the pre-merge gate (hvtest --smoke --slow-too)
+./build.sh test --kind smoke    # hvtest --smoke only
+./build.sh test --kind ctest    # full ctest suite
+```
+
+### Working Across Checkouts
+
+Several copies of this repo often exist side by side. `fleet` and `status`
+operate on all of them and always identify binaries by the commit they
+contain, never by file timestamp:
+
+```bash
+./build.sh status               # every build dir: commit, staleness, size
+./build.sh which                # which binary to actually run
+./build.sh fleet build          # build every workspace
+./build.sh fleet test           # test every workspace
+
+# Reclaim disk: 23G of build dirs is normal. Dry-run by default.
+./build.sh gc                                       # report
+./build.sh gc --prune --older-than 14d --yes        # delete idle dirs
+./build.sh gc --hardlink --yes                      # dedupe plugin .so
+
+# Timing history: every build/test run is recorded
+./build.sh report
+```
+
+### Resource Limits
+
+```bash
+./build.sh limit show
+./build.sh limit set max-parallel 2     # fleet concurrency
+./build.sh limit set ccache-size 8G     # shared compiler cache
+
+# Manage a running build (works on any process, including other agents')
+./build.sh jobs
+./build.sh pause <pid> && ./build.sh resume <pid>
+./build.sh stop <pid>
+```
+
 ### Environment Variables
 
 ```bash
-# Parallel jobs (default: all cores)
+# Parallel jobs (default: auto, capped to leave headroom; --threads overrides)
 THREADS=8 ./build.sh build
 
 # Sanitizer levels (Debug builds only)

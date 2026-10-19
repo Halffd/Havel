@@ -20,8 +20,33 @@ use "process"
 use "sys"
 
 HPKG = ""
-candidates = ["${sys.cwd()}/build-debug/hpkg", "${sys.cwd()}/build-release/hpkg",
-              "${sys.cwd()}/out/bin/hpkg"]
+// Prefer the hpkg built beside the havel binary this suite is running
+// (HVTEST sets HAVEL_BINARY to its own build's havel). Probing
+// ${cwd}/build-debug first validated a *foreign* build's hpkg: on a box with
+// several build dirs that binary can predate the subcommands under test
+// (observed: a stale hpkg without toolchain-install --from failed 19 checks
+// that the current tree passes). HAVEL_BINARY's directory is by construction
+// built from current sources; the cwd candidates remain as fallbacks.
+bindir = sys.env("HAVEL_BINARY")
+if bindir != null && bindir != "" {
+    lastSlash = -1
+    bi = #bindir - 1
+    while bi >= 0 {
+        if bindir[bi:bi+1] == "/" { lastSlash = bi; bi = -1 }
+        bi = bi - 1
+    }
+    if lastSlash > 0 {
+        candidates = ["${bindir[0:lastSlash]}/hpkg"]
+    } else {
+        candidates = []
+    }
+} else {
+    candidates = []
+}
+for c in ["${sys.cwd()}/build-debug/hpkg", "${sys.cwd()}/build-release/hpkg",
+          "${sys.cwd()}/out/bin/hpkg"] {
+    candidates.push(c)
+}
 for c in candidates {
     if fs.exists(c) {
         HPKG = c

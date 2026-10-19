@@ -459,13 +459,17 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
                         if (it->second.isHostFuncId()) {
                             host_idx = it->second.asHostFuncId();
                             found_host = true;
-                            // Check if this object is in globals (namespace/module style)
-                            for (auto &g : globals) {
-                                if (g.second.isObjectId() &&
-                                    g.second.asObjectId() == recv->asObjectId()) {
-                                    found_via_module = true;
-                                    break;
-                                }
+                            // Parity with CALL_METHOD's direct-field arm
+                            // (VMControlFlow.cpp): a host-fn field that does not
+                            // want self never receives the receiver, regardless of
+                            // whether the receiver object is bound to a global.
+                            bool isClassProtoSim = obj->get("__class") != nullptr ||
+                                                   obj->get("__struct") != nullptr ||
+                                                   obj->get("__is_class") != nullptr;
+                            bool wantsSelfSim =
+                                host_function_wants_self_.count(it->second.asHostFuncId()) > 0;
+                            if (!isClassProtoSim && !wantsSelfSim) {
+                                found_via_module = true;
                             }
                         } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
                             vm_func = it->second;

@@ -214,18 +214,18 @@ fn request(method, url, headers, body, timeoutMs) {
     }
 
     // Build HTTP/1.1 request
-    reqStr = "{method} {parsed.path} HTTP/1.1\r\n"
-    reqStr = reqStr + "Host: {parsed.host}\r\n"
+    reqStr = "${method} ${parsed.path} HTTP/1.1\r\n"
+    reqStr = reqStr + "Host: ${parsed.host}\r\n"
     reqStr = reqStr + "Connection: close\r\n"
 
     // Set content-length if body exists
     if body != null {
-        reqStr = reqStr + "Content-Length: {#body}\r\n"
+        reqStr = reqStr + "Content-Length: ${#body}\r\n"
     }
 
     // Add other headers
     for k in headers.keys() {
-        reqStr = reqStr + "{k}: {headers[k]}\r\n"
+        reqStr = reqStr + "${k}: ${headers[k]}\r\n"
     }
     reqStr = reqStr + "\r\n"
 
@@ -277,7 +277,7 @@ fn HTTPServer(host, port) {
     self = {host: host, port: port, routes: {}, defaultHandler: null, running: false, tcpServer: null, acceptTimeoutMs: 1000}
 
     fn _route(method, path, handler) {
-        key = "{method}:{path}"
+        key = "${method}:${path}"
         self.routes[key] = handler
     }
 
@@ -367,7 +367,7 @@ fn HTTPServer(host, port) {
         req = {method: method, path: path, query: queryStr, headers: headers, body: body}
         
         // Find route handler
-        handlerKey = "{method}:{path}"
+        handlerKey = "${method}:${path}"
         res = null
         if self.routes.has(handlerKey) {
             handler = self.routes[handlerKey]
@@ -383,18 +383,18 @@ fn HTTPServer(host, port) {
         if res.status == 404 { statusPhrase = "Not Found" }
         else if res.status == 500 { statusPhrase = "Internal Server Error" }
         
-        resStr = "HTTP/1.1 {res.status} {statusPhrase}\r\n"
+        resStr = "HTTP/1.1 ${res.status} ${statusPhrase}\r\n"
         resStr = resStr + "Server: Havel-WebServer/1.0\r\n"
         resStr = resStr + "Connection: close\r\n"
         
         if res.body != null {
-            resStr = resStr + "Content-Length: {#res.body}\r\n"
+            resStr = resStr + "Content-Length: ${#res.body}\r\n"
         } else {
             resStr = resStr + "Content-Length: 0\r\n"
         }
 
         for k in res.headers.keys() {
-            resStr = resStr + "{k}: {res.headers[k]}\r\n"
+            resStr = resStr + "${k}: ${res.headers[k]}\r\n"
         }
         resStr = resStr + "\r\n"
 

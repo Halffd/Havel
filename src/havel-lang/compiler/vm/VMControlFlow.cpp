@@ -592,8 +592,19 @@ if (instanceObj) {
                         bool isClassProto = instanceObj->get("__class") != nullptr ||
                                           instanceObj->get("__struct") != nullptr ||
                                           instanceObj->get("__is_class") != nullptr;
-                        if (!isClassProto && !wantsSelf &&
-                            isNamespaceObjectGlobal(receiver.asObjectId())) {
+                        // Direct host-fn fields that do not want self are plain
+                        // callables (namespace fns, $module_closure_ wrappers around
+                        // module-exported closures): never prepend the receiver.
+                        // This matches the JIT bridge classifier (JitRuntimeBridges
+                        // .cpp methodWantsSelf). The old isNamespaceObjectGlobal gate
+                        // exempted only receivers that happened to be bound to a
+                        // global, so a wrapper called on an object held in a LOCAL
+                        // (the normal case inside functions/goroutines) got the
+                        // object prepended as arg0: TCPConnection._send received the
+                        // connection object as `data`, every real arg shifted one
+                        // slot, and socket.hv's ord(null)==110 filled FFI send
+                        // buffers with 'n' (all HTTP responses were garbage).
+                        if (!isClassProto && !wantsSelf) {
                             found_via_module = true;
                         }
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
@@ -1027,8 +1038,14 @@ if (found_host) {
                         bool isClassProto = instanceObj->get("__class") != nullptr ||
                                             instanceObj->get("__struct") != nullptr ||
                                             instanceObj->get("__is_class") != nullptr;
-                        if (!isClassProto &&
-                            isNamespaceObjectGlobal(receiver.asObjectId())) {
+                        // Same rule as CALL_METHOD's direct-field arm (see there):
+                        // a host-fn field that does not want self never receives
+                        // the receiver, regardless of whether the receiver object
+                        // is bound to a global. Keeps CALL_METHOD_SPREAD in parity
+                        // with CALL_METHOD and the JIT bridge classifier.
+                        bool wantsSelfSpread =
+                            host_function_wants_self_.count(host_func_idx) > 0;
+                        if (!isClassProto && !wantsSelfSpread) {
                             found_via_module = true;
                         }
                     } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {

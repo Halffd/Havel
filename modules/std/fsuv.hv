@@ -150,7 +150,7 @@ fn close(fd) {
 fn _mkbuf(ptr, len) {
     bv = ffi.allocBytes(16)
     ffi.set_ptr(bv, ptr)
-    ffi.set_u64(offset(bv, 8), len)
+    ffi.set_u64(ffi.ptr_add(bv, 8), len)
     return bv
 }
 
@@ -212,20 +212,20 @@ fn appendFile(path, content) {
 
 fn _parseStat(sb) {
     info = {}
-    info.dev = ffi.get_u64(offset(sb, 0))
-    info.st_mode = ffi.get_u64(offset(sb, 8))
-    info.nlink = ffi.get_u64(offset(sb, 16))
-    info.uid = ffi.get_u64(offset(sb, 24))
-    info.gid = ffi.get_u64(offset(sb, 32))
-    info.rdev = ffi.get_u64(offset(sb, 40))
-    info.ino = ffi.get_u64(offset(sb, 48))
-    info.size = ffi.get_i64(offset(sb, 56))
-    info.blksize = ffi.get_u64(offset(sb, 64))
-    info.blocks = ffi.get_u64(offset(sb, 72))
-    info.atime_sec = ffi.get_i64(offset(sb, 96))
-    info.mtime_sec = ffi.get_i64(offset(sb, 112))
-    info.ctime_sec = ffi.get_i64(offset(sb, 128))
-    info.birthtime_sec = ffi.get_i64(offset(sb, 144))
+    info.dev = ffi.get_u64(ffi.ptr_add(sb, 0))
+    info.st_mode = ffi.get_u64(ffi.ptr_add(sb, 8))
+    info.nlink = ffi.get_u64(ffi.ptr_add(sb, 16))
+    info.uid = ffi.get_u64(ffi.ptr_add(sb, 24))
+    info.gid = ffi.get_u64(ffi.ptr_add(sb, 32))
+    info.rdev = ffi.get_u64(ffi.ptr_add(sb, 40))
+    info.ino = ffi.get_u64(ffi.ptr_add(sb, 48))
+    info.size = ffi.get_i64(ffi.ptr_add(sb, 56))
+    info.blksize = ffi.get_u64(ffi.ptr_add(sb, 64))
+    info.blocks = ffi.get_u64(ffi.ptr_add(sb, 72))
+    info.atime_sec = ffi.get_i64(ffi.ptr_add(sb, 96))
+    info.mtime_sec = ffi.get_i64(ffi.ptr_add(sb, 112))
+    info.ctime_sec = ffi.get_i64(ffi.ptr_add(sb, 128))
+    info.birthtime_sec = ffi.get_i64(ffi.ptr_add(sb, 144))
     info.isDir = (( info.st_mode & 0o170000 )) == 0o040000
     info.isFile = (( info.st_mode & 0o170000 )) == 0o100000
     info.isSymlink = (( info.st_mode & 0o170000 )) == 0o120000
@@ -265,8 +265,8 @@ fn fstat(fd) {
     if r < 0 { _cleanup(req); return null }
     sb = ffi.call(_uv_fs_get_statbuf, "pointer", _t_p, req)
     info = {}
-    info.size = ffi.get_i64(offset(sb, 56))
-    info.st_mode = ffi.get_u64(offset(sb, 8))
+    info.size = ffi.get_i64(ffi.ptr_add(sb, 56))
+    info.st_mode = ffi.get_u64(ffi.ptr_add(sb, 8))
     info.isDir = (( info.st_mode & 0o170000 )) == 0o040000
     info.isFile = (( info.st_mode & 0o170000 )) == 0o100000
     _cleanup(req)

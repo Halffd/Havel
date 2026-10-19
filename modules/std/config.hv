@@ -149,13 +149,26 @@ fn status() {
     return _store.status()
 }
 
-// {exists, valid, problems, duplicateSections, malformedLines}
+// {exists, valid, problems, duplicateSections, duplicateKeys, malformedLines}
 fn validate(filename) {
     return _store.validate(filename)
 }
 
 fn validate() {
     return _store.validate("havel.cfg")
+}
+
+// Collapse duplicate [Section] headers and duplicate key assignments by
+// rewriting the file in canonical form. The in-memory config already merged
+// them on load, so this is about making the file on disk match and reporting
+// what was collapsed. Takes a backup first; a clean file is left untouched.
+// {valid, written, duplicateSections, duplicateKeys, malformedLines, backup}
+fn dedupe() {
+    return _store.dedupe()
+}
+
+fn dedupe(filename) {
+    return _store.dedupe(filename)
 }
 
 // Existing backups, newest first.

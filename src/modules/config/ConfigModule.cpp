@@ -116,15 +116,33 @@ static Value configStatus(const VMApi &api) {
 
 static Value configValidate(const VMApi &api, const std::vector<Value> &args) {
   std::string filename = args.empty() ? "havel.cfg" : api.toString(args[0]);
-  size_t dups = 0, bad = 0;
-  int problems = Configs::Get().Validate(filename, &dups, &bad);
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  int problems = Configs::Get().Validate(filename, &dups, &bad, &dupKeys);
   Value o = api.makeObject();
   // -1 means "file does not exist", which is not the same as "broken".
   api.setField(o, "exists", Value::makeBool(problems >= 0));
   api.setField(o, "valid", Value::makeBool(problems == 0));
   api.setField(o, "problems", Value::makeInt(problems));
   api.setField(o, "duplicateSections", Value::makeInt(static_cast<int64_t>(dups)));
+  api.setField(o, "duplicateKeys", Value::makeInt(static_cast<int64_t>(dupKeys)));
   api.setField(o, "malformedLines", Value::makeInt(static_cast<int64_t>(bad)));
+  return o;
+}
+
+// Collapse duplicate sections and duplicate key assignments in place, so the
+// on-disk file matches the (already merged) in-memory view instead of leaving
+// the cleanup to be discovered by whatever unrelated save came next.
+static Value configDedupe(const VMApi &api, const std::vector<Value> &args) {
+  std::string filename = args.empty() ? std::string() : api.toString(args[0]);
+  HavelConfigDedupeReport rep = Configs::Get().Dedupe(filename);
+  Value o = api.makeObject();
+  api.setField(o, "valid", Value::makeBool(rep.valid));
+  api.setField(o, "written", Value::makeBool(rep.written));
+  api.setField(o, "duplicateSections",
+               Value::makeInt(static_cast<int64_t>(rep.duplicateSections)));
+  api.setField(o, "duplicateKeys", Value::makeInt(static_cast<int64_t>(rep.duplicateKeys)));
+  api.setField(o, "malformedLines", Value::makeInt(static_cast<int64_t>(rep.malformed)));
+  api.setField(o, "backup", api.makeString(rep.backup));
   return o;
 }
 
@@ -243,6 +261,9 @@ void registerConfigModule(const VMApi &api) {
   });
   api.registerFunction("config.validate",
                        [api](const std::vector<Value> &args) { return configValidate(api, args); });
+  api.registerFunction("config.dedupe", [api](const std::vector<Value> &args) {
+    return configDedupe(api, args);
+  });
   api.registerFunction("config.backups", [api](const std::vector<Value> &args) {
     std::string filename = args.empty() ? "havel.cfg" : api.toString(args[0]);
     auto arr = api.makeArray();
@@ -278,6 +299,7 @@ void registerConfigModule(const VMApi &api) {
   api.setField(configObj, "saveReport", api.makeFunctionRef("config.saveReport"));
   api.setField(configObj, "status", api.makeFunctionRef("config.status"));
   api.setField(configObj, "validate", api.makeFunctionRef("config.validate"));
+  api.setField(configObj, "dedupe", api.makeFunctionRef("config.dedupe"));
   api.setField(configObj, "backups", api.makeFunctionRef("config.backups"));
   api.setField(configObj, "restore", api.makeFunctionRef("config.restore"));
   // Propagate __vivify to config methods so the object itself behaves as a namespace

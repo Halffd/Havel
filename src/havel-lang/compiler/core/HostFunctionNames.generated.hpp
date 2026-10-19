@@ -264,6 +264,7 @@ inline constexpr const char *kHostFunctionNames[] = {
     "code",
     "config",
     "config.backups",
+    "config.dedupe",
     "config.diff",
     "config.get",
     "config.getAll",

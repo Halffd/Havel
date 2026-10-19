@@ -125,8 +125,16 @@ public:
     return rep;
   }
 
-  int Validate(const std::string &filename, size_t *duplicateSections, size_t *malformedLines) {
-    return HavelConfig_validateFile(filename.c_str(), duplicateSections, malformedLines);
+  int Validate(const std::string &filename, size_t *duplicateSections,
+               size_t *malformedLines, size_t *duplicateKeys) {
+    return HavelConfig_validateFile(filename.c_str(), duplicateSections, malformedLines,
+                                    duplicateKeys);
+  }
+
+  HavelConfigDedupeReport Dedupe(const std::string &filename = "") {
+    HavelConfigDedupeReport rep;
+    HavelConfig_dedupe(handle(), filename.empty() ? nullptr : filename.c_str(), &rep);
+    return rep;
   }
 
   std::vector<std::string> ListBackups(const std::string &filename = "havel.cfg") {

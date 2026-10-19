@@ -46,6 +46,7 @@ typedef struct {
   size_t removed;    // keys on disk that the save dropped
   size_t changed;    // keys whose value differs
   size_t duplicates; // duplicate [Section] headers seen while reading disk
+  size_t dupKeys;    // duplicate key assignments seen while reading disk
   size_t malformed;  // unparseable lines seen while reading disk
   char backup[512];  // backup file created by this save ("" if none)
 } HavelConfigSaveReport;
@@ -57,8 +58,28 @@ void HavelConfig_saveWithReport(HavelConfig *cfg, const char *filename, HavelCon
 void HavelConfig_diffToDisk(HavelConfig *cfg, HavelConfigSaveReport *out);
 
 // Validate a config file: 0 when clean, otherwise the number of problems.
+// duplicateSections counts repeated [Section] headers; duplicateKeys counts
+// repeated assignments of the same key (last one wins); malformedLines counts
+// lines that are neither a comment, a header, nor a key=value.
 int HavelConfig_validateFile(const char *filename, size_t *duplicateSections,
-                             size_t *malformedLines);
+                             size_t *malformedLines, size_t *duplicateKeys);
+
+// Outcome of a deduplication pass over a config file.
+typedef struct {
+  bool valid;               // file was already canonical; nothing to do
+  size_t duplicateSections; // repeated [Section] headers collapsed
+  size_t duplicateKeys;     // repeated key assignments collapsed (last wins)
+  size_t malformed;         // unparseable lines seen
+  bool written;             // file was rewritten in canonical form
+  char backup[512];         // backup taken before the rewrite ("" if none)
+} HavelConfigDedupeReport;
+
+// Collapse duplicate sections and duplicate key assignments by rewriting the
+// file in canonical form. The in-memory map already merged them on load, so
+// this exists to make the on-disk file match and to report what was collapsed
+// instead of leaving it to be discovered by the next unrelated save.
+void HavelConfig_dedupe(HavelConfig *cfg, const char *filename,
+                        HavelConfigDedupeReport *out);
 
 // List backups newest-first. Caller frees with HavelConfig_freeBackups.
 size_t HavelConfig_listBackups(const char *filename, char ***outPaths);

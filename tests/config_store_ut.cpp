@@ -228,8 +228,8 @@ TEST_F(ConfigStoreTest, DuplicateSectionsAreDetectedLoadedAndRepaired) {
   // Exactly what the old writer produced.
   writeRaw(cfgPath, "[IO]\nBackend = X11\n\n[IO]\nExecutor = Scheduler\n");
 
-  size_t dups = 0, bad = 0;
-  EXPECT_GE(HavelConfig_validateFile("havel.cfg", &dups, &bad), 1);
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  EXPECT_GE(HavelConfig_validateFile("havel.cfg", &dups, &bad, &dupKeys), 1);
   EXPECT_EQ(dups, 1u);
 
   // Loading must merge rather than lose data.
@@ -256,6 +256,112 @@ TEST_F(ConfigStoreTest, ZeroLengthFileRecoversFromBackup) {
   HavelConfig_reload(HavelConfig_getInstance());
   EXPECT_EQ(get("IO.Backend"), "X11") << "a truncated file must not read as 'no settings'";
   EXPECT_GT(fileSize(cfgPath), 0) << "recovery should leave a usable file";
+}
+
+// A repeated key assignment with no repeated header used to report the file
+// as clean: the parser overwrote the earlier value silently and only
+// duplicate [Section] headers were ever counted.
+TEST_F(ConfigStoreTest, DuplicateKeysAreCountedEvenWithoutADuplicateHeader) {
+  writeRaw(cfgPath, "[IO]\nBackend = \"a\"\nBackend = \"b\"\nExecutor = \"S\"\n");
+
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  int problems = HavelConfig_validateFile("havel.cfg", &dups, &bad, &dupKeys);
+  EXPECT_EQ(dupKeys, 1u);
+  EXPECT_EQ(dups, 0u);
+  EXPECT_GE(problems, 1);
+
+  // Last assignment wins, and that is the value that survives.
+  HavelConfig_reload(HavelConfig_getInstance());
+  EXPECT_EQ(get("IO.Backend"), "b");
+}
+
+// Repeats are counted against every header seen so far, not just the one
+// immediately before: comparing only with the previous header missed
+// "[A] ... [B] ... [A]".
+TEST_F(ConfigStoreTest, NonAdjacentRepeatedHeaderIsCounted) {
+  writeRaw(cfgPath, "[A]\nK = \"1\"\n\n[B]\nK = \"2\"\n\n[A]\nK = \"3\"\n");
+
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  HavelConfig_validateFile("havel.cfg", &dups, &bad, &dupKeys);
+  EXPECT_EQ(dups, 1u) << "the second [A] is not adjacent to the first";
+  EXPECT_EQ(dupKeys, 1u);
+}
+
+TEST_F(ConfigStoreTest, DedupeCollapsesBothKindsAndTakesABackup) {
+  set("A.K", "1");
+  set("B.K", "2");
+  HavelConfig_saveWithReport(HavelConfig_getInstance(), NULL, NULL);
+  // A file as an older writer or a hand edit could leave it.
+  writeRaw(cfgPath, "[A]\nK = \"1\"\n\n[B]\nK = \"2\"\n\n[A]\nK = \"3\"\nK = \"4\"\n");
+
+  HavelConfigDedupeReport rep;
+  HavelConfig_dedupe(HavelConfig_getInstance(), NULL, &rep);
+  EXPECT_EQ(rep.duplicateSections, 1u);
+  EXPECT_EQ(rep.duplicateKeys, 2u);
+  EXPECT_TRUE(rep.written);
+  EXPECT_NE(std::string(rep.backup).find(".bak1"), std::string::npos)
+      << "rewriting the user's file must leave a backup";
+
+  std::string text = readFile(cfgPath);
+  EXPECT_EQ(countSub(text, "[A]"), 1) << text;
+  EXPECT_EQ(countSub(text, "[B]"), 1) << text;
+  // Last assignment survives.
+  EXPECT_NE(text.find("K = 4"), std::string::npos) << text;
+}
+
+TEST_F(ConfigStoreTest, DedupeIsANoOpOnACleanFile) {
+  set("A.K", "1");
+  set("B.K", "2");
+  HavelConfig_saveWithReport(HavelConfig_getInstance(), NULL, NULL);
+
+  HavelConfigDedupeReport rep;
+  HavelConfig_dedupe(HavelConfig_getInstance(), NULL, &rep);
+  EXPECT_TRUE(rep.valid);
+  EXPECT_FALSE(rep.written);
+  EXPECT_EQ(rep.duplicateSections, 0u);
+  EXPECT_EQ(rep.duplicateKeys, 0u);
+  EXPECT_EQ(std::string(rep.backup), "");
+  EXPECT_LE(fileSize(backupPath1), 0) << "a no-op dedupe must not burn a backup";
+}
+
+TEST_F(ConfigStoreTest, DedupeIsIdempotent) {
+  set("A.K", "1");
+  set("B.K", "2");
+  HavelConfig_saveWithReport(HavelConfig_getInstance(), NULL, NULL);
+  writeRaw(cfgPath, "[A]\nK = \"1\"\n\n[B]\nK = \"2\"\n\n[A]\nK = \"3\"\n");
+
+  HavelConfigDedupeReport first;
+  HavelConfig_dedupe(HavelConfig_getInstance(), NULL, &first);
+  ASSERT_TRUE(first.written);
+  std::string afterFirst = readFile(cfgPath);
+
+  HavelConfigDedupeReport second;
+  HavelConfig_dedupe(HavelConfig_getInstance(), NULL, &second);
+  EXPECT_TRUE(second.valid);
+  EXPECT_FALSE(second.written);
+  EXPECT_EQ(readFile(cfgPath), afterFirst);
+}
+
+// dedupe repairs the FILE. Writing the live map instead would overwrite a
+// hand-edited file with the older copy memory happens to hold - a repair
+// operation making the file worse.
+TEST_F(ConfigStoreTest, DedupeRepairsTheFileNotTheStaleInMemoryCopy) {
+  set("A.K", "in-memory");
+  HavelConfig_saveWithReport(HavelConfig_getInstance(), NULL, NULL);
+
+  // Someone edits the file afterwards; the in-memory copy is now stale.
+  writeRaw(cfgPath, "[A]\nK = \"1\"\n\n[A]\nK = \"hand-edited\"\n");
+
+  HavelConfigDedupeReport rep;
+  HavelConfig_dedupe(HavelConfig_getInstance(), NULL, &rep);
+  ASSERT_TRUE(rep.written);
+
+  std::string text = readFile(cfgPath);
+  EXPECT_EQ(countSub(text, "[A]"), 1) << text;
+  EXPECT_NE(text.find("hand-edited"), std::string::npos)
+      << "dedupe overwrote the file with the stale in-memory value:\n"
+      << text;
+  EXPECT_EQ(text.find("in-memory"), std::string::npos) << text;
 }
 
 } // namespace

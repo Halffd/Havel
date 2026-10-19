@@ -355,7 +355,8 @@ void HavelConfig_ensureConfigDir(void) {
 
 // Defined in the save-pipeline block below.
 static int copyFileTo(const char *src, const char *dst);
-static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, size_t *malformed);
+static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections,
+                         size_t *malformed, size_t *dupKeys);
 static int cfgRecoverFromBackup(const char *path);
 
 // The single read path. load() and reload() used to carry two copies of this
@@ -376,7 +377,7 @@ static void cfgLoadFromDisk(const char *fpath, int notifyWatchers) {
   CfgMap fresh;
   cfgMapInit(&fresh);
   size_t dups = 0, bad = 0;
-  cfgParseInto(fpath, &fresh, &dups, &bad);
+  cfgParseInto(fpath, &fresh, &dups, &bad, NULL);
   if (dups || bad)
     HAVEL_LOGF_WARN("Config: %s has %zu duplicate section(s) and %zu malformed line(s)", fpath,
                     dups, bad);
@@ -642,10 +643,16 @@ static char *cfgReadWholeFile(const char *path, size_t *outLen) {
 }
 
 // Parse a file into a fresh map without touching global state.
-static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, size_t *malformed) {
-  size_t dups = 0, bad = 0;
+static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections,
+                         size_t *malformed, size_t *dupKeys) {
+  size_t dups = 0, bad = 0, dupKeyCount = 0;
   FILE *f = fopen(path, "r");
   if (f) {
+    // Every section header seen so far, so a repeat is detected against the
+    // whole file rather than only the immediately preceding header. Comparing
+    // only with the previous header missed "[A] ... [B] ... [A]".
+    CfgMap seenSections;
+    cfgMapInit(&seenSections);
     char *section = NULL;
     char line[4096];
     while (fgets(line, sizeof(line), f)) {
@@ -666,12 +673,12 @@ static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, siz
           sec++;
         }
         char *trimmed = trimDup(sec);
-        if (section && *section && strcmp(section, trimmed) != 0) {
-          // A different section: fine. Same section repeated is the
-          // redefinition the old writer produced.
-        } else if (section && *section) {
+        // A repeated header redefines the table, which TOML forbids. Count
+        // every repeat, not just one adjacent to the previous header.
+        if (cfgMapGet(&seenSections, trimmed))
           dups++;
-        }
+        else
+          cfgMapSet(&seenSections, trimmed, "1");
         free(section);
         section = trimmed;
         continue;
@@ -694,9 +701,16 @@ static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, siz
         size_t klen = strlen(section) + strlen(key) + 2;
         char *fullKey = (char *)malloc(klen);
         snprintf(fullKey, klen, "%s.%s", section, key);
+        // A repeated assignment of the same key silently overwrote the earlier
+        // value with no trace. Count it: the surviving value is the last one,
+        // and validation should say so rather than reporting the file clean.
+        if (cfgMapGet(dst, fullKey))
+          dupKeyCount++;
         cfgMapSet(dst, fullKey, val);
         free(fullKey);
       } else {
+        if (cfgMapGet(dst, key))
+          dupKeyCount++;
         cfgMapSet(dst, key, val);
       }
       free(key);
@@ -704,11 +718,14 @@ static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, siz
     }
     fclose(f);
     free(section);
+    cfgMapFree(&seenSections);
   }
   if (dupSections)
     *dupSections = dups;
   if (malformed)
     *malformed = bad;
+  if (dupKeys)
+    *dupKeys = dupKeyCount;
 }
 
 static void cfgDiffMaps(const CfgMap *mem, const CfgMap *disk, HavelConfigSaveReport *rep) {
@@ -846,7 +863,7 @@ static int cfgRecoverFromBackup(const char *path) {
     CfgMap probe;
     cfgMapInit(&probe);
     size_t dups = 0, bad = 0;
-    cfgParseInto(bak, &probe, &dups, &bad);
+    cfgParseInto(bak, &probe, &dups, &bad, NULL);
     size_t keys = probe.len;
     cfgMapFree(&probe);
     if (keys == 0)
@@ -909,7 +926,7 @@ void HavelConfig_saveWithReport(HavelConfig *cfg, const char *filename,
     if (cfgRecoverFromBackup(fpath))
       rep.recovered = true;
   }
-  cfgParseInto(fpath, &disk, &dups, &bad);
+  cfgParseInto(fpath, &disk, &dups, &bad, &rep.dupKeys);
   rep.duplicates = dups;
   rep.malformed = bad;
 
@@ -981,7 +998,7 @@ void HavelConfig_diffToDisk(HavelConfig *cfg, HavelConfigSaveReport *out) {
   CfgMap disk;
   cfgMapInit(&disk);
   size_t dups = 0, bad = 0;
-  cfgParseInto(fpath, &disk, &dups, &bad);
+  cfgParseInto(fpath, &disk, &dups, &bad, &rep.dupKeys);
   rep.duplicates = dups;
   rep.malformed = bad;
   cfgDiffMaps(&g_config.values, &disk, &rep);
@@ -991,7 +1008,7 @@ void HavelConfig_diffToDisk(HavelConfig *cfg, HavelConfigSaveReport *out) {
 }
 
 int HavelConfig_validateFile(const char *filename, size_t *duplicateSections,
-                             size_t *malformedLines) {
+                             size_t *malformedLines, size_t *duplicateKeys) {
   char fpath[4096];
   HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
   struct stat st;
@@ -1000,18 +1017,109 @@ int HavelConfig_validateFile(const char *filename, size_t *duplicateSections,
       *duplicateSections = 0;
     if (malformedLines)
       *malformedLines = 0;
+    if (duplicateKeys)
+      *duplicateKeys = 0;
     return -1; // missing
   }
   CfgMap probe;
   cfgMapInit(&probe);
-  size_t dups = 0, bad = 0;
-  cfgParseInto(fpath, &probe, &dups, &bad);
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  cfgParseInto(fpath, &probe, &dups, &bad, &dupKeys);
   cfgMapFree(&probe);
   if (duplicateSections)
     *duplicateSections = dups;
   if (malformedLines)
     *malformedLines = bad;
-  return (int)(dups + bad);
+  if (duplicateKeys)
+    *duplicateKeys = dupKeys;
+  return (int)(dups + bad + dupKeys);
+}
+
+void HavelConfig_dedupe(HavelConfig *cfg, const char *filename,
+                        HavelConfigDedupeReport *out) {
+  HavelConfigDedupeReport rep;
+  memset(&rep, 0, sizeof(rep));
+
+  char fpath[4096];
+  if (filename && *filename)
+    HavelConfig_getConfigFilePath(filename, fpath, sizeof(fpath));
+  else {
+    havel_mutex_lock(&g_config.mutex);
+    if (!g_config.path || !*g_config.path) {
+      havel_mutex_unlock(&g_config.mutex);
+      if (out)
+        *out = rep;
+      return;
+    }
+    snprintf(fpath, sizeof(fpath), "%s", g_config.path);
+    havel_mutex_unlock(&g_config.mutex);
+  }
+
+  struct stat st;
+  if (stat(fpath, &st) != 0) {
+    rep.valid = true; // nothing on disk to deduplicate
+    if (out)
+      *out = rep;
+    return;
+  }
+
+  // Measure the file as written, independently of the live map: the live map
+  // already merged these on load, so asking it would always answer zero.
+  CfgMap probe2;
+  cfgMapInit(&probe2);
+  size_t dups = 0, bad = 0, dupKeys = 0;
+  cfgParseInto(fpath, &probe2, &dups, &bad, &dupKeys);
+  rep.duplicateSections = dups;
+  rep.duplicateKeys = dupKeys;
+  rep.malformed = bad;
+
+  if (dups == 0 && dupKeys == 0 && bad == 0) {
+    cfgMapFree(&probe2);
+    rep.valid = true;
+    if (out)
+      *out = rep;
+    return;
+  }
+
+  // Rewrite from the FILE, not from the live map. This is a repair operation:
+  // it must not overwrite a hand-edited file with stale in-memory values just
+  // because the map happens to hold an older copy of the same keys.
+  char *merged = NULL;
+  if (!cfgSerialize(&probe2, &merged) || !merged) {
+    if (out)
+      *out = rep;
+    return;
+  }
+
+  // No-op when the canonical text already matches, so a clean file is left
+  // byte-identical and no backup slot is burned.
+  size_t onDiskLen = 0;
+  char *onDisk = cfgReadWholeFile(fpath, &onDiskLen);
+  if (onDisk && onDiskLen == strlen(merged) && memcmp(onDisk, merged, onDiskLen) == 0) {
+    free(onDisk);
+    free(merged);
+    rep.valid = true;
+    if (out)
+      *out = rep;
+    return;
+  }
+  free(onDisk);
+
+  cfgBackupRotate(fpath, rep.backup, sizeof(rep.backup));
+  rep.written = cfgWriteAtomic(fpath, merged);
+  free(merged);
+  (void)cfg;
+
+  // Pick the repaired file up so memory and disk agree again.
+  HavelConfig_reload(HavelConfig_getInstance());
+
+  cfgMapFree(&probe2);
+
+  HAVEL_LOGF_INFO("Config: dedupe %s (duplicate sections=%d duplicate keys=%d malformed=%d written=%d)",
+                  fpath, (int)rep.duplicateSections, (int)rep.duplicateKeys,
+                  (int)rep.malformed, (int)rep.written);
+  if (out)
+    *out = rep;
 }
 
 size_t HavelConfig_listBackups(const char *filename, char ***outPaths) {

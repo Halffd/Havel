@@ -2031,7 +2031,24 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       // importing script's `use` line - the consumer, not the module that
       // actually performed the failing assignment - which sent debugging a
       // 2000-line config away from a 1-line module bug.
-      COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname,
+      //
+      // This also fires once on EVERY daemon exit (14/14 in the 2026-10-18
+      // daemon log) from a callback drained during the exit unwind, and the
+      // production build lost the script location there. Name the executing
+      // module and the exit state so one reproduction identifies which
+      // callback performs the failing assignment.
+      std::string ctx;
+      if (current_chunk) {
+        for (const auto &[name, mc] : module_chunks_) {
+          if (mc.get() == current_chunk) {
+            ctx += " in module " + name;
+            break;
+          }
+        }
+      }
+      if (exit_requested_.load())
+        ctx += " (vm exit in progress)";
+      COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname + ctx,
                         instruction);
     }
 

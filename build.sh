@@ -217,6 +217,7 @@ ws_build() { # workspace mode threads
     -DENABLE_HEADLESS="$headless" -DENABLE_TSAN="$tsan")
   if [ "$lang" = "ON" ]; then cmake_cmd+=(-DENABLE_MODULE_PLUGINS=ON); fi
   if [ "$headless" = "ON" ]; then cmake_cmd+=(-DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF); fi
+  [ ${#SAN_FLAGS[@]} -gt 0 ] && cmake_cmd+=("${SAN_FLAGS[@]}")
 
   say "configure: $(ws_name "$ws") mode $m -> $bdir" "$BLUE"
   [ "$FLAGS_DRYRUN" = 1 ] && { say "  (dry-run) ${cmake_cmd[*]}" "$DIM"; return 0; }
@@ -332,6 +333,43 @@ cmd_which() {
   [ -x "$script" ] || die "scripts/which-havel.sh missing"
   exec "$script" "$@"
 }
+
+# ---------------------------------------------------------------------------
+# sanitizer flags (documented in README/docs; CMake reads the -D equivalents)
+# ---------------------------------------------------------------------------
+OPT_ASAN_LEVEL="default"
+OPT_UBSAN_FULL=0
+OPT_NO_ASAN=0
+OPT_NO_UBSAN=0
+OPT_TSAN=0
+OPT_FSAN=""
+
+apply_sanitizers() {
+  local -a extra=()
+  if [ "$OPT_NO_ASAN" = 1 ]; then
+    extra+=(-DASAN_DETECT_LEAKS=OFF -DASAN_DETECT_ODR_VIOLATION=OFF
+            -DASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+            -DASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF)
+  elif [ "$OPT_ASAN_LEVEL" != "default" ]; then
+    case "$OPT_ASAN_LEVEL" in
+      minimal) extra+=(-DASAN_DETECT_LEAKS=ON -DASAN_DETECT_ODR_VIOLATION=ON
+                       -DASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+                       -DASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF) ;;
+      full|strict)
+        extra+=(-DASAN_DETECT_LEAKS=ON -DASAN_DETECT_ODR_VIOLATION=ON
+                -DASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+                -DASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+                -DASAN_ALLOCATOR_MAY_RETURN_NULL=ON -DASAN_ABORT_ON_ERROR=ON) ;;
+      none|off) extra+=(-DASAN_DETECT_LEAKS=OFF -DASAN_DETECT_ODR_VIOLATION=OFF) ;;
+      *) die "unknown asan level '$OPT_ASAN_LEVEL' (none|minimal|default|full|strict)" ;;
+    esac
+  fi
+  [ "$OPT_UBSAN_FULL" = 1 ] && extra+=(-DUBSAN_ABORT_ON_ERROR=ON)
+  [ "$OPT_NO_UBSAN" = 1 ] && extra+=(-DUBSAN_ABORT_ON_ERROR=OFF)
+  [ -n "$OPT_FSAN" ] && extra+=(-DENABLE_EXTRA_SANITIZERS="$OPT_FSAN")
+  SAN_FLAGS=("${extra[@]}")
+}
+SAN_FLAGS=()
 
 # ---------------------------------------------------------------------------
 # jobs: live process discovery, so pause/resume/stop work on anything running
@@ -665,6 +703,13 @@ while [ $# -gt 0 ]; do
     --json) FLAGS_JSON=1; shift ;;
     --dry-run) FLAGS_DRYRUN=1; shift ;;
     --yes) OPT_YES=1; shift ;;
+    --asan-level) OPT_ASAN_LEVEL="$2"; apply_sanitizers; shift 2 ;;
+    --asan-full|--asanl-full) OPT_ASAN_LEVEL="full"; apply_sanitizers; shift ;;
+    --ubsan-full) OPT_UBSAN_FULL=1; apply_sanitizers; shift ;;
+    --no-asan) OPT_NO_ASAN=1; apply_sanitizers; shift ;;
+    --no-ubsan) OPT_NO_UBSAN=1; apply_sanitizers; shift ;;
+    --tsan|--enable-tsan) OPT_TSAN=1; OPT_MODE="${OPT_MODE:-16}"; shift ;;
+    --fsanitize|--fsan) OPT_FSAN="$2"; apply_sanitizers; shift 2 ;;
     -h|--help|help) help; exit 0 ;;
     --*)
       # Flags after the command belong to that command (e.g. `which --path`,

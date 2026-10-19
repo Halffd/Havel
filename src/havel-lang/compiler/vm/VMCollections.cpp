@@ -2080,33 +2080,44 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     auto *autoSaveRoot = obj->get("__autosave_root");
     if (autoSaveRoot && !autoSaveRoot->isNull()) {
       auto *cfgPathVal = obj->get("__cfg_path");
+      // Accept both string representations. A section created by
+      // autovivification carries a StringValId; a section materialised from
+      // existing config keys at module registration carries a plain interned
+      // StringId (setNestedField uses api.makeString). Testing only
+      // isStringValId() silently skipped every already-known section, so
+      // writes to cfg.Gaming.Classes never reached the config store while
+      // writes to a brand-new cfg.Fresh.K did.
+      std::string cfgPath;
       if (cfgPathVal && cfgPathVal->isStringValId()) {
-        auto *pathStr = heap_.string(cfgPathVal->asStringValId());
-        if (pathStr) {
-          std::string fullKey = *pathStr + "." + *keyStr;
-          // Resolve value to string for config storage
-          std::string valStr;
-          if (value.isBool())
-            valStr = value.asBool() ? "true" : "false";
-          else if (value.isInt())
-            valStr = std::to_string(value.asInt());
-          else if (value.isDouble())
-            valStr = std::to_string(value.asDouble());
-          else if (value.isStringValId()) {
-            auto *s = heap_.string(value.asStringValId());
-            valStr = s ? *s : "";
-          } else if (value.isStringId()) {
-            auto *s = heap_.string(value.asStringId());
-            valStr = s ? *s : "";
-          } else {
-            valStr = "";
-          }
+        auto *p = heap_.string(cfgPathVal->asStringValId());
+        if (p) cfgPath = *p;
+      } else if (cfgPathVal && cfgPathVal->isStringId()) {
+        auto *p = heap_.string(cfgPathVal->asStringId());
+        if (p) cfgPath = *p;
+      }
+      if (!cfgPath.empty()) {
+        std::string fullKey = cfgPath + "." + *keyStr;
+        // Resolve value to string for config storage
+        std::string valStr;
+        if (value.isBool())
+          valStr = value.asBool() ? "true" : "false";
+        else if (value.isInt())
+          valStr = std::to_string(value.asInt());
+        else if (value.isDouble())
+          valStr = std::to_string(value.asDouble());
+        else if (value.isStringValId()) {
+          auto *sv = heap_.string(value.asStringValId());
+          valStr = sv ? *sv : "";
+        } else if (value.isStringId()) {
+          auto *sv = heap_.string(value.asStringId());
+          valStr = sv ? *sv : "";
+        } else {
+          valStr = "";
+        }
 
-          if (!valStr.empty() || value.isBool() || value.isInt() || value.isDouble()) {
-            auto &config = Configs::Get();
-            config.Set(fullKey, valStr, true);
-            // havel::debug("VM Auto-save: {} = {}", fullKey, valStr);
-          }
+        if (!valStr.empty() || value.isBool() || value.isInt() || value.isDouble()) {
+          Configs::Get().Set(fullKey, valStr, true);
+          havel::debug("VM config autosave: {} = '{}'", fullKey, valStr);
         }
       }
     }

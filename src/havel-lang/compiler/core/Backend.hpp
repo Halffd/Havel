@@ -29,32 +29,56 @@
 
 namespace havel::compiler {
 
+// Live-JIT-frame gate (see native_jit_depth_ in vm/VM.hpp). While a backend
+// execute entry is on the stack, ordinary collection sites defer: compiled
+// code holds object ids in native registers/spill slots no GC root set
+// scans. The Cranelift loop checkpoint bypasses the gate through
+// VM::maybeCollectGarbageAtJitCheckpoint (it spills its frame's live
+// values first). Defined in VM.cpp - VM is incomplete in this header.
+void native_jit_frame_enter(VM *vm);
+void native_jit_frame_exit(VM *vm);
+
+struct NativeJitFrameScope {
+  VM *vm_;
+  explicit NativeJitFrameScope(VM *vm) : vm_(vm) {
+    if (vm_)
+      native_jit_frame_enter(vm_);
+  }
+  ~NativeJitFrameScope() {
+    if (vm_)
+      native_jit_frame_exit(vm_);
+  }
+  NativeJitFrameScope(const NativeJitFrameScope &) = delete;
+  NativeJitFrameScope &operator=(const NativeJitFrameScope &) = delete;
+};
+
 class CompilerBackend {
 public:
   virtual ~CompilerBackend() = default;
 
   // Compile one validated function. Returns true when the function is
   // executable through this backend afterwards.
-  virtual bool compile(const BytecodeFunction& func) = 0;
+  virtual bool compile(const BytecodeFunction &func) = 0;
   // Compile every function of a validated module. Returns false if any
   // function fails; functions that already succeeded stay compiled.
-  virtual bool compile_module(const BytecodeChunk& chunk) {
+  virtual bool compile_module(const BytecodeChunk &chunk) {
     bool all = true;
     const size_t count = chunk.getFunctionCount();
     for (size_t i = 0; i < count; ++i) {
-      const BytecodeFunction* fn = chunk.getFunction(static_cast<uint32_t>(i));
-      if (fn && !compile(*fn)) all = false;
+      const BytecodeFunction *fn = chunk.getFunction(static_cast<uint32_t>(i));
+      if (fn && !compile(*fn))
+        all = false;
     }
     return all;
   }
   // Tier-aware compilation contract (see class comment).
-  virtual bool compile_tier(const BytecodeFunction& func, uint8_t tier) {
+  virtual bool compile_tier(const BytecodeFunction &func, uint8_t tier) {
     (void)tier;
     return compile(func);
   }
 
   // Whether a previously compiled function is executable via this backend.
-  virtual bool is_compiled(const std::string& func_name) const = 0;
+  virtual bool is_compiled(const std::string &func_name) const = 0;
 
   // Execute a compiled function. Returns true when the backend executed it
   // (result in *out); false when the caller must fall back to its own
@@ -62,9 +86,12 @@ public:
   // it never executes here). Thrown exceptions propagate to the caller:
   // in particular JitCoroutineSignal escapes JIT execution and tells the VM
   // to re-enter the interpreter for this call.
-  virtual bool execute(VM* vm, const std::string& func_name,
-                       const std::vector<Value>& args, Value* out) {
-    (void)vm; (void)func_name; (void)args; (void)out;
+  virtual bool execute(VM *vm, const std::string &func_name, const std::vector<Value> &args,
+                       Value *out) {
+    (void)vm;
+    (void)func_name;
+    (void)args;
+    (void)out;
     return false;
   }
 
@@ -76,29 +103,28 @@ public:
   virtual void set_optimization_level(uint8_t level) { (void)level; }
 
   // Human-readable backend name for diagnostics.
-  virtual const char* name() const = 0;
+  virtual const char *name() const = 0;
 };
 
 // The interpreter backend: always compiled, executes through the VM.
 class VMBbackend final : public CompilerBackend {
 public:
-  bool compile(const BytecodeFunction& func) override {
-    (void)func;  // Nothing to lower: the VM executes the bytecode directly.
+  bool compile(const BytecodeFunction &func) override {
+    (void)func; // Nothing to lower: the VM executes the bytecode directly.
     return true;
   }
-  bool is_compiled(const std::string& func_name) const override {
+  bool is_compiled(const std::string &func_name) const override {
     // The interpreter can run anything; a name check is meaningless here,
     // so report availability only for non-empty names.
     return !func_name.empty();
   }
-  bool execute(VM*, const std::string&, const std::vector<Value>&,
-               Value*) override {
+  bool execute(VM *, const std::string &, const std::vector<Value> &, Value *) override {
     // The VM backend never executes through the abstraction: the interpreter
     // IS the VM's own execution path, and the caller falls back to it when
     // execute() returns false.
     return false;
   }
-  const char* name() const override { return "vm"; }
+  const char *name() const override { return "vm"; }
 };
 
 // Adapter presenting the legacy JITCompiler (BytecodeOrcJIT) as a
@@ -113,11 +139,10 @@ class JITCompilerBackend final : public CompilerBackend {
 public:
   explicit JITCompilerBackend(std::unique_ptr<JITCompiler> jit)
       : jit_(std::move(jit)), owning_(true) {}
-  explicit JITCompilerBackend(JITCompiler* jit_view)
-      : jit_(jit_view), owning_(false) {}
+  explicit JITCompilerBackend(JITCompiler *jit_view) : jit_(jit_view), owning_(false) {}
 
-  JITCompilerBackend(const JITCompilerBackend&) = delete;
-  JITCompilerBackend& operator=(const JITCompilerBackend&) = delete;
+  JITCompilerBackend(const JITCompilerBackend &) = delete;
+  JITCompilerBackend &operator=(const JITCompilerBackend &) = delete;
 
   ~JITCompilerBackend() override {
     if (!owning_) {
@@ -127,40 +152,66 @@ public:
     }
   }
 
-  bool compile(const BytecodeFunction& func) override {
-    if (!jit_) return false;
+  bool compile(const BytecodeFunction &func) override {
+    if (!jit_)
+      return false;
     jit_->compileFunction(func);
-    return true;
+    return jit_->isCompiled(func.name);
   }
-  bool compile_tier(const BytecodeFunction& func, uint8_t tier) override {
-    if (!jit_) return false;
+  bool compile_tier(const BytecodeFunction &func, uint8_t tier) override {
+    if (!jit_)
+      return false;
     jit_->compileFunctionTier(func, tier);
-    return true;
+    // Compile failures must surface as refusals, not as success: the caller
+    // marks jit_compiled on success, and a marked-but-uncompiled function
+    // would return a null Value from every call (executeCompiled finds no
+    // fptrs_ entry) instead of falling back to the interpreter.
+    return jit_->isCompiled(func.name);
   }
-  bool is_compiled(const std::string& func_name) const override {
+  bool is_compiled(const std::string &func_name) const override {
     return jit_ && jit_->isCompiled(func_name);
   }
-  bool execute(VM* vm, const std::string& func_name,
-               const std::vector<Value>& args, Value* out) override {
-    if (!jit_) return false;
+  bool execute(VM *vm, const std::string &func_name, const std::vector<Value> &args,
+               Value *out) override {
+    if (!jit_)
+      return false;
+    // Live-JIT-frame gate: any collection triggered by a bridge beneath
+    // this native call defers until the frame returns (see
+    // native_jit_depth_ in VM.hpp). The Cranelift checkpoint path bypasses
+    // the gate via maybeCollectGarbageAtJitCheckpoint.
+    NativeJitFrameScope native_guard(vm);
     Value result = jit_->executeCompiled(vm, func_name, args);
-    if (out) *out = std::move(result);
+    if (out)
+      *out = std::move(result);
     return true;
   }
 
-  void set_debug_mode(bool enabled) override { if (jit_) jit_->setDebugMode(enabled); }
-  void set_dump_ir(bool enabled) override { if (jit_) jit_->setDumpIR(enabled); }
-  void set_dump_asm(bool enabled) override { if (jit_) jit_->setDumpAsmToFile(enabled); }
-  void set_show_warnings(bool enabled) override { if (jit_) jit_->setShowWarnings(enabled); }
+  void set_debug_mode(bool enabled) override {
+    if (jit_)
+      jit_->setDebugMode(enabled);
+  }
+  void set_dump_ir(bool enabled) override {
+    if (jit_)
+      jit_->setDumpIR(enabled);
+  }
+  void set_dump_asm(bool enabled) override {
+    if (jit_)
+      jit_->setDumpAsmToFile(enabled);
+  }
+  void set_show_warnings(bool enabled) override {
+    if (jit_)
+      jit_->setShowWarnings(enabled);
+  }
   void set_optimization_level(uint8_t level) override {
-    if (jit_) jit_->setOptimizationLevel(level);
+    if (jit_)
+      jit_->setOptimizationLevel(level);
   }
 
-  const char* name() const override { return "llvm-orc"; }
+  const char *name() const override { return "llvm-orc"; }
 
   // Access for embedders that still drive the legacy interface directly
   // (VM tiering hooks, trace compilation).
-  JITCompiler* legacy() const { return jit_.get(); }
+  JITCompiler *legacy() const { return jit_.get(); }
 
 private:
   std::unique_ptr<JITCompiler> jit_;
@@ -178,60 +229,79 @@ private:
 // A missing fast backend degrades to the optimizing one alone.
 class TieredBackend final : public CompilerBackend {
 public:
-  TieredBackend(std::unique_ptr<CompilerBackend> fast,
-                std::unique_ptr<CompilerBackend> optimizing)
+  TieredBackend(std::unique_ptr<CompilerBackend> fast, std::unique_ptr<CompilerBackend> optimizing)
       : fast_(std::move(fast)), optimizing_(std::move(optimizing)) {}
 
-  bool compile(const BytecodeFunction& func) override {
-    return fast_ ? fast_->compile(func)
-                 : (optimizing_ && optimizing_->compile(func));
+  bool compile(const BytecodeFunction &func) override {
+    return fast_ ? fast_->compile(func) : (optimizing_ && optimizing_->compile(func));
   }
 
-  bool compile_tier(const BytecodeFunction& func, uint8_t tier) override {
+  bool compile_tier(const BytecodeFunction &func, uint8_t tier) override {
     switch (tier) {
-      case 1:
-        // Tier 1 wants low-latency codegen; when no fast backend exists
-        // (no ENABLE_CRANELIFT), fall through to the optimizing one so
-        // tiering still works. A declined function (opcodes outside the
-        // fast backend's subset) also falls through to the optimizing
-        // tier rather than losing tiering entirely.
-        if (fast_ && fast_->compile(func)) {
-          ::havel::debug("[backend] tier1 {} via {}", func.name,
-                         fast_->name());
+    case 1:
+      // Tier 1 wants low-latency codegen; when no fast backend exists
+      // (no ENABLE_CRANELIFT), fall through to the optimizing one so
+      // tiering still works.
+      //
+      // When a fast backend EXISTS but declines the function, refuse
+      // rather than silently compiling it with the optimizing backend:
+      // a tier-1 decision must mean "this runs on the vetted fast-tier
+      // lowering". The optimizing backend's whole-function lowering has
+      // known parity gaps (class-constructor calls, GC frame roots),
+      // and a silent swap-in corrupts execution exactly where the fast
+      // tier was deemed unsafe. The function keeps the interpreter
+      // fallback; the refusal is reported by the VM's tier1_refused
+      // counter.
+      if (fast_) {
+        if (fast_->compile(func)) {
+          ::havel::debug("[backend] tier1 {} via {}", func.name, fast_->name());
           return true;
         }
-        if (optimizing_ && optimizing_->compile(func)) {
-          ::havel::debug("[backend] tier1 {} via {} (fast tier declined)",
-                         func.name, optimizing_->name());
-          return true;
-        }
+        ::havel::debug("[backend] tier1 {} declined by {} (interpreter fallback)", func.name,
+                       fast_->name());
         return false;
-      case 2:
-        if (optimizing_ && optimizing_->compile(func)) {
-          ::havel::debug("[backend] tier2 {} via {}", func.name,
-                         optimizing_->name());
-          return true;
-        }
-        // No optimizing backend (or it declined). Do NOT fall back to
-        // the fast tier: the function already runs fast-tier code from
-        // its tier-1 compile, and re-defining the same name in the same
-        // backend module can only fail with DuplicateDefinition - the
-        // noisy [hclb] compile failures observed on tier-2 promotion in
-        // no-LLVM builds. The promotion is a no-op: the request is
-        // satisfied by the code already installed.
+      }
+      if (optimizing_ && optimizing_->compile(func)) {
+        ::havel::debug("[backend] tier1 {} via {}", func.name, optimizing_->name());
+        return true;
+      }
+      return false;
+    case 2:
+      // Cross-backend promotion is not vetted: when the fast tier owns
+      // this function's current code, re-lowering it with the optimizing
+      // backend swaps lowering implementations mid-run - the same
+      // unvetted-swap class refused for tier 1 above (observed as
+      // nondeterministic parse corruption in the self-hosted compiler
+      // once promotions landed). Tier-2 promotion therefore stays within
+      // the owning backend: ORC-only builds (no fast tier) keep their
+      // O0 -> O2 promotion; fast-tier functions keep their tier-1 code.
+      if (fast_ && fast_->is_compiled(func.name)) {
         return false;
-      default:
-        return compile(func);
+      }
+      if (optimizing_ && optimizing_->compile(func)) {
+        ::havel::debug("[backend] tier2 {} via {}", func.name, optimizing_->name());
+        return true;
+      }
+      // No optimizing backend (or it declined). Do NOT fall back to
+      // the fast tier: the function already runs fast-tier code from
+      // its tier-1 compile, and re-defining the same name in the same
+      // backend module can only fail with DuplicateDefinition - the
+      // noisy [hclb] compile failures observed on tier-2 promotion in
+      // no-LLVM builds. The promotion is a no-op: the request is
+      // satisfied by the code already installed.
+      return false;
+    default:
+      return compile(func);
     }
   }
 
-  bool is_compiled(const std::string& func_name) const override {
+  bool is_compiled(const std::string &func_name) const override {
     return (fast_ && fast_->is_compiled(func_name)) ||
            (optimizing_ && optimizing_->is_compiled(func_name));
   }
 
-  bool execute(VM* vm, const std::string& func_name,
-               const std::vector<Value>& args, Value* out) override {
+  bool execute(VM *vm, const std::string &func_name, const std::vector<Value> &args,
+               Value *out) override {
     // Optimizing tier first: a function that graduated to tier 2 must keep
     // running its optimized code, not regress to tier 1 output.
     if (optimizing_ && optimizing_->is_compiled(func_name) &&
@@ -242,38 +312,50 @@ public:
   }
 
   void set_debug_mode(bool enabled) override {
-    if (fast_) fast_->set_debug_mode(enabled);
-    if (optimizing_) optimizing_->set_debug_mode(enabled);
+    if (fast_)
+      fast_->set_debug_mode(enabled);
+    if (optimizing_)
+      optimizing_->set_debug_mode(enabled);
   }
   void set_dump_ir(bool enabled) override {
-    if (fast_) fast_->set_dump_ir(enabled);
-    if (optimizing_) optimizing_->set_dump_ir(enabled);
+    if (fast_)
+      fast_->set_dump_ir(enabled);
+    if (optimizing_)
+      optimizing_->set_dump_ir(enabled);
   }
   void set_dump_asm(bool enabled) override {
-    if (fast_) fast_->set_dump_asm(enabled);
-    if (optimizing_) optimizing_->set_dump_asm(enabled);
+    if (fast_)
+      fast_->set_dump_asm(enabled);
+    if (optimizing_)
+      optimizing_->set_dump_asm(enabled);
   }
   void set_show_warnings(bool enabled) override {
-    if (fast_) fast_->set_show_warnings(enabled);
-    if (optimizing_) optimizing_->set_show_warnings(enabled);
+    if (fast_)
+      fast_->set_show_warnings(enabled);
+    if (optimizing_)
+      optimizing_->set_show_warnings(enabled);
   }
   void set_optimization_level(uint8_t level) override {
-    if (fast_) fast_->set_optimization_level(level);
-    if (optimizing_) optimizing_->set_optimization_level(level);
+    if (fast_)
+      fast_->set_optimization_level(level);
+    if (optimizing_)
+      optimizing_->set_optimization_level(level);
   }
 
-  const char* name() const override {
-    if (fast_ && optimizing_) return "tiered(cranelift+llvm)";
-    if (fast_) return "tiered(cranelift)";
+  const char *name() const override {
+    if (fast_ && optimizing_)
+      return "tiered(cranelift+llvm)";
+    if (fast_)
+      return "tiered(cranelift)";
     return "tiered(llvm)";
   }
 
-  CompilerBackend* fast() const { return fast_.get(); }
-  CompilerBackend* optimizing() const { return optimizing_.get(); }
+  CompilerBackend *fast() const { return fast_.get(); }
+  CompilerBackend *optimizing() const { return optimizing_.get(); }
 
 private:
   std::unique_ptr<CompilerBackend> fast_;
   std::unique_ptr<CompilerBackend> optimizing_;
 };
 
-}  // namespace havel::compiler
+} // namespace havel::compiler

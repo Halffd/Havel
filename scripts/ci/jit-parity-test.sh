@@ -150,5 +150,120 @@ for s in $CANDIDATES; do
   pass=$((pass + 1))
 done
 
+# ===== Self-hosted compiler parity =====
+#
+# The self-hosted engine (modules/lang) is ordinary Havel code and must
+# tier like any other program. This section runs the engine's TEXT path
+# (--eval; file arguments are natively precompiled and never reach the
+# Havel parser) interpreted and tiered, and requires:
+#   1. both runs exit 0 with identical stdout,
+#   2. the tiered run actually tier-compiled parser functions (tier1>0).
+# Regression context (2026-10): under --tiering the self-hosted Pratt
+# parser misparsed inputs the interpreted run handled cleanly - the legacy
+# hot-trace callback compiled whole parser functions O0 without any
+# tier-manager gate and TieredBackend::execute preferred them, the ORC
+# whole-function lowering had no GC frame roots (havel_gc_register_roots
+# stub) and unsynchronized fptrs_ mutation from the tier-2 worker, and the
+# cranelift landing-pad gap refused nud/led. Fixes landed in VM.cpp/hpp,
+# Backend.hpp, BytecodeOrcJIT.cpp, CraneliftBackend.hpp.
+
+sh_fh="$TMPD/selfhost_fixture.hv"
+cat > "$sh_fh" <<'SHFIX'
+fn add(a, b) { a + b }
+
+fn makeCounter(start) {
+    n = start
+    fn inc(by = 1) {
+        n = n + by
+        n
+    }
+    inc
+}
+
+fn sumTo(n) {
+    total = 0
+    for i in 0 .. n {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total + i * 2
+        }
+    }
+    total
+}
+
+c = makeCounter(10)
+part1 = c()
+part2 = c(5)
+items = ["alpha", "beta", "gamma"]
+obj = { name: "tier", hits: 0 }
+obj.hits = part1 + part2
+joined = ""
+first = true
+for t in items {
+    if !first {
+        joined = "${joined}|"
+    }
+    joined = "${joined}${t}:${obj.name}:${obj.hits}"
+    first = false
+}
+print(joined)
+print("sum=${sumTo(50)} add=${add(2, 3)}")
+print("done ${obj.hits}")
+SHFIX
+FIXTURE="$(cat "$sh_fh")"
+
+sh_ref="$TMPD/selfhost.ref"
+sh_tier="$TMPD/selfhost.tier"
+
+timeout "$TMO" env HAVEL_HEADLESS=1 "$HAVEL_BIN" --self-hosted --eval "$FIXTURE" \
+  >"$sh_ref" 2>"$TMPD/selfhost.ref.err"
+sh_ref_rc=$?
+if [ "$sh_ref_rc" -eq 124 ]; then
+  echo "FAIL selfhost: interpreted run hung (> ${TMO}s)"
+  fail=$((fail + 1))
+elif [ "$sh_ref_rc" -ne 0 ]; then
+  echo "FAIL selfhost: interpreted run rc=$sh_ref_rc (reference must pass first)"
+  tail -4 "$TMPD/selfhost.ref.err" | sed 's/^/    /'
+  fail=$((fail + 1))
+elif ! grep -aq 'alpha:tier:27' "$sh_ref"; then
+  echo "FAIL selfhost: interpreted run output unexpected (expected 'alpha:tier:27'):"
+  grep -a 'alpha' "$sh_ref" | head -2 | sed 's/^/    /'
+  fail=$((fail + 1))
+else
+  timeout "$TMO" env HAVEL_HEADLESS=1 "$HAVEL_BIN" --self-hosted --tiering \
+    --tier1-threshold 3 --eval "$FIXTURE" >"$sh_tier" 2>"$TMPD/selfhost.tier.err"
+  sh_tier_rc=$?
+  if [ "$sh_tier_rc" -eq 124 ]; then
+    echo "FAIL selfhost: tiered run hung (> ${TMO}s)"
+    fail=$((fail + 1))
+  elif [ "$sh_tier_rc" -ne 0 ]; then
+    echo "FAIL selfhost: tiered run rc=$sh_tier_rc"
+    grep -aE 'Parse error|JIT exception|Self-hosted error' "$sh_tier" "$TMPD/selfhost.tier.err" 2>/dev/null | head -4 | sed 's/^/    /'
+    tail -4 "$TMPD/selfhost.tier.err" | sed 's/^/    /'
+    fail=$((fail + 1))
+  elif ! grep -aq 'alpha:tier:27' "$sh_tier"; then
+    echo "FAIL selfhost: tiered run output missing 'alpha:tier:27':"
+    grep -a 'alpha' "$sh_tier" | head -2 | sed 's/^/    /'
+    fail=$((fail + 1))
+  elif ! diff -q \
+      <(tr -d '\000' <"$sh_ref" | normalize - | grep -av '^TIMING: ') \
+      <(tr -d '\000' <"$sh_tier" | normalize - | grep -av '^TIMING: ') >/dev/null; then
+    echo "FAIL selfhost: output divergence between interpreted and tiered:"
+    diff <(tr -d '\000' <"$sh_ref" | normalize - | grep -av '^TIMING: ') \
+         <(tr -d '\000' <"$sh_tier" | normalize - | grep -av '^TIMING: ') | head -10
+    fail=$((fail + 1))
+  else
+    sh_tier1="$(grep -aoE 'tier1=[0-9]+' "$sh_tier" | head -1 | cut -d= -f2)"
+    if [ -z "$sh_tier1" ] || [ "$sh_tier1" -eq 0 ]; then
+      echo "FAIL selfhost: tiered run never tier-compiled a parser function (tier1=${sh_tier1:-absent})"
+      fail=$((fail + 1))
+    else
+      echo "PASS selfhost (tier1=$sh_tier1)"
+      pass=$((pass + 1))
+    fi
+  fi
+fi
+
 echo "jit-parity: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -928,6 +928,12 @@ public:
   // operand stack) as raw words and pass them here, so a mid-native-loop
   // collection sees them. Same gating as maybeCollectGarbage.
   void maybeCollectGarbageWithExtraRoots(const std::vector<Value> &extra_roots);
+  // The sanctioned collection point UNDER a live JIT frame: the Cranelift
+  // loop checkpoint spills its frame's live values and calls this, so the
+  // native_jit_depth_ gate does not apply (that gate exists to defer
+  // collections whose roots would be invisible - the checkpoint's spilled
+  // roots are visible by construction). Suspend gating still applies.
+  void maybeCollectGarbageAtJitCheckpoint(const std::vector<Value> &extra_roots);
   // Cheap probe for JIT safe points: would a collection run right now?
   // (budget exceeded or externally requested, and not suspended.)
   bool gcCollectionPendingPublic() const { return !gcSuspended() && heap_.shouldMaybeCollect(); }
@@ -1249,7 +1255,16 @@ public:
     };
     // Trace callback fires once per site past the tier-1 threshold
     // (hot-trace hooks; separate from function tier-up).
-    if (site.trace_fn != fn) {
+    // Tier-manager coherence: when the modern tiering pipeline is active
+    // it owns every compile decision (thresholds, HAVEL_TIER1_ONLY
+    // isolation, size caps, tier dedup, backend selection). The legacy
+    // trace path compiles whole functions at O0 and marks them
+    // jit_compiled without any of those gates, and TieredBackend::execute
+    // prefers the optimizing tier, so a trace compile would silently
+    // hijack execution away from working tier-1 code. Under --tiering the
+    // callback stays off; tier-up happens exclusively through
+    // maybeTierUp.
+    if (site.trace_fn != fn && !(tiering_enabled_ && backend_)) {
       bool should_fire = false;
       {
         std::lock_guard<std::mutex> lock(hot_trace_mutex_);
@@ -1657,14 +1672,21 @@ public:
     }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
-      tier1_transition_count_.fetch_add(1);
-      profiler_.recordTier1Compile(key);
-      ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason, hotness);
       if (backend_->compile_tier(func, 1)) {
+        tier1_transition_count_.fetch_add(1);
+        profiler_.recordTier1Compile(key);
+        ::havel::debug("[tiering] {} -> tier1 ({}, hotness={})", key, reason, hotness);
         // The execute fast paths gate on jit_compiled for ANY backend, not
         // just the legacy ORC flag: mark the function so calls route through
         // the backend's compiled code.
         func.jit_compiled = true;
+      } else {
+        // The backend refused (opcodes outside the vetted lowering subset,
+        // or a genuine compile failure). The function keeps the interpreter
+        // fallback - counted and reported so refusals are never silent.
+        tier1_refused_count_.fetch_add(1);
+        ::havel::debug("[tiering] {} tier-1 compile refused ({}); interpreter fallback", key,
+                       reason);
       }
     }
 
@@ -1689,41 +1711,71 @@ public:
           tier2_skip_duplicate_count_.fetch_add(1);
         }
       }
-      ensureTier2Worker();
     }
   }
 
   // Spawn the background tier-2 compiler thread once; the worker drains the
   // queue until shutdown marks it stopped and the queue is empty.
+  //
+  // RETIRED: the worker compiled into the shared ORC LLJIT session while the
+  // VM thread executed previously compiled code - concurrent module
+  // definition/finalization against live execution corrupted calls
+  // (self-hosted parser broke exactly when tier-2 promotions landed, at any
+  // optimization level, with the lookup tables already mutex-guarded).
+  // Tier-2 compiles now drain on the VM thread at dispatch checkpoints
+  // (drainPendingTier2Compiles) - compilation and execution never overlap by
+  // construction, and the gc-suspend gate keeps drains out of JIT-called
+  // frames. The shutdown flush in ~VM drains the tail synchronously.
   void ensureTier2Worker() {
-    if (!tier2_worker_running_.exchange(true)) {
-      tier2_worker_ = std::thread([this]() {
-        auto hasQueuedWork = [this]() {
-          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-          return !tier2_queue_.empty();
-        };
-        while (tier2_worker_running_.load() || hasQueuedWork()) {
-          std::optional<BytecodeFunction> fn;
-          {
-            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-            if (!tier2_queue_.empty()) {
-              fn = tier2_queue_.front();
-              tier2_queue_.pop();
-            }
-          }
-          if (fn.has_value() && backend_) {
-            backend_->compile_tier(*fn, 2);
-            tier2_compile_count_.fetch_add(1);
-            profiler_.recordTier2Compile(fn->name);
-            ::havel::debug("[tiering] {} -> tier2", fn->name);
-            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-            tier2_queued_or_compiling_.erase(fn->name);
-          } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-          }
-        }
-      });
+    // No-op: kept for source compatibility with the retired worker-thread
+    // design; tier-2 work drains on the VM thread instead.
+  }
+
+  // Compile up to max_compiles queued tier-2 functions on the calling (VM)
+  // thread. Call ONLY from dispatch checkpoints with no JIT frame live: the
+  // gc_suspend_counter_ gate enforces that (havel_vm_call holds a defer
+  // guard for the whole JIT-called re-entry). Bounded by max_compiles so a
+  // hot parse pays at most one background-grade compile per checkpoint.
+  void drainPendingTier2Compiles(uint32_t max_compiles) {
+    if (!backend_ || max_compiles == 0) {
+      return;
     }
+    // Debug isolation: HAVEL_TIER2_MAX=<n> caps total tier-2 compiles per
+    // run (miscompile bisects; not a production knob).
+    static const uint64_t tier2_max = []() -> uint64_t {
+      if (const char *env = std::getenv("HAVEL_TIER2_MAX")) {
+        try {
+          return std::stoull(env);
+        } catch (...) {
+        }
+      }
+      return UINT64_MAX;
+    }();
+    for (uint32_t done = 0; done < max_compiles; ++done) {
+      if (tier2_compile_count_.load() >= tier2_max) {
+        return;
+      }
+      std::optional<BytecodeFunction> fn;
+      {
+        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+        if (tier2_queue_.empty()) {
+          return;
+        }
+        fn = tier2_queue_.front();
+        tier2_queue_.pop();
+      }
+      backend_->compile_tier(*fn, 2);
+      tier2_compile_count_.fetch_add(1);
+      profiler_.recordTier2Compile(fn->name);
+      ::havel::debug("[tiering] {} -> tier2", fn->name);
+      std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+      tier2_queued_or_compiling_.erase(fn->name);
+    }
+  }
+
+  bool tier2QueueEmpty() {
+    std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+    return tier2_queue_.empty();
   }
 
   // Backend attachment (TODO #18/#19): the VM executes through a
@@ -2584,10 +2636,18 @@ private:
   std::unordered_set<std::string> tier2_queued_or_compiling_;
   std::mutex tier2_queue_mutex_;
   std::queue<BytecodeFunction> tier2_queue_;
-  std::thread tier2_worker_;
-  std::atomic<bool> tier2_worker_running_{false};
   std::atomic<bool> vm_in_execute_{false};
+  uint32_t native_jit_depth_ = 0;
+
+public:
+  // Live-JIT-frame gate entry/exit (used by Backend.hpp's
+  // NativeJitFrameScope through the free functions in VM.cpp).
+  void nativeJitFrameEnter() { native_jit_depth_++; }
+  void nativeJitFrameExit() { native_jit_depth_--; }
+
+private:
   std::atomic<uint64_t> tier1_transition_count_{0};
+  std::atomic<uint64_t> tier1_refused_count_{0};
   std::atomic<uint64_t> tier2_enqueue_count_{0};
   std::atomic<uint64_t> tier2_compile_count_{0};
   std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
@@ -2842,6 +2902,21 @@ public:
     GCSuspendDeferGuard &operator=(const GCSuspendDeferGuard &) = delete;
   };
   GCSuspendDeferGuard gcDeferGuardPublic() { return GCSuspendDeferGuard(this); }
+
+  // Live-JIT-frame gate for collections. Incremented for the duration of
+  // every backend execute entry (TieredBackend::execute, the goroutine JIT
+  // entry). While > 0, ordinary maybeCollectGarbage call sites defer:
+  // compiled code holds object ids in native registers/spill slots no GC
+  // root set scans, so a collection under the frame would sweep objects
+  // only the native frame references (container ids are recycled after a
+  // sweep - a stale id silently rebinds). The Cranelift loop checkpoint
+  // bypasses the gate via maybeCollectGarbageAtJitCheckpoint because it
+  // spills its frame's live values as extra roots first. Bridges that
+  // already hold GCSuspendDeferGuard are unaffected (same deferral, wider).
+  // enter/exit are free functions (defined in VM.cpp) because this header
+  // is included before the VM class is complete.
+  struct NativeJitFrameGuard;
+  NativeJitFrameGuard nativeJitFrameGuardPublic();
 
   void suspendGC() { gc_suspend_counter_++; }
   void resumeGC() {

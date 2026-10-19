@@ -342,25 +342,18 @@ void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
-    for (;;) {
-      bool empty = false;
-      {
-        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-        empty = tier2_queue_.empty() && tier2_queued_or_compiling_.empty();
-      }
-      if (empty)
-        break;
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    // Compiles run on this (destroying) thread - the VM is no longer
+    // executing, so no frame can be live under the compile.
+    while (!tier2QueueEmpty()) {
+      drainPendingTier2Compiles(4);
     }
   }
-  tier2_worker_running_.store(false);
-  if (tier2_worker_.joinable())
-    tier2_worker_.join();
   if (tiering_enabled_) {
-    ::havel::info("[tiering] transitions: tier1={} tier2_enqueued={} "
+    ::havel::info("[tiering] transitions: tier1={} tier1_refused={} tier2_enqueued={} "
                   "tier2_compiled={} tier2_dup_skipped={}",
-                  tier1_transition_count_.load(), tier2_enqueue_count_.load(),
-                  tier2_compile_count_.load(), tier2_skip_duplicate_count_.load());
+                  tier1_transition_count_.load(), tier1_refused_count_.load(),
+                  tier2_enqueue_count_.load(), tier2_compile_count_.load(),
+                  tier2_skip_duplicate_count_.load());
     // Self-declaration: a tiered run that never tiers is an interpreter
     // run wearing the flag. Every log now either says the JIT ran or
     // says it did not - no silent interpreter-only "passes" of
@@ -2269,6 +2262,14 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         if (exit_requested_.load())
           break;
         maybeCollectGarbage();
+        // Tier-2 background compiles drain here: a dispatch checkpoint has
+        // no JIT frame live (gc_suspend_counter_ == 0 unless a JIT-called
+        // re-entry is in progress), so compilation never overlaps with
+        // executing compiled code. One compile per checkpoint bounds the
+        // stall the hot loop pays.
+        if (gc_suspend_counter_ == 0) {
+          drainPendingTier2Compiles(1);
+        }
         if (last_suspension_reason_ != 0) {
           // Suspension requested - return immediately so caller can handle it
           current_executing_fiber_ = saved_fiber_flag;
@@ -2424,6 +2425,11 @@ slow_path:
         break;
       }
       maybeCollectGarbage();
+      // Tier-2 background compiles drain here (same no-live-JIT-frame
+      // guarantee as the fast loop's checkpoint above).
+      if (gc_suspend_counter_ == 0) {
+        drainPendingTier2Compiles(1);
+      }
       if (yield_callback_) {
         try {
           yield_callback_();
@@ -3372,6 +3378,17 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       if (frame_count_ >= jit_frame_base) {
         frame_count_ = jit_frame_base - 1;
       }
+      // Close open upvalues into this frame's locals BEFORE shrinking the
+      // vector - parity with the interpreter's frame pop, which closes them
+      // before discarding the frame's region. A compiled function that
+      // creates a closure capturing one of its own locals leaves an open
+      // cell keyed at an absolute index inside [jit_locals_base,
+      // locals.size()); resizing without closing leaves the cell open past
+      // the end of the shrunk vector, and every later upvalue access reads
+      // or writes out-of-bounds slots (observed as PTR(0) callees and
+      // corrupted token state in the tiered self-hosted parse).
+      closeFrameUpvalues(static_cast<uint32_t>(jit_locals_base),
+                         static_cast<uint32_t>(locals.size()));
       locals.resize(jit_locals_base);
       current_chunk = prev_chunk;
       if (jit_owns_globals && !globals_stack_.empty()) {
@@ -4057,8 +4074,44 @@ void VM::maybeCollectGarbage() {
   maybeCollectGarbageWithExtraRoots({});
 }
 
+void VM::maybeCollectGarbageAtJitCheckpoint(const std::vector<Value> &extra_roots) {
+  // A checkpoint may collect only at the OUTERMOST live native frame
+  // (native_jit_depth_ == 1). The spill covers just this frame's locals and
+  // operand stack; DEEPER-STACKED compiled frames (parseTokens -> parseExpr
+  // -> nud in the self-hosted compiler) hold live object ids in their own
+  // native registers that this spill cannot see - collecting here would
+  // sweep them (nondeterministic "unknown object id" / stale-id
+  // corruption, first seen in the tiered self-hosted parse). Deferring is
+  // cheap: every compiled frame that CALLS others returns through its
+  // caller's own backedge checkpoints, so the outermost frame keeps the GC
+  // live; single-level compiled loops (tier_bench_loop, the parity-gate
+  // scripts) collect exactly as before.
+  if (native_jit_depth_ > 1)
+    return;
+  if (gc_suspend_counter_ > 0)
+    return;
+  maybeCollectGarbageWithExtraRoots(extra_roots);
+}
+
+// Live-JIT-frame gate (Backend.hpp NativeJitFrameScope). Free functions
+// because Backend.hpp is included before the VM class is complete.
+void native_jit_frame_enter(VM *vm) {
+  vm->nativeJitFrameEnter();
+}
+
+void native_jit_frame_exit(VM *vm) {
+  vm->nativeJitFrameExit();
+}
+
 void VM::maybeCollectGarbageWithExtraRoots(const std::vector<Value> &extra_roots) {
   if (gc_suspend_counter_ > 0)
+    return;
+  // Live-JIT-frame gate: a collection beneath compiled code would sweep
+  // objects whose only references are native-frame words (registers,
+  // spill slots) no root set scans. The Cranelift loop checkpoint is the
+  // sanctioned exception - it spills its frame's live values and enters
+  // through maybeCollectGarbageAtJitCheckpoint.
+  if (native_jit_depth_ > 0)
     return;
   // Building the root snapshot is expensive (full operand-stack copy plus
   // globals, closure table and scheduler roots — measured at 41% of a
@@ -6829,7 +6882,8 @@ load_from_source:
     case SourceCompileStatus::CompileError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compilation error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file +
+                     ") compilation error: " + compiled.error);
     case SourceCompileStatus::NullChunk:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;

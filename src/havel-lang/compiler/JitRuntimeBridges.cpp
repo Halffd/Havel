@@ -1126,7 +1126,7 @@ void havel_vm_gc_checkpoint(void *vm_ptr, const uint64_t *roots, uint32_t count)
     std::memcpy(&v, &roots[i], sizeof(uint64_t));
     extra.push_back(v);
   }
-  vm->maybeCollectGarbageWithExtraRoots(extra);
+  vm->maybeCollectGarbageAtJitCheckpoint(extra);
 }
 
 #include "runtime/HavelEngine.hpp"

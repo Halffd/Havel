@@ -2256,6 +2256,29 @@ target_link_libraries(havel_api_test PRIVATE
 
 # brightness_test disabled - replaced by modules/app/brightness/brightness.hv (FFI-based)
 
+# ctest support for every build type (the drift guards and the embedding
+# invariant register below; previously only Debug builds had ctest).
+enable_testing()
+
+# ------------------------------------------------------------------------
+# Embedding invariant (architectural): an executable that links ONLY
+# libhavel_lang + libhavel_core must build, run and stay Qt-free. If a Qt
+# symbol re-enters the language/core archives, this target fails to link
+# (it deliberately does not link Qt) and embedding-qt-invariant fails in
+# ctest. See scripts/ci/embedding-qt-audit.sh.
+add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
+target_link_libraries(embedding_minimal PRIVATE
+    havel_lang
+    havel_core
+)
+target_include_directories(embedding_minimal PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+add_test(NAME embedding_minimal COMMAND embedding_minimal)
+add_test(NAME embedding-qt-invariant
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ci/embedding-qt-audit.sh ${CMAKE_BINARY_DIR})
+
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
   # Pre-merge gate: full tier including slow stress runs. Dev-loop

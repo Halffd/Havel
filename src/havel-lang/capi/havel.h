@@ -11,100 +11,106 @@ extern "C" {
 
 typedef struct HavelState HavelState;
 typedef struct HavelValue HavelValue;
-typedef int (*HavelCFunction)(HavelState*);
-typedef int (*HavelCFunctionWithCtx)(HavelState*, void* ctx);
+typedef int (*HavelCFunction)(HavelState *);
+typedef int (*HavelCFunctionWithCtx)(HavelState *, void *ctx);
 
-void*      havel_getuserdata(HavelState* H);
-void       havel_setuserdata(HavelState* H, void* data);
+void *havel_getuserdata(HavelState *H);
+void havel_setuserdata(HavelState *H, void *data);
 
 // VM Runtime types (matches Value.hpp)
-#define HAVEL_TNIL       0   // isNull()
-#define HAVEL_TBOOLEAN    1   // isBool()
-#define HAVEL_TINT        2   // isInt() - 48-bit signed
-#define HAVEL_TNUMBER     3   // isInt() || isDouble()
-#define HAVEL_TFLOAT     4   // isDouble()
-#define HAVEL_TSTRING     5   // isStringId() || isStringValId()
-#define HAVEL_TPOINTER   6   // isPtr()
-#define HAVEL_TARRAY     7   // isArrayId()
-#define HAVEL_TOBJECT    8   // isObjectId() - keyed object/map
-#define HAVEL_TFUNCTION  9   // isClosureId() || isHostFuncId()
-#define HAVEL_TCOROUTINE 10   // isCoroutineId()
-#define HAVEL_TTHREAD    11   // isThreadId()
-#define HAVEL_TCHANNEL  12   // isChannelId()
-#define HAVEL_TRANGE    13   // isRangeId()
-#define HAVEL_TSET      14   // isSetId()
-#define HAVEL_TENUM     15   // isEnumId()
-#define HAVEL_TITERATOR  16   // isIteratorId()
+#define HAVEL_TNIL 0        // isNull()
+#define HAVEL_TBOOLEAN 1    // isBool()
+#define HAVEL_TINT 2        // isInt() - 48-bit signed
+#define HAVEL_TNUMBER 3     // isInt() || isDouble()
+#define HAVEL_TFLOAT 4      // isDouble()
+#define HAVEL_TSTRING 5     // isStringId() || isStringValId()
+#define HAVEL_TPOINTER 6    // isPtr()
+#define HAVEL_TARRAY 7      // isArrayId()
+#define HAVEL_TOBJECT 8     // isObjectId() - keyed object/map
+#define HAVEL_TFUNCTION 9   // isClosureId() || isHostFuncId()
+#define HAVEL_TCOROUTINE 10 // isCoroutineId()
+#define HAVEL_TTHREAD 11    // isThreadId()
+#define HAVEL_TCHANNEL 12   // isChannelId()
+#define HAVEL_TRANGE 13     // isRangeId()
+#define HAVEL_TSET 14       // isSetId()
+#define HAVEL_TENUM 15      // isEnumId()
+#define HAVEL_TITERATOR 16  // isIteratorId()
 
 // Type predicates for numbers
-#define HAVEL_TISINT     20  // isInt() - exact match
-#define HAVEL_TISDOUBLE  21  // isDouble() - exact match
-#define HAVEL_TISNUMBER  22  // isNumber() - int or double
+#define HAVEL_TISINT 20    // isInt() - exact match
+#define HAVEL_TISDOUBLE 21 // isDouble() - exact match
+#define HAVEL_TISNUMBER 22 // isNumber() - int or double
 
-#define HAVEL_OK     0
+#define HAVEL_OK 0
 #define HAVEL_YIELD 1
-#define HAVEL_ERR   2
-#define HAVEL_DEAD  3
+#define HAVEL_ERR 2
+#define HAVEL_DEAD 3
 
-#define HAVEL_GC_COLLECT  0
-#define HAVEL_GC_STOP    1
+// Last error message recorded on this state (set by havel_loadstring /
+// havel_pcall / stack ops on failure). Empty string when no error. The
+// pointer stays valid until the next call on this state.
+const char *havel_lasterror(HavelState *H);
+
+#define HAVEL_GC_COLLECT 0
+#define HAVEL_GC_STOP 1
 #define HAVEL_GC_RESTART 2
 
-HavelState* havel_newstate(void);
-void       havel_close(HavelState* H);
-HavelState* havel_newthread(HavelState* H);
+HavelState *havel_newstate(void);
+void havel_close(HavelState *H);
+HavelState *havel_newthread(HavelState *H);
 
-void*      havel_getuserdata(HavelState* H);
-void       havel_setuserdata(HavelState* H, void* data);
+void *havel_getuserdata(HavelState *H);
+void havel_setuserdata(HavelState *H, void *data);
 
-int  havel_gettop(HavelState* H);
-void havel_settop(HavelState* H, int idx);
-void havel_pushvalue(HavelState* H, int idx);
-void havel_pop(HavelState* H, int n);
-void havel_remove(HavelState* H, int idx);
-void havel_insert(HavelState* H, int idx);
+int havel_gettop(HavelState *H);
+void havel_settop(HavelState *H, int idx);
+void havel_pushvalue(HavelState *H, int idx);
+void havel_pop(HavelState *H, int n);
+void havel_remove(HavelState *H, int idx);
+void havel_insert(HavelState *H, int idx);
 
-void havel_pushnil(HavelState* H);
-void havel_pushboolean(HavelState* H, int b);
-void havel_pushnumber(HavelState* H, double n);
-void havel_pushinteger(HavelState* H, int64_t n);
-void havel_pushstring(HavelState* H, const char* s);
-void havel_pushcfunction(HavelState* H, HavelCFunction fn, const char* name);
-void havel_pushcfunction_with_ctx(HavelState* H, HavelCFunctionWithCtx fn, void* ctx, const char* name);
-void havel_pushobject(HavelState* H);
-void havel_pusharray(HavelState* H);
+void havel_pushnil(HavelState *H);
+void havel_pushboolean(HavelState *H, int b);
+void havel_pushnumber(HavelState *H, double n);
+void havel_pushinteger(HavelState *H, int64_t n);
+void havel_pushstring(HavelState *H, const char *s);
+void havel_pushcfunction(HavelState *H, HavelCFunction fn, const char *name);
+void havel_pushcfunction_with_ctx(HavelState *H, HavelCFunctionWithCtx fn, void *ctx,
+                                  const char *name);
+void havel_pushobject(HavelState *H);
+void havel_pusharray(HavelState *H);
 
-int havel_type(HavelState* H, int idx);
-int havel_isnil(HavelState* H, int idx);
-int havel_isboolean(HavelState* H, int idx);
-int havel_isnumber(HavelState* H, int idx);
-int havel_isstring(HavelState* H, int idx);
-int havel_isfunction(HavelState* H, int idx);
-int havel_isobject(HavelState* H, int idx);
-int havel_isarray(HavelState* H, int idx);
-int havel_iscoroutine(HavelState* H, int idx);
-int havel_isthread(HavelState* H, int idx);
+int havel_type(HavelState *H, int idx);
+int havel_isnil(HavelState *H, int idx);
+int havel_isboolean(HavelState *H, int idx);
+int havel_isnumber(HavelState *H, int idx);
+int havel_isstring(HavelState *H, int idx);
+int havel_isfunction(HavelState *H, int idx);
+int havel_isobject(HavelState *H, int idx);
+int havel_isarray(HavelState *H, int idx);
+int havel_iscoroutine(HavelState *H, int idx);
+int havel_isthread(HavelState *H, int idx);
 
-int         havel_toboolean(HavelState* H, int idx);
-double      havel_tonumber(HavelState* H, int idx);
-int64_t     havel_tointeger(HavelState* H, int idx);
-const char* havel_tostring(HavelState* H, int idx);
-size_t      havel_rawlen(HavelState* H, int idx);
+int havel_toboolean(HavelState *H, int idx);
+double havel_tonumber(HavelState *H, int idx);
+int64_t havel_tointeger(HavelState *H, int idx);
+const char *havel_tostring(HavelState *H, int idx);
+size_t havel_rawlen(HavelState *H, int idx);
 
-void havel_getglobal(HavelState* H, const char* name);
-void havel_setglobal(HavelState* H, const char* name);
-int  havel_hasglobal(HavelState* H, const char* name);
+void havel_getglobal(HavelState *H, const char *name);
+void havel_setglobal(HavelState *H, const char *name);
+int havel_hasglobal(HavelState *H, const char *name);
 
-void havel_getfield(HavelState* H, int idx, const char* key);
-void havel_setfield(HavelState* H, int idx, const char* key);
-void havel_getindex(HavelState* H, int idx, int i);
-void havel_setindex(HavelState* H, int idx, int i);
-int  havel_iternext(HavelState* H, int idx);
+void havel_getfield(HavelState *H, int idx, const char *key);
+void havel_setfield(HavelState *H, int idx, const char *key);
+void havel_getindex(HavelState *H, int idx, int i);
+void havel_setindex(HavelState *H, int idx, int i);
+int havel_iternext(HavelState *H, int idx);
 
-void havel_arrayappend(HavelState* H, int idx);
-int  havel_arraylen(HavelState* H, int idx);
+void havel_arrayappend(HavelState *H, int idx);
+int havel_arraylen(HavelState *H, int idx);
 
-void havel_call(HavelState* H, int nargs, int nresults);
+void havel_call(HavelState *H, int nargs, int nresults);
 
 // Pin/restore the main chunk. loadstring/loadfile REPLACE the VM's main
 // chunk on every load; closures stored by earlier scripts are
@@ -113,8 +119,8 @@ void havel_call(HavelState* H, int nargs, int nresults);
 // snippet calling io.injectKey re-resolved into itself and spun).
 // Pin the config chunk before a load, restore after: keybinding
 // closures keep resolving in the chunk they were compiled in.
-void* havel_pin_main_chunk(HavelState* H);
-void havel_restore_chunk(HavelState* H, void* pin);
+void *havel_pin_main_chunk(HavelState *H);
+void havel_restore_chunk(HavelState *H, void *pin);
 
 // Normalize the callable at stack index idx into a closure pinned to its
 // owning chunk (VM::pinCallableAsClosure). Values stored for later
@@ -124,68 +130,67 @@ void havel_restore_chunk(HavelState* H, void* pin);
 // later loadstring replacing the main chunk makes them resolve to the
 // wrong function. Returns HAVEL_OK and rewrites the stack slot in
 // place, or HAVEL_ERR if the value is not a pin-able callable.
-int havel_pin_callable(HavelState* H, int idx);
+int havel_pin_callable(HavelState *H, int idx);
 
-int  havel_pcall(HavelState* H, int nargs, int nresults, int msgh);
+int havel_pcall(HavelState *H, int nargs, int nresults, int msgh);
 
-int  havel_resume(HavelState* H, HavelState* thread, int nargs);
-int  havel_yield(HavelState* H, int nresults);
-int  havel_status(HavelState* H, HavelState* thread);
+int havel_resume(HavelState *H, HavelState *thread, int nargs);
+int havel_yield(HavelState *H, int nresults);
+int havel_status(HavelState *H, HavelState *thread);
 
-void havel_error(HavelState* H, const char* fmt, ...);
-const char* havel_errmsg(HavelState* H);
+void havel_error(HavelState *H, const char *fmt, ...);
+const char *havel_errmsg(HavelState *H);
 
-void havel_gc(HavelState* H, int what);
+void havel_gc(HavelState *H, int what);
 
-int havel_loadstring(HavelState* H, const char* s, const char* name);
-int havel_loadfile(HavelState* H, const char* filename);
+int havel_loadstring(HavelState *H, const char *s, const char *name);
+int havel_loadfile(HavelState *H, const char *filename);
 
-int havel_call_named_function(HavelState* H, const char* name);
+int havel_call_named_function(HavelState *H, const char *name);
 
-void havel_require(HavelState* H, const char* name);
-void havel_register_cmodule(HavelState* H, const char* name,
-                          int (*init)(HavelState*));
-void havel_add_search_path(HavelState* H, const char* path);
-void havel_clear_module_cache(HavelState* H);
+void havel_require(HavelState *H, const char *name);
+void havel_register_cmodule(HavelState *H, const char *name, int (*init)(HavelState *));
+void havel_add_search_path(HavelState *H, const char *path);
+void havel_clear_module_cache(HavelState *H);
 
-int havel_ffi_typeid(HavelState* H, const char* ctype);
-size_t havel_ffi_sizeof(HavelState* H, const char* ctype);
-size_t havel_ffi_alignof(HavelState* H, const char* ctype);
+int havel_ffi_typeid(HavelState *H, const char *ctype);
+size_t havel_ffi_sizeof(HavelState *H, const char *ctype);
+size_t havel_ffi_alignof(HavelState *H, const char *ctype);
 
-void* havel_ffi_alloc(HavelState* H, const char* ctype, size_t count);
-void havel_ffi_free(HavelState* H, void* ptr);
-void* havel_ffi_cast(HavelState* H, const char* ctype, void* ptr);
+void *havel_ffi_alloc(HavelState *H, const char *ctype, size_t count);
+void havel_ffi_free(HavelState *H, void *ptr);
+void *havel_ffi_cast(HavelState *H, const char *ctype, void *ptr);
 
-int8_t   havel_ffi_get_int8(HavelState* H, void* ptr);
-int16_t  havel_ffi_get_int16(HavelState* H, void* ptr);
-int32_t  havel_ffi_get_int32(HavelState* H, void* ptr);
-int64_t  havel_ffi_get_int64(HavelState* H, void* ptr);
-uint8_t  havel_ffi_get_uint8(HavelState* H, void* ptr);
-uint16_t havel_ffi_get_uint16(HavelState* H, void* ptr);
-uint32_t havel_ffi_get_uint32(HavelState* H, void* ptr);
-uint64_t havel_ffi_get_uint64(HavelState* H, void* ptr);
-float    havel_ffi_get_float(HavelState* H, void* ptr);
-double   havel_ffi_get_double(HavelState* H, void* ptr);
-void*    havel_ffi_get_pointer(HavelState* H, void* ptr);
+int8_t havel_ffi_get_int8(HavelState *H, void *ptr);
+int16_t havel_ffi_get_int16(HavelState *H, void *ptr);
+int32_t havel_ffi_get_int32(HavelState *H, void *ptr);
+int64_t havel_ffi_get_int64(HavelState *H, void *ptr);
+uint8_t havel_ffi_get_uint8(HavelState *H, void *ptr);
+uint16_t havel_ffi_get_uint16(HavelState *H, void *ptr);
+uint32_t havel_ffi_get_uint32(HavelState *H, void *ptr);
+uint64_t havel_ffi_get_uint64(HavelState *H, void *ptr);
+float havel_ffi_get_float(HavelState *H, void *ptr);
+double havel_ffi_get_double(HavelState *H, void *ptr);
+void *havel_ffi_get_pointer(HavelState *H, void *ptr);
 
-void havel_ffi_set_int8(HavelState* H, void* ptr, int8_t val);
-void havel_ffi_set_int16(HavelState* H, void* ptr, int16_t val);
-void havel_ffi_set_int32(HavelState* H, void* ptr, int32_t val);
-void havel_ffi_set_int64(HavelState* H, void* ptr, int64_t val);
-void havel_ffi_set_uint8(HavelState* H, void* ptr, uint8_t val);
-void havel_ffi_set_uint16(HavelState* H, void* ptr, uint16_t val);
-void havel_ffi_set_uint32(HavelState* H, void* ptr, uint32_t val);
-void havel_ffi_set_uint64(HavelState* H, void* ptr, uint64_t val);
-void havel_ffi_set_float(HavelState* H, void* ptr, float val);
-void havel_ffi_set_double(HavelState* H, void* ptr, double val);
-void havel_ffi_set_pointer(HavelState* H, void* ptr, void* val);
+void havel_ffi_set_int8(HavelState *H, void *ptr, int8_t val);
+void havel_ffi_set_int16(HavelState *H, void *ptr, int16_t val);
+void havel_ffi_set_int32(HavelState *H, void *ptr, int32_t val);
+void havel_ffi_set_int64(HavelState *H, void *ptr, int64_t val);
+void havel_ffi_set_uint8(HavelState *H, void *ptr, uint8_t val);
+void havel_ffi_set_uint16(HavelState *H, void *ptr, uint16_t val);
+void havel_ffi_set_uint32(HavelState *H, void *ptr, uint32_t val);
+void havel_ffi_set_uint64(HavelState *H, void *ptr, uint64_t val);
+void havel_ffi_set_float(HavelState *H, void *ptr, float val);
+void havel_ffi_set_double(HavelState *H, void *ptr, double val);
+void havel_ffi_set_pointer(HavelState *H, void *ptr, void *val);
 
-void havel_ffi_cdef(HavelState* H, const char* cdecl);
-void* havel_ffi_load(HavelState* H, const char* path);
-void havel_ffi_unload(HavelState* H, void* handle);
-void* havel_ffi_sym(HavelState* H, void* handle, const char* name);
+void havel_ffi_cdef(HavelState *H, const char *cdecl);
+void *havel_ffi_load(HavelState *H, const char *path);
+void havel_ffi_unload(HavelState *H, void *handle);
+void *havel_ffi_sym(HavelState *H, void *handle, const char *name);
 
-const char* havel_version(void);
+const char *havel_version(void);
 int havel_version_major(void);
 int havel_version_minor(void);
 int havel_version_patch(void);

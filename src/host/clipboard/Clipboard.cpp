@@ -517,4 +517,31 @@ bool Clipboard::setImage(const std::string &base64Png) {
   }
 }
 
+bool Clipboard::setFiles(const std::vector<std::string> &paths) {
+  // Backend-routed only: the native text paths (X11/Wayland/external
+  // wl-copy) carry no file-list representation. Backends that support it
+  // (Qt file URLs) implement the slot; others report unsupported.
+  ensureBackend();
+  if (backend_) {
+    return backend_->setFiles(paths);
+  }
+  return false;
+}
+
+std::vector<std::string> Clipboard::getFiles() const {
+  ensureBackend();
+  if (backend_) {
+    return backend_->getFiles();
+  }
+  return {};
+}
+
+bool Clipboard::hasFiles() const {
+  ensureBackend();
+  if (backend_) {
+    return backend_->hasFiles();
+  }
+  return false;
+}
+
 } // namespace havel::host

@@ -1968,6 +1968,13 @@ endforeach()
 add_executable(havel
     src/main.cpp
     src/utils/LsanSuppressions.cpp
+    # Plugin symbol anchors - MUST be an executable object, not an archive
+    # member: the linker only pulls archive members to satisfy references
+    # from included objects, so an anchor living in havel_core.a is itself
+    # skipped and forces nothing (observed: AudioService.cpp.o never pulled,
+    # its HAVEL_EXPORT symbols absent from the dynamic symbol table). Being
+    # an executable object guarantees the anchor's relocations are processed.
+    src/host/plugin_symbol_anchors.cpp
 )
 
 target_link_libraries(havel PRIVATE

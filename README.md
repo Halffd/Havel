@@ -131,6 +131,11 @@ contain, never by file timestamp:
 
 # Timing history: every build/test run is recorded
 ./build.sh report
+
+# Queue a build behind whoever is building now (foreground, notifies when done)
+./build.sh queue build
+./build.sh await                  # or just wait them out, running nothing
+./build.sh locks                  # who holds what right now
 ```
 
 ### Resource Limits

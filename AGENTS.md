@@ -43,6 +43,64 @@ around them. Full help: `./build.sh help`.
 ./build.sh doctor
 ```
 
+### Queueing in the foreground (no backgrounding allowed)
+
+Two agents running `build.sh build` into the same build directory interleave
+two cmake runs over one dir and corrupt each other. Every build and test takes
+a lock on its workspace + build dir, so the second one WAITS instead of
+colliding. The wait is always in the foreground - there is no background mode
+and no polling to clean up.
+
+The normal habit, when you suspect someone else may be building:
+
+```bash
+# 1. Look before you leap: what is built, and what is currently running?
+./build.sh status
+./build.sh jobs
+
+# 2a. Queue it. If another agent holds the lock, this BLOCKS in the
+#     foreground with a progress line every 30s, then builds, then
+#     fires the notifier with the exit status. Nothing to babysit,
+#     nothing left running when your session dies.
+./build.sh queue build
+./build.sh queue test --kind gate
+./build.sh queue fleet build        # every workspace, in order
+
+# 2b. Or just wait them out, running nothing yourself:
+./build.sh await                    # waits on this tree's default build lock
+./build.sh await havel-3-build-debug-build
+./build.sh locks                    # who holds what, right now
+```
+
+What you will see while queued (this is the whole point - the wait is visible,
+not a silent hang):
+
+```
+[warn] lock 'havel-3-build-debug-test' is held (pid 418124 bash) - queueing in foreground
+  still queued: 30s elapsed, holder: pid 418124 bash
+  still queued: 60s elapsed, holder: pid 418124 bash
+[ok]   lock acquired after 60s
+```
+
+The notifier fires when a queued run finishes: a terminal bell, a desktop
+notification if a display is reachable, and an entry in
+`~/.cache/havel-build/notifications.log`. Read that file to catch up on what
+completed while you were away. `./build.sh notify "text"` emits one manually.
+
+Rules that make this safe:
+
+- Plain `build`, `rebuild`, `test`, `fleet` and their `queue` forms all take
+  the same per-directory lock, so they serialize against each other. You do
+  not have to remember to use `queue` - but prefer it, because only it
+  notifies.
+- `await` never runs anything: it is the polite "I'll go after you" that
+  leaves the other agent's build untouched.
+- If your session dies mid-build, the lock's recorded pid dies with it; the
+  next `locks` call reports the lock free and the next run takes it. No stale
+  lock can wedge the tree.
+- Never `kill -9` a build to "clear" a lock. Use `./build.sh stop <pid>`, which
+  takes down the whole tree cleanly and lets the lock release normally.
+
 Conventions that are now script-enforced:
 
 - Every build/test run records duration and exit status to
@@ -54,6 +112,11 @@ Conventions that are now script-enforced:
   process group - a build inherits the caller's pgid, so a group signal
   freezes the shell that started it.
 - `gc --prune` and `--hardlink` are no-ops without `--yes`.
+- Every build and test takes a per-workspace+build-dir lock, so concurrent
+  runs queue behind each other in the foreground instead of interleaving two
+  cmake runs into one directory. See "Queueing in the foreground" above.
+- `help`'s mode table is generated from `BUILD_CONFIGS` at runtime; the old
+  hand-written one claimed mode 16 had tests enabled and omitted modes 17-20.
 
 Common commands (legacy forms still work):
 - `./build.sh 5 build` - Full release with LLVM

@@ -1,59 +1,78 @@
-// livelink.hv — LiveLink daemon control plane (HTTP-only)
+// livelink.hv — LiveLink Full Edition, ported from the JS reference
+// (/host/sandbox/js/live-v2/livelink.js): a multi-screen stream aggregator
+// that fetches live streams (Holodex/YouTube, Twitch, direct URLs), queues
+// them per screen, and plays them through mpv/streamlink with an HTTP
+// control surface.
 //
-// Concurrency model: the web server, request handlers, and the auto-refresh
-// loop all run as cooperative fibers on the single-threaded scheduler
-// (modules/std/net/webserver.hv spawns each request via `go {}`). There are
-// no preemptive threads, so `state` needs no mutex — but a handler CAN
-// observe a half-updated invariant if a fiber suspends (sleep / socket I/O)
-// mid-mutation. Invariant used throughout: every multi-field update builds a
-// complete replacement object and swaps it with one assignment, and no
-// suspension point sits inside a mutation sequence.
+// CONCURRENCY MODEL: the web server, request handlers, the auto-refresh
+// loop and the process reaper all run as cooperative fibers on one
+// scheduler thread (modules/std/net/webserver.hv spawns each request via
+// `go {}`). The JS version's mutexes (playingUrlsMutex etc.) are not
+// needed — but a fiber CAN observe a half-updated invariant if a
+// suspension point (sleep / http / spawn) sits mid-mutation. Invariants
+// used throughout:
+//   - multi-field updates build a complete replacement, then one
+//     assignment swaps it;
+//   - per-screen `screenStarting` flags are set BEFORE any suspension
+//     (spawn) and checked again after it, which is the withScreenLock
+//     equivalent;
+//   - activeProcesses entries are keyed per screen, mutated by one fiber
+//     at a time (the screenStarting flag plus the reaper's exists-check).
 //
-// Interfaces: HTTP API only. The interactive CLI loop was removed —
-// shell.read() is a hard-blocking std::getline that freezes the scheduler
-// (and with it the web server) while waiting at the prompt. Use curl or
-// scripts/livelinkctl.hv against the API below.
+// PLAYBACK SAFETY: the daemon spawns real mpv/streamlink processes when a
+// screen picks a stream. Nothing is spawned unless a screen is enabled,
+// a stream is selected, and maxStreams allows it. Shutdown endpoint kills
+// every tracked child.
 //
-// API:
-//   GET  /api/status     server + stream status (times are epoch millis)
-//   GET  /api/stream     active stream record
-//   POST /api/stream     {url, title?} — switch stream (400 on missing url)
-//   POST /api/refresh    re-record current stream (success:false if no url)
-//   GET  /api/streams    configured streams from config.toml
-//   POST /api/shutdown   graceful stop (no signal API exists in Havel; this
-//                        endpoint is the controlled shutdown path)
-//   GET  /               dashboard HTML (templates/dashboard.html)
+// API (mirrors the JS surface):
+//   GET  /api/status              server + per-screen + cache snapshot
+//   GET  /api/streams             force refetch, return the cache
+//   GET  /api/queue/:screen       one screen's queue
+//   GET  /api/queues              all queues
+//   GET  /api/favorites           twitch + youtube favorites
+//   GET  /api/watched             watched urls + count
+//   GET  /api/organizations       organizations list
+//   GET  /api/filters             exclude filters
+//   GET  /api/screens             screen config
+//   GET  /api/health              liveness
+//   POST /api/queue/add           {screen, url, title?}
+//   POST /api/queue/clear         {screen}
+//   POST /api/stream/start        {screen} — pick + play
+//   POST /api/stream/stop         {screen}
+//   POST /api/stream/stop-all
+//   POST /api/watched/clear
+//   POST /api/refresh             cache reset + full refetch + idle screens
+//   POST /api/save                write .env
+//   POST /api/screen/enable       {screen}
+//   POST /api/screen/disable      {screen}
+//   POST /api/screen/toggle       {screen}
+//   POST /api/shutdown            graceful stop (kills children)
+//   GET  /                        dashboard
 
 use sys
 use shell
 use time
-// The template is read at STARTUP via an explicitly bound host-fs read: the
-// webserver module (imported below) loads net/fsuv under the name `fs`, which
-// shadows the plain `use fs` binding — fsuv's read() takes an fd, not a path.
-// Binding the host read as fsRead (a name no other module exports) keeps the
-// startup read unambiguous, and handlers never touch fs at all.
-use { read as fsRead, exists as fsExists } from "fs"
+// Host fs bound under a unique name: the webserver module (imported below)
+// loads net/fsuv under the name `fs`, which would shadow a plain `use fs`.
+use { read as fsRead, exists as fsExists, write as fsWrite } from "fs"
 use { config as dotenvConfig } from "std/dotenv"
 use { parse as tomlParse } from "std/toml"
+use { parse as jsonParse, stringify as jsonStringify } from "std/json"
 use { create as createApp } from "net/webserver"
 
+// Module-function bindings captured at top level, under names no other
+// module exports. Inside request handlers the ambient globals are the
+// merged module-stdlib map, where names like `time`, `fs` and `state`
+// resolve to OTHER modules' exports (observed: NOW_MS() returned an
+// object from a handler, fs resolved to net/fsuv). Calling the captured
+// values is context-free.
+NOW_MS = time.millis
+
 // ============================================================================
-// Configuration
+// CONFIGURATION (same precedence chain as the JS: CLI > config.toml > .env >
+// default)
 // ============================================================================
 
-fn resolveEnv(key, defaultVal, envVars) {
-  envVal = sys.env(key)
-  if envVal != null && envVal != "" {
-    envVal
-  } else if envVars != null && envVars[key] != null && envVars[key] != "" {
-    envVars[key]
-  } else {
-    defaultVal
-  }
-}
-
-// int() maps junk to 0 and parses "12x" as 12 (VM::toInt uses std::stoll),
-// so numeric config from the outside world is validated strictly here.
 fn isDigits(s) {
   if s == null || s == "" {
     return false
@@ -71,27 +90,33 @@ fn isDigits(s) {
   ok
 }
 
-fn parsePositiveInt(raw, label, maxVal) {
+// int() maps junk to 0 and "12x" to 12, so outside numeric config is
+// validated strictly before use.
+fn parseIntStrict(raw) {
   if !isDigits(raw) {
-    print("[LiveLink] Invalid ${label}: '${raw}' is not a whole number")
-    shell.exit(1)
+    return null
   }
-  n = int(raw)
-  if n <= 0 {
-    print("[LiveLink] Invalid ${label}: ${raw} must be > 0")
-    shell.exit(1)
+  int(raw)
+}
+
+fn splitNonEmpty(s, sep) {
+  out = []
+  if s == null || s == "" {
+    return out
   }
-  if maxVal != null && n > maxVal {
-    print("[LiveLink] Invalid ${label}: ${raw} must be <= ${maxVal}")
-    shell.exit(1)
+  parts = s.split(sep)
+  for p in parts {
+    t = p.trim()
+    if t != "" {
+      out.push(t)
+    }
   }
-  n
+  out
 }
 
 fn loadConfig() {
   envVars = {}
-
-  if fs.exists(".env") {
+  if fsExists(".env") {
     envRes = dotenvConfig(".env")
     if envRes != null && envRes.parsed != null {
       envVars = envRes.parsed
@@ -99,8 +124,8 @@ fn loadConfig() {
   }
 
   tomlCfg = {}
-  if fs.exists("config.toml") {
-    content = fs.read("config.toml")
+  if fsExists("config.toml") {
+    content = fsRead("config.toml")
     if content != null {
       parsed = tomlParse(content)
       if parsed != null {
@@ -109,117 +134,1340 @@ fn loadConfig() {
     }
   }
 
-  config = {
-    port: parsePositiveInt(resolveEnv("PORT", "3000", envVars), "PORT", 65535)
-    streamUrl: resolveEnv("STREAM_URL", "", envVars)
-    refreshInterval: parsePositiveInt(resolveEnv("REFRESH_INTERVAL", "300000", envVars), "REFRESH_INTERVAL", null)
-    streams: {}
-    autoRefresh: resolveEnv("AUTO_REFRESH", "true", envVars) == "true"
-  }
-
-  if tomlCfg.streams != null {
-    config.streams = tomlCfg.streams
-  }
-
-  // CLI Overrides
   rawArgs = []
   if sys.argv != null {
     rawArgs = sys.argv()
   }
 
+  fn argValue(flag) {
+    i = 0
+    while i < #rawArgs {
+      if rawArgs[i] == flag && i + 1 < #rawArgs {
+        return rawArgs[i+1]
+      }
+      i = i + 1
+    }
+    null
+  }
+  fn hasFlag(flag) {
+    i = 0
+    while i < #rawArgs {
+      if rawArgs[i] == flag {
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  // First CLI hit wins, like the JS switch/case parse.
+  cliPort = null
+  cliScreens = null
+  cliMpvConfig = null
+  cliGeometry = null
+  cliStreamlink = null
+  cliRefresh = null
+  cliMaxStreams = null
+  i2 = 0
+  while i2 < #rawArgs {
+    a = rawArgs[i2]
+    if a == "--port" && cliPort == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliPort = rawArgs[i2]
+    } else if a == "--screens" && cliScreens == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliScreens = rawArgs[i2]
+    } else if a == "--mpv-config" && cliMpvConfig == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliMpvConfig = rawArgs[i2]
+    } else if a == "--geometry" && cliGeometry == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliGeometry = rawArgs[i2]
+    } else if a == "--streamlink" && cliStreamlink == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliStreamlink = rawArgs[i2]
+    } else if a == "--refresh-interval" && cliRefresh == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliRefresh = rawArgs[i2]
+    } else if a == "--max-streams" && cliMaxStreams == null && i2 + 1 < #rawArgs {
+      i2 = i2 + 1
+      cliMaxStreams = rawArgs[i2]
+    }
+    i2 = i2 + 1
+  }
+
+  fn resolveStr(cliVal, tomlVal, envKey, fallback) {
+    if cliVal != null && cliVal != "" {
+      return cliVal
+    }
+    if tomlVal != null && tomlVal != "" {
+      return tomlVal
+    }
+    envVal = sys.env(envKey)
+    if envVal != null && envVal != "" {
+      return envVal
+    }
+    fallback
+  }
+
+  // Numbers: CLI > toml > env > default, each validated when present.
+  fn resolveInt(cliRaw, tomlVal, envKey, fallback) {
+    raw = cliRaw
+    if raw == null || raw == "" {
+      if tomlVal != null && tomlVal != "" {
+        if isDigits("${tomlVal}") {
+          return int("${tomlVal}")
+        }
+      }
+      envVal = sys.env(envKey)
+      if envVal != null && envVal != "" && isDigits(envVal) {
+        return int(envVal)
+      }
+      return fallback
+    }
+    if isDigits(raw) {
+      return int(raw)
+    }
+    fallback
+  }
+
+  serverToml = tomlCfg.server
+  if serverToml == null {
+    serverToml = {}
+  }
+  mpvToml = tomlCfg.mpv
+  if mpvToml == null {
+    mpvToml = {}
+  }
+  streamlinkToml = tomlCfg.streamlink
+  if streamlinkToml == null {
+    streamlinkToml = {}
+  }
+  favToml = tomlCfg.favorites
+  if favToml == null {
+    favToml = {}
+  }
+
+  refreshSec = resolveInt(cliRefresh, serverToml.refresh_interval, "REFRESH_INTERVAL", 60)
+  if refreshSec <= 0 {
+    refreshSec = 60
+  }
+  maxStreams = resolveInt(cliMaxStreams, serverToml.max_streams, "MAX_STREAMS", 0)
+
+  // NOTE: not `return {...}` — object literals with call-valued fields
+  // silently return all-null outside assignment position (parser defect:
+  // D/G repros). Assign, then return.
+  resolved = {
+    holodexKey: resolveStr(null, tomlCfg.holodex != null ? tomlCfg.holodex.api_key : null, "HOLODEX_API_KEY", "")
+    twitchClientId: resolveStr(null, tomlCfg.twitch != null ? tomlCfg.twitch.client_id : null, "TWITCH_CLIENT_ID", "")
+    twitchSecret: resolveStr(null, tomlCfg.twitch != null ? tomlCfg.twitch.client_secret : null, "TWITCH_CLIENT_SECRET", "")
+    port: resolveInt(cliPort, serverToml.port, "PORT", 3000)
+    screens: resolveStr(cliScreens, tomlCfg.screens, "SCREENS", null)
+    mpvConfig: resolveStr(cliMpvConfig, mpvToml.config_dir, "MPV_CONFIG_DIR", "/home/agent/.config/mpv")
+    geometry: resolveStr(cliGeometry, mpvToml.geometry, "GEOMETRY", null)
+    useStreamlink: resolveStr(cliStreamlink, null, "USE_STREAMLINK", "true") != "false"
+    streamlinkPath: resolveStr(null, streamlinkToml.path, "STREAMLINK_PATH", "streamlink")
+    organizations: splitNonEmpty(resolveStr(null, tomlCfg.organizations, "ORGANIZATIONS", "Hololive,Nijisanji,VShojo,Phase Connect,Independents"), ",")
+    twitchFavorites: splitNonEmpty(resolveStr(null, favToml.twitch, "TWITCH_FAVORITES", ""), ",")
+    youtubeFavorites: splitNonEmpty(resolveStr(null, favToml.youtube, "YOUTUBE_FAVORITES", ""), ",")
+    excludeFilters: splitNonEmpty(resolveStr(null, tomlCfg.filters, "EXCLUDE_FILTERS", "membership,members only,karaoke,zatsudan,asmr"), ",")
+    screen1Sources: splitNonEmpty(resolveStr(null, null, "SCREEN1_SOURCES", "youtube"), ",")
+    screen2Sources: splitNonEmpty(resolveStr(null, null, "SCREEN2_SOURCES", "twitch"), ",")
+    watchedStreams: splitNonEmpty(resolveStr(null, tomlCfg.watched_streams, "WATCHED_STREAMS", ""), ",")
+    refreshInterval: refreshSec
+    watchedClearHours: resolveInt(null, serverToml.watched_clear_hours, "WATCHED_CLEAR_HOURS", 10)
+    maxStreams: maxStreams
+  }
+  resolved
+}
+
+cfg = loadConfig()
+
+// ============================================================================
+// GLOBAL STATE
+// ============================================================================
+
+nowMs0 = NOW_MS()
+
+// screenConfig: {1: {sources: [...], enabled: true, currentUrl: null}, ...}
+// Parse cfg.screens either as a count ("2") or "sources1,sources2" pairs
+// ("youtube:twitch,youtube+direct"), exactly like the JS.
+fn buildScreenConfig() {
+  sc = {}
+  if cfg.screens != null && cfg.screens != "" {
+    if isDigits(cfg.screens) {
+      n = int(cfg.screens)
+      if n > 0 {
+        i = 1
+        while i <= n {
+          sc["${i}"] = {sources: ["youtube"], enabled: true, currentUrl: null}
+          i = i + 1
+        }
+        return sc
+      }
+    }
+    pairs = cfg.screens.split(",")
+    idx = 1
+    for pair in pairs {
+      sourcesPart = pair
+      colonIdx = pair.find(":")
+      if colonIdx >= 0 {
+        sourcesPart = pair[0:colonIdx]
+      }
+      sources = splitNonEmpty(sourcesPart, "+")
+      if #sources == 0 {
+        sources = ["youtube"]
+      }
+      sc["${idx}"] = {sources: sources, enabled: true, currentUrl: null}
+      idx = idx + 1
+    }
+    if #sc.keys() > 0 {
+      return sc
+    }
+  }
+  // Default: two screens, screen1=screen1Sources, screen2=screen2Sources.
+  sc["1"] = {sources: cfg.screen1Sources, enabled: true, currentUrl: null}
+  sc["2"] = {sources: cfg.screen2Sources, enabled: true, currentUrl: null}
+  sc
+}
+
+appState = {
+  screenConfig: buildScreenConfig()
+  screenQueues: {}
+  favorites: {twitch: cfg.twitchFavorites, youtube: cfg.youtubeFavorites}
+  watchedStreams: cfg.watchedStreams
+  excludeFilters: cfg.excludeFilters
+  organizations: cfg.organizations
+  cachedStreams: {youtube: [], twitch: [], direct: []}
+  lastFetchMs: 0
+  isShuttingDown: false
+  twitchToken: null
+  tokenExpiryMs: 0
+  activeProcesses: {}
+  playingUrls: {}
+  screenStarting: {}
+}
+
+// One queue array per screen, keyed like the JS screenQueues.
+for k in appState.screenConfig.keys() {
+  appState.screenQueues[k] = []
+}
+
+// Connectivity probe — see the comment above fetchYouTubeStreams.
+// One blocking 5s curl at startup (pre-scheduler), never inside fibers.
+NETWORK_OK = http.isOnline()
+if !NETWORK_OK {
+  print("[LiveLink] Network unreachable at startup - stream fetches disabled until restart")
+}
+
+CACHE_TTL_MS = cfg.refreshInterval * 1000
+serverStartMs = NOW_MS()
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+fn validateScreen(screen) {
+  key = "${screen}"
+  if appState.screenConfig[key] != null {
+    return key
+  }
+  null
+}
+
+fn validateUrl(url) {
+  url != null && #url > 8 && url.find("://") > 0
+}
+
+fn extractYouTubeVideoId(url) {
+  // youtube.com/watch?v=ID
+  marker = "watch?v="
+  mIdx = url.find(marker)
+  if mIdx >= 0 {
+    rest = url[mIdx + #marker:#url]
+    if #rest >= 11 {
+      return rest[0:11]
+    }
+  }
+  // youtu.be/ID
+  mIdx2 = url.find("youtu.be/")
+  if mIdx2 >= 0 {
+    rest2 = url[mIdx2 + 9:#url]
+    if #rest2 >= 11 {
+      return rest2[0:11]
+    }
+  }
+  // youtube.com/embed/ID and /v/ID
+  mIdx3 = url.find("/embed/")
+  if mIdx3 >= 0 {
+    rest3 = url[mIdx3 + 7:#url]
+    if #rest3 >= 11 {
+      return rest3[0:11]
+    }
+  }
+  mIdx4 = url.find("/v/")
+  if mIdx4 >= 0 {
+    rest4 = url[mIdx4 + 3:#url]
+    if #rest4 >= 11 {
+      return rest4[0:11]
+    }
+  }
+  null
+}
+
+fn extractTwitchChannel(url) {
+  marker = "twitch.tv/"
+  mIdx = url.find(marker)
+  if mIdx < 0 {
+    return null
+  }
+  rest = url[mIdx + #marker:#url]
+  if rest == "" {
+    return null
+  }
+  slash = rest.find("/")
+  if slash > 0 {
+    rest[0:slash]
+  } else {
+    rest
+  }
+}
+
+fn isDirectUrl(url) {
+  url.find("kick.com") >= 0 || url.find("youtube.com") >= 0 || url.find("youtu.be") >= 0 || url.find("twitch.tv") >= 0
+}
+
+fn isExcludedByFilters(title, channel) {
+  lowerTitle = title != null ? title.lower() : ""
+  lowerChannel = channel != null ? channel.lower() : ""
+  for f in appState.excludeFilters {
+    fl = f.lower()
+    if lowerTitle.find(fl) >= 0 || lowerChannel.find(fl) >= 0 {
+      return true
+    }
+  }
+  false
+}
+
+fn getDirectStreamInfo(url) {
+  if url.find("kick.com") >= 0 {
+    return {url: url, title: "Kick Stream: ${url}", platform: "kick", channel: url}
+  }
+  if url.find("youtube.com/watch") >= 0 || url.find("youtu.be") >= 0 {
+    vid = extractYouTubeVideoId(url)
+    if vid != null {
+      return {url: url, title: "YouTube Video: ${vid}", platform: "youtube", channel: vid}
+    }
+  }
+  if url.find("twitch.tv") >= 0 {
+    ch = extractTwitchChannel(url)
+    if ch != null {
+      return {url: url, title: "Twitch: ${ch}", platform: "twitch", channel: ch}
+    }
+  }
+  {url: url, title: "Direct Stream: ${url}", platform: "direct", channel: url}
+}
+
+// Fetch JSON over HTTP with the host curl module. Returns null on any
+// failure (the JS fetchWithTimeout throws; every caller here handles null).
+fn fetchJson(url, headers, timeoutMs) {
+  opts = {timeout: timeoutMs, follow_redirects: true}
+  if headers != null {
+    opts.headers = headers
+  }
+  res = http.get(url, opts)
+  if res == null || !res.ok {
+    return null
+  }
+  jsonParse(res.body)
+}
+
+// ============================================================================
+// FILTER + SELECTION
+// ============================================================================
+
+// Insertion sort by a numeric key function (n is small; arr.sort() only
+// handles plain numbers). `keyFn(item)` returns the sort rank; lower first.
+fn sortByKey(arr, rankFn) {
+  i = 1
+  while i < #arr {
+    item = arr[i]
+    key = rankFn(item)
+    j = i - 1
+    while j >= 0 {
+      otherKey = rankFn(arr[j])
+      if otherKey > key {
+        arr[j+1] = arr[j]
+        j = j - 1
+      } else {
+        j = -1
+      }
+    }
+    arr[j+1] = item
+    i = i + 1
+  }
+  arr
+}
+
+fn indexOfValue(arr, needle) {
   i = 0
-  while i < #rawArgs {
-    arg = rawArgs[i]
-    if arg == "--port" && i + 1 < #rawArgs {
-      i = i + 1
-      config.port = parsePositiveInt(rawArgs[i], "--port", 65535)
-    } else if arg == "--url" && i + 1 < #rawArgs {
-      i = i + 1
-      config.streamUrl = rawArgs[i]
-    } else if arg == "--refresh-interval" && i + 1 < #rawArgs {
-      i = i + 1
-      config.refreshInterval = parsePositiveInt(rawArgs[i], "--refresh-interval", null)
-    } else if arg == "--no-auto-refresh" {
-      config.autoRefresh = false
+  while i < #arr {
+    if arr[i] == needle {
+      return i
     }
     i = i + 1
   }
-
-  config
+  -1
 }
 
 // ============================================================================
-// State
+// API FUNCTIONS — HOLODEX / YOUTUBE
 // ============================================================================
 
-cfg = loadConfig()
-serverStartMs = time.millis()
-
-appState = {
-  activeStream: {
-    url: cfg.streamUrl
-    quality: "auto"
-    title: "LiveLink Direct Stream"
-    headers: {}
-    format: "hls"
-    lastUpdated: serverStartMs
+fn fetchHolodex(endpoint) {
+  if cfg.holodexKey == "" {
+    return []
   }
-  streamHistory: []
-  autoRefresh: cfg.autoRefresh
-  refreshInterval: cfg.refreshInterval
-  shuttingDown: false
+  data = fetchJson("https://holodex.net/api/v2${endpoint}", {"X-APIKEY": cfg.holodexKey}, 10000)
+  if data == null {
+    return []
+  }
+  data
+}
+
+fn streamFromHolodexVideo(v, orgFallback) {
+  channelName = "Unknown"
+  if v.channel != null {
+    if v.channel.english_name != null && v.channel.english_name != "" {
+      channelName = v.channel.english_name
+    } else if v.channel.name != null && v.channel.name != "" {
+      channelName = v.channel.name
+    }
+  }
+  viewers = 0
+  if v.live_viewers != null {
+    viewers = v.live_viewers
+  }
+  org = orgFallback
+  if v.channel != null && v.channel.org != null && v.channel.org != "" {
+    org = v.channel.org
+  }
+  // NOTE: not a bare tail literal — `{key: call()}` at statement position
+  // silently returns null (parser defect, reported). Assign, then return.
+  stream = {
+    url: "https://youtube.com/watch?v=${v.id}"
+    title: v.title != null ? v.title : ""
+    channel: channelName
+    viewers: viewers
+    platform: "youtube"
+    org: org
+  }
+  stream
+}
+
+fn getOrgStreams(org) {
+  enc = http.urlEncode(org)
+  videos = fetchHolodex("/live?org=${enc}&limit=30&status=live")
+  out = []
+  for v in videos {
+    out.push(streamFromHolodexVideo(v, org))
+  }
+  out
+}
+
+fn getChannelStreams(channelIds) {
+  if #channelIds == 0 {
+    return []
+  }
+  streams = []
+  for id in channelIds {
+    videos = fetchHolodex("/channels/${id}/videos?limit=5&type=stream&status=live")
+    if videos != null {
+      for v in videos {
+        s = streamFromHolodexVideo(v, "Favorite")
+        streams.push(s)
+      }
+    }
+  }
+  streams
+}
+
+fn dedupeByChannel(streams) {
+  seen = {}
+  out = []
+  for s in streams {
+    key = s.channel
+    if !seen.has(key) {
+      seen[key] = true
+      out.push(s)
+    }
+  }
+  out
+}
+
+fn fetchYouTubeStreams() {
+  print("[LiveLink] Fetching YouTube streams...")
+  if !NETWORK_OK {
+    print("[LiveLink] Skipping YouTube fetch - offline")
+    return []
+  }
+
+  streams = []
+  favoriteStreams = []
+  for org in appState.organizations {
+    orgStreams = getOrgStreams(org)
+    if #orgStreams > 0 {
+      print("[LiveLink]   ${org}: ${#orgStreams} live")
+    }
+    for s in orgStreams {
+      streams.push(s)
+    }
+  }
+  if #appState.favorites.youtube > 0 {
+    favStreams = getChannelStreams(appState.favorites.youtube)
+    if #favStreams > 0 {
+      print("[LiveLink]   Favorites: ${#favStreams} live")
+    }
+    for s in favStreams {
+      s.isFavorite = true
+      streams.push(s)
+    }
+    favoriteStreams = favStreams
+  }
+
+  filtered = []
+  for s in streams {
+    if !isExcludedByFilters(s.title, s.channel) {
+      filtered.push(s)
+    }
+  }
+  streams = dedupeByChannel(filtered)
+
+  // Sort: favorites first (config order), then org order, then viewers desc.
+  rankFn = fn(s) {
+    base = 1000000
+    if s.isFavorite {
+      favIdx = indexOfValue(appState.favorites.youtube, s.channel)
+      if favIdx >= 0 {
+        base = favIdx * 100000
+      }
+    } else {
+      orgIdx = indexOfValue(appState.organizations, s.org)
+      if orgIdx >= 0 {
+        base = 100000 + orgIdx * 1000
+      }
+    }
+    base + (s.viewers != null ? s.viewers / 1000 : 0)
+  }
+  sortByKey(streams, rankFn)
+
+  print("[LiveLink]   YouTube total: ${#streams} unique streams")
+  streams
 }
 
 // ============================================================================
-// Stream Management
+// API FUNCTIONS — TWITCH
 // ============================================================================
 
-fn refreshStream() {
-  url = appState.activeStream.url
-  if url == null || url == "" {
-    print("[LiveLink] No stream URL configured.")
+fn getTwitchToken() {
+  if appState.twitchToken != null && NOW_MS() < appState.tokenExpiryMs {
+    return appState.twitchToken
+  }
+  if cfg.twitchClientId == "" || cfg.twitchSecret == "" {
+    return null
+  }
+  body = "client_id=${cfg.twitchClientId}&client_secret=${cfg.twitchSecret}&grant_type=client_credentials"
+  res = http.post("https://id.twitch.tv/oauth2/token", body,
+                  {timeout: 10000, headers: {"Content-Type": "application/x-www-form-urlencoded"}})
+  if res == null || !res.ok {
+    print("[LiveLink] Twitch token error")
+    return null
+  }
+  data = jsonParse(res.body)
+  if data == null || data.access_token == null {
+    return null
+  }
+  appState.twitchToken = data.access_token
+  expiresIn = 3600
+  if data.expires_in != null {
+    expiresIn = data.expires_in
+  }
+  appState.tokenExpiryMs = NOW_MS() + (expiresIn - 60) * 1000
+  print("[LiveLink] Twitch token obtained, expires in ${expiresIn}s")
+  appState.twitchToken
+}
+
+fn twitchStreamFrom(s) {
+  viewers = 0
+  if s.viewer_count != null {
+    viewers = s.viewer_count
+  }
+  stream = {
+    url: "https://twitch.tv/${s.user_login}"
+    title: s.title != null ? s.title : ""
+    channel: s.user_login
+    viewers: viewers
+    platform: "twitch"
+    org: "Twitch"
+  }
+  stream
+}
+
+fn getTwitchStreamsByNames(usernames) {
+  token = getTwitchToken()
+  if token == null {
+    return []
+  }
+  valid = []
+  for u in usernames {
+    if u != null && #u >= 4 && #u <= 25 {
+      valid.push(u.lower())
+    }
+  }
+  if #valid == 0 {
+    return []
+  }
+  query = ""
+  for u in valid {
+    if query != "" {
+      query = query + "&"
+    }
+    query = query + "user_login=${u}"
+  }
+  res = http.get("https://api.twitch.tv/helix/streams?${query}",
+                 {timeout: 10000,
+                  headers: {"Client-ID": cfg.twitchClientId, "Authorization": "Bearer ${token}"}})
+  if res == null || !res.ok {
+    return []
+  }
+  data = jsonParse(res.body)
+  out = []
+  if data != null && data.data != null {
+    for s in data.data {
+      out.push(twitchStreamFrom(s))
+    }
+  }
+  out
+}
+
+fn getTopTwitchStreams(limit) {
+  token = getTwitchToken()
+  if token == null {
+    return []
+  }
+  first = limit
+  if first > 100 {
+    first = 100
+  }
+  res = http.get("https://api.twitch.tv/helix/streams?first=${first}",
+                 {timeout: 10000,
+                  headers: {"Client-ID": cfg.twitchClientId, "Authorization": "Bearer ${token}"}})
+  if res == null || !res.ok {
+    return []
+  }
+  data = jsonParse(res.body)
+  out = []
+  if data != null && data.data != null {
+    for s in data.data {
+      out.push(twitchStreamFrom(s))
+    }
+  }
+  out
+}
+
+fn fetchTwitchStreams() {
+  print("[LiveLink] Fetching Twitch streams...")
+  if !NETWORK_OK {
+    print("[LiveLink] Skipping Twitch fetch - offline")
+    return []
+  }
+  token = getTwitchToken()
+  if token == null {
+    print("[LiveLink] No Twitch token - check CLIENT_ID and SECRET")
+    return []
+  }
+
+  streams = []
+  if #appState.favorites.twitch > 0 {
+    favStreams = getTwitchStreamsByNames(appState.favorites.twitch)
+    print("[LiveLink]   Favorites: ${#favStreams} live")
+    for s in favStreams {
+      s.isFavorite = true
+      streams.push(s)
+    }
+  }
+  if #streams == 0 {
+    topStreams = getTopTwitchStreams(30)
+    print("[LiveLink]   Top streams: ${#topStreams} live")
+    for s in topStreams {
+      streams.push(s)
+    }
+  }
+
+  filtered = []
+  for s in streams {
+    if !isExcludedByFilters(s.title, s.channel) {
+      filtered.push(s)
+    }
+  }
+  streams = dedupeByChannel(filtered)
+
+  rankFn = fn(s) {
+    base = 1000000
+    if s.isFavorite {
+      favIdx = indexOfValue(appState.favorites.twitch, s.channel)
+      if favIdx >= 0 {
+        base = favIdx * 100000
+      }
+    }
+    base + (s.viewers != null ? s.viewers / 1000 : 0)
+  }
+  sortByKey(streams, rankFn)
+
+  print("[LiveLink]   Twitch total: ${#streams} live streams")
+  streams
+}
+
+// ============================================================================
+// FETCH ALL STREAMS (with cache TTL + direct URLs from queues)
+// ============================================================================
+
+fn fetchAllStreams() {
+  now = NOW_MS()
+  cache = appState.cachedStreams
+  if #cache.youtube > 0 && #cache.twitch > 0 && now - appState.lastFetchMs < CACHE_TTL_MS {
+    return cache
+  }
+
+  // Direct URLs queued on any screen become their own cache bucket.
+  directUrls = {}
+  for screenKey in appState.screenQueues.keys() {
+    for item in appState.screenQueues[screenKey] {
+      url = item
+      if type(item) == "object" && item.url != null {
+        url = item.url
+      }
+      if url.find("youtube.com/watch") < 0 && url.find("twitch.tv") < 0 {
+        if isDirectUrl(url) && !directUrls.has(url) {
+          directUrls[url] = true
+        }
+      }
+    }
+  }
+  directStreams = []
+  for url in directUrls.keys() {
+    info = getDirectStreamInfo(url)
+    info.viewers = 0
+    info.org = "Direct"
+    directStreams.push(info)
+  }
+  appState.cachedStreams.direct = directStreams
+
+  appState.cachedStreams.youtube = fetchYouTubeStreams()
+  appState.cachedStreams.twitch = fetchTwitchStreams()
+  appState.lastFetchMs = now
+  appState.cachedStreams
+}
+
+// ============================================================================
+// MPV / STREAMLINK
+// ============================================================================
+
+fn parseGeometry() {
+  geo = [[1920, 1080, 1366, 0], [1366, 768, 0, 312]]
+  if cfg.geometry != null && cfg.geometry != "" {
+    geo = []
+    pairs = cfg.geometry.split(",")
+    for pair in pairs {
+      nums = pair.split(":")
+      w = 1920
+      h = 1080
+      x = 0
+      y = 0
+      if #nums > 0 && isDigits(nums[0].trim()) {
+        w = int(nums[0].trim())
+      }
+      if #nums > 1 && isDigits(nums[1].trim()) {
+        h = int(nums[1].trim())
+      }
+      if #nums > 2 && isDigits(nums[2].trim()) {
+        x = int(nums[2].trim())
+      }
+      if #nums > 3 && isDigits(nums[3].trim()) {
+        y = int(nums[3].trim())
+      }
+      geo.push([w, h, x, y])
+    }
+  }
+  geo
+}
+
+SCREENS_GEOMETRY = parseGeometry()
+
+fn buildPlayerCommand(screenKey, url) {
+  idx = int(screenKey) - 1
+  g = SCREENS_GEOMETRY[0]
+  if idx >= 0 && idx < #SCREENS_GEOMETRY {
+    g = SCREENS_GEOMETRY[idx]
+  }
+  geometryArg = "--geometry=${g[0]}x${g[1]}+${g[2]}+${g[3]}"
+  if cfg.useStreamlink {
+    return "streamlink \"${url}\" best --player=mpv --player-args=\"${geometryArg} --no-border --volume=0 --keep-open=yes --idle=yes --config-dir=${cfg.mpvConfig}\""
+  }
+  "mpv ${geometryArg} --no-border --volume=0 --keep-open=yes --idle=yes --loop-playlist=inf --demuxer-max-bytes=10M --config-dir=${cfg.mpvConfig} \"${url}\""
+}
+
+fn playStream(screenKey, url) {
+  print("[Screen ${screenKey}] Playing ${url}")
+  cmd = buildPlayerCommand(screenKey, url)
+  proc = process.spawn(cmd)
+  proc.url = url
+  proc.screen = screenKey
+  proc
+}
+
+fn stopScreen(screenKey) {
+  data = appState.activeProcesses[screenKey]
+  if data == null {
     return false
   }
-  // Mutation block: no suspension points between these writes, so no other
-  // fiber can observe a partial history/lastUpdated update.
-  if #appState.streamHistory >= 10 {
-    appState.streamHistory.shift()
+  print("[Screen ${screenKey}] Stopping...")
+  // Remove from tracking FIRST (same as the JS), then kill.
+  appState.activeProcesses[screenKey] = null
+  if data.url != null {
+    appState.playingUrls[data.url] = null
   }
-  appState.streamHistory.push({url: url, timestampMs: time.millis()})
-  appState.activeStream.lastUpdated = time.millis()
-  print("[LiveLink] Stream refreshed: ${url}")
+  if appState.screenConfig[screenKey] != null {
+    appState.screenConfig[screenKey].currentUrl = null
+  }
+  process.killObj(data.proc)
+  print("[Screen ${screenKey}] Stopped")
   true
 }
 
-fn switchStream(newUrl, newTitle) {
-  if newTitle == null {
-    newTitle = "Stream - ${newUrl}"
+fn stopAllScreens() {
+  print("[LiveLink] Stopping all screens...")
+  for screenKey in appState.activeProcesses.keys() {
+    stopScreen(screenKey)
   }
-  // Atomic under the cooperative scheduler: build the complete record, then
-  // replace the reference in a single assignment.
-  appState.activeStream = {
-    url: newUrl
-    quality: appState.activeStream.quality
-    title: newTitle
-    headers: appState.activeStream.headers
-    format: appState.activeStream.format
-    lastUpdated: time.millis()
-  }
-  refreshStream()
 }
 
-fn shutdown(code) {
-  if appState.shuttingDown {
+// The JS registers proc.on('close') callbacks; the Havel spawn returns only
+// a pid, so a reaper fiber polls liveness every 2s and performs the same
+// cleanup: drop from playing/active, record watched (if it ran long enough),
+// then let the screen pick the next stream.
+fn reapExitedProcesses() {
+  nowMs = NOW_MS()
+  for screenKey in appState.activeProcesses.keys() {
+    data = appState.activeProcesses[screenKey]
+    if data == null {
+      continue
+    }
+    alive = process.exists(data.pid)
+    if !alive {
+      appState.activeProcesses[screenKey] = null
+      if data.url != null {
+        appState.playingUrls[data.url] = null
+      }
+      if appState.screenConfig[screenKey] != null {
+        appState.screenConfig[screenKey].currentUrl = null
+      }
+      // Only mark watched when it played a reasonable time (>= 10s),
+      // mirroring the JS "code 0/1 = normal exit" filter.
+      if data.startedMs != null && nowMs - data.startedMs >= 10000 {
+        if indexOfValue(appState.watchedStreams, data.url) < 0 {
+          appState.watchedStreams.push(data.url)
+          if #appState.watchedStreams > 100 {
+            appState.watchedStreams.shift()
+          }
+          print("[LiveLink] Added to watched: ${data.url}")
+        }
+      }
+      appState.screenStarting[screenKey] = null
+    }
+  }
+}
+
+fn refreshScreen(screenKey) {
+  reapExitedProcesses()
+  validKey = validateScreen(screenKey)
+  if validKey == null {
+    return false
+  }
+  configScreen = appState.screenConfig[validKey]
+  if configScreen == null || !configScreen.enabled || appState.isShuttingDown {
+    return false
+  }
+  // Prevent double-start: set BEFORE any suspension point.
+  if appState.screenStarting[validKey] {
+    print("[Screen ${validKey}] Already starting, skipping")
+    return false
+  }
+  appState.screenStarting[validKey] = true
+
+  // Stop existing process if any.
+  if appState.activeProcesses[validKey] != null {
+    stopScreen(validKey)
+  }
+
+  queue = appState.screenQueues[validKey]
+  url = null
+  if queue != null && #queue > 0 {
+    item = queue.shift()
+    url = item
+    if type(item) == "object" && item.url != null {
+      url = item.url
+    }
+    if !validateUrl(url) {
+      print("[Screen ${validKey}] Invalid URL in queue: ${url}")
+      appState.screenStarting[validKey] = null
+      return false
+    }
+    print("[Screen ${validKey}] From queue: ${url}")
+  }
+
+  if url == null {
+    fetchAllStreams()
+    available = []
+    for source in configScreen.sources {
+      bucket = appState.cachedStreams[source]
+      if bucket != null {
+        for s in bucket {
+          available.push(s)
+        }
+      }
+    }
+
+    seen = {}
+    deduped = []
+    for s in available {
+      if !seen.has(s.url) {
+        seen[s.url] = true
+        deduped.push(s)
+      }
+    }
+
+    candidates = []
+    for s in deduped {
+      if !appState.playingUrls.has(s.url) && indexOfValue(appState.watchedStreams, s.url) < 0 {
+        candidates.push(s)
+      }
+    }
+    // Fall back to playing-duplicates only (still avoid watched), matching
+    // the JS retry ladder.
+    if #candidates == 0 {
+      for s in deduped {
+        if !appState.playingUrls.has(s.url) {
+          candidates.push(s)
+        }
+      }
+    }
+
+    if #candidates == 0 {
+      print("[Screen ${validKey}] No streams available")
+      appState.screenStarting[validKey] = null
+      return false
+    }
+    selected = candidates[0]
+    url = selected.url
+    print("[Screen ${validKey}] Selected ${selected.channel} (${selected.viewers} viewers)")
+  }
+
+  // maxStreams limit BEFORE spawning.
+  if cfg.maxStreams > 0 {
+    count = 0
+    for k in appState.activeProcesses.keys() {
+      if appState.activeProcesses[k] != null {
+        count = count + 1
+      }
+    }
+    if count >= cfg.maxStreams {
+      print("[Screen ${validKey}] Max streams reached (${count}/${cfg.maxStreams})")
+      appState.screenStarting[validKey] = null
+      return false
+    }
+  }
+
+  if appState.playingUrls.has(url) {
+    print("[Screen ${validKey}] URL already playing on another screen, skipping")
+    appState.screenStarting[validKey] = null
+    return false
+  }
+
+  proc = playStream(validKey, url)
+  if proc == null || proc.pid == null || proc.pid < 0 {
+    print("[Screen ${validKey}] Spawn failed")
+    appState.screenStarting[validKey] = null
+    return false
+  }
+
+  // Atomic tracking write: complete record, single assignment.
+  appState.activeProcesses[validKey] = {
+    pid: proc.pid
+    url: url
+    startedMs: NOW_MS()
+    proc: proc
+  }
+  appState.playingUrls[url] = true
+  if appState.screenConfig[validKey] != null {
+    appState.screenConfig[validKey].currentUrl = url
+  }
+  // screenStarting stays set: the reaper clears it when the process ends
+  // (same contract as the JS close handler).
+  true
+}
+
+fn addToQueue(screenKey, url, customTitle) {
+  validKey = validateScreen(screenKey)
+  if validKey == null || !validateUrl(url) {
+    return false
+  }
+  if appState.screenQueues[validKey] == null {
+    appState.screenQueues[validKey] = []
+  }
+  if customTitle != null && customTitle != "" {
+    appState.screenQueues[validKey].push({url: url, title: customTitle})
+  } else {
+    appState.screenQueues[validKey].push(url)
+  }
+  print("[Screen ${validKey}] Added to queue: ${url}")
+
+  okToStart = appState.activeProcesses[validKey] == null && appState.screenConfig[validKey].enabled && !appState.isShuttingDown
+  if okToStart {
+    go {
+      sleep(50)
+      refreshScreen(validKey)
+    }
+  }
+  true
+}
+
+fn addWatched(url) {
+  if url == null || url == "" {
     return
   }
-  appState.shuttingDown = true
-  print("[LiveLink] Shutting down (exit code ${code})...")
+  if indexOfValue(appState.watchedStreams, url) < 0 {
+    appState.watchedStreams.push(url)
+    print("[LiveLink] Added to watched: ${url}")
+  }
+}
+
+fn clearWatched() {
+  appState.watchedStreams = []
+  print("[LiveLink] Cleared watched history")
+}
+
+fn cleanupWatchedStreams() {
+  if #appState.watchedStreams > 0 {
+    print("[LiveLink] Watched cleanup (${#appState.watchedStreams} items, ${cfg.watchedClearHours}h interval)")
+    appState.watchedStreams = []
+  }
+}
+
+fn saveConfig() {
+  favTw = ""
+  for f in appState.favorites.twitch {
+    favTw = favTw + (favTw == "" ? "" : ",") + f
+  }
+  favYt = ""
+  for f in appState.favorites.youtube {
+    favYt = favYt + (favYt == "" ? "" : ",") + f
+  }
+  watched = ""
+  for w in appState.watchedStreams {
+    watched = watched + (watched == "" ? "" : ",") + w
+  }
+  orgs = ""
+  for o in appState.organizations {
+    orgs = orgs + (orgs == "" ? "" : ",") + o
+  }
+  filters = ""
+  for f in appState.excludeFilters {
+    filters = filters + (filters == "" ? "" : ",") + f
+  }
+  s1 = ""
+  for s in appState.screenConfig["1"].sources {
+    s1 = s1 + (s1 == "" ? "" : ",") + s
+  }
+  s2 = ""
+  for s in appState.screenConfig["2"].sources {
+    s2 = s2 + (s2 == "" ? "" : ",") + s
+  }
+  content = "HOLODEX_API_KEY=${cfg.holodexKey}\n"
+  content = content + "TWITCH_CLIENT_ID=${cfg.twitchClientId}\n"
+  content = content + "TWITCH_CLIENT_SECRET=${cfg.twitchSecret}\n"
+  content = content + "TWITCH_FAVORITES=${favTw}\n"
+  content = content + "YOUTUBE_FAVORITES=${favYt}\n"
+  content = content + "WATCHED_STREAMS=${watched}\n"
+  content = content + "ORGANIZATIONS=${orgs}\n"
+  content = content + "EXCLUDE_FILTERS=${filters}\n"
+  content = content + "SCREEN1_SOURCES=${s1}\n"
+  content = content + "SCREEN2_SOURCES=${s2}\n"
+  content = content + "PORT=${cfg.port}\n"
+  content = content + "REFRESH_INTERVAL=${cfg.refreshInterval}\n"
+  content = content + "WATCHED_CLEAR_HOURS=${cfg.watchedClearHours}\n"
+  fsWrite(".env", content)
+  print("[LiveLink] Config saved to .env")
+}
+
+fn shutdown() {
+  if appState.isShuttingDown {
+    return
+  }
+  appState.isShuttingDown = true
+  print("[LiveLink] Shutting down...")
+  for screenKey in appState.activeProcesses.keys() {
+    stopScreen(screenKey)
+  }
   webApp.stop()
-  shell.exit(code)
+  shell.exit(0)
 }
 
 // ============================================================================
-// Dashboard
+// AUTO-REFRESH
+// ============================================================================
+
+fn autoRefresh() {
+  print("[LiveLink] Auto-refreshing streams...")
+  reapExitedProcesses()
+  fetchAllStreams()
+  // Refresh enabled screens with no active stream.
+  for screenKey in appState.screenConfig.keys() {
+    sc = appState.screenConfig[screenKey]
+    if sc.enabled && appState.activeProcesses[screenKey] == null {
+      print("[LiveLink]   Starting idle screen ${screenKey}...")
+      refreshScreen(screenKey)
+    }
+  }
+}
+
+// ============================================================================
+// WEB SERVER & API
+// ============================================================================
+
+webApp = createApp()
+
+// JSON responses are stringified IN THIS SCRIPT'S CHUNK and sent as a
+// pre-built string. Passing live objects through the webserver frames
+// cross into the webserver/json module frames, where nested content
+// corrupts (observed: object keys renamed, bool/array fields nulled in
+// the serialized output). A string crosses modules reliably.
+fn jsonOut(res, obj) {
+  res.send(jsonStringify(obj), "application/json")
+}
+
+// Handler bodies stay loop-free: a loop with object writes inside a
+// handler-closure frame corrupts adjacent locals (observed: the status
+// response's `nowMs` aliasing the last loop entry object, then SUB for
+// objects). Loop work lives in top-level fns, whose frames are clean.
+fn buildStatusSnapshot() {
+  nowMs = NOW_MS()
+  screensOut = {}
+  ks = appState.screenConfig.keys()
+  ki = 0
+  while ki < #ks {
+    screenKey = ks[ki]
+    sc = appState.screenConfig[screenKey]
+    proc = appState.activeProcesses[screenKey]
+    entry = {}
+    entry.sources = sc.sources
+    entry.enabled = sc.enabled
+    entry.currentUrl = sc.currentUrl
+    entry.playing = proc != null
+    entry.pid = proc != null ? proc.pid : null
+    screensOut[screenKey] = entry
+    ki = ki + 1
+  }
+  snapshot = {}
+  snapshot.status = "online"
+  snapshot.clock = "epoch-millis (wall clock, not monotonic)"
+  snapshot.uptimeMs = nowMs - serverStartMs
+  snapshot.uptimeSec = (nowMs - serverStartMs) / 1000
+  snapshot.port = cfg.port
+  snapshot.screens = screensOut
+  snapshot.cache = {
+    youtube: #appState.cachedStreams.youtube
+    twitch: #appState.cachedStreams.twitch
+    direct: #appState.cachedStreams.direct
+  }
+  snapshot.holodexEnabled = cfg.holodexKey != ""
+  snapshot.twitchEnabled = cfg.twitchClientId != ""
+  snapshot.watchedCount = #appState.watchedStreams
+  snapshot.refreshIntervalSec = cfg.refreshInterval
+  snapshot
+}
+
+webApp.get("/api/status", fn(req, res) {
+  jsonOut(res, buildStatusSnapshot())
+})
+
+webApp.get("/api/streams", fn(req, res) {
+  fetchAllStreams()
+  jsonOut(res, appState.cachedStreams)
+})
+
+webApp.get("/api/queue/:screen", fn(req, res) {
+  key = validateScreen(req.params.screen)
+  if key == null {
+    res.setStatus(404).send(jsonStringify({success: false, error: "unknown screen ${req.params.screen}"}), "application/json")
+    return
+  }
+  q = appState.screenQueues[key]
+  if q == null {
+    q = []
+  }
+  jsonOut(res, {screen: key, queue: q})
+})
+
+webApp.get("/api/queues", fn(req, res) {
+  jsonOut(res, appState.screenQueues)
+})
+
+webApp.get("/api/favorites", fn(req, res) {
+  jsonOut(res, appState.favorites)
+})
+
+webApp.get("/api/watched", fn(req, res) {
+  jsonOut(res, {watched: appState.watchedStreams, count: #appState.watchedStreams})
+})
+
+webApp.get("/api/organizations", fn(req, res) {
+  jsonOut(res, appState.organizations)
+})
+
+webApp.get("/api/filters", fn(req, res) {
+  jsonOut(res, appState.excludeFilters)
+})
+
+webApp.get("/api/screens", fn(req, res) {
+  jsonOut(res, appState.screenConfig)
+})
+
+webApp.get("/api/health", fn(req, res) {
+  jsonOut(res, {status: "ok", timestampMs: NOW_MS()})
+})
+
+webApp.post("/api/queue/add", fn(req, res) {
+  body = req.json
+  if body == null || body.url == null || body.url == "" {
+    res.setStatus(400).send(jsonStringify({success: false, error: "url is required (JSON body with Content-Type: application/json)"}), "application/json")
+    return
+  }
+  screen = body.screen != null ? body.screen : 1
+  ok = addToQueue(screen, body.url, body.title)
+  if !ok {
+    res.setStatus(400).send(jsonStringify({success: false, error: "invalid screen or url"}), "application/json")
+    return
+  }
+  jsonOut(res, {success: true})
+})
+
+webApp.post("/api/queue/clear", fn(req, res) {
+  body = req.json
+  screen = body != null && body.screen != null ? body.screen : 1
+  key = validateScreen(screen)
+  if key == null {
+    res.setStatus(404).send(jsonStringify({success: false, error: "unknown screen"}), "application/json")
+    return
+  }
+  appState.screenQueues[key] = []
+  jsonOut(res, {success: true})
+})
+
+webApp.post("/api/stream/start", fn(req, res) {
+  body = req.json
+  screen = body != null && body.screen != null ? body.screen : 1
+  ok = refreshScreen(screen)
+  jsonOut(res, {success: ok})
+})
+
+webApp.post("/api/stream/stop", fn(req, res) {
+  body = req.json
+  screen = body != null && body.screen != null ? body.screen : 1
+  stopped = stopScreen("${screen}")
+  jsonOut(res, {success: stopped})
+})
+
+webApp.post("/api/stream/stop-all", fn(req, res) {
+  stopAllScreens()
+  jsonOut(res, {success: true})
+})
+
+webApp.post("/api/watched/clear", fn(req, res) {
+  clearWatched()
+  jsonOut(res, {success: true})
+})
+
+webApp.post("/api/refresh", fn(req, res) {
+  appState.cachedStreams = {youtube: [], twitch: [], direct: []}
+  appState.lastFetchMs = 0
+  autoRefresh()
+  jsonOut(res, {success: true, cache: {
+    youtube: #appState.cachedStreams.youtube
+    twitch: #appState.cachedStreams.twitch
+    direct: #appState.cachedStreams.direct
+  }})
+})
+
+webApp.post("/api/save", fn(req, res) {
+  saveConfig()
+  jsonOut(res, {success: true})
+})
+
+webApp.post("/api/screen/enable", fn(req, res) {
+  body = req.json
+  key = validateScreen(body != null ? body.screen : null)
+  if key == null {
+    res.setStatus(404).send(jsonStringify({success: false, error: "unknown screen"}), "application/json")
+    return
+  }
+  appState.screenConfig[key].enabled = true
+  go {
+    sleep(20)
+    refreshScreen(key)
+  }
+  jsonOut(res, {success: true, enabled: true})
+})
+
+webApp.post("/api/screen/disable", fn(req, res) {
+  body = req.json
+  key = validateScreen(body != null ? body.screen : null)
+  if key == null {
+    res.setStatus(404).send(jsonStringify({success: false, error: "unknown screen"}), "application/json")
+    return
+  }
+  appState.screenConfig[key].enabled = false
+  stopScreen(key)
+  jsonOut(res, {success: true, enabled: false})
+})
+
+webApp.post("/api/screen/toggle", fn(req, res) {
+  body = req.json
+  key = validateScreen(body != null ? body.screen : null)
+  if key == null {
+    res.setStatus(404).send(jsonStringify({success: false, error: "unknown screen"}), "application/json")
+    return
+  }
+  sc = appState.screenConfig[key]
+  sc.enabled = !sc.enabled
+  if sc.enabled {
+    go {
+      sleep(20)
+      refreshScreen(key)
+    }
+  } else {
+    stopScreen(key)
+  }
+  jsonOut(res, {success: true, enabled: sc.enabled})
+})
+
+webApp.post("/api/shutdown", fn(req, res) {
+  jsonOut(res, {success: true, message: "shutting down"})
+  shutdown()
+})
+
+// ============================================================================
+// DASHBOARD
 // ============================================================================
 
 DASH_TEMPLATE_PATH = "templates/dashboard.html"
@@ -238,85 +1486,35 @@ fn loadDashboardTemplate() {
 DASH_TPL = loadDashboardTemplate()
 
 fn renderDashboard() {
-  html = DASH_TPL.replace("{{title}}", "${appState.activeStream.title}")
-  html = html.replace("{{url}}", "${appState.activeStream.url}")
+  html = DASH_TPL.replace("{{title}}", "LiveLink Full Edition")
+  html = html.replace("{{url}}", "http://localhost:${cfg.port}")
   html = html.replace("{{port}}", "${cfg.port}")
-  html = html.replace("{{autorefresh}}", "${appState.autoRefresh}")
+  html = html.replace("{{autorefresh}}", "${cfg.refreshInterval}s")
   html
 }
-
-// ============================================================================
-// Web Server & API
-// ============================================================================
-
-webApp = createApp()
-
-webApp.get("/api/status", fn(req, res) {
-  nowMs = time.millis()
-  res.json({
-    status: "online"
-    // All times are epoch millis (time.millis). This is wall-clock, NOT
-    // monotonic — NTP steps can skew uptime. Havel has no monotonic
-    // process-clock primitive; sys.uptime() is system uptime, not ours.
-    clock: "epoch-millis (wall clock, not monotonic)"
-    uptimeMs: nowMs - serverStartMs
-    uptimeSec: (nowMs - serverStartMs) / 1000
-    activeStream: appState.activeStream
-    autoRefresh: appState.autoRefresh
-    refreshIntervalMs: appState.refreshInterval
-    shuttingDown: appState.shuttingDown
-    port: cfg.port
-  })
-})
-
-webApp.get("/api/stream", fn(req, res) {
-  res.json(appState.activeStream)
-})
-
-webApp.post("/api/stream", fn(req, res) {
-  body = req.json
-  if body == null || body.url == null || body.url == "" {
-    res.setStatus(400).json({
-      success: false
-      error: "url is required: POST JSON {\"url\": ...} with Content-Type: application/json"
-    })
-    return
-  }
-  switchStream(body.url, body.title)
-  res.json({success: true, activeStream: appState.activeStream})
-})
-
-webApp.post("/api/refresh", fn(req, res) {
-  success = refreshStream()
-  res.json({success: success, activeStream: appState.activeStream})
-})
-
-webApp.get("/api/streams", fn(req, res) {
-  res.json({streams: cfg.streams})
-})
-
-webApp.post("/api/shutdown", fn(req, res) {
-  res.json({success: true, message: "shutting down"})
-  shutdown(0)
-})
 
 webApp.get("/", fn(req, res) {
   res.html(renderDashboard())
 })
 
 // ============================================================================
-// Start
+// START
 // ============================================================================
 
 print("========================================================================")
-print(" LiveLink Daemon Started (HTTP-only; interactive CLI removed)")
-print(" API on port: ${cfg.port}")
-print(" Auto-refresh: ${appState.autoRefresh} (interval: ${appState.refreshInterval} ms)")
-print("========================================================================")
-
-if appState.activeStream.url != "" {
-  refreshStream()
+print(" LiveLink Full Edition (havel port of live-v2)")
+print(" HTTP: http://localhost:${cfg.port}")
+print(" Holodex: ${cfg.holodexKey != "" ? "ENABLED" : "DISABLED"}  Twitch: ${cfg.twitchClientId != "" ? "ENABLED" : "DISABLED"}")
+for screenKey in appState.screenConfig.keys() {
+  sc = appState.screenConfig[screenKey]
+  srcs = ""
+  for s in sc.sources {
+    srcs = srcs + (srcs == "" ? "" : ",") + s
+  }
+  print("   Screen ${screenKey}: ${srcs} (${sc.enabled ? "ON" : "OFF"})")
 }
+print(" Auto-refresh: ${cfg.refreshInterval}s   Watched cleanup: every ${cfg.watchedClearHours}h")
+print("========================================================================")
 
 listening = webApp.listen("0.0.0.0", cfg.port)
 if !listening {
@@ -324,28 +1522,55 @@ if !listening {
   shell.exit(1)
 }
 
-// Background auto-refresh. refreshStream() cannot fail today, but the loop
-// survives future failures (network fetches) instead of dying silently on
-// the first throw.
+// Initial fetch + start enabled screens (screen 1 immediately, others 2s
+// later, same stagger as the JS main()).
 go {
-  while !appState.shuttingDown {
-    sleep(appState.refreshInterval)
-    if appState.shuttingDown {
-      break
-    }
-    if appState.autoRefresh && appState.activeStream.url != "" {
-      try {
-        refreshStream()
-      } catch e {
-        print("[LiveLink] Auto-refresh failed: ${e}")
+  fetchAllStreams()
+  first = true
+  for screenKey in appState.screenConfig.keys() {
+    if appState.screenConfig[screenKey].enabled {
+      if !first {
+        sleep(2000)
       }
+      refreshScreen(screenKey)
+      first = false
     }
   }
 }
 
-// Daemon keep-alive. Checked every second so a future signal bridge (none
-// exists yet) or the shutdown flag can end the process cleanly.
-while !appState.shuttingDown {
+// Auto-refresh loop (refreshInterval is SECONDS, like the JS config).
+go {
+  while !appState.isShuttingDown {
+    sleep(cfg.refreshInterval * 1000)
+    if appState.isShuttingDown {
+      break
+    }
+    try {
+      autoRefresh()
+    } catch e {
+      print("[LiveLink] Auto-refresh failed: ${e}")
+    }
+  }
+}
+
+// Watched cleanup loop.
+go {
+  while !appState.isShuttingDown {
+    sleep(cfg.watchedClearHours * 60 * 60 * 1000)
+    if !appState.isShuttingDown {
+      cleanupWatchedStreams()
+    }
+  }
+}
+
+// Process reaping: the close-handler equivalent (reapExitedProcesses) runs
+// inside the auto-refresh cycle and before each screen start instead of a
+// dedicated 2s fiber — a frequently-waking concurrent fiber corrupts
+// in-flight request handlers at the VM level (fiber/globals isolation
+// defect, same family as the timer_stress goroutine-globals report).
+
+// Daemon keep-alive.
+while !appState.isShuttingDown {
   sleep(1000)
 }
 print("[LiveLink] Daemon loop ended.")

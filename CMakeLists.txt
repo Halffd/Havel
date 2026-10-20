@@ -2983,6 +2983,12 @@ add_havel_module_plugin(browser      ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/B
 add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FormatModule.cpp)
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
+# The http plugin is the only compilation unit that calls curl. The main
+# executable's -lcurl is dropped by --as-needed (it never references curl
+# itself), so "resolve from the main exe at runtime" does not work for the
+# plugin: loading it died with 'undefined symbol: curl_global_init'. Link
+# the shared lib explicitly.
+target_link_libraries(havel_mod_http PRIVATE ${CURL_LIBRARIES})
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
 # MathModule is in the static lib (registered eagerly by
 # registerDefaultHostFunctions) — lazy plugin registration hit the

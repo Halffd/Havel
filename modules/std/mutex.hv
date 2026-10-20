@@ -299,7 +299,16 @@ fn withTryLock(mutex, f, timeoutMs=1000) {
     sleep(1)
   }
   try {
-    return {error: null, result: func()}
+    // NOT `return {error: null, result: func()}`: object literals with
+    // call-valued fields return all-null outside assignment position
+    // (compiler defect, reproducible repo-wide - every caller of withLock
+    // got both fields null regardless of the callback's result). Build by
+    // assignment, which is the safe form, then return.
+    lockResult = func()
+    out = {}
+    out["error"] = null
+    out["result"] = lockResult
+    return out
   } finally {
     mutex.unlock()
   }

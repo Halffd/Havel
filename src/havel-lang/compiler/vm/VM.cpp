@@ -6886,7 +6886,8 @@ load_from_source:
     case SourceCompileStatus::CompileError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compilation error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file +
+                     ") compilation error: " + compiled.error);
     case SourceCompileStatus::NullChunk:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;

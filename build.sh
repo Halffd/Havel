@@ -219,8 +219,15 @@ ws_build() { # workspace mode threads
   if [ "$headless" = "ON" ]; then cmake_cmd+=(-DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF); fi
   [ ${#SAN_FLAGS[@]} -gt 0 ] && cmake_cmd+=("${SAN_FLAGS[@]}")
 
+  # Lock per workspace+dir. Plain `build` and `queue build` both end up here,
+  # so two agents pointing at the same directory queue behind each other in
+  # the foreground instead of interleaving two cmake runs into one dir.
+  local lock; lock="$(lock_name "$(ws_name "$ws")" "$bdir" build)"
+  acquire_lock_blocking "$lock" 8
+  BUILD_LOCK_NAME="$lock"
+  trap 'release_lock 8' RETURN
   say "configure: $(ws_name "$ws") mode $m -> $bdir" "$BLUE"
-  [ "$FLAGS_DRYRUN" = 1 ] && { say "  (dry-run) ${cmake_cmd[*]}" "$DIM"; return 0; }
+  [ "$FLAGS_DRYRUN" = 1 ] && { say "  (dry-run) ${cmake_cmd[*]}" "$DIM"; release_lock 8; trap - RETURN; return 0; }
 
   if ! "${cmake_cmd[@]}" >"$LOG_DIR/configure-$(ws_name "$ws")-$bdir.log" 2>&1; then
     err "configure failed: $(ws_name "$ws") mode $m (log: $LOG_DIR/configure-$(ws_name "$ws")-$bdir.log)"
@@ -233,6 +240,8 @@ ws_build() { # workspace mode threads
   cmake --build "$dir" -j"$threads" >"$LOG_DIR/build-$(ws_name "$ws")-$bdir.log" 2>&1
   rc=$?
   t1=$(date +%s)
+  release_lock 8
+  trap - RETURN
   if [ $rc -ne 0 ]; then
     err "build failed rc=$rc (log: $LOG_DIR/build-$(ws_name "$ws")-$bdir.log)"
     tail -30 "$LOG_DIR/build-$(ws_name "$ws")-$bdir.log" >&2
@@ -249,6 +258,8 @@ ws_test() { # workspace mode kind
   local dir="$ws/$bdir"
   [ -x "$dir/hvtest" ] || [ -x "$dir/ctest" ] || {
     err "no test runner in $dir (build mode $m first)"; return 1; }
+  local lock; lock="$(lock_name "$(ws_name "$ws")" "$bdir" test)"
+  acquire_lock_blocking "$lock" 8
   local t0 t1 rc logf="$LOG_DIR/test-$(ws_name "$ws")-$bdir-$kind.log"
   t0=$(date +%s)
   case "$kind" in
@@ -265,6 +276,7 @@ ws_test() { # workspace mode kind
   esac
   rc=$?
   t1=$(date +%s)
+  release_lock 8
   local col=$GREEN; [ $rc -ne 0 ] && col=$RED
   say "tests rc=$rc in $((t1 - t0))s (log: $logf)" "$col"
   return $rc
@@ -375,7 +387,7 @@ SAN_FLAGS=()
 # jobs: live process discovery, so pause/resume/stop work on anything running
 # (including other agents' builds), without detached-job bookkeeping.
 # ---------------------------------------------------------------------------
-PATTERNS='cmake|ninja|make|clang|clang\+\+|hvtest|ctest|havel '
+PATTERNS='cmake|ninja|make|clang|clang[+]\\+|hvtest|ctest|havel '
 
 cmd_jobs() {
   printf '%-8s %-8s %-9s %-6s %s\n' PID PPID ELAPSED CPU% CMD
@@ -592,6 +604,160 @@ cmd_doctor() {
 }
 
 # ---------------------------------------------------------------------------
+# queue + notifier.
+#
+# The rule is foreground only: nothing here backgrounds. "Queueing" therefore
+# means: take a lock on the thing you want to build/test; if someone else
+# (often another agent) already holds it, BLOCK here in the foreground with
+# visible progress until they finish, then run. That is what stops two agents
+# from building the same directory into each other, without any detached
+# bookkeeping to lose track of.
+#
+# The notifier fires on completion of a queued run: terminal bell, an optional
+# desktop notification when one is reachable, and an entry in
+# ~/.cache/havel-build/notifications.log
+# ---------------------------------------------------------------------------
+LOCKS_DIR="$STATE_DIR/locks"
+NOTIF_LOG="$STATE_DIR/notifications.log"
+QUEUE_POLL=30   # seconds between "still waiting" messages while blocked
+
+lock_name() { # workspace, build-dir, kind -> stable lock file name
+  echo "$(ws_name "$1")-$2-$3"
+}
+
+# Prints holder info without taking anything: whoever holds the flock wrote
+# their pid into the file.
+lock_holder() {
+  local f="$LOCKS_DIR/$1.lock" pid
+  [ -f "$f" ] || return 0
+  pid="$(tail -1 "$f" 2>/dev/null)"
+  [ -n "$pid" ] || return 0
+  if kill -0 "$pid" 2>/dev/null; then
+    ps -o etime=,comm= -p "$pid" 2>/dev/null | tr -s ' ' | sed "s/^/pid $pid /"
+    return 0
+  fi
+  # Holder pid is gone. Say "free" only when the flock is actually free: the
+  # recorded pid can outlive the hold (a queue that finished and released).
+  exec 7>>"$f"
+  if flock -n 7 2>/dev/null; then
+    flock -u 7; exec 7>&-
+    echo "free (released by pid $pid)"
+  else
+    exec 7>&-
+    echo "held (by a process that did not record its pid)"
+  fi
+}
+
+# Blocks in the foreground until the lock is free. Prints progress so a long
+# wait never looks like a hang.
+# fd is a parameter so callers never share an fd: a nested acquire of the SAME
+# lock through the same fd is a no-op, but a second fd to the same file is a
+# second flock that would deadlock against the first.
+acquire_lock_blocking() { # name fd
+  local name="$1" fd="$2"
+  mkdir -p "$LOCKS_DIR"
+  eval "exec $fd>>\"$LOCKS_DIR/$name.lock\""
+  if flock -n "$fd" 2>/dev/null; then
+    printf '%s\n' "$$" >&"$fd"
+    return 0
+  fi
+  local waited=0 holder
+  holder="$(lock_holder "$name")"
+  warn "lock '$name' is held ($holder) - queueing in foreground"
+  while ! flock -n "$fd" 2>/dev/null; do
+    sleep "$QUEUE_POLL"
+    waited=$((waited + QUEUE_POLL))
+    holder="$(lock_holder "$name")"
+    say "  still queued: ${waited}s elapsed, holder: ${holder:-<released>}" "$DIM"
+  done
+  printf '%s\n' "$$" >&"$fd"
+  ok "lock acquired after ${waited}s"
+  return 0
+}
+
+release_lock() { # fd
+  flock -u "$1" 2>/dev/null
+  eval "exec $1>&-"
+}
+
+cmd_notify() {
+  local msg="$*"
+  printf '\a'                       # terminal bell: reaches tmux/screen too
+  say "[notify] $msg" "$CYAN"
+  if command -v notify-send >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    notify-send "havel build" "$msg" 2>/dev/null || true
+  fi
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" >> "$NOTIF_LOG" 2>/dev/null
+}
+
+cmd_locks() {
+  say "locks ($LOCKS_DIR)" "$CYAN"
+  local f name
+  for f in "$LOCKS_DIR"/*.lock; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f" .lock)"
+    printf '  %-34s %s\n' "$name" "$(lock_holder "$name" || echo free)"
+  done
+}
+
+# Foreground wait for a named lock to become free, without running anything.
+cmd_await() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    # no argument: wait on the lock our default mode would use
+    name="$(lock_name build)"
+    say "no lock named; defaulting to '$name'" "$DIM"
+  fi
+  mkdir -p "$LOCKS_DIR"
+  local f="$LOCKS_DIR/$name.lock"
+  if [ ! -f "$f" ] || ! flock -n 9 2>/dev/null <<<"" ; then :; fi
+  exec 9>>"$f"
+  if flock -n 9 2>/dev/null; then
+    flock -u 9; exec 9>&-
+    ok "lock '$name' is free - nothing to wait for"
+    return 0
+  fi
+  local waited=0 holder
+  holder="$(lock_holder "$name")"
+  say "awaiting '$name' (holder: $holder) - foreground, no timeout" "$CYAN"
+  while ! flock -n 9 2>/dev/null; do
+    sleep "$QUEUE_POLL"
+    waited=$((waited + QUEUE_POLL))
+    holder="$(lock_holder "$name")"
+    say "  still waiting: ${waited}s, holder: ${holder:-<released>}" "$DIM"
+  done
+  flock -u 9; exec 9>&-
+  cmd_notify "await done: '$name' free after ${waited}s"
+  return 0
+}
+
+# queue <build|rebuild|test|fleet ...>: wait for the lock, run, notify.
+cmd_queue() {
+  [ $# -gt 0 ] || die "usage: build.sh queue <build|rebuild|test|fleet ...> [args]"
+  local kind="$1"; shift
+  case "$kind" in
+    build|rebuild|test|fleet) ;;
+    *) die "queue: unsupported command '$kind' (build|rebuild|test|fleet)" ;;
+  esac
+
+  # The workspace functions take the per-directory lock themselves, so plain
+  # `build` and `queue build` serialise against each other identically. The
+  # queue's own job is the notification around them.
+  local t0 t1 rc
+  t0=$(date +%s)
+  case "$kind" in
+    build)   do_build;   rc=$? ;;
+    rebuild) do_rebuild; rc=$? ;;
+    test)    do_test;    rc=$? ;;
+    fleet)   cmd_fleet "$@"; rc=$? ;;
+  esac
+  t1=$(date +%s)
+  local col="ok"; [ $rc -ne 0 ] && col="FAILED"
+  cmd_notify "queue $kind rc=$rc ($col) after $((t1 - t0))s"
+  return $rc
+}
+
+# ---------------------------------------------------------------------------
 # legacy-compatible single-workspace commands
 # ---------------------------------------------------------------------------
 do_build() {
@@ -630,31 +796,65 @@ do_run() {
 # ---------------------------------------------------------------------------
 # help
 # ---------------------------------------------------------------------------
+# The mode table is generated from BUILD_CONFIGS at runtime: hand-maintaining a
+# second copy of that list is how help drifted (it claimed mode 16 had tests
+# enabled, which it does not).
+help_mode_table() {
+  printf '%-5s %-8s %-6s %-6s %-6s %-9s %-5s %s\n' MODE TYPE TESTS LANG LLVM HEADLESS TSAN BUILD-DIR
+  local m f t te la ll he ts bdir note
+  for m in $(echo "${!BUILD_CONFIGS[@]}" | tr ' ' '\n' | sort -n); do
+    f="${BUILD_CONFIGS[$m]}"
+    IFS=',' read -r t te la ll he ts _ _ _ bdir <<<"$f"
+    note=""
+    [ "$ts" = "ON" ] && note="ThreadSanitizer"
+    case "$bdir" in build-crane*) note="cranelift backend" ;; esac
+    [ "$bdir" = "build" ] && note="generic dir"
+    [ "$m" = "$DEFAULT_MODE" ] && note="${note:+$note }default"
+    printf '%-5s %-8s %-6s %-6s %-6s %-9s %-5s %s\n' \
+      "$m" "$t" "$te" "$la" "$ll" "$he" "$ts" "$bdir${note:+  [$note]}"
+  done
+  echo
+}
+
 help() {
   cat <<'EOF'
 havel unified build system
 
 Usage: build.sh [--mode N] [--threads N] [--json] [--dry-run] <command> [args]
 
+EOF
+  help_mode_table
+  cat <<'EOF'
+
 Build lifecycle
   build                configure + build (mode default 6)
   rebuild              clean + build
   clean                remove the build dir for the mode
   run [-- args]        run the built havel binary
-Modes: 0-20, same numbering as before (`build.sh 5 build`). Mode table in build.sh.
 
 Tests
   test [--kind gate|smoke|ctest|quick]
        gate  = hvtest --smoke --slow-too --timeout 300   (the pre-merge gate)
        smoke = hvtest --smoke --timeout 180
        ctest = full ctest
-       quick = fast gtest subset
+       quick = fast gtest subset (seconds)
 
-Fleet (all sibling workspaces: /host/havel, /host/havel-2, ...)
+Fleet (every sibling checkout: /host/havel, /host/havel-2, ...)
   fleet status         what is built where, sizes, staleness
   fleet build          build every workspace (--mode N)
   fleet test           test every workspace
   fleet gc             disk report everywhere
+
+Queueing (foreground - nothing ever backgrounds)
+  queue <build|rebuild|test|fleet> [args]
+                       take the lock for this workspace+mode. If another
+                       agent already holds it, BLOCK here with visible
+                       progress until they finish, then run, then notify.
+                       This is how two agents avoid building the same
+                       directory into each other without detached jobs.
+  await [lock]         block until a held lock is free; runs nothing after
+  notify <msg>         bell + desktop notification (if reachable) + log
+  locks                list locks and who holds them
 
 Introspection
   status               single-workspace status table
@@ -664,7 +864,7 @@ Introspection
 
 Resource management
   jobs                 list running build/test processes (all agents)
-  pause <pid>          SIGSTOP the process group
+  pause <pid>          SIGSTOP the process and its descendants
   resume <pid>         SIGCONT
   stop <pid>           SIGTERM, then SIGKILL after 5s
   limit show|set <max-parallel|timeout|ccache-size> <v>
@@ -683,14 +883,16 @@ Options
   --dry-run            print commands, run nothing
   -h, --help           this help
 
-Logs:  ~/.cache/havel-build/logs/
+State:  ~/.cache/havel-build/   (times.jsonl, logs/, locks/, notifications.log)
+Logs:   ~/.cache/havel-build/logs/
 EOF
 }
+
 
 # ---------------------------------------------------------------------------
 # argument parsing: global flags, optional leading MODE, then a command
 # ---------------------------------------------------------------------------
-COMMANDS=(build rebuild clean test run status which fleet jobs pause resume stop limit gc report doctor detect info help)
+COMMANDS=(build rebuild clean test run status which fleet jobs pause resume stop limit queue await notify locks gc report doctor detect info help)
 is_command() { local c; for c in "${COMMANDS[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
 
 POSITIONAL=()
@@ -746,6 +948,10 @@ case "$CMD" in
   resume)  job_signal "$1" CONT resume ;;
   stop)    job_signal "$1" TERM stop ;;
   limit)   cmd_limit "$@" ;;
+  queue)   cmd_queue "$@" ;;
+  await)   cmd_await "$@" ;;
+  notify)  cmd_notify "$@" ;;
+  locks)   cmd_locks ;;
   gc)      cmd_gc "$@" ;;
   report)  cmd_report ;;
   doctor)  cmd_doctor ;;

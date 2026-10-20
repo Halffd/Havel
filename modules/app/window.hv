@@ -1121,6 +1121,12 @@ fn activeId() {
 	0
 }
 
+// Lowercase alias: window.activeid() — same value as activeId(), the
+// documented default for the module-level pos/move/resize windowId args.
+
+
+
+
 fn list() {
 	_ids = _allWindows()
 	_wins = []
@@ -1556,7 +1562,7 @@ use compositor
 
 // Safe fallback — never crashes, always logs
 class FallbackWindowInterface {
-	fn activeId() { 0 }
+	fn activeIdImpl() { 0 }
 	fn activeTitle() { "" }
 	fn activeClass() { "" }
 	fn list() { [] }
@@ -1581,7 +1587,7 @@ class SwayWindowInterface {
 		_r = shell.exec("swaymsg {} 2>/dev/null".format(cmd))
 		_r.code == 0
 	}
-	fn activeId() {
+	fn activeIdImpl() {
 		_out = _swaymsg("tree")
 		if _out == null { return 0 }
 		_tree = json.parse(_out)
@@ -1637,7 +1643,7 @@ class HyprlandWindowInterface {
 		_r = shell.exec("hyprctl {} 2>/dev/null".format(cmd))
 		_r.code == 0
 	}
-	fn activeId() {
+	fn activeIdImpl() {
 		_out = _hyprctl("activewindow")
 		if _out == null { return 0 }
 		_win = json.parse(_out)
@@ -1696,7 +1702,7 @@ class KdeWindowInterface {
 		if _r.code != 0 { return null }
 		_r.stdout.trim()
 	}
-	fn activeId() {
+	fn activeIdImpl() {
 		_r = _kdotool("getactivewindow")
 		if _r.code != 0 { return 0 }
 		_val = _r.stdout.trim()
@@ -1759,7 +1765,7 @@ fn getInterface() {
 }
 
 // Wayland-compatible module-level functions
-fn wlActiveId() { getInterface().activeId() }
+fn wlActiveId() { getInterface().activeIdImpl() }
 fn wlActiveTitle() { getInterface().activeTitle() }
 fn wlActiveClass() { getInterface().activeClass() }
 fn wlList() { getInterface().list() }
@@ -1784,6 +1790,35 @@ fn _resolveId(x) {
 }
 
 // -- Position / size ------------------------------------------------
+
+// Module-level position query.
+//   relative = false: absolute screen position (root coordinates)
+//   relative = true:  position relative to the parent window
+//   windowId omitted or 0: the active window
+fn pos(relative = false, windowId = 0) {
+    _posAt(windowId, relative)
+}
+
+// Module-level move.
+//   x, y:   target (absolute) or delta (relative = true)
+//   speed:  animation speed hint (kept for API compat; X11 applies instantly)
+//   winId omitted or 0: the active window
+//   relative = true: move by delta from the current position
+fn move(x, y, speed = 0.0, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).move(x, y, speed, _id, relative)
+}
+
+// Module-level resize.
+//   w, h:   target (absolute) or delta (relative = true)
+//   winId omitted or 0: the active window
+//   relative = true: resize by delta from the current size
+fn resize(w, h, winId = 0, relative = false) {
+    _id = _resolveId(winId)
+    if _id == 0 { return null }
+    Window(_id).resize(w, h, _id, relative)
+}
 
 fn _posAt(windowId = 0, relative = false) {
     _id = _resolveId(windowId)
@@ -2180,3 +2215,5 @@ fn viewport() {
     }
     {x: 0, y: 0}
 }
+
+

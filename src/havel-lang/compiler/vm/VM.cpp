@@ -4124,6 +4124,45 @@ void VM::maybeCollectGarbageWithExtraRoots(const std::vector<Value> &extra_roots
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
   }
+  // Chunk-constant roots: chunks retained by the VM (main/persistent/module)
+  // hold heap references in their per-function constants and default values
+  // - the .hvc load path rewrites FunctionObjId constants into load-time
+  // closures (VM.cpp module-load), and the tier-1 lowering bakes constant
+  // values as immediates into compiled code. The GC's closure scan only
+  // sees chunk constants TRANSITIVELY (via a marked closure whose .chunk is
+  // this chunk); when no rooted closure references the chunk - the warm
+  // module-restore path - the load-time constant closures were unrooted and
+  // swept, leaving baked immediates pointing at recycled ids (tiered
+  // self-hosted parse corruption: token objects reused as closures, null
+  // callees). Chunks the VM keeps alive have live constants by definition.
+  auto collect_chunk_roots = [&scheduler_roots](const BytecodeChunk *chunk) {
+    if (!chunk)
+      return;
+    for (size_t fi = 0; fi < chunk->getFunctionCount(); ++fi) {
+      const auto *func = chunk->getFunction(static_cast<uint32_t>(fi));
+      if (!func)
+        continue;
+      for (const auto &c : func->constants) {
+        if (c.isClosureId() || c.isFunctionObjId() || c.isObjectId() || c.isArrayId() ||
+            c.isStringId()) {
+          scheduler_roots.push_back(c);
+        }
+      }
+      for (const auto &dv : func->default_values) {
+        if (dv.has_value() && (dv->isClosureId() || dv->isFunctionObjId() || dv->isObjectId() ||
+                               dv->isArrayId() || dv->isStringId())) {
+          scheduler_roots.push_back(*dv);
+        }
+      }
+    }
+  };
+  collect_chunk_roots(main_chunk_.get());
+  for (const auto &pc : persistent_chunks_) {
+    collect_chunk_roots(pc.get());
+  }
+  for (const auto &[_, mc] : module_chunks_) {
+    collect_chunk_roots(mc.get());
+  }
   // JIT safe-point roots (spilled native-frame values) ride the same
   // extra-roots slot as the scheduler's.
   scheduler_roots.insert(scheduler_roots.end(), extra_roots.begin(), extra_roots.end());
@@ -6589,9 +6628,21 @@ Value VM::loadModule(const std::string &path) {
       }
     }
 
-    // Wrap FunctionObjId constants in closures that capture this module's chunk
-    // so cross-module function references resolve to the correct chunk.
-    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+    // Do NOT rewrite FunctionObjId constants into load-time closures here.
+    // The rewrite bakes concrete heap closure ids into the chunk's constants;
+    // the tier-1 lowering embeds constant values as immediates, so compiled
+    // code carries a heap id captured at module-load time, and the tiered
+    // self-hosted parse corrupted deterministically on warm .hvc caches
+    // (fresh-compiled modules keep the funcobj form and never fail; warm
+    // runs failed 5/6 with "Unexpected token" cascades and null callees).
+    // Intra-module funcobj constants resolve correctly at call time: the
+    // interpreter's current_chunk and the JIT entry both point at the
+    // callee's own chunk, so doCall's FunctionObjId path binds the right
+    // function. Cross-chunk binding for REPL/persistent chunks stays in
+    // bc.execute_persistent (its own globals rewrite). Escape hatch:
+    // HAVEL_HVC_CLOSURE_CONSTS=1 restores the old rewrite for bisecting.
+    const bool hvc_closure_consts = std::getenv("HAVEL_HVC_CLOSURE_CONSTS") != nullptr;
+    for (size_t i = 0; i < chunk->getFunctionCount() && hvc_closure_consts; ++i) {
       BytecodeFunction *func = chunk->getFunctionMutable(i);
       if (!func)
         continue;

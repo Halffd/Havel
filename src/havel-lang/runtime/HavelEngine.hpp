@@ -1466,10 +1466,18 @@ private:
       // pickNext() never offered it again and the hotkey died permanently
       // (test_hk_starvation_repeated: 1 of 10 triggers fired). Suspended and
       // Done are excluded: their outcome handling already parked them.
+      //
+      // NO saveFiberStatePublic here. A held goroutine was NOT dispatched
+      // this pass, so its fiber already holds its own correct last-saved
+      // state - saving now would snapshot whatever frames the VM currently
+      // holds (usually __main__'s, whose sleep deadline expires constantly)
+      // and overwrite the held goroutine's fiber with main's bytecode
+      // position: on resume it ran main's deadline loop forever instead of
+      // its own body - 40 zombie goroutines in test_timer_stress_many_timers
+      // with every goroutine_done store never executing (fix verified 6/6 +
+      // 3/3 + full gate on havel-3, aa8bbbea8).
       if (h && h->state != compiler::Scheduler::GoroutineState::Suspended &&
           h->state != compiler::Scheduler::GoroutineState::Done) {
-        if (h->fiber)
-          vm_->saveFiberStatePublic(h->fiber);
         if (h->state == compiler::Scheduler::GoroutineState::Created) {
           sched->requeuePreservingState(h);
         } else {

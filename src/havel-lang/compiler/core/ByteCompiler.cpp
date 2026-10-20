@@ -1633,12 +1633,27 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     }
   }
 
-  BytecodeFunction bf("<lambda>",
-                       static_cast<uint32_t>(lambda.parameters.size()), 0);
+  // Compute max local slot from the resolver's lambda_local_counts, exactly
+  // like compileFunctionDeclaration/methods/__main__ do. Assignment stores
+  // emit the resolver's binding.slot directly without bumping
+  // next_local_index, so without this seed leaveFunction computed
+  // local_count = 0 for a lambda whose body uses locals - the interpreter
+  // ignores local_count (it sizes frames by use), but the JIT/AOT lowering
+  // allocates exactly local_count vlocals and aborted on vlocals[0] of an
+  // empty vector (AOT: `go fn f() { i = 0 }` crashed STORE_VAR at ip 2).
+  uint32_t max_slot = static_cast<uint32_t>(lambda.parameters.size());
+  auto lambda_local_it = lexical_resolution_.lambda_local_counts.find(&lambda);
+  if (lambda_local_it != lexical_resolution_.lambda_local_counts.end() &&
+      lambda_local_it->second > max_slot) {
+    max_slot = lambda_local_it->second;
+  }
+
+  BytecodeFunction bf("<lambda>", static_cast<uint32_t>(lambda.parameters.size()), max_slot);
   bf.param_names = std::move(param_names);
   bf.source_line = lambda.line;
 
   enterFunction(std::move(bf), index_it->second);
+  next_local_index = max_slot;
 
   // If we're inside a class method, preserve class context so @field works correctly.
   // Also capture "self" (slot 0 of enclosing class method) as an upvalue.

@@ -16,7 +16,8 @@
 //   tf  = py.import("tensorflow")     // the CPython bridge, as an object
 //   bot = lua.load("game_bot.lua")     // a Lua file, as an object
 //   compositor.createWorkspace("AI_Gaming")
-//   F12 => { ... }                    // the hotkey DSL binds the key directly
+//   hotkey("F12") => { ... }          // the hotkey DSL, key named in a string
+//   (F12 => { ... } is the same binding)
 //
 // Notes:
 //  - `let` does not exist in Havel; assignment is plain `name = value`.
@@ -43,15 +44,18 @@ print("[demo] compositor: " + compositor.detect())
 ws = compositor.createWorkspace("AI_Gaming")
 print("[demo] workspace: ok=" + ws.ok + " err=" + ws.err)
 
-F12 => {
-    // Load the model once and keep it in a global so the next press reuses it.
-    if model == null {
-        model = tf.keras.models.load_model("genshin_ai.h5")
+// The model handle is kept across presses; the object holds it because a
+// closure captures locals by value.
+state = {model: null}
+
+hotkey("F12") => {
+    if state.model == null {
+        state.model = tf.keras.models.load_model("genshin_ai.h5")
     }
     // The frame goes to a file; the model reads it (passing millions of
     // pixels across the bridge is refused by design).
     frame = "/tmp/livelink_frame.png"
     screenshot.save(frame)
-    action = model.predict(frame)
+    action = state.model.predict(frame)
     bot.start_automation(action)
 }

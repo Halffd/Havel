@@ -1,0 +1,52 @@
+// test_hotkey_call_form.hv — the call form of the hotkey DSL.
+//
+// hotkey("F24") => { ... } is the spelling the LiveLink brief used; the DSL
+// form F24 => { ... } is the same binding. This test registers both and
+// asserts the hotkey registry actually holds them.
+//
+// Headless-safe: F24 is the suite's convention (a persistent goroutine
+// fired via hotkey.trigger), and the registration is released at exit.
+
+use hotkey
+
+fails = 0
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        fails = fails + 1
+    }
+}
+
+// The counter lives in an object: a closure captures locals by value, so a
+// plain local would never see the increments.
+st = {fired: 0}
+
+// DSL form (unchanged behaviour).
+F24 => {
+    st.fired = st.fired + 1
+}
+
+// Call form: the key named in a string literal.
+hotkey("F23") => {
+    st.fired = st.fired + 1
+}
+
+registered = hotkey.list()
+joined = ""
+for r in registered {
+    joined = joined + " " + r.key
+}
+
+check("dsl form registered", joined ~ "F24")
+check("call form registered", joined ~ "F23")
+
+// The call form fires like any other hotkey. The trigger dispatches
+// asynchronously (the handler runs on the event loop), so give it a beat.
+hotkey.trigger("F23")
+sleep(300)
+check("call form fires", st.fired >= 1)
+
+print(fails == 0 ? "ALL PASS" : "FAILURES: " + fails)
+shell.exit(fails == 0 ? 0 : 1)

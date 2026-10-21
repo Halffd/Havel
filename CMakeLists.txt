@@ -2268,8 +2268,14 @@ enable_testing()
 # ctest. See scripts/ci/embedding-qt-audit.sh.
 add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
 target_link_libraries(embedding_minimal PRIVATE
-    havel_lang
-    havel_core
+    # The three havel archives reference each other cyclically: havel_core's
+    # EventBridge/FileWatcher call into havel_runtime's EventRuntime, and
+    # havel_compiler into both. A plain list leaves them in scan order, so
+    # core's references to EventRuntime are unresolved when runtime is scanned
+    # first - this target failed to link the first time anything built it,
+    # because no earlier build had ever reached it. Same group form as
+    # io_key_parse_test / pixel_provider_test.
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
 )
 target_include_directories(embedding_minimal PRIVATE
     ${CMAKE_SOURCE_DIR}/src

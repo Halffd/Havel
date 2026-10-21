@@ -2227,11 +2227,14 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // hotkey("F12") => { ... } - the call form of the hotkey DSL. The word
     // "hotkey" stays an identifier (hotkey.enable/register/trigger are
     // module calls), so the binding is recognised here: a call to the
-    // identifier "hotkey" with a single string-literal key, immediately
-    // followed by '=>'. Every other call keeps parsing as an ordinary call.
+    // identifier "hotkey" with a string-literal key, immediately followed by
+    // '=>'. With a second argument the key also carries a condition:
+    //   hotkey("F12", cond) => { ... }
+    // Every other call keeps parsing as an ordinary call.
     if (at().type == TokenType::Arrow && left &&
-        left->kind == ast::NodeType::Identifier && args.size() == 1 && args[0] &&
-        args[0]->kind == ast::NodeType::StringLiteral && kwargs.empty()) {
+        left->kind == ast::NodeType::Identifier && !args.empty() && args[0] &&
+        args[0]->kind == ast::NodeType::StringLiteral && kwargs.empty() &&
+        args.size() <= 2) {
       const auto &calleeId = static_cast<const ast::Identifier &>(*left);
       if (calleeId.symbol == "hotkey") {
         const auto &keyLiteral = static_cast<const ast::StringLiteral &>(*args[0]);
@@ -2241,7 +2244,11 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
         }
         Token keyToken(keyLiteral.value, TokenType::Hotkey, keyLiteral.value,
                        token.line, token.column);
-        return parseHotkeyExpression(keyToken);
+        std::unique_ptr<ast::Expression> condExpr;
+        if (args.size() == 2) {
+          condExpr = std::move(args[1]);
+        }
+        return parseHotkeyExpressionEx(keyToken, std::move(condExpr), nullptr);
       }
     }
 
@@ -3051,7 +3058,25 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
     return parseDelStatement();
   default:
     // Expression statement (including assignments, function calls, etc.)
+    Token startTok = at();
     auto expr = parseExpression();
+    // hotkey("F12", cond, onTrue, onFalse) - the register-style statement
+    // form of the call form: the same payload as
+    // hotkey.register(key, condition, onTrue, onFalse). The branches are
+    // hoisted into temps (so a closure passed inline keeps ONE identity
+    // across presses) and the action branches on the condition.
+    if (expr && expr->kind == ast::NodeType::CallExpression) {
+      auto &call = static_cast<ast::CallExpression &>(*expr);
+      if (call.callee && call.callee->kind == ast::NodeType::Identifier &&
+          static_cast<const ast::Identifier &>(*call.callee).symbol == "hotkey" &&
+          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() &&
+          call.args[0] && call.args[0]->kind == ast::NodeType::StringLiteral) {
+        auto branched = buildBranchedHotkeyBinding(call, startTok);
+        if (branched) {
+          return branched;
+        }
+      }
+    }
     // Handle multiple ; -separated statements on same line (e.g. advance(); advance())
     if (at().type == havel::TokenType::Semicolon) {
       auto block = makeNode<havel::ast::BlockStatement>();
@@ -3774,6 +3799,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     auto expr = parseExpression();
     if (clauseShape) {
       context.inMatchExpression = prevMatchExpr;
+    }
+
+    // hotkey("F12", cond, onTrue, onFalse) - the register-style statement
+    // form of the call form (same payload as
+    // hotkey.register(key, condition, onTrue, onFalse)). The 1- and 2-arg
+    // arrow forms are consumed inside the call infix and never reach here.
+    if (expr && expr->kind == ast::NodeType::CallExpression) {
+      auto &call = static_cast<ast::CallExpression &>(*expr);
+      if (call.callee && call.callee->kind == ast::NodeType::Identifier &&
+          static_cast<const ast::Identifier &>(*call.callee).symbol == "hotkey" &&
+          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() &&
+          call.args[0] && call.args[0]->kind == ast::NodeType::StringLiteral) {
+        auto branched = buildBranchedHotkeyBinding(call, at());
+        if (branched) {
+          return branched;
+        }
+      }
     }
 
     // TODO #2: Erlang-style multi-clause function heads:
@@ -8109,33 +8151,126 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 
 // Parse hotkey as expression (for assignment: hk = ^t => { ... })
 // Returns HotkeyExpression (wraps HotkeyBinding as expression)
+// buildBranchedHotkeyBinding: hotkey("F12", cond, onTrue, onFalse)
+//   -> a binding whose action is if cond { onTrue() } else { onFalse() }.
+//
+// Branch values: a NAMED closure is referenced by name; an inline
+// fn(){...} is hoisted into a unique global first, because a hotkey
+// action cannot capture block-level locals (the action's scope is the
+// enclosing function/module scope) and a closure created inside the
+// action would be rebuilt on every press.
+std::unique_ptr<havel::ast::Statement>
+Parser::buildBranchedHotkeyBinding(ast::CallExpression &call, const Token &token) {
+  const auto &keyLiteral = static_cast<const ast::StringLiteral &>(*call.args[0]);
+  if (keyLiteral.value.empty()) {
+    failAt(token, "hotkey(\"...\") requires a non-empty key");
+    return nullptr;
+  }
+
+  auto block = makeNode<ast::BlockStatement>();
+
+  // Branch accessor: name for a named closure, hoisted global otherwise.
+  auto branchName = [&](std::unique_ptr<ast::Expression> &arg) -> std::string {
+    if (arg && arg->kind == ast::NodeType::Identifier) {
+      auto symbol = static_cast<ast::Identifier &>(*arg).symbol;
+      arg.reset();
+      return symbol;
+    }
+    // A block-level local, not a global: hotkey actions resolve names in
+    // the enclosing function/module scope and block locals leak into it
+    // (an `if` block's locals are visible to a hotkey action declared
+    // outside it), so the hoisted closure is reachable without touching
+    // the global namespace - no leak when hotkeys are registered and
+    // removed repeatedly.
+    std::string name = "__hk_branch_" + std::to_string(++hotkey_branch_counter_);
+    auto target = makeNode<ast::Identifier>(name, token.line, token.column);
+    auto assign = makeNode<ast::AssignmentExpression>(std::move(target), std::move(arg));
+    block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(assign)));
+    return name;
+  };
+
+  std::string trueName = branchName(call.args[2]);
+  std::string falseName = "__hk_branch_none";
+  if (call.args.size() == 4) {
+    falseName = branchName(call.args[3]);
+  }
+
+  // if cond { trueName() } else { falseName() }
+  auto trueBlock = makeNode<ast::BlockStatement>();
+  trueBlock->body.push_back(makeNode<ast::ExpressionStatement>(
+      makeNode<ast::CallExpression>(
+          makeNode<ast::Identifier>(trueName, token.line, token.column),
+          std::vector<std::unique_ptr<ast::Expression>>{})));
+  auto falseBlock = makeNode<ast::BlockStatement>();
+  falseBlock->body.push_back(makeNode<ast::ExpressionStatement>(
+      makeNode<ast::CallExpression>(
+          makeNode<ast::Identifier>(falseName, token.line, token.column),
+          std::vector<std::unique_ptr<ast::Expression>>{})));
+
+  auto ifStmt = makeNode<ast::IfStatement>(std::move(call.args[1]),
+                                           std::move(trueBlock),
+                                           std::move(falseBlock));
+
+  auto action = makeNode<ast::BlockStatement>();
+  action->body.push_back(std::move(ifStmt));
+
+  auto binding = makeNode<ast::HotkeyBinding>();
+  binding->hotkeys.push_back(makeNode<ast::HotkeyLiteral>(keyLiteral.value));
+  binding->action = std::move(action);
+
+  auto hkExpr = makeNode<ast::HotkeyExpression>(std::move(binding));
+  hkExpr->line = token.line;
+  hkExpr->column = token.column;
+  block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(hkExpr)));
+  return block;
+}
+
 std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Token &hotkeyToken) {
+  return parseHotkeyExpressionEx(hotkeyToken, nullptr, nullptr);
+}
+
+// parseHotkeyExpressionEx: the hotkey binding with optional pieces supplied
+// by the caller.
+//   conditionExpr  - a condition expression (the call form
+//                    hotkey("F12", cond) => { ... }); nullptr = none.
+//   actionOverride - a pre-built action block (the register-style statement
+//                    form hotkey("F12", cond, onTrue, onFalse)); nullptr =
+//                    parse the '=> { ... }' body from the source.
+std::unique_ptr<havel::ast::Expression>
+Parser::parseHotkeyExpressionEx(const Token &hotkeyToken,
+                                std::unique_ptr<havel::ast::Expression> conditionExpr,
+                                std::unique_ptr<havel::ast::BlockStatement> actionOverride) {
   // hotkeyToken was already consumed by the Pratt parser's nud()
 
   // The key comes from the hotkey token itself (F12, ctrl+shift+f1, ...).
   std::string hotkeyName = hotkeyToken.value;
 
-
   // Check for prefix condition (before =>)
   std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
   prefixCondition = parseHotkeyPrefixCondition();
 
-  if (at().type != havel::TokenType::Arrow) {
-    failAt(hotkeyToken, "Expected '=>' after hotkey literal");
-    return nullptr;
-  }
-  advance(); // consume '=>'
-
   std::unique_ptr<havel::ast::BlockStatement> action;
 
-  // => can be followed by { } block or a single expression
-  if (at().type == havel::TokenType::OpenBrace) {
-    action = parseBlockStatement(true); // true = input context
+  if (actionOverride) {
+    // The caller built the action (register-style statement form).
+    action = std::move(actionOverride);
   } else {
-    // Single expression wrapped in a block
-    auto expr = parseExpression();
-    action = makeNode<havel::ast::BlockStatement>();
-    action->body.push_back(makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(hotkeyToken, "Expected '=>' after hotkey literal");
+      return nullptr;
+    }
+    advance(); // consume '=>'
+
+    // => can be followed by { } block or a single expression
+    if (at().type == havel::TokenType::OpenBrace) {
+      action = parseBlockStatement(true); // true = input context
+    } else {
+      // Single expression wrapped in a block
+      auto expr = parseExpression();
+      action = makeNode<havel::ast::BlockStatement>();
+      action->body.push_back(
+          makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+    }
   }
 
   // Check for suffix condition (after action)
@@ -8152,9 +8287,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Toke
 
   // Combine conditions if needed
   if (prefixCondition || suffixCondition) {
-    auto finalCondition = combineConditions(std::move(prefixCondition), std::move(suffixCondition));
+    auto finalCondition = combineConditions(std::move(prefixCondition),
+                                            std::move(suffixCondition));
     // Set condition on the binding
     binding->conditionExpr = std::move(finalCondition);
+  } else if (conditionExpr) {
+    // Condition supplied by the caller: hotkey("F12", cond) => { ... }
+    binding->conditionExpr = std::move(conditionExpr);
   }
 
   // Return HotkeyExpression (condition is on binding->conditionExpr)

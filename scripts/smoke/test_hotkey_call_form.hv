@@ -1,27 +1,40 @@
 // test_hotkey_call_form.hv — the call form of the hotkey DSL.
 //
 // hotkey("F24") => { ... } is the spelling the LiveLink brief used; the DSL
-// form F24 => { ... } is the same binding. This test registers both and
-// asserts the hotkey registry actually holds them.
+// form F24 => { ... } is the same binding. The call form also carries the
+// register-style payload:
 //
-// Headless-safe: F24 is the suite's convention (a persistent goroutine
-// fired via hotkey.trigger), and the registration is released at exit.
+//   hotkey("F24")                        -> key only
+//   hotkey("F24", cond) => { ... }       -> key + condition
+//   hotkey("F24", cond, onTrue, onFalse) -> key + condition + branches
+//                                          (same shape as
+//                                           hotkey.register(key, cond, onTrue, onFalse))
+//
+// Headless-safe: F23/F24 are the suite's convention (persistent goroutines
+// fired via hotkey.trigger); the registrations are released at exit.
 
 use hotkey
 
-fails = 0
+st = {fails: 0, fired: 0, flag: false}
+
 check = fn(name, cond) {
     if cond {
         print("PASS: " + name)
     } else {
         print("FAIL: " + name)
-        fails = fails + 1
+        st.fails = st.fails + 1
     }
 }
 
-// The counter lives in an object: a closure captures locals by value, so a
-// plain local would never see the increments.
-st = {fired: 0}
+fn onTrue() {
+    st.fired = st.fired + 1
+    print("BRANCH-TRUE")
+}
+
+fn onFalse() {
+    st.fired = st.fired + 1
+    print("BRANCH-FALSE")
+}
 
 // DSL form (unchanged behaviour).
 F24 => {
@@ -33,6 +46,14 @@ hotkey("F23") => {
     st.fired = st.fired + 1
 }
 
+// Call form with a condition.
+hotkey("F22", st.flag) => {
+    st.fired = st.fired + 1
+}
+
+// Call form, register-style: condition plus two branches.
+hotkey("F21", st.flag, onTrue, onFalse)
+
 registered = hotkey.list()
 joined = ""
 for r in registered {
@@ -41,12 +62,68 @@ for r in registered {
 
 check("dsl form registered", joined ~ "F24")
 check("call form registered", joined ~ "F23")
+check("conditional call form registered", joined ~ "F22")
+check("branched call form registered", joined ~ "F21")
 
 // The call form fires like any other hotkey. The trigger dispatches
 // asynchronously (the handler runs on the event loop), so give it a beat.
+st.fired = 0
 hotkey.trigger("F23")
 sleep(300)
 check("call form fires", st.fired >= 1)
 
-print(fails == 0 ? "ALL PASS" : "FAILURES: " + fails)
-shell.exit(fails == 0 ? 0 : 1)
+// The branched form picks the branch the condition selects.
+st.fired = 0
+st.flag = false
+hotkey.trigger("F21")
+sleep(300)
+check("branched form ran the false branch", st.fired == 1)
+
+st.fired = 0
+st.flag = true
+hotkey.trigger("F21")
+sleep(300)
+check("branched form ran the true branch", st.fired == 1)
+
+// Registration must not evaluate the branch: a conditional hotkey fires
+// only when the key is pressed. (If the condition were evaluated at
+// registration time, the false branch would run once at registration.)
+st.fired = 0
+st.flag = false
+hotkey("F20", st.flag, onTrue, onFalse)
+sleep(50)
+check("branched registration does not fire", st.fired == 0)
+
+// Inline closures: the branch values are hoisted to a name the action can
+// reach (a block local - hotkey actions resolve names in the enclosing
+// function/module scope, and block locals leak into it). The hoisted
+// closure must keep ONE identity across presses, so the branch state
+// survives.
+inlineFired = {n: 0}
+hotkey("F19", st.flag, fn() { inlineFired.n = inlineFired.n + 1 },
+                          fn() { inlineFired.n = inlineFired.n + 100 })
+st.flag = true
+hotkey.trigger("F19")
+sleep(300)
+check("inline closure branch ran", inlineFired.n == 1)
+st.flag = false
+hotkey.trigger("F19")
+sleep(300)
+check("inline closure other branch ran", inlineFired.n == 101)
+
+// No global leak: registering hotkeys repeatedly must not grow the global
+// namespace (the hoisted branch closures are block locals, not globals).
+before = globals()
+i = 0
+while i < 50 {
+    h = F18 => {
+        st.fired = st.fired
+    }
+    hotkey.remove(h)
+    i = i + 1
+}
+after = globals()
+check("no global leak on repeated register/remove", after - before < 5)
+
+print(st.fails == 0 ? "ALL PASS" : "FAILURES: " + st.fails)
+shell.exit(st.fails == 0 ? 0 : 1)

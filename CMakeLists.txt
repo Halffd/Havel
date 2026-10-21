@@ -3019,6 +3019,44 @@ add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModul
 # plugin: loading it died with 'undefined symbol: curl_global_init'. Link
 # the shared lib explicitly.
 target_link_libraries(havel_mod_http PRIVATE ${CURL_LIBRARIES})
+
+# Python bridge plugin. The interpreter is reached exclusively through this
+# dlopen'd module - havel_core/havel_lang never reference CPython (the Qt
+# rule, applied to libpython). python3-embed is the pkg-config name for the
+# embedding ABI and links the SHARED libpython, which is what a dlopen'd
+# module wants; find_package(Development.Module) provides no usable
+# Python3_LIBRARIES (it links the interpreter's own symbols instead), so it is
+# only a fallback, via Development.Embed.
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(PYEMBED python3-embed)
+endif()
+if(PYEMBED_FOUND)
+    add_havel_module_plugin(python ${CMAKE_SOURCE_DIR}/src/modules/python/PythonModule.cpp)
+    target_include_directories(havel_mod_python PRIVATE ${PYEMBED_INCLUDE_DIRS})
+    target_link_libraries(havel_mod_python PRIVATE ${PYEMBED_LIBRARIES})
+else()
+    find_package(Python3 COMPONENTS Development.Embed QUIET)
+    if(Python3_Development.Embed_FOUND)
+        add_havel_module_plugin(python ${CMAKE_SOURCE_DIR}/src/modules/python/PythonModule.cpp)
+        target_link_libraries(havel_mod_python PRIVATE Python3::Python)
+    else()
+        message(STATUS "no embeddable libpython found: py.* bridge plugin not built")
+    endif()
+endif()
+
+# Lua 5.4 bridge plugin, same seam.
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(LUA54 lua5.4)
+    if(LUA54_FOUND)
+        add_havel_module_plugin(lua ${CMAKE_SOURCE_DIR}/src/modules/lua/LuaModule.cpp)
+        target_include_directories(havel_mod_lua PRIVATE ${LUA54_INCLUDE_DIRS})
+        target_link_libraries(havel_mod_lua PRIVATE ${LUA54_LIBRARIES})
+    else()
+        message(STATUS "lua5.4 not found: lua.* bridge plugin not built")
+    endif()
+endif()
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
 # MathModule is in the static lib (registered eagerly by
 # registerDefaultHostFunctions) — lazy plugin registration hit the

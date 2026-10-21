@@ -1,14 +1,17 @@
 // compositor.hv — Wayland/X11 compositor and desktop environment detection
 // Provides: detect(), isWayland(), isX11(), name(), desktop(),
-// checkUinput(), uinputStatus()
+// checkUinput(), uinputStatus(),
+// createWorkspace(name), switchWorkspace(name)
 //
 // Usage:
 //   use compositor
 //   print(compositor.detect())      // "hyprland"
 //   print(compositor.isWayland())   // true
 //   print(compositor.checkUinput()) // {ok: true, err: ""}
+//   print(compositor.createWorkspace("AI_Gaming")) // {ok: true, err: ""}
 
 use env
+use shell
 
 _cached = null
 
@@ -95,6 +98,80 @@ fn detect() {
 fn isWayland() {
 	_c = detect()
 	_c == "hyprland" || _c == "sway" || _c == "gnome" || _c == "kde" || _c == "cinnamon" || _c == "wayfire" || _c == "river" || _c == "wayland"
+}
+
+// ---- Workspaces --------------------------------------------------------
+//
+// createWorkspace(name) creates a workspace with the given name and, on the
+// compositors whose IPC creates-and-switches, switches to it. Returns
+// {ok: bool, err: ""} - never throws, so a script can branch on it.
+//
+// Per-compositor IPC:
+//   sway      swaymsg workspace <name>          (creates and switches)
+//   hyprland  hyprctl dispatch workspace <name> (creates implicitly)
+//   i3        i3-msg workspace <name>         (creates and switches)
+//   kde       qdbus org.kde.KWin /KWin org.kde.KWin.showDesktopInterface? no -
+//             KWin 6 exposes workspaces over qdbus; creating one by name is
+//             not supported, so the name is reported as unsupported.
+//   gnome     gnome-shell has no create-by-name IPC; unsupported.
+//   x11/wm    unsupported.
+
+fn _runCmd(cmd) {
+	shell.exec(cmd)
+}
+
+fn createWorkspace(name) {
+	if name == null || name == "" {
+		return {ok: false, err: "workspace name is required"}
+	}
+	_c = detect()
+	_q = "'" + name.replace("'", "") + "'"
+	_res = null
+	if _c == "sway" {
+		_res = _runCmd("swaymsg workspace " + _q + " 2>&1")
+	} else if _c == "hyprland" {
+		_res = _runCmd("hyprctl dispatch workspace " + _q + " 2>&1")
+	} else if _c == "i3" {
+		_res = _runCmd("i3-msg workspace " + _q + " 2>&1")
+	} else if _c == "kde" {
+		return {ok: false, err: "KDE Plasma does not support creating a workspace by name"}
+	} else if _c == "gnome" {
+		return {ok: false, err: "GNOME does not support creating a workspace by name"}
+	} else {
+		return {ok: false, err: "compositor '" + _c + "' does not support workspace creation"}
+	}
+	if _res == null {
+		return {ok: false, err: "no result"}
+	}
+	_out = (_res.stdout ?? "") + (_res.stderr ?? "")
+	if _res.code != 0 {
+		return {ok: false, err: _out.trim()}
+	}
+	{ok: true, err: ""}
+}
+
+// switchWorkspace(name) - switch to an existing workspace (no creation).
+fn switchWorkspace(name) {
+	if name == null || name == "" {
+		return {ok: false, err: "workspace name is required"}
+	}
+	_c = detect()
+	_q = "'" + name.replace("'", "") + "'"
+	_res = null
+	if _c == "sway" {
+		_res = _runCmd("swaymsg workspace " + _q + " 2>&1")
+	} else if _c == "hyprland" {
+		_res = _runCmd("hyprctl dispatch workspace " + _q + " 2>&1")
+	} else if _c == "i3" {
+		_res = _runCmd("i3-msg workspace " + _q + " 2>&1")
+	} else {
+		return {ok: false, err: "compositor '" + _c + "' does not support workspace switching"}
+	}
+	_out = (_res.stdout ?? "") + (_res.stderr ?? "")
+	if _res.code != 0 {
+		return {ok: false, err: _out.trim()}
+	}
+	{ok: true, err: ""}
 }
 
 fn isX11() {

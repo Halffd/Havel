@@ -1,0 +1,57 @@
+// ai_gaming_demo.hv — the LiveLink "AI gaming" flow, in Havel.
+//
+// The shape asked for:
+//
+//   import tensorflow as tf from python
+//   import "game_bot.lua" as bot from lua
+//   compositor.create_workspace("AI_Gaming")
+//   hotkey("f12") => {
+//       let model = tf.load_model("genshin_ai.h5");
+//       bot.start_automation(model.predict(screen.capture()));
+//   }
+//
+// Havel's equivalents (the language has no import statement; modules are
+// reached with `use`, and a module object is what `use` binds):
+//
+//   tf  = py.import("tensorflow")     // the CPython bridge, as an object
+//   bot = lua.load("game_bot.lua")     // a Lua file, as an object
+//   compositor.createWorkspace("AI_Gaming")
+//   F12 => { ... }                    // the hotkey DSL binds the key directly
+//
+// Notes:
+//  - `let` does not exist in Havel; assignment is plain `name = value`.
+//  - the hotkey body is a closure: it captures the module objects above.
+//  - a screen capture is a 2D RGBA array of millions of elements; the
+//    python bridge refuses arrays over 64k elements, so the frame is passed
+//    as a FILE the model loads itself (screenshot.save writes the frame).
+//
+// This file is a shape demonstration, not an automated test: it needs
+// tensorflow, a model file and a real desktop. Run it by hand.
+
+use py
+use lua
+use compositor
+use screenshot
+
+tf = py.import("tensorflow")
+bot = lua.load("game_bot.lua")
+
+print("[demo] python: " + py.version())
+print("[demo] lua: " + lua.version())
+print("[demo] compositor: " + compositor.detect())
+
+ws = compositor.createWorkspace("AI_Gaming")
+print("[demo] workspace: ok=" + ws.ok + " err=" + ws.err)
+
+F12 => {
+    // Load the model once and keep it in a global so the next press reuses it.
+    if model == null {
+        model = tf.keras.models.load_model("genshin_ai.h5")
+    }
+    // The frame goes to a file; the model reads it (passing millions of
+    // pixels across the bridge is refused by design).
+    frame = "/tmp/livelink_frame.png"
+    screenshot.save(frame)
+    action = model.predict(frame)
+    bot.start_automation(action)
+}

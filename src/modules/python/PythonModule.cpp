@@ -35,6 +35,10 @@
 #include <unordered_map>
 #include <vector>
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
 namespace havel::modules::python {
 
 using compiler::Value;
@@ -49,12 +53,33 @@ namespace {
 // Defined below; drops bridge-owned references before finalizing.
 void shutdownPython();
 
+// CPython's C-extension modules (math, numpy, tensorflow, ...) resolve the
+// CPython API against libpython in the GLOBAL namespace. The havel plugin
+// itself is loaded RTLD_LOCAL on purpose (so a plugin's symbols never shadow
+// the host's), which leaves libpython local too - and the extensions then
+// fail with 'undefined symbol: PyLong_AsLongLongAndOverflow'. Promote the
+// already-loaded libpython to global scope: dladdr gives the path of the
+// copy this plugin is linked against, and re-opening that path with
+// RTLD_GLOBAL adds it to the global namespace (the same object, so no
+// second interpreter instance).
+void promoteLibPythonToGlobal() {
+#ifndef _WIN32
+  Dl_info info;
+  if (dladdr(reinterpret_cast<void *>(&Py_InitializeEx), &info) != 0 &&
+      info.dli_fname != nullptr) {
+    void *handle = dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL);
+    (void)handle; // deliberately leaked: the interpreter lives for the process
+  }
+#endif
+}
+
 // RAII: bring the interpreter up on first use and hold the GIL for the call.
 class PyGuard {
 public:
   PyGuard() {
     static std::once_flag once;
     std::call_once(once, [] {
+      promoteLibPythonToGlobal();
       if (!Py_IsInitialized()) {
         Py_InitializeEx(0);
       }
@@ -227,7 +252,17 @@ PyObject *toPython(const VMApi &api, const Value &v) {
     return PyUnicode_FromStringAndSize(s.data(), static_cast<Py_ssize_t>(s.size()));
   }
   if (v.isArrayId()) {
-    uint32_t n = api.length(v);
+    const uint32_t n = api.length(v);
+    // Frames are the reason for the cap: a 1080p RGBA capture is ~8M
+    // numbers, and converting that to Python lists takes minutes. Pass a
+    // file path (or build the array in Python) instead.
+    static constexpr uint32_t kMaxArrayElements = 65536;
+    if (n > kMaxArrayElements) {
+      throw std::runtime_error(
+          "py: refusing to convert an array of " + std::to_string(n) +
+          " elements (limit " + std::to_string(kMaxArrayElements) +
+          ") - pass a file path or build the array in Python instead");
+    }
     PyObject *list = PyList_New(n);
     if (!list) return nullptr;
     for (uint32_t i = 0; i < n; ++i) {
@@ -268,6 +303,13 @@ PyObject *toPython(const VMApi &api, const Value &v) {
 // ---------------------------------------------------------------------------
 
 // Wraps an object with no direct Havel representation. Caller holds the GIL.
+// Forward declarations: wrapOpaque materializes the wrapped object's
+// methods, which needs the argument-tuple and result-conversion helpers
+// defined further down.
+PyObject *argsToTuple(const VMApi &api, const std::vector<Value> &args, size_t first,
+                      const std::string &context);
+Value fromPython(const VMApi &api, PyObject *o);
+
 Value wrapOpaque(const VMApi &api, PyObject *o) {
   Value obj = api.makeObject();
 
@@ -291,9 +333,60 @@ Value wrapOpaque(const VMApi &api, PyObject *o) {
     PyErr_Clear();
   }
 
-  api.setField(obj, "__py_id", Value::makeInt(retainHandle(o)));
+  const int64_t pyId = retainHandle(o);
+  api.setField(obj, "__py_id", Value::makeInt(pyId));
   api.setField(obj, "__py_type", api.makeString(typeName));
   api.setField(obj, "__py_repr", api.makeString(repr));
+
+  // Materialize the object's public callable attributes as fields, so
+  // `model.predict(x)` works as a direct method call instead of
+  // py.method(handle, "predict", x). Bounded: instances of rich types
+  // (numpy arrays, keras models) expose hundreds of names; the cap keeps
+  // wrapper creation cheap and the failure mode is falling back to
+  // py.method for anything past it.
+  static constexpr int kMaxMaterialized = 256;
+  PyObject *dirList = nullptr;
+  PyObject *dirFunc = nullptr;
+  if ((dirFunc = PyObject_GetAttrString(o, "__dir__")) != nullptr) {
+    dirList = PyObject_CallNoArgs(dirFunc);
+    Py_DECREF(dirFunc);
+  }
+  if (!dirList && PyErr_Occurred()) PyErr_Clear();
+  if (dirList && PyList_Check(dirList)) {
+    Py_ssize_t n = PyList_Size(dirList);
+    int materialized = 0;
+    for (Py_ssize_t i = 0; i < n && materialized < kMaxMaterialized; ++i) {
+      PyObject *nameItem = PyList_GetItem(dirList, i); // borrowed
+      if (!nameItem || !PyUnicode_Check(nameItem)) continue;
+      const char *nameC = PyUnicode_AsUTF8(nameItem);
+      if (!nameC || nameC[0] == '_') continue;
+      PyObject *attr = PyObject_GetAttrString(o, nameC); // new ref
+      if (!attr) { PyErr_Clear(); continue; }
+      const bool callable = PyCallable_Check(attr);
+      Py_DECREF(attr);
+      if (!callable) continue;
+      std::string methodName = nameC;
+      std::string regName = "py.attr$" + std::to_string(pyId) + "$" + methodName;
+      api.registerFunction(regName, [api, pyId, methodName](const std::vector<Value> &cargs) {
+        PyGuard guard;
+        PyObject *target = lookupHandle(pyId);
+        if (!target) throw std::runtime_error("py: handle " + std::to_string(pyId) + " was released");
+        PyObject *func = PyObject_GetAttrString(target, methodName.c_str());
+        if (!func) { PyErr_Clear(); throw std::runtime_error("py: no attribute '" + methodName + "'"); }
+        PyObject *tuple = argsToTuple(api, cargs, 0, "py: converting arguments");
+        PyObject *result = PyObject_CallObject(func, tuple);
+        Py_DECREF(tuple);
+        Py_DECREF(func);
+        if (!result) throwPythonError("py: calling '" + methodName + "'");
+        Value converted = fromPython(api, result);
+        Py_DECREF(result);
+        return converted;
+      });
+      api.setField(obj, methodName, api.makeFunctionRef(regName.c_str()));
+      ++materialized;
+    }
+  }
+  Py_XDECREF(dirList);
   return obj;
 }
 
@@ -492,6 +585,77 @@ Value pyCall(const VMApi &api, const std::vector<Value> &args) {
   return converted;
 }
 
+// py.import(module) -> module object with every public callable
+// materialized as a direct field, so `tf.load_model("f.h5")` is a plain
+// CALL_METHOD. Submodules (e.g. tf.keras) are objects, not callables - they
+// are wrapped opaque, which recursively materializes THEIR methods.
+Value pyImport(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) throw std::runtime_error("py.import(module) requires a module name");
+  PyGuard guard;
+  std::string moduleName = api.toString(args[0]);
+  PyObject *module = PyImport_ImportModule(moduleName.c_str());
+  if (!module) throwPythonError("py.import: importing '" + moduleName + "'");
+
+  static constexpr int kMaxMaterialized = 512;
+  Value obj = api.makeObject();
+  api.setField(obj, "__py_module", api.makeString(moduleName));
+
+  PyObject *dict = PyModule_GetDict(module); // borrowed
+  if (!dict) {
+    Py_DECREF(module);
+    throw std::runtime_error("py.import: module has no namespace");
+  }
+  PyObject *keys = PyDict_Keys(dict); // new ref list
+  if (!keys) {
+    Py_DECREF(module);
+    throwPythonError("py.import: listing namespace");
+  }
+  const int64_t moduleHandle = retainHandle(module); // keeps the module alive
+  Py_ssize_t n = PyList_Size(keys);
+  int materialized = 0;
+  for (Py_ssize_t i = 0; i < n && materialized < kMaxMaterialized; ++i) {
+    PyObject *nameItem = PyList_GetItem(keys, i); // borrowed
+    if (!nameItem || !PyUnicode_Check(nameItem)) continue;
+    const char *nameC = PyUnicode_AsUTF8(nameItem);
+    if (!nameC || nameC[0] == '_') continue;
+    PyObject *attr = PyObject_GetAttrString(module, nameC); // new ref
+    if (!attr) { PyErr_Clear(); continue; }
+    const bool callable = PyCallable_Check(attr);
+    if (callable) {
+      Py_DECREF(attr);
+      std::string fnName = nameC;
+      std::string regName = "py.mod$" + std::to_string(moduleHandle) + "$" + fnName;
+      api.registerFunction(regName, [api, moduleHandle, fnName](const std::vector<Value> &cargs) {
+        PyGuard guard;
+        PyObject *mod = lookupHandle(moduleHandle);
+        if (!mod) throw std::runtime_error("py: module handle was released");
+        PyObject *func = PyObject_GetAttrString(mod, fnName.c_str());
+        if (!func) { PyErr_Clear(); throw std::runtime_error("py: module '" + fnName + "' attribute was removed"); }
+        PyObject *tuple = argsToTuple(api, cargs, 0, "py: converting arguments");
+        PyObject *result = PyObject_CallObject(func, tuple);
+        Py_DECREF(tuple);
+        Py_DECREF(func);
+        if (!result) throwPythonError("py: calling '" + fnName + "'");
+        Value converted = fromPython(api, result);
+        Py_DECREF(result);
+        return converted;
+      });
+      api.setField(obj, fnName, api.makeFunctionRef(regName.c_str()));
+      ++materialized;
+    } else {
+      // Non-callable attribute: classes, submodules, constants. Objects
+      // wrap opaque (methods materialized recursively); plain scalars and
+      // strings convert directly.
+      Value converted = fromPython(api, attr);
+      Py_DECREF(attr);
+      api.setField(obj, nameC, converted);
+      ++materialized;
+    }
+  }
+  Py_DECREF(keys);
+  return obj;
+}
+
 Value pyGet(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() != 2) throw std::runtime_error("py.get(handle, attribute) requires two arguments");
   PyGuard guard;
@@ -590,12 +754,24 @@ void registerPythonModule(const VMApi &api) {
   reg("py.run", pyRun);
   reg("py.eval", pyEval);
   reg("py.call", pyCall);
+  reg("py.import", pyImport);
   reg("py.get", pyGet);
   reg("py.set", pySet);
   reg("py.method", pyMethod);
   reg("py.release", pyRelease);
   reg("py.handles", pyHandles);
   reg("py.str", pyStr);
+
+  // Expose the bridge as a global OBJECT named "py" (the http/fs pattern):
+  // the compile-time known-globals list is derived from setGlobal() sites, so
+  // without this the identifier `py` is unresolved at parse time and
+  // py.eval(...) never reaches the runtime registration.
+  auto pyObj = api.makeObject();
+  for (const char *field : {"version", "available", "run", "eval", "call", "import",
+                            "get", "set", "method", "release", "handles", "str"}) {
+    api.setField(pyObj, field, api.makeFunctionRef(std::string("py.") + field));
+  }
+  api.setGlobal("py", pyObj);
 
   havel::debug("python", "CPython bridge registered");
 }

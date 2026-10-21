@@ -1619,12 +1619,27 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     }
   }
 
+  // Frame size floor from the resolver. The resolver counts the slots a
+  // scope chain needs (ctx.next_slot); the compiler's own counter can be
+  // smaller, and an undersized lambda frame lets the body's locals spill
+  // into neighbouring slots - a local object clobbered by a loop body
+  // ("ARRAY_SET expects array/set/object container"). The main script,
+  // function, class-method and struct-method paths all take this floor;
+  // lambdas did not.
+  uint32_t max_slot = static_cast<uint32_t>(lambda.parameters.size());
+  auto lambda_slots_it = lexical_resolution_.lambda_local_counts.find(&lambda);
+  if (lambda_slots_it != lexical_resolution_.lambda_local_counts.end() &&
+      lambda_slots_it->second > max_slot) {
+    max_slot = lambda_slots_it->second;
+  }
+
   BytecodeFunction bf("<lambda>",
-                       static_cast<uint32_t>(lambda.parameters.size()), 0);
+                       static_cast<uint32_t>(lambda.parameters.size()), max_slot);
   bf.param_names = std::move(param_names);
   bf.source_line = lambda.line;
 
   enterFunction(std::move(bf), index_it->second);
+  next_local_index = max_slot;
 
   // If we're inside a class method, preserve class context so @field works correctly.
   // Also capture "self" (slot 0 of enclosing class method) as an upvalue.

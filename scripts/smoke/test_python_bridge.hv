@@ -1,0 +1,66 @@
+// test_python_bridge.hv — smoke-safe checks for the py.* CPython bridge.
+//
+// No hardware, no network, no model downloads: the checks use the Python
+// standard library only (json, math, os.path), so the suite stays
+// reproducible offline. The bridge itself is a dlopen'd module plugin
+// (havel_mod_python.so) - when it is missing the test SKIPS (a machine
+// without an embeddable libpython is not a failure of the language).
+
+use py
+
+if !py.available() {
+    print("SKIP: no embeddable libpython on this machine")
+    shell.exit(0)
+}
+
+// The counter lives in an object: a closure captures locals by value, so a
+// plain local would not see the increments.
+st = {fails: 0}
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        st.fails = st.fails + 1
+    }
+}
+
+check("py.version is a string", py.version() != null && py.version() != "")
+check("py.eval arithmetic", py.eval("1 + 1") == 2)
+check("py.eval float", py.eval("0.5 * 4") == 2.0)
+check("py.eval string", py.eval("'a' + 'b'") == "ab")
+check("py.eval list", py.eval("[1, 2, 3]")[1] == 2)
+check("py.eval dict", py.eval("{'k': 7}")["k"] == 7)
+
+// py.import: a module object with materialized callables.
+json = py.import("json")
+check("py.import returns object", type(json) == "object")
+check("py.import callable is callable", type(json.dumps) == "function")
+encoded = json.dumps({a: 1})
+check("py.import json.dumps works", encoded != null && encoded ~ "a")
+
+math = py.import("math")
+check("py.import math.sqrt", math.sqrt(16) == 4.0)
+check("py.import math.floor", math.floor(3.7) == 3)
+
+// Opaque objects (a class instance) come back as a handle whose methods are
+// materialized, so instance.method(...) is a direct call.
+datetime = py.import("datetime")
+check("py.import opaque attr", datetime.timedelta != null)
+
+// The bridge converts Havel values into Python: dict -> dict, list -> list.
+converted = py.eval("{'a': [1, 2], 'b': 'x'}")
+check("converted dict field", converted["b"] == "x")
+check("converted nested list", converted["a"][1] == 2)
+
+// Errors surface as script-visible failures, not crashes.
+failed = false
+try {
+    py.eval("1/0")
+} catch e {
+    failed = true
+}
+check("python error surfaces", failed)
+
+print(st.fails == 0 ? "ALL PASS" : "FAILURES: " + st.fails)
+shell.exit(st.fails == 0 ? 0 : 1)

@@ -465,6 +465,11 @@ void havel_call(HavelState* H, int nargs, int nresults) {
     }
 }
 
+const char* havel_lasterror(HavelState* H) {
+    if (!H) return "";
+    return H->last_error.c_str();
+}
+
 int havel_pcall(HavelState* H, int nargs, int nresults, int msgh) {
     if (!H || !H->vm) return HAVEL_ERR;
     int top = havel_gettop(H);

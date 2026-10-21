@@ -3300,6 +3300,38 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   if (!callee) {
     COMPILER_THROW("Function index not found: " + std::to_string(function_index));
   }
+  // Materialize chunk-relative StringValIds in arguments when the call
+  // crosses a chunk boundary. A StringValId indexes the string table of the
+  // chunk that created it; once the value flows into a callee frame running
+  // another module's chunk, any lazy resolution there (json.stringify
+  // walking an object, string ops, wrapper re-materialization) indexes the
+  // WRONG table. Observed: an /api/status handler (main chunk) built
+  // {status: "online", ...} and passed it to a webserver-module closure;
+  // json.stringify's module wrapper then materialized the object against
+  // the WEBSERVER table and the fields became ".css"/".html". Do it here,
+  // while current_chunk is still the CALLER's chunk — the chunk that owns
+  // the args' StringValIds — and pin the args first: materialization
+  // allocates, and these args live only in this C++ vector, invisible to
+  // the GC root scan (same gap as the module wrappers).
+  if (resolve_chunk && current_chunk && resolve_chunk != current_chunk) {
+    bool args_need_materialize = false;
+    for (const auto &a : args) {
+      if (a.isStringValId() || a.isObjectId() || a.isArrayId()) {
+        args_need_materialize = true;
+        break;
+      }
+    }
+    if (args_need_materialize) {
+      std::vector<GCRoot> argRoots;
+      argRoots.reserve(args.size());
+      for (const auto &a : args) {
+        argRoots.emplace_back(*this, a);
+      }
+      for (auto &a : args) {
+        a = deepMaterializeStrings(a, current_chunk);
+      }
+    }
+  }
   // Pack variadic args for variadic functions
   packVariadicArgs(args, callee);
 
@@ -5131,6 +5163,15 @@ Value VM::deepWrapModuleFunctions(
         wrapperName,
         [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey,
          fnCapturedField, wantsSelf, depth, visited](const std::vector<Value> &args) -> Value {
+          // Pin argument values for the wrapper's duration: same GC-root gap
+          // as the $module_closure_ wrapper (see the rationale there). Args
+          // held only in this C++ vector are invisible to the root scan, and
+          // deepMaterializeStrings below allocates per field.
+          std::vector<GCRoot> argRoots;
+          argRoots.reserve(args.size());
+          for (const auto &argVal : args) {
+            argRoots.emplace_back(*this, argVal);
+          }
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
           bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
@@ -5399,6 +5440,22 @@ Value VM::deepWrapModuleFunctions(
           auto *rc2 = heap_.closure(closureId);
           if (!rc2 || !rc2->chunk)
             return Value::makeNull();
+
+          // Pin argument values for the whole wrapper execution. These args
+          // live only in this C++ vector — invisible to the GC's root scan —
+          // and deepMaterializeStrings (below) allocates per field, which can
+          // trigger a collection. Without pinning, a collection here frees an
+          // argument object mid-iteration; its storage is reused by the next
+          // allocation and the materialized write-back lands in a foreign
+          // object (observed: an /api/status response object's fields
+          // overwritten with unrelated values — "clock": "text/css" — after
+          // the receiver-injection fix first routed real object args through
+          // this wrapper).
+          std::vector<GCRoot> argRoots;
+          argRoots.reserve(args.size());
+          for (const auto &argVal : args) {
+            argRoots.emplace_back(*this, argVal);
+          }
 
           auto *savedChunk = current_chunk;
           // Push caller globals and swap ambient to the closure's module
@@ -6829,7 +6886,8 @@ load_from_source:
     case SourceCompileStatus::CompileError:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
-      COMPILER_THROW("Module " + path + " (" + _mod_file + ") compilation error: " + compiled.error);
+      COMPILER_THROW("Module " + path + " (" + _mod_file +
+                     ") compilation error: " + compiled.error);
     case SourceCompileStatus::NullChunk:
       moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;

@@ -100,7 +100,7 @@ TEST_F(HppProtoTest, TranspilesAndLoadsViaModuleAbi) {
     const std::string soPath = root_ + "/mymath.so";
     std::string cmd = hppc_ + " \"" + hvpPath + "\" -o \"" + soPath + "\"";
     cmd += " --build-id " + std::string(HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID));
-    cmd += " -I " HAVEL_SRC_DIR "/src -I " HAVEL_SRC_DIR "/src/havel-lang -I " HAVEL_SRC_DIR "/include";
+    cmd += " -I " HAVEL_SRC_DIR "/src -I " HAVEL_SRC_DIR "/src/include -I " HAVEL_SRC_DIR "/src/havel-lang -I " HAVEL_SRC_DIR "/include";
     const int rc = std::system(cmd.c_str());
     ASSERT_EQ(rc, 0) << "havel-hppc failed: " << cmd;
     ASSERT_TRUE(std::filesystem::exists(soPath)) << "no .so produced";

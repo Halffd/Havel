@@ -1,0 +1,81 @@
+// test_closure_frame_locals.hv — regression test for the closure frame
+// size defect.
+//
+// A lambda's frame was sized from the compiler's own local counter, while
+// the resolver counted the slots the scope chain needs. When the compiler
+// undercounted, the body's locals spilled into neighbouring slots: a local
+// object declared before a loop was clobbered by the loop body, and the
+// subscript write failed with "ARRAY_SET expects array/set/object
+// container". The same shape in a PLAIN function was fine - the function,
+// main, class-method and struct-method paths all take the resolver's
+// frame-size floor; lambdas did not.
+//
+// The test covers both the crashing shape and the capture semantics that
+// must keep working (closures see the current value of an enclosing
+// local, and writes through a closure are visible outside).
+
+fails = 0
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        fails = fails + 1
+    }
+}
+
+// The crashing shape: a local object, then a loop that writes into it,
+// inside a closure.
+fn makeHandler() {
+    captured = 41
+    return fn() {
+        nowMs = 7
+        screensOut = {}
+        ks = ["a", "b"]
+        ki = 0
+        while ki < 2 {
+            screenKey = ks[ki]
+            entry = {}
+            entry.v = ki
+            screensOut[screenKey] = entry
+            ki = ki + 1
+        }
+        captured = captured + 1
+        {captured: captured, nowMs: nowMs, screens: screensOut}
+    }
+}
+
+h = makeHandler()
+r = h()
+check("loop-written object survives in a closure", type(r.screens.a) == "object" && type(r.screens.b) == "object")
+check("local next to the loop is intact", type(r.nowMs) == "int")
+check("captured local is intact", r.captured == 42)
+
+// Capture semantics: a closure reads the CURRENT value of an enclosing
+// local, and a write through a closure is visible outside.
+fn captureCase() {
+    m = 0
+    bump = fn() { m = m + 1 }
+    bump()
+    bump()
+    seen = 0
+    read = fn() { seen = m }
+    m = 5
+    read()
+    {m: m, seen: seen}
+}
+c = captureCase()
+check("closure write reaches the enclosing local", c.m == 5)
+check("closure reads the current value", c.seen == 5)
+
+fn bumpCase() {
+    n = 0
+    bump = fn() { n = n + 1 }
+    bump()
+    bump()
+    n
+}
+check("closure writes accumulate in the enclosing local", bumpCase() == 2)
+
+print(fails == 0 ? "ALL PASS" : "FAILURES: " + fails)
+shell.exit(fails == 0 ? 0 : 1)

@@ -1476,8 +1476,12 @@ private:
       // overwrote the goroutine's fiber with __main__'s bytecode position:
       // on resume it executed main's deadline loop instead of its own body,
       // parked for 5ms, got woken, and looped forever (40 zombies,
-      // "every goroutine must finish, got 0" -
-      // test_timer_stress_many_timers, failing 1-in-3 even at load 0.4).
+      // "every goroutine must finish, got 0" - and the all-or-nothing
+      // goroutines:0 variant where every goroutine_done store was lost).
+      // test_timer_stress_many_timers failed 1-in-3 even at load 0.4 on
+      // havel-3 (b4a8a5e9) and deterministically under load on main; this
+      // comment is the union of havel-3's aa8bbbea8 and main's 1130ff567,
+      // which fixed the same defect independently.
       if (h && h->state != compiler::Scheduler::GoroutineState::Suspended &&
           h->state != compiler::Scheduler::GoroutineState::Done) {
         if (h->state == compiler::Scheduler::GoroutineState::Created) {

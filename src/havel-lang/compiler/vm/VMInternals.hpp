@@ -24,7 +24,14 @@ do { \
 do { \
     std::string _ct_msg = (msg); \
     if ((instr).location.has_value() && (instr).location->line > 0) { \
-        _ct_msg += " at " + std::to_string((instr).location->line) + ":" + std::to_string((instr).location->column); \
+        if (!(instr).location->filename.empty()) { \
+            _ct_msg += " at " + (instr).location->filename + ":" + \
+                       std::to_string((instr).location->line) + ":" + \
+                       std::to_string((instr).location->column); \
+        } else { \
+            _ct_msg += " at " + std::to_string((instr).location->line) + ":" + \
+                       std::to_string((instr).location->column); \
+        } \
     } \
     ::havel::errors::ErrorReporter::instance().report( \
     HAVEL_ERROR(::havel::errors::ErrorStage::VM, _ct_msg)); \

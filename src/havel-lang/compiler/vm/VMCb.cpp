@@ -40,8 +40,7 @@ CallbackId VM::registerCallback(const Value &closure) {
   return id;
 }
 
-Value VM::invokeCallback(CallbackId id,
-                                 const std::vector<Value> &args) {
+Value VM::invokeCallback(CallbackId id, const std::vector<Value> &args) {
   assertVMThread("invokeCallback");
   if (id == INVALID_CALLBACK_ID) {
     COMPILER_THROW("invokeCallback called with invalid callback ID");
@@ -50,8 +49,7 @@ Value VM::invokeCallback(CallbackId id,
   // Get the closure from external roots
   auto closureValue = externalRootValue(id);
   if (!closureValue.has_value()) {
-    COMPILER_THROW(
-        "invokeCallback: callback not found (may have been released)");
+    COMPILER_THROW("invokeCallback: callback not found (may have been released)");
   }
 
   // Call the closure and return result
@@ -70,7 +68,8 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
   }
 
   if (trace_scheduler_) {
-    traceScheduler(std::format("Spawning goroutine: callee={}, args={}", callee.toString(), args.size()));
+    traceScheduler(
+        std::format("Spawning goroutine: callee={}, args={}", callee.toString(), args.size()));
   }
 
   // Normalize to a closure pinned to its owning chunk. Scheduler stores this
@@ -110,8 +109,8 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
     std::shared_ptr<std::unordered_map<std::string, Value>> snapshot_src;
     auto *closure = heap_.closure(cid);
     if (closure && closure->module_globals) {
-      snapshot_src = std::make_shared<std::unordered_map<std::string, Value>>(
-          *closure->module_globals);
+      snapshot_src =
+          std::make_shared<std::unordered_map<std::string, Value>>(*closure->module_globals);
     } else {
       snapshot_src = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     }
@@ -122,116 +121,116 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
 }
 
 uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
-    assertVMThread("spawnCallback");
-    auto closure = externalRootValue(id);
-    if (!closure) {
-        ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
-        return 0;
-    }
-    return spawnGoroutine(*closure, args);
+  assertVMThread("spawnCallback");
+  auto closure = externalRootValue(id);
+  if (!closure) {
+    ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
+    return 0;
+  }
+  return spawnGoroutine(*closure, args);
 }
 
 uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args) {
-    assertVMThread("spawnCallback");
-    if (!scheduler_) {
-        ::havel::warn("[VM] spawnCallback: No scheduler available");
-        return 0;
-    }
+  assertVMThread("spawnCallback");
+  if (!scheduler_) {
+    ::havel::warn("[VM] spawnCallback: No scheduler available");
+    return 0;
+  }
 
-    auto closure = externalRootValue(id);
-    if (!closure) {
-        ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
-        return 0;
-    }
-    if (!closure->isFunctionObjId() && !closure->isClosureId()) {
-        ::havel::warn("[VM] spawnCallback: Callback is not a function or closure");
-        return 0;
-    }
+  auto closure = externalRootValue(id);
+  if (!closure) {
+    ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
+    return 0;
+  }
+  if (!closure->isFunctionObjId() && !closure->isClosureId()) {
+    ::havel::warn("[VM] spawnCallback: Callback is not a function or closure");
+    return 0;
+  }
 
-    Value spawn_value = pinCallableAsClosure(*closure);
-    if (spawn_value.isNull()) {
-        ::havel::warn("[VM] spawnCallback: could not resolve chunk for callable");
-        return 0;
-    }
+  Value spawn_value = pinCallableAsClosure(*closure);
+  if (spawn_value.isNull()) {
+    ::havel::warn("[VM] spawnCallback: could not resolve chunk for callable");
+    return 0;
+  }
 
-    // Close open upvalue cells before the goroutine runs on its own locals
-    // (see spawnGoroutine for the reasoning).
-    if (spawn_value.isClosureId()) {
-        closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
-    }
+  // Close open upvalue cells before the goroutine runs on its own locals
+  // (see spawnGoroutine for the reasoning).
+  if (spawn_value.isClosureId()) {
+    closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
+  }
 
-    ::havel::debug("[VM] spawnCallback: id={} priority={} args={}", id, (int)priority, args.size());
+  ::havel::debug("[VM] spawnCallback: id={} priority={} args={}", id, (int)priority, args.size());
 
-    uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-callback", priority);
-    ::havel::debug("[VM] spawnCallback: created gid={} for callback id={}", gid, id);
-    return gid;
+  uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-callback", priority);
+  ::havel::debug("[VM] spawnCallback: created gid={} for callback id={}", gid, id);
+  return gid;
 }
 
 uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
-const std::vector<Value> &args,
-HotkeyPolicy policy,
-const std::string &alias) {
-    assertVMThread("createPersistentHotkeyCallback");
-    if (!scheduler_) {
-        ::havel::warn("[VM] createPersistentHotkeyCallback: No scheduler available");
-        return 0;
+                                            const std::vector<Value> &args, HotkeyPolicy policy,
+                                            const std::string &alias) {
+  assertVMThread("createPersistentHotkeyCallback");
+  if (!scheduler_) {
+    ::havel::warn("[VM] createPersistentHotkeyCallback: No scheduler available");
+    return 0;
+  }
+
+  auto closure = externalRootValue(id);
+  if (!closure) {
+    ::havel::warn("[VM] createPersistentHotkeyCallback: Callback {} not found", id);
+    return 0;
+  }
+  if (!closure->isFunctionObjId() && !closure->isClosureId()) {
+    ::havel::warn("[VM] createPersistentHotkeyCallback: Callback is not a function or closure");
+    return 0;
+  }
+
+  Value spawn_value = pinCallableAsClosure(*closure);
+  if (spawn_value.isNull()) {
+    ::havel::warn("[VM] createPersistentHotkeyCallback: could not resolve chunk for callable");
+    return 0;
+  }
+
+  // Close open upvalue cells before the goroutine runs on its own locals
+  // (see spawnGoroutine for the reasoning).
+  if (spawn_value.isClosureId()) {
+    closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
+  }
+
+  uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-persistent", priority);
+
+  auto *g = scheduler_->get(gid);
+  if (g) {
+    g->persistent = true;
+    g->hotkey_callable = spawn_value;
+    g->hotkey_args = args;
+    g->hotkey_policy = policy;
+    g->hotkey_alias = alias;
+
+    auto thunk = buildDirectCallThunk(id);
+    if (!thunk.calls.empty()) {
+      g->hotkey_direct_thunk = true;
+      g->hotkey_callback_id = id;
+      storeDirectCallThunk(id, std::move(thunk));
     }
-
-    auto closure = externalRootValue(id);
-    if (!closure) {
-        ::havel::warn("[VM] createPersistentHotkeyCallback: Callback {} not found", id);
-        return 0;
+    // Park immediately: set Suspended + HotkeyWait and remove from any
+    // priority queue. spawn() pushed this goroutine to hotkey_queue_
+    // (state=Created); without removal it would sit there as Suspended
+    // indefinitely, inflating hotkey_queue_ to N persistent registrations
+    // and making hasRunnableFibers()/pickNext() O(N) per scheduler tick
+    // even when no hotkey is actually runnable. wakeHotkey() re-enqueues
+    // on trigger, so the goroutine only needs to be discoverable via
+    // goroutines_ (by id/alias), not via the run queues.
+    if (g->fiber) {
+      g->fiber->state = FiberState::SUSPENDED;
+      g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
     }
-    if (!closure->isFunctionObjId() && !closure->isClosureId()) {
-        ::havel::warn("[VM] createPersistentHotkeyCallback: Callback is not a function or closure");
-        return 0;
-    }
+    scheduler_->suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+    ::havel::debug("[VM] createPersistentHotkeyCallback: gid={} persistent (parked, de-queued)",
+                   gid);
+  }
 
-    Value spawn_value = pinCallableAsClosure(*closure);
-    if (spawn_value.isNull()) {
-        ::havel::warn("[VM] createPersistentHotkeyCallback: could not resolve chunk for callable");
-        return 0;
-    }
-
-    // Close open upvalue cells before the goroutine runs on its own locals
-    // (see spawnGoroutine for the reasoning).
-    if (spawn_value.isClosureId()) {
-        closeOpenUpvaluesForSpawn(spawn_value.asClosureId());
-    }
-
-    uint32_t gid = scheduler_->spawn(spawn_value, args, "hotkey-persistent", priority);
-
-    auto *g = scheduler_->get(gid);
-    if (g) {
-        g->persistent = true;
-        g->hotkey_callable = spawn_value;
-        g->hotkey_args = args;
-        g->hotkey_policy = policy;
-        g->hotkey_alias = alias;
-
-        auto thunk = buildDirectCallThunk(id);
-        if (!thunk.calls.empty()) {
-            g->hotkey_direct_thunk = true;
-            g->hotkey_callback_id = id;
-            storeDirectCallThunk(id, std::move(thunk));
-        }
-        // Park immediately: set Suspended + HotkeyWait and remove from any
-        // priority queue. spawn() pushed this goroutine to hotkey_queue_
-        // (state=Created); without removal it would sit there as Suspended
-        // indefinitely, inflating hotkey_queue_ to N persistent registrations
-        // and making hasRunnableFibers()/pickNext() O(N) per scheduler tick
-        // even when no hotkey is actually runnable. wakeHotkey() re-enqueues
-        // on trigger, so the goroutine only needs to be discoverable via
-        // goroutines_ (by id/alias), not via the run queues.
-        if (g->fiber) {
-            g->fiber->state = FiberState::SUSPENDED;
-            g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
-        }
-        scheduler_->suspend(g, Scheduler::SuspensionReason::HotkeyWait);
-        ::havel::debug("[VM] createPersistentHotkeyCallback: gid={} persistent (parked, de-queued)", gid);
-    }
-
-    return gid;
+  return gid;
 }
 
 void VM::releaseCallback(CallbackId id) {
@@ -286,303 +285,398 @@ bool VM::isTimeoutClosurePinned(uint32_t timeout_id) const {
 }
 
 DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
-    auto closureVal = externalRootValue(id);
-    if (!closureVal) return {};
+  auto closureVal = externalRootValue(id);
+  if (!closureVal)
+    return {};
 
-    uint32_t function_index = 0;
-    const BytecodeChunk *chunk = current_chunk;
+  uint32_t function_index = 0;
+  const BytecodeChunk *chunk = current_chunk;
 
-    if (closureVal->isFunctionObjId()) {
-        function_index = closureVal->asFunctionObjId();
-    } else if (closureVal->isClosureId()) {
-        auto *closure_obj = heap_.closure(closureVal->asClosureId());
-        if (!closure_obj) return {};
-        function_index = closure_obj->function_index;
-        if (closure_obj->chunk) chunk = closure_obj->chunk;
+  if (closureVal->isFunctionObjId()) {
+    function_index = closureVal->asFunctionObjId();
+  } else if (closureVal->isClosureId()) {
+    auto *closure_obj = heap_.closure(closureVal->asClosureId());
+    if (!closure_obj)
+      return {};
+    function_index = closure_obj->function_index;
+    if (closure_obj->chunk)
+      chunk = closure_obj->chunk;
+  } else {
+    return {};
+  }
+
+  if (!chunk)
+    return {};
+  const auto *func = chunk->getFunction(function_index);
+  if (!func) {
+    if (main_chunk_)
+      func = main_chunk_->getFunction(function_index);
+    if (!func)
+      return {};
+  }
+
+  DirectCallThunk thunk;
+  std::vector<std::optional<Value>> sim;
+  bool ok = true;
+
+  auto pushConst = [&](uint32_t idx) {
+    if (idx < func->constants.size()) {
+      sim.push_back(func->constants[idx]);
     } else {
-        return {};
+      ok = false;
+    }
+  };
+
+  for (auto &instr : func->instructions) {
+    if (!ok)
+      break;
+
+    switch (instr.opcode) {
+    case OpCode::LOAD_CONST:
+      if (instr.operands.empty() || !instr.operands[0].isInt()) {
+        ok = false;
+        break;
+      }
+      pushConst(instr.operands[0].asInt());
+      break;
+
+    case OpCode::PUSH_NULL:
+      sim.push_back(Value::makeNull());
+      break;
+
+    case OpCode::DUP:
+      if (sim.empty()) {
+        ok = false;
+        break;
+      }
+      sim.push_back(sim.back());
+      break;
+
+    case OpCode::POP:
+      if (sim.empty()) {
+        ok = false;
+        break;
+      }
+      sim.pop_back();
+      break;
+
+    case OpCode::LOAD_GLOBAL: {
+      if (instr.operands.empty() || !instr.operands[0].isStringValId()) {
+        ok = false;
+        break;
+      }
+      std::string name = chunk->getString(instr.operands[0].asStringValId());
+      Value val = lookupGlobalByKey(name);
+      if (val.isNull()) {
+        ok = false;
+        break;
+      }
+      sim.push_back(val);
+      break;
     }
 
-    if (!chunk) return {};
-    const auto *func = chunk->getFunction(function_index);
-    if (!func) {
-        if (main_chunk_) func = main_chunk_->getFunction(function_index);
-        if (!func) return {};
+    case OpCode::CALL:
+    case OpCode::TAIL_CALL: {
+      if (instr.operands.empty() || !instr.operands[0].isInt()) {
+        ok = false;
+        break;
+      }
+      uint32_t n = instr.operands[0].asInt();
+      if (sim.size() < n + 1) {
+        ok = false;
+        break;
+      }
+      std::vector<Value> args(n);
+      for (uint32_t i = 0; i < n; ++i) {
+        auto v = sim.back();
+        sim.pop_back();
+        if (!v) {
+          ok = false;
+          break;
+        }
+        args[n - 1 - i] = *v;
+      }
+      if (!ok)
+        break;
+      auto callee = sim.back();
+      sim.pop_back();
+      if (!callee || !callee->isHostFuncId()) {
+        ok = false;
+        break;
+      }
+      thunk.calls.push_back({callee->asHostFuncId(), std::move(args)});
+      sim.push_back(std::nullopt); // return value not known
+      break;
+    }
+    case OpCode::FFI_CALL: {
+      if (instr.operands.size() != 3 || !instr.operands[0].isInt() || !instr.operands[1].isInt() ||
+          !instr.operands[2].isInt()) {
+        ok = false;
+        break;
+      }
+      uint64_t ret_type_raw = instr.operands[0].asInt();
+      uint64_t param_types_raw = instr.operands[1].asInt();
+      uint32_t arg_count = instr.operands[2].asInt();
+
+      if (sim.size() < arg_count + 4) {
+        ok = false;
+        break;
+      }
+
+      // Pop args
+      std::vector<Value> args(arg_count);
+      for (uint32_t i = 0; i < arg_count; ++i) {
+        auto v = sim.back();
+        sim.pop_back();
+        if (!v) {
+          ok = false;
+          break;
+        }
+        args[arg_count - 1 - i] = *v;
+      }
+      if (!ok)
+        break;
+
+      // Pop fn_ptr
+      auto fn_ptr_val = sim.back();
+      sim.pop_back();
+      if (!fn_ptr_val || !fn_ptr_val->isPtr()) {
+        ok = false;
+        break;
+      }
+      void *fn_ptr = fn_ptr_val->asPtr();
+
+      // For now, just push null - this is a stub for callback thunk compilation
+      // Full implementation would call havel_vm_ffi_call
+      sim.push_back(Value::makeNull());
+      break;
+    }
+    case OpCode::CALL_DYN: {
+      if (sim.empty()) {
+        ok = false;
+        break;
+      }
+      auto nv = sim.back();
+      sim.pop_back();
+      if (!nv || !nv->isInt()) {
+        ok = false;
+        break;
+      }
+      uint32_t n = static_cast<uint32_t>(nv->asInt());
+      if (sim.size() < n + 1) {
+        ok = false;
+        break;
+      }
+      std::vector<Value> args(n);
+      for (uint32_t i = 0; i < n; ++i) {
+        auto v = sim.back();
+        sim.pop_back();
+        if (!v) {
+          ok = false;
+          break;
+        }
+        args[n - 1 - i] = *v;
+      }
+      if (!ok)
+        break;
+      auto callee = sim.back();
+      sim.pop_back();
+      if (!callee || !callee->isHostFuncId()) {
+        ok = false;
+        break;
+      }
+      thunk.calls.push_back({callee->asHostFuncId(), std::move(args)});
+      sim.push_back(std::nullopt);
+      break;
+    }
+    case OpCode::CALL_SPREAD: {
+      // Dynamic spread not supported in callback thunk compilation
+      ok = false;
+      break;
     }
 
-    DirectCallThunk thunk;
-    std::vector<std::optional<Value>> sim;
-    bool ok = true;
-
-    auto pushConst = [&](uint32_t idx) {
-        if (idx < func->constants.size()) {
-            sim.push_back(func->constants[idx]);
-        } else {
-            ok = false;
+    case OpCode::CALL_METHOD: {
+      if (instr.operands.size() < 2 || !instr.operands[0].isStringValId() ||
+          !instr.operands[1].isInt()) {
+        ok = false;
+        break;
+      }
+      std::string method = chunk->getString(instr.operands[0].asStringValId());
+      uint32_t n = instr.operands[1].asInt();
+      if (sim.size() < n + 1) {
+        ok = false;
+        break;
+      }
+      std::vector<Value> args(n);
+      for (uint32_t i = 0; i < n; ++i) {
+        auto v = sim.back();
+        sim.pop_back();
+        if (!v) {
+          ok = false;
+          break;
         }
-    };
+        args[n - 1 - i] = *v;
+      }
+      if (!ok)
+        break;
+      auto recv = sim.back();
+      sim.pop_back();
+      if (!recv) {
+        ok = false;
+        break;
+      }
 
-    for (auto &instr : func->instructions) {
-        if (!ok) break;
+      // Resolve method on receiver (mirrors VM::executeInstruction CALL_METHOD logic)
+      uint32_t host_idx = 0;
+      bool found_host = false;
+      bool found_via_module = false;
+      bool is_instance = false;
+      Value vm_func = Value::makeNull();
 
-        switch (instr.opcode) {
-        case OpCode::LOAD_CONST:
-            if (instr.operands.empty() || !instr.operands[0].isInt()) { ok = false; break; }
-            pushConst(instr.operands[0].asInt());
-            break;
-
-        case OpCode::PUSH_NULL:
-            sim.push_back(Value::makeNull());
-            break;
-
-        case OpCode::DUP:
-            if (sim.empty()) { ok = false; break; }
-            sim.push_back(sim.back());
-            break;
-
-        case OpCode::POP:
-            if (sim.empty()) { ok = false; break; }
-            sim.pop_back();
-            break;
-
-        case OpCode::LOAD_GLOBAL: {
-            if (instr.operands.empty() || !instr.operands[0].isStringValId()) { ok = false; break; }
-            std::string name = chunk->getString(instr.operands[0].asStringValId());
-            Value val = lookupGlobalByKey(name);
-            if (val.isNull()) { ok = false; break; }
-            sim.push_back(val);
-            break;
-        }
-
-        case OpCode::CALL:
-        case OpCode::TAIL_CALL: {
-            if (instr.operands.empty() || !instr.operands[0].isInt()) { ok = false; break; }
-            uint32_t n = instr.operands[0].asInt();
-            if (sim.size() < n + 1) { ok = false; break; }
-            std::vector<Value> args(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                auto v = sim.back(); sim.pop_back();
-                if (!v) { ok = false; break; }
-                args[n - 1 - i] = *v;
-            }
-            if (!ok) break;
-            auto callee = sim.back(); sim.pop_back();
-            if (!callee || !callee->isHostFuncId()) { ok = false; break; }
-            thunk.calls.push_back({callee->asHostFuncId(), std::move(args)});
-            sim.push_back(std::nullopt); // return value not known
-            break;
-        }
-        case OpCode::FFI_CALL: {
-            if (instr.operands.size() != 3 || !instr.operands[0].isInt() ||
-                !instr.operands[1].isInt() || !instr.operands[2].isInt()) {
-                ok = false; break;
-            }
-            uint64_t ret_type_raw = instr.operands[0].asInt();
-            uint64_t param_types_raw = instr.operands[1].asInt();
-            uint32_t arg_count = instr.operands[2].asInt();
-            
-            if (sim.size() < arg_count + 4) { ok = false; break; }
-            
-            // Pop args
-            std::vector<Value> args(arg_count);
-            for (uint32_t i = 0; i < arg_count; ++i) {
-                auto v = sim.back(); sim.pop_back();
-                if (!v) { ok = false; break; }
-                args[arg_count - 1 - i] = *v;
-            }
-            if (!ok) break;
-            
-            // Pop fn_ptr
-            auto fn_ptr_val = sim.back(); sim.pop_back();
-            if (!fn_ptr_val || !fn_ptr_val->isPtr()) { ok = false; break; }
-            void* fn_ptr = fn_ptr_val->asPtr();
-            
-            // For now, just push null - this is a stub for callback thunk compilation
-            // Full implementation would call havel_vm_ffi_call
-            sim.push_back(Value::makeNull());
-            break;
-        }
-        case OpCode::CALL_DYN: {
-            if (sim.empty()) { ok = false; break; }
-            auto nv = sim.back(); sim.pop_back();
-            if (!nv || !nv->isInt()) { ok = false; break; }
-            uint32_t n = static_cast<uint32_t>(nv->asInt());
-            if (sim.size() < n + 1) { ok = false; break; }
-            std::vector<Value> args(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                auto v = sim.back(); sim.pop_back();
-                if (!v) { ok = false; break; }
-                args[n - 1 - i] = *v;
-            }
-            if (!ok) break;
-            auto callee = sim.back(); sim.pop_back();
-            if (!callee || !callee->isHostFuncId()) { ok = false; break; }
-            thunk.calls.push_back({callee->asHostFuncId(), std::move(args)});
-            sim.push_back(std::nullopt);
-            break;
-        }
-        case OpCode::CALL_SPREAD: {
-            // Dynamic spread not supported in callback thunk compilation
-            ok = false;
-            break;
-        }
-
-        case OpCode::CALL_METHOD: {
-            if (instr.operands.size() < 2 ||
-                !instr.operands[0].isStringValId() ||
-                !instr.operands[1].isInt()) { ok = false; break; }
-            std::string method = chunk->getString(instr.operands[0].asStringValId());
-            uint32_t n = instr.operands[1].asInt();
-            if (sim.size() < n + 1) { ok = false; break; }
-            std::vector<Value> args(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                auto v = sim.back(); sim.pop_back();
-                if (!v) { ok = false; break; }
-                args[n - 1 - i] = *v;
-            }
-            if (!ok) break;
-            auto recv = sim.back(); sim.pop_back();
-            if (!recv) { ok = false; break; }
-
-            // Resolve method on receiver (mirrors VM::executeInstruction CALL_METHOD logic)
-            uint32_t host_idx = 0;
-            bool found_host = false;
-            bool found_via_module = false;
-            bool is_instance = false;
-            Value vm_func = Value::makeNull();
-
-            if (recv->isObjectId()) {
-                auto *obj = heap_.object(recv->asObjectId());
-                if (obj) {
-                    auto it = obj->find(method);
-                    if (it != obj->end()) {
-                        if (it->second.isHostFuncId()) {
-                            host_idx = it->second.asHostFuncId();
-                            found_host = true;
-                            // Check if this object is in globals (namespace/module style)
-                            for (auto &g : globals) {
-                                if (g.second.isObjectId() &&
-                                    g.second.asObjectId() == recv->asObjectId()) {
-                                    found_via_module = true;
-                                    break;
-                                }
-                            }
-                        } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
-                            vm_func = it->second;
-                            is_instance = true;
-                        }
-                    }
-                }
-                // Check prototype chain
-                if (!found_host && vm_func.isNull()) {
-                    auto *proto = heap_.object(recv->asObjectId());
-                    if (proto) {
-                        auto *cv = proto->get("__class");
-                        if (!cv) cv = proto->get("__struct");
-                        if (cv && cv->isObjectId()) proto = heap_.object(cv->asObjectId());
-                        else proto = nullptr;
-                    }
-                    while (proto) {
-                        auto *mv = proto->get(method);
-                        if (mv) {
-                            if (mv->isHostFuncId()) {
-                                host_idx = mv->asHostFuncId();
-                                found_host = true;
-                                break;
-                            } else if (mv->isFunctionObjId() || mv->isClosureId()) {
-                                vm_func = *mv;
-                                break;
-                            }
-                        }
-                        auto *pv = proto->get("__parent");
-                        if (pv && pv->isObjectId()) proto = heap_.object(pv->asObjectId());
-                        else break;
-                    }
-                }
-      // Check type prototypes
-      if (!found_host && vm_func.isNull()) {
-        std::string tn;
-        if (recv->isStringValId() || recv->isStringId()) {
-          tn = "string";
-        } else if (recv->isInt()) {
-          tn = "int";
-        } else if (recv->isDouble()) {
-          tn = "float";
-        } else if (recv->isBool()) {
-          tn = "bool";
-        } else if (recv->isArrayId()) {
-          tn = "array";
-        } else if (recv->isObjectId()) {
-          tn = "object";
-        } else if (recv->isSetId()) {
-          tn = "set";
-        } else if (recv->isThreadId()) {
-          tn = "thread";
-        } else if (recv->isIntervalId()) {
-          tn = "interval";
-        } else if (recv->isTimeoutId()) {
-          tn = "timeout";
-} else if (recv->isWaitGroupId()) {
-            tn = "waitgroup";
-        } else if (recv->isRangeId()) {
-            tn = "range";
-        } else if (recv->isChannelId()) {
-            tn = "channel";
-        } else if (recv->isHostFuncId()) {
-          std::string receiver_name;
-          if (recv->asHostFuncId() < host_function_names_.size()) {
-            receiver_name = host_function_names_[recv->asHostFuncId()];
-          }
-          std::string dotted_name = receiver_name + "." + method;
-          for (size_t i = 0; i < host_function_names_.size(); ++i) {
-            if (host_function_names_[i] == dotted_name) {
-              host_idx = static_cast<uint32_t>(i);
+      if (recv->isObjectId()) {
+        auto *obj = heap_.object(recv->asObjectId());
+        if (obj) {
+          auto it = obj->find(method);
+          if (it != obj->end()) {
+            if (it->second.isHostFuncId()) {
+              host_idx = it->second.asHostFuncId();
               found_host = true;
-              found_via_module = true;
+              // Parity with CALL_METHOD's direct-field arm
+              // (VMControlFlow.cpp): a host-fn field that does not
+              // want self never receives the receiver, regardless of
+              // whether the receiver object is bound to a global.
+              bool isClassProtoSim = obj->get("__class") != nullptr ||
+                                     obj->get("__struct") != nullptr ||
+                                     obj->get("__is_class") != nullptr;
+              bool wantsSelfSim = host_function_wants_self_.count(it->second.asHostFuncId()) > 0;
+              if (!isClassProtoSim && !wantsSelfSim) {
+                found_via_module = true;
+              }
+            } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+              vm_func = it->second;
+              is_instance = true;
+            }
+          }
+        }
+        // Check prototype chain
+        if (!found_host && vm_func.isNull()) {
+          auto *proto = heap_.object(recv->asObjectId());
+          if (proto) {
+            auto *cv = proto->get("__class");
+            if (!cv)
+              cv = proto->get("__struct");
+            if (cv && cv->isObjectId())
+              proto = heap_.object(cv->asObjectId());
+            else
+              proto = nullptr;
+          }
+          while (proto) {
+            auto *mv = proto->get(method);
+            if (mv) {
+              if (mv->isHostFuncId()) {
+                host_idx = mv->asHostFuncId();
+                found_host = true;
+                break;
+              } else if (mv->isFunctionObjId() || mv->isClosureId()) {
+                vm_func = *mv;
+                break;
+              }
+            }
+            auto *pv = proto->get("__parent");
+            if (pv && pv->isObjectId())
+              proto = heap_.object(pv->asObjectId());
+            else
               break;
-            }
           }
         }
-        if (!tn.empty()) {
-          auto pt = prototypes_.find(tn);
-          if (pt != prototypes_.end()) {
-            auto mt = pt->second.find(method);
-            if (mt != pt->second.end()) {
-              host_idx = mt->second;
-              found_host = true;
+        // Check type prototypes
+        if (!found_host && vm_func.isNull()) {
+          std::string tn;
+          if (recv->isStringValId() || recv->isStringId()) {
+            tn = "string";
+          } else if (recv->isInt()) {
+            tn = "int";
+          } else if (recv->isDouble()) {
+            tn = "float";
+          } else if (recv->isBool()) {
+            tn = "bool";
+          } else if (recv->isArrayId()) {
+            tn = "array";
+          } else if (recv->isObjectId()) {
+            tn = "object";
+          } else if (recv->isSetId()) {
+            tn = "set";
+          } else if (recv->isThreadId()) {
+            tn = "thread";
+          } else if (recv->isIntervalId()) {
+            tn = "interval";
+          } else if (recv->isTimeoutId()) {
+            tn = "timeout";
+          } else if (recv->isWaitGroupId()) {
+            tn = "waitgroup";
+          } else if (recv->isRangeId()) {
+            tn = "range";
+          } else if (recv->isChannelId()) {
+            tn = "channel";
+          } else if (recv->isHostFuncId()) {
+            std::string receiver_name;
+            if (recv->asHostFuncId() < host_function_names_.size()) {
+              receiver_name = host_function_names_[recv->asHostFuncId()];
+            }
+            std::string dotted_name = receiver_name + "." + method;
+            for (size_t i = 0; i < host_function_names_.size(); ++i) {
+              if (host_function_names_[i] == dotted_name) {
+                host_idx = static_cast<uint32_t>(i);
+                found_host = true;
+                found_via_module = true;
+                break;
+              }
+            }
+          }
+          if (!tn.empty()) {
+            auto pt = prototypes_.find(tn);
+            if (pt != prototypes_.end()) {
+              auto mt = pt->second.find(method);
+              if (mt != pt->second.end()) {
+                host_idx = mt->second;
+                found_host = true;
+              }
             }
           }
         }
       }
-            }
 
-            if (!found_host) { ok = false; break; }
+      if (!found_host) {
+        ok = false;
+        break;
+      }
 
-            // Assemble args using same convention as VM
-            std::vector<Value> all_args;
-            if (is_instance || found_via_module) {
-                all_args = std::move(args);
-            } else {
-                all_args.reserve(n + 1);
-                all_args.push_back(*recv);
-                all_args.insert(all_args.end(), args.begin(), args.end());
-            }
-            thunk.calls.push_back({host_idx, std::move(all_args)});
-            sim.push_back(std::nullopt);
-            break;
-        }
-
-        case OpCode::RETURN:
-            break;
-
-        default:
-            ok = false;
-            break;
-        }
+      // Assemble args using same convention as VM
+      std::vector<Value> all_args;
+      if (is_instance || found_via_module) {
+        all_args = std::move(args);
+      } else {
+        all_args.reserve(n + 1);
+        all_args.push_back(*recv);
+        all_args.insert(all_args.end(), args.begin(), args.end());
+      }
+      thunk.calls.push_back({host_idx, std::move(all_args)});
+      sim.push_back(std::nullopt);
+      break;
     }
 
-    if (!ok || thunk.calls.empty()) return {};
-    return thunk;
+    case OpCode::RETURN:
+      break;
+
+    default:
+      ok = false;
+      break;
+    }
+  }
+
+  if (!ok || thunk.calls.empty())
+    return {};
+  return thunk;
 }
 // ============================================================================
 // Image helpers - GC-managed image creation
@@ -597,8 +691,7 @@ VMImage VM::createImage(int width, int height, int stride, PixelFormat format,
   img.format = format;
 
   // Create GC-managed byte array for image data
-  size_t dataSize =
-      stride > 0 ? static_cast<size_t>(stride) * height : width * height * 4;
+  size_t dataSize = stride > 0 ? static_cast<size_t>(stride) * height : width * height * 4;
   auto arrayRef = createHostArray();
   for (size_t i = 0; i < dataSize; ++i) {
     pushHostArrayValue(arrayRef, static_cast<int64_t>(data[i]));
@@ -610,21 +703,20 @@ VMImage VM::createImage(int width, int height, int stride, PixelFormat format,
   return img;
 }
 
-VMImage VM::createImageFromRGBA(int width, int height,
-                                const std::vector<uint8_t> &rgbaData) {
+VMImage VM::createImageFromRGBA(int width, int height, const std::vector<uint8_t> &rgbaData) {
   // RGBA format: 4 bytes per pixel
   int stride = width * 4;
-  return createImage(width, height, stride, PixelFormat::RGBA8,
-                     rgbaData.data());
+  return createImage(width, height, stride, PixelFormat::RGBA8, rgbaData.data());
 }
 
-void VM::setEventQueue(class EventQueue* eq) {
+void VM::setEventQueue(class EventQueue *eq) {
   event_queue_ = eq;
   if (eq && !timer_handler_registered_) {
     timer_handler_registered_ = true;
-    eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
-      auto *payload = static_cast<TimerFirePayload*>(event.ptr);
-      if (!payload) return;
+    eq->onEvent(EventType::TIMER_FIRE, [this](const Event &event) {
+      auto *payload = static_cast<TimerFirePayload *>(event.ptr);
+      if (!payload)
+        return;
       bool is_timeout = (event.data1 == 1);
       PendingTimerCallback pcb;
       pcb.closure = payload->closure;
@@ -638,17 +730,16 @@ void VM::setEventQueue(class EventQueue* eq) {
       }
       delete payload;
     });
-    eq->onEvent(EventType::ASYNC_HOST_COMPLETE,
-                [this](const Event& event) {
-                  auto *cell =
-                      static_cast<AsyncCxxResult *>(event.ptr);
-                  if (!cell) return;
-                  // move the cell out before handling: the event owns the
-                  // last reference once the handler returns
-                  AsyncCxxResult owned(std::move(*cell));
-                  delete cell;
-                  handleAsyncHostComplete(event.data1, owned);
-                });
+    eq->onEvent(EventType::ASYNC_HOST_COMPLETE, [this](const Event &event) {
+      auto *cell = static_cast<AsyncCxxResult *>(event.ptr);
+      if (!cell)
+        return;
+      // move the cell out before handling: the event owns the
+      // last reference once the handler returns
+      AsyncCxxResult owned(std::move(*cell));
+      delete cell;
+      handleAsyncHostComplete(event.data1, owned);
+    });
   }
 }
 
@@ -659,12 +750,14 @@ void VM::executePendingTimerCallbacks() {
     callbacks = std::move(pending_timer_callbacks_);
     pending_timer_callbacks_.clear();
   }
-  if (callbacks.empty()) return;
-  for (auto& cb : callbacks) {
-    if (exit_requested_.load()) break;
+  if (callbacks.empty())
+    return;
+  for (auto &cb : callbacks) {
+    if (exit_requested_.load())
+      break;
     try {
-      Value result = cb.has_callback_id ? invokeCallback(cb.callback_id, {})
-                                        : callFunction(cb.closure, {});
+      Value result =
+          cb.has_callback_id ? invokeCallback(cb.callback_id, {}) : callFunction(cb.closure, {});
       if (cb.is_timeout) {
         addTimeoutResult(cb.timer_id, result);
         // Release the pinned timeout closure after it fires.
@@ -672,7 +765,7 @@ void VM::executePendingTimerCallbacks() {
       } else {
         addIntervalResult(cb.timer_id, result);
       }
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       ::havel::error("[VM] Timer callback exception: {}", e.what());
     }
   }
@@ -688,7 +781,8 @@ void VM::handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell) {
     auto it = pending_host_calls_.find(token);
     if (it == pending_host_calls_.end()) {
       ::havel::debug("[VM] async host complete: token {} unmatched (call "
-                     "aborted) - dropped", token);
+                     "aborted) - dropped",
+                     token);
       return;
     }
     record = std::move(it->second);
@@ -697,7 +791,8 @@ void VM::handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell) {
 
   Value result = Value::makeNull();
   try {
-    if (record.vm_lift) result = record.vm_lift(cell);
+    if (record.vm_lift)
+      result = record.vm_lift(cell);
   } catch (const std::exception &e) {
     ::havel::error("[VM] async host lift threw: {}", e.what());
   } catch (...) {
@@ -713,12 +808,14 @@ void VM::handleAsyncHostComplete(uint32_t token, const AsyncCxxResult &cell) {
 }
 
 std::unique_ptr<BytecodeInterpreter> createVM() {
-    return std::make_unique<VM>();
+  return std::make_unique<VM>();
 }
 
 void VM::processPendingEvents() {
-  if (timer_check_func_) timer_check_func_();
-  if (event_queue_) event_queue_->processAll();
+  if (timer_check_func_)
+    timer_check_func_();
+  if (event_queue_)
+    event_queue_->processAll();
   // Drain fired timer/interval callbacks. TIMER_FIRE events land in
   // pending_timer_callbacks_ via setEventQueue's handler; without this
   // drain they are never executed and scripts relying on timeout{}

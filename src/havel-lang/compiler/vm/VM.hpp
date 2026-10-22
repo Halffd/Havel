@@ -931,6 +931,14 @@ public:
   // Cheap probe for JIT safe points: would a collection run right now?
   // (budget exceeded or externally requested, and not suspended.)
   bool gcCollectionPendingPublic() const { return !gcSuspended() && heap_.shouldMaybeCollect(); }
+  // C-API string interning: havel_pushstring routes strings through the
+  // VM's own heap so every string value shares one id space and one
+  // resolver (resolveStringKey). The old C-API side table used a private
+  // counter whose ids collided with chunk string-table indices - a host
+  // function's literal argument resolved to an unrelated previously
+  // pushed string (observed live: settings("AAA","BBB") stored a stale
+  // zoom-status JSON as the key).
+  uint32_t internHeapString(const std::string &s) { return heap_.allocateString(s).id; }
   void collectGarbage();
   void stepGarbageCollection(size_t work_budget = 128);
   void drainFinalizers();

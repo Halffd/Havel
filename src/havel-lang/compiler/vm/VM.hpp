@@ -1672,6 +1672,33 @@ public:
     }
     if (!tier1_compiled_.count(key)) {
       tier1_compiled_.insert(key);
+      // HAVEL_TIER1_DUMP=1: dump the exact bytecode handed to the tier-1
+      // backend (opcode stream, constants, upvalues, defaults) so lowering
+      // audits can replay the input offline. Diagnostic knob; env-gated so
+      // bisect runs keep argv byte-identical.
+      if (std::getenv("HAVEL_TIER1_DUMP")) {
+        std::fprintf(stderr, "[tier1-dump] fn %s params=%u locals=%u variadic=%u\n",
+                     func.name.c_str(), func.param_count, func.local_count,
+                     func.variadic_param_index == UINT32_MAX ? 0u : 1u);
+        for (size_t di = 0; di < func.instructions.size(); ++di) {
+          const auto &dinst = func.instructions[di];
+          std::fprintf(stderr, "[tier1-dump] %s %zu: op=%u", func.name.c_str(), di,
+                       static_cast<unsigned>(dinst.opcode));
+          for (const auto &dop : dinst.operands) {
+            std::fprintf(stderr, " %s", dop.toString().c_str());
+          }
+          std::fprintf(stderr, "\n");
+        }
+        for (size_t ci = 0; ci < func.constants.size(); ++ci) {
+          std::fprintf(stderr, "[tier1-dump] %s const[%zu] = %s\n", func.name.c_str(), ci,
+                       func.constants[ci].toString().c_str());
+        }
+        for (size_t ui = 0; ui < func.upvalues.size(); ++ui) {
+          std::fprintf(stderr, "[tier1-dump] %s upval[%zu] index=%u captures_local=%d\n",
+                       func.name.c_str(), ui, func.upvalues[ui].index,
+                       func.upvalues[ui].captures_local ? 1 : 0);
+        }
+      }
       if (backend_->compile_tier(func, 1)) {
         tier1_transition_count_.fetch_add(1);
         profiler_.recordTier1Compile(key);
@@ -2902,6 +2929,37 @@ public:
     GCSuspendDeferGuard &operator=(const GCSuspendDeferGuard &) = delete;
   };
   GCSuspendDeferGuard gcDeferGuardPublic() { return GCSuspendDeferGuard(this); }
+
+  // Fast-tick budget disarm for synchronous host-function calls made from
+  // a C++ caller (JIT bridges, timers, native re-entries). The tick-budget
+  // cutoff is an interpreter-only protocol: a module-function wrapper that
+  // unwinds on budget exhaustion returns a null placeholder and leaves its
+  // frame live, and only the interpreted CALL/TAIL_CALL sites (doCall /
+  // doTailCall, which read budget_unwind_no_result_) know how to resume
+  // it. A C++ caller has no such site - receiving the null placeholder as
+  // a real result corrupted the tiered self-hosted parse (compiled nud
+  // called the $module_fn_ Identifier wrapper, the wrapper was cut off
+  // mid-execution, and the parser built 'Unexpected token Identifier'
+  // errors from the null node). Disarm for the duration of the host call;
+  // the outer armed tick resumes when control returns to its dispatch
+  // loop (the pump's own checkpoint).
+  struct FastTickDisarmGuard {
+    VM *vm_;
+    uint64_t saved_budget_ = 0;
+    explicit FastTickDisarmGuard(VM *v) : vm_(v) {
+      if (vm_) {
+        saved_budget_ = vm_->fast_tick_budget_;
+        vm_->fast_tick_budget_ = 0;
+      }
+    }
+    ~FastTickDisarmGuard() {
+      if (vm_)
+        vm_->fast_tick_budget_ = saved_budget_;
+    }
+    FastTickDisarmGuard(const FastTickDisarmGuard &) = delete;
+    FastTickDisarmGuard &operator=(const FastTickDisarmGuard &) = delete;
+  };
+  FastTickDisarmGuard fastTickDisarmPublic() { return FastTickDisarmGuard(this); }
 
   // Live-JIT-frame gate for collections. Incremented for the duration of
   // every backend execute entry (TieredBackend::execute, the goroutine JIT

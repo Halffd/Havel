@@ -3317,6 +3317,21 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   // Invocation-driven tiering (TODO #25).
   maybeTierUp(*callee, callee->execution_count, "invocation");
 
+  // HAVEL_TRACE_CALLS=1: log every doCall (name + argc) right before the
+  // JIT/interpreter split, so interpreted and tiered runs can be diffed
+  // instruction-by-instruction at the call level. HAVEL_TRACE_CALLS=2 also
+  // logs the raw argument words. Env-gated diagnostic.
+  if (const char *tc_env = std::getenv("HAVEL_TRACE_CALLS");
+      tc_env && (tc_env[0] == '1' || tc_env[0] == '2')) {
+    std::fprintf(stderr, "[call] %s argc=%zu jit=%d closure=%u", callee->name.c_str(), args.size(),
+                 callee->jit_compiled ? 1 : 0, closure_id);
+    if (tc_env[0] == '2') {
+      for (const auto &a : args)
+        std::fprintf(stderr, " 0x%llx", static_cast<unsigned long long>(a.rawBits()));
+    }
+    std::fprintf(stderr, "\n");
+  }
+
   if (trace_execution_) {
     // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u
     // is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled,
@@ -3812,6 +3827,19 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
                    std::to_string(function_index) + " (expected at least " +
                    std::to_string(callee->variadic_param_index) + ", got " +
                    std::to_string(args.size()) + ")");
+  }
+
+  // HAVEL_TRACE_CALLS=1: tail calls bypass doCall (frame reuse), so trace
+  // them here to keep the interpreted and tiered call sequences diffable.
+  if (const char *tc_env = std::getenv("HAVEL_TRACE_CALLS");
+      tc_env && (tc_env[0] == '1' || tc_env[0] == '2')) {
+    std::fprintf(stderr, "[call] %s argc=%zu jit=%d closure=%u tail=1", callee->name.c_str(),
+                 args.size(), callee->jit_compiled ? 1 : 0, closure_id);
+    if (tc_env[0] == '2') {
+      for (const auto &a : args)
+        std::fprintf(stderr, " 0x%llx", static_cast<unsigned long long>(a.rawBits()));
+    }
+    std::fprintf(stderr, "\n");
   }
 
   // TCO: Reuse current frame - update function, reset IP, adjust locals
@@ -5273,6 +5301,12 @@ Value VM::deepWrapModuleFunctions(
           current_chunk = moduleChunk.get();
           const auto *callee = moduleChunk->getFunction(funcIdx);
           if (!callee) {
+            // HAVEL_TRACE_WRAPPER=1: identify which null-return branch a
+            // module wrapper took (miscompile bisects on the tiered parse).
+            if (const char *mw_env = std::getenv("HAVEL_TRACE_WRAPPER");
+                mw_env && mw_env[0] == '1') {
+              std::fprintf(stderr, "[mw-null] %s reason=no-callee\n", wrapperName.c_str());
+            }
             if (wrapper_pushed_globals) {
               popGlobals();
             }
@@ -5386,6 +5420,14 @@ Value VM::deepWrapModuleFunctions(
                 // it, or the resume reads the placeholder as their operand.
                 budget_unwind_no_result_ = true;
               }
+              if (const char *mw_env = std::getenv("HAVEL_TRACE_WRAPPER");
+                  mw_env && mw_env[0] == '1') {
+                std::fprintf(stderr,
+                             "[mw-null] %s reason=suspend susp=%d last=%d budget=%d depth=%zu\n",
+                             wrapperName.c_str(), static_cast<int>(suspension_requested_),
+                             static_cast<int>(last_suspension_reason_),
+                             tickBudgetExhausted() ? 1 : 0, frame_count_);
+              }
               return Value::makeNull();
             }
             if (g_sleep_trace) {
@@ -5427,6 +5469,11 @@ Value VM::deepWrapModuleFunctions(
             globals_mirror_object_id_ = savedMirrorId;
             current_chunk = savedChunk;
             budget_unwind_no_result_ = true;
+            if (const char *mw_env = std::getenv("HAVEL_TRACE_WRAPPER");
+                mw_env && mw_env[0] == '1') {
+              std::fprintf(stderr, "[mw-null] %s reason=throw-transfer stack=%zu depth=%zu\n",
+                           wrapperName.c_str(), stack.size(), frame_count_);
+            }
             return Value::makeNull();
           }
           Value result = popStack();

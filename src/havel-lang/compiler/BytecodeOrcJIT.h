@@ -16,8 +16,14 @@
 #include <vector>
 
 // Forward-declare the LLVM types we store so the header stays LLVM-free
-namespace llvm::orc { class LLJIT; }
-namespace llvm       { class Module; class TargetMachine; class Function; }
+namespace llvm::orc {
+class LLJIT;
+}
+namespace llvm {
+class Module;
+class TargetMachine;
+class Function;
+}
 
 namespace havel::compiler {
 
@@ -31,16 +37,16 @@ namespace havel::compiler {
  * requiring a shadow stack or LLVM's stackmap infrastructure.
  */
 struct JITStackFrame {
-    static constexpr uint32_t MAX_GC_ROOTS = 32;
-    static constexpr uint32_t MAX_EXCEPTION_HANDLERS = 32;
-    void*    vm;                           ///< opaque VM*
-    uint64_t root_ids[MAX_GC_ROOTS];       ///< GC external-root handle array
-    uint64_t slot_values[MAX_GC_ROOTS];    ///< value bits at pin time
-    uint32_t root_count;                   ///< number of live roots
-    uint32_t handler_catch_ip[MAX_EXCEPTION_HANDLERS];
-    uint32_t handler_finally_ip[MAX_EXCEPTION_HANDLERS];
-    uint32_t handler_stack_depth[MAX_EXCEPTION_HANDLERS];
-    uint32_t handler_count;
+  static constexpr uint32_t MAX_GC_ROOTS = 32;
+  static constexpr uint32_t MAX_EXCEPTION_HANDLERS = 32;
+  void *vm;                           ///< opaque VM*
+  uint64_t root_ids[MAX_GC_ROOTS];    ///< GC external-root handle array
+  uint64_t slot_values[MAX_GC_ROOTS]; ///< value bits at pin time
+  uint32_t root_count;                ///< number of live roots
+  uint32_t handler_catch_ip[MAX_EXCEPTION_HANDLERS];
+  uint32_t handler_finally_ip[MAX_EXCEPTION_HANDLERS];
+  uint32_t handler_stack_depth[MAX_EXCEPTION_HANDLERS];
+  uint32_t handler_count;
 };
 
 /**
@@ -55,90 +61,90 @@ struct JITStackFrame {
  */
 class BytecodeOrcJIT : public JITCompiler {
 public:
-    enum class TargetOS {
-        Native,
-        Linux,
-        Windows,
-        MacOS,
-        Wasm
-    };
+  enum class TargetOS { Native, Linux, Windows, MacOS, Wasm };
 
-    BytecodeOrcJIT();
-    ~BytecodeOrcJIT() override;
+  BytecodeOrcJIT();
+  ~BytecodeOrcJIT() override;
 
-    // JITCompiler interface
-    void compileFunction(const BytecodeFunction &func) override;
-    Value executeCompiled(VM* vm, const std::string &func_name,
-                          const std::vector<Value> &args) override;
-    bool isCompiled(const std::string &func_name) const override;
+  // JITCompiler interface
+  void compileFunction(const BytecodeFunction &func) override;
+  Value executeCompiled(VM *vm, const std::string &func_name,
+                        const std::vector<Value> &args) override;
+  bool isCompiled(const std::string &func_name) const override;
 
-    void setDebugMode(bool enabled) override { debug_jit_ = enabled; }
-    void setDumpIR(bool enabled) override { dump_ir_ = enabled; }
-    void setDumpAsmToFile(bool enabled) override { dump_asm_to_file_ = enabled; }
-    void setOptimizationLevel(uint8_t level) override { optimization_level_ = level > 3 ? 3 : level; }
-    void setTargetOS(TargetOS os);
-    void setShowWarnings(bool enabled) override { show_warnings_ = enabled; }
-    void setLinkedLibraries(const std::vector<std::string>& libs) { linked_libraries_ = libs; }
-    void addLinkedLibrary(const std::string& lib) { linked_libraries_.push_back(lib); }
-    TargetOS targetOS() const { return target_os_; }
-    bool showWarnings() const { return show_warnings_; }
-    const std::vector<std::string>& linkedLibraries() const { return linked_libraries_; }
-    // Global JIT diagnostics state for script/runtime introspection.
-    static void setLastError(std::string err);
-    static std::string lastError();
-    static void clearLastError();
-    void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
-    void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
-    void compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count) override;
-    void setCompilationVM(const VM* vm) { compilation_vm_ = vm; }
+  void setDebugMode(bool enabled) override { debug_jit_ = enabled; }
+  void setDumpIR(bool enabled) override { dump_ir_ = enabled; }
+  void setDumpAsmToFile(bool enabled) override { dump_asm_to_file_ = enabled; }
+  void setOptimizationLevel(uint8_t level) override { optimization_level_ = level > 3 ? 3 : level; }
+  void setTargetOS(TargetOS os);
+  void setShowWarnings(bool enabled) override { show_warnings_ = enabled; }
+  void setLinkedLibraries(const std::vector<std::string> &libs) { linked_libraries_ = libs; }
+  void addLinkedLibrary(const std::string &lib) { linked_libraries_.push_back(lib); }
+  TargetOS targetOS() const { return target_os_; }
+  bool showWarnings() const { return show_warnings_; }
+  const std::vector<std::string> &linkedLibraries() const { return linked_libraries_; }
+  // Global JIT diagnostics state for script/runtime introspection.
+  static void setLastError(std::string err);
+  static std::string lastError();
+  static void clearLastError();
+  void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
+  void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
+  void compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count) override;
+  void setCompilationVM(const VM *vm) { compilation_vm_ = vm; }
 
-    void dumpAssembly(const std::string &filename);
+  void dumpAssembly(const std::string &filename);
 
-    // AOT: Translate function to LLVM IR (public for AOT compilation)
-    void translate(const BytecodeFunction &func, llvm::Module &module);
+  // AOT: Translate function to LLVM IR (public for AOT compilation)
+  void translate(const BytecodeFunction &func, llvm::Module &module);
 
-    // Check if a function contains opcodes the JIT/AOT path cannot handle
-    // (coroutine ops, fiber ops, etc.). These must stay in the interpreter.
-    static bool hasUnsupportedOpcodes(const BytecodeFunction &func);
+  // Check if a function contains opcodes the JIT/AOT path cannot handle
+  // (coroutine ops, fiber ops, etc.). These must stay in the interpreter.
+  static bool hasUnsupportedOpcodes(const BytecodeFunction &func);
 
 private:
-    struct CachedFunction {
-        std::string canonical_name;
-    };
+  struct CachedFunction {
+    std::string canonical_name;
+  };
 
-    struct CachedTrace {
-        std::string function_name;
-        uint32_t start_ip = 0;
-        uint64_t hot_count = 0;
-        uint64_t trace_hash = 0;
-    };
+  struct CachedTrace {
+    std::string function_name;
+    uint32_t start_ip = 0;
+    uint64_t hot_count = 0;
+    uint64_t trace_hash = 0;
+  };
 
-    std::unique_ptr<llvm::orc::LLJIT> lljit_;
-    std::unordered_map<std::string, void*> fptrs_;
-    std::unordered_map<uint64_t, CachedFunction> compile_cache_;
-    std::unordered_map<uint64_t, CachedTrace> trace_cache_;
-    std::string cache_index_path_;
-    std::unique_ptr<llvm::TargetMachine> target_machine_;
-    bool debug_jit_ = false;
-    bool dump_ir_ = false;
-    bool dump_asm_to_file_ = false;
-    uint8_t optimization_level_ = 1; // 0=O0 fast start, 1=O1 baseline, 2=O2, 3=O3
-    TargetOS target_os_ = TargetOS::Native;
-    bool show_warnings_ = true;
-    std::vector<std::string> linked_libraries_;
-    const VM* compilation_vm_ = nullptr;
-    std::string last_asm_;
-    static std::mutex last_error_mutex_;
-    static std::string last_error_;
+  std::unique_ptr<llvm::orc::LLJIT> lljit_;
+  // Lookup tables shared between the VM thread (executeCompiled /
+  // isCompiled) and the tier-2 compiler worker (compileFunction /
+  // compileTrace). Every access takes table_mutex_: an unsynchronized
+  // unordered_map insert racing a find is UB and corrupted calls once
+  // tier-2 promotions began landing mid-run.
+  std::unordered_map<std::string, void *> fptrs_;
+  std::unordered_map<uint64_t, CachedFunction> compile_cache_;
+  std::unordered_map<uint64_t, CachedTrace> trace_cache_;
+  mutable std::mutex table_mutex_;
+  std::string cache_index_path_;
+  std::unique_ptr<llvm::TargetMachine> target_machine_;
+  bool debug_jit_ = false;
+  bool dump_ir_ = false;
+  bool dump_asm_to_file_ = false;
+  uint8_t optimization_level_ = 1; // 0=O0 fast start, 1=O1 baseline, 2=O2, 3=O3
+  TargetOS target_os_ = TargetOS::Native;
+  bool show_warnings_ = true;
+  std::vector<std::string> linked_libraries_;
+  const VM *compilation_vm_ = nullptr;
+  std::string last_asm_;
+  static std::mutex last_error_mutex_;
+  static std::string last_error_;
 
-    std::string resolveTargetTriple() const;
-    void initTargetMachine();
-    void runOptimizations(llvm::Module &module);
-    uint64_t computeFunctionHash(const BytecodeFunction &func) const;
-    void loadCompileCacheIndex();
-    void saveCompileCacheIndex() const;
+  std::string resolveTargetTriple() const;
+  void initTargetMachine();
+  void runOptimizations(llvm::Module &module);
+  uint64_t computeFunctionHash(const BytecodeFunction &func) const;
+  void loadCompileCacheIndex();
+  void saveCompileCacheIndex() const;
 
-    static void InitializeLLVM();
+  static void InitializeLLVM();
 };
 
 } // namespace havel::compiler

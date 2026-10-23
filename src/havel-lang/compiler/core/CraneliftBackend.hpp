@@ -232,11 +232,18 @@ public:
       case OpCode::JUMP_IF_FALSE:
       case OpCode::JUMP_IF_TRUE:
       case OpCode::JUMP_IF_NULL: {
-        if (inst.operands.empty() || !inst.operands[0].isInt())
+        if (inst.operands.empty() || !inst.operands[0].isInt() || inst.operands[0].asInt() < 0 ||
+            static_cast<size_t>(inst.operands[0].asInt()) > n) {
+          static const bool trace_refusals = std::getenv("HAVEL_CRANELIFT_TRACE") != nullptr;
+          if (trace_refusals) {
+            ::havel::debug("[cranelift] can_lower refused {} (bad jump target at {})", func.name,
+                           opcodeName(inst.opcode));
+          }
           return false;
-        const int64_t t = inst.operands[0].asInt();
-        if (t < 0 || static_cast<size_t>(t) >= n)
-          return false;
+        }
+        // t == n (jump past the last instruction) is allowed: lower() appends
+        // a PUSH_NULL;RETURN landing pad there, matching the interpreter's
+        // implicit return for ip >= n (VMDispatch.cpp).
         break;
       }
       case OpCode::CALL:
@@ -249,6 +256,11 @@ public:
         // OP_EXTENDED_ARG pseudo-pair after the instruction.
         if (inst.operands.size() != 2 || !inst.operands[0].isStringValId() ||
             !inst.operands[1].isInt()) {
+          static const bool trace_refusals = std::getenv("HAVEL_CRANELIFT_TRACE") != nullptr;
+          if (trace_refusals) {
+            ::havel::debug("[cranelift] can_lower refused {} (bad CALL_METHOD operands)",
+                           func.name);
+          }
           return false;
         }
         break;
@@ -289,6 +301,12 @@ public:
                Value *out) override {
     if (!handle_)
       return false;
+    // Live-JIT-frame gate: bridges beneath this call defer collections
+    // (compiled values live in registers/spill slots no root set scans).
+    // The compiled loop checkpoint bypasses the gate via
+    // maybeCollectGarbageAtJitCheckpoint, so long native loops still
+    // collect at their designed safe point.
+    NativeJitFrameScope native_guard(vm);
     std::vector<uint64_t> raw;
     raw.reserve(args.size());
     for (const auto &a : args)
@@ -315,14 +333,33 @@ private:
   static std::vector<uint32_t> lower(const BytecodeFunction &func) {
     std::vector<uint32_t> out;
     out.reserve(func.instructions.size() * 2);
+    // Jump-past-the-end landing pad: the interpreter's dispatch loop treats
+    // ip >= instruction count as an implicit return (VMDispatch.cpp pushes
+    // null and executes RETURN), and the emitter produces such jumps (the
+    // Pratt parser's loop-exit edges). The flat stream has no instruction at
+    // that index, so when any jump targets it, append a PUSH_NULL;RETURN pad
+    // at the old end and remap those targets onto the pad.
+    bool needs_landing_pad = false;
+    for (const auto &inst : func.instructions) {
+      if ((inst.opcode == OpCode::JUMP || inst.opcode == OpCode::JUMP_IF_FALSE ||
+           inst.opcode == OpCode::JUMP_IF_TRUE || inst.opcode == OpCode::JUMP_IF_NULL) &&
+          inst.operands.size() == 1 && inst.operands[0].isInt() &&
+          static_cast<size_t>(inst.operands[0].asInt()) == func.instructions.size()) {
+        needs_landing_pad = true;
+        break;
+      }
+    }
     // Emitted pair index per source instruction (jump-operand remap).
     std::vector<uint32_t> pair_of(func.instructions.size(), 0);
+    uint32_t landing_pad_pair = 0;
     {
       uint32_t pair_cursor = 0;
       for (size_t i = 0; i < func.instructions.size(); ++i) {
         pair_of[i] = pair_cursor;
         pair_cursor += func.instructions[i].opcode == OpCode::CALL_METHOD ? 2 : 1;
       }
+      // The landing pad (when appended) starts at exactly this pair index.
+      landing_pad_pair = pair_cursor;
     }
     for (const auto &inst : func.instructions) {
       uint32_t op = 0;
@@ -540,6 +577,10 @@ private:
           const size_t target = static_cast<size_t>(inst.operands[0].asInt());
           if (target < pair_of.size()) {
             operand = pair_of[target];
+          } else if (target == pair_of.size() && needs_landing_pad) {
+            // Jump past the last instruction: land on the appended
+            // PUSH_NULL;RETURN pad (interpreter implicit-return parity).
+            operand = landing_pad_pair;
           }
           break;
         }
@@ -557,6 +598,12 @@ private:
         out.push_back(50 /* OP_EXTENDED_ARG */);
         out.push_back(argc);
       }
+    }
+    if (needs_landing_pad) {
+      out.push_back(18 /* OP_PUSH_NULL */);
+      out.push_back(0);
+      out.push_back(7 /* OP_RETURN */);
+      out.push_back(0);
     }
     return out;
   }

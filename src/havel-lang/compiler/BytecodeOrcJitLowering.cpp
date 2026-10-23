@@ -383,6 +383,24 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     }
   }
 
+  // Handler IPs this function can dispatch a throw to: exactly the
+  // catchIp operands of its TRY_ENTER instructions - the interpreter's
+  // havel_vm_try_find_throw_target only ever returns addresses recorded
+  // there. The throw dispatch switch must case ONLY these blocks. A case
+  // for every basic block injected throw_dispatch edges into mid-stream
+  // blocks, so any SSA value used past a block boundary lost dominance
+  // (test_try AOT: 82 "Instruction does not dominate all uses" verifier
+  // failures - %load_exception defined in ipN, stored in ipN+1, whose
+  // phantom dispatch pred bypassed ipN).
+  std::vector<bool> handlerEntryIps(basicBlocks.size(), false);
+  for (const auto &instr : func.instructions) {
+    if (instr.opcode == OpCode::TRY_ENTER) {
+      const size_t handlerIp = static_cast<size_t>(instr.operands[0].asInt());
+      if (handlerIp < handlerEntryIps.size())
+        handlerEntryIps[handlerIp] = true;
+    }
+  }
+
   struct IncomingStackState {
     llvm::BasicBlock *pred = nullptr;
     std::vector<llvm::Value *> stack;
@@ -2166,12 +2184,23 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
       B.CreateCondBr(hasHandler, throwDispatchBB, throwUnwindBB);
 
       B.SetInsertPoint(throwDispatchBB);
+      // A handler block must stay reachable ONLY via the dispatch switch:
+      // it jumps straight to the handler IP, so any SSA value emitted in
+      // it (or defined before it and used after it) must be re-derived at
+      // the handler, never carried across. Handler IPs are never inline
+      // fallthrough targets (the compiled try body ends in `jump END`
+      // over the handler), so this CFG is handler-exclusive by
+      // construction.
       // Conservative stack-state reset for catch entry. This avoids
       // reusing stale SSA values after handler-walk pops.
       vstack.clear();
       jit_try_stack_depths.clear();
       llvm::SwitchInst *sw = B.CreateSwitch(catchIp, throwUnwindBB, basicBlocks.size());
       for (size_t target = 0; target < basicBlocks.size(); ++target) {
+        // Only TRY_ENTER handler IPs are legal dispatch landings; anything
+        // else falls through to throw_unwind (see handlerEntryIps above).
+        if (!handlerEntryIps[target])
+          continue;
         auto *caseVal = llvm::cast<llvm::ConstantInt>(
             llvm::ConstantInt::get(i32, static_cast<uint32_t>(target)));
         sw->addCase(caseVal, basicBlocks[target]);

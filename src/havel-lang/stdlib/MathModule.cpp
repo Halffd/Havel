@@ -17,18 +17,23 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 static double toNum(const Value &v) {
-  if (v.isInt()) return static_cast<double>(v.asInt());
-  if (v.isDouble()) return v.asDouble();
+  if (v.isInt())
+    return static_cast<double>(v.asInt());
+  if (v.isDouble())
+    return v.asDouble();
   return 0.0;
 }
 
 static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
   auto &vm = api.vm();
-  if (!exports.isObjectId()) return;
+  if (!exports.isObjectId())
+    return;
   auto *obj = vm.getHeap().object(exports.asObjectId());
-  if (!obj) return;
-  for (const auto& [name, value] : *obj) {
-    if (name.empty() || name[0] == '_') continue;
+  if (!obj)
+    return;
+  for (const auto &[name, value] : *obj) {
+    if (name.empty() || name[0] == '_')
+      continue;
     api.setField(targetObj, name, value);
     // Mirror the ArrayModule/ObjectModule rule: a pure-Havel sidecar export
     // must not clobber a canonical host-function global (the bare `hypot`
@@ -46,66 +51,89 @@ void registerMathModule(const VMApi &api) {
   // --- cmath host bridges (require native <cmath>) ---
 
   api.registerFunction("math.ceil", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.ceil() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.ceil() requires 1 argument");
     return Value(std::ceil(toNum(args[0])));
   });
   api.registerFunction("math.floor", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.floor() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.floor() requires 1 argument");
     return Value(std::floor(toNum(args[0])));
   });
   api.registerFunction("math.round", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.round() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.round() requires 1 argument");
     return Value(std::round(toNum(args[0])));
   });
   api.registerFunction("math.sin", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.sin() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.sin() requires 1 argument");
     return Value(std::sin(toNum(args[0])));
   });
   api.registerFunction("math.cos", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.cos() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.cos() requires 1 argument");
     return Value(std::cos(toNum(args[0])));
   });
   api.registerFunction("math.tan", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.tan() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.tan() requires 1 argument");
     return Value(std::tan(toNum(args[0])));
   });
   api.registerFunction("math.sqrt", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.sqrt() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.sqrt() requires 1 argument");
     double val = toNum(args[0]);
-    if (val < 0) throw std::runtime_error("math.sqrt() argument must be non-negative");
+    if (val < 0)
+      throw std::runtime_error("math.sqrt() argument must be non-negative");
     return Value(std::sqrt(val));
   });
   api.registerFunction("math.log", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.log() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.log() requires 1 argument");
     double val = toNum(args[0]);
-    if (val <= 0) throw std::runtime_error("math.log() argument must be positive");
+    if (val <= 0)
+      throw std::runtime_error("math.log() argument must be positive");
     return Value(std::log(val));
   });
   api.registerFunction("math.exp", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.exp() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.exp() requires 1 argument");
     return Value(std::exp(toNum(args[0])));
   });
   api.registerFunction("math.pow", [](const std::vector<Value> &args) {
-    if (args.size() != 2) throw std::runtime_error("math.pow() requires 2 arguments");
+    if (args.size() != 2)
+      throw std::runtime_error("math.pow() requires 2 arguments");
     return Value(std::pow(toNum(args[0]), toNum(args[1])));
   });
   api.registerFunction("math.random", [](const std::vector<Value> &) {
     return Value(static_cast<double>(std::rand()) / RAND_MAX);
   });
   api.registerFunction("math.abs", [](const std::vector<Value> &args) {
-    if (args.size() != 1) throw std::runtime_error("math.abs() requires 1 argument");
+    if (args.size() != 1)
+      throw std::runtime_error("math.abs() requires 1 argument");
     return Value(std::abs(toNum(args[0])));
   });
   api.registerFunction("math.min", [](const std::vector<Value> &args) {
-    if (args.empty()) throw std::runtime_error("math.min() requires at least 1 argument");
+    if (args.empty())
+      throw std::runtime_error("math.min() requires at least 1 argument");
     double min = toNum(args[0]);
-    for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val < min) min = val; }
+    for (size_t i = 1; i < args.size(); ++i) {
+      double val = toNum(args[i]);
+      if (val < min)
+        min = val;
+    }
     return Value(min);
   });
   api.registerFunction("math.max", [](const std::vector<Value> &args) {
-    if (args.empty()) throw std::runtime_error("math.max() requires at least 1 argument");
+    if (args.empty())
+      throw std::runtime_error("math.max() requires at least 1 argument");
     double max = toNum(args[0]);
-    for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val > max) max = val; }
+    for (size_t i = 1; i < args.size(); ++i) {
+      double val = toNum(args[i]);
+      if (val > max)
+        max = val;
+    }
     return Value(max);
   });
 
@@ -166,8 +194,9 @@ void registerMathModule(const VMApi &api) {
   if (physicsExports.isObjectId()) {
     auto *pobj = vm.getHeap().object(physicsExports.asObjectId());
     if (pobj) {
-      for (const auto& [name, value] : *pobj) {
-        if (name.empty() || name[0] == '_') continue;
+      for (const auto &[name, value] : *pobj) {
+        if (name.empty() || name[0] == '_')
+          continue;
         api.setField(physicsObj, name, value);
         // Expose on the math namespace too: `use math` contract
         // (math/math sidecar merges the same way via mergeExports).
@@ -191,13 +220,9 @@ void registerMathModule(const VMApi &api) {
     const char *globalName;
   };
   const SidecarDef sidecars[] = {
-    {"math/vec",       "vec"},
-    {"math/num",       "num"},
-    {"math/stats",     "stats"},
-    {"math/sci",       "sci"},
-    {"math/special",   "special"},
-    {"math/set",       "set"},
-    {"math/symbolic",  "symbolic"},
+      {"math/vec", "vec"},           {"math/num", "num"},         {"math/stats", "stats"},
+      {"math/sci", "sci"},           {"math/special", "special"}, {"math/set", "set"},
+      {"math/symbolic", "symbolic"},
   };
   for (const auto &sc : sidecars) {
     Value exports;
@@ -206,12 +231,15 @@ void registerMathModule(const VMApi &api) {
     } catch (...) {
       continue;
     }
-    if (!exports.isObjectId()) continue;
+    if (!exports.isObjectId())
+      continue;
     auto *expObj = vm.getHeap().object(exports.asObjectId());
-    if (!expObj) continue;
+    if (!expObj)
+      continue;
     auto nsObj = api.makeObject();
-    for (const auto& [name, value] : *expObj) {
-      if (name.empty() || name[0] == '_') continue;
+    for (const auto &[name, value] : *expObj) {
+      if (name.empty() || name[0] == '_')
+        continue;
       api.setField(nsObj, name, value);
     }
     api.setGlobal(sc.globalName, nsObj);
@@ -224,7 +252,7 @@ void registerMathModule(const VMApi &api) {
   api.setGlobal("E", Value(2.71828182845904523536));
   api.setGlobal("INF", Value(std::numeric_limits<double>::infinity()));
   api.setGlobal("NAN", Value(std::numeric_limits<double>::quiet_NaN()));
-  }
+}
 
 } // namespace havel::stdlib
 
@@ -232,6 +260,5 @@ void registerMathModule(const VMApi &api) {
 #include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_EAGER(math, "1.0.0", "Math operations stdlib module",
-    havel::stdlib::registerMathModule(*api);
-)
+                          havel::stdlib::registerMathModule(*api);)
 #endif

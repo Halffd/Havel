@@ -299,12 +299,15 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
   }
 
   const uint64_t func_hash = computeFunctionHash(func);
-  auto cached = compile_cache_.find(func_hash);
-  if (cached != compile_cache_.end()) {
-    auto existing = fptrs_.find(cached->second.canonical_name);
-    if (existing != fptrs_.end()) {
-      fptrs_[func.name] = existing->second;
-      return;
+  {
+    std::lock_guard<std::mutex> lock(table_mutex_);
+    auto cached = compile_cache_.find(func_hash);
+    if (cached != compile_cache_.end()) {
+      auto existing = fptrs_.find(cached->second.canonical_name);
+      if (existing != fptrs_.end()) {
+        fptrs_[func.name] = existing->second;
+        return;
+      }
     }
   }
 
@@ -401,9 +404,12 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
   }
 
   void *func_ptr = reinterpret_cast<void *>((*sym).getValue());
-  fptrs_[func.name] = func_ptr;
-  compile_cache_[func_hash] = CachedFunction{func.name};
-  saveCompileCacheIndex();
+  {
+    std::lock_guard<std::mutex> lock(table_mutex_);
+    fptrs_[func.name] = func_ptr;
+    compile_cache_[func_hash] = CachedFunction{func.name};
+    saveCompileCacheIndex();
+  }
   func.jit_compiled = true;
 }
 
@@ -424,9 +430,35 @@ void BytecodeOrcJIT::compileFunctionTier(const BytecodeFunction &func, uint8_t t
   }
   compileFunctionAtOptLevel(func, 2);
 }
-
 void BytecodeOrcJIT::compileTrace(const BytecodeFunction &func, uint32_t start_ip,
                                   uint64_t hot_count) {
+  // Debug isolation: HAVEL_TRACE_DENY=<name[,name...]> excludes the listed
+  // functions from trace compilation (miscompile bisects; not a production
+  // knob). Mirrors the VM's HAVEL_TIER1_ONLY gate for tier-1 compiles.
+  static const std::vector<std::string> deny_names = [] {
+    std::vector<std::string> names;
+    if (const char *env = std::getenv("HAVEL_TRACE_DENY")) {
+      std::string_view sv(env);
+      size_t pos = 0;
+      while (pos <= sv.size()) {
+        size_t comma = sv.find(',', pos);
+        if (comma == std::string_view::npos)
+          comma = sv.size();
+        if (comma > pos)
+          names.emplace_back(sv.substr(pos, comma - pos));
+        if (comma == sv.size())
+          break;
+        pos = comma + 1;
+      }
+    }
+    return names;
+  }();
+  for (const auto &deny : deny_names) {
+    if (deny == func.name) {
+      ::havel::debug("[trace] '{}' denied by HAVEL_TRACE_DENY", func.name);
+      return;
+    }
+  }
   if (!lljit_) {
     setLastError("trace:" + func.name + ": JIT is not initialized");
     return;
@@ -439,12 +471,15 @@ void BytecodeOrcJIT::compileTrace(const BytecodeFunction &func, uint32_t start_i
   trace_hash ^= static_cast<uint64_t>(start_ip) * 0x9e3779b97f4a7c15ULL;
   trace_hash ^= hot_count + 0x27d4eb2f165667c5ULL + (trace_hash << 7) + (trace_hash >> 3);
 
-  auto cached = trace_cache_.find(trace_hash);
-  if (cached != trace_cache_.end()) {
-    auto existing = fptrs_.find(cached->second.function_name);
-    if (existing != fptrs_.end()) {
-      fptrs_[func.name] = existing->second;
-      return;
+  {
+    std::lock_guard<std::mutex> lock(table_mutex_);
+    auto cached = trace_cache_.find(trace_hash);
+    if (cached != trace_cache_.end()) {
+      auto existing = fptrs_.find(cached->second.function_name);
+      if (existing != fptrs_.end()) {
+        fptrs_[func.name] = existing->second;
+        return;
+      }
     }
   }
 
@@ -467,17 +502,38 @@ void BytecodeOrcJIT::compileTrace(const BytecodeFunction &func, uint32_t start_i
   }
 
   compileFunctionAtOptLevel(func, 0);
-  trace_cache_[trace_hash] = CachedTrace{func.name, start_ip, hot_count, trace_hash};
+  {
+    std::lock_guard<std::mutex> lock(table_mutex_);
+    trace_cache_[trace_hash] = CachedTrace{func.name, start_ip, hot_count, trace_hash};
+  }
 }
 
 Value BytecodeOrcJIT::executeCompiled(VM *vm, const std::string &func_name,
                                       const std::vector<Value> &args) {
-  auto it = fptrs_.find(func_name);
-  if (it == fptrs_.end())
-    return Value::makeNull();
+  // GC deferral for the whole native invocation. Compiled code holds live
+  // object ids in native frames (LLVM allocas, spilled vstack words) that
+  // no GC root set scans: havel_gc_register_roots is still a stub, and
+  // unlike the Cranelift tier-1 loop checkpoints there is no spill hook.
+  // A collection beneath this frame (unguarded bridge reaching an
+  // interpreter dispatch checkpoint) sweeps objects whose only reference
+  // is a raw word here; container ids are recycled after a sweep, so the
+  // stale id then silently rebinds to a different object or faults with
+  // "unknown object id". Deferring keeps the invariant the bridges
+  // already document: collection waits for the next safe point with no
+  // native frames live. Cranelift executions are unaffected - they own
+  // the havel_vm_gc_checkpoint spill path.
+  auto gc_guard = vm ? vm->gcDeferGuardPublic() : VM::GCSuspendDeferGuard(nullptr);
+  void *entry_ptr = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(table_mutex_);
+    auto it = fptrs_.find(func_name);
+    if (it == fptrs_.end())
+      return Value::makeNull();
+    entry_ptr = it->second;
+  }
 
   typedef uint64_t (*NativeFunc)(void *, const Value *, uint32_t);
-  auto func = reinterpret_cast<NativeFunc>(it->second);
+  auto func = reinterpret_cast<NativeFunc>(entry_ptr);
 
   try {
     // This avoids C stack growth during deep JIT recursion by returning
@@ -494,17 +550,26 @@ Value BytecodeOrcJIT::executeCompiled(VM *vm, const std::string &func_name,
       // Check if a tail call occurred that we can handle in JIT
       if (vm->hasJitTailCall()) {
         const BytecodeFunction *next_func = vm->currentFunction();
-        if (next_func && isCompiled(next_func->name)) {
-          // Stay in JIT: update function pointer and continue loop
-          func = reinterpret_cast<NativeFunc>(fptrs_[next_func->name]);
+        if (next_func) {
+          void *next_ptr = nullptr;
+          {
+            std::lock_guard<std::mutex> lock(table_mutex_);
+            auto nf = fptrs_.find(next_func->name);
+            if (nf != fptrs_.end())
+              next_ptr = nf->second;
+          }
+          if (next_ptr) {
+            // Stay in JIT: update function pointer and continue loop
+            func = reinterpret_cast<NativeFunc>(next_ptr);
 
-          // Args for the tail call are already set up in the VM's locals array
-          // by doTailCall. We need to pass them to the next JIT function.
-          size_t lb = vm->currentLocalsBasePublic();
-          current_args_ptr = vm->getLocalsPointerPublic(lb);
-          current_args_count = next_func->param_count;
+            // Args for the tail call are already set up in the VM's locals array
+            // by doTailCall. We need to pass them to the next JIT function.
+            size_t lb = vm->currentLocalsBasePublic();
+            current_args_ptr = vm->getLocalsPointerPublic(lb);
+            current_args_count = next_func->param_count;
 
-          continue; // Loop again with new function
+            continue; // Loop again with new function
+          }
         }
 
         // If the next function is NOT JIT-compiled, return back to VM loop
@@ -544,6 +609,7 @@ Value BytecodeOrcJIT::executeCompiled(VM *vm, const std::string &func_name,
 }
 
 bool BytecodeOrcJIT::isCompiled(const std::string &func_name) const {
+  std::lock_guard<std::mutex> lock(table_mutex_);
   return fptrs_.count(func_name) > 0;
 }
 

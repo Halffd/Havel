@@ -704,8 +704,14 @@ cmd_locks() {
 cmd_await() {
   local name="${1:-}"
   if [ -z "$name" ]; then
-    # no argument: wait on the lock our default mode would use
-    name="$(lock_name build)"
+    # No argument: wait on the lock a default-mode build would take - the same
+    # name ws_build computes. lock_name takes (workspace, build-dir, kind);
+    # calling it with one arg produced an EMPTY lock name and await returned
+    # instantly while a real build was still running.
+    local m bdir
+    m=$(resolve_mode "$OPT_MODE")
+    IFS=',' read -r _ _ _ _ _ _ _ _ _ bdir <<<"${BUILD_CONFIGS[$m]}"
+    name="$(lock_name "$(ws_name "$SCRIPT_DIR")" "$bdir" build)"
     say "no lock named; defaulting to '$name'" "$DIM"
   fi
   mkdir -p "$LOCKS_DIR"

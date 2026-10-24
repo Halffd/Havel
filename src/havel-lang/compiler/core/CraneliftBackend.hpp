@@ -42,6 +42,7 @@
 #include "../../../utils/Logger.hpp"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -311,11 +312,24 @@ public:
     raw.reserve(args.size());
     for (const auto &a : args)
       raw.push_back(a.rawBits());
+    // HAVEL_TRACE_JIT=1: log the exact raw argument words entering compiled
+    // code (and the raw result leaving), so a corrupted argument can be
+    // told apart from an in-body miscompile. Env-gated diagnostic.
+    if (const char *tj_env = std::getenv("HAVEL_TRACE_JIT"); tj_env && tj_env[0] == '1') {
+      std::fprintf(stderr, "[jit-in] %s argc=%zu", func_name.c_str(), raw.size());
+      for (const auto &w : raw)
+        std::fprintf(stderr, " 0x%llx", static_cast<unsigned long long>(w));
+      std::fprintf(stderr, "\n");
+    }
     uint64_t result_bits = 0;
     if (!hclb_execute(handle_, reinterpret_cast<void *>(vm), func_name.c_str(),
                       raw.empty() ? nullptr : raw.data(), static_cast<uint32_t>(raw.size()),
                       &result_bits)) {
       return false;
+    }
+    if (const char *tj_env = std::getenv("HAVEL_TRACE_JIT"); tj_env && tj_env[0] == '1') {
+      std::fprintf(stderr, "[jit-out] %s -> 0x%llx\n", func_name.c_str(),
+                   static_cast<unsigned long long>(result_bits));
     }
     if (out)
       *out = Value::fromRawBits(result_bits);

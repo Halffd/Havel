@@ -2125,12 +2125,67 @@ bc.emit("OBJECT_GET")
         keyIdx = scopeDeclare(loopScope, keyVar)
         bc.emit("STORE_VAR", keyIdx)
       }
-      // Get result.second (the value)
-      bc.emit("LOAD_VAR", resultIdx)
-      secondSid = bc.str_id(bc.add_chunk_string("second"))
-      bc.emit("LOAD_CONST", bc.add_const(secondSid))
-      bc.emit("OBJECT_GET")
-      bc.emit("STORE_VAR", localIdx)
+      if hasKeyVar {
+        // Two-var form: result.second is always the value
+        bc.emit("LOAD_VAR", resultIdx)
+        secondSid = bc.str_id(bc.add_chunk_string("second"))
+        bc.emit("LOAD_CONST", bc.add_const(secondSid))
+        bc.emit("OBJECT_GET")
+        bc.emit("STORE_VAR", localIdx)
+      }
+      if !hasKeyVar {
+        // Single-var form: mirror the native compiler's compileForStatement
+        // detection chain. Arrays/strings/ranges bind result.second
+        // (value/char/element); objects/sets bind result.first (key).
+        bc.emit("LOAD_VAR", iterableIdx)
+        pushSid = bc.str_id(bc.add_chunk_string("push"))
+        bc.emit("LOAD_CONST", bc.add_const(pushSid))
+        bc.emit("OBJECT_GET")
+        isArrayJump = bc.emit("JUMP_IF_NULL", 0)
+        bc.emit("LOAD_VAR", resultIdx)
+        secondSid = bc.str_id(bc.add_chunk_string("second"))
+        bc.emit("LOAD_CONST", bc.add_const(secondSid))
+        bc.emit("OBJECT_GET")
+        bc.emit("STORE_VAR", localIdx)
+        arrayEndJump = bc.emit("JUMP", 0)
+
+        bc.patch_jump(isArrayJump, bc.instr_count())
+        bc.emit("LOAD_VAR", iterableIdx)
+        upperSid = bc.str_id(bc.add_chunk_string("upper"))
+        bc.emit("LOAD_CONST", bc.add_const(upperSid))
+        bc.emit("OBJECT_GET")
+        isStringJump = bc.emit("JUMP_IF_NULL", 0)
+        bc.emit("LOAD_VAR", resultIdx)
+        secondSid2 = bc.str_id(bc.add_chunk_string("second"))
+        bc.emit("LOAD_CONST", bc.add_const(secondSid2))
+        bc.emit("OBJECT_GET")
+        bc.emit("STORE_VAR", localIdx)
+        stringEndJump = bc.emit("JUMP", 0)
+
+        bc.patch_jump(isStringJump, bc.instr_count())
+        bc.emit("LOAD_VAR", iterableIdx)
+        stepSid = bc.str_id(bc.add_chunk_string("step"))
+        bc.emit("LOAD_CONST", bc.add_const(stepSid))
+        bc.emit("OBJECT_GET")
+        isRangeJump = bc.emit("JUMP_IF_NULL", 0)
+        bc.emit("LOAD_VAR", resultIdx)
+        secondSid3 = bc.str_id(bc.add_chunk_string("second"))
+        bc.emit("LOAD_CONST", bc.add_const(secondSid3))
+        bc.emit("OBJECT_GET")
+        bc.emit("STORE_VAR", localIdx)
+        rangeEndJump = bc.emit("JUMP", 0)
+
+        bc.patch_jump(isRangeJump, bc.instr_count())
+        bc.emit("LOAD_VAR", resultIdx)
+        firstSid = bc.str_id(bc.add_chunk_string("first"))
+        bc.emit("LOAD_CONST", bc.add_const(firstSid))
+        bc.emit("OBJECT_GET")
+        bc.emit("STORE_VAR", localIdx)
+
+        bc.patch_jump(arrayEndJump, bc.instr_count())
+        bc.patch_jump(stringEndJump, bc.instr_count())
+        bc.patch_jump(rangeEndJump, bc.instr_count())
+      }
 	// Body (not in tail position)
 	savedTailBody = emitter.inTailPosition
 	emitter.inTailPosition = false

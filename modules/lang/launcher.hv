@@ -306,7 +306,6 @@ fn runScript(lcfg) {
     t = now()
     emitter = Emitter()
     bc.reset()
-    setFlag("emitter", true)
     sourceFile = null
     if #lcfg.scriptFiles > 0 { sourceFile = lcfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
@@ -390,7 +389,6 @@ fn loadScriptForRepl(lcfg) {
         }
     }
     bc.reset()
-    setFlag("emitter", true)
     emitter = Emitter()
     compileProgram(emitter, result.ast, true, combinedNames)
     bc.execute_persistent("__main__")
@@ -492,7 +490,6 @@ fn replEvaluate(lcfg, line) {
         }
     }
     bc.reset()
-    setFlag("emitter", true)
     emitter = Emitter()
     compileProgram(emitter, result.ast, true, "<repl>")
     try {

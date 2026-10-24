@@ -269,6 +269,19 @@ _KEY_TABLE = [
   ["fnf10", 475, 0, 0],
   ["fnf11", 476, 0, 0],
   ["fnf12", 477, 0, 0],
+  ["joytrigger", 288, 0, 0],
+  ["joythumb", 289, 0, 0],
+  ["joythumb2", 290, 0, 0],
+  ["joytop", 291, 0, 0],
+  ["joytop2", 292, 0, 0],
+  ["joypinkie", 293, 0, 0],
+  ["joybase", 294, 0, 0],
+  ["joybase2", 295, 0, 0],
+  ["joybase3", 296, 0, 0],
+  ["joybase4", 297, 0, 0],
+  ["joybase5", 298, 0, 0],
+  ["joybase6", 299, 0, 0],
+  ["joydead", 300, 0, 0],
 ]
 
 // Aliases map an alternate name to a primary name already present in
@@ -341,6 +354,30 @@ _ALIAS_TABLE = [
   ["scrollup", "wheelup"],
   ["scrolldown", "wheeldown"],
   ["nosymbol", "unknown"],
+  // Gamepad aliases: position-based names (SDL convention). The kernel
+  // normalizes every modern controller family onto the BTN_GAMEPAD codes,
+  // so "cross" fires on the bottom face button of a DualSense, an Xbox
+  // pad (labelled A), and a Switch pad (labelled B) alike. Legacy
+  // PS2/PS1 adapter pads report the joytrigger..joydead range instead.
+  ["south", "joya"],
+  ["east", "joyb"],
+  ["west", "joyx"],
+  ["north", "joyy"],
+  ["cross", "joya"],
+  ["circle", "joyb"],
+  ["square", "joyx"],
+  ["triangle", "joyy"],
+  ["l1", "joylb"],
+  ["r1", "joyrb"],
+  ["l2", "joylt"],
+  ["r2", "joyrt"],
+  ["l3", "joylstick"],
+  ["r3", "joyrstick"],
+  ["share", "joyback"],
+  ["view", "joyback"],
+  ["options", "joystart"],
+  ["menu", "joystart"],
+  ["ps", "joyguide"],
 ]
 
 _name_to_key = {}

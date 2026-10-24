@@ -1,0 +1,80 @@
+// gamepad_e2e — end-to-end controller verification on a virtual DualSense.
+// Creates a uinput pad spoofing a Sony DualSense (BUS_USB, 054c:0ce6), then
+// verifies through the gamepad module: family detection, named button
+// press/release, analog axis read, D-pad hat read, and rumble effect upload.
+//
+// HARDWARE-TOUCHING (real /dev/uinput + evdev writes): lives in
+// scripts/tests/io/, NOT in smoke/integration. Run manually with a display
+// free; needs /dev/uinput writable by the user (setfacl after VM reboot).
+use gamepad
+use uinput
+
+sleep(400)
+_pad = uinput.create({name: "Wireless Controller", vendor: 1356, product: 3302, keyboard: false, mouse: false, gamepad: true, ff_effects_max: 16, abs: {0: {min: -32767, max: 32767, fuzz: 16, flat: 128}, 1: {min: -32767, max: 32767, fuzz: 16, flat: 128}, 3: {min: -32767, max: 32767, fuzz: 16, flat: 128}, 4: {min: -32767, max: 32767, fuzz: 16, flat: 128}, 16: {min: -1, max: 1, fuzz: 0, flat: 0}, 17: {min: -1, max: 1, fuzz: 0, flat: 0}}})
+if _pad == null { print("FAIL: uinput.create returned null (is /dev/uinput writable?)"); exit(1) }
+print("created")
+
+// The devtmpfs event node appears asynchronously after UI_DEV_CREATE:
+// poll for it (bounded, 10 x 200ms) before enumerating.
+_found = null
+_tries = 0
+while _tries < 10 {
+  sleep(200)
+  _pads = gamepad.devices()
+  for _d in _pads { if _d.family == "ps5" { _found = _d } }
+  if _found != null { break }
+  _tries = _tries + 1
+}
+if _found == null { print("FAIL: virtual DualSense not detected as ps5 after retries"); uinput.destroy(_pad); exit(1) }
+print("detected family=" + _found.family + " path=" + _found.path)
+
+_h = gamepad.open(_found.path)
+if _h == null { print("FAIL: gamepad.open returned null"); uinput.destroy(_pad); exit(1) }
+print("opened")
+
+// --- button press: inject down, poll, inject up, poll ---
+uinput.sendKey(_pad, 304, 1)
+uinput.sync(_pad)
+_evs1 = gamepad.poll(_h)
+_down = false
+for _e in _evs1 { if _e.name == "south" && _e.type == "down" { _down = true } }
+if !_down { print("FAIL: cross down not observed"); gamepad.close(_h); uinput.destroy(_pad); exit(1) }
+print("cross down observed")
+
+uinput.sendKey(_pad, 304, 0)
+uinput.sync(_pad)
+_evs2 = gamepad.poll(_h)
+_up = false
+for _e in _evs2 { if _e.name == "south" && _e.type == "up" { _up = true } }
+if !_up { print("FAIL: cross up not observed"); gamepad.close(_h); uinput.destroy(_pad); exit(1) }
+print("cross up observed")
+
+// --- analog axis: left stick x to -16000 (~ -0.49 normalized) ---
+uinput.sendAbs(_pad, 0, -16000)
+uinput.sync(_pad)
+_lx = gamepad.axis(_h, "lx")
+if !(_lx < -0.4) { print("FAIL: lx=" + str(_lx)); gamepad.close(_h); uinput.destroy(_pad); exit(1) }
+print("lx=" + str(_lx))
+
+// --- D-pad: ABS_HAT0Y = -1 (up) ---
+uinput.sendAbs(_pad, 17, -1)
+uinput.sync(_pad)
+_up_hat = gamepad.hat(_h, "dpady")
+if _up_hat != -1 { print("FAIL: dpady=" + str(_up_hat)); gamepad.close(_h); uinput.destroy(_pad); exit(1) }
+print("dpady=" + str(_up_hat))
+
+// --- rumble: capability check ---
+// The full EVIOCSFF upload on a uinput-backed pad blocks until the uinput
+// creator services the UI_BEGIN/END_FF_UPLOAD handshake (kernel queues an
+// EV_UINPUT request, 30s timeout). A single-threaded havel script cannot
+// service it during the blocking ioctl, so this E2E verifies the
+// capability path via ffCapable(); the complete upload roundtrip is
+// verified by scripts/tests/io/padctl ff (C, threaded ack service).
+// On real hardware rumble() completes in-driver with no handshake.
+if !gamepad.ffCapable(_h) { print("FAIL: FF_RUMBLE capability not advertised"); gamepad.close(_h); uinput.destroy(_pad); exit(1) }
+print("ffCapable=true")
+
+gamepad.close(_h)
+uinput.destroy(_pad)
+print("PASS: gamepad_e2e")
+exit(0)

@@ -1,6 +1,6 @@
 # A goroutine's write to an enclosing function-local is not visible to the parent
 
-**Status:** open — needs boxed upvalues (compiler + VM) or per-fiber locals.
+**Status:** FIXED (close-at-capture boxing, this session). A local captured by an inner closure lives in a born-closed heap cell that owns the value; the defining function's local accesses route through the same cell (loadLocalRouted/storeLocalRouted), and CLOSURE creates the cell via VM::boxLocal. A goroutine's write lands in the cell, which the parent reads on resume - no fiber snapshot involved. Regression lock: scripts/smoke/test_goroutine_local_write.hv (5 checks, both write directions + the object/global paths). Tiering note: functions whose locals were captured are refused tier-1 at runtime (functions_with_captured_locals_, stamped by boxLocal) because compiled code writes flat slots and would diverge from the boxes. See the Ownership lock section below for what landed.
 **Impact:** narrow. Reads work; writes to objects and module-level globals work.
 Only a write to a *function-local* of the enclosing function is lost.
 
@@ -118,6 +118,18 @@ fallback in `VMControlFlow.cpp` (~1420), from three trees:
 Per the "Shared hot paths" rule in AGENTS.md: changes to `doCall`,
 `callFunction`, the `CLOSURE` opcode, or the fiber locals/upvalue
 machinery must be claimed here before landing. Current claims:
+
+- **goroutine-local-write-fix** (this session): implementing fix option 1
+  as *close-at-capture boxing*. `CLOSURE`'s first capture of an absolute
+  slot moves the slot's value into the cell and marks it closed (the cell
+  becomes the authoritative storage); the defining scope's local accesses
+  route through the existing `open_upvalues` map; `closeFrameUpvalues`'s
+  idempotent close makes frame-exit a no-op for boxed cells;
+  `closeOpenUpvaluesForSpawn` no longer snapshots (the cell is shared,
+  not copied); the box map's closed values are GC roots; functions whose
+  locals are captured are refused tier-1 (the JIT writes flat slots and
+  would diverge from the cell). Files: `VMControlFlow.cpp`, `VMDispatch.cpp`,
+  `VM.cpp`, `GC.cpp`, compiler flag stamping. Gates: smoke + jit-parity.
 
 - havel-2-efa39c: the tiering fast-tick budget work
   (`FastTickDisarmGuard` in callFunction's host branch + the JIT bridges),

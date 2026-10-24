@@ -88,3 +88,59 @@ declared before a loop was clobbered by the loop body) is fixed in
 `88c7ebf5f` and covered by `scripts/smoke/test_closure_frame_locals.hv`.
 That one was a compiler bug; this one is a fiber/upvalue-lifetime issue
 and is a different fix.
+
+
+## Converging defects in the same opcode (2026-10-22)
+
+Three independent defects have been traced to the `CLOSURE` opcode and its
+fallback in `VMControlFlow.cpp` (~1420), from three trees:
+
+1. **Lambda frame size** (fixed, `88c7ebf5f`): a lambda's frame was sized
+   from the compiler's local counter instead of the resolver's slot count.
+2. **Boxed-upvalues gap** (this document, open): captured locals alias frame
+   slots; fibers snapshot their locals, so a goroutine's write to an
+   enclosing function-local is lost.
+3. **CLOSURE fallback copies the ambient** (havel-2, 2634b6ec2): the
+   fallback for closures whose parent chain lacks `module_globals` copies
+   the ambient into a private snapshot. For Parser-factory closures that
+   snapshot is taken while lazy module state is unbuilt, so compiled global
+   reads/writes fork the lazy module build (multiple parallel BP tables; a
+   consult racing a rebuild reads an empty table and the Pratt loop ends an
+   expression one operator early - silent wrong ASTs). Main carries the
+   same fallback (`VM.cpp` module-load sites create top-level functions
+   with `module_globals = nullptr`, and `VMControlFlow.cpp`'s fallback
+   copies the ambient), so this affects main's tiered self-hosted parsing
+   too. havel-2's fix direction: the fallback must share the module's
+   authoritative sidecar map instead of copying the ambient.
+
+## Ownership lock
+
+Per the "Shared hot paths" rule in AGENTS.md: changes to `doCall`,
+`callFunction`, the `CLOSURE` opcode, or the fiber locals/upvalue
+machinery must be claimed here before landing. Current claims:
+
+- havel-2-efa39c: the tiering fast-tick budget work
+  (`FastTickDisarmGuard` in callFunction's host branch + the JIT bridges),
+  landed on havel-2, pending merge to main.
+- The boxed-upvalues fix (this document's open item): unstarted; owner
+  will claim here before landing. It must NOT land while the tiering
+  budget changes are unmerged - both touch the same call paths, and the
+  when-block regression found while prototyping boxing (a failed condition
+  callback wedged the VM) shows the interaction is real.
+
+## Retrospective: an untested assertion that misdirected this work
+
+During the investigation, this session asserted in a committed test file
+that "a closure captures locals by value" - an untested assumption stated
+as fact, which then framed the goroutine-write defect as a capture bug and
+led to a proposed ticket for a closure-capture language bug. Measured
+later: capture semantics are by-reference and correct (a closure reads the
+current value of an enclosing local, writes are visible outside, two
+closures share the variable). The actual defect was the lambda frame size
+- unrelated to capture semantics. Lesson recorded: an untested mechanism
+guess must be labelled as a guess at the time it is made, not quietly
+reused; the probe that discredited the earlier "hotkey actions cannot
+capture block-level locals" claim had the same shape (an invalid script
+whose parse failure was misread as a capture failure). Both wrong leads
+came from probing with invalid Havel and reading the resulting error as
+the finding.

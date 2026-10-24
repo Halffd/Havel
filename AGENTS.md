@@ -1290,6 +1290,30 @@ If the evidence does not establish completion, continue investigating or report 
 * For commands that exceed the available foreground timeout, use a persistent terminal or a supported wait mechanism rather than launching another build.
 * Report the actual exit status and relevant final output. Do not claim success merely because an executable exists.
 * Preserve existing build processes and artifacts unless explicitly instructed to terminate or clean them.
+* Do not use sudo to work around permission errors in shared directories.
+  A permission error in /host is itself a finding — report it, do not route
+  around it. (Observed: a session built a shared build dir as root via
+  sudo, leaving 5253 root-owned files that blocked every other session's
+  incremental build until they were chowned back. The virtiofs UID mapping
+  was also wrong at the time; both were fixed, but the sudo build was the
+  wrong response either way.)
+
+## Shared hot paths: ownership before convergence
+
+`VM::doCall` / `VM::callFunction` and the `CLOSURE` opcode in
+`VMControlFlow.cpp` are the hottest, most-merged region in the repo. Three
+independent changes have converged there (the lambda frame-size fix, the
+tiering fast-tick budget work, the boxed-upvalues goroutine fix). Rule:
+
+* Before landing a change that touches `doCall`, `callFunction`, the
+  `CLOSURE` opcode, or the fiber locals/upvalue machinery, claim the region
+  in coordination AND record the claim in
+  `docs/known-issues/goroutine-local-write.md` (the tracking file for the
+  open boxed-upvalues defect). One session owns the region until its change
+  lands and the gates (smoke + jit-parity) pass on the merged tree.
+* Hand merges in that region are done by the session whose change lands
+  LAST, with both sides' gates as verifier - never two sessions merging
+  independently and hoping the gate catches drift.
 
 ## Multi-agent coordination
 

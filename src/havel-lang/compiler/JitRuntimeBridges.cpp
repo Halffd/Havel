@@ -15,6 +15,8 @@
 #include "runtime/HavelEngine.hpp"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 // The bridges lived inside namespace havel::compiler in their original
@@ -165,7 +167,19 @@ uint64_t havel_vm_upvalue_get(void *vm_ptr, uint32_t slot) {
   const auto &cell = closure->upvalues[slot];
   if (cell->is_open) {
     uint32_t abs_index = cell->locals_base + cell->open_index;
+    // HAVEL_TRACE_UV=1: log open-cell reads - the stale-locals seam. An
+    // open module cell reading the recycled locals region is the known
+    // corruption shape for tiered module functions.
+    if (const char *uv_env = std::getenv("HAVEL_TRACE_UV"); uv_env && uv_env[0] == '1') {
+      std::fprintf(stderr, "[uv-open] slot=%u abs=%u base=%u idx=%u\n", slot, abs_index,
+                   cell->locals_base, cell->open_index);
+    }
     return vm->readLocalPublic(abs_index).rawBits();
+  }
+  if (const char *uv_env = std::getenv("HAVEL_TRACE_UV"); uv_env && uv_env[0] == '1') {
+    std::fprintf(stderr, "[uv] slot=%u val=0x%llx%s\n", slot,
+                 static_cast<unsigned long long>(cell->closed_value.rawBits()),
+                 cell->closed_value.isNull() ? " (null)" : "");
   }
   return cell->closed_value.rawBits();
 }
@@ -372,13 +386,26 @@ extern "C" uint64_t havel_vm_eq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
     // Scalars keep the inline numeric path.
     const bool l_scalar = lv.isNull() || lv.isBool() || lv.isInt() || lv.isDouble();
     const bool r_scalar = rv.isNull() || rv.isBool() || rv.isInt() || rv.isDouble();
-    if (!l_scalar || !r_scalar)
-      return Value::makeBool(vm->valuesEqualDeepPublic(lv, rv)).rawBits();
+    if (!l_scalar || !r_scalar) {
+      const bool deep_eq = vm->valuesEqualDeepPublic(lv, rv);
+      // HAVEL_TRACE_EQ=1: log every comparison that reads false, so a
+      // miscompiled dispatch chain shows which operand diverged. Env-gated.
+      if (const char *eq_env = std::getenv("HAVEL_TRACE_EQ");
+          eq_env && eq_env[0] == '1' && !deep_eq) {
+        std::fprintf(stderr, "[eq-false-deep] l=0x%llx r=0x%llx\n",
+                     static_cast<unsigned long long>(l), static_cast<unsigned long long>(r));
+      }
+      return Value::makeBool(deep_eq).rawBits();
+    }
   }
   const double ld = valueToDouble(l), rd = valueToDouble(r);
-  if (rawBitsAreNaN(ld) || rawBitsAreNaN(rd))
-    return Value::makeBool(false).rawBits();
-  return Value::makeBool(ld == rd).rawBits();
+  const bool nan = rawBitsAreNaN(ld) || rawBitsAreNaN(rd);
+  const bool result = !nan && ld == rd;
+  if (const char *eq_env = std::getenv("HAVEL_TRACE_EQ"); eq_env && eq_env[0] == '1' && !result) {
+    std::fprintf(stderr, "[eq-false] l=0x%llx r=0x%llx\n", static_cast<unsigned long long>(l),
+                 static_cast<unsigned long long>(r));
+  }
+  return Value::makeBool(result).rawBits();
 }
 
 extern "C" uint64_t havel_vm_neq_vm(void *vm_ptr, uint64_t l, uint64_t r) {
@@ -987,6 +1014,16 @@ uint64_t havel_vm_object_get_raw_ic(void *vm_ptr, uint64_t obj_bits, uint64_t ke
     const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
     if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version &&
         entry.key_bits == key_bits && entry.gc_epoch == epoch) {
+      // HAVEL_TRACE_IC=1: diagnostic log of every IC hit (see the miss path
+      // below). Env-gated so bisect argv stays byte-identical.
+      if (const char *ic_env = std::getenv("HAVEL_TRACE_IC"); ic_env && ic_env[0] == '1') {
+        Value k;
+        std::memcpy(&k, &key_bits, sizeof(uint64_t));
+        auto key_str = vm->resolveKeyPublic(k);
+        std::fprintf(stderr, "[ic-hit] obj=%u key=%s val_bits=0x%llx epoch=%llu chunk=%p\n", obj_id,
+                     key_str ? key_str->c_str() : "<?>", (unsigned long long)entry.value_bits,
+                     (unsigned long long)epoch, (void *)vm->getCurrentChunk());
+      }
       return entry.value_bits;
     }
   }
@@ -1001,9 +1038,28 @@ uint64_t havel_vm_object_get_raw_ic(void *vm_ptr, uint64_t obj_bits, uint64_t ke
   Value out;
   bool cacheable = false;
   if (!vm->memberGetPublic(obj_bits, key_bits, &out, &cacheable)) {
+    // HAVEL_TRACE_IC=2 also logs misses that memberGetPublic rejected.
+    if (const char *ic_env2 = std::getenv("HAVEL_TRACE_IC"); ic_env2 && ic_env2[0] == '2') {
+      Value k2;
+      std::memcpy(&k2, &key_bits, sizeof(uint64_t));
+      auto key_str2 = vm->resolveKeyPublic(k2);
+      std::fprintf(stderr, "[ic-miss-fail] obj=%u key=%s\n", obj_id,
+                   key_str2 ? key_str2->c_str() : "<?>");
+    }
     return Value::makeNull().rawBits();
   }
   const uint64_t result_bits = out.rawBits();
+  // HAVEL_TRACE_IC=2: log every miss result - the parity seam
+  // (memberGetPublic) is the only place a wrong field value can enter
+  // compiled code on a first read.
+  if (const char *ic_env2 = std::getenv("HAVEL_TRACE_IC"); ic_env2 && ic_env2[0] == '2') {
+    Value k2;
+    std::memcpy(&k2, &key_bits, sizeof(uint64_t));
+    auto key_str2 = vm->resolveKeyPublic(k2);
+    std::fprintf(stderr, "[ic-miss] obj=%u key=%s val_bits=0x%llx cacheable=%d\n", obj_id,
+                 key_str2 ? key_str2->c_str() : "<?>", (unsigned long long)result_bits,
+                 cacheable ? 1 : 0);
+  }
   if (!cacheable) {
     return result_bits;
   }
@@ -1126,7 +1182,7 @@ void havel_vm_gc_checkpoint(void *vm_ptr, const uint64_t *roots, uint32_t count)
     std::memcpy(&v, &roots[i], sizeof(uint64_t));
     extra.push_back(v);
   }
-  vm->maybeCollectGarbageWithExtraRoots(extra);
+  vm->maybeCollectGarbageAtJitCheckpoint(extra);
 }
 
 #include "runtime/HavelEngine.hpp"
@@ -1653,6 +1709,11 @@ uint64_t havel_vm_call_host(void *vm_ptr, uint32_t host_idx, uint64_t *args, uin
   // Host functions may re-enter the interpreter (module wrappers,
   // callbacks). The JIT caller's raw values are unrooted meanwhile.
   auto gc_guard = vm->gcDeferGuardPublic();
+  // Same tick-budget disarm as VM::callFunction's host branch: the JIT
+  // caller has no interpreted CALL site to resume a budget-unwound
+  // module-wrapper frame, so the cutoff placeholder must never be
+  // produced beneath this bridge.
+  auto tick_guard = vm->fastTickDisarmPublic();
 
   std::vector<Value> valArgs;
   for (uint32_t i = 0; i < count; ++i) {
@@ -1673,6 +1734,11 @@ uint64_t havel_vm_call_method(void *vm_ptr, uint64_t receiver_bits, uint32_t met
   // the caller's raw values (receiver staged by the lowering, live
   // vstack temps) are unrooted.
   auto gc_guard = vm->gcDeferGuardPublic();
+  // Tick-budget disarm for the whole bridge: a method field may hold a
+  // $module_fn_ wrapper (module namespace objects), and the wrapper's
+  // budget-cutoff protocol has no consumer under a compiled frame -
+  // the placeholder null would flow back as the method's result.
+  auto tick_guard = vm->fastTickDisarmPublic();
   auto *chunk = vm->getCurrentChunk();
   if (!chunk)
     return Value::makeNull().rawBits();

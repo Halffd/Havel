@@ -101,8 +101,7 @@ static std::string readScriptFile(const std::string &path) {
   return content;
 }
 
-static std::unordered_set<std::string>
-collectKnownGlobals(const havel::compiler::VM *vm) {
+static std::unordered_set<std::string> collectKnownGlobals(const havel::compiler::VM *vm) {
   std::unordered_set<std::string> globals;
   if (!vm) {
     return globals;
@@ -119,9 +118,8 @@ collectKnownGlobals(const havel::compiler::VM *vm) {
 
 #ifdef HAVEL_ENABLE_LLVM
 static std::string normalizeTargetOS(std::string os) {
-  std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(os.begin(), os.end(), os.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (os == "win")
     return "windows";
   if (os == "mac" || os == "darwin")
@@ -158,13 +156,12 @@ static std::string sharedLibraryExtensionForOS(const std::string &requestedOS) {
   return ".so";
 }
 
-static void appendLinkLibraries(std::string &linkCmd,
-                                const std::vector<std::string> &libs) {
+static void appendLinkLibraries(std::string &linkCmd, const std::vector<std::string> &libs) {
   for (const auto &lib : libs) {
     if (lib.empty())
       continue;
-    if (lib.rfind("-l", 0) == 0 || lib.rfind("-L", 0) == 0 ||
-        lib.rfind("/", 0) == 0 || lib.rfind(".", 0) == 0) {
+    if (lib.rfind("-l", 0) == 0 || lib.rfind("-L", 0) == 0 || lib.rfind("/", 0) == 0 ||
+        lib.rfind(".", 0) == 0) {
       linkCmd += " " + lib;
     } else {
       linkCmd += " -l" + lib;
@@ -199,15 +196,13 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
   // Add havel build dir to library search path.
   std::string exePath = Env::executable();
   if (!exePath.empty()) {
-    std::string libDir =
-        std::filesystem::path(exePath).parent_path().string();
+    std::string libDir = std::filesystem::path(exePath).parent_path().string();
     linkCmd += " -L\"";
     linkCmd += libDir;
     linkCmd += "\"";
   }
 #ifdef HAVEL_DEFAULT_NATIVE_LINK_FLAGS
-  constexpr const char *kDefaultNativeLinkFlags =
-      HAVEL_DEFAULT_NATIVE_LINK_FLAGS;
+  constexpr const char *kDefaultNativeLinkFlags = HAVEL_DEFAULT_NATIVE_LINK_FLAGS;
   if (kDefaultNativeLinkFlags[0] != '\0') {
     linkCmd += " ";
     linkCmd += kDefaultNativeLinkFlags;
@@ -224,8 +219,7 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
   // main references them directly, so lld drops that archive member.
   // havel_core transitively requires those symbols on some platforms.
   // Force the entire archive in for the native-AOT link.
-  linkCmd +=
-      " -Wl,--whole-archive -lwayland-protos -Wl,--no-whole-archive";
+  linkCmd += " -Wl,--whole-archive -lwayland-protos -Wl,--no-whole-archive";
 }
 #endif
 
@@ -249,8 +243,7 @@ loadScriptFiles(const std::vector<std::string> &files) {
   return {{code, names}};
 }
 
-static void appendEval(std::string &code, std::string &names,
-                       const std::string &eval) {
+static void appendEval(std::string &code, std::string &names, const std::string &eval) {
   if (!eval.empty()) {
     code += eval + "\n";
     if (!names.empty())
@@ -299,11 +292,10 @@ static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig &c
 }
 
 static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
-  return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(),
-                                   Configs::Get(), inst.getWindowManagerPtr(),
-                                   inst.getAudioManager(), nullptr, nullptr,
-                                   nullptr, nullptr, nullptr, nullptr, nullptr,
-                                   nullptr, inst.getBrightnessManagerPtr());
+  return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
+                                   inst.getWindowManagerPtr(), inst.getAudioManager(), nullptr,
+                                   nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                   inst.getBrightnessManagerPtr());
 }
 
 // Lint check: assignment used in condition position (if/while/do-while/
@@ -317,7 +309,7 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
 static int lintAssignmentInCondition(
     const havel::ast::Expression *cond, const std::string &constructName,
     const std::string &primaryFile, const std::string &code,
-    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+    std::vector<std::pair<const havel::ast::Expression *, std::string>> &findings) {
   if (!cond)
     return 0;
   if (cond->kind == havel::ast::NodeType::AssignmentExpression) {
@@ -328,28 +320,25 @@ static int lintAssignmentInCondition(
 }
 
 // Recursive statement walker collecting condition-position assignments.
-static void lintWalkStatements(
-    const havel::ast::Statement *stmt, const std::string &primaryFile,
-    const std::string &code,
-    std::vector<std::pair<const havel::ast::Expression*, std::string>> &findings) {
+static void
+lintWalkStatements(const havel::ast::Statement *stmt, const std::string &primaryFile,
+                   const std::string &code,
+                   std::vector<std::pair<const havel::ast::Expression *, std::string>> &findings) {
   if (!stmt)
     return;
   using havel::ast::NodeType;
   if (stmt->kind == NodeType::IfStatement) {
     const auto *n = static_cast<const havel::ast::IfStatement *>(stmt);
-    lintAssignmentInCondition(n->condition.get(), "if", primaryFile, code,
-                              findings);
+    lintAssignmentInCondition(n->condition.get(), "if", primaryFile, code, findings);
     lintWalkStatements(n->consequence.get(), primaryFile, code, findings);
     lintWalkStatements(n->alternative.get(), primaryFile, code, findings);
   } else if (stmt->kind == NodeType::WhileStatement) {
     const auto *n = static_cast<const havel::ast::WhileStatement *>(stmt);
-    lintAssignmentInCondition(n->condition.get(), "while", primaryFile, code,
-                              findings);
+    lintAssignmentInCondition(n->condition.get(), "while", primaryFile, code, findings);
     lintWalkStatements(n->body.get(), primaryFile, code, findings);
   } else if (stmt->kind == NodeType::DoWhileStatement) {
     const auto *n = static_cast<const havel::ast::DoWhileStatement *>(stmt);
-    lintAssignmentInCondition(n->condition.get(), "do-while", primaryFile,
-                              code, findings);
+    lintAssignmentInCondition(n->condition.get(), "do-while", primaryFile, code, findings);
     lintWalkStatements(n->body.get(), primaryFile, code, findings);
   } else if (stmt->kind == NodeType::ForStatement) {
     const auto *n = static_cast<const havel::ast::ForStatement *>(stmt);
@@ -363,9 +352,8 @@ static void lintWalkStatements(
 
 static int runLint(const std::string &code, const std::string &primaryFile,
                    const havel::init::LaunchConfig &cfg) {
-  havel::parser::Parser parser{{.lexer = cfg.debugLexer,
-                                .parser = cfg.debugParser,
-                                .ast = cfg.debugAst}};
+  havel::parser::Parser parser{
+      {.lexer = cfg.debugLexer, .parser = cfg.debugParser, .ast = cfg.debugAst}};
   std::unique_ptr<havel::ast::Program> program;
   try {
     program = parser.produceAST(code);
@@ -387,9 +375,8 @@ static int runLint(const std::string &code, const std::string &primaryFile,
           }
         }
       }
-      std::string formatted =
-          havel::ErrorPrinter::formatError("error", err.message, primaryFile,
-                                           err.line, err.column, 1, sourceLine);
+      std::string formatted = havel::ErrorPrinter::formatError("error", err.message, primaryFile,
+                                                               err.line, err.column, 1, sourceLine);
       std::cerr << formatted;
     }
     error("Linting failed with {} error(s)", parser.getErrors().size());
@@ -400,7 +387,7 @@ static int runLint(const std::string &code, const std::string &primaryFile,
     // Condition-assignment lint: silent logic-bug class (see
     // lintAssignmentInCondition comment). Warnings, not errors - existing
     // scripts with intentional condition assignments keep linting green.
-    std::vector<std::pair<const havel::ast::Expression*, std::string>> findings;
+    std::vector<std::pair<const havel::ast::Expression *, std::string>> findings;
     for (const auto &stmt : program->body)
       lintWalkStatements(stmt.get(), primaryFile, code, findings);
     for (const auto &[node, constructName] : findings) {
@@ -417,11 +404,12 @@ static int runLint(const std::string &code, const std::string &primaryFile,
           }
         }
       }
-      std::string formatted = havel::ErrorPrinter::formatError(
-          "warning", "assignment '=' used as " + constructName +
-                         " condition - did you mean '=='? the branch tests "
-                         "the assigned value, not a comparison",
-          primaryFile, node->line, node->column, 1, sourceLine);
+      std::string formatted =
+          havel::ErrorPrinter::formatError("warning",
+                                           "assignment '=' used as " + constructName +
+                                               " condition - did you mean '=='? the branch tests "
+                                               "the assigned value, not a comparison",
+                                           primaryFile, node->line, node->column, 1, sourceLine);
       std::cerr << formatted;
     }
     if (!findings.empty())
@@ -452,8 +440,7 @@ static int runLint(const std::string &code, const std::string &primaryFile,
           }
         }
         std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.what(), primaryFile, err.line, err.column, 1,
-            sourceLine);
+            "error", err.what(), primaryFile, err.line, err.column, 1, sourceLine);
         std::cerr << formatted;
       }
       error("Compilation failed with {} error(s)", compiler.errors().size());
@@ -464,11 +451,10 @@ static int runLint(const std::string &code, const std::string &primaryFile,
   return 0;
 }
 
-static std::unique_ptr<havel::ast::Program>
-parseScript(const std::string &code, const havel::init::LaunchConfig &cfg) {
-  havel::parser::Parser parser{{.lexer = cfg.debugLexer,
-                                .parser = cfg.debugParser,
-                                .ast = cfg.debugAst}};
+static std::unique_ptr<havel::ast::Program> parseScript(const std::string &code,
+                                                        const havel::init::LaunchConfig &cfg) {
+  havel::parser::Parser parser{
+      {.lexer = cfg.debugLexer, .parser = cfg.debugParser, .ast = cfg.debugAst}};
   try {
     return parser.produceAST(code);
   } catch (const std::exception &) {
@@ -510,9 +496,7 @@ static bool programUsesUIBackend(const havel::ast::Program &program) {
           return true;
       }
       // use "ui" / use "ui/..." as alias
-      if (use.filePath == "ui" ||
-          use.filePath.rfind("ui/", 0) == 0 ||
-          use.filePath == "qt")
+      if (use.filePath == "ui" || use.filePath.rfind("ui/", 0) == 0 || use.filePath == "qt")
         return true;
     }
     if (stmt->kind == havel::ast::NodeType::ImportStatement) {
@@ -530,16 +514,20 @@ static void installMinimalSignalHandlers() {
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = [](int sig) {
     ExitReason reason = ExitReason::SignalInt;
-    if (sig == SIGTERM) reason = ExitReason::SignalTerm;
-    else if (sig == SIGQUIT) reason = ExitReason::SignalQuit;
-    else if (sig == SIGHUP) reason = ExitReason::SignalHup;
-    else if (sig == SIGSEGV) reason = ExitReason::SignalCrash;
+    if (sig == SIGTERM)
+      reason = ExitReason::SignalTerm;
+    else if (sig == SIGQUIT)
+      reason = ExitReason::SignalQuit;
+    else if (sig == SIGHUP)
+      reason = ExitReason::SignalHup;
+    else if (sig == SIGSEGV)
+      reason = ExitReason::SignalCrash;
     havel::exit(reason, 0);
   };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
   sigaction(SIGQUIT, &sa, nullptr);
-  sigaction(SIGHUP,  &sa, nullptr);
+  sigaction(SIGHUP, &sa, nullptr);
   sigaction(SIGSEGV, &sa, nullptr);
 }
 
@@ -576,33 +564,29 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
     const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
 #ifdef HAVEL_ENABLE_LLVM
-    const bool wantJIT = cfg.useJIT || cfg.vmConfig.tiering_enabled ||
-                         (std::getenv("HAVEL_TIERING") &&
-                          std::string(std::getenv("HAVEL_TIERING")) != "0");
+    const bool wantJIT =
+        cfg.useJIT || cfg.vmConfig.tiering_enabled ||
+        (std::getenv("HAVEL_TIERING") && std::string(std::getenv("HAVEL_TIERING")) != "0");
     if (wantJIT && vm->getJITCompiler()) {
-      auto* jit = static_cast<havel::compiler::BytecodeOrcJIT*>(vm->getJITCompiler());
+      auto *jit = static_cast<havel::compiler::BytecodeOrcJIT *>(vm->getJITCompiler());
       jit->setCompilationVM(vm);
       jit->setDebugMode(cfg.debugJIT);
       jit->setDumpIR(cfg.dumpIR);
       jit->setDumpAsmToFile(cfg.outputAsmToFile);
       jit->setShowWarnings(cfg.aotWarnings);
-      vm->setHotFunctionCallback(
-          [jit](const havel::compiler::BytecodeFunction &func) {
-            if (!jit->isCompiled(func.name))
-              jit->compileFunction(func);
-          });
-      vm->setHotTraceCallback(
-          [jit](const havel::compiler::BytecodeFunction &func,
-                uint32_t start_ip,
-                uint64_t hot_count) {
-            if (jit) {
-              jit->compileTrace(func, start_ip, hot_count);
-            }
-          });
+      vm->setHotFunctionCallback([jit](const havel::compiler::BytecodeFunction &func) {
+        if (!jit->isCompiled(func.name))
+          jit->compileFunction(func);
+      });
+      vm->setHotTraceCallback([jit](const havel::compiler::BytecodeFunction &func,
+                                    uint32_t start_ip, uint64_t hot_count) {
+        if (jit) {
+          jit->compileTrace(func, start_ip, hot_count);
+        }
+      });
     }
 #endif
-    bridge->install(coreProfile ? havel::InstallProfile::Core
-                                : havel::InstallProfile::Full,
+    bridge->install(coreProfile ? havel::InstallProfile::Core : havel::InstallProfile::Full,
                     !coreProfile);
     if (coreProfile) {
       if (cfg.pureStdlib)
@@ -612,12 +596,10 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
     }
     for (const auto &[name, fn] : bridge->options().host_functions)
       vm->registerHostFunction(name, fn);
-    info("Loaded bytecode file: {} ({} function(s))", f,
-         chunk->getFunctionCount());
+    info("Loaded bytecode file: {} ({} function(s))", f, chunk->getFunctionCount());
     if (cfg.debugBytecode)
       info("Bytecode loaded successfully: {}", f);
-    auto chunkPtr =
-        std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
+    auto chunkPtr = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
     vm->setMainChunkShared(chunkPtr);
     vm->setCurrentScriptDir(std::filesystem::path(f).parent_path().string());
     {
@@ -631,8 +613,7 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
       auto arrRef = vm->createHostArray();
       for (const auto &arg : cfg.scriptArgs) {
         auto strRef = vm->createRuntimeString(arg);
-        vm->pushHostArrayValue(arrRef,
-                               havel::compiler::Value::makeStringId(strRef.id));
+        vm->pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
       }
       vm->setAppArgs(arrRef.id);
     }
@@ -659,14 +640,14 @@ class DaemonStrategy : public RunStrategy {
 public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
     auto result = loadScriptFiles(cfg.scriptFiles);
-    if (!result) return 1;
+    if (!result)
+      return 1;
     auto [combinedCode, combinedNames] = *result;
 
     // LINT-ONLY MODE
     if (cfg.lintOnly && !combinedCode.empty()) {
       info("Linting scripts: {}", combinedNames);
-      return runLint(combinedCode,
-                     combinedNames.empty() ? "input" : combinedNames, cfg);
+      return runLint(combinedCode, combinedNames.empty() ? "input" : combinedNames, cfg);
     }
 
     auto *backend = host::UIManager::instance().backend();
@@ -701,8 +682,7 @@ public:
           auto *bytecodeVM = havel_inst.getBytecodeVM();
           auto *modules = havel_inst.getModules();
           if (bytecodeVM && modules) {
-            info("Executing combined scripts with bytecode VM: {}",
-                 combinedNames);
+            info("Executing combined scripts with bytecode VM: {}", combinedNames);
             havel::compiler::PipelineOptions options = modules->options();
             options.compile_unit_name = combinedNames;
             options.vm_override = bytecodeVM;
@@ -716,8 +696,7 @@ public:
             }
             auto exec_t0 = havel::startup_now();
             try {
-              havel::compiler::runBytecodePipeline(combinedCode, "__main__",
-                                                   options);
+              havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
               havel::startup_timing_report("runBytecodePipeline", exec_t0);
               info("Execution completed successfully");
             } catch (const std::exception &e) {
@@ -760,7 +739,8 @@ public:
       return runBytecodeFiles(cfg, hvcFiles);
 
     auto result = loadScriptFiles(cfg.scriptFiles);
-    if (!result) return 1;
+    if (!result)
+      return 1;
     auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
 
@@ -807,11 +787,10 @@ public:
 
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       auto hostAPI = createHostAPI(havel_inst);
-      havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                       cfg.serviceExcludes, cfg.headlessMode);
+      havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes,
+                                       cfg.headlessMode);
       hostAPI->SetVM(bytecodeVM);
-      bytecodeVM->setTimerCheckFunction(
-          [modules]() { modules->checkTimers(); });
+      bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
       auto *ee = havel_inst.getExecutionEngine();
       if (ee)
@@ -919,14 +898,14 @@ public:
       return runBytecodeFiles(cfg, hvcFiles);
 
     auto result = loadScriptFiles(cfg.scriptFiles);
-    if (!result) return 1;
+    if (!result)
+      return 1;
     auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
     readFromStdIn(combinedCode, combinedNames);
 
-    havel::parser::Parser parser{{.lexer = cfg.debugLexer,
-                                  .parser = cfg.debugParser,
-                                  .ast = cfg.debugAst}};
+    havel::parser::Parser parser{
+        {.lexer = cfg.debugLexer, .parser = cfg.debugParser, .ast = cfg.debugAst}};
     std::unique_ptr<havel::ast::Program> program;
     try {
       program = parser.produceAST(combinedCode);
@@ -935,8 +914,8 @@ public:
 
     if (parser.hasErrors() || !program) {
       for (const auto &err : parser.getErrors())
-        std::cerr << "Parse error: " << err.message << " at line " << err.line
-                  << " col " << err.column << std::endl;
+        std::cerr << "Parse error: " << err.message << " at line " << err.line << " col "
+                  << err.column << std::endl;
       error("Failed to parse script");
       return 1;
     }
@@ -982,8 +961,7 @@ public:
         auto arrRef = vm.createHostArray();
         for (const auto &arg : cfg.scriptArgs) {
           auto strRef = vm.createRuntimeString(arg);
-          vm.pushHostArrayValue(
-              arrRef, havel::compiler::Value::makeStringId(strRef.id));
+          vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
         }
         vm.setAppArgs(arrRef.id);
       }
@@ -1006,14 +984,10 @@ public:
       auto t3 = std::chrono::high_resolution_clock::now();
 
       if (cfg.debugMode) {
-        double init_ms =
-            std::chrono::duration<double, std::milli>(t1 - t0).count();
-        double exec_ms =
-            std::chrono::duration<double, std::milli>(t2 - t1).count();
-        double shut_ms =
-            std::chrono::duration<double, std::milli>(t3 - t2).count();
-        double total_ms =
-            std::chrono::duration<double, std::milli>(t3 - t0).count();
+        double init_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        double exec_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+        double shut_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
+        double total_ms = std::chrono::duration<double, std::milli>(t3 - t0).count();
         info("benchmark: init={:.1f}ms exec={:.1f}ms shutdown={:.1f}ms "
              "total={:.1f}ms",
              init_ms, exec_ms, shut_ms, total_ms);
@@ -1032,8 +1006,7 @@ public:
 static int setupFullReplCommon(const havel::init::LaunchConfig &cfg) {
   auto *replBackend = host::UIManager::instance().backend();
   if (!replBackend) {
-    error(
-        "No UI backend available. Use --minimal or --run for REPL without UI.");
+    error("No UI backend available. Use --minimal or --run for REPL without UI.");
     return -1;
   }
   host::UIBackend::ApplicationMetadata meta;
@@ -1044,8 +1017,7 @@ static int setupFullReplCommon(const havel::init::LaunchConfig &cfg) {
   return 0;
 }
 
-static int runMinimalReplLoop(havel::HavelEngine &engine,
-                              const havel::init::LaunchConfig &cfg) {
+static int runMinimalReplLoop(havel::HavelEngine &engine, const havel::init::LaunchConfig &cfg) {
   havel::repl::REPL repl(makeREPLConfig(cfg));
   repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
   repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
@@ -1060,11 +1032,10 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
 
   havel::repl::REPL repl(makeREPLConfig(cfg));
   auto hostAPI = createHostAPI(havel_inst);
-  havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                   cfg.serviceExcludes, cfg.headlessMode);
+  havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes,
+                                   cfg.headlessMode);
   hostAPI->SetVM(bytecodeVM);
-  repl.attach(bytecodeVM, havel_inst.getModules(),
-              collectKnownGlobals(bytecodeVM));
+  repl.attach(bytecodeVM, havel_inst.getModules(), collectKnownGlobals(bytecodeVM));
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
@@ -1079,7 +1050,8 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
     // already pumps goroutines via HavelEngine::tickGoroutines; this is
     // the full-mode equivalent, guarded by the same idle probe.
     repl.setPumpCallback([io, bytecodeVM, sched]() {
-      if (io) io->PumpOnce();
+      if (io)
+        io->PumpOnce();
       if (bytecodeVM && sched && sched->hasPendingWork()) {
         bytecodeVM->tickScheduler();
       }
@@ -1105,7 +1077,8 @@ public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
     try {
       auto result = loadScriptFiles(cfg.scriptFiles);
-      if (!result) return 1;
+      if (!result)
+        return 1;
       auto [combinedCode, combinedNames] = *result;
 
       if (cfg.minimalMode) {
@@ -1145,8 +1118,7 @@ public:
       if (!bytecodeVM || !modules)
         return 1;
 
-      bytecodeVM->setTimerCheckFunction(
-          [modules]() { modules->checkTimers(); });
+      bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
       auto *ee = havel_inst.getExecutionEngine();
       if (ee)
@@ -1188,7 +1160,8 @@ public:
       if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
         auto result = loadScriptFiles(cfg.scriptFiles);
-        if (!result) return 1;
+        if (!result)
+          return 1;
         auto [combinedCode, combinedNames] = *result;
 
         havel::HavelEngine engine(makeEngineConfig(cfg));
@@ -1323,7 +1296,10 @@ public:
     std::string precompiledScriptDir;
     for (const auto &f : cfg.scriptFiles) {
       bool isHvc = f.size() >= 4 && f.compare(f.size() - 4, 4, ".hvc") == 0;
-      if (isHvc) { compiledScriptPaths.push_back(f); continue; }
+      if (isHvc) {
+        compiledScriptPaths.push_back(f);
+        continue;
+      }
       allPrecompiled = false;
     }
     if (!allPrecompiled && !cfg.scriptFiles.empty()) {
@@ -1362,16 +1338,15 @@ public:
         havel::compiler::ValueSerializer serializer;
         std::error_code ec;
         std::string canonical = fs::canonical(f, ec).string();
-        if (ec) canonical = f;
+        if (ec)
+          canonical = f;
         std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
         std::string cacheDir = havel::Env::cache() + "/havel";
         fs::create_directories(cacheDir, ec);
         auto bytes = serializer.serializeChunk(
             *unit.chunk, canonical,
-            havel::compiler::computePipelineFingerprint(
-                havel::ModuleLoader::getDefaultCacheDir()),
-            options.strictSemantics, options.optimizeBytecode,
-            content);
+            havel::compiler::computePipelineFingerprint(havel::ModuleLoader::getDefaultCacheDir()),
+            options.strictSemantics, options.optimizeBytecode, content);
         std::ofstream out(cacheDir + "/" + cacheName + ".hvc", std::ios::binary);
         if (!out.is_open()) {
           error("Cannot write precompiled chunk for {}", f);
@@ -1452,13 +1427,14 @@ public:
     // the loop drives goroutines and exit.
     bool needsUI = program && programUsesUIBackend(*program);
     if (needsUI && !cfg.headlessMode) {
-      return executeWithUIBackend(cfg, argc, argv, launcherCode, launcherPath, appArgList, combinedNames);
+      return executeWithUIBackend(cfg, argc, argv, launcherCode, launcherPath, appArgList,
+                                  combinedNames);
     }
     bool hasHotkeys = program && programHasHotkeys(*program);
 
     // Headless / no hotkeys: run via engine.execute (which calls processGoroutines)
     try {
-  havel::HavelEngine engine(makeEngineConfig(cfg));
+      havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
 
       auto &vm = *engine.vm();
@@ -1471,7 +1447,8 @@ public:
         auto *modules = engine.modules();
         if (modules) {
           int rc = precompileScripts(modules->options(), &vm);
-          if (rc != 0) return rc;
+          if (rc != 0)
+            return rc;
         }
         // Script files are now .hvc paths; append them + the original
         // source dir for module resolution.
@@ -1487,7 +1464,7 @@ public:
       // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
       // effect on tiering compiles done through the TieredBackend. Apply
       // the same flags here, through the backend boundary.
-      if (auto* jit = vm.getJITCompiler()) {
+      if (auto *jit = vm.getJITCompiler()) {
         jit->setDebugMode(cfg.debugJIT);
         jit->setDumpIR(cfg.dumpIR);
         jit->setDumpAsmToFile(cfg.outputAsmToFile);
@@ -1497,8 +1474,7 @@ public:
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);
-        vm.pushHostArrayValue(arrRef,
-                              havel::compiler::Value::makeStringId(strRef.id));
+        vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
       }
       vm.setAppArgs(arrRef.id);
 
@@ -1537,12 +1513,10 @@ public:
   }
 
 private:
-  int executeWithUIBackend(const havel::init::LaunchConfig &cfg,
-                           int argc, char *argv[],
-                           const std::string& launcherCode,
-                           const std::string& launcherPath,
-                           const std::vector<std::string>& appArgList,
-                           const std::string& combinedNames) {
+  int executeWithUIBackend(const havel::init::LaunchConfig &cfg, int argc, char *argv[],
+                           const std::string &launcherCode, const std::string &launcherPath,
+                           const std::vector<std::string> &appArgList,
+                           const std::string &combinedNames) {
     auto *backend = host::UIManager::instance().backend();
     if (!backend) {
       error("No UI backend available to run hotkey scripts. Install a UI "
@@ -1569,7 +1543,7 @@ private:
       // JIT's debug knobs; the self-hosted path never did, so -djt/-S had no
       // effect on tiering compiles done through the TieredBackend. Apply
       // the same flags here, through the backend boundary.
-      if (auto* jit = vm.getJITCompiler()) {
+      if (auto *jit = vm.getJITCompiler()) {
         jit->setDebugMode(cfg.debugJIT);
         jit->setDumpIR(cfg.dumpIR);
         jit->setDumpAsmToFile(cfg.outputAsmToFile);
@@ -1579,8 +1553,7 @@ private:
       auto arrRef = vm.createHostArray();
       for (const auto &arg : appArgList) {
         auto strRef = vm.createRuntimeString(arg);
-        vm.pushHostArrayValue(arrRef,
-                              havel::compiler::Value::makeStringId(strRef.id));
+        vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
       }
       vm.setAppArgs(arrRef.id);
 
@@ -1621,8 +1594,7 @@ public:
 
     std::vector<std::string> testFiles;
     try {
-      for (const auto &entry :
-           std::filesystem::directory_iterator(cfg.testDir)) {
+      for (const auto &entry : std::filesystem::directory_iterator(cfg.testDir)) {
         if (entry.is_regular_file()) {
           std::string path = entry.path().string();
           if (path.size() >= 3 && path.substr(path.size() - 3) == ".hv")
@@ -1656,8 +1628,7 @@ public:
 
     for (const auto &testFile : testFiles) {
       std::string testName = testFile.substr(testFile.find_last_of('/') + 1);
-      std::string cmd = std::format("timeout {} {} --run {}", cfg.testTimeout,
-                                    selfPath, testFile);
+      std::string cmd = std::format("timeout {} {} --run {}", cfg.testTimeout, selfPath, testFile);
       FILE *pipe = popen(cmd.c_str(), "r");
       if (!pipe) {
         error("  FAIL {} - failed to run", testName);
@@ -1682,8 +1653,7 @@ public:
           if (line.find("[ERROR]") != std::string::npos ||
               line.find("Error:") != std::string::npos) {
             errLine = line;
-            errLine.erase(std::remove(errLine.begin(), errLine.end(), '\r'),
-                          errLine.end());
+            errLine.erase(std::remove(errLine.begin(), errLine.end(), '\r'), errLine.end());
             break;
           }
         }
@@ -1742,10 +1712,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
     Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
-    Configs::Get().Set("Compiler.OutputAsm",
-                       cfg.outputAsmToFile ? "true" : "false");
-    Configs::Get().Set("Compiler.JITWarnings",
-                       cfg.aotWarnings ? "true" : "false");
+    Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
+    Configs::Get().Set("Compiler.JITWarnings", cfg.aotWarnings ? "true" : "false");
 #ifdef HAVEL_ENABLE_LLVM
     Configs::Get().Set("Compiler.JITTargetOS", normalizeTargetOS(cfg.targetOS));
 #else
@@ -1759,8 +1727,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
       // User/overridden path: keep SELF_HOSTED available only when explicitly
       // requested (--self-hosted). Auto-promotion into SELF_HOSTED is off.
       namespace fs = std::filesystem;
-      fs::path langDir =
-          fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
+      fs::path langDir = fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (!fs::exists(langDir)) {
         cfg.vmConfig.self_hosted_modules_path.clear();
       }
@@ -1780,8 +1747,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
   }
 }
 
-std::unique_ptr<RunStrategy>
-HavelLauncher::createStrategy(const havel::init::LaunchConfig &cfg) {
+std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const havel::init::LaunchConfig &cfg) {
   using Mode = LaunchConfig::Mode;
   switch (cfg.mode) {
   case Mode::DAEMON:
@@ -1812,21 +1778,26 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     cfg.programName = argv[0];
 
   // Read logging config from environment variables first
-  if (const char* env = std::getenv("HAVEL_LOG_LEVEL")) {
+  if (const char *env = std::getenv("HAVEL_LOG_LEVEL")) {
     std::string level = env;
-    if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-    else if (level == "info") Logger::getInstance().setLogLevel(Logger::LOG_INFO);
-    else if (level == "warning") Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
-    else if (level == "error") Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
-    else if (level == "fatal") Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
+    if (level == "debug")
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+    else if (level == "info")
+      Logger::getInstance().setLogLevel(Logger::LOG_INFO);
+    else if (level == "warning")
+      Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
+    else if (level == "error")
+      Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
+    else if (level == "fatal")
+      Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
   }
-  if (const char* env = std::getenv("HAVEL_LOG_FILE")) {
+  if (const char *env = std::getenv("HAVEL_LOG_FILE")) {
     Logger::getInstance().setLogFile(env);
   }
   if (std::getenv("HAVEL_LOG_NO_COLOR")) {
     Logger::getInstance().setColoredOutput(false);
   }
-  if (const char* env = std::getenv("HAVEL_LOG_ORIGIN_FILTER")) {
+  if (const char *env = std::getenv("HAVEL_LOG_ORIGIN_FILTER")) {
     std::string filter = env;
     size_t p1 = filter.find(':');
     size_t p2 = filter.find(':', p1 + 1);
@@ -1886,12 +1857,18 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.optimizeBytecode = true;
     } else if (arg == "--log-level" && i + 1 < argc) {
       std::string level = argv[++i];
-      if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-      else if (level == "info") Logger::getInstance().setLogLevel(Logger::LOG_INFO);
-      else if (level == "warning") Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
-      else if (level == "error") Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
-      else if (level == "fatal") Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
-      else error("Unknown log level: " + level);
+      if (level == "debug")
+        Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+      else if (level == "info")
+        Logger::getInstance().setLogLevel(Logger::LOG_INFO);
+      else if (level == "warning")
+        Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
+      else if (level == "error")
+        Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
+      else if (level == "fatal")
+        Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
+      else
+        error("Unknown log level: " + level);
     } else if (arg == "--log-file" && i + 1 < argc) {
       Logger::getInstance().setLogFile(argv[++i]);
     } else if (arg == "--log-no-color") {
@@ -1930,8 +1907,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       // Headless mode - skip X11/Brightness/EventListener initialization
       cfg.headlessMode = true;
       cfg.minimalMode = true;
-    } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" ||
-               arg == "-i") {
+    } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i") {
       repl = true;
     } else if (arg == "--gui") {
       cfg.mode = LaunchConfig::Mode::DAEMON; // GUI mode is now DAEMON
@@ -2054,14 +2030,12 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--ui") {
       if (i + 1 < argc) {
         std::string uiName = argv[++i];
-        if (uiName == "qt" || uiName == "gtk" || uiName == "imgui" ||
-            uiName == "auto") {
+        if (uiName == "qt" || uiName == "gtk" || uiName == "imgui" || uiName == "auto") {
           // Applies lazily at first backend creation; an unavailable
           // backend falls back to auto detection inside UIManager.
           host::UIManager::instance().setPreferredBackend(uiName);
         } else {
-          warning("--ui expects qt, gtk, imgui or auto; ignoring '{}'",
-                  uiName);
+          warning("--ui expects qt, gtk, imgui or auto; ignoring '{}'", uiName);
         }
       } else {
         warning("--ui requires an argument (qt, gtk, imgui, auto)");
@@ -2175,8 +2149,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         continue;
       }
       std::string backend = argv[++i];
-      if (backend != "auto" &&
-          !InputBackend::ParseBackendType(backend)) {
+      if (backend != "auto" && !InputBackend::ParseBackendType(backend)) {
         error("Unknown --io backend '{}'. Supported: evdev, x11, wayland, "
               "windows, auto",
               backend);
@@ -2211,8 +2184,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.vmConfig.gc_full_collection_interval = std::stoul(argv[++i]);
     } else if (arg == "--gc-promotion-age") {
       if (i + 1 < argc)
-        cfg.vmConfig.gc_promotion_age =
-            static_cast<uint8_t>(std::stoul(argv[++i]));
+        cfg.vmConfig.gc_promotion_age = static_cast<uint8_t>(std::stoul(argv[++i]));
     } else if (arg == "--max-call-depth") {
       if (i + 1 < argc)
         cfg.vmConfig.max_call_depth = std::stoul(argv[++i]);
@@ -2224,8 +2196,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.vmConfig.goroutine_tick_instructions = std::stoull(argv[++i]);
     } else if (arg == "--hotkey-tick-instructions") {
       if (i + 1 < argc)
-        cfg.vmConfig.goroutine_hotkey_tick_instructions =
-            std::stoull(argv[++i]);
+        cfg.vmConfig.goroutine_hotkey_tick_instructions = std::stoull(argv[++i]);
     } else if (arg == "--tier1-threshold") {
       if (i + 1 < argc)
         cfg.vmConfig.tier1_threshold = std::stoull(argv[++i]);
@@ -2250,8 +2221,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--version" || arg == "-v") {
       std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
 #ifdef HAVEL_BUILD_COMMIT
-      std::cout << "commit " << HAVEL_BUILD_COMMIT << " ("
-                << HAVEL_BUILD_BRANCH << ", " << HAVEL_BUILD_DIRTY << ")\n";
+      std::cout << "commit " << HAVEL_BUILD_COMMIT << " (" << HAVEL_BUILD_BRANCH << ", "
+                << HAVEL_BUILD_DIRTY << ")\n";
 #endif
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
@@ -2273,8 +2244,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     cfg.mode = LaunchConfig::Mode::SCRIPT_AND_REPL;
   } else if (repl) {
     cfg.mode = LaunchConfig::Mode::REPL;
-  } else if (cfg.scriptFiles.empty() &&
-             cfg.mode == LaunchConfig::Mode::DAEMON) {
+  } else if (cfg.scriptFiles.empty() && cfg.mode == LaunchConfig::Mode::DAEMON) {
     cfg.mode = LaunchConfig::Mode::REPL;
   }
   // Check for debug flags (but don't force minimal mode when --repl is
@@ -2301,8 +2271,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         std::cout << " [" << info.group << "]";
       std::cout << "\n";
     }
-    std::cout
-        << "\nUse --enable-service <name> to include only specific services\n";
+    std::cout << "\nUse --enable-service <name> to include only specific services\n";
     std::cout << "Use --disable-service <name> to exclude specific services\n";
     havel::exit(ExitReason::Normal, 0);
   }
@@ -2389,7 +2358,6 @@ VM Configuration:
 }
 
 int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
-
   // Build mode: compile .hv files to .hvc bytecode
   std::string combinedCode;
   std::string primaryFile;
@@ -2457,10 +2425,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       bool reusable = false;
       {
         std::error_code cacheEc, sourceEc;
-        const bool cacheExists =
-            std::filesystem::exists(fileCachePath, cacheEc) && !cacheEc;
-        const bool sourceExists =
-            std::filesystem::exists(f, sourceEc) && !sourceEc;
+        const bool cacheExists = std::filesystem::exists(fileCachePath, cacheEc) && !cacheEc;
+        const bool sourceExists = std::filesystem::exists(f, sourceEc) && !sourceEc;
         if (cacheExists && sourceExists) {
           std::ifstream cacheIn(fileCachePath, std::ios::binary | std::ios::ate);
           if (cacheIn.is_open()) {
@@ -2476,14 +2442,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               if (srcInfo.hasInfo && srcInfo.has_compile_flags &&
                   srcInfo.compiled_strict == cfg.strictSemantics &&
                   !srcInfo.pipelineFingerprint.empty()) {
-                const std::string currentFp =
-                    havel::compiler::computePipelineFingerprint(
-                        havel::ModuleLoader::getDefaultCacheDir());
-                if (currentFp.empty() ||
-                    currentFp == srcInfo.pipelineFingerprint) {
+                const std::string currentFp = havel::compiler::computePipelineFingerprint(
+                    havel::ModuleLoader::getDefaultCacheDir());
+                if (currentFp.empty() || currentFp == srcInfo.pipelineFingerprint) {
                   std::error_code hashEc;
-                  const std::string liveHash =
-                      havel::ModuleLoader::sha256FileHex(f);
+                  const std::string liveHash = havel::ModuleLoader::sha256FileHex(f);
                   std::array<char, 65> embeddedHex{};
                   if (!hashEc && !liveHash.empty()) {
                     for (size_t i = 0; i < 32; ++i) {
@@ -2493,10 +2456,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                     }
                     embeddedHex[64] = '\0';
                     std::error_code sizeEc;
-                    const uint64_t liveSize =
-                        std::filesystem::file_size(f, sizeEc);
-                    if (!sizeEc && liveSize == srcInfo.size &&
-                        liveHash == embeddedHex.data()) {
+                    const uint64_t liveSize = std::filesystem::file_size(f, sizeEc);
+                    if (!sizeEc && liveSize == srcInfo.size && liveHash == embeddedHex.data()) {
                       reusable = true;
                     }
                   }
@@ -2522,8 +2483,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         havel::compiler::PipelineOptions options;
         options.compile_unit_name = f;
         options.strictSemantics = cfg.strictSemantics;
-        auto chunk = havel::compiler::compileToBytecodeChunk(
-            content, "__main__", options);
+        auto chunk = havel::compiler::compileToBytecodeChunk(content, "__main__", options);
         if (!chunk) {
           error("Batch build failed for {}: null chunk", f);
           fail++;
@@ -2534,12 +2494,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         havel::compiler::ValueSerializer serializer;
         auto data = serializer.serializeChunk(
             *chunk, f,
-            havel::compiler::computePipelineFingerprint(
-                havel::ModuleLoader::getDefaultCacheDir()),
+            havel::compiler::computePipelineFingerprint(havel::ModuleLoader::getDefaultCacheDir()),
             cfg.strictSemantics, false, content);
         std::error_code writeDirEc;
-        std::filesystem::create_directories(
-            std::filesystem::path(fileCachePath).parent_path(), writeDirEc);
+        std::filesystem::create_directories(std::filesystem::path(fileCachePath).parent_path(),
+                                            writeDirEc);
         std::ofstream outFile(fileCachePath, std::ios::binary);
         if (!outFile.is_open()) {
           error("Cannot open cache file for writing: {}", fileCachePath);
@@ -2576,22 +2535,17 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
   }
 
-  info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile,
-       outputPath);
+  info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile, outputPath);
 
   const std::string cachePath = companionCachePath(primaryFile);
   if (!isBytecode && !primaryFile.empty() && !cachePath.empty()) {
     std::error_code cacheEc;
     std::error_code sourceEc;
-    const bool cacheExists =
-        std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
-    const bool sourceExists =
-        std::filesystem::exists(primaryFile, sourceEc) && !sourceEc;
+    const bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
+    const bool sourceExists = std::filesystem::exists(primaryFile, sourceEc) && !sourceEc;
     if (cacheExists && sourceExists) {
-      const auto cacheTime =
-          std::filesystem::last_write_time(cachePath, cacheEc);
-      const auto sourceTime =
-          std::filesystem::last_write_time(primaryFile, sourceEc);
+      const auto cacheTime = std::filesystem::last_write_time(cachePath, cacheEc);
+      const auto sourceTime = std::filesystem::last_write_time(primaryFile, sourceEc);
       if (!cacheEc && !sourceEc && cacheTime >= sourceTime) {
         std::ifstream cacheIn(cachePath, std::ios::binary | std::ios::ate);
         if (cacheIn.is_open()) {
@@ -2599,88 +2553,81 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-             // mtime alone lies: GLBS trailer rewrites and other runtime
-             // writers rewrite the .hvc (bumping its mtime) without
-             // recompiling, so a source edit can end up older than a
-             // cache that still holds pre-edit bytecode. When the cache
-             // embeds a source hash (serializeChunk with a source
-             // path), verify it against the live source before reusing.
-             // Hash-less legacy caches compare the cache-copy .hv's
-             // content hash against the live source instead - plain
-             // mtime reuse is NOT safe for them (observed: a legacy
-             // cache served pre-edit bytecode after a GLBS rewrite
-             // bumped its mtime past the edit).
-              auto srcInfo = havel::compiler::ValueSerializer::peekSourceInfo(
-                  std::span<const uint8_t>(buffer));
-              bool reusable = true;
-              if (srcInfo.hasInfo) {
-                // The cache is global (~/.cache/havel) but source trees
-                // are not: a parallel worktree's havel binary may have
-                // compiled this entry against ITS copy of the module
-                // (observed: lang.scope.hvc embedding a /havel-3/ path
-                // while this tree's build happily reused it). The
-                // recorded path says nothing about THIS tree's source,
-                // so validate against the file being built: bytecode
-                // depends only on source CONTENT, so compare the
-                // embedded size+sha256 with primaryFile directly.
-                // Identical content across trees reuses without a
-                // ping-pong of recompiles; diverged content recompiles
-                // and re-stamps the entry with this tree's identity.
-                static const char hexDigits[] = "0123456789abcdef";
-                std::string embeddedHex;
-                embeddedHex.reserve(srcInfo.hash.size() * 2);
-                for (uint8_t b : srcInfo.hash) {
-                  embeddedHex += hexDigits[b >> 4];
-                  embeddedHex += hexDigits[b & 0x0F];
-                }
-                const std::string primaryHashHex =
-                    havel::ModuleLoader::sha256FileHex(primaryFile);
-                std::error_code sizeEc;
-                const uintmax_t primarySize =
-                    std::filesystem::file_size(primaryFile, sizeEc);
-                if (!primaryHashHex.empty() && !sizeEc &&
-                    primarySize == srcInfo.size &&
-                    primaryHashHex == embeddedHex) {
-                  // Source identity holds; check pipeline identity for
-                  // stamped (v5) entries the same way checkBcCache does.
-                  if (!srcInfo.pipelineFingerprint.empty()) {
-                    const std::string currentFp =
-                        havel::compiler::computePipelineFingerprint(
-                            havel::ModuleLoader::getDefaultCacheDir());
-                    if (!currentFp.empty() &&
-                        currentFp != srcInfo.pipelineFingerprint) {
-                      reusable = false;
-                      info("Bytecode cache pipeline mismatch (cache built with {} vs current {}), recompiling: {}",
-                           srcInfo.pipelineFingerprint.substr(0, 12),
-                           currentFp.substr(0, 12),
-                           cachePath);
-                    }
-                  }
-                  // Compile-option gate (version-6 entries): strict
-                  // resolution changes what a compile produces (undeclared
-                  // reads become errors), so an entry built with a
-                  // different strict setting must not be reused. Entries
-                  // without recorded flags (v4/v5) keep legacy behavior and
-                  // heal to stamped (v6) on the next compile.
-                  if (reusable && srcInfo.has_compile_flags &&
-                      srcInfo.compiled_strict != cfg.strictSemantics) {
+            // mtime alone lies: GLBS trailer rewrites and other runtime
+            // writers rewrite the .hvc (bumping its mtime) without
+            // recompiling, so a source edit can end up older than a
+            // cache that still holds pre-edit bytecode. When the cache
+            // embeds a source hash (serializeChunk with a source
+            // path), verify it against the live source before reusing.
+            // Hash-less legacy caches compare the cache-copy .hv's
+            // content hash against the live source instead - plain
+            // mtime reuse is NOT safe for them (observed: a legacy
+            // cache served pre-edit bytecode after a GLBS rewrite
+            // bumped its mtime past the edit).
+            auto srcInfo =
+                havel::compiler::ValueSerializer::peekSourceInfo(std::span<const uint8_t>(buffer));
+            bool reusable = true;
+            if (srcInfo.hasInfo) {
+              // The cache is global (~/.cache/havel) but source trees
+              // are not: a parallel worktree's havel binary may have
+              // compiled this entry against ITS copy of the module
+              // (observed: lang.scope.hvc embedding a /havel-3/ path
+              // while this tree's build happily reused it). The
+              // recorded path says nothing about THIS tree's source,
+              // so validate against the file being built: bytecode
+              // depends only on source CONTENT, so compare the
+              // embedded size+sha256 with primaryFile directly.
+              // Identical content across trees reuses without a
+              // ping-pong of recompiles; diverged content recompiles
+              // and re-stamps the entry with this tree's identity.
+              static const char hexDigits[] = "0123456789abcdef";
+              std::string embeddedHex;
+              embeddedHex.reserve(srcInfo.hash.size() * 2);
+              for (uint8_t b : srcInfo.hash) {
+                embeddedHex += hexDigits[b >> 4];
+                embeddedHex += hexDigits[b & 0x0F];
+              }
+              const std::string primaryHashHex = havel::ModuleLoader::sha256FileHex(primaryFile);
+              std::error_code sizeEc;
+              const uintmax_t primarySize = std::filesystem::file_size(primaryFile, sizeEc);
+              if (!primaryHashHex.empty() && !sizeEc && primarySize == srcInfo.size &&
+                  primaryHashHex == embeddedHex) {
+                // Source identity holds; check pipeline identity for
+                // stamped (v5) entries the same way checkBcCache does.
+                if (!srcInfo.pipelineFingerprint.empty()) {
+                  const std::string currentFp = havel::compiler::computePipelineFingerprint(
+                      havel::ModuleLoader::getDefaultCacheDir());
+                  if (!currentFp.empty() && currentFp != srcInfo.pipelineFingerprint) {
                     reusable = false;
-                    info("Bytecode cache strict-semantics mismatch (cache built strict={} vs build strict={}), recompiling: {}",
-                         srcInfo.compiled_strict ? 1 : 0,
-                         cfg.strictSemantics ? 1 : 0,
+                    info("Bytecode cache pipeline mismatch (cache built with {} vs current {}), "
+                         "recompiling: {}",
+                         srcInfo.pipelineFingerprint.substr(0, 12), currentFp.substr(0, 12),
                          cachePath);
                   }
-                } else {
+                }
+                // Compile-option gate (version-6 entries): strict
+                // resolution changes what a compile produces (undeclared
+                // reads become errors), so an entry built with a
+                // different strict setting must not be reused. Entries
+                // without recorded flags (v4/v5) keep legacy behavior and
+                // heal to stamped (v6) on the next compile.
+                if (reusable && srcInfo.has_compile_flags &&
+                    srcInfo.compiled_strict != cfg.strictSemantics) {
                   reusable = false;
-                  info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built from {} bytes/hash {}), recompiling: {}",
-                       sizeEc ? std::string("?")
-                              : std::to_string(primarySize),
-                       primaryHashHex.empty() ? "?" : primaryHashHex.substr(0, 12),
-                       srcInfo.hasInfo ? std::to_string(srcInfo.size) : "?",
-                       embeddedHex.empty() ? "?" : embeddedHex.substr(0, 12),
-                       cachePath);
+                  info("Bytecode cache strict-semantics mismatch (cache built strict={} vs build "
+                       "strict={}), recompiling: {}",
+                       srcInfo.compiled_strict ? 1 : 0, cfg.strictSemantics ? 1 : 0, cachePath);
                 }
               } else {
+                reusable = false;
+                info("Bytecode cache content mismatch (source is {} bytes/hash {} vs cache built "
+                     "from {} bytes/hash {}), recompiling: {}",
+                     sizeEc ? std::string("?") : std::to_string(primarySize),
+                     primaryHashHex.empty() ? "?" : primaryHashHex.substr(0, 12),
+                     srcInfo.hasInfo ? std::to_string(srcInfo.size) : "?",
+                     embeddedHex.empty() ? "?" : embeddedHex.substr(0, 12), cachePath);
+              }
+            } else {
               // Legacy hash-less cache: the file predates source-hash
               // embedding and could have been written by any older
               // binary. The cache-copy .hv beside it is NOT evidence of
@@ -2694,11 +2641,9 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               // future runs). Bundles with no live source (AOT
               // distribution) keep the mtime decision.
               std::error_code liveEc;
-              if (std::filesystem::exists(primaryFile, liveEc) &&
-                  !liveEc) {
+              if (std::filesystem::exists(primaryFile, liveEc) && !liveEc) {
                 reusable = false;
-                info("Legacy bytecode cache without source hash, recompiling: {}",
-                     cachePath);
+                info("Legacy bytecode cache without source hash, recompiling: {}", cachePath);
               }
             }
             if (reusable) {
@@ -2711,9 +2656,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               // it arithmetically - the warm-restore consumer is
               // disabled anyway (VM hasCachedGlobals=false).
               {
-                const size_t chunkEnd =
-                    havel::compiler::ValueSerializer::chunkDataEnd(
-                        std::span<const uint8_t>(buffer));
+                const size_t chunkEnd = havel::compiler::ValueSerializer::chunkDataEnd(
+                    std::span<const uint8_t>(buffer));
                 if (chunkEnd > 0 && chunkEnd < buffer.size()) {
                   buffer.resize(chunkEnd);
                 }
@@ -2724,8 +2668,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               if (outputPath != cachePath) {
                 std::ofstream outFile(outputPath, std::ios::binary);
                 if (outFile.is_open()) {
-                  outFile.write(reinterpret_cast<const char *>(buffer.data()),
-                                buffer.size());
+                  outFile.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
                   if (!outFile.good()) {
                     error("Failed to write output file: {}", outputPath);
                     return 1;
@@ -2767,14 +2710,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       error("Failed to deserialize bytecode file: {}", primaryFile);
       return 1;
     }
-    chunk = std::make_unique<havel::compiler::BytecodeChunk>(
-        std::move(*deserializedChunk));
+    chunk = std::make_unique<havel::compiler::BytecodeChunk>(std::move(*deserializedChunk));
     info("Loaded bytecode from {}", primaryFile);
   } else {
     // Parse
-    havel::parser::Parser parser{{.lexer = cfg.debugLexer,
-                                  .parser = cfg.debugParser,
-                                  .ast = cfg.debugAst}};
+    havel::parser::Parser parser{
+        {.lexer = cfg.debugLexer, .parser = cfg.debugParser, .ast = cfg.debugAst}};
     std::unique_ptr<havel::ast::Program> program;
     try {
       program = parser.produceAST(combinedCode);
@@ -2784,8 +2725,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
     if (parser.hasErrors()) {
       for (const auto &err : parser.getErrors()) {
-        std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.message, primaryFile, err.line, err.column, 1, "");
+        std::string formatted = havel::ErrorPrinter::formatError("error", err.message, primaryFile,
+                                                                 err.line, err.column, 1, "");
         std::cerr << formatted;
       }
       error("Build failed with {} parse error(s)", parser.getErrors().size());
@@ -2916,8 +2857,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
     if (compiler.hasErrors()) {
       for (const auto &err : compiler.errors()) {
-        std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.what(), primaryFile, err.line, err.column, 1, "");
+        std::string formatted = havel::ErrorPrinter::formatError("error", err.what(), primaryFile,
+                                                                 err.line, err.column, 1, "");
         std::cerr << formatted;
       }
       error("Build failed with {} compile error(s)", compiler.errors().size());
@@ -2934,12 +2875,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   // Handle AOT LLVM output
-  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
-      cfg.emitBinary || cfg.emitElf) {
+  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
     std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
-    const bool wantJIT = cfg.useJIT || cfg.vmConfig.tiering_enabled ||
-                         (std::getenv("HAVEL_TIERING") && std::string(std::getenv("HAVEL_TIERING")) != "0");
+    const bool wantJIT =
+        cfg.useJIT || cfg.vmConfig.tiering_enabled ||
+        (std::getenv("HAVEL_TIERING") && std::string(std::getenv("HAVEL_TIERING")) != "0");
     if (wantJIT) {
       jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
       jit->setDebugMode(cfg.debugJIT);
@@ -2989,10 +2930,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       std::vector<bool> shouldSkip = hasUnsupported;
       if (anyUnsupported) {
         for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-          if (shouldSkip[i]) continue;
+          if (shouldSkip[i])
+            continue;
           const auto *func = chunk->getFunction(i);
-          if (!func) continue;
-          for (const auto& instr : func->instructions) {
+          if (!func)
+            continue;
+          for (const auto &instr : func->instructions) {
             if (instr.opcode == compiler::OpCode::CALL ||
                 instr.opcode == compiler::OpCode::TAIL_CALL ||
                 instr.opcode == compiler::OpCode::CALL_METHOD ||
@@ -3049,10 +2992,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       }
 
       // Determine output base path
-      std::string aotOutput =
-          cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
-      if (aotOutput.size() >= 3 &&
-          aotOutput.rfind(".hv") == aotOutput.size() - 3) {
+      std::string aotOutput = cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
+      if (aotOutput.size() >= 3 && aotOutput.rfind(".hv") == aotOutput.size() - 3) {
         aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
       }
       // If the user passed an explicit -o OUT with a known artifact extension
@@ -3061,17 +3002,22 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       // double-suffixes the file. Only strip well-known extensions, never
       // arbitrary ones like "ao" or random paths.
       if (!cfg.outputPath.empty()) {
-        auto endsWith = [&](const char* ext) {
+        auto endsWith = [&](const char *ext) {
           size_t n = strlen(ext);
-          return aotOutput.size() > n &&
-                 aotOutput.compare(aotOutput.size() - n, n, ext) == 0;
+          return aotOutput.size() > n && aotOutput.compare(aotOutput.size() - n, n, ext) == 0;
         };
-        if (endsWith(".o"))      aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
-        else if (endsWith(".ll")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
-        else if (endsWith(".s"))  aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
-        else if (endsWith(".wasm")) aotOutput = aotOutput.substr(0, aotOutput.size() - 5);
-        else if (endsWith(".so")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
-        else if (endsWith(".exe")) aotOutput = aotOutput.substr(0, aotOutput.size() - 4);
+        if (endsWith(".o"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+        else if (endsWith(".ll"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+        else if (endsWith(".s"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+        else if (endsWith(".wasm"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 5);
+        else if (endsWith(".so"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+        else if (endsWith(".exe"))
+          aotOutput = aotOutput.substr(0, aotOutput.size() - 4);
       }
       if (aotOutput.empty()) {
         aotOutput = "output";
@@ -3097,8 +3043,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
 
         std::string targetTripleStr =
             cfg.arch.empty()
-                ? mapTargetTripleForOS(cfg.targetOS,
-                                       llvm::sys::getDefaultTargetTriple())
+                ? mapTargetTripleForOS(cfg.targetOS, llvm::sys::getDefaultTargetTriple())
                 : cfg.arch;
         llvm::Triple targetTriple(targetTripleStr);
         module->setTargetTriple(targetTriple);
@@ -3137,8 +3082,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             return 1;
           }
           llvm::legacy::PassManager pm;
-          if (targetMachine->addPassesToEmitFile(
-                  pm, out, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
+          if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                                                 llvm::CodeGenFileType::AssemblyFile)) {
             error("Target '{}' cannot emit assembly", targetTripleStr);
             return 1;
           }
@@ -3155,8 +3100,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             return 1;
           }
           llvm::legacy::PassManager pm;
-          if (targetMachine->addPassesToEmitFile(
-                  pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+          if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                                                 llvm::CodeGenFileType::ObjectFile)) {
             error("Target '{}' cannot emit object files", targetTripleStr);
             return 1;
           }
@@ -3171,14 +3116,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           std::string soPath = aotOutput + shExt;
           std::string linkCmd;
           if (normalizeTargetOS(cfg.targetOS) == "windows") {
-            linkCmd =
-                "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            linkCmd = "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
           } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
-            linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" +
-                      soPath + "\"";
+            linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
           } else {
-            linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" +
-                      soPath + "\"";
+            linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
           }
           if (!coreProfile) {
             appendLinkLibraries(linkCmd, jit->linkedLibraries());
@@ -3189,13 +3131,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           }
           int linkRc = std::system(linkCmd.c_str());
           if (linkRc != 0) {
-            error("Failed to link native shared binary with command: {}",
-                  linkCmd);
+            error("Failed to link native shared binary with command: {}", linkCmd);
             return 1;
           }
           info("Native shared binary written to: {}", soPath);
         }
-        
+
         if (cfg.emitElf) {
           const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
           std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
@@ -3215,17 +3156,16 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           std::error_code aotCacheEc;
           const std::string aotCacheRoot = havel::Env::cache() + "/havel/aot";
           std::filesystem::create_directories(aotCacheRoot, aotCacheEc);
-          const std::string pipelineFp =
-              havel::compiler::computePipelineFingerprint(
-                  havel::ModuleLoader::getDefaultCacheDir());
+          const std::string pipelineFp = havel::compiler::computePipelineFingerprint(
+              havel::ModuleLoader::getDefaultCacheDir());
           // Config hash folds in the runtime build id, the ELF target,
           // and the core/full profile: the ELF links the runtime's
           // static libs, so a runtime change must invalidate.
           const std::string aotConfigHash =
-              inc::fingerprintString(
-                  std::string(HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID)) +
-                  ":" + normalizeTargetOS(cfg.targetOS) + ":" +
-                  (coreProfile ? "core" : "full")).value;
+              inc::fingerprintString(std::string(HAVEL_MODULE_BUILD_ID_STR(HAVEL_MODULE_BUILD_ID)) +
+                                     ":" + normalizeTargetOS(cfg.targetOS) + ":" +
+                                     (coreProfile ? "core" : "full"))
+                  .value;
           inc::IncrementalConfig aotConfig;
           aotConfig.cache_root = aotCacheRoot;
           aotConfig.compiler_version = pipelineFp + ":" + aotConfigHash;
@@ -3233,61 +3173,57 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           // Source fingerprint: the fresh chunk is deterministic from
           // (combinedCode, compiler, flags), so hashing the source text
           // is equivalent to hashing the chunk and always in scope here.
-          const std::string chunkFp = (isBytecode
-              ? *inc::fingerprintFile(primaryFile)
-              : inc::fingerprintString(combinedCode)).value;
-          const std::string aotKey = inc::makeCacheKey(
-              chunkFp, "", aotConfigHash);
+          const std::string chunkFp = (isBytecode ? *inc::fingerprintFile(primaryFile)
+                                                  : inc::fingerprintString(combinedCode))
+                                          .value;
+          const std::string aotKey = inc::makeCacheKey(chunkFp, "", aotConfigHash);
           {
             if (auto cached = aotDriver.cache()->get(aotKey)) {
               std::error_code writeEc;
-              std::filesystem::create_directories(
-                  std::filesystem::path(binPath).parent_path(), writeEc);
+              std::filesystem::create_directories(std::filesystem::path(binPath).parent_path(),
+                                                  writeEc);
               std::ofstream binOut(binPath, std::ios::binary);
               if (binOut.is_open()) {
-                binOut.write(reinterpret_cast<const char*>(cached->data()),
+                binOut.write(reinterpret_cast<const char *>(cached->data()),
                              static_cast<std::streamsize>(cached->size()));
                 binOut.close();
                 std::error_code permEc;
-                std::filesystem::permissions(
-                    binPath,
-                    std::filesystem::perms::owner_all |
-                        std::filesystem::perms::group_exec |
-                        std::filesystem::perms::others_exec,
-                    permEc);
+                std::filesystem::permissions(binPath,
+                                             std::filesystem::perms::owner_all |
+                                                 std::filesystem::perms::group_exec |
+                                                 std::filesystem::perms::others_exec,
+                                             permEc);
                 if (!permEc) {
-                  info("AOT ELF served from incremental cache ({} bytes, key {})",
-                       cached->size(), aotKey.substr(0, 12));
+                  info("AOT ELF served from incremental cache ({} bytes, key {})", cached->size(),
+                       aotKey.substr(0, 12));
                   return 0;
                 }
-                error("Failed to make cached AOT executable executable: {}",
-                      binPath);
+                error("Failed to make cached AOT executable executable: {}", binPath);
               } else {
                 error("Cannot open output file for cached AOT: {}", binPath);
               }
             }
           }
 
-            // Get build directory for module search paths
-            std::string buildDir;
-            std::string exePath = Env::executable();
-            if (!exePath.empty()) {
-                buildDir = std::filesystem::path(exePath).parent_path().string();
-            }
+          // Get build directory for module search paths
+          std::string buildDir;
+          std::string exePath = Env::executable();
+          if (!exePath.empty()) {
+            buildDir = std::filesystem::path(exePath).parent_path().string();
+          }
 
-            info("AOT: generating stub at {}", stubPath);
+          info("AOT: generating stub at {}", stubPath);
           {
             std::ofstream stub(stubPath);
             if (!stub) {
               error("Failed to open stub file for writing: {}", stubPath);
               return 1;
             }
-            const std::string initSymbol = coreProfile
-                                               ? "havel_vm_init_standalone_core"
-                                               : "havel_vm_init_standalone";
-            const std::string initWithFuncsSymbol = coreProfile
-                                               ? "havel_vm_init_standalone_with_functions_core"
-                                               : "havel_vm_init_standalone_with_functions";
+            const std::string initSymbol =
+                coreProfile ? "havel_vm_init_standalone_core" : "havel_vm_init_standalone";
+            const std::string initWithFuncsSymbol =
+                coreProfile ? "havel_vm_init_standalone_with_functions_core"
+                            : "havel_vm_init_standalone_with_functions";
             if (mainCompiled) {
               // Collect function metadata for closures.
               // IMPORTANT: Include ALL functions (even skipped ones) to preserve
@@ -3299,16 +3235,16 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               std::vector<uint32_t> funcIsGenerator;
               std::vector<uint32_t> upvalueIndices;
               std::vector<uint32_t> upvalueCapturesLocal;
-              
+
               for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-                const auto* func = chunk->getFunction(i);
+                const auto *func = chunk->getFunction(i);
                 if (func) {
                   funcNames.push_back(func->name);
                   funcParamCounts.push_back(func->param_count);
                   funcLocalCounts.push_back(func->local_count);
                   funcUpvalueCounts.push_back(static_cast<uint32_t>(func->upvalues.size()));
                   funcIsGenerator.push_back(func->is_generator ? 1 : 0);
-                  for (const auto& uv : func->upvalues) {
+                  for (const auto &uv : func->upvalues) {
                     upvalueIndices.push_back(uv.index);
                     upvalueCapturesLocal.push_back(uv.captures_local ? 1 : 0);
                   }
@@ -3321,7 +3257,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                   funcIsGenerator.push_back(0);
                 }
               }
-              
+
               // Generate arrays for function metadata
               stub << "#include <cstdint>\n";
               stub << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n";
@@ -3341,133 +3277,140 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                 const std::string &s = chunkStrings[i];
                 std::string escaped;
                 for (char c : s) {
-                  if (c == '"') escaped += "\\\"";
-                  else if (c == '\\') escaped += "\\\\";
-                  else if (c == '\n') escaped += "\\n";
-                  else escaped += c;
+                  if (c == '"')
+                    escaped += "\\\"";
+                  else if (c == '\\')
+                    escaped += "\\\\";
+                  else if (c == '\n')
+                    escaped += "\\n";
+                  else
+                    escaped += c;
                 }
                 stub << "        \"" << escaped << "\",\n";
               }
               stub << "    };\n";
-              
+
               // Function names
               stub << "    const char* func_names[] = {\n";
               for (size_t i = 0; i < funcNames.size(); ++i) {
                 std::string escaped = funcNames[i];
-                for (char& c : escaped) {
-                  if (c == '"') c = '\\'; // strings don't have quotes in names
+                for (char &c : escaped) {
+                  if (c == '"')
+                    c = '\\'; // strings don't have quotes in names
                 }
                 stub << "        \"" << escaped << "\",\n";
               }
               stub << "    };\n";
-              
+
               // Function param counts
               stub << "    const uint32_t func_param_counts[] = {\n";
               for (size_t i = 0; i < funcParamCounts.size(); ++i) {
                 stub << "        " << funcParamCounts[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Function local counts
               stub << "    const uint32_t func_local_counts[] = {\n";
               for (size_t i = 0; i < funcLocalCounts.size(); ++i) {
                 stub << "        " << funcLocalCounts[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Function upvalue counts
               stub << "    const uint32_t func_upvalue_counts[] = {\n";
               for (size_t i = 0; i < funcUpvalueCounts.size(); ++i) {
                 stub << "        " << funcUpvalueCounts[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Function is_generator
               stub << "    const uint32_t func_is_generator[] = {\n";
               for (size_t i = 0; i < funcIsGenerator.size(); ++i) {
                 stub << "        " << funcIsGenerator[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Upvalue indices
               stub << "    const uint32_t upvalue_indices[] = {\n";
               for (size_t i = 0; i < upvalueIndices.size(); ++i) {
                 stub << "        " << upvalueIndices[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Upvalue captures_local
               stub << "    const uint32_t upvalue_captures_local[] = {\n";
               for (size_t i = 0; i < upvalueCapturesLocal.size(); ++i) {
                 stub << "        " << upvalueCapturesLocal[i] << ",\n";
               }
               stub << "    };\n";
-              
+
               // Function constants - serialize for interpreter fallback
               stub << "    // Function constants (serialized)\n";
               stub << "    const uint32_t func_const_counts[] = {\n";
               for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-                const auto* func = chunk->getFunction(i);
+                const auto *func = chunk->getFunction(i);
                 uint32_t count = func ? static_cast<uint32_t>(func->constants.size()) : 0;
                 stub << "        " << count << ",\n";
               }
               stub << "    };\n";
-              
+
               // Flattened constant data: raw bits for each constant
               stub << "    const uint64_t func_const_data[] = {\n";
               for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-                const auto* func = chunk->getFunction(i);
+                const auto *func = chunk->getFunction(i);
                 if (func) {
-                  for (const auto& c : func->constants) {
+                  for (const auto &c : func->constants) {
                     stub << "        " << c.rawBits() << ",\n";
                   }
                 }
               }
               stub << "    };\n";
-              
+
               // Function instructions - serialize for interpreter fallback
               stub << "    // Function instructions (serialized)\n";
               stub << "    const uint32_t func_instr_counts[] = {\n";
               for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-                const auto* func = chunk->getFunction(i);
+                const auto *func = chunk->getFunction(i);
                 uint32_t count = func ? static_cast<uint32_t>(func->instructions.size()) : 0;
                 stub << "        " << count << ",\n";
               }
               stub << "    };\n";
-              
-              // Flattened instruction data: [opcode, num_operands, operand1, operand2, ...] for each instruction
+
+              // Flattened instruction data: [opcode, num_operands, operand1, operand2, ...] for
+              // each instruction
               stub << "    const uint64_t func_instr_data[] = {\n";
               for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-                const auto* func = chunk->getFunction(i);
+                const auto *func = chunk->getFunction(i);
                 if (func) {
-                  for (const auto& instr : func->instructions) {
+                  for (const auto &instr : func->instructions) {
                     stub << "        " << static_cast<uint32_t>(instr.opcode) << ",\n";
                     stub << "        " << instr.operands.size() << ",\n";
-                    for (const auto& op : instr.operands) {
+                    for (const auto &op : instr.operands) {
                       stub << "        " << op.rawBits() << ",\n";
                     }
                   }
                 }
               }
               stub << "    };\n";
-              
+
               std::string escapedBuildDir;
               escapedBuildDir.reserve(buildDir.size() * 2);
               for (char c : buildDir) {
-                  if (c == '"' || c == '\\') escapedBuildDir += '\\';
-                  escapedBuildDir += c;
+                if (c == '"' || c == '\\')
+                  escapedBuildDir += '\\';
+                escapedBuildDir += c;
               }
-              
+
               stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
                    << chunkStrings.size() << ",\n";
               stub << "        func_names, " << funcNames.size() << ",\n";
               stub << "        func_param_counts, func_local_counts,\n";
               stub << "        func_upvalue_counts, func_is_generator,\n";
-              stub << "        upvalue_indices, upvalue_captures_local, "
-                   << upvalueIndices.size() << ",\n";
+              stub << "        upvalue_indices, upvalue_captures_local, " << upvalueIndices.size()
+                   << ",\n";
               stub << "        func_const_counts, func_const_data,\n";
-              stub << "        func_instr_counts, func_instr_data, "
-                   << chunk->getFunctionCount() << ",\n";
+              stub << "        func_instr_counts, func_instr_data, " << chunk->getFunctionCount()
+                   << ",\n";
               stub << "        \"" << escapedBuildDir << "\");\n";
               stub << "    uint64_t dummy_args[1024];\n";
               stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
@@ -3477,26 +3420,25 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
               stub << "}\n";
             } else {
               // Entry point not compiled - emit a dummy main that prints message
-              stub
-                  << "#include <cstdio>\n"
-                  << "int main() {\n"
-                  << "    fprintf(stderr, \"AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). Run with interpreter.\\n\");\n"
-                  << "    return 0;\n"
-                  << "}\n";
+              stub << "#include <cstdio>\n"
+                   << "int main() {\n"
+                   << "    fprintf(stderr, \"AOT: entry point '__main__' not compiled (contains or "
+                      "calls unsupported opcodes). Run with interpreter.\\n\");\n"
+                   << "    return 0;\n"
+                   << "}\n";
             }
           }
 
           std::string linkCmd;
           if (targetWindows) {
-            linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath +
-                      "\" -o \"" + binPath + "\"";
+            linkCmd =
+                "clang++ \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
           } else {
-            linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" +
-                      nativeObjPath + "\" -o \"" + binPath + "\" -Wl,--export-dynamic";
+            linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath +
+                      "\" -o \"" + binPath + "\" -Wl,--export-dynamic";
             std::string exePath = Env::executable();
             if (!exePath.empty()) {
-              std::string libDir =
-                  std::filesystem::path(exePath).parent_path().string();
+              std::string libDir = std::filesystem::path(exePath).parent_path().string();
               linkCmd += " -L\"" + libDir + "\"";
             }
             if (coreProfile) {
@@ -3524,8 +3466,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           appendDefaultNativeLinkLibraries(linkCmd);
           int linkRc = std::system(linkCmd.c_str());
           if (linkRc != 0) {
-            error("Failed to link native AOT executable with command: {}",
-                  linkCmd);
+            error("Failed to link native AOT executable with command: {}", linkCmd);
             // std::filesystem::remove(stubPath);
             return 1;
           }
@@ -3540,24 +3481,21 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           {
             std::ifstream elfIn(binPath, std::ios::binary);
             if (elfIn.is_open()) {
-              std::vector<uint8_t> elfBytes(
-                  (std::istreambuf_iterator<char>(elfIn)), {});
+              std::vector<uint8_t> elfBytes((std::istreambuf_iterator<char>(elfIn)), {});
               elfIn.close();
               inc::CacheEntryMeta meta;
               meta.key = aotKey;
               meta.fingerprint = chunkFp;
-              meta.timestamp_ms =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
+              meta.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::system_clock::now().time_since_epoch())
+                                      .count();
               meta.size_bytes = elfBytes.size();
               meta.opt_level = 0;
               meta.target_arch = normalizeTargetOS(cfg.targetOS);
               meta.ir_version = "1.0";
               meta.compiler_version = aotConfig.compiler_version;
               aotDriver.cache()->put(aotKey, elfBytes, meta);
-              info("AOT ELF stored in incremental cache (key {})",
-                   aotKey.substr(0, 12));
+              info("AOT ELF stored in incremental cache (key {})", aotKey.substr(0, 12));
             }
           }
         }
@@ -3590,8 +3528,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           return 1;
         }
         llvm::legacy::PassManager pm;
-        if (targetMachine->addPassesToEmitFile(
-                pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+        if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                                               llvm::CodeGenFileType::ObjectFile)) {
           error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
           return 1;
         }
@@ -3603,99 +3541,99 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
   }
 #else
-    if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
-        cfg.emitBinary) {
-      error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
-      return 1;
-    }
+  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary) {
+    error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
+    return 1;
+  }
 #endif
 
-    // Serialize and write bytecode. Pass the source path so the .hvc
-    // embeds the source size + sha256: the cache-reuse gate above
-    // validates this hash against the live source, making reuse immune
-    // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
-    // and bump its mtime without recompiling). The build's strict
-    // resolution setting is stamped (version-6 header) so cache readers
-    // can require an exact compile-option match.
-    havel::compiler::ValueSerializer serializer;
-    auto data = serializer.serializeChunk(
-        *chunk, primaryFile,
-        havel::compiler::computePipelineFingerprint(
-            havel::ModuleLoader::getDefaultCacheDir()),
-        cfg.strictSemantics, false);
+  // Serialize and write bytecode. Pass the source path so the .hvc
+  // embeds the source size + sha256: the cache-reuse gate above
+  // validates this hash against the live source, making reuse immune
+  // to mtime-only staleness (GLBS trailer appends rewrite the .hvc
+  // and bump its mtime without recompiling). The build's strict
+  // resolution setting is stamped (version-6 header) so cache readers
+  // can require an exact compile-option match.
+  havel::compiler::ValueSerializer serializer;
+  auto data = serializer.serializeChunk(
+      *chunk, primaryFile,
+      havel::compiler::computePipelineFingerprint(havel::ModuleLoader::getDefaultCacheDir()),
+      cfg.strictSemantics, false);
 
-    info("Serialization complete, {} bytes", data.size());
+  info("Serialization complete, {} bytes", data.size());
 
-    auto writeAtomically = [&](const std::string& targetPath, const std::vector<uint8_t>& bytes) -> bool {
-        std::string tempPath = targetPath + ".tmp." + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
-        std::ofstream outFile(tempPath, std::ios::binary);
-        if (!outFile.is_open()) {
-            error("Cannot open temporary output file: {}", tempPath);
-            return false;
-        }
-        outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        if (!outFile.good()) {
-            error("Failed to write output file: {}", tempPath);
-            std::error_code ec;
+  auto writeAtomically = [&](const std::string &targetPath,
+                             const std::vector<uint8_t> &bytes) -> bool {
+    std::string tempPath = targetPath + ".tmp." +
+                           std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    std::ofstream outFile(tempPath, std::ios::binary);
+    if (!outFile.is_open()) {
+      error("Cannot open temporary output file: {}", tempPath);
+      return false;
+    }
+    outFile.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    if (!outFile.good()) {
+      error("Failed to write output file: {}", tempPath);
+      std::error_code ec;
+      std::filesystem::remove(tempPath, ec);
+      return false;
+    }
+    outFile.close();
+
+    std::error_code ec;
+    std::filesystem::rename(tempPath, targetPath, ec);
+    if (ec) {
+      // Cross-device rename failed, fall back to copy + remove
+      if (ec == std::errc::cross_device_link) {
+        std::ifstream src(tempPath, std::ios::binary);
+        std::ofstream dst(targetPath, std::ios::binary);
+        if (src && dst) {
+          dst << src.rdbuf();
+          if (!dst.good()) {
+            error("Failed to copy output file: {}", targetPath);
             std::filesystem::remove(tempPath, ec);
             return false;
+          }
+          dst.close();
+        } else {
+          error("Failed to copy output file: {}", targetPath);
+          std::filesystem::remove(tempPath, ec);
+          return false;
         }
-        outFile.close();
-        
-        std::error_code ec;
-        std::filesystem::rename(tempPath, targetPath, ec);
-        if (ec) {
-            // Cross-device rename failed, fall back to copy + remove
-            if (ec == std::errc::cross_device_link) {
-                std::ifstream src(tempPath, std::ios::binary);
-                std::ofstream dst(targetPath, std::ios::binary);
-                if (src && dst) {
-                    dst << src.rdbuf();
-                    if (!dst.good()) {
-                        error("Failed to copy output file: {}", targetPath);
-                        std::filesystem::remove(tempPath, ec);
-                        return false;
-                    }
-                    dst.close();
-                } else {
-                    error("Failed to copy output file: {}", targetPath);
-                    std::filesystem::remove(tempPath, ec);
-                    return false;
-                }
-                std::filesystem::remove(tempPath, ec);
-            } else {
-                error("Failed to rename temporary file to output: {}", ec.message());
-                std::filesystem::remove(tempPath, ec);
-                return false;
-            }
-        }
-        return true;
-    };
-
-    if (!writeAtomically(outputPath, data)) {
-        return 1;
+        std::filesystem::remove(tempPath, ec);
+      } else {
+        error("Failed to rename temporary file to output: {}", ec.message());
+        std::filesystem::remove(tempPath, ec);
+        return false;
+      }
     }
+    return true;
+  };
 
-    const auto writeCompanionCache = [&](const std::string &path) {
-        if (path.empty()) {
-            return;
-        }
-        std::string cachePath = companionCachePath(path);
-        if (cachePath == outputPath) {
-            return; // already written as the build output
-        }
-        if (!writeAtomically(cachePath, data)) {
-            warn("Failed to write bytecode cache file: {}", cachePath);
-            return;
-        }
-        info("Bytecode cache written to: {}", cachePath);
-    };
-
-    writeCompanionCache(primaryFile);
-
-    info("Build successful: {} ({} bytes)", outputPath, data.size());
-    return 0;
+  if (!writeAtomically(outputPath, data)) {
+    return 1;
   }
+
+  const auto writeCompanionCache = [&](const std::string &path) {
+    if (path.empty()) {
+      return;
+    }
+    std::string cachePath = companionCachePath(path);
+    if (cachePath == outputPath) {
+      return; // already written as the build output
+    }
+    if (!writeAtomically(cachePath, data)) {
+      warn("Failed to write bytecode cache file: {}", cachePath);
+      return;
+    }
+    info("Bytecode cache written to: {}", cachePath);
+  };
+
+  writeCompanionCache(primaryFile);
+
+  info("Build successful: {} ({} bytes)", outputPath, data.size());
+  return 0;
+}
 
 int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
   namespace fs = std::filesystem;
@@ -3710,8 +3648,7 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
   }
   const std::string &baselinePath = cfg.diffPipelinePath;
 
-  auto collectHvc =
-      [](const fs::path &dir) -> std::map<std::string, std::vector<uint8_t>> {
+  auto collectHvc = [](const fs::path &dir) -> std::map<std::string, std::vector<uint8_t>> {
     std::map<std::string, std::vector<uint8_t>> files;
     if (!fs::exists(dir))
       return files;
@@ -3730,8 +3667,7 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
     return files;
   };
 
-  info("Diffing pipeline: current=out({}), baseline={}", currentPath,
-       baselinePath);
+  info("Diffing pipeline: current=out({}), baseline={}", currentPath, baselinePath);
   auto current = collectHvc(currentPath);
   auto baseline = collectHvc(baselinePath);
 
@@ -3756,8 +3692,8 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
     }
   }
 
-  info("Pipeline diff: {} added, {} removed, {} changed, {} unchanged", added,
-       removed, changed, unchanged);
+  info("Pipeline diff: {} added, {} removed, {} changed, {} unchanged", added, removed, changed,
+       unchanged);
   return (added || removed || changed) ? 1 : 0;
 }
 

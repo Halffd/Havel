@@ -8,55 +8,51 @@
 
 namespace havel::compiler {
 
-void VM::registerHostFunction(const std::string &name,
-    BytecodeHostFunction function) {
-    // Stamp metadata before any early return: the two-argument overload takes
-    // any argument count, so it clears a stale arity left by a previous
-    // arity-checked registration of the same name.
-    auto &meta = host_function_meta_[name];
-    meta.arity.reset();
-    if (!host_module_scope_.empty() && !meta.module_explicit)
-      meta.module = host_module_scope_;
+void VM::registerHostFunction(const std::string &name, BytecodeHostFunction function) {
+  // Stamp metadata before any early return: the two-argument overload takes
+  // any argument count, so it clears a stale arity left by a previous
+  // arity-checked registration of the same name.
+  auto &meta = host_function_meta_[name];
+  meta.arity.reset();
+  if (!host_module_scope_.empty() && !meta.module_explicit)
+    meta.module = host_module_scope_;
 
-    auto it = host_functions.find(name);
-    if (it != host_functions.end()) {
-        // Duplicate registration: the winner is whichever registration runs
-        // last. Log so duplicate impls cannot silently diverge (real example:
-        // process.runDetached accepted arrays via the bridge copy but only
-        // strings via the stdlib copy until they were unified).
-        havel::debug(
-            "duplicate host function registration for '" + name +
-            "' - overwriting previous implementation");
-        auto rootIt = host_function_gc_roots_.find(name);
-        if (rootIt != host_function_gc_roots_.end()) {
-            unpinExternalRoot(rootIt->second);
-            host_function_gc_roots_.erase(rootIt);
-        }
+  auto it = host_functions.find(name);
+  if (it != host_functions.end()) {
+    // Duplicate registration: the winner is whichever registration runs
+    // last. Log so duplicate impls cannot silently diverge (real example:
+    // process.runDetached accepted arrays via the bridge copy but only
+    // strings via the stdlib copy until they were unified).
+    havel::debug("duplicate host function registration for '" + name +
+                 "' - overwriting previous implementation");
+    auto rootIt = host_function_gc_roots_.find(name);
+    if (rootIt != host_function_gc_roots_.end()) {
+      unpinExternalRoot(rootIt->second);
+      host_function_gc_roots_.erase(rootIt);
     }
-    host_functions[name] = std::move(function);
+  }
+  host_functions[name] = std::move(function);
   for (uint32_t i = 0; i < host_function_names_.size(); i++) {
     if (host_function_names_[i] == name) {
       host_function_globals_[name] = Value::makeHostFuncId(i);
       return;
     }
   }
-    uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
-    host_function_names_.push_back(name);
-    host_function_globals_[name] = Value::makeHostFuncId(idx);
+  uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
+  host_function_names_.push_back(name);
+  host_function_globals_[name] = Value::makeHostFuncId(idx);
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
-BytecodeHostFunction function) {
+                              BytecodeHostFunction function) {
   registerHostFunction(
-    name,
-    [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
-      if (args.size() != arity) {
-                COMPILER_THROW("Host function '" + name + "' expects " +
-                    std::to_string(arity) + " arguments, got " +
-                    std::to_string(args.size()));
-            }
-            return function(args);
-        });
+      name, [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
+        if (args.size() != arity) {
+          COMPILER_THROW("Host function '" + name + "' expects " + std::to_string(arity) +
+                         " arguments, got " + std::to_string(args.size()));
+        }
+        return function(args);
+      });
   // The two-argument overload above clears arity, since it accepts any
   // argument count; record the checked arity after it has stamped the module.
   host_function_meta_[name].arity = arity;
@@ -72,8 +68,7 @@ std::vector<HostFunctionInfo> VM::getHostFunctionInfo() const {
     info.name = name;
     info.index = i;
 
-    if (auto meta = host_function_meta_.find(name);
-        meta != host_function_meta_.end()) {
+    if (auto meta = host_function_meta_.find(name); meta != host_function_meta_.end()) {
       info.arity = meta->second.arity;
       info.module = meta->second.module;
     }
@@ -86,18 +81,17 @@ std::vector<HostFunctionInfo> VM::getHostFunctionInfo() const {
 
     auto fn = host_functions.find(name);
     info.callable = fn != host_functions.end() && static_cast<bool>(fn->second);
-    info.bound_as_global = host_function_globals_.find(name) !=
-                           host_function_globals_.end();
+    info.bound_as_global = host_function_globals_.find(name) != host_function_globals_.end();
 
     rows.push_back(std::move(info));
   }
   return rows;
 }
 
-std::optional<HostFunctionInfo> VM::getHostFunctionInfoByName(
-    const std::string &name) const {
+std::optional<HostFunctionInfo> VM::getHostFunctionInfoByName(const std::string &name) const {
   for (auto &row : getHostFunctionInfo())
-    if (row.name == name) return row;
+    if (row.name == name)
+      return row;
   return std::nullopt;
 }
 
@@ -142,8 +136,7 @@ uint32_t VM::getStringId(const Value &str) {
   return 0;
 }
 
-void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
-                             Value value) {
+void VM::setHostObjectField(ObjectRef object_ref, const std::string &key, Value value) {
   auto *object = heap_.object(object_ref.id);
   if (!object) {
     COMPILER_THROW("setHostObjectField unknown object id");
@@ -174,54 +167,60 @@ void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
 
 // Array helpers
 size_t VM::getHostArrayLength(ArrayRef array_ref) {
-    auto *array = heap_.array(array_ref.id);
-    if (!array)
-        return 0;
-    return array->size();
+  auto *array = heap_.array(array_ref.id);
+  if (!array)
+    return 0;
+  return array->size();
 }
 
 Value VM::execLengthOp(Value v) {
   if (v.isObjectId()) {
- Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
- if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
- return callFunction(opMethod, {v});
- }
- // Try object.len prototype
- auto typeIt = prototypes_.find("object");
- if (typeIt != prototypes_.end()) {
- auto methodIt = typeIt->second.find("len");
- if (methodIt != typeIt->second.end()) {
- auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
- if (fnIt != host_functions.end()) return fnIt->second({v});
-}
+    Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
+    if (!opMethod.isNull() &&
+        (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+      return callFunction(opMethod, {v});
+    }
+    // Try object.len prototype
+    auto typeIt = prototypes_.find("object");
+    if (typeIt != prototypes_.end()) {
+      auto methodIt = typeIt->second.find("len");
+      if (methodIt != typeIt->second.end()) {
+        auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
+        if (fnIt != host_functions.end())
+          return fnIt->second({v});
+      }
+    }
+    // No op_length method and no object.len prototype: nothing to call.
+    COMPILER_THROW("Length operator requires array, string, object, or set");
   }
-  // No op_length method and no object.len prototype: nothing to call.
-  COMPILER_THROW("Length operator requires array, string, object, or set");
-}
- if (v.isArrayId()) {
- return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
- } else if (v.isStringValId()) {
- if (current_chunk) {
- return Value::makeInt(static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
- }
- return Value::makeInt(0);
- } else if (v.isStringId()) {
- auto *s = heap_.string(v.asStringId());
- return Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0);
- } else if (v.isSetId()) {
- // Try set.len prototype
- auto typeIt = prototypes_.find("set");
- if (typeIt != prototypes_.end()) {
- auto methodIt = typeIt->second.find("len");
-  if (methodIt != typeIt->second.end()) {
-  auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
-  if (fnIt != host_functions.end()) return fnIt->second({v});
-  }
-}
+  if (v.isArrayId()) {
+    return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
+  } else if (v.isStringValId()) {
+    if (current_chunk) {
+      return Value::makeInt(
+          static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
+    }
+    return Value::makeInt(0);
+  } else if (v.isStringId()) {
+    auto *s = heap_.string(v.asStringId());
+    return Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0);
+  } else if (v.isSetId()) {
+    // Try set.len prototype
+    auto typeIt = prototypes_.find("set");
+    if (typeIt != prototypes_.end()) {
+      auto methodIt = typeIt->second.find("len");
+      if (methodIt != typeIt->second.end()) {
+        auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
+        if (fnIt != host_functions.end())
+          return fnIt->second({v});
+      }
+    }
   } else if (v.isRangeId()) {
     auto *r = heap_.range(v.asRangeId());
-    if (!r) return Value::makeInt(0);
-    if (r->step == 0) return Value::makeInt(0);
+    if (!r)
+      return Value::makeInt(0);
+    if (r->step == 0)
+      return Value::makeInt(0);
     int64_t delta = r->end - r->start;
     int64_t step = r->step;
     int64_t count = 0;
@@ -230,20 +229,20 @@ Value VM::execLengthOp(Value v) {
       int64_t absStep = step > 0 ? step : -step;
       count = span / absStep + 1;
     }
-    if (count < 0) count = 0;
+    if (count < 0)
+      count = 0;
     return Value::makeInt(count);
   }
   // No branch matched: log the tag so a bad encoding cannot fail silently,
   // then throw.
   uint64_t tag = v.getTagBits() & 0x7;
-  havel::debug(
-      "len operator: unhandled value tag=" + std::to_string(tag) +
-      " isArray=" + std::to_string(static_cast<int>(v.isArrayId())) +
-      " isString=" + std::to_string(static_cast<int>(v.isStringId())) +
-      " isObject=" + std::to_string(static_cast<int>(v.isObjectId())) +
-      " isSet=" + std::to_string(static_cast<int>(v.isSetId())) +
-      " isRange=" + std::to_string(static_cast<int>(v.isRangeId())) +
-      " isIter=" + std::to_string(static_cast<int>(v.isIteratorId())));
+  havel::debug("len operator: unhandled value tag=" + std::to_string(tag) +
+               " isArray=" + std::to_string(static_cast<int>(v.isArrayId())) +
+               " isString=" + std::to_string(static_cast<int>(v.isStringId())) +
+               " isObject=" + std::to_string(static_cast<int>(v.isObjectId())) +
+               " isSet=" + std::to_string(static_cast<int>(v.isSetId())) +
+               " isRange=" + std::to_string(static_cast<int>(v.isRangeId())) +
+               " isIter=" + std::to_string(static_cast<int>(v.isIteratorId())));
   COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 
@@ -254,8 +253,7 @@ Value VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
   return (*array)[index];
 }
 
-void VM::setHostArrayValue(ArrayRef array_ref, size_t index,
-                           Value value) {
+void VM::setHostArrayValue(ArrayRef array_ref, size_t index, Value value) {
   auto *array = heap_.array(array_ref.id);
   if (!array)
     return;
@@ -277,47 +275,43 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
   array->pop_back();
   heap_.bumpArrayVersion(array_ref.id);
   return value;
-  }
+}
 
-  void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
-  Value value) {
+void VM::insertHostArrayValue(ArrayRef array_ref, size_t index, Value value) {
   auto *array = heap_.array(array_ref.id);
   if (!array)
-  return;
+    return;
   if (index > array->size())
-  index = array->size();
+    index = array->size();
   array->insert(array->begin() + index, std::move(value));
   heap_.bumpArrayVersion(array_ref.id);
-  }
+}
 
-  Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
+Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
   auto *array = heap_.array(array_ref.id);
   if (!array || index >= array->size())
-  return Value::makeNull();
+    return Value::makeNull();
   auto value = std::move((*array)[index]);
   array->erase(array->begin() + index);
   heap_.bumpArrayVersion(array_ref.id);
   return value;
-  }
+}
 
-  // Range helpers
+// Range helpers
 bool VM::isInRange(RangeRef range_ref, int64_t value) {
   auto *r = heap_.range(range_ref.id);
   if (!r)
     return false;
 
   if (r->step > 0) {
-    return value >= r->start && value < r->end &&
-           (value - r->start) % r->step == 0;
+    return value >= r->start && value < r->end && (value - r->start) % r->step == 0;
   } else {
-    return value <= r->start && value > r->end &&
-           (r->start - value) % (-r->step) == 0;
+    return value <= r->start && value > r->end && (r->start - value) % (-r->step) == 0;
   }
 }
 
 // Enum helpers
-uint32_t VM::registerEnumType(const std::string &name,
-                              const std::vector<std::string> &variants) {
+uint32_t VM::registerEnumType(const std::string &name, const std::vector<std::string> &variants) {
   return heap_.registerEnumType(name, variants);
 }
 
@@ -325,7 +319,9 @@ EnumRef VM::createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
   return heap_.allocateEnum(typeId, tag, payloadCount);
 }
 
-uint32_t VM::getEnumTag(EnumRef enum_ref) { return heap_.enumTag(enum_ref.id); }
+uint32_t VM::getEnumTag(EnumRef enum_ref) {
+  return heap_.enumTag(enum_ref.id);
+}
 
 Value VM::getEnumPayload(EnumRef enum_ref, size_t index) {
   auto it = heap_.enums_.find(enum_ref.id);
@@ -335,8 +331,7 @@ Value VM::getEnumPayload(EnumRef enum_ref, size_t index) {
   return it->second.second[index];
 }
 
-void VM::setEnumPayload(EnumRef enum_ref, size_t index,
-                        const Value &value) {
+void VM::setEnumPayload(EnumRef enum_ref, size_t index, const Value &value) {
   auto it = heap_.enums_.find(enum_ref.id);
   if (it == heap_.enums_.end() || index >= it->second.second.size()) {
     return;
@@ -382,49 +377,51 @@ bool VM::arrayContains(ArrayRef array_ref, const Value &value) {
       return true;
     }
   }
-    return false;
-  }
+  return false;
+}
 
-  bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
-    auto *object = heap_.object(object_ref.id);
+bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
+  auto *object = heap_.object(object_ref.id);
   if (!object)
-      return false;
-    return object->find(key) != object->end();
+    return false;
+  return object->find(key) != object->end();
+}
+
+// Iterator helpers
+IteratorRef VM::createIterator(const Value &iterable) {
+  IteratorRef ref;
+
+  // _G globals mirror: iterate the live globals maps, not the stale heap snapshot
+  if (iterable.isObjectId() && iterable.asObjectId() == globals_mirror_object_id_) {
+    ref.id = heap_.createIterator(iterable);
+    auto *iter = heap_.iterator(ref.id);
+    if (iter) {
+      iter->keys.clear();
+      std::set<std::string> seen;
+      for (const auto &[name, _] : globals) {
+        if (seen.insert(name).second)
+          iter->keys.push_back(name);
+      }
+      for (const auto &[name, _] : host_function_globals_) {
+        if (seen.insert(name).second)
+          iter->keys.push_back(name);
+      }
+    }
+    return ref;
   }
 
-  // Iterator helpers
-IteratorRef VM::createIterator(const Value &iterable) {
-    IteratorRef ref;
-
-    // _G globals mirror: iterate the live globals maps, not the stale heap snapshot
-    if (iterable.isObjectId() && iterable.asObjectId() == globals_mirror_object_id_) {
-        ref.id = heap_.createIterator(iterable);
-        auto *iter = heap_.iterator(ref.id);
-        if (iter) {
-            iter->keys.clear();
-            std::set<std::string> seen;
-            for (const auto& [name, _] : globals) {
-                if (seen.insert(name).second) iter->keys.push_back(name);
-            }
-            for (const auto& [name, _] : host_function_globals_) {
-                if (seen.insert(name).second) iter->keys.push_back(name);
-            }
-        }
-        return ref;
+  // Materialize StringValId to heap StringId so iterator can resolve characters
+  Value effective = iterable;
+  if (iterable.isStringValId()) {
+    if (current_chunk) {
+      const std::string &src = current_chunk->getString(iterable.asStringValId());
+      auto strRef = heap_.allocateString(src);
+      effective = Value::makeStringId(strRef.id);
     }
+  }
 
-    // Materialize StringValId to heap StringId so iterator can resolve characters
-    Value effective = iterable;
-    if (iterable.isStringValId()) {
-        if (current_chunk) {
-            const std::string &src = current_chunk->getString(iterable.asStringValId());
-            auto strRef = heap_.allocateString(src);
-            effective = Value::makeStringId(strRef.id);
-        }
-    }
-
-    ref.id = heap_.createIterator(effective);
-    return ref;
+  ref.id = heap_.createIterator(effective);
+  return ref;
 }
 
 Value VM::iteratorNext(IteratorRef iterRef) {
@@ -487,13 +484,11 @@ std::vector<std::string> VM::getHostObjectKeys(ObjectRef object_ref) {
   return keys;
 }
 
-std::vector<std::pair<std::string, Value>>
-VM::getHostObjectEntries(ObjectRef object_ref) {
+std::vector<std::pair<std::string, Value>> VM::getHostObjectEntries(ObjectRef object_ref) {
   auto *object = heap_.object(object_ref.id);
   if (!object)
     return {};
-  return std::vector<std::pair<std::string, Value>>(object->begin(),
-                                                            object->end());
+  return std::vector<std::pair<std::string, Value>>(object->begin(), object->end());
 }
 
 bool VM::hasHostObjectField(ObjectRef object_ref, const std::string &key) {
@@ -503,80 +498,77 @@ bool VM::hasHostObjectField(ObjectRef object_ref, const std::string &key) {
   return object->find(key) != object->end();
 }
 
-Value VM::getHostObjectField(ObjectRef object_ref,
-	const std::string &key) {
-	auto *object = heap_.object(object_ref.id);
-	if (!object)
-		return Value::makeNull();
+Value VM::getHostObjectField(ObjectRef object_ref, const std::string &key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object)
+    return Value::makeNull();
 
-	auto it = object->find(key);
-	if (it != object->end())
-		return it->second;
+  auto it = object->find(key);
+  if (it != object->end())
+    return it->second;
 
-	// Check prototype chain via __proto__, __class, or __struct
-	for (const char *protoKey : {"__proto__", "__class", "__struct"}) {
-		auto protoIt = object->find(protoKey);
-		if (protoIt != object->end() && protoIt->second.isObjectId()) {
-			return getHostObjectField(ObjectRef{protoIt->second.asObjectId(), true}, key);
-		}
-	}
+  // Check prototype chain via __proto__, __class, or __struct
+  for (const char *protoKey : {"__proto__", "__class", "__struct"}) {
+    auto protoIt = object->find(protoKey);
+    if (protoIt != object->end() && protoIt->second.isObjectId()) {
+      return getHostObjectField(ObjectRef{protoIt->second.asObjectId(), true}, key);
+    }
+  }
 
-	return Value::makeNull();
+  return Value::makeNull();
 }
 
-  bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
-    auto *object = heap_.object(object_ref.id);
-    if (!object)
+bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object)
+    return false;
+  if (key == "__frozen__" || key == "__sealed__")
+    return false;
+  {
+    auto it = object->find("__frozen__");
+    if (it != object->end() && it->second.isBool() && it->second.asBool())
       return false;
-    if (key == "__frozen__" || key == "__sealed__")
-      return false;
-    {
-      auto it = object->find("__frozen__");
-      if (it != object->end() && it->second.isBool() && it->second.asBool())
+  }
+  {
+    auto it = object->find("__sealed__");
+    if (it != object->end() && it->second.isBool() && it->second.asBool()) {
+      if (object->find(key) != object->end())
         return false;
     }
-    {
-      auto it = object->find("__sealed__");
-      if (it != object->end() && it->second.isBool() && it->second.asBool()) {
-        if (object->find(key) != object->end())
-          return false;
-      }
-    }
-    return object->erase(key) > 0;
   }
+  return object->erase(key) > 0;
+}
 
-  void VM::setHostObjectFrozen(ObjectRef object_ref, bool frozen) {
-    auto *object = heap_.object(object_ref.id);
-    if (!object)
-      return;
-    if (frozen) {
-      (*object)["__frozen__"] = Value::makeBool(true);
-      (*object)["__sealed__"] = Value::makeBool(true);
-    } else {
-      object->erase("__frozen__");
-      object->erase("__sealed__");
-    }
+void VM::setHostObjectFrozen(ObjectRef object_ref, bool frozen) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object)
+    return;
+  if (frozen) {
+    (*object)["__frozen__"] = Value::makeBool(true);
+    (*object)["__sealed__"] = Value::makeBool(true);
+  } else {
+    object->erase("__frozen__");
+    object->erase("__sealed__");
   }
+}
 
-  void VM::setHostObjectSealed(ObjectRef object_ref, bool sealed) {
-    auto *object = heap_.object(object_ref.id);
-    if (!object)
-      return;
-    if (sealed) {
-      (*object)["__sealed__"] = Value::makeBool(true);
-    } else {
-      object->erase("__sealed__");
-    }
+void VM::setHostObjectSealed(ObjectRef object_ref, bool sealed) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object)
+    return;
+  if (sealed) {
+    (*object)["__sealed__"] = Value::makeBool(true);
+  } else {
+    object->erase("__sealed__");
   }
+}
 
 // Function calling
-Value VM::callHostFunction(const Value &fn,
-                                    const std::vector<Value> &args) {
+Value VM::callHostFunction(const Value &fn, const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {
     uint32_t host_func_idx = fn.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
-      COMPILER_THROW("Host function index out of range: " +
-                     std::to_string(host_func_idx));
+      COMPILER_THROW("Host function index out of range: " + std::to_string(host_func_idx));
     }
     const std::string &name = host_function_names_[host_func_idx];
     auto it = host_functions.find(name);
@@ -589,9 +581,17 @@ Value VM::callHostFunction(const Value &fn,
 }
 
 // General function call (handles both VM closures and host functions)
-Value VM::callFunction(const Value &fn,
-                                const std::vector<Value> &args) {
-  // Host function - direct call
+Value VM::callFunction(const Value &fn, const std::vector<Value> &args) {
+  // Host function - direct call. The fast-tick budget is disarmed for the
+  // duration: host functions execute synchronously for a C++ caller (JIT
+  // bridges, timers, native re-entries), and the interpreter-only budget
+  // cutoff protocol (module wrappers unwind with a null placeholder and a
+  // live frame that only an interpreted CALL site can resume) cannot be
+  // honored from C++. Without the disarm, a JIT-compiled caller received
+  // the cutoff placeholder as a genuine null return - the tiered
+  // self-hosted parse miscompiled on exactly this ("Unexpected token
+  // Identifier" from a null Identifier node). See FastTickDisarmGuard.
+  FastTickDisarmGuard tick_disarm(this);
   if (fn.isHostFuncId()) {
     return callHostFunction(fn, args);
   }
@@ -603,27 +603,28 @@ Value VM::callFunction(const Value &fn,
 // Call a method on a receiver
 // This is the canonical method call used by both VM and JIT
 Value VM::callMethod(Value receiver, uint32_t method_name_id, const std::vector<Value> &args) {
-  if (!current_chunk) return Value::makeNull();
-  
+  if (!current_chunk)
+    return Value::makeNull();
+
   // Push receiver and args onto stack
   pushStack(receiver);
-  for (const auto& arg : args) {
+  for (const auto &arg : args) {
     pushStack(arg);
   }
-  
+
   // Create a synthetic instruction for CALL_METHOD
   Instruction instr;
   instr.opcode = OpCode::CALL_METHOD;
-  
+
   // Use the existing string val ID directly - no need to add a new string
   uint32_t strIdx = method_name_id;
-  
+
   // Operands: [method_name string val id, arg_count int]
   instr.operands = {Value::makeStringValId(strIdx), Value::makeInt(args.size())};
-  
+
   // Execute via the main dispatch
   executeInstruction(instr);
-  
+
   // Return the result from stack
   if (!stack.empty()) {
     return popStack();
@@ -633,25 +634,26 @@ Value VM::callMethod(Value receiver, uint32_t method_name_id, const std::vector<
 
 // Call super method
 Value VM::callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &args) {
-  if (!current_chunk) return Value::makeNull();
-  
+  if (!current_chunk)
+    return Value::makeNull();
+
   // Push receiver and args
   pushStack(receiver);
-  for (const auto& arg : args) {
+  for (const auto &arg : args) {
     pushStack(arg);
   }
-  
+
   // Create synthetic CALL_SUPER instruction
   Instruction instr;
   instr.opcode = OpCode::CALL_SUPER;
-  
+
   // Use the existing string val ID directly
   uint32_t strIdx = method_id;
-  
+
   instr.operands = {Value::makeStringValId(strIdx), Value::makeInt(args.size())};
-  
+
   executeInstruction(instr);
-  
+
   if (!stack.empty()) {
     return popStack();
   }
@@ -659,28 +661,25 @@ Value VM::callSuper(Value receiver, uint32_t method_id, const std::vector<Value>
 }
 
 // Prototype system - methods on types
-void VM::registerPrototypeMethod(const std::string &typeName,
-                                 const std::string &methodName,
+void VM::registerPrototypeMethod(const std::string &typeName, const std::string &methodName,
                                  uint32_t hostFuncIndex) {
   prototypes_[typeName][methodName] = hostFuncIndex;
 }
 
-void VM::registerPrototypeMethodByName(const std::string &typeName,
-                                         const std::string &methodName,
-                                         const std::string &funcName) {
-    // Find the function index by name
-    for (size_t i = 0; i < host_function_names_.size(); ++i) {
-        if (host_function_names_[i] == funcName) {
-        prototypes_[typeName][methodName] = static_cast<uint32_t>(i);
-        return;
-        }
+void VM::registerPrototypeMethodByName(const std::string &typeName, const std::string &methodName,
+                                       const std::string &funcName) {
+  // Find the function index by name
+  for (size_t i = 0; i < host_function_names_.size(); ++i) {
+    if (host_function_names_[i] == funcName) {
+      prototypes_[typeName][methodName] = static_cast<uint32_t>(i);
+      return;
     }
-    // Not found - register with 0 (will be null)
-    prototypes_[typeName][methodName] = 0;
+  }
+  // Not found - register with 0 (will be null)
+  prototypes_[typeName][methodName] = 0;
 }
 
-Value VM::getPrototypeMethodValue(const Value &value,
-                                 const std::string &methodName) {
+Value VM::getPrototypeMethodValue(const Value &value, const std::string &methodName) {
   std::string typeName;
   if (value.isStringValId() || value.isStringId() || value.isRegexValId()) {
     typeName = "string";
@@ -695,7 +694,8 @@ Value VM::getPrototypeMethodValue(const Value &value,
       auto *classVal = obj->get("__class");
       if (classVal) {
         if (classVal->isStringValId() || classVal->isStringId()) {
-          uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+          uint32_t strIdx =
+              classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
           auto *classStr = heap_.string(strIdx);
           if (classStr) {
             auto classIt = prototypes_.find(*classStr);
@@ -705,7 +705,9 @@ Value VM::getPrototypeMethodValue(const Value &value,
                 return Value::makeHostFuncId(methodIt->second);
             }
             std::string lower = *classStr;
-            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+            for (auto &c : lower)
+              if (c >= 'A' && c <= 'Z')
+                c += 32;
             auto lowerIt = prototypes_.find(lower);
             if (lowerIt != prototypes_.end()) {
               auto methodIt = lowerIt->second.find(methodName);
@@ -781,35 +783,34 @@ Value VM::getPrototypeMethodValue(const Value &value,
   if (!capName.empty() && capName[0] >= 'a' && capName[0] <= 'z')
     capName[0] = static_cast<char>(capName[0] - 32);
   for (const auto &modName : {typeName, capName}) {
-      auto modIt = globals.find(modName);
-      if (modIt != globals.end() && modIt->second.isObjectId()) {
-        auto *modObj = heap_.object(modIt->second.asObjectId());
-        if (modObj) {
-          auto *val = modObj->get(methodName);
-          if (val) {
-            if (val->isHostFuncId()) {
-              uint32_t idx = val->asHostFuncId();
-              auto cacheIt = prototypes_.find(typeName);
-              if (cacheIt == prototypes_.end()) {
-                prototypes_[typeName][methodName] = idx;
-              } else {
-                cacheIt->second[methodName] = idx;
-              }
-              return Value::makeHostFuncId(idx);
+    auto modIt = globals.find(modName);
+    if (modIt != globals.end() && modIt->second.isObjectId()) {
+      auto *modObj = heap_.object(modIt->second.asObjectId());
+      if (modObj) {
+        auto *val = modObj->get(methodName);
+        if (val) {
+          if (val->isHostFuncId()) {
+            uint32_t idx = val->asHostFuncId();
+            auto cacheIt = prototypes_.find(typeName);
+            if (cacheIt == prototypes_.end()) {
+              prototypes_[typeName][methodName] = idx;
+            } else {
+              cacheIt->second[methodName] = idx;
             }
-            if (val->isClosureId() || val->isFunctionObjId()) {
-              return *val;
-            }
+            return Value::makeHostFuncId(idx);
+          }
+          if (val->isClosureId() || val->isFunctionObjId()) {
+            return *val;
           }
         }
       }
+    }
   }
 
   return Value::makeNull();
 }
 
-std::optional<uint32_t> VM::getPrototypeMethod(const Value &value,
-                       const std::string &methodName) {
+std::optional<uint32_t> VM::getPrototypeMethod(const Value &value, const std::string &methodName) {
   // Determine type name (try both lowercase and capitalized)
   std::string typeName;
   std::string moduleName;
@@ -830,7 +831,8 @@ std::optional<uint32_t> VM::getPrototypeMethod(const Value &value,
       auto *classVal = obj->get("__class");
       if (classVal) {
         if (classVal->isStringValId() || classVal->isStringId()) {
-          uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+          uint32_t strIdx =
+              classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
           auto *classStr = heap_.string(strIdx);
           if (classStr) {
             // Use the class name for prototype lookup
@@ -842,7 +844,9 @@ std::optional<uint32_t> VM::getPrototypeMethod(const Value &value,
             }
             // Also try lowercase
             std::string lower = *classStr;
-            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+            for (auto &c : lower)
+              if (c >= 'A' && c <= 'Z')
+                c += 32;
             auto lowerIt = prototypes_.find(lower);
             if (lowerIt != prototypes_.end()) {
               auto methodIt = lowerIt->second.find(methodName);
@@ -984,8 +988,7 @@ void VM::registerProtocol(const std::string &protocolName,
   protocol_contracts_[protocolName] = methods;
 }
 
-void VM::registerProtocolImpl(const std::string &protocolName,
-                              const std::string &typeName) {
+void VM::registerProtocolImpl(const std::string &protocolName, const std::string &typeName) {
   protocol_impls_[protocolName].insert(typeName);
   type_protocols_[typeName].insert(protocolName);
 }
@@ -993,19 +996,22 @@ void VM::registerProtocolImpl(const std::string &protocolName,
 bool VM::typeImplementsProtocol(const std::string &typeName,
                                 const std::string &protocolName) const {
   auto it = type_protocols_.find(typeName);
-  if (it == type_protocols_.end()) return false;
+  if (it == type_protocols_.end())
+    return false;
   return it->second.count(protocolName) > 0;
 }
 
 std::unordered_set<std::string> VM::getTypeProtocols(const std::string &typeName) const {
   auto it = type_protocols_.find(typeName);
-  if (it == type_protocols_.end()) return {};
+  if (it == type_protocols_.end())
+    return {};
   return it->second;
 }
 
 std::unordered_set<std::string> VM::getProtocolMethods(const std::string &protocolName) const {
   auto it = protocol_contracts_.find(protocolName);
-  if (it == protocol_contracts_.end()) return {};
+  if (it == protocol_contracts_.end())
+    return {};
   return it->second;
 }
 
@@ -1020,25 +1026,42 @@ std::vector<std::string> VM::getProtocolNames() const {
 
 std::string VM::getTypeName(const Value &value) const {
   // Handle non-object (builtin) types first
-  if (value.isNull()) return "null";
-  if (value.isBool()) return "bool";
-  if (value.isInt()) return "int";
-  if (value.isDouble()) return "float";
-  if (value.isStringValId() || value.isStringId() || value.isRegexValId()) return "str";
-  if (value.isArrayId()) return "array";
-  if (value.isSetId()) return "set";
-  if (value.isRangeId()) return "range";
-  if (value.isHostFuncId()) return "hostfunc";
-  if (value.isClosureId()) return "closure";
-  if (value.isFunctionObjId()) return "fn";
-  if (value.isEnumId()) return "enum";
-  if (value.isIteratorId()) return "iterator";
-  if (value.isBoundMethodId()) return "boundmethod";
-  if (value.isCoroutineId()) return "coroutine";
-  if (!value.isObjectId()) return "";
+  if (value.isNull())
+    return "null";
+  if (value.isBool())
+    return "bool";
+  if (value.isInt())
+    return "int";
+  if (value.isDouble())
+    return "float";
+  if (value.isStringValId() || value.isStringId() || value.isRegexValId())
+    return "str";
+  if (value.isArrayId())
+    return "array";
+  if (value.isSetId())
+    return "set";
+  if (value.isRangeId())
+    return "range";
+  if (value.isHostFuncId())
+    return "hostfunc";
+  if (value.isClosureId())
+    return "closure";
+  if (value.isFunctionObjId())
+    return "fn";
+  if (value.isEnumId())
+    return "enum";
+  if (value.isIteratorId())
+    return "iterator";
+  if (value.isBoundMethodId())
+    return "boundmethod";
+  if (value.isCoroutineId())
+    return "coroutine";
+  if (!value.isObjectId())
+    return "";
 
   const auto *obj = heap_.object(value.asObjectId());
-  if (!obj) return "";
+  if (!obj)
+    return "";
   // Check __name on the object itself (struct/class prototypes store __name)
   auto nameIt = obj->data.find("__name");
   if (nameIt != obj->data.end() && nameIt->second.isStringValId() && current_chunk) {
@@ -1069,7 +1092,8 @@ std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
 }
 
 void VM::trackExternalRoot(uint64_t root_id) {
-    if (root_id != 0) tracked_external_roots_.push_back(root_id);
+  if (root_id != 0)
+    tracked_external_roots_.push_back(root_id);
 }
 
 uint64_t VM::pinExternalRoot(const Value &value) {
@@ -1085,13 +1109,13 @@ std::optional<Value> VM::externalRootValue(uint64_t root_id) const {
 }
 
 void VM::pinModuleCacheExports(const std::string &key, const Value &exports) {
-  if (!exports.isObjectId()) return;
+  if (!exports.isObjectId())
+    return;
   auto existing = module_cache_gc_roots_.find(key);
   if (existing != module_cache_gc_roots_.end() && existing->second != 0) {
     unpinExternalRoot(existing->second);
   }
   module_cache_gc_roots_[key] = pinExternalRoot(exports);
 }
-
 
 } // namespace havel::compiler

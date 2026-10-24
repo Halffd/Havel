@@ -138,9 +138,19 @@ void havel_pushinteger(HavelState* H, int64_t n) {
 
 void havel_pushstring(HavelState* H, const char* s) {
     if (s) {
-        auto strId = H->next_string_id++;
-        H->strings[strId] = s;
-        H->stack.push_back(havel::core::Value::makeStringValId(strId));
+        if (H->vm) {
+            // Intern into the VM heap: one id space, one resolver. The
+            // old private-counter + H->strings path pushed StringValIds
+            // whose numeric ids collided with chunk string-table indices;
+            // havel_tostring then resolved literal arguments to unrelated
+            // previously-pushed strings (observed live).
+            H->stack.push_back(havel::core::Value::makeStringId(
+                H->vm->internHeapString(s)));
+        } else {
+            auto strId = H->next_string_id++;
+            H->strings[strId] = s;
+            H->stack.push_back(havel::core::Value::makeStringValId(strId));
+        }
     } else {
         H->stack.push_back(havel::core::Value::makeNull());
     }
@@ -276,17 +286,18 @@ const char* havel_tostring(HavelState* H, int idx) {
     int i = idx >= 0 ? idx : t + idx;
     if (i < 0 || i >= t) return "";
     const auto& v = H->stack[i];
+    if (H->vm) {
+        // Authoritative resolver for both VM id kinds (chunk-table
+        // StringValId, heap StringId). H->strings must not be consulted
+        // while a VM exists: its private-counter ids overlap the other
+        // id spaces and resolve to unrelated strings (observed live).
+        buf = H->vm->resolveStringKey(v);
+        return buf.c_str();
+    }
+    // VM-less state: the C-API string table is all there is
     if (v.isStringValId()) {
         auto it = H->strings.find(v.asStringValId());
         if (it != H->strings.end()) return it->second.c_str();
-    }
-    if (v.isStringId()) {
-        auto it = H->strings.find(v.asStringId());
-        if (it != H->strings.end()) return it->second.c_str();
-    }
-    if (H->vm) {
-        buf = H->vm->resolveStringKey(v);
-        return buf.c_str();
     }
     buf = v.toString();
     return buf.c_str();

@@ -795,7 +795,26 @@ if (instanceObj) {
     if (!found_host && vm_func.isNull()) {
       // Pop args and receiver before pushing null result
       for (uint32_t i = 0; i < arg_count; ++i) popStack();
-      popStack(); // receiver
+      Value recv = popStack(); // receiver
+      // Pipe-stage disambiguation: `x | name` parses as a pipeline whenever
+      // name is an identifier (the lexer emits BitwiseOr, but led() re-reads
+      // it as pipeline sugar). When the same-named global holds a
+      // NON-callable value the author wrote a bitwise-or with a variable -
+      // e.g. `(_O_RDONLY | _O_NONBLOCK)` over module-level int constants -
+      // and the pipeline path silently yielded null. For a 0-arg pipe stage
+      // whose name resolves to a defined non-callable, compute the bitwise
+      // or of the two values instead. Unknown names keep the null (could be
+      // a module fn not yet imported into these globals).
+      if (isPipeCall && arg_count == 0) {
+        auto defIt = globals.find(method_name);
+        if (defIt != globals.end() && !defIt->second.isFunctionObjId() &&
+            !defIt->second.isClosureId() && !defIt->second.isHostFuncId() &&
+            receiver.isInt() && defIt->second.isInt()) {
+          pushStack(Value(static_cast<int64_t>(receiver.asInt()) |
+                          static_cast<int64_t>(defIt->second.asInt())));
+          break;
+        }
+      }
       pushStack(Value::makeNull());
       break;
     }

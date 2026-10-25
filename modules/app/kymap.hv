@@ -401,13 +401,16 @@ fn _addAlias(alias, primary) {
   _entry = _name_to_key[primary]
   if _entry == null { return }
   _entry.aliases.push(alias)
-  // Mirrors the C++ struct copy: the alias entry carries the primary's codes
-  // and a snapshot of its alias list taken at this point.
+  // Mirrors the C++ AddAlias struct copy: the alias entry carries the
+  // primary's codes and a snapshot of its alias list (which now includes
+  // this alias) taken at this point. clone(), NOT copy() — arrays have no
+  // copy method, and an unknown method call yields null, which silently
+  // nulled every alias entry's aliases field.
   _name_to_key[alias] = {
     evdev: _entry.evdev,
     x11: _entry.x11,
     win: _entry.win,
-    aliases: _entry.aliases.copy(),
+    aliases: _entry.aliases.clone(),
   }
   // Marked as an alias so the loader keeps it out of the reverse maps, exactly
   // as AddAlias did.

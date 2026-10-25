@@ -9661,9 +9661,22 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
     BytecodeFunction bodyFn("when_body");
     enterFunction(std::move(bodyFn));
 
+    // A hotkey binding compiled inside the body (e.g. `saved = F10 => {}`
+    // assigned as a statement) must be gated by the when condition exactly
+    // like a bare `F10 => {}` in hotkeyStmts. Without this, the body fn's
+    // compileHotkeyBindingExpr sees no conditional index and emits plain
+    // hotkey.register - grab on, empty condition, fires forever after the
+    // edge that ran the body ends (observed: user script's
+    // `lwk = lwin => play()` kept toggling mpv on every window after the
+    // when-block deactivated).
+    auto prevBodyCondIndex = conditional_hotkey_condition_index_;
+    conditional_hotkey_condition_index_ = condition_func_index;
+
     for (const auto *stmt : otherStmts) {
       compileStatement(*stmt);
     }
+    conditional_hotkey_condition_index_ = prevBodyCondIndex;
+
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
 

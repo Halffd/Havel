@@ -5,6 +5,9 @@
 #include "../core/CraneliftBackend.hpp"
 #endif
 #include "host/ServiceRegistry.hpp"
+#include "../../../core/hotkey/HotkeyManager.hpp"
+#include "../../../core/window/WindowManager.hpp"
+#include "stdlib/HotkeyModule.hpp"
 #include <iostream>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -2143,6 +2146,16 @@ bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
   if (!condVal)
     return true;
 
+  // Focus transitions race the press: the condition's window.title() /
+  // window.class() reads flow through the active-window cache, whose TTL
+  // can serve the PREVIOUS window for up to CACHE_TTL after an alt-tab.
+  // A press landing in that window passed the gate on stale data and ran
+  // the body in the wrong window. Drop the cache before every gate eval
+  // so the condition observes the current focus. Inert on backends
+  // without a cache; null WindowManager under tests/headless.
+  if (context_ && context_->windowManager)
+    context_->windowManager->InvalidateActiveWindowCache();
+  bool prev_result = g->hotkey_condition_last_result;
   g->hotkey_condition_last_result = false;
   bool conditionMet = false;
   try {
@@ -2156,6 +2169,34 @@ bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
     conditionMet = false;
   }
 
+  // Gate trace: the press arrived, the condition ran live, here is the
+  // decision. Cross-reference against the [Havel] cond ... TRANSITION lines
+  // (grab toggles) to see whether a wrong-window fire was a stale window
+  // read inside this eval (gate said true but window had changed) or a
+  // grab/ungrab ordering gap (gate false, OS still routing keys to us).
+  if (debugging::debug_hotkeys) {
+    ::havel::debug("[VM] gate gid={} key='{}' t={}us allow={} (prev={})",
+                   g->id, g->hotkey_condition_alias,
+                   std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                       .count(),
+                   conditionMet, prev_result);
+  }
+  // Self-heal: if the live eval contradicts the last recorded result, the
+  // dep-driven re-eval never observed the change (window-namespace
+  // conditions track only the static "window" global, which nothing
+  // stores to, so no VAR_CHANGED ever fires for them). Sync OS grab +
+  // context grab NOW, by id, so a stale grab stops consuming the key.
+  // Without this, a hotkey whose condition read true at registration kept
+  // its OS grab armed forever: the gate blocked the body but the keypress
+  // was still eaten by the handler.
+  if (conditionMet != prev_result) {
+    if (context_ && context_->hotkeyManager && g->hotkey_os_id > 0)
+      static_cast<havel::HotkeyManager *>(context_->hotkeyManager)
+          ->SetHotkeyGrabById(g->hotkey_os_id, conditionMet);
+    if (!g->hotkey_id.empty())
+      ::havel::stdlib::HotkeyModule::setGrabById(*this, g->hotkey_id, conditionMet);
+  }
   if (conditionMet) {
     g->hotkey_condition_last_result = true;
     return true;

@@ -530,7 +530,13 @@ public:
               g->suspension_reason.load(std::memory_order_acquire) !=
                   compiler::Scheduler::SuspensionReason::HotkeyWait)
             return;
-          if (!g->hotkey_condition_deps.empty() && g->hotkey_condition_deps.count(var_name) == 0)
+          // "__active_window__" (focus-transition sentinel, see
+          // Havel::startPeriodicTimer): window-reading conditions record
+          // only the static "window" namespace global, so the sentinel
+          // matches ALL conditional hotkeys and the live eval decides.
+          if (var_name != "__active_window__" &&
+              !g->hotkey_condition_deps.empty() &&
+              g->hotkey_condition_deps.count(var_name) == 0)
             return;
           auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
           if (!condVal)

@@ -94,6 +94,11 @@ public:
   virtual WindowInfo getWindowInfo(wID id) = 0;
   virtual WindowInfo getActiveWindowInfo() = 0;
 
+  // Drop any cached active-window snapshot so the next getActiveWindow*()
+  // re-queries the display server. Focus-transition consumers call this
+  // before re-evaluating window-reading conditions. Inert default: a
+  // backend without a cache has nothing to drop.
+  virtual void invalidateActiveWindowCache() {}
   // Window hierarchy and introspection. Optional: backends that cannot
   // provide them keep the inert defaults (0 / empty), which callers surface
   // as 0 / null / empty rather than errors.

@@ -1,0 +1,89 @@
+// test_python_property_side_effects.hv — wrapOpaque's attribute walk is not
+// side-effect-free, and this test locks in exactly what it does.
+//
+// wrapOpaque materializes an opaque Python object by walking __dir__ and
+// calling PyObject_GetAttrString on every non-underscore name. For a
+// @property that is a live attribute access: the property RUNS, once, at
+// materialization time. The resulting value is then frozen into a havel
+// field; later reads of that field do not re-run the property. A property
+// that RAISES must be skipped cleanly (PyErr_Clear; continue) without
+// corrupting the rest of the wrap.
+//
+// What this pins down, and why it matters to users:
+//   1. wrapping a "heavy" object (lazy ORM rows, computed properties) has an
+//      observable cost/side-effect profile BEFORE the user calls anything;
+//   2. obj.field is a snapshot, but py.get(obj, "field") is live - the
+//      difference is the difference between materialize-once and
+//      fetch-per-call, and both are correct by design here;
+//   3. a raising property must not take the wrap down.
+//
+// Smoke-safe: Python stdlib only, no hardware, no network.
+
+use py
+
+if !py.available() {
+    print("SKIP: no embeddable libpython on this machine")
+    shell.exit(0)
+}
+
+st = {fails: 0}
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        st.fails = st.fails + 1
+    }
+}
+
+// One class, three interesting attributes: a counting property, a raising
+// property, and a plain method that reports the counter live.
+// havel does not concatenate adjacent string literals - one literal, \n
+// escapes (which havel does process) carries the whole class definition.
+py.run("class C:\n    def __init__(self):\n        self.n = 0\n    @property\n    def tick(self):\n        self.n = self.n + 1\n        return self.n\n    @property\n    def broken(self):\n        raise ValueError('boom')\n    def get_n(self):\n        return self.n\n")
+
+obj = py.eval("C()")
+
+// Materialization ran the counting property exactly once (dir() walks
+// alphabetically: broken, get_n, n, tick - so tick fires last, after the
+// instance-attr snapshot took n at 0). The live method confirms it.
+check("materialization ran the property (side effect observable)", obj.get_n() == 1)
+
+// wrapOpaque materializes ONLY callables (see the `if (!callable) continue;`
+// in the walk): a property whose value is a scalar is skipped, not frozen.
+// So obj.tick is null - silently. This is the trap the test exists to pin:
+// obj.attr and py.get(obj, "attr") DIVERGE for properties; reading a
+// property's value must go through py.get. The contrast with py.import is
+// deliberate there: module attributes DO convert non-callables as fields,
+// instance properties do not.
+check("property-scalar is NOT materialized (obj.tick is null)", obj.tick == null)
+check("reading the null field did not re-run the property", obj.get_n() == 1)
+
+// py.get is a live attribute access: it re-runs the property each time.
+check("py.get is live (1st access)", py.get(obj, "tick") == 2)
+check("py.get is live (2nd access)", py.get(obj, "tick") == 3)
+check("live accesses really ran the property", obj.get_n() == 3)
+
+// The raising property: skipped at materialization (the wrap survived -
+// obj and its other members work), and surfaces as a clean error when
+// fetched live.
+check("raising property skipped at materialization", obj.get_n() == 3)
+// py.get on the raising property throws cleanly (no crash) - but note the
+// message says "no attribute", which does not distinguish a MISSING
+// attribute from a RAISING one. The message is pinned here so that any
+// future improvement that surfaces the real ValueError is a deliberate,
+// test-visible change rather than silent drift.
+sawBoom = false
+try {
+    py.get(obj, "broken")
+} catch e {
+    sawBoom = str(e) ~ "no attribute"
+}
+check("raising property throws cleanly on live fetch", sawBoom)
+check("fetch error message is the generic one (missing-vs-raising not distinguished)", sawBoom)
+
+// The wrap is still fully functional after all of the above.
+check("object still usable after property errors", obj.get_n() == 3)
+
+print(st.fails == 0 ? "ALL PASS" : "FAILURES: " + st.fails)
+shell.exit(st.fails == 0 ? 0 : 1)

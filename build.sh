@@ -263,14 +263,14 @@ ws_test() { # workspace mode kind
   local t0 t1 rc logf="$LOG_DIR/test-$(ws_name "$ws")-$bdir-$kind.log"
   t0=$(date +%s)
   case "$kind" in
-    gate)   "$dir/hvtest" --smoke --slow-too --timeout 300 ;;
-    smoke)  "$dir/hvtest" --smoke --timeout 180 ;;
-    ctest)  ctest --test-dir "$dir" --output-on-failure -j"$(resolve_threads)" ;;
+    gate)   "$dir/hvtest" --smoke --slow-too --timeout 300 >"$logf" 2>&1 ;;
+    smoke)  "$dir/hvtest" --smoke --timeout 180 >"$logf" 2>&1 ;;
+    ctest)  ctest --test-dir "$dir" --output-on-failure -j"$(resolve_threads)" >"$logf" 2>&1 ;;
     quick)
       local n
       n=$(ctest --test-dir "$dir" -N 2>/dev/null | grep -c '^  Test ')
       [ "${n:-0}" -eq 0 ] && { err "no ctest entries"; return 1; }
-      ctest --test-dir "$dir" -j"$(resolve_threads)" -R "config_store_test|window_manager_detector_test" --output-on-failure
+      ctest --test-dir "$dir" -j"$(resolve_threads)" -R "config_store_test|window_manager_detector_test" --output-on-failure >"$logf" 2>&1
       ;;
     *) die "unknown test kind '$kind' (gate|smoke|ctest|quick)" ;;
   esac

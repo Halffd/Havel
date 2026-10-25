@@ -1268,7 +1268,7 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
     if (base >= locals.size()) {
       COMPILER_THROW("CALL_SUPER: locals_base out of range");
     }
-    Value this_value = locals[base];
+    Value this_value = this->loadLocalRouted(base);
 
     // Find the parent class method using the prototype chain
     // For now, emit as a host function call with special prefix
@@ -1420,19 +1420,14 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
       if (descriptor.captures_local) {
+        // Boxed capture: the cell is born CLOSED and owns the value from
+        // here on (boxLocal moves the slot's current value into it). The
+        // defining function's local accesses route through the same cell
+        // via loadLocalRouted/storeLocalRouted, so a goroutine spawned on
+        // this closure writes a cell the parent reads - not a frame slot
+        // its fiber snapshot owns.
         uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-        this->ensureLocalIndex(abs);
-        auto open_it = open_upvalues.find(abs);
-        if (open_it == open_upvalues.end()) {
-          auto cell = std::make_shared<GCHeap::UpvalueCell>();
-          cell->is_open = true;
-          cell->open_index = descriptor.index;
-          cell->locals_base = currentFrame().locals_base;
-          open_upvalues.emplace(abs, cell);
-          closure.upvalues.push_back(std::move(cell));
-        } else {
-          closure.upvalues.push_back(open_it->second);
-        }
+        closure.upvalues.push_back(this->boxLocal(abs, descriptor.index));
       } else {
         uint32_t parent_closure_id = currentFrame().closure_id;
         if (parent_closure_id == 0) {

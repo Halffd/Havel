@@ -1851,6 +1851,13 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--debug-events" || arg == "-dev") {
+      // Input-path debugging: event pump + grab lifecycle (EventListener)
+      // and evdev adapter reads. debug() output is level-gated, so raise
+      // the log level too or the flags produce nothing visible.
+      debugging::debug_event_listener = true;
+      debugging::debug_evdev = true;
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "--trace" || arg == "-t") {
       cfg.traceExecution = true;
     } else if (arg == "--optimize-bytecode" || arg == "-O") {
@@ -2298,6 +2305,7 @@ Options:
   -de, --debug-engine Enable engine debugging
    -dio, --debug-io    Enable IO debugging
    -dhk, --debug-hotkeys Enable hotkey debugging
+   -dev, --debug-events  Enable input event + grab debugging (event listener, evdev)
    --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
    -e, --error         Stop on first error/warning
   -E, --eval CODE     Run inline Havel code

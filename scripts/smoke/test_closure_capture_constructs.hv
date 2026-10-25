@@ -9,13 +9,12 @@
 // CONSTRUCTS that host closures, so a regression in any of them is
 // caught here.
 //
-// Known limitation (not a defect in the compiler - the fibers snapshot
-// their locals, so a goroutine's write to an enclosing FUNCTION-LOCAL is
-// not visible to the parent afterwards; a shared object or a module-level
-// global is the supported way to hand a value back from a goroutine).
-// The object/global paths are asserted here; the function-local case is
-// asserted to stay UNCHANGED (documented behaviour) so a future change to
-// it is deliberate.
+// Fixed: captured locals are boxed (born-closed cells shared by the
+// defining function and every closure), so a goroutine's write to an
+// enclosing FUNCTION-LOCAL is now visible to the parent. That case is
+// covered by scripts/smoke/test_goroutine_local_write.hv; the object and
+// module-global paths below are regression locks for the always-working
+// routes.
 
 fails = 0
 check = fn(name, cond) {

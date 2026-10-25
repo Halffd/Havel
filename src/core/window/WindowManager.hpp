@@ -131,6 +131,7 @@ public:
   static WindowInfo getActiveWindowInfo();
   static std::vector<WindowInfo> getAllWindows();
   static WindowInfo getWindowInfo(wID id);
+  static void InvalidateActiveWindowCache();
   static uint64_t getActiveWindow();
   static bool focusWindow(uint64_t id);
   static bool closeWindow(uint64_t id);

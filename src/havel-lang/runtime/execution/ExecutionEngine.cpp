@@ -685,7 +685,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
             std::string alias;
             int osId;
             bool grab;
-            uint32_t gid;
+
         };
         std::vector<HotkeyAction> pendingActions;
         ::havel::debug("[ExecutionEngine] onVariableChanged('{}'): scanning conditional hotkeys", var_name);
@@ -706,7 +706,11 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                     return;
                 }
                 // Check if this goroutine's condition depends on the changed variable
-                if (!g->hotkey_condition_deps.empty() &&
+                // "__active_window__" sentinel matches all conditional
+                // hotkeys (window-reading conditions track only the
+                // static "window" global).
+                if (var_name != "__active_window__" &&
+                    !g->hotkey_condition_deps.empty() &&
                     g->hotkey_condition_deps.count(var_name) == 0) {
                     std::string depStr;
                     for (auto& d : g->hotkey_condition_deps) {
@@ -748,7 +752,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 // Edge-triggered: only act on transition
                 if (prev == conditionMet) return;
 
-                pendingActions.push_back({g->hotkey_id, g->hotkey_condition_alias, g->hotkey_os_id, conditionMet, g->id});
+                pendingActions.push_back({g->hotkey_id, g->hotkey_condition_alias, g->hotkey_os_id, conditionMet});
             }
         );
         for (auto& act : pendingActions) {
@@ -764,8 +768,14 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
             } else if (!act.alias.empty()) {
                 ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
-            auto* g = scheduler_->get(act.gid);
-            if (g && act.grab) scheduler_->wakeHotkey(g, {}, "cond-dep-change");
+            // A condition turning true does NOT fire the hotkey: it only
+            // arms the OS grab so the NEXT physical keypress routes here.
+            // wakeHotkey() here re-queued the goroutine (requeueFront ->
+            // Created), and the next pickNext ran the body through the
+            // dispatch gate — conditionMet was true, so the body executed
+            // with no keypress at all. The gate at the dispatch site is the
+            // only legitimate entry; dep transitions must not synthesize
+            // triggers.
         }
     }
 

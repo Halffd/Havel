@@ -10992,6 +10992,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral(bool unsorted
              t == havel::TokenType::Throw || t == havel::TokenType::Del ||
              t == havel::TokenType::True || t == havel::TokenType::False ||
              t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
+             t == havel::TokenType::From ||
              t == havel::TokenType::String || t == havel::TokenType::MultilineString ||
              t == havel::TokenType::RegexString || t == havel::TokenType::Number;
     };

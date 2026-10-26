@@ -964,6 +964,8 @@ public:
                                              const HostContext *ctx);
     static Value handleAutomationStopAll(const std::vector<Value> &args,
                                           const HostContext *ctx);
+    static Value handleAutomationGetTaskNames(const std::vector<Value> &args,
+                                              const HostContext *ctx);
 private:
     const HostContext *ctx_;
 };

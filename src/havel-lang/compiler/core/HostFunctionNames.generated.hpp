@@ -96,6 +96,7 @@ inline constexpr const char *kHostFunctionNames[] = {
     "automation.createAutoClicker",
     "automation.createAutoKeyPresser",
     "automation.createAutoRunner",
+    "automation.getTaskNames",
     "automation.hasTask",
     "automation.removeTask",
     "automation.stopAll",

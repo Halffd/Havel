@@ -292,10 +292,17 @@ static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig &c
 }
 
 static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
-  return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-                                   inst.getWindowManagerPtr(), inst.getAudioManager(), nullptr,
-                                   nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                   inst.getBrightnessManagerPtr());
+  // HostAPI ctor order: io, hotkeyManager, config, windowManager, audioManager,
+  // guiManager, screenshotManager, clipboardManager, pixelAutomation,
+  // automationManager, fileManager, processManager, mapManager,
+  // brightnessManager, commandLineArgs. automationManager was passed as
+  // nullptr, so HostContext.automationManager was null and the automation.*
+  // host functions had no manager to drive (they stubbed false).
+  return std::make_shared<HostAPI>(
+      inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
+      inst.getWindowManagerPtr(), inst.getAudioManager(), nullptr, nullptr,
+      nullptr, nullptr, inst.getAutomationManager(), nullptr, nullptr,
+      nullptr, inst.getBrightnessManagerPtr());
 }
 
 // Lint check: assignment used in condition position (if/while/do-while/

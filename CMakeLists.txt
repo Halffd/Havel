@@ -3458,6 +3458,25 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
 
+    # Drift guard for the three token-name registries: TokenType enum ->
+    # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
+    # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member
+    # with no table row, and tokenize() then tags the token tid=null, which
+    # reaches the Pratt binding-power lookup as a null object key (the
+    # `emit` regression). Pure header test.
+    add_executable(token_type_names_drift_test
+        tests/token_type_names_drift_ut.cpp
+    )
+    target_include_directories(token_type_names_drift_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+    )
+    target_compile_definitions(token_type_names_drift_test PRIVATE
+        LEXER_HV_PATH="${CMAKE_SOURCE_DIR}/modules/lang/lexer.hv")
+    target_compile_features(token_type_names_drift_test PRIVATE cxx_std_23)
+    target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

@@ -3256,6 +3256,23 @@ if k == "ModesBlock" {
     }
     return
   }
+  if k == "EmitStatement" {
+    // `emit <name> [payload]` - sugar over the event.publish host function,
+    // same lowering as the C++ ByteCompiler.
+    sid = globalIdx(emitter, "event.publish")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    nameIdx = bc.add_string(node.eventName)
+    bc.emit("LOAD_CONST", nameIdx)
+    if node.payload != null {
+      emitExpr(emitter, node.payload)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("CALL", 2)
+    bc.emit("POP")
+    return
+  }
   if k == "OnTapStatement" {
     emitOnKeyBinding(emitter, "on_tap", node.key, node.body)
     return

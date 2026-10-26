@@ -1,0 +1,105 @@
+// smoke: timeout = 180
+// Regression: `emit` keyword broke the selfhost parser's whole token stream.
+// TokenType::Emit shipped with the C++ lexer (Lexer.cpp keywords) and parser
+// (parseEmitStatement), but the TOKEN_TYPE_NAMES table in TokenTypeNames.hpp
+// had no Emit row. _nativeTokenize (the actual tokenizer behind the .hv
+// tokenize()) fell back to type="Unknown" for the emit token, so
+// TID["Unknown"] = null tagged it tid=null, and pratt's binding-power lookup
+// crashed the whole parse with a null-key OBJECT index. Every script touching
+// emit in any form failed --format/--lint with the whole stream dumped.
+//
+// Covered through `havel --format`/`--lint`, never by execution: the emit
+// statement publishes to the real event bus, and `fn emit` shadows the
+// statement with a user function. Both are side effects; --format/--lint
+// parse, type-check and bytecode-compile without running anything, and the
+// sentinel fixture proves it (same technique as hotkey_symbol_keys.hv).
+//
+// Expected result: PASS, exit 0. Fails if any emit form stops parsing, if the
+// soft-name positions regress, or if a fixture got executed.
+use "fs"
+use "process"
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_emitfix_${sys.pid()}"
+SENTINEL = "${FIXTURE_DIR}/SIDE_EFFECT.txt"
+
+fs.mkdir(FIXTURE_DIR)
+
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-release/havel", "${cwd}/build-nollvm/havel",
+                  "${cwd}/build-debug/havel", "${cwd}/havel"]
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+// --------------------------------------------------------- fixture 1: forms
+// The emit statement in all its grammatical forms (identifier and string
+// event names, optional object payload), plus every soft-name position:
+// module fn named emit, parameter named emit, class method emit called as
+// member and via @ receiver. The payload path would write the sentinel if
+// executed; the class-method body has a sleep-like effect if executed.
+forms_src = """
+fn emit(tag, value) {
+    tag + str(value)
+}
+fn tagOf(emit, other) {
+    other
+}
+class Bus {
+    fn emit(value) {
+        value
+    }
+    fn twice(value) {
+        @emit(value)
+    }
+}
+emit "some.event"
+emit "other.event" { foo: 123 }
+emit "emit.name.event"
+return 0
+"""
+FORMS_FIXTURE = "${FIXTURE_DIR}/forms.hv"
+fs.write(FORMS_FIXTURE, forms_src)
+
+res = process.run("\"${havel_bin}\" run modules/lang/launcher.hv -- --script-dir modules/lang --format \"${FORMS_FIXTURE}\" 2>&1")
+assert(res.exitCode == 0, "emit forms must pass --format, got exit ${res.exitCode}: ${res.stdout}")
+assert(str(res.stdout).find("EmitStatement") != -1, "--format output must contain the parsed EmitStatement node, got: ${res.stdout}")
+assert(str(res.stdout).find("Unknown") == -1, "no token may serialize as Unknown, got: ${res.stdout}")
+
+res = process.run("\"${havel_bin}\" --lint \"${FORMS_FIXTURE}\" 2>&1")
+assert(res.exitCode == 0, "emit forms must pass --lint, got exit ${res.exitCode}: ${res.stdout}")
+
+// ------------------------------------------------- fixture 2: selfhost parity
+// The same forms must also parse through the pure-Havel pipeline
+// (launcher --lint). This is the path that originally crashed with the
+// null-key OBJECT index.
+SH_FIXTURE = "${FIXTURE_DIR}/selfhost.hv"
+sh_src = """
+decl = 1
+emit(decl)
+emit "sugar.event"
+return 0
+"""
+fs.write(SH_FIXTURE, sh_src)
+
+res = process.run("\"${havel_bin}\" run modules/lang/launcher.hv -- --script-dir modules/lang --lint \"${SH_FIXTURE}\" 2>&1")
+assert(res.exitCode == 0, "selfhost pipeline must lint emit forms, got exit ${res.exitCode}: ${res.stdout}")
+assert(str(res.stdout).find("Unknown") == -1, "selfhost tokens must all have names, got: ${res.stdout}")
+
+// ------------------------------------------------------- no execution check
+// --format and --lint compile but never run the fixture: the emit statement
+// would publish to the event bus, so if the sentinel exists something was
+// actually executed.
+assert(!fs.exists(SENTINEL), "no fixture must be executed (sentinel created)")
+
+fs.rmdir(FIXTURE_DIR, true)
+
+print("PASS emit-selfhost-parse")
+return 0

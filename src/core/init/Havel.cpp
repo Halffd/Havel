@@ -153,6 +153,7 @@ void Havel::initialize(bool isStartup) {
   hostContext->hotkeyManager = hotkeyManager.get();
   hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
+  hostContext->automationManager = automationManager.get();
   hostContext->brightnessManager = brightnessManager.get();
 
   // Create VM

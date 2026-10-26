@@ -38,6 +38,7 @@
 #include "core/window/WindowManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
+#include "core/automation/AutomationManager.hpp"
 #include <filesystem>
 #include <thread>
 #include <atomic>
@@ -93,9 +94,10 @@ public:
     if (!config_.headlessMode) {
       brightnessManager_ = std::make_shared<BrightnessManager>();
     }
+    automationManager_ = std::make_shared<automation::AutomationManager>(io_holder_);
     auto hostAPI = std::make_shared<HostAPI>(
         io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, automationManager_.get(), nullptr, nullptr, nullptr,
         config_.headlessMode ? nullptr : brightnessManager_.get());
     initializeFull(hostAPI, config_.leanMinimalStartup);
   }
@@ -1059,6 +1061,8 @@ private:
   std::shared_ptr<HotkeyManager> hotkeyManager_;
   std::shared_ptr<WindowManager> windowManager_;
   std::shared_ptr<BrightnessManager> brightnessManager_;
+  std::shared_ptr<automation::AutomationManager> automationManager_;
+
 #ifdef HAVEL_ENABLE_LLVM
   // Backend abstraction (TODO #18): the engine owns the ORC JIT through the
   // CompilerBackend boundary. The VM's tiering hooks keep talking to the

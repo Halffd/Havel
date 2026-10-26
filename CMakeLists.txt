@@ -2267,9 +2267,16 @@ enable_testing()
 # (it deliberately does not link Qt) and embedding-qt-invariant fails in
 # ctest. See scripts/ci/embedding-qt-audit.sh.
 add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
+# havel_core sits in the documented havel_core <-> havel_runtime symbol
+# cycle with the havel_runtime/havel_compiler archives (the same archives
+# havel_lang expands to). Without the group the single-pass archive scan
+# drops members pulled late (EventBridge/FileWatcher -> EventRuntime,
+# ExecutionEngine -> HotkeyActionWrapper) and the link fails with undefined
+# references. Link the concrete archives inside the group exactly like
+# havel-lsp does; havel_lang must not be wrapped because CMake expands an
+# INTERFACE library's transitive archives outside the group markers.
 target_link_libraries(embedding_minimal PRIVATE
-    havel_lang
-    havel_core
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
 )
 target_include_directories(embedding_minimal PRIVATE
     ${CMAKE_SOURCE_DIR}/src

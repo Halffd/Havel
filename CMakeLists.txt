@@ -2276,6 +2276,7 @@ add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
 # havel-lsp does; havel_lang must not be wrapped because CMake expands an
 # INTERFACE library's transitive archives outside the group markers.
 target_link_libraries(embedding_minimal PRIVATE
+
     ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
 )
 target_include_directories(embedding_minimal PRIVATE
@@ -3311,6 +3312,24 @@ endif()
 # which cannot compile the core sources (they require the generated
 # havel_platform.h, absent from that target's include path).
 if(ENABLE_TESTS AND GTest_FOUND)
+    # Config store save pipeline (serialize -> diff -> backup -> atomic write).
+    # Config.c is C; it is compiled as C and linked with its own logger so the
+    # test does not drag in the application core.
+    add_executable(config_store_test
+        tests/config_store_ut.cpp
+        src/c/Config.c
+        src/c/LoggerC.c
+    )
+    set_target_properties(config_store_test PROPERTIES C_STANDARD 11)
+    target_include_directories(config_store_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/c
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(config_store_test PRIVATE GTest::gtest GTest::gtest_main pthread)
+    add_test(NAME config_store_test COMMAND config_store_test)
+
     add_executable(cfg_pipeline_test
         tests/cfg_pipeline_ut.cpp
         src/havel-lang/compiler/core/FunctionBuilder.cpp

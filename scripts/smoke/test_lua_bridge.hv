@@ -42,6 +42,19 @@ check("lua.load returns object", type(bot) == "object")
 check("lua global function callable", bot.greet("you") == "hi you")
 check("lua table method callable", bot.score(14) == 42)
 
+// Release the loaded state, then the materialized environment must fail
+// cleanly (a throw) rather than crash the process on a closed lua_State.
+// The temp file stays for this section so `bot` remains a real loaded env;
+// it is removed after.
+lua.release(bot)
+released = false
+try {
+    bot.greet("you")
+} catch e {
+    released = true
+}
+check("post-release call throws, does not crash", released)
+
 fs.remove(path)
 
 // Lua errors surface as script-visible failures, not crashes.

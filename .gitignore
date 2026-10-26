@@ -19,6 +19,11 @@ build*
 # `build*` also swallows docs/build/, which is documentation, not build
 # output. Re-include it so docs/build/windows.md can actually be committed.
 !docs/build/
+# `build*` likewise swallows docs/contributing/build-system.md, which sat
+# untracked for its whole life: edits to it silently never left the working
+# tree. Re-include every docs markdown file so a filename can never decide
+# whether documentation is version-controlled.
+!docs/**/*.md
 *-protocol.o
 *-client-protocol.o
 *-server-protocol.o

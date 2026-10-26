@@ -26,5 +26,18 @@
 
 extern "C" HAVEL_EXPORT const char *__lsan_default_suppressions() {
     // Process-global fontconfig config cache, never freed by design.
-    return "leak:libfontconfig.so\n";
+    //
+    // CPython's import machinery (import_find_and_load and below) makes a
+    // handful of permanent allocations on the FIRST module import that
+    // survive Py_FinalizeEx - measured here as 2289 bytes / 3 allocations on
+    // test_python_bridge (stack: pyImport -> PyImport_ImportModule ->
+    // PyImport_Import -> import_find_and_load -> PyObject_CallMethodObjArgs),
+    // while py.eval-only usage of the same bridge runs clean. These are
+    // CPython-internal allocations, not bridge objects: the bridge's own
+    // reference discipline is balanced and shutdownPython drains the handle
+    // registry before Py_FinalizeEx. Suppressing by the import-machinery
+    // frame name is deliberately narrow - it hides nothing allocated in
+    // havel frames, so a genuine bridge leak still fails the suite.
+    return "leak:libfontconfig.so\n"
+           "leak:import_find_and_load\n";
 }

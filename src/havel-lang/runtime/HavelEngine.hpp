@@ -38,6 +38,7 @@
 #include "core/window/WindowManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
+#include "core/automation/AutomationManager.hpp"
 #include <filesystem>
 #include <thread>
 #include <atomic>
@@ -93,9 +94,10 @@ public:
     if (!config_.headlessMode) {
       brightnessManager_ = std::make_shared<BrightnessManager>();
     }
+    automationManager_ = std::make_shared<automation::AutomationManager>(io_holder_);
     auto hostAPI = std::make_shared<HostAPI>(
         io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, automationManager_.get(), nullptr, nullptr, nullptr,
         config_.headlessMode ? nullptr : brightnessManager_.get());
     initializeFull(hostAPI, config_.leanMinimalStartup);
   }
@@ -1059,6 +1061,8 @@ private:
   std::shared_ptr<HotkeyManager> hotkeyManager_;
   std::shared_ptr<WindowManager> windowManager_;
   std::shared_ptr<BrightnessManager> brightnessManager_;
+  std::shared_ptr<automation::AutomationManager> automationManager_;
+
 #ifdef HAVEL_ENABLE_LLVM
   // Backend abstraction (TODO #18): the engine owns the ORC JIT through the
   // CompilerBackend boundary. The VM's tiering hooks keep talking to the
@@ -1473,15 +1477,21 @@ private:
       // (test_hk_starvation_repeated: 1 of 10 triggers fired). Suspended and
       // Done are excluded: their outcome handling already parked them.
       //
-      // NO saveFiberStatePublic here. A held goroutine was NOT dispatched
+      // NO saveFiberState here. A held goroutine was never dispatched in
       // this pass, so its fiber already holds its own correct last-saved
-      // state - saving now would snapshot whatever frames the VM currently
-      // holds (usually __main__'s, whose sleep deadline expires constantly)
-      // and overwrite the held goroutine's fiber with main's bytecode
-      // position: on resume it ran main's deadline loop forever instead of
-      // its own body - 40 zombie goroutines in test_timer_stress_many_timers
-      // with every goroutine_done store never executing (fix verified 6/6 +
-      // 3/3 + full gate on havel-3, aa8bbbea8).
+      // state. Saving now would snapshot whatever frames the LAST dispatch
+      // left on the VM - frequently main's, because main is itself a
+      // scheduler goroutine whose 5ms sleep deadline expires constantly,
+      // and the suspension branch does not wipe the VM after saving. That
+      // overwrote the goroutine's fiber with __main__'s bytecode position:
+      // on resume it executed main's deadline loop instead of its own body,
+      // parked for 5ms, got woken, and looped forever (40 zombies,
+      // "every goroutine must finish, got 0" - and the all-or-nothing
+      // goroutines:0 variant where every goroutine_done store was lost).
+      // test_timer_stress_many_timers failed 1-in-3 even at load 0.4 on
+      // havel-3 (b4a8a5e9) and deterministically under load on main; this
+      // comment is the union of havel-3's aa8bbbea8 and main's 1130ff567,
+      // which fixed the same defect independently.
       if (h && h->state != compiler::Scheduler::GoroutineState::Suspended &&
           h->state != compiler::Scheduler::GoroutineState::Done) {
         if (h->state == compiler::Scheduler::GoroutineState::Created) {

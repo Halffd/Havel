@@ -41,8 +41,19 @@ grep "case OpCode::" "${JIT_SRC}" \
     | sed 's/.*case OpCode:://; s/[: ].*//' | sort -u > /tmp/unsupported_listed.txt
 
 # Every opcode in the enum.
+# Match every enum entry anywhere on a line, not just one per line at an
+# indent: the enum contains both column-0 entries (`CHANNEL_SEND,`) and
+# several entries per line (`BIT_POPCOUNT, BIT_CTZ, BIT_BSWAP, ...`), so a
+# `^\s+NAME,` pattern silently skipped 43 of 232 opcodes. The guard still
+# passed while checking only 189 - including 20 that the lowering does not
+# handle and this list did not claim, i.e. opcodes a JIT-compiled function
+# would have had silently dropped. Strip trailing `// ...` comments first so
+# a word inside a comment is not mistaken for an enumerator.
 sed -n '/^enum class OpCode/,/^};/p' "${IR_HPP}" \
-    | grep -oE '^\s+[A-Z][A-Z0-9_]*,' | tr -d ' ,\t' | sort -u > /tmp/all_opcodes.txt
+    | sed 's,//.*,,' \
+    | grep -oE '\b[A-Z][A-Z0-9_]*\b' \
+    | grep -vE '^OpCode$' \
+    | sort -u > /tmp/all_opcodes.txt
 
 if [[ ! -s /tmp/all_opcodes.txt ]]; then
     echo "FAIL: could not extract opcode list from ${IR_HPP}"

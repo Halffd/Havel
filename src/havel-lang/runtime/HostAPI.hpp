@@ -10,6 +10,8 @@
 namespace havel {
 
 namespace compiler { class VM; }
+namespace automation { class AutomationManager; }
+
 
 // Forward declarations
 using pID = int;
@@ -110,7 +112,7 @@ public:
   virtual class ScreenshotManager *GetScreenshotManager() = 0;
   virtual class ClipboardManager *GetClipboardManager() = 0;
   virtual class PixelAutomation *GetPixelAutomation() = 0;
-  virtual class AutomationManager *GetAutomationManager() = 0;
+  virtual class automation::AutomationManager *GetAutomationManager() = 0;
   virtual class FileManager *GetFileManager() = 0;
   virtual class ProcessManager *GetProcessManager() = 0;
   virtual class MapManager *GetMapManager() = 0;
@@ -142,7 +144,7 @@ public:
           class ScreenshotManager *screenshotManager = nullptr,
           class ClipboardManager *clipboardManager = nullptr,
           class PixelAutomation *pixelAutomation = nullptr,
-          class AutomationManager *automationManager = nullptr,
+          class automation::AutomationManager *automationManager = nullptr,
           class FileManager *fileManager = nullptr,
           class ProcessManager *processManager = nullptr,
            class MapManager *mapManager = nullptr,
@@ -197,7 +199,7 @@ public:
   class ScreenshotManager *GetScreenshotManager() override;
   class ClipboardManager *GetClipboardManager() override;
   class PixelAutomation *GetPixelAutomation() override;
-  class AutomationManager *GetAutomationManager() override;
+  class automation::AutomationManager *GetAutomationManager() override;
   class FileManager *GetFileManager() override;
   class ProcessManager *GetProcessManager() override;
   class MapManager *GetMapManager() override;
@@ -225,7 +227,7 @@ private:
   class ScreenshotManager *screenshotManager;
   class ClipboardManager *clipboardManager;
   class PixelAutomation *pixelAutomation;
-  class AutomationManager *automationManager;
+  class automation::AutomationManager *automationManager;
   class FileManager *fileManager;
   class ProcessManager *processManager;
   class MapManager *mapManager;

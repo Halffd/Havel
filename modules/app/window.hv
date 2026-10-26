@@ -67,6 +67,23 @@ try {
 }
 _active_cache_result = null
 _active_cache_ts = 0
+// Transient-null masking: X11 reports focus None/PointerRoot briefly
+// during override-redirect popups, compositor transitions and game
+// loading screens. Pollers that mode-switch on window changes would
+// flap on those samples. Hold the last real window for this long
+// before letting a null through; a genuine focus loss outlasts it.
+_active_hold_result = null
+_active_hold_ts = 0
+_active_hold_ms = 400
+try {
+    _env_hold = shell.getenv("HAVEL_WINDOW_ACTIVE_HOLD")
+    if _env_hold != null && _env_hold != "" {
+        _parsed_hold = int(_env_hold)
+        if _parsed_hold >= 0 { _active_hold_ms = _parsed_hold }
+    }
+} catch {
+    // ignore non-integer env; keep default
+}
 // activeId() uses the same TTL. Polling loops (goroutines watching the
 // active window) call activeId() directly; without a cache every poll
 // does an X round-trip that blocks the single VM thread. The id cache
@@ -93,12 +110,18 @@ fn active() {
     }
     _aid = activeId()
     if _aid == null || _aid == 0 {
+        if _active_hold_result != null && (time.now() - _active_hold_ts) <= _active_hold_ms {
+            _tend("active.total", _t0)
+            return _active_hold_result
+        }
         _tend("active.total", _t0)
         return null
     }
     _result = _snapshot(Window(_aid))
     _active_cache_result = _result
     _active_cache_ts = time.now()
+    _active_hold_result = _result
+    _active_hold_ts = time.now()
     _tend("active.total", _t0)
     _result
 }

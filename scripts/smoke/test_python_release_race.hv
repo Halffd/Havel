@@ -1,0 +1,102 @@
+// test_python_release_race.hv — release-during-call against the py.* bridge.
+//
+// Why this exists: a materialized method callback captures the opaque
+// handle's pyId and resolves it through the registry on every call
+// (lookupHandle). If the user releases the handle from another fiber while a
+// call is in flight — a hotkey action releasing an object another hotkey is
+// calling is the realistic shape — the in-flight side must see the clean
+// "handle was released" error, never a crash, and the registry must drain.
+//
+// Smoke-safe: Python stdlib only, no hardware, no network. Skips cleanly
+// when no embeddable libpython is present (same contract as
+// test_python_bridge).
+
+use py
+
+if !py.available() {
+    print("SKIP: no embeddable libpython on this machine")
+    shell.exit(0)
+}
+
+st = {fails: 0}
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        st.fails = st.fails + 1
+    }
+}
+
+baseline = py.handles()
+
+// A Python class instance with a cheap method. fromPython wraps instances
+// opaque and materializes their callables, so obj.m(...) is a direct
+// materialized call resolving the handle per call.
+obj = py.eval("type('C', (), {'m': lambda self: 42})()")
+check("instance is an opaque handle", py.str(obj) != "")
+check("method call works before release", obj.m() == 42)
+check("one handle retained for the instance", py.handles() == baseline + 1)
+
+// The race: a goroutine hammers the materialized method while the main fiber
+// releases the handle mid-flight. The goroutine must observe either
+// successful calls (before release) or the clean released-error (after) —
+// and the process must survive.
+sawCleanError = false
+sawCrashyError = false
+calls = 0
+done = false
+
+go fn() {
+    i = 0
+    while i < 2000 {
+        try {
+            if obj.m() != 42 {
+                sawCrashyError = true
+            }
+        } catch e {
+            msg = str(e)
+            if msg ~ "released" {
+                sawCleanError = true
+            } else {
+                // Any other message means the registry handed back something
+                // unexpected mid-race - record it loudly.
+                sawCrashyError = true
+                print("UNEXPECTED ERROR MID-RACE: " + msg)
+            }
+        }
+        calls = calls + 1
+        sleep(1)   // span the release: without this, 2000 cheap calls can
+                   // finish inside the main fiber's pre-release window and
+                   // the race never actually happens (observed on first run)
+        i = i + 1
+    }
+    done = true
+}
+
+// Give the goroutine a few dispatch slices so calls genuinely interleave
+// with the release, then release mid-flight.
+sleep(30)
+py.release(obj)
+
+deadline = time.millis() + 15000
+while !done && time.millis() < deadline {
+    sleep(5)
+}
+
+check("goroutine completed, no hang", done)
+check("no unexpected mid-race error", !sawCrashyError)
+check("clean released-error observed (release really raced a call)", sawCleanError)
+check("registry drained after release", py.handles() == baseline)
+
+// Post-release: a direct call must throw the clean error, not crash.
+late = false
+try {
+    obj.m()
+} catch e {
+    late = str(e) ~ "released"
+}
+check("post-release call throws clean released-error", late)
+
+print(st.fails == 0 ? "ALL PASS" : "FAILURES: " + st.fails)
+shell.exit(st.fails == 0 ? 0 : 1)

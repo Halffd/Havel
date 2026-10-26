@@ -5,7 +5,9 @@
 
 #include <dbus/dbus.h>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
+#include "utils/ExitHandler.hpp"
 
 namespace havel::host {
 
@@ -168,6 +170,17 @@ struct MediaService::Impl {
     if (!connection) {
       throw std::runtime_error("Failed to connect to DBus");
     }
+
+    // libdbus keeps internal allocator state (message loader buffers,
+    // string pools) alive past the last connection unref; only
+    // dbus_shutdown() releases them. Without this, every havel exit
+    // reports ~1.6KB of libdbus leaks under LeakSanitizer even after the
+    // MediaService is destroyed. Register once per process, only when a
+    // session bus connection was actually taken.
+    static std::once_flag dbus_shutdown_once;
+    std::call_once(dbus_shutdown_once, []() {
+      havel::registerExitCleanup([]() { dbus_shutdown(); });
+    });
 
     find_active_player();
   }

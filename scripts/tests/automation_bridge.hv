@@ -1,0 +1,49 @@
+// automation_bridge.hv - regression test for the automation.* host functions.
+//
+// WHAT: exercises automation.createAutoClicker / getTaskNames / hasTask /
+//       stopAll against the real AutomationManager (the bridge handlers were
+//       stubs returning false; the manager was never wired into any
+//       HostContext - both fixed together, see the automation commits).
+//
+// WHY scripts/tests/ AND NOT scripts/smoke/: createAutoClicker STARTS the
+//   clicker thread and its first io_->Click fires immediately - on a real
+//   desktop that is ONE REAL MOUSE CLICK. The smoke suite runs on every
+//   contributor's machine with no confirmation, so this file is deliberately
+//   NOT auto-collected. Run by hand only, with your screen in view:
+//     HAVEL_HEADLESS=1 ./build-debug/havel --headless scripts/tests/automation_bridge.hv
+//   Under headless (no input devices) the click is a no-op warning.
+//
+// EXPECTED: every check prints "ok"; final line "ALL CHECKS PASSED".
+//   Exit code is the headless script-run convention (1), not a failure -
+//   the printed lines are the verdict.
+
+print("check 1: create returns true")
+c = automation.createAutoClicker("left", 600)
+assert(c == true, "createAutoClicker must return true, got " + str(c))
+print("ok")
+
+print("check 2: task registered")
+names = automation.getTaskNames()
+assert(len(names) == 1, "expected 1 task, got " + str(len(names)))
+assert(str(names[0]).startsWith("AutoClicker_left_"), "wrong task name " + str(names[0]))
+print("ok: " + str(names))
+
+print("check 3: hasTask finds it")
+assert(automation.hasTask(names[0]), "hasTask must find the live task")
+assert(!automation.hasTask("no_such_task"), "hasTask must not find a missing task")
+print("ok")
+
+print("check 4: stopAll clears")
+assert(automation.stopAll() == true, "stopAll must succeed")
+assert(len(automation.getTaskNames()) == 0, "registry must be empty after stopAll")
+print("ok")
+
+print("check 5: runner and key-presser create")
+assert(automation.createAutoRunner("up", 600) == true, "createAutoRunner")
+assert(automation.createAutoKeyPresser("a", 600) == true, "createAutoKeyPresser")
+assert(len(automation.getTaskNames()) == 2, "two tasks expected")
+assert(automation.stopAll() == true, "final stopAll")
+assert(len(automation.getTaskNames()) == 0, "empty after final stopAll")
+print("ok")
+
+print("ALL CHECKS PASSED")

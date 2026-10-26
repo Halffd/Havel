@@ -3,53 +3,61 @@
 
 use toml
 
+// The host config object, captured at load time under a private name.
+// Referencing it as `config` inside this file does not work: `use
+// "std/config"` binds this module as `config`, and function bodies resolve
+// names in the importing scope, so every `config.get(...)` below found this
+// module and recursed into itself until the wrapper depth limit aborted the
+// script. Capturing once here sidesteps the name collision entirely.
+_store = config
+
 // Get a config value by key, with optional default
 fn get(key, _default) {
-    return config.get(key, _default)
+    return _store.get(key, _default)
 }
 
 // Get a config value by key (no default)
 fn get(key) {
-    return config.get(key)
+    return _store.get(key)
 }
 
 // Set a config value (autosave enabled via debounced save)
 fn set(key, value) {
-    return config.set(key, value)
+    return _store.set(key, value)
 }
 
 // Save config to disk immediately
 fn save() {
-    return config.save()
+    return _store.save()
 }
 
 // Reload config from disk
 fn load() {
-    return config.load()
+    return _store.load()
 }
 
 // Check if a config key exists
 fn has(key) {
-    return config.has(key)
+    return _store.has(key)
 }
 
 // Get all config keys
 fn keys() {
-    return config.keys()
+    return _store.keys()
 }
 
 // Get all config as an object
 fn all() {
-    return config.getAll()
+    return _store.getAll()
 }
 
 // Get a config section as a TOML-parsed object
 // e.g. config.section("General") returns {GamingApps: "...", DefaultBrightness: 1.0, ...}
 fn section(name) {
-    allConfig = config.getAll()
+    allConfig = _store.getAll()
     result = {}
     prefix = name + "."
-    k = config.keys()
+    k = _store.keys()
     i = 0
     n = #k
     while i < n {
@@ -72,17 +80,17 @@ fn batch(pairs) {
     n = #k
     while i < n {
         key = k[i]
-        config.set(key, pairs[key])
+        _store.set(key, pairs[key])
         i = i + 1
     }
-    config.save()
+    _store.save()
 }
 
 // Parse a TOML string and merge into config
 fn mergeToml(source) {
     data = toml.parse(source)
     _mergeObject(data, "")
-    config.save()
+    _store.save()
 }
 
 fn _mergeObject(obj, prefix) {
@@ -100,7 +108,7 @@ fn _mergeObject(obj, prefix) {
         if t == "object" {
             _mergeObject(_val, fullKey)
         } else {
-            config.set(fullKey, _val)
+            _store.set(fullKey, _val)
         }
         i = i + 1
     }
@@ -108,23 +116,79 @@ fn _mergeObject(obj, prefix) {
 
 // Export config as TOML string
 fn toToml() {
-    allConfig = config.getAll()
+    allConfig = _store.getAll()
     return toml.stringify(allConfig)
 }
 
-// Reset config to defaults by deleting the config file and reloading
+// Reset config to defaults by deleting the config file and reloading.
+// NOTE: this is not covered by the backup ring - the ring only guards the
+// save path. Copy the file aside first if the current settings matter.
 fn reset() {
     configPath = conf_path()
     if fs.exists(configPath) {
         shell.exec("rm " + configPath)
     }
-    config.load()
+    _store.load()
+}
+
+// What a save would change, without writing anything.
+// Returns {written:false, added, removed, changed, duplicateSections,
+//          malformedLines, backup}
+fn diff() {
+    return _store.diff()
+}
+
+// Save and return a full report instead of a bare bool, so a caller can tell
+// "wrote 3 keys" from "there was nothing to write" from "recovered a backup".
+fn save_report() {
+    return _store.saveReport()
+}
+
+// {path, keyCount, pendingDiff}
+fn status() {
+    return _store.status()
+}
+
+// {exists, valid, problems, duplicateSections, duplicateKeys, malformedLines}
+fn validate(filename) {
+    return _store.validate(filename)
+}
+
+fn validate() {
+    return _store.validate("havel.cfg")
+}
+
+// Collapse duplicate [Section] headers and duplicate key assignments by
+// rewriting the file in canonical form. The in-memory config already merged
+// them on load, so this is about making the file on disk match and reporting
+// what was collapsed. Takes a backup first; a clean file is left untouched.
+// {valid, written, duplicateSections, duplicateKeys, malformedLines, backup}
+fn dedupe() {
+    return _store.dedupe()
+}
+
+fn dedupe(filename) {
+    return _store.dedupe(filename)
+}
+
+// Existing backups, newest first.
+fn backups(filename) {
+    return _store.backups(filename)
+}
+
+fn backups() {
+    return _store.backups("havel.cfg")
+}
+
+// Restore backup `index` (0 = newest) into the live config file.
+fn restore(index) {
+    return _store.restore(index)
 }
 
 // Get the config file path
 fn conf_path() {
-    return config.get("_config_path", "")
+    return _store.get("_config_path", "")
 }
 
 // Compatibility: cfg = config (for scripts using 'use "std/config" as cfg')
-cfg = config
+cfg = _store

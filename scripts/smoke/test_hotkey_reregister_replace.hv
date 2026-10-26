@@ -1,0 +1,55 @@
+// Regression: re-registering a hotkey must replace the previous binding.
+//
+// when-blocks re-run their hotkey registrations on every condition flip.
+// Before the replace fix, each flip leaked a duplicate binding (resolveUniqueId
+// minted lwin_236, lwin_237, ... within seconds in the user's config). The
+// stale duplicates kept their OS grabs, shadowed the fresh binding, and
+// double-fired: one Enter press ran N handlers, one stopping the autoclicker
+// and the next restarting it.
+//
+// This test registers keys nobody presses (F23/F24) and never triggers input;
+// it only counts bindings via hotkey.list(). Expected: exactly one binding
+// per key after re-registration, both for direct hotkey.register and for
+// when-block re-entry.
+
+use "process"
+
+fn countAlias(name) {
+    _n = 0
+    for _hk in hotkey.list() {
+        if _hk.alias == name { _n = _n + 1 }
+    }
+    _n
+}
+
+if countAlias("F23") != 0 {
+    print("FAIL precondition: F23 already bound (${countAlias(\"F23\")})")
+    process.exit(1)
+}
+
+// 1. Direct re-registration replaces.
+hotkey.register("F23", () => {})
+hotkey.register("F23", () => {})
+_n1 = countAlias("F23")
+if _n1 != 1 {
+    print("FAIL hotkey.register leak: ${_n1} bindings for F23 (want 1)")
+    process.exit(1)
+}
+print("PASS register replaces")
+
+// 2. when-block re-entry replaces (the leak the user hit).
+_p = false
+when _p == true { _c = F24 => { } }
+_p = true
+sleep(300)
+_p = false
+sleep(200)
+_p = true
+sleep(300)
+_n2 = countAlias("F24")
+if _n2 != 1 {
+    print("FAIL when-block re-entry leak: ${_n2} bindings for F24 (want 1)")
+    process.exit(1)
+}
+print("PASS when re-entry replaces")
+process.exit(0)

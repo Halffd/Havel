@@ -126,5 +126,26 @@ fn conf_path() {
     return config.get("_config_path", "")
 }
 
-// Compatibility: cfg = config (for scripts using 'use "std/config" as cfg')
-cfg = config
+// Live section objects on the module namespace. The host `config` global
+// (set by registerConfigModule) is a __vivify object carrying one sub-object
+// per config section; `use "std/config" as X` binds THIS module's namespace,
+// not that global, so scripts doing X.Gaming.Classes read null without this.
+// Publishing the live sub-objects via _G (dynamic module exports) restores
+// the pre-refactor semantics: cfg.Gaming.Classes reads the section value
+// and writes are visible to config { } blocks and conf.* accesses (they all
+// share one object). Sections created by a later config.load()/reload() are
+// not re-published here - use cfg.get("Section.Key") for those.
+_cfgSections = config.keys()
+_i = 0
+_n = #_cfgSections
+while _i < _n {
+    _k = _cfgSections[_i]
+    _dot = _k.find(".")
+    if _dot > 0 {
+        _sec = _k[0:_dot]
+        if !_sec.startsWith("_") {
+            _G[_sec] = config[_sec]
+        }
+    }
+    _i = _i + 1
+}

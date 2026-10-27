@@ -349,67 +349,62 @@ void HavelConfig_ensureConfigDir(void) {
 // TOML parsing
 // ---------------------------------------------------------------------------
 
-static void parseTomlLine(char *line, char **section) {
-  char *p = line;
-  while (*p && isspace((unsigned char)*p))
-    p++;
-  if (!*p || *p == '#' || *p == ';')
-    return;
-
-  size_t len = strlen(p);
-  while (len > 0 && isspace((unsigned char)p[len - 1]))
-    p[--len] = '\0';
-  if (!*p)
-    return;
-
-  if (*p == '[' && len >= 2 && p[len - 1] == ']') {
-    p[len - 1] = '\0';
-    char *sec = p + 1;
-    if (*sec == '[' && p[len - 2] == ']') {
-      p[len - 2] = '\0';
-      sec++;
-    }
-    free(*section);
-    *section = trimDup(sec);
-    return;
-  }
-
-  char *eq = strchr(p, '=');
-  if (!eq)
-    return;
-  *eq = '\0';
-  char *rawKey = p;
-  char *rawVal = eq + 1;
-
-  char *key = trimDup(rawKey);
-  char *val = trimDup(rawVal);
-
-  size_t vlen = strlen(val);
-  if (vlen >= 2 &&
-      ((val[0] == '"' && val[vlen - 1] == '"') || (val[0] == '\'' && val[vlen - 1] == '\''))) {
-    memmove(val, val + 1, vlen - 2);
-    val[vlen - 2] = '\0';
-  }
-
-  havel_mutex_lock(&g_config.mutex);
-  if (*section && **section) {
-    size_t klen = strlen(*section) + 1 + strlen(key) + 1;
-    char *fullKey = (char *)malloc(klen);
-    snprintf(fullKey, klen, "%s.%s", *section, key);
-    cfgMapSet(&g_config.values, fullKey, val);
-    free(fullKey);
-  } else {
-    cfgMapSet(&g_config.values, key, val);
-  }
-  havel_mutex_unlock(&g_config.mutex);
-
-  free(key);
-  free(val);
-}
-
 // ---------------------------------------------------------------------------
 // Load / Save / Reload
 // ---------------------------------------------------------------------------
+
+// Defined in the save-pipeline block below.
+static int copyFileTo(const char *src, const char *dst);
+static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, size_t *malformed);
+static int cfgRecoverFromBackup(const char *path);
+
+// The single read path. load() and reload() used to carry two copies of this
+// logic; they drifted, and reload's copy lacked the zero-length recovery, so a
+// truncated file was read as "no settings" instead of being restored.
+static void cfgLoadFromDisk(const char *fpath, int notifyWatchers) {
+  // A zero-length config is never a legitimate state. Falling back to the
+  // newest good backup beats starting up with an empty config, whose only
+  // symptom is a downstream "expected object, got null" far from the cause.
+  struct stat lst;
+  bool recovered = false;
+  if (stat(fpath, &lst) == 0 && lst.st_size == 0)
+    recovered = cfgRecoverFromBackup(fpath) != 0;
+
+  // Parse into a FRESH map and swap it in. Parsing straight into the live map
+  // meant keys deleted from the file survived forever in memory and were
+  // written back on the next save.
+  CfgMap fresh;
+  cfgMapInit(&fresh);
+  size_t dups = 0, bad = 0;
+  cfgParseInto(fpath, &fresh, &dups, &bad);
+  if (dups || bad)
+    HAVEL_LOGF_WARN("Config: %s has %zu duplicate section(s) and %zu malformed line(s)", fpath,
+                    dups, bad);
+
+  havel_mutex_lock(&g_config.mutex);
+  if (notifyWatchers) {
+    for (size_t w = 0; w < g_config.watcherCount; w++) {
+      CfgWatch *cw = &g_config.watchers[w];
+      for (size_t i = 0; i < fresh.cap; i++) {
+        if (!fresh.entries[i].occupied)
+          continue;
+        const char *nk = fresh.entries[i].key;
+        const char *nv = fresh.entries[i].value;
+        const char *ov = cfgMapGet(&g_config.values, nk);
+        if ((!ov || strcmp(ov, nv) != 0) && (strcmp(cw->key, nk) == 0 || cw->key[0] == '\0'))
+          cw->cb(nk, nv, cw->userData);
+      }
+    }
+  }
+  cfgMapFree(&g_config.values);
+  g_config.values = fresh;
+  havel_mutex_unlock(&g_config.mutex);
+
+  // A file that does not exist yet (first run) is normal; a file that exists
+  // with content but parses to nothing is a real problem worth shouting about.
+  if (fresh.len == 0 && !recovered && stat(fpath, &lst) == 0 && lst.st_size > 0)
+    HAVEL_LOGF_WARN("Config: %s yielded no keys", fpath);
+}
 
 void HavelConfig_load(HavelConfig *cfg, const char *filename) {
   (void)cfg;
@@ -421,54 +416,457 @@ void HavelConfig_load(HavelConfig *cfg, const char *filename) {
   g_config.path = strdup(fpath);
   havel_mutex_unlock(&g_config.mutex);
 
-  FILE *f = fopen(fpath, "r");
-  if (!f) {
-    HAVEL_LOGF_ERROR("Could not open config file: %s", fpath);
-    return;
-  }
-
-  char *section = NULL;
-  char line[4096];
-  while (fgets(line, sizeof(line), f)) {
-    line[strcspn(line, "\r\n")] = '\0';
-    parseTomlLine(line, &section);
-  }
-  fclose(f);
-  free(section);
-}
-
-static void writeTomlValue(FILE *f, const char *value) {
-  if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
-    fputs(value, f);
-    return;
-  }
-  char *end;
-  strtod(value, &end);
-  if (*end == '\0' && end != value) {
-    fputs(value, f);
-    return;
-  }
-  size_t vlen = strlen(value);
-  if (vlen >= 2 && ((value[0] == '"' && value[vlen - 1] == '"') ||
-                    (value[0] == '\'' && value[vlen - 1] == '\''))) {
-    fputs(value, f);
-    return;
-  }
-  if (vlen > 0 && (value[0] == '[' || value[0] == '{')) {
-    fputs(value, f);
-    return;
-  }
-  fputc('"', f);
-  fputs(value, f);
-  fputc('"', f);
+  cfgLoadFromDisk(fpath, 0);
 }
 
 static int cmpStr(const void *a, const void *b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
 
-void HavelConfig_save(HavelConfig *cfg, const char *filename) {
+// ===========================================================================
+// Canonical serialization, diffing, atomic writes, backups, validation
+// ===========================================================================
+//
+// The config file is the user's data: it survives across processes and is
+// edited by hand. Everything below exists because a plain
+// fopen(path,"w") + fprintf loop can, and did, destroy it:
+//
+//   - a crash or a kill mid-write leaves a truncated file (the 0-byte
+//     artifacts a killed linker leaves behind are the same failure mode);
+//   - rewriting when nothing changed needlessly churns the file and burns
+//     backup slots, so real changes become invisible;
+//   - a bad write had no way back, so a single mistake cost every setting.
+//
+// The pipeline is therefore: serialize in memory -> diff against disk ->
+// only if it differs, rotate a backup and write via temp+fsync+rename.
+
+#define CFG_BACKUP_COUNT 3
+#define CFG_MAX_REPORT_KEYS 64
+
+// Growable text buffer.
+typedef struct {
+  char *data;
+  size_t len;
+  size_t cap;
+} TextBuf;
+
+static void tbInit(TextBuf *b) {
+  b->data = NULL;
+  b->len = 0;
+  b->cap = 0;
+}
+
+static int tbReserve(TextBuf *b, size_t extra) {
+  if (b->len + extra + 1 <= b->cap)
+    return 1;
+  size_t want = b->cap ? b->cap : 4096;
+  while (want < b->len + extra + 1)
+    want *= 2;
+  char *p = (char *)realloc(b->data, want);
+  if (!p)
+    return 0;
+  b->data = p;
+  b->cap = want;
+  return 1;
+}
+
+static void tbAppend(TextBuf *b, const char *s, size_t n) {
+  if (!tbReserve(b, n))
+    return;
+  memcpy(b->data + b->len, s, n);
+  b->len += n;
+  b->data[b->len] = '\0';
+}
+
+static void tbPuts(TextBuf *b, const char *s) {
+  tbAppend(b, s, strlen(s));
+}
+
+// ---------------------------------------------------------------------------
+// Canonical serializer: root keys first, then exactly one [Section] header per
+// section, keys sorted within each. This is the ONLY writer of the file format;
+// a second writer is how the duplicate-header corruption got in.
+// ---------------------------------------------------------------------------
+static int cfgSerialize(const CfgMap *m, char **outText) {
+  size_t nKeys = 0;
+  for (size_t i = 0; i < m->cap; i++)
+    if (m->entries[i].occupied)
+      nKeys++;
+  if (nKeys == 0) {
+    *outText = strdup("");
+    return *outText != NULL;
+  }
+
+  char **keys = (char **)malloc(nKeys * sizeof(char *));
+  if (!keys)
+    return 0;
+  size_t ki = 0;
+  for (size_t i = 0; i < m->cap; i++)
+    if (m->entries[i].occupied)
+      keys[ki++] = m->entries[i].key;
+  qsort(keys, ki, sizeof(char *), cmpStr);
+
+  TextBuf b;
+  tbInit(&b);
+  if (!tbReserve(&b, 8192)) {
+    free(keys);
+    return 0;
+  }
+  b.data[0] = '\0';
+
+  // Root keys must precede any [table]: in TOML a bare key written after a
+  // table header belongs to that table.
+  for (size_t i = 0; i < ki; i++) {
+    if (strchr(keys[i], '.'))
+      continue;
+    const char *val = cfgMapGet(m, keys[i]);
+    if (!val)
+      continue;
+    tbPuts(&b, keys[i]);
+    tbPuts(&b, " = ");
+    // writeTomlValue writes to a FILE; mirror it into the buffer by hand.
+    size_t vlen = strlen(val);
+    int bare = (strcmp(val, "true") == 0 || strcmp(val, "false") == 0);
+    if (!bare && vlen >= 2 &&
+        ((val[0] == '"' && val[vlen - 1] == '"') || (val[0] == '\'' && val[vlen - 1] == '\'')))
+      bare = 1;
+    if (!bare && vlen > 0 && (val[0] == '[' || val[0] == '{'))
+      bare = 1;
+    if (!bare) {
+      char *end;
+      strtod(val, &end);
+      if (*end == '\0' && end != val)
+        bare = 1;
+    }
+    if (bare) {
+      tbPuts(&b, val);
+    } else {
+      tbPuts(&b, "\"");
+      tbPuts(&b, val);
+      tbPuts(&b, "\"");
+    }
+    tbPuts(&b, "\n");
+  }
+
+  // One header per section. Compare against the PREVIOUS KEY's section
+  // prefix: the earlier version stored the whole previous key
+  // ("IO.Backend") as "lastSection", compared the next section's length
+  // against strlen("IO.Backend"), and therefore never matched - every key
+  // got its own [Section] header. That output redefines tables, which TOML
+  // forbids, so a later load lost the multi-key sections entirely.
+  const char *lastKey = NULL;
+  for (size_t i = 0; i < ki; i++) {
+    const char *dot = strchr(keys[i], '.');
+    if (!dot)
+      continue;
+    const char *val = cfgMapGet(m, keys[i]);
+    if (!val)
+      continue;
+    size_t secLen = (size_t)(dot - keys[i]);
+    int sameSection = 0;
+    if (lastKey) {
+      const char *lastDot = strchr(lastKey, '.');
+      if (lastDot && (size_t)(lastDot - lastKey) == secLen &&
+          strncmp(keys[i], lastKey, secLen) == 0)
+        sameSection = 1;
+    }
+    if (!sameSection) {
+      if (b.len > 0)
+        tbPuts(&b, "\n");
+      tbPuts(&b, "[");
+      tbAppend(&b, keys[i], secLen);
+      tbPuts(&b, "]\n");
+    }
+    tbPuts(&b, dot + 1);
+    tbPuts(&b, " = ");
+    size_t vlen = strlen(val);
+    int bare = (strcmp(val, "true") == 0 || strcmp(val, "false") == 0);
+    if (!bare && vlen >= 2 &&
+        ((val[0] == '"' && val[vlen - 1] == '"') || (val[0] == '\'' && val[vlen - 1] == '\'')))
+      bare = 1;
+    if (!bare && vlen > 0 && (val[0] == '[' || val[0] == '{'))
+      bare = 1;
+    if (!bare) {
+      char *end;
+      strtod(val, &end);
+      if (*end == '\0' && end != val)
+        bare = 1;
+    }
+    if (bare) {
+      tbPuts(&b, val);
+    } else {
+      tbPuts(&b, "\"");
+      tbPuts(&b, val);
+      tbPuts(&b, "\"");
+    }
+    tbPuts(&b, "\n");
+    lastKey = keys[i];
+  }
+
+  free(keys);
+  if (!b.data) {
+    *outText = strdup("");
+    return 1;
+  }
+  *outText = b.data;
+  return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Diff: what a save would add / remove / change relative to disk.
+// ---------------------------------------------------------------------------
+static char *cfgReadWholeFile(const char *path, size_t *outLen) {
+  FILE *f = fopen(path, "rb");
+  if (!f) {
+    if (outLen)
+      *outLen = 0;
+    return NULL;
+  }
+  TextBuf b;
+  tbInit(&b);
+  if (!tbReserve(&b, 8192)) {
+    fclose(f);
+    return NULL;
+  }
+  b.data[0] = '\0';
+  char chunk[4096];
+  size_t n;
+  while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0)
+    tbAppend(&b, chunk, n);
+  fclose(f);
+  if (outLen)
+    *outLen = b.len;
+  if (!b.data)
+    b.data = strdup("");
+  return b.data;
+}
+
+// Parse a file into a fresh map without touching global state.
+static void cfgParseInto(const char *path, CfgMap *dst, size_t *dupSections, size_t *malformed) {
+  size_t dups = 0, bad = 0;
+  FILE *f = fopen(path, "r");
+  if (f) {
+    char *section = NULL;
+    char line[4096];
+    while (fgets(line, sizeof(line), f)) {
+      line[strcspn(line, "\r\n")] = '\0';
+      char *sp = line;
+      while (*sp && isspace((unsigned char)*sp))
+        sp++;
+      size_t len = strlen(sp);
+      while (len > 0 && isspace((unsigned char)sp[len - 1]))
+        sp[--len] = '\0';
+      if (!*sp || *sp == '#' || *sp == ';')
+        continue;
+      if (*sp == '[' && len >= 2 && sp[len - 1] == ']') {
+        sp[len - 1] = '\0';
+        char *sec = sp + 1;
+        if (*sec == '[' && len >= 3 && sp[len - 2] == ']') {
+          sp[len - 2] = '\0';
+          sec++;
+        }
+        char *trimmed = trimDup(sec);
+        if (section && *section && strcmp(section, trimmed) != 0) {
+          // A different section: fine. Same section repeated is the
+          // redefinition the old writer produced.
+        } else if (section && *section) {
+          dups++;
+        }
+        free(section);
+        section = trimmed;
+        continue;
+      }
+      char *eq = strchr(sp, '=');
+      if (!eq) {
+        bad++;
+        continue;
+      }
+      *eq = '\0';
+      char *key = trimDup(sp);
+      char *val = trimDup(eq + 1);
+      size_t vlen = strlen(val);
+      if (vlen >= 2 &&
+          ((val[0] == '"' && val[vlen - 1] == '"') || (val[0] == '\'' && val[vlen - 1] == '\''))) {
+        memmove(val, val + 1, vlen - 2);
+        val[vlen - 2] = '\0';
+      }
+      if (section && *section) {
+        size_t klen = strlen(section) + strlen(key) + 2;
+        char *fullKey = (char *)malloc(klen);
+        snprintf(fullKey, klen, "%s.%s", section, key);
+        cfgMapSet(dst, fullKey, val);
+        free(fullKey);
+      } else {
+        cfgMapSet(dst, key, val);
+      }
+      free(key);
+      free(val);
+    }
+    fclose(f);
+    free(section);
+  }
+  if (dupSections)
+    *dupSections = dups;
+  if (malformed)
+    *malformed = bad;
+}
+
+static void cfgDiffMaps(const CfgMap *mem, const CfgMap *disk, HavelConfigSaveReport *rep) {
+  for (size_t i = 0; i < mem->cap; i++) {
+    if (!mem->entries[i].occupied)
+      continue;
+    const char *k = mem->entries[i].key;
+    const char *v = mem->entries[i].value;
+    const char *dv = cfgMapGet(disk, k);
+    if (!dv)
+      rep->added++;
+    else if (strcmp(dv, v) != 0)
+      rep->changed++;
+  }
+  for (size_t i = 0; i < disk->cap; i++) {
+    if (!disk->entries[i].occupied)
+      continue;
+    if (!cfgMapGet(mem, disk->entries[i].key))
+      rep->removed++;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Atomic write: temp file in the SAME directory, fsync, rename, fsync dir.
+// A reader either sees the old file or the new one, never a partial one.
+// ---------------------------------------------------------------------------
+static int cfgWriteAtomic(const char *path, const char *text) {
+  char tmp[4200];
+  snprintf(tmp, sizeof(tmp), "%s.tmp.%d", path, (int)getpid());
+  FILE *f = fopen(tmp, "wb");
+  if (!f) {
+    HAVEL_LOGF_ERROR("Config: cannot create temp file %s", tmp);
+    return 0;
+  }
+  size_t len = strlen(text);
+  if (len > 0 && fwrite(text, 1, len, f) != len) {
+    fclose(f);
+    remove(tmp);
+    HAVEL_LOGF_ERROR("Config: short write to %s", tmp);
+    return 0;
+  }
+  if (fflush(f) != 0) {
+    fclose(f);
+    remove(tmp);
+    return 0;
+  }
+  if (fsync(fileno(f)) != 0 && errno != EINVAL) {
+    fclose(f);
+    remove(tmp);
+    HAVEL_LOGF_ERROR("Config: fsync failed for %s", tmp);
+    return 0;
+  }
+  if (fclose(f) != 0) {
+    remove(tmp);
+    return 0;
+  }
+  if (rename(tmp, path) != 0) {
+    remove(tmp);
+    HAVEL_LOGF_ERROR("Config: rename %s -> %s failed: %s", tmp, path, strerror(errno));
+    return 0;
+  }
+  // fsync the directory so the rename itself is durable.
+  char dir[4096];
+  snprintf(dir, sizeof(dir), "%s", path);
+  char *slash = strrchr(dir, '/');
+  if (slash) {
+    *slash = '\0';
+    int dfd = open(dir, O_RDONLY);
+    if (dfd >= 0) {
+      fsync(dfd);
+      close(dfd);
+    }
+  }
+  return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Backup ring: current -> .bak1 -> .bak2 -> .bak3, only when about to
+// overwrite with genuinely different content.
+// ---------------------------------------------------------------------------
+static void cfgBackupRotate(const char *path, char *outBackup, size_t outSz) {
+  struct stat st;
+  if (stat(path, &st) != 0 || st.st_size == 0)
+    return; // nothing worth keeping
+
+  char oldest[4200], prev[4200];
+  snprintf(oldest, sizeof(oldest), "%s.bak%d", path, CFG_BACKUP_COUNT);
+  remove(oldest);
+  for (int i = CFG_BACKUP_COUNT - 1; i >= 1; i--) {
+    snprintf(prev, sizeof(prev), "%s.bak%d", path, i);
+    snprintf(oldest, sizeof(oldest), "%s.bak%d", path, i + 1);
+    rename(prev, oldest);
+  }
+  snprintf(prev, sizeof(prev), "%s.bak1", path);
+  if (copyFileTo(path, prev) && outBackup && outSz > 0)
+    snprintf(outBackup, outSz, "%s", prev);
+}
+
+static int copyFileTo(const char *src, const char *dst) {
+  FILE *in = fopen(src, "rb");
+  if (!in)
+    return 0;
+  FILE *out = fopen(dst, "wb");
+  if (!out) {
+    fclose(in);
+    return 0;
+  }
+  char chunk[8192];
+  size_t n;
+  int ok = 1;
+  while ((n = fread(chunk, 1, sizeof(chunk), in)) > 0) {
+    if (fwrite(chunk, 1, n, out) != n) {
+      ok = 0;
+      break;
+    }
+  }
+  fclose(in);
+  if (fflush(out) == 0)
+    fsync(fileno(out));
+  fclose(out);
+  if (!ok)
+    remove(dst);
+  return ok;
+}
+
+// Recovery: if the live file is gone or unreadable-as-config, adopt the
+// newest backup instead of silently continuing with an empty config.
+static int cfgRecoverFromBackup(const char *path) {
+  for (int i = 1; i <= CFG_BACKUP_COUNT; i++) {
+    char bak[4200];
+    snprintf(bak, sizeof(bak), "%s.bak%d", path, i);
+    struct stat st;
+    if (stat(bak, &st) != 0 || st.st_size == 0)
+      continue;
+    CfgMap probe;
+    cfgMapInit(&probe);
+    size_t dups = 0, bad = 0;
+    cfgParseInto(bak, &probe, &dups, &bad);
+    size_t keys = probe.len;
+    cfgMapFree(&probe);
+    if (keys == 0)
+      continue;
+    HAVEL_LOGF_WARN("Config: %s is missing or unreadable; recovered from %s", path, bak);
+    return copyFileTo(bak, path);
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Save pipeline: serialize -> diff vs disk -> backup + atomic write only when
+// the content actually differs.
+// ---------------------------------------------------------------------------
+void HavelConfig_saveWithReport(HavelConfig *cfg, const char *filename,
+                                HavelConfigSaveReport *out) {
   (void)cfg;
+  HavelConfigSaveReport rep;
+  memset(&rep, 0, sizeof(rep));
+
   char fpath[4096];
   if (filename && *filename) {
     HavelConfig_getConfigFilePath(filename, fpath, sizeof(fpath));
@@ -476,6 +874,8 @@ void HavelConfig_save(HavelConfig *cfg, const char *filename) {
     havel_mutex_lock(&g_config.mutex);
     if (!g_config.path || !*g_config.path) {
       havel_mutex_unlock(&g_config.mutex);
+      if (out)
+        *out = rep;
       return;
     }
     snprintf(fpath, sizeof(fpath), "%s", g_config.path);
@@ -484,159 +884,204 @@ void HavelConfig_save(HavelConfig *cfg, const char *filename) {
 
   HavelConfig_ensureConfigDir();
 
-  FILE *f = fopen(fpath, "w");
-  if (!f) {
-    HAVEL_LOGF_ERROR("Could not save config file: %s", fpath);
+  // Serialize a consistent snapshot under the lock, then do all file work
+  // outside it so a slow disk cannot block readers.
+  char *text = NULL;
+  havel_mutex_lock(&g_config.mutex);
+  int serialized = cfgSerialize(&g_config.values, &text);
+  havel_mutex_unlock(&g_config.mutex);
+  if (!serialized || !text) {
+    HAVEL_LOGF_ERROR("Config: serialization failed; %s left untouched", fpath);
+    if (out)
+      *out = rep;
     return;
   }
 
+  // What is on disk right now, and is it even readable?
+  CfgMap disk;
+  cfgMapInit(&disk);
+  size_t dups = 0, bad = 0;
+  struct stat st;
+  if (stat(fpath, &st) == 0 && st.st_size == 0) {
+    // A zero-length config is not a legitimate state - recover before
+    // diffing, otherwise the diff would read as "everything added" and the
+    // empty state would be written back as if it were intended.
+    if (cfgRecoverFromBackup(fpath))
+      rep.recovered = true;
+  }
+  cfgParseInto(fpath, &disk, &dups, &bad);
+  rep.duplicates = dups;
+  rep.malformed = bad;
+
+  size_t diskLen = 0;
+  char *diskText = cfgReadWholeFile(fpath, &diskLen);
+  if (diskText && diskLen == strlen(text) && memcmp(diskText, text, diskLen) == 0) {
+    // Nothing changed: do not rewrite, do not burn a backup slot. This is
+    // what makes a later real change visible in the diff.
+    free(diskText);
+    free(text);
+    cfgMapFree(&disk);
+    rep.written = false;
+    if (out)
+      *out = rep;
+    return;
+  }
+  free(diskText);
+
+  cfgDiffMaps(&g_config.values, &disk, &rep);
+  cfgMapFree(&disk);
+
+  if (rep.recovered || rep.duplicates || rep.malformed) {
+    // The file we are about to replace was malformed: say so loudly instead
+    // of silently "fixing" the user's file.
+    HAVEL_LOGF_WARN("Config: rewriting %s (recovered=%d duplicate sections=%d malformed lines=%d)",
+                    fpath, (int)rep.recovered, (int)rep.duplicates, (int)rep.malformed);
+  }
+
+  cfgBackupRotate(fpath, rep.backup, sizeof(rep.backup));
+
+  if (!cfgWriteAtomic(fpath, text)) {
+    free(text);
+    if (out)
+      *out = rep;
+    return;
+  }
+  free(text);
+  rep.written = true;
+
+  if (rep.added || rep.removed || rep.changed) {
+    HAVEL_LOGF_INFO("Config: saved %s (+%zu ~%zu -%zu)", fpath, rep.added, rep.changed,
+                    rep.removed);
+  }
+
+  if (out)
+    *out = rep;
+}
+
+void HavelConfig_save(HavelConfig *cfg, const char *filename) {
+  HavelConfig_saveWithReport(cfg, filename, NULL);
+}
+
+void HavelConfig_diffToDisk(HavelConfig *cfg, HavelConfigSaveReport *out) {
+  (void)cfg;
+  HavelConfigSaveReport rep;
+  memset(&rep, 0, sizeof(rep));
+
+  char fpath[4096];
   havel_mutex_lock(&g_config.mutex);
-
-  // Collect all keys, sort them
-  size_t nKeys = g_config.values.len;
-  char **keys = (char **)malloc(nKeys * sizeof(char *));
-  size_t ki = 0;
-  for (size_t i = 0; i < g_config.values.cap; i++) {
-    if (g_config.values.entries[i].occupied)
-      keys[ki++] = g_config.values.entries[i].key;
+  if (!g_config.path || !*g_config.path) {
+    havel_mutex_unlock(&g_config.mutex);
+    if (out)
+      *out = rep;
+    return;
   }
-  qsort(keys, ki, sizeof(char *), cmpStr);
-
-  // Group by section
-  const char *lastSection = "";
-  for (size_t i = 0; i < ki; i++) {
-    const char *key = keys[i];
-    const char *val = cfgMapGet(&g_config.values, key);
-    if (!val)
-      continue;
-
-    const char *dot = strchr(key, '.');
-    if (dot) {
-      size_t secLen = (size_t)(dot - key);
-      if (secLen != strlen(lastSection) || strncmp(key, lastSection, secLen) != 0) {
-        if (i > 0)
-          fputc('\n', f);
-        fputc('[', f);
-        fwrite(key, 1, secLen, f);
-        fputs("]\n", f);
-        lastSection = key;
-      }
-      fputs(dot + 1, f);
-      fputs(" = ", f);
-      writeTomlValue(f, val);
-      fputc('\n', f);
-    } else {
-      fputs(key, f);
-      fputs(" = ", f);
-      writeTomlValue(f, val);
-      fputc('\n', f);
-      lastSection = "";
-    }
-  }
-
+  snprintf(fpath, sizeof(fpath), "%s", g_config.path);
   havel_mutex_unlock(&g_config.mutex);
-  free(keys);
-  fclose(f);
+
+  CfgMap disk;
+  cfgMapInit(&disk);
+  size_t dups = 0, bad = 0;
+  cfgParseInto(fpath, &disk, &dups, &bad);
+  rep.duplicates = dups;
+  rep.malformed = bad;
+  cfgDiffMaps(&g_config.values, &disk, &rep);
+  cfgMapFree(&disk);
+  if (out)
+    *out = rep;
+}
+
+int HavelConfig_validateFile(const char *filename, size_t *duplicateSections,
+                             size_t *malformedLines) {
+  char fpath[4096];
+  HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
+  struct stat st;
+  if (stat(fpath, &st) != 0) {
+    if (duplicateSections)
+      *duplicateSections = 0;
+    if (malformedLines)
+      *malformedLines = 0;
+    return -1; // missing
+  }
+  CfgMap probe;
+  cfgMapInit(&probe);
+  size_t dups = 0, bad = 0;
+  cfgParseInto(fpath, &probe, &dups, &bad);
+  cfgMapFree(&probe);
+  if (duplicateSections)
+    *duplicateSections = dups;
+  if (malformedLines)
+    *malformedLines = bad;
+  return (int)(dups + bad);
+}
+
+size_t HavelConfig_listBackups(const char *filename, char ***outPaths) {
+  char fpath[4096];
+  HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
+  char **paths = (char **)calloc(CFG_BACKUP_COUNT, sizeof(char *));
+  size_t n = 0;
+  if (!paths) {
+    *outPaths = NULL;
+    return 0;
+  }
+  for (int i = 1; i <= CFG_BACKUP_COUNT; i++) {
+    char bak[4200];
+    snprintf(bak, sizeof(bak), "%s.bak%d", fpath, i);
+    struct stat st;
+    if (stat(bak, &st) != 0 || st.st_size == 0)
+      continue;
+    paths[n++] = strdup(bak);
+  }
+  *outPaths = paths;
+  return n;
+}
+
+void HavelConfig_freeBackups(char **paths, size_t count) {
+  if (!paths)
+    return;
+  for (size_t i = 0; i < count; i++)
+    free(paths[i]);
+  free(paths);
+}
+
+bool HavelConfig_restoreBackup(HavelConfig *cfg, const char *filename, size_t index) {
+  (void)cfg;
+  char fpath[4096];
+  HavelConfig_getConfigFilePath(filename ? filename : "havel.cfg", fpath, sizeof(fpath));
+
+  char bak[4200];
+  snprintf(bak, sizeof(bak), "%s.bak%d", fpath, (int)index + 1);
+  size_t bakLen = 0;
+  char *content = cfgReadWholeFile(bak, &bakLen);
+  if (!content || bakLen == 0) {
+    free(content);
+    return false;
+  }
+
+  // Rotate the live file only AFTER taking a copy of the backup, because
+  // rotating pushes the live file into .bak1 - the very slot being restored
+  // from. Rotating first silently restored the file that was already there.
+  cfgBackupRotate(fpath, NULL, 0);
+  int ok = cfgWriteAtomic(fpath, content);
+  free(content);
+  if (!ok)
+    return false;
+
+  HAVEL_LOGF_INFO("Config: restored %s from %s", fpath, bak);
+  HavelConfig_reload(HavelConfig_getInstance());
+  return true;
 }
 
 void HavelConfig_reload(HavelConfig *cfg) {
+  char fpath[4096];
   havel_mutex_lock(&g_config.mutex);
-  char *p = g_config.path ? strdup(g_config.path) : NULL;
-  havel_mutex_unlock(&g_config.mutex);
-
-  if (!p || !*p) {
-    free(p);
+  if (!g_config.path || !*g_config.path) {
+    havel_mutex_unlock(&g_config.mutex);
     return;
   }
-
-  FILE *f = fopen(p, "r");
-  if (!f) {
-    free(p);
-    return;
-  }
-
-  CfgMap newValues;
-  cfgMapInit(&newValues);
-
-  char *section = NULL;
-  char line[4096];
-  while (fgets(line, sizeof(line), f)) {
-    line[strcspn(line, "\r\n")] = '\0';
-    char *sp = line;
-    while (*sp && isspace((unsigned char)*sp))
-      sp++;
-    if (!*sp || *sp == '#' || *sp == ';')
-      continue;
-
-    size_t len = strlen(sp);
-    while (len > 0 && isspace((unsigned char)sp[len - 1]))
-      sp[--len] = '\0';
-    if (!*sp)
-      continue;
-
-    if (*sp == '[' && len >= 2 && sp[len - 1] == ']') {
-      sp[len - 1] = '\0';
-      char *sec = sp + 1;
-      if (*sec == '[' && sp[len - 2] == ']') {
-        sp[len - 2] = '\0';
-        sec++;
-      }
-      free(section);
-      section = trimDup(sec);
-      continue;
-    }
-
-    char *eq = strchr(sp, '=');
-    if (!eq)
-      continue;
-    *eq = '\0';
-    char *rawKey = sp;
-    char *rawVal = eq + 1;
-    char *key = trimDup(rawKey);
-    char *val = trimDup(rawVal);
-    size_t vlen = strlen(val);
-    if (vlen >= 2 &&
-        ((val[0] == '"' && val[vlen - 1] == '"') || (val[0] == '\'' && val[vlen - 1] == '\''))) {
-      memmove(val, val + 1, vlen - 2);
-      val[vlen - 2] = '\0';
-    }
-
-    if (section && *section) {
-      size_t klen = strlen(section) + 1 + strlen(key) + 1;
-      char *fullKey = (char *)malloc(klen);
-      snprintf(fullKey, klen, "%s.%s", section, key);
-      cfgMapSet(&newValues, fullKey, val);
-      free(fullKey);
-    } else {
-      cfgMapSet(&newValues, key, val);
-    }
-    free(key);
-    free(val);
-  }
-  fclose(f);
-  free(section);
-
-  // Notify watchers of changed values, then swap
-  havel_mutex_lock(&g_config.mutex);
-  for (size_t w = 0; w < g_config.watcherCount; w++) {
-    CfgWatch *cw = &g_config.watchers[w];
-    for (size_t i = 0; i < newValues.cap; i++) {
-      if (!newValues.entries[i].occupied)
-        continue;
-      const char *nk = newValues.entries[i].key;
-      const char *nv = newValues.entries[i].value;
-      const char *ov = cfgMapGet(&g_config.values, nk);
-      if (!ov || strcmp(ov, nv) != 0) {
-        if (strcmp(cw->key, nk) == 0 || cw->key[0] == '\0') {
-          cw->cb(nk, nv, cw->userData);
-        }
-      }
-    }
-  }
-  cfgMapFree(&g_config.values);
-  g_config.values = newValues;
+  snprintf(fpath, sizeof(fpath), "%s", g_config.path);
   havel_mutex_unlock(&g_config.mutex);
-  free(p);
+
+  cfgLoadFromDisk(fpath, 1);
 }
 
 // ---------------------------------------------------------------------------

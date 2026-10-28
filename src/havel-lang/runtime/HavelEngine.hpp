@@ -1249,8 +1249,12 @@ private:
           held.push_back(g);
           continue;
         }
-        failing_g = g;
+        // Same exit invariant as processGoroutines: no user dispatch after
+        // exit was requested mid-iteration (see the guard there).
+        if (vm_->exit_requested_.load())
+          break;
 
+         failing_g = g;
         // Conditional `when` hotkey: re-check the condition on every trigger
         // and re-park when false, so its body never runs for this press.
         if (!vm_->hotkeyConditionAllows(g)) {
@@ -1649,9 +1653,20 @@ private:
         continue;
       }
 
+      // Exit invariant: once exit was requested (exit()/sys.exit from any
+      // goroutine), no further user bytecode may dispatch. The loop-top
+      // check is not enough: a goroutine's own dispatch or a timer/
+      // deferred callback inside this iteration can request exit, and the
+      // pre-dispatch work above (timer wakeups, event dispatch) then handed
+      // the pump a goroutine whose captured upvalue cells are being closed
+      // by the exiting main script - resuming it computed on torn state
+      // and threw Type mismatch (test_hk_starvation_repeated flake,
+      // traced: dispatching gid=4 exit_req=1).
+      if (vm_->exit_requested_.load())
+        break;
+
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);
-      // Conditional `when` hotkey gate — see VM::hotkeyConditionAllows.
       if (!vm_->hotkeyConditionAllows(g)) {
         continue;
       }
@@ -1669,7 +1684,7 @@ private:
         }
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          dispatchTick(g);
+        dispatchTick(g);
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {

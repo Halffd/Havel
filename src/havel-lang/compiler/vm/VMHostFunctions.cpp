@@ -3824,6 +3824,16 @@ void VM::registerDefaultHostFunctions() {
       });
 
   registerHostFunction(
+      "gc_external_root_count", 0, [this](const std::vector<Value> &) -> Value {
+        // Read-only observability for root-lifetime regression tests: a
+        // script can register/discard host-held objects (hotkey bindings,
+        // timers, callbacks), force a sweep, and assert the count returns
+        // to baseline. Leaked pins (e.g. a bridge dropping the unpin handle)
+        // are otherwise only visible as the shutdown warning.
+        return Value::makeInt(static_cast<int64_t>(heap_.externalRootCount()));
+      });
+
+  registerHostFunction(
       "gc_validate", 0, [this](const std::vector<Value> &) -> Value {
         int invalid = 0;
         int checked = 0;

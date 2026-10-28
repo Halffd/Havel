@@ -130,8 +130,12 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         // The id was dropped here before: pinExternalRoot returns the only
         // handle that can release the root, so discarding it pinned one root
         // per hotkey binding for the whole process (318 of them for a large
-        // config). trackExternalRoot hands it to the VM shutdown drain.
-        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
+        // config). trackExternalRoot hands it to the VM shutdown drain;
+        // setContextRootId lets hotkey.remove() release it mid-session too
+        // (unpin is idempotent, so the drain overlap is safe).
+        uint64_t contextRootId = vm->pinExternalRoot(hotkeyContext);
+        vm->trackExternalRoot(contextRootId);
+        ::havel::stdlib::HotkeyModule::setContextRootId(hotkeyId, contextRootId);
     }
 
     // Always create a persistent goroutine for the hotkey callback.
@@ -228,11 +232,11 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
         "Conditional hotkey", actionCb, false, conditionCb);
 
     if (hotkeyContext.isObjectId()) {
-        // The id was dropped here before: pinExternalRoot returns the only
-        // handle that can release the root, so discarding it pinned one root
-        // per hotkey binding for the whole process (318 of them for a large
-        // config). trackExternalRoot hands it to the VM shutdown drain.
-        vm->trackExternalRoot(vm->pinExternalRoot(hotkeyContext));
+        // Same lifetime contract as the plain-register path above:
+        // shutdown drain + mid-session release via hotkey.remove().
+        uint64_t contextRootId = vm->pinExternalRoot(hotkeyContext);
+        vm->trackExternalRoot(contextRootId);
+        ::havel::stdlib::HotkeyModule::setContextRootId(hotkeyId, contextRootId);
     }
 
     uint32_t persistentGid = vm->createPersistentHotkeyCallback(

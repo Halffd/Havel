@@ -421,6 +421,7 @@ inline constexpr const char *kHostFunctionNames[] = {
     "function.source",
     "gc_collect",
     "gc_collect_full",
+    "gc_external_root_count",
     "gc_mark_check",
     "gc_now",
     "gc_stats",

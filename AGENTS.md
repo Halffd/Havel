@@ -1186,3 +1186,35 @@ Multiple OpenCode sessions may work on this repository in separate Git worktrees
 - After merging, handoff with `agent handoff <merge-task> "merged <branch>" --commit <hash>`.
 - Cherry-pick rules: cherry-picking into another worktree is merging small. Same
   broadcast rule applies.
+
+## Defect Discovery and Session Handoffs
+
+When discovering a bug, lifetime hazard, resource leak, unsafe ownership
+pattern, or other actionable defect:
+
+1. **Fix it and add a regression test** when it is within the task's scope
+   and can be changed safely.
+2. Otherwise, record confirmed defects in `docs/known-issues/` with a
+   descriptive filename, evidence, a minimal safe reproducer, relevant
+   source locations, and a concrete next step.
+3. Record unconfirmed hazards separately as hypotheses. Never present an
+   inference as a verified root cause.
+4. Before finishing, search existing known-issues entries and relevant
+   source comments for related findings. Link related defects instead of
+   creating duplicate reports.
+5. Include the durable issue path, test added or run, test result, and
+   remaining uncertainty in the session handoff.
+6. Never claim a defect is fixed merely because the code builds or a narrow
+   test passes. Verify the specific failure mode and its regression test.
+7. Do not run scripts that generate hardware input, interact with live
+   applications, or create unsafe external side effects as diagnostic tests.
+   Use safe synthetic tests where possible.
+
+Rationale: a defect explained in a source comment but not converted into a
+tracked artifact (issue + reproducer + test) will be rediscovered from
+scratch by the next session at full diagnostic cost. The pin-leak at
+`src/host/module/bridges/InputBridge.cpp` ("The id was dropped here before:
+pinExternalRoot returns the only handle that can release the root, so
+discarding it pinned one root per hotkey binding for the whole process")
+is the worked example: diagnosed, explained in a comment, and left there
+until re-diagnosis cost another session real time.

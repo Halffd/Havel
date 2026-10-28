@@ -1,0 +1,25 @@
+// Pure classification test for the gamepad module: vendor/product/name
+// triples from real controllers must map to the right family. No device
+// access - classify() is a pure function over the identification data.
+use gamepad
+
+// Sony
+assert(gamepad.classify("Sony Interactive Entertainment Wireless Controller", 1356, 3302) == "ps5", "DualSense must be ps5")
+assert(gamepad.classify("Sony Interactive Entertainment Wireless Controller", 1356, 1476) == "ps4", "DualShock4 v1 must be ps4")
+assert(gamepad.classify("Sony Interactive Entertainment Wireless Controller", 1356, 2508) == "ps4", "DualShock4 v2 must be ps4")
+assert(gamepad.classify("PLAYSTATION(R)3 Controller", 1356, 616) == "ps3", "DualShock3 must be ps3")
+// Microsoft
+assert(gamepad.classify("Microsoft X-Box 360 pad", 1118, 654) == "xbox360", "Xbox 360 pad must be xbox360")
+assert(gamepad.classify("Microsoft X-Box One S pad", 1118, 721) == "xboxone", "Xbox One S must be xboxone")
+assert(gamepad.classify("Xbox Series X Controller", 1118, 2816) == "xboxseries", "Series X must be xboxseries")
+// Nintendo
+assert(gamepad.classify("Nintendo Switch Pro Controller", 1406, 8201) == "switch", "Switch Pro must be switch")
+assert(gamepad.classify("Joy-Con (L)", 1406, 8198) == "joycon_l", "Joy-Con L must be joycon_l")
+assert(gamepad.classify("Joy-Con (R)", 1406, 8199) == "joycon_r", "Joy-Con R must be joycon_r")
+// PS2/PS1 USB adapters (Personal Communication Systems chips)
+assert(gamepad.classify("PS2/PS1 Gamepad", 2064, 1) == "ps2", "PS2 adapter must be ps2")
+assert(gamepad.classify("Generic USB Gamepad", 2064, 1) == "ps2", "2064 vendor adapter must be ps2")
+// Fallback
+assert(gamepad.classify("Something Unknown", 1234, 5678) == "generic", "unknown device must be generic")
+
+print("PASS: test_gamepad_classify")

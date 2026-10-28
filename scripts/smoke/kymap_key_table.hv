@@ -24,12 +24,15 @@ fn _fail(msg) {
 }
 
 // --- counts -------------------------------------------------------------
-// 325 = 262 primary keys + 63 aliases registered as names.
+// 356 = 270 primary keys + 86 aliases registered as names (includes the
+// 16 legacy joystick rows and 19 gamepad alias rows added with the
+// controller support: joytrigger..joydead primaries + cross/circle/ps/
+// south/east/north/west-style aliases).
 // allEntries must carry every one of those names, aliases included: the C++
 // loader keys its maps off `name`, so an alias missing from this export means
 // the alias silently stops resolving in C++.
-if kymap.keyCount() != 325 { _fail("keyCount expected 325, got " + str(kymap.keyCount())) }
-if #kymap.allEntries() != 325 { _fail("allEntries expected 325, got " + str(#kymap.allEntries())) }
+if kymap.keyCount() != 356 { _fail("keyCount expected 356, got " + str(kymap.keyCount())) }
+if #kymap.allEntries() != 356 { _fail("allEntries expected 356, got " + str(#kymap.allEntries())) }
 
 // --- codes, taken from the real system headers -------------------------
 //       name      evdev  x11keysym  winVK
@@ -53,6 +56,19 @@ if kymap.fromString("escape") != kymap.fromString("esc") { _fail("alias escape !
 if kymap.fromString("numpadplus") != kymap.fromString("numpadadd") { _fail("alias numpadplus != numpadadd") }
 if kymap.fromString("pagedown") != kymap.fromString("pgdn") { _fail("alias pagedown != pgdn") }
 
+// --- gamepad aliases resolve to the BTN_GAMEPAD family ------------------
+// cross/south both map to the bottom face button (position-based naming),
+// ps to BTN_MODE's joystick primary, legacy adapter names to 288+.
+if kymap.fromString("cross") != 304 { _fail("gamepad cross expected 304, got " + str(kymap.fromString("cross"))) }
+if kymap.fromString("south") != 304 { _fail("gamepad south expected 304, got " + str(kymap.fromString("south"))) }
+if kymap.fromString("circle") != 305 { _fail("gamepad circle expected 305, got " + str(kymap.fromString("circle"))) }
+if kymap.fromString("ps") != 316 { _fail("gamepad ps expected 316, got " + str(kymap.fromString("ps"))) }
+if kymap.fromString("joytrigger") != 288 { _fail("gamepad joytrigger expected 288, got " + str(kymap.fromString("joytrigger"))) }
+// reverse maps name the PRIMARY (joya/joyguide), never the alias
+if kymap.evdevToString(304) != "joya" { _fail("evdevToString(304) expected joya, got " + kymap.evdevToString(304)) }
+if kymap.evdevToString(316) != "joyguide" { _fail("evdevToString(316) expected joyguide, got " + kymap.evdevToString(316)) }
+if kymap.evdevToString(288) != "joytrigger" { _fail("evdevToString(288) expected joytrigger, got " + kymap.evdevToString(288)) }
+
 // --- every alias must be exported AND flagged isAlias -------------------
 // Regression: allEntries() used to walk _KEY_TABLE and emit only the 262
 // primary rows, so no alias ever reached the C++ side and FromString("lwin")
@@ -64,11 +80,11 @@ for _r in _rows {
   _names.push(_r.name)
   if _r.isAlias { _aliases.push(_r.name) }
 }
-// 67 alias rows, 258 key rows = 325. The 67 (not 63) is because print,
-// pause, scrollup and scrolldown are first added as keys and then redefined
-// as aliases later in the source; the later AddAlias wins, exactly as in the
-// original C++.
-if #_aliases != 67 { _fail("expected 67 isAlias rows, got " + str(#_aliases)) }
+// 86 alias rows, 270 key rows = 356. The alias count exceeds the raw
+// AddAlias calls because print, pause, scrollup and scrolldown are first
+// added as keys and then redefined as aliases later in the source; the
+// later AddAlias wins, exactly as in the original C++.
+if #_aliases != 86 { _fail("expected 86 isAlias rows, got " + str(#_aliases)) }
 
 // Spot-check the alias families the user relies on for hotkeys: win/modifier
 // aliases, pagination, and every single-character symbol alias.
@@ -81,6 +97,7 @@ _expected_aliases = [
   "period", "equals", "102nd", "iso", "nosymbol", "mouse4", "mouse5",
   "side1", "side2", "side3", "side4", "button4", "buttonforward",
   "apps", "brightnessauto", "calculator", "wifi", "volumemute",
+  "cross", "circle", "square", "triangle", "ps", "south", "east", "north", "west",
 ]
 for _a in _expected_aliases {
   if !_has(_aliases, _a) { _fail("alias " + _a + " missing or not flagged isAlias") }

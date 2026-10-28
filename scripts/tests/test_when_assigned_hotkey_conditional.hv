@@ -1,0 +1,52 @@
+// Regression test: hotkey binding ASSIGNED inside a when body must be
+// gated by the when condition.
+//
+// what: `saved = F10 => {...}` inside `when zz == true {}` used to compile
+//   via plain hotkey.register (empty condition, grab on) because
+//   compileWhenBlock set conditional_hotkey_condition_index_ only around
+//   the hotkeyStmts loop, not the body-fn compilation. The hotkey then
+//   fired forever after the when deactivated - user's
+//   `lwk = lwin => play()` kept toggling mpv on every window.
+//
+// why: fixed by setting the condition index around otherStmts too
+//   (ByteCompiler::compileWhenBlock).
+//
+// expected: after zz flips false, hotkey.trigger("F10") does NOT run the
+//   action; the registered context reports info "Conditional hotkey" and a
+//   non-empty condition. Run: ./build-debug/havel scripts/tests/\
+//   test_when_assigned_hotkey_conditional.hv  (headless-safe;
+//   hotkey.trigger is programmatic, no real input)
+//
+// NOT in scripts/smoke: hotkey.trigger is on the smoke-forbidden list.
+// This file is manual-run only.
+
+zz = true
+firedB = 0
+when zz == true {
+    saved = F10 => {
+        firedB = firedB + 1
+    }
+}
+if saved == null {
+    print("FAIL: saved binding context is null")
+    exit(1)
+}
+_cond = saved.condition
+if _cond == null || _cond == "" {
+    print("FAIL: saved registered unconditionally: " + str(saved))
+    exit(1)
+}
+if !(str(saved).includes("Conditional hotkey")) {
+    print("FAIL: saved ctx info wrong: " + str(saved))
+    exit(1)
+}
+zz = false
+sleep(300)
+hotkey.trigger("F10")
+sleep(300)
+if firedB != 0 {
+    print("FAIL: assigned when-body hotkey fired while condition false (fired=" + str(firedB) + ")")
+    exit(1)
+}
+print("PASS: assigned when-body hotkey is conditional and stays gated off")
+exit(0)

@@ -1,7 +1,25 @@
-// gamepad.hv — Gamepad/joystick access via Linux joystick API (/dev/input/js*)
-// Provides: gamepad.list, gamepad.open, gamepad.close,
-// gamepad.read, gamepad.readNonBlock, gamepad.state,
-// gamepad.axis, gamepad.button, gamepad.rumble, gamepad.name
+// gamepad.hv — Controller/joystick support: family detection, named
+// buttons and axes, deadzone normalization, D-pad, and rumble.
+//
+// Works over the Linux evdev interface (the /dev/input/event* node every
+// kernel controller driver exposes - DualSense/DualShock, XBox pads,
+// Switch Pro/JoyCons, and PS2/PS1 USB adapters alike), NOT over the
+// legacy /dev/input/js* joystick nodes. One device node carries buttons,
+// axes, D-pad and the force-feedback interface, so a single handle covers
+// everything.
+//
+// Families: ps5, ps4, ps3, ps2, ps1, xbox360, xboxone, xboxseries,
+// switch, joycon_l, joycon_r, generic.
+//
+// Button names are POSITION-based (SDL convention): the bottom face
+// button is "cross" on PlayStation hardware and "a" on XBox/Switch
+// hardware - both names resolve to the same code, so hotkeys written
+// against either name fire on every controller family. Per-family
+// labels live in _FAMILY_LABELS for scripts that want to display the
+// printing on the physical pad.
+//
+// The legacy /dev/input/js* polling API (open/read/state/axis/button by
+// index) is preserved at the bottom of this file for existing scripts.
 
 use ffi
 
@@ -12,17 +30,666 @@ _open = ffi.sym(_c, "open")
 _close = ffi.sym(_c, "close")
 _read = ffi.sym(_c, "read")
 _ioctl = ffi.sym(_c, "ioctl")
+_write = ffi.sym(_c, "write")
 _popen = ffi.sym(_c, "popen")
 _pclose = ffi.sym(_c, "pclose")
 _fgets = ffi.sym(_c, "fgets")
+_memset = ffi.sym(_c, "memset")
 
 _O_RDONLY = 0
 _O_NONBLOCK = 2048
+_O_CLOEXEC = 524288
+
+// Event types
+_EV_SYN = 0
+_EV_KEY = 1
+_EV_ABS = 3
+_EV_FF = 21
+
+// Face/shoulder/stick button codes (BTN_GAMEPAD block)
+_BTN_SOUTH = 304
+_BTN_EAST = 305
+_BTN_NORTH = 307
+_BTN_WEST = 308
+_BTN_TL = 310
+_BTN_TR = 311
+_BTN_TL2 = 312
+_BTN_TR2 = 313
+_BTN_SELECT = 314
+_BTN_START = 315
+_BTN_MODE = 316
+_BTN_THUMBL = 317
+_BTN_THUMBR = 318
+
+// Legacy joystick button block (what PS2/PS1 USB adapters report)
+_BTN_TRIGGER = 288
+_BTN_THUMB = 289
+_BTN_THUMB2 = 290
+_BTN_TOP = 291
+_BTN_TOP2 = 292
+_BTN_PINKIE = 293
+_BTN_BASE = 294
+_BTN_BASE2 = 295
+_BTN_BASE3 = 296
+_BTN_BASE4 = 297
+_BTN_BASE5 = 298
+_BTN_BASE6 = 299
+_BTN_DEAD = 300
+
+// Absolute axes
+_ABS_X = 0
+_ABS_Y = 1
+_ABS_Z = 2
+_ABS_RX = 3
+_ABS_RY = 4
+_ABS_RZ = 5
+_ABS_HAT0X = 16
+_ABS_HAT0Y = 17
+
+// Force feedback
+_FF_RUMBLE = 80
+_FF_GAIN = 96
+
+// ioctl numbers (see scripts/tests/io for the _IOR/_IOW derivations)
+_EVIOCGID = 2148025602
+_EVIOCGNAME256 = 2164278534
+_EVIOCGBIT_KEY = 2153792801
+_EVIOCGBIT_ABS = 2151695651
+_EVIOCGBIT_FF = 2148549941
+_EVIOCGABS_BASE = 2149074240
+_EVIOCSFF = 1076905344
+
+// ---------------------------------------------------------------------------
+// Family classification
+// ---------------------------------------------------------------------------
+
+// Vendor IDs
+_VID_SONY = 1356
+_VID_MS = 1118
+_VID_NINTENDO = 1406
+
+// classify(name, vendor, product) -> family string. Pure function over the
+// identification data a controller exposes; no device access. The
+// product-ID table covers the common USB and Bluetooth PIDs; unknown ids
+// fall back to name matching, then "generic".
+fn classify(name, vendor, product) {
+  _n = ""
+  if name != null { _n = name.lower() }
+  if vendor == _VID_SONY {
+    if product == 3302 { return "ps5" }
+    if product == 1476 || product == 2508 { return "ps4" }
+    if product == 616 { return "ps3" }
+    if _n.contains("dualsense") { return "ps5" }
+    if _n.contains("dualshock 4") || _n.contains("dualshock4") { return "ps4" }
+    if _n.contains("dualshock 3") || _n.contains("dualshock3") { return "ps3" }
+    if _n.contains("playstation") { return "ps3" }
+  }
+  if vendor == _VID_MS {
+    if product == 654 || product == 729 || product == 733 || product == 739 { return "xbox360" }
+    if product == 721 || product == 731 || product == 735 || product == 741 { return "xboxone" }
+    if product == 2816 || product == 2821 || product == 2837 || product == 2838 { return "xboxseries" }
+    if _n.contains("xbox 360") { return "xbox360" }
+    if _n.contains("series") { return "xboxseries" }
+    if _n.contains("x-box one") || _n.contains("xbox one") { return "xboxone" }
+    if _n.contains("xbox") { return "xboxone" }
+  }
+  if vendor == _VID_NINTENDO {
+    if product == 8201 { return "switch" }
+    if product == 8198 { return "joycon_l" }
+    if product == 8199 { return "joycon_r" }
+    if _n.contains("joy-con (l)") { return "joycon_l" }
+    if _n.contains("joy-con (r)") { return "joycon_r" }
+    if _n.contains("switch") { return "switch" }
+  }
+  // PS2/PS1 pads reach the kernel through USB adapter chips; the adapters
+  // are made by several vendors (0x0810 Personal Communication Systems is
+  // the common one) and report generic names, so classify by name and by
+  // the legacy button range the caller observed.
+  if _n.contains("ps2") || _n.contains("ps1") { return "ps2" }
+  if _n.contains("playstation 2") || _n.contains("playstation 1") { return "ps2" }
+  if _n.contains("dualshock 2") { return "ps2" }
+  if vendor == 2064 { return "ps2" }
+  return "generic"
+}
+
+// Position-based canonical button map: name -> evdev code. Every modern
+// controller family normalizes onto these codes, so the map is family
+// independent. Legacy pads (ps2/ps1 adapters) use the second map.
+_BTN_MAP_MODERN = {
+  // Positional canonical names (inverse of _codeToBtnName) — poll() maps
+  // state keys back to codes through this table, so the names the
+  // generator produces MUST resolve here.
+  south: _BTN_SOUTH, east: _BTN_EAST, north: _BTN_NORTH, west: _BTN_WEST,
+  cross: _BTN_SOUTH, a: _BTN_SOUTH,
+  circle: _BTN_EAST, b: _BTN_EAST,
+  triangle: _BTN_NORTH, y: _BTN_NORTH,
+  square: _BTN_WEST, x: _BTN_WEST,
+  l1: _BTN_TL, lb: _BTN_TL,
+  r1: _BTN_TR, rb: _BTN_TR,
+  l2: _BTN_TL2, r2: _BTN_TR2,
+  l3: _BTN_THUMBL, r3: _BTN_THUMBR,
+  "select": _BTN_SELECT, back: _BTN_SELECT, share: _BTN_SELECT, view: _BTN_SELECT,
+  start: _BTN_START, options: _BTN_START, menu: _BTN_START,
+  ps: _BTN_MODE, guide: _BTN_MODE, home: _BTN_MODE,
+}
+
+// Labels printed on each family's face buttons, for display purposes.
+_FAMILY_LABELS = {
+  ps5: {south: "cross", east: "circle", north: "triangle", west: "square"},
+  ps4: {south: "cross", east: "circle", north: "triangle", west: "square"},
+  ps3: {south: "cross", east: "circle", north: "triangle", west: "square"},
+  xbox360: {south: "a", east: "b", north: "y", west: "x"},
+  xboxone: {south: "a", east: "b", north: "y", west: "x"},
+  xboxseries: {south: "a", east: "b", north: "y", west: "x"},
+  switch: {south: "b", east: "a", north: "x", west: "y"},
+}
+
+// Legacy adapter button map: name -> evdev code (BTN_JOYSTICK block).
+_BTN_MAP_LEGACY = {
+  trigger: _BTN_TRIGGER, thumb: _BTN_THUMB, thumb2: _BTN_THUMB2,
+  top: _BTN_TOP, top2: _BTN_TOP2, pinkie: _BTN_PINKIE,
+  base: _BTN_BASE, base2: _BTN_BASE2, base3: _BTN_BASE3,
+  base4: _BTN_BASE4, base5: _BTN_BASE5, base6: _BTN_BASE6, dead: _BTN_DEAD,
+}
+
+// Axis map: name -> evdev ABS code. Sticks are ABS_X/Y (left) and
+// ABS_RX/RY (right); analog triggers are ABS_Z (left) and ABS_RZ (right)
+// on both Sony and Microsoft drivers.
+_AXIS_MAP = {
+  lx: _ABS_X, ly: _ABS_Y,
+  rx: _ABS_RX, ry: _ABS_RY,
+  l2: _ABS_Z, r2: _ABS_RZ,
+}
+
+fn _btnCode(name, family) {
+  if family == "ps2" || family == "ps1" {
+    _c = _BTN_MAP_LEGACY[name]
+    if _c != null { return _c }
+  }
+  _c = _BTN_MAP_MODERN[name]
+  if _c != null { return _c }
+  // Legacy range also reachable by its joy* kymap names on modern pads.
+  return 0
+}
+
+fn _axisCode(name) {
+  // Returns -1 when the name is unknown. Never 0-as-sentinel: ABS_X is
+  // code 0, a legitimate axis.
+  _c = _AXIS_MAP[name]
+  if _c != null { return _c }
+  -1
+}
+
+// ---------------------------------------------------------------------------
+// Device probing
+// ---------------------------------------------------------------------------
+
+fn _testBit(buf, bit) {
+  _byte = bit / 8
+  _off = bit % 8
+  _b = ffi.get_u8(ffi.ptr_add(buf, _byte))
+  _shifted = _b >> _off
+  _masked = _shifted & 1
+  _masked == 1
+}
+
+fn _probe(path) {
+  _fd = ffi.call(_open, "int32", ["pointer", "int32"], ffi.cstring(path), (_O_RDONLY + _O_NONBLOCK))
+  if _fd < 0 { return null }
+
+  _id_buf = ffi.allocBytes(8)
+  _has_id = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _EVIOCGID, _id_buf) == 0
+  _vendor = 0
+  _product = 0
+  if _has_id {
+    // input_id layout: bustype@0, vendor@2, product@4, version@6
+    _vendor = ffi.get_u16(ffi.ptr_add(_id_buf, 2))
+    _product = ffi.get_u16(ffi.ptr_add(_id_buf, 4))
+  }
+  ffi.free(_id_buf)
+
+  _name_buf = ffi.allocBytes(256)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _EVIOCGNAME256, _name_buf)
+  _devname = ffi.string(_name_buf)
+  ffi.free(_name_buf)
+
+  // Gamepad test: the KEY bitmap must contain at least one face button
+  // (BTN_SOUTH..BTN_WEST) or the device must sit in the legacy joystick
+  // button block. Plain keyboards/mice/tablets fail this.
+  _key_buf = ffi.allocBytes(96)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _key_buf, 0, 96)
+  _is_pad = false
+  if ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _EVIOCGBIT_KEY, _key_buf) >= 0 {
+    _b = _BTN_SOUTH
+    while _b <= _BTN_WEST {
+      if _testBit(_key_buf, _b) { _is_pad = true }
+      _b = _b + 1
+    }
+    if !_is_pad {
+      _b = _BTN_TRIGGER
+      while _b <= _BTN_DEAD {
+        if _testBit(_key_buf, _b) { _is_pad = true }
+        _b = _b + 1
+      }
+    }
+  }
+
+  // Axis bitmap: which absolute axes the pad reports (sticks, triggers,
+  // D-pad hats). Needed to build the axis state and to skip button-only
+  // oddities from being called pads with sticks.
+  _abs_buf = ffi.allocBytes(64)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _abs_buf, 0, 64)
+  _has_abs = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _EVIOCGBIT_ABS, _abs_buf) >= 0
+
+  _family = "generic"
+  if _is_pad { _family = classify(_devname, _vendor, _product) }
+
+  _info = {path: path, name: _devname, vendor: _vendor, product: _product,
+           family: _family, is_pad: _is_pad, has_abs: _has_abs,
+           _key_buf: _key_buf, _abs_buf: _abs_buf, fd: _fd}
+  _info
+}
+
+fn _closeProbe(info) {
+  if info != null && info.fd >= 0 { ffi.call(_close, "int32", ["int32"], info.fd) }
+}
+
+// Enumerate connected controllers. Returns a list of
+// {path, name, vendor, product, family} for every evdev node that looks
+// like a gamepad/joystick. Safe to call repeatedly.
+fn devices() {
+  _raw = _shell("ls /dev/input/event* 2>/dev/null")
+  _result = []
+  if _raw == null || #_raw == 0 { return _result }
+  _lines = _raw.split("\n")
+  for _line in _lines {
+    _p = _line.trim()
+    if #_p == 0 { continue }
+    _info = _probe(_p)
+    if _info != null && _info.is_pad {
+      _result.push({path: _info.path, name: _info.name, vendor: _info.vendor,
+                    product: _info.product, family: _info.family})
+    }
+    _closeProbe(_info)
+  }
+  _result
+}
+
+// Detect the most likely controller: pads first, in device order.
+fn detect() {
+  _pads = devices()
+  if #_pads == 0 { return null }
+  _pads[0]
+}
+
+// ---------------------------------------------------------------------------
+// Open handle + event pump
+// ---------------------------------------------------------------------------
+
+// Open a controller. Dispatches on the path: an "/event" node (or any
+// non-js path) builds the family-aware evdev handle; a "/js" node builds
+// the legacy index-based handle; null keeps the historical js0 default.
+fn open(path) {
+  if path == null || path == "" { return _jsOpen(null) }
+  if path.contains("/js") { return _jsOpen(path) }
+  _evOpen(path)
+}
+
+// Open a controller by evdev path (from devices()). Builds the named
+// button/axis state from the device's own capability bits: only buttons
+// the pad actually reports appear in the state.
+fn _evOpen(path) {
+  _info = _probe(path)
+  if _info == null { return null }
+  if !_info.is_pad {
+    _closeProbe(_info)
+    return null
+  }
+
+  _btn_state = {}
+  _btn_names = {}
+  _code = _BTN_SOUTH
+  while _code <= _BTN_THUMBR {
+    if _testBit(_info._key_buf, _code) {
+      _nm = _codeToBtnName(_code)
+      _btn_state[_nm] = false
+      _btn_names[str(_code)] = _nm
+    }
+    _code = _code + 1
+  }
+  if _info.family == "ps2" || _info.family == "ps1" {
+    _code = _BTN_TRIGGER
+    while _code <= _BTN_DEAD {
+      if _testBit(_info._key_buf, _code) {
+        _nm = _codeToLegacyName(_code)
+        _btn_state[_nm] = false
+        _btn_names[str(_code)] = _nm
+      }
+      _code = _code + 1
+    }
+  }
+
+  _axis_state = {}
+  _axis_meta = {}
+  _axis_names = {}
+  _code = 0
+  while _code < 64 {
+    if _testBit(_info._abs_buf, _code) {
+      _abs_buf = ffi.allocBytes(24)
+      ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd_abs(_info), (_EVIOCGABS_BASE + _code), _abs_buf)
+      _min = ffi.get_i32(ffi.ptr_add(_abs_buf, 4))
+      _max = ffi.get_i32(ffi.ptr_add(_abs_buf, 8))
+      _flat = ffi.get_i32(ffi.ptr_add(_abs_buf, 16))
+      ffi.free(_abs_buf)
+      _nm = _codeToAxisName(_code)
+      _axis_state[_nm] = 0
+      _axis_meta[_nm] = {code: _code, min: _min, max: _max, flat: _flat}
+      _axis_names[str(_code)] = _nm
+    }
+    _code = _code + 1
+  }
+
+  _handle = {path: path, name: _info.name, family: _info.family,
+             vendor: _info.vendor, product: _info.product,
+             fd: _info.fd, _btn_state: _btn_state, _btn_names: _btn_names,
+             _axis_state: _axis_state, _axis_meta: _axis_meta,
+             _axis_names: _axis_names, _deadzone: 0.12, _nonblock: false}
+  _info.fd = -1
+  _handle
+}
+
+fn _fd_abs(info) { info.fd }
+
+fn _codeToBtnName(code) {
+  // Modern range: canonical names by position. A pad that reports the
+  // legacy range is handled by _codeToLegacyName.
+  if code == _BTN_SOUTH { return "south" }
+  if code == _BTN_EAST { return "east" }
+  if code == _BTN_NORTH { return "north" }
+  if code == _BTN_WEST { return "west" }
+  if code == _BTN_TL { return "l1" }
+  if code == _BTN_TR { return "r1" }
+  if code == _BTN_TL2 { return "l2" }
+  if code == _BTN_TR2 { return "r2" }
+  if code == _BTN_SELECT { return "select" }
+  if code == _BTN_START { return "start" }
+  if code == _BTN_MODE { return "ps" }
+  if code == _BTN_THUMBL { return "l3" }
+  if code == _BTN_THUMBR { return "r3" }
+  return "btn" + code
+}
+
+fn _codeToLegacyName(code) {
+  if code == _BTN_TRIGGER { return "trigger" }
+  if code == _BTN_THUMB { return "thumb" }
+  if code == _BTN_THUMB2 { return "thumb2" }
+  if code == _BTN_TOP { return "top" }
+  if code == _BTN_TOP2 { return "top2" }
+  if code == _BTN_PINKIE { return "pinkie" }
+  if code == _BTN_BASE { return "base" }
+  if code == _BTN_BASE2 { return "base2" }
+  if code == _BTN_BASE3 { return "base3" }
+  if code == _BTN_BASE4 { return "base4" }
+  if code == _BTN_BASE5 { return "base5" }
+  if code == _BTN_BASE6 { return "base6" }
+  if code == _BTN_DEAD { return "dead" }
+  return "btn" + code
+}
+
+fn _codeToAxisName(code) {
+  if code == _ABS_X { return "lx" }
+  if code == _ABS_Y { return "ly" }
+  if code == _ABS_RX { return "rx" }
+  if code == _ABS_RY { return "ry" }
+  if code == _ABS_Z { return "l2" }
+  if code == _ABS_RZ { return "r2" }
+  if code == _ABS_HAT0X { return "dpadx" }
+  if code == _ABS_HAT0Y { return "dpady" }
+  return "abs" + code
+}
+
+fn close(handle) {
+  if handle == null { return }
+  if handle.kind == "js" {
+    if handle.fd >= 0 { ffi.call(_close, "int32", ["int32"], handle.fd) }
+    handle.fd = -1
+    return
+  }
+  if handle.fd < 0 { return }
+  ffi.call(_close, "int32", ["int32"], handle.fd)
+  handle.fd = -1
+}
+
+// Normalize a raw axis value to -1..1 honoring min/max and the center
+// deadband. deadzone is a fraction of the half-range.
+fn _normalize(meta, raw, deadzone) {
+  _center = (meta.min + meta.max) / 2
+  _half = (meta.max - meta.min) / 2
+  if _half <= 0 { return 0 }
+  _n = (raw - _center) / _half
+  if _n > 1 { _n = 1 }
+  if _n < -1 { _n = -1 }
+  _dz = deadzone * meta.flat / _half
+  if _dz <= 0 { _dz = deadzone }
+  if _n > -_dz && _n < _dz { return 0 }
+  _n
+}
+
+// Drain pending events, update state, return the named events seen in
+// this drain: [{type: "down"/"up"/"axis", name, value}]. The D-pad hat
+// axes are translated into dpad_up/dpad_down/dpad_left/dpad_right
+// down/up events.
+fn poll(handle) {
+  if handle == null || handle.fd < 0 { return [] }
+  _events = []
+
+  // EVIOCGBIT(KEY): read the CURRENT button state bitmap
+  _cur_key = ffi.allocBytes(96)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _cur_key, 0, 96)
+  // EVIOCGKEY(96) = _IOC(2, 0x45, 0x18, 96) - reads the CURRENT key state
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, 2153792792, _cur_key)
+
+  // Diff against the previous state: buttons that changed
+  for _nm in handle._btn_state.keys() {
+    _code = _btnCode(_nm, handle.family)
+    if _code == 0 { continue }
+    _byte = _code / 8
+    _off = _code % 8
+    _now = ffi.get_u8(ffi.ptr_add(_cur_key, _byte))
+    _bit = (_now >> _off) & 1
+    _was = handle._btn_state[_nm]
+    if _bit == 1 && !_was {
+      handle._btn_state[_nm] = true
+      _events.push({type: "down", name: _nm, value: 1})
+    } else if _bit == 0 && _was {
+      handle._btn_state[_nm] = false
+      _events.push({type: "up", name: _nm, value: 0})
+    }
+  }
+
+  // EVIOCGABS: read the CURRENT axis values (sticks, triggers, D-pad)
+  for _nm in handle._axis_meta.keys() {
+    _meta = handle._axis_meta[_nm]
+    _abs_buf = ffi.allocBytes(24)
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, (_EVIOCGABS_BASE + _meta.code), _abs_buf)
+    _raw = ffi.get_i32(_abs_buf)
+    ffi.free(_abs_buf)
+    _old = handle._axis_state[_nm]
+    handle._axis_state[_nm] = _raw
+    if _meta.code == _ABS_HAT0X || _meta.code == _ABS_HAT0Y {
+      _named = _hatEvents(_nm, _raw)
+      for _e in _named { _events.push(_e) }
+    } else {
+      _norm = _normalize(_meta, _raw, handle._deadzone)
+      _events.push({type: "axis", name: _nm, value: _norm})
+    }
+  }
+
+  ffi.free(_cur_key)
+  _events
+}
+
+fn _hatEvents(axis_name, value) {
+  _out = []
+  _pairs = [["dpad_left", "dpad_right"], ["dpad_up", "dpad_down"]]
+  _pair = axis_name == "dpadx" ? _pairs[0] : _pairs[1]
+  if value == -1 {
+    _out.push({type: "down", name: _pair[0], value: 1})
+  } else if value == 1 {
+    _out.push({type: "down", name: _pair[1], value: 1})
+  } else {
+    _out.push({type: "up", name: _pair[0], value: 0})
+    _out.push({type: "up", name: _pair[1], value: 0})
+  }
+  _out
+}
+
+// Current state of a named button: is it down right now?
+fn down(handle, name) {
+  if handle == null { return false }
+  if handle._btn_state.has(name) { return handle._btn_state[name] }
+  _code = _btnCode(name, handle.family)
+  if _code == 0 { return false }
+  if handle._btn_state.has(_btnCodeKey(handle, _code)) {
+    return handle._btn_state[_btnCodeKey(handle, _code)]
+  }
+  false
+}
+
+fn _btnCodeKey(handle, code) {
+  _nm = handle._btn_names[str(code)]
+  if _nm != null { return _nm }
+  ""
+}
+
+// Normalized (-1..1, deadzoned) value of a named axis: lx/ly/rx/ry/l2/r2.
+// Reads the live value through EVIOCGABS so polling is optional. On legacy
+// handles, axis(handle, N) returns raw js axis N.
+fn axis(handle, name) {
+  if handle == null { return 0 }
+  if handle.kind == "js" {
+    _idx = 0
+    if type(name) == "int" { _idx = name }
+    if handle._axes_arr != null && _idx >= 0 && _idx < #handle._axes_arr {
+      return handle._axes_arr[_idx]
+    }
+    return 0
+  }
+  if handle.fd < 0 { return 0 }
+  _code = _axisCode(name)
+  if _code == -1 { return 0 }
+  if !handle._axis_meta.has(name) { return 0 }
+  _meta = handle._axis_meta[name]
+  _abs_buf = ffi.allocBytes(24)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, (_EVIOCGABS_BASE + _code), _abs_buf)
+  _raw = ffi.get_i32(_abs_buf)
+  ffi.free(_abs_buf)
+  _normalize(_meta, _raw, handle._deadzone)
+}
+
+// Raw hat value: -1, 0 or 1 for dpadx (left/right) and dpady (up/down).
+fn hat(handle, axis_name) {
+  if handle == null || handle.fd < 0 { return 0 }
+  _code = axis_name == "dpadx" ? _ABS_HAT0X : _ABS_HAT0Y
+  _abs_buf = ffi.allocBytes(24)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, (_EVIOCGABS_BASE + _code), _abs_buf)
+  _raw = ffi.get_i32(_abs_buf)
+  ffi.free(_abs_buf)
+  _raw
+}
+
+fn setDeadzone(handle, dz) {
+  if handle == null { return }
+  handle._deadzone = dz
+}
+
+// True when the device advertises the FF_RUMBLE capability. Non-blocking:
+// unlike rumble(), this never touches the upload path, so it is safe for
+// uinput-backed pads (whose EVIOCSFF blocks until the uinput creator
+// services the UI_BEGIN/END_FF_UPLOAD handshake).
+fn ffCapable(handle) {
+  if handle == null || handle.fd < 0 { return false }
+  _ff_buf = ffi.allocBytes(16)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _ff_buf, 0, 16)
+  _has_ff = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _EVIOCGBIT_FF, _ff_buf) >= 0
+  _supports = _has_ff && _testBit(_ff_buf, _FF_RUMBLE)
+  ffi.free(_ff_buf)
+  _supports
+}
+
+// Rumble: upload a rumble effect (EVIOCSFF) and play it (write an EV_FF
+// event). weak/strong are 0..65535 magnitudes, ms is the duration in
+// milliseconds. Returns false when the pad has no force feedback
+// (PS2/PS1 adapters) or the upload failed.
+fn rumble(handle, weak, strong, ms) {
+  if handle == null || handle.fd < 0 { return false }
+  if weak == null { weak = 0 }
+  if strong == null { strong = 0 }
+  if ms == null { ms = 200 }
+
+  // FF capability check: FF_RUMBLE must be in the device's FF bitmap.
+  // 16 bytes: FF_MAX is 0x7f, so the bitmap is 128 bits; an 8-byte request
+  // returns only the first 64 bits and FF_RUMBLE (bit 80) is invisible.
+  _ff_buf = ffi.allocBytes(16)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _ff_buf, 0, 16)
+  _has_ff = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _EVIOCGBIT_FF, _ff_buf) >= 0
+  _supports = _has_ff && _testBit(_ff_buf, _FF_RUMBLE)
+  ffi.free(_ff_buf)
+  if !_supports { return false }
+
+  // struct ff_effect (48 bytes): type@0, id@2=-1 (kernel assigns),
+  // direction@4, trigger@6, union@16 -> u.rumble strong@16, weak@18.
+  // (offsetof(u.rumble)==16 per /usr/include/linux/input.h.)
+  _eff = ffi.allocBytes(48)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _eff, 0, 48)
+  ffi.set_u16(_eff, _FF_RUMBLE)
+  ffi.set_i16(ffi.ptr_add(_eff, 2), -1)
+  ffi.set_u16(ffi.ptr_add(_eff, 4), 16384)
+  ffi.set_u16(ffi.ptr_add(_eff, 16), strong)
+  ffi.set_u16(ffi.ptr_add(_eff, 18), weak)
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _EVIOCSFF, _eff)
+  _effect_id = ffi.get_i16(ffi.ptr_add(_eff, 2))
+  ffi.free(_eff)
+  if _ret < 0 { return false }
+
+  // Play (value = strength, 0..65535 scaled from ms so callers keep
+  // physical control): value 1 plays the uploaded magnitudes.
+  _ev = ffi.allocBytes(24)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _ev, 0, 24)
+  ffi.set_u16(ffi.ptr_add(_ev, 16), _EV_FF)
+  ffi.set_u16(ffi.ptr_add(_ev, 18), _effect_id)
+  ffi.set_i32(ffi.ptr_add(_ev, 20), 1)
+  ffi.call(_write, "int32", ["int32", "pointer", "int32"], handle.fd, _ev, 24)
+  ffi.free(_ev)
+
+  // Auto-stop after ms via a second write with value 0 is deferred to the
+  // caller (timers): rumble returns the effect id so a
+  // `timeout ms { gamepad.rumbleStop(handle, id) }` can end it.
+  _effect_id
+}
+
+// Stop a playing rumble effect by id.
+fn rumbleStop(handle, effect_id) {
+  if handle == null || handle.fd < 0 { return false }
+  _ev = ffi.allocBytes(24)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _ev, 0, 24)
+  ffi.set_u16(ffi.ptr_add(_ev, 16), _EV_FF)
+  ffi.set_u16(ffi.ptr_add(_ev, 18), effect_id)
+  ffi.set_i32(ffi.ptr_add(_ev, 20), 0)
+  ffi.call(_write, "int32", ["int32", "pointer", "int32"], handle.fd, _ev, 24)
+  ffi.free(_ev)
+  true
+}
+
+// ---------------------------------------------------------------------------
+// Legacy /dev/input/js* polling API (preserved for existing scripts).
+// Index-based: axes and buttons are numbered by the kernel driver, no
+// family knowledge, no rumble. Prefer the evdev API above.
+// ---------------------------------------------------------------------------
 
 _JSIOCGAXES = 2147576337
 _JSIOCGBUTTONS = 2147576338
 _JSIOCGNAME128 = 2155899411
-
 _JS_EVENT_BUTTON = 1
 _JS_EVENT_AXIS = 2
 _JS_EVENT_INIT = 128
@@ -38,7 +705,7 @@ fn _shell(cmd) {
   _result = ""
   _looping = true
   while _looping {
-    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 4096, _fp)
+    _ret = ffi.call(_fgets, "int64", ["pointer", "int32", "pointer"], _buf, 4096, _fp)
     if _ret == 0 {
       _looping = false
     } else {
@@ -46,12 +713,13 @@ fn _shell(cmd) {
       _result = _result + _chunk
     }
   }
+
   ffi.call(_pclose, "int32", ["pointer"], _fp)
   ffi.free(_buf)
   _result
 }
 
-fn list() {
+fn jsList() {
   _raw = _shell("ls /dev/input/js* 2>/dev/null")
   if _raw == null || #_raw == 0 { return [] }
   _lines = _raw.split("\n")
@@ -63,8 +731,15 @@ fn list() {
   _result
 }
 
-fn open(path) {
-  if path == null { path = "/dev/input/js0" }
+// ---------------------------------------------------------------------------
+// Legacy /dev/input/js* handles: open() dispatches on the path. A path
+// containing "/js" builds a legacy handle (index-based axes/buttons per
+// the kernel joystick driver); an "/event" path builds the evdev handle
+// above. open(null) keeps the historical default of /dev/input/js0.
+// ---------------------------------------------------------------------------
+
+fn _jsOpen(path) {
+  if path == null || path == "" { path = "/dev/input/js0" }
   _path_cs = ffi.cstring(path)
   _fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, _O_RDONLY)
   ffi.free(_path_cs)
@@ -99,15 +774,11 @@ fn open(path) {
     _i = _i + 1
   }
 
-  ({fd: _fd, path: path, name: _devname, axes: _axes, buttons: _buttons, _axes_arr: _axes_arr, _buttons_arr: _buttons_arr, _nonblock: false})
+  ({kind: "js", fd: _fd, path: path, name: _devname, axes: _axes, buttons: _buttons,
+    _axes_arr: _axes_arr, _buttons_arr: _buttons_arr, _nonblock: false})
 }
 
-fn close(handle) {
-  if handle == null { return }
-  ffi.call(_close, "int32", ["int32"], handle.fd)
-}
-
-fn _parseEvent(buf) {
+fn _jsParseEvent(buf) {
   _time = ffi.get_u32(buf)
   _value = ffi.get_i16(ffi.ptr_add(buf, 4))
   _type = ffi.get_u8(ffi.ptr_add(buf, 6))
@@ -119,19 +790,19 @@ fn _parseEvent(buf) {
   ({time: _time, value: _value, type: _type_str, number: _number, init: _init})
 }
 
-fn _readEvent(handle) {
+fn _jsReadEvent(handle) {
   _buf = ffi.allocBytes(8)
-  _n = ffi.call(_read, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, 8)
+  _n = ffi.call(_read, "int32", ["int32", "pointer", "int32"], handle.fd, _buf, 8)
   if _n != 8 {
     ffi.free(_buf)
     return null
   }
-  _ev = _parseEvent(_buf)
+  _ev = _jsParseEvent(_buf)
   ffi.free(_buf)
   _ev
 }
 
-fn _applyEvent(handle, ev) {
+fn _jsApplyEvent(handle, ev) {
   if ev.type == "axis" {
     if ev.number < #handle._axes_arr {
       handle._axes_arr[ev.number] = ev.value
@@ -143,62 +814,67 @@ fn _applyEvent(handle, ev) {
   }
 }
 
-fn read(handle) {
-  if handle == null { return null }
-  _ev = _readEvent(handle)
-  if _ev == null { return null }
-  _applyEvent(handle, _ev)
-  _ev
+fn _jsDrain(handle) {
+  _looping = true
+  while _looping {
+    _ev = _jsReadEvent(handle)
+    if _ev == null {
+      _looping = false
+    } else {
+      _jsApplyEvent(handle, _ev)
+    }
+  }
 }
 
-fn readNonBlock(handle) {
+// Drain-and-state for legacy handles: reads pending js events and returns
+// the full snapshot ({axes: [...], buttons: [...]}) in the historical
+// shape. On evdev handles, state() returns the named snapshot
+// ({axes: {lx: -0.3, ...}, buttons: {cross: false, ...}}).
+fn state(handle) {
   if handle == null { return null }
+  if handle.kind == "js" {
+    _jsDrain(handle)
+    return ({axes: handle._axes_arr, buttons: handle._buttons_arr})
+  }
+  ({axes: handle._axis_state, buttons: handle._btn_state})
+}
+
+// Legacy: non-blocking read of the next js event (null when none).
+fn readNonBlock(handle) {
+  if handle == null || handle.kind != "js" { return null }
   if !handle._nonblock {
     ffi.call(_close, "int32", ["int32"], handle.fd)
     _path_cs = ffi.cstring(handle.path)
-    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, (_O_RDONLY | _O_NONBLOCK))
+    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, (_O_RDONLY + _O_NONBLOCK))
     ffi.free(_path_cs)
     if handle.fd < 0 { return null }
     handle._nonblock = true
   }
-  _ev = _readEvent(handle)
+  _ev = _jsReadEvent(handle)
   if _ev == null { return null }
-  _applyEvent(handle, _ev)
+  _jsApplyEvent(handle, _ev)
   _ev
 }
 
-fn state(handle) {
-  if handle == null { return null }
-  _looping = true
-  while _looping {
-    _ev = readNonBlock(handle)
-    if _ev == null {
-      _looping = false
-    }
-  }
-  ({axes: handle._axes_arr, buttons: handle._buttons_arr})
+// Legacy: blocking read of the next js event (null when none).
+fn read(handle) {
+  if handle == null || handle.kind != "js" { return null }
+  _ev = _jsReadEvent(handle)
+  if _ev == null { return null }
+  _jsApplyEvent(handle, _ev)
+  _ev
 }
 
-fn axis(handle, index) {
-  if handle == null { return 0 }
-  if index == null { index = 0 }
-  state(handle)
-  if index < 0 || index >= #handle._axes_arr { return 0 }
-  handle._axes_arr[index]
-}
-
+// Legacy: current value of js button N (drains pending events first).
 fn button(handle, index) {
-  if handle == null { return false }
+  if handle == null || handle.kind != "js" { return false }
   if index == null { index = 0 }
-  state(handle)
+  _jsDrain(handle)
   if index < 0 || index >= #handle._buttons_arr { return false }
   handle._buttons_arr[index]
 }
 
-fn rumble(handle, strong, weak, ms) {
-  false
-}
-
+// Device name: the kernel name string for both handle kinds.
 fn name(handle) {
   if handle == null { return "" }
   handle.name

@@ -1,0 +1,51 @@
+// Regression test: hotkey binding contexts must not leak GC external roots.
+//
+// what: register many conditional hotkeys (each pins a hotkey-context object
+//   via pinExternalRoot), discard/re-register them, force GC, and verify the
+//   external root count stays proportional to LIVE bindings - not to the
+//   total ever registered.
+// why: InputBridge.cpp:130/231 - "The id was dropped here before:
+//   pinExternalRoot returns the only handle that can release the root, so
+//   discarding it pinned one root per hotkey binding for the whole process
+//   (318 of them for a large config)." The fix (trackExternalRoot shutdown
+//   drain) released them only at shutdown; this test guards the count DURING
+//   the process too, so a future bridge change that re-drops the handle fails
+//   here instead of as a progressive scheduler slowdown in production.
+// how: gc_external_root_count() exposes the heap's live pin count.
+//   hotkey.remove() unregisters; the pin should die with the binding.
+// expected: after removing all bindings and gc_collect_full, the count
+//   returns to the pre-registration baseline.
+// run: ./build-debug/havel scripts/tests/test_hotkey_root_lifetime.hv
+//   (manual-run; registers hotkeys via hotkey.register_conditional but never
+//   triggers them - no input injection)
+
+_base = gc_external_root_count()
+print("baseline_roots=" + str(_base))
+
+_names = []
+_i = 0
+while _i < 60 {
+    _n = "F" + str(_i + 1)
+    hotkey.register_conditional(_n, fn() { return 1 }, fn() { return true })
+    _names.push(_n)
+    _i = _i + 1
+}
+_after_reg = gc_external_root_count()
+print("after_register=" + str(_after_reg) + " (expect >= baseline; pins live while bindings live)")
+
+// Remove every binding; pins must die with them.
+for _n in _names {
+    hotkey.remove(_n)
+}
+gc_collect_full()
+gc_collect()
+_after_remove = gc_external_root_count()
+print("after_remove=" + str(_after_remove))
+if _after_remove > _base {
+    print("FAIL: " + str(_after_remove - _base) + " external roots leaked after removing all hotkey bindings (baseline " + str(_base) + ", now " + str(_after_remove) + ")")
+    sys.exit(1)
+}
+if _after_remove <= _base {
+    print("PASS: hotkey binding pins die with their bindings (baseline " + str(_base) + ", after remove+GC " + str(_after_remove) + ")")
+}
+sys.exit(0)

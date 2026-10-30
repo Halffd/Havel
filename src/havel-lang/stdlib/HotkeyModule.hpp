@@ -41,6 +41,7 @@ public:
     static size_t conditionalCount();
 
     static void setGoroutineId(const std::string &hotkeyId, uint32_t gid);
+    static void setContextRootId(const std::string &hotkeyId, uint64_t rootId);
 
     static std::string resolveUniqueId(const std::string &preferredId);
 };

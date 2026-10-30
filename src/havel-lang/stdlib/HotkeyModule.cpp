@@ -41,6 +41,7 @@ struct HotkeyContextData {
     CallbackId callback;
     bool enabled;
     bool grab = false;
+    uint64_t context_root_id = 0;
     CallbackId condition_callback = 0;
     uint32_t hostObjectId = 0;
     int64_t triggerCount = 0;
@@ -1514,18 +1515,38 @@ bool HotkeyModule::removeById(VM &vm, const std::string &hotkeyId) {
     return false;
   }
   
-  // Get the goroutine ID before erasing
+  // Capture the lifetime data before erasing: the pins were created at
+  // registration (InputBridge pins the context object and registers the
+  // action/condition closures as callbacks, each of which pins a root).
+  // Releasing them here makes hotkey.remove() root-neutral mid-session;
+  // before this, only the VM shutdown drain released them, so a
+  // register/remove cycle (e.g. hotkeys0.3's fuckedUp()) leaked three
+  // external roots per cycle for the process lifetime - measured by
+  // scripts/tests/test_hotkey_root_lifetime.hv (180 roots after 60 cycles).
   uint32_t gid = it->second->goroutine_id;
   std::string alias = it->second->alias;
-  
+  CallbackId actionCb = it->second->callback;
+  CallbackId condCb = it->second->condition_callback;
+  uint64_t contextRootId = it->second->context_root_id;
+
   // Remove from hotkey contexts
   g_hotkeyContexts.erase(it);
-  
+
+  // Release the registration pins (unpin/release are idempotent, so the
+  // shutdown drain overlap is safe).
+  vm.releaseCallback(actionCb);
+  if (condCb != 0) {
+    vm.releaseCallback(condCb);
+  }
+  if (contextRootId != 0) {
+    vm.unpinExternalRoot(contextRootId);
+  }
+
   // Clean up the persistent goroutine in the scheduler
   if (gid != 0 && vm.getScheduler()) {
     vm.getScheduler()->removeHotkeyByAlias(alias);
   }
-  
+
   return true;
 }
 
@@ -1605,6 +1626,11 @@ Value HotkeyModule::rebuildHotkeyContext(VM &vm, const std::string &hotkeyId) {
 void HotkeyModule::setGoroutineId(const std::string &hotkeyId, uint32_t gid) {
     auto *ctx = getHotkeyContextDataMutable(hotkeyId);
     if (ctx) ctx->goroutine_id = gid;
+}
+
+void HotkeyModule::setContextRootId(const std::string &hotkeyId, uint64_t rootId) {
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (ctx) ctx->context_root_id = rootId;
 }
 
 std::string HotkeyModule::resolveUniqueId(const std::string &preferredId) {

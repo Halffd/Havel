@@ -6260,6 +6260,38 @@ Value VM::loadModule(const std::string &path) {
     }
   }
 
+  // Plugin-registered GLOBAL OBJECTS win over .hv wrapper namespaces: a
+  // plugin like config registers `config.<fn>` host functions AND a
+  // same-basename vivified object carrying section sub-objects. Scripts
+  // bind `use "std/config" as cfg` to whatever loadModule returns, and
+  // their member access (cfg.Gaming.Classes) needs the SECTION OBJECTS.
+  // The .hv wrapper (modules/std/config.hv) only re-exports the functions
+  // - binding it left cfg.Gaming a marker-only shell (v0.3.8 A/B: the old
+  // binary bound the host object). Fires only when the plugin's own fns
+  // are registered under this module's basename AND a global object with
+  // that basename exists; plain fn-namespace plugins without a global
+  // object are unaffected.
+  {
+    std::filesystem::path pBase(path);
+    std::string modBasename = pBase.stem().string();
+    bool pluginFnsRegistered = false;
+    for (const auto &[name, value] : host_function_globals_) {
+      if (name.rfind(modBasename + ".", 0) == 0) {
+        pluginFnsRegistered = true;
+        break;
+      }
+    }
+    if (pluginFnsRegistered) {
+      auto gObjIt = globals.find(modBasename);
+      if (gObjIt != globals.end() && gObjIt->second.isObjectId()) {
+        Value globalExports = gObjIt->second;
+        moduleLoader_.putCache(canonicalKey, globalExports);
+        pinModuleCacheExports(canonicalKey, globalExports);
+        return globalExports;
+      }
+    }
+  }
+
   // Check for eager plugin functions registered in host_function_globals_ BEFORE native plugin
   // check. Eager plugins (registered via HAVEL_MODULE_PLUGIN_EAGER) register their functions in
   // host_function_globals_ during VM init with prefix "moduleName." (e.g., "ffi.open").

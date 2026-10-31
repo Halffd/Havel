@@ -1,3 +1,4 @@
+// smoke: timeout = 90
 // Regression: hpkg's toolchain store (per-commit havel binaries).
 //
 // The version manager keeps one directory per commit under

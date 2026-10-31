@@ -35,6 +35,8 @@ All notable changes to Havel are documented here.
 - String interpolation: only `"{var}"` and `$var` syntax
 - Variable declaration: `val` for immutable, no `let`/`const`
 - **Brightness setters now apply to all monitors** when no monitor index specified (was: first monitor only)
+- Reading a property of `nil` now raises a catchable error (`Cannot read property 'x' of nil`); previously it silently returned `nil`. `?.` is unchanged and remains the null-safe form
+- When-block exit branches now observe the post-transition hotkey `enabled`/`grab` state (`enabled` field reads are live, like `grab`)
 
 ### Deprecated
 - `let` for immutable bindings (use `val`)

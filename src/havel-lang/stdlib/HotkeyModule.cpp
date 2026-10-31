@@ -1174,6 +1174,26 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     vm.setHostObjectField(objRef, "grab", Value::makeBool(ctx->grab));
     return Value::makeBool(ctx->grab);
   });
+  // enabled - live enabled state, mirror of __get_grab. Without this the
+  // read hit the plain object field, which only tracks the context when it
+  // has a host object (ctx->hostObjectId != 0). A script-assigned binding
+  // (`saved = key => ...`) then kept its registration-time `enabled` while
+  // the live context had already flipped: a when-gated binding deactivating
+  // left the exit branch reading enabled=true although the grab re-eval had
+  // set ctx->enabled=false. scripts/tests/test_when_exit_observes_ungrab.hv
+  // pins this.
+  api.registerPrototypeMethod("Hotkey", "__get_enabled", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    vm.drainConditionalHotkeyPending();
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    vm.setHostObjectField(objRef, "enabled", Value::makeBool(ctx->enabled));
+    return Value::makeBool(ctx->enabled);
+  });
 
   // ===== Dynamic Update Methods =====
 

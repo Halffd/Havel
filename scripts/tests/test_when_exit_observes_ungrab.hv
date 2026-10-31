@@ -1,0 +1,54 @@
+// Regression test: a `when` exit branch must observe the post-transition
+// hotkey grab state for a binding created inside the when body.
+//
+// what: `pHk = p => ...` inside `when title_ ~ "mpv" {}` registers as a
+//   conditional hotkey whose grab follows the when condition. When the
+//   when deactivates, grab/enabled must already be false BY THE TIME the
+//   sibling `when !(...)` exit branch runs.
+// why: the app-side var-change handler (Havel.cpp setOnVarChangedSync, and
+//   the same site in HavelEngine) ran when-branch bodies BEFORE the
+//   conditional-hotkey re-eval, so the exit branch observed
+//   enabled=true grab=true and the flip landed one tick later. Reproduced
+//   2026-10-30: exit-branch read enabled=true grab=true, +100ms read
+//   enabled=false grab=false. Fix: grab re-eval first, bodies last.
+// expected: the exit branch sees enabled=false grab=false; PASS.
+// run: ./build-debug/havel scripts/tests/test_when_exit_observes_ungrab.hv
+//   (manual-run; registers the `p` hotkey - the grab is brief and released
+//   when the when deactivates; no input injection)
+sawExit = false
+exitOk = true
+title_ = ""
+pHk = nil
+when title_ ~ "mpv" {
+  pHk = p => print("P pressed in mpv")
+}
+when !(title_ ~ "mpv") {
+  if pHk != nil {
+    sawExit = true
+    if pHk.enabled || pHk.grab {
+      exitOk = false
+      print("FAIL: exit branch sees enabled=${pHk.enabled} grab=${pHk.grab} (bodies ran before the grab re-eval)")
+    }
+  }
+}
+title_ = "mpv"
+sleep(500)
+if pHk == nil {
+  print("FAIL: when body did not create the binding")
+  exit(1)
+}
+if !pHk.enabled || !pHk.grab {
+  print("FAIL: binding not grabbing inside mpv: enabled=${pHk.enabled} grab=${pHk.grab}")
+  exit(1)
+}
+title_ = "zzz"
+sleep(200)
+if !sawExit {
+  print("FAIL: exit branch never ran")
+  exit(1)
+}
+if !exitOk {
+  exit(1)
+}
+print("PASS: when exit branch observes enabled=false grab=false")
+exit(0)

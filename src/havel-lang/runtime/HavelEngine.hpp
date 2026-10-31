@@ -396,6 +396,7 @@ public:
     vm_->setOnVarChangedSync([this](const std::string &var_name) {
       if (!watcher_registry_ || !vm_)
         return;
+      std::vector<compiler::Fiber *> firedBodies;
       auto fired = watcher_registry_->onVariableChanged(
           var_name,
           [this](compiler::WatcherRegistry::WatcherId wid) -> bool {
@@ -430,20 +431,7 @@ public:
             } catch (...) {
             }
           });
-      for (auto *fiber : fired) {
-        if (!fiber)
-          continue;
-        try {
-          uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
-          vm_->current_when_watcher_id_ = fiber->watcher_id;
-          compiler::Value body_func =
-              compiler::Value::makeFunctionObjId(fiber->current_function_id);
-          vm_->call(body_func, {});
-          vm_->current_when_watcher_id_ = prev_when_watcher;
-        } catch (...) {
-        }
-      }
-      vm_->processSignalBindings(var_name);
+      firedBodies.assign(fired.begin(), fired.end());
       // Conditional-hotkey re-eval: defer to scheduler tick when we're
       // inside a goroutine's dispatch loop, run inline otherwise.
       // Synchronous re-eval from inside a goroutine frame nests a
@@ -471,6 +459,28 @@ public:
       } else {
         reevalConditionalHotkeys(var_name);
       }
+
+      // When-branch bodies run last: an exit branch observes the
+      // grab/enabled state the re-eval above just applied. In the deferred
+      // branch the flip lands at the next processGoroutines drain; the
+      // bodies then still see the pre-drain state - that case cannot
+      // re-eval synchronously without wedging the active dispatch frame
+      // (see the comment above). processSignalBindings keeps its
+      // historical position relative to the bodies.
+      for (auto *fiber : firedBodies) {
+        if (!fiber)
+          continue;
+        try {
+          uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
+          vm_->current_when_watcher_id_ = fiber->watcher_id;
+          compiler::Value body_func =
+              compiler::Value::makeFunctionObjId(fiber->current_function_id);
+          vm_->call(body_func, {});
+          vm_->current_when_watcher_id_ = prev_when_watcher;
+        } catch (...) {
+        }
+      }
+      vm_->processSignalBindings(var_name);
     });
 
     // Wire a drain into the VM so host getters (e.g. Hotkey.grab) that

@@ -1,6 +1,7 @@
 /* ShellModule.cpp - VM-native stdlib module (shell/process operations)
    Multi-platform: Linux, macOS, BSD, Windows */
 #include "ShellModule.hpp"
+#include "havel-lang/tools/ShellTranslate.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -324,6 +325,26 @@ api.registerFunction("shell.exec",
       if (!val)
         return Value::makeNull();
       return api.makeString(val);
+    });
+
+  // ----------------------------------------------------------------------
+  // shell.translate – translate one shell-mode line into Havel source.
+  // This is the REPL's :shell layer exposed for scripts and tests: returns
+  // {ok, source, error} so callers can inspect the generated code and the
+  // rejection message for unsupported bash syntax.
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.translate",
+    [api](const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeNull();
+      std::string line = api.resolveString(args[0]);
+      auto tr = havel::repl::translateShellLine(line, nullptr);
+      auto obj = api.makeObject();
+      api.setField(obj, "ok", Value::makeBool(tr.ok));
+      api.setField(obj, "source", api.makeString(tr.source));
+      api.setField(obj, "error",
+                   tr.error.empty() ? Value::makeNull() : api.makeString(tr.error));
+      return obj;
     });
 
   // ----------------------------------------------------------------------
@@ -975,6 +996,7 @@ api.registerFunction("shell.listDir",
   api.setField(shellObj, "cwd",        api.makeFunctionRef("shell.cwd"));
   api.setField(shellObj, "cd",         api.makeFunctionRef("shell.cd"));
   api.setField(shellObj, "escape",     api.makeFunctionRef("shell.escape"));
+  api.setField(shellObj, "translate",  api.makeFunctionRef("shell.translate"));
   api.setField(shellObj, "platform",   api.makeFunctionRef("shell.platform"));
   api.setField(shellObj, "pid",        api.makeFunctionRef("shell.pid"));
   api.setField(shellObj, "home",       api.makeFunctionRef("shell.home"));

@@ -305,10 +305,12 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   // Create pipes for output capture when not detaching
   int pipe_stdout[2] = {-1, -1};
   int pipe_stderr[2] = {-1, -1};
+  int pipe_stdin[2] = {-1, -1};
 
   // Create pipes for output capture unless detaching
   if (!params.detachFromParent && params.method == Method::Sync) {
-    if (pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
+    if (pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1 ||
+        pipe(pipe_stdin) == -1) {
       return {-1, -1, false,
               "Failed to create pipes: " + std::string(strerror(errno))};
     }
@@ -318,9 +320,14 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   posix_spawn_file_actions_t actions;
   posix_spawn_file_actions_init(&actions);
 
-  // Redirect stdout/stderr if needed
+  // Redirect stdin/stdout/stderr if needed
   if (!params.detachFromParent && params.method == Method::Sync) {
-    // Close read ends of pipes in child (we only need write ends)
+    // Child reads stdin from the pipe (LaunchParams.input / pipeline stage)
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[1]);
+    posix_spawn_file_actions_adddup2(&actions, pipe_stdin[0], STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[0]);
+
+    // Close read ends of output pipes in child (we only need write ends)
     posix_spawn_file_actions_addclose(&actions, pipe_stdout[0]);
     posix_spawn_file_actions_addclose(&actions, pipe_stderr[0]);
     
@@ -365,6 +372,8 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
 
   if (spawn_result != 0) {
     if (!params.detachFromParent && params.method == Method::Sync) {
+      close(pipe_stdin[0]);
+      close(pipe_stdin[1]);
       close(pipe_stdout[0]);
       close(pipe_stdout[1]);
       close(pipe_stderr[0]);
@@ -383,6 +392,26 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   if (!params.detachFromParent && params.method == Method::Sync) {
     close(pipe_stdout[1]);
     close(pipe_stderr[1]);
+    close(pipe_stdin[0]);
+    // Feed stdin, then close the write end so the child sees EOF. Without
+    // this, every command that reads stdin blocked until it was killed (the
+    // same defect the shell path had before it gained stdin support).
+    if (!params.input.empty()) {
+      const char *ptr = params.input.data();
+      size_t remaining = params.input.size();
+      while (remaining > 0) {
+        ssize_t written = write(pipe_stdin[1], ptr, remaining);
+        if (written > 0) {
+          ptr += written;
+          remaining -= static_cast<size_t>(written);
+          continue;
+        }
+        if (written < 0 && errno == EINTR)
+          continue;
+        break; // EPIPE: child closed stdin or already exited
+      }
+    }
+    close(pipe_stdin[1]);
   }
 
   if (params.method == Method::Sync) {

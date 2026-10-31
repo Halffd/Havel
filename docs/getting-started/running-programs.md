@@ -67,6 +67,38 @@ chmod +x collect_errors.hv
 With `havel` on `PATH`, the kernel runs the script through `env havel`,
 which executes it as a normal script.
 
+### REPL Shell Mode
+
+The REPL speaks both Havel and shell. `:shell` switches the grammar to
+bash-shaped input (`havel[sh]>`); `:havel` - or a bare `exit` - comes back:
+
+```text
+havel> :shell
+havel[sh]> ls -la | grep txt
+havel[sh]> files = *.log
+havel[sh]> for f in *.log { grep error $f }
+havel[sh]> export LOG_LEVEL=debug
+havel[sh]> echo $LOG_LEVEL
+havel[sh]> cd /tmp
+havel[sh]> :save collect.hv
+```
+
+Accepted: pipelines (`a | b | c`), redirects (`>`, `>>`, `<`), command
+substitution (`x = $(cmd)`), globs (`*.log`), `$VAR` expansion, `cd`,
+`export NAME=value`, `echo`, `pwd`, `exit` (back to Havel mode; `exit N`
+leaves the REPL with status N), and `!!` / `!$` history. Control flow is
+Havel's grammar - `for f in *.log { ... }`, `if [ -f /tmp/x ] { ... }` -
+there is no `then`/`fi`/`done`.
+
+Rejected by design, with a suggestion: `[[ ]]`, `$@`/`$*`/`$#`,
+`(( ))`/`$(( ))`, arrays (`a=(1 2)`), `declare`/`local`/`readonly`,
+subshells, `&` background (use `go { ... }`), `&>` and `2>&1` (process
+results expose `.stderr`).
+
+Every shell line is translated to Havel before it runs (`shell.translate`
+does the same transformation for scripts), so `:save file.hv` writes the
+session out as a runnable script.
+
 ## Compiler Pipeline Selection
 
 | Flag | Description |

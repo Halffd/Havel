@@ -3077,7 +3077,8 @@ add_havel_module_plugin(pack         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/P
 add_havel_module_plugin(ptr          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PointerModule.cpp)
 add_havel_module_plugin(random       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RandomModule.cpp)
 add_havel_module_plugin(regex        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RegexModule.cpp)
-add_havel_module_plugin(shell        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ShellModule.cpp)
+add_havel_module_plugin(shell        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ShellModule.cpp
+                                     ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/ShellTranslate.cpp)
 add_havel_module_plugin(readline        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ReadlineModule.cpp)
 if(READLINE_LIB)
   target_link_libraries(havel_mod_readline PRIVATE ${READLINE_LIB})

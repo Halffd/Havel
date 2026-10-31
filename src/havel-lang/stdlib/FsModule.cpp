@@ -159,6 +159,22 @@ static bool globMatch(const std::string &pattern, const std::string &name) {
 #endif
 }
 
+// Split an absolute glob pattern into base directory + pattern so the walker
+// (which matches entries relative to `dir`) can serve "/var/log/*.log".
+// No-op for relative patterns or when the caller passed an explicit dir.
+static void splitAbsoluteGlob(std::string &pattern, std::string &dir,
+                              bool hasDirArg) {
+    if (hasDirArg || pattern.empty() || pattern[0] != '/')
+        return;
+    size_t wild = pattern.find_first_of("*?[");
+    size_t from = (wild == std::string::npos) ? pattern.size() - 1 : wild;
+    size_t slash = pattern.rfind('/', from);
+    if (slash != std::string::npos) {
+        dir = (slash == 0) ? "/" : pattern.substr(0, slash);
+        pattern = pattern.substr(slash + 1);
+    }
+}
+
 static void globSearch(const fs::path &dir, const std::string &pattern,
                        bool recursive, std::vector<fs::path> &results) {
     std::error_code ec;
@@ -570,15 +586,7 @@ void registerFsModule(const VMApi &api) {
             // "/tmp/x/*.log" into dir "/tmp/x" + pattern "*.log". The walker
             // matches entries RELATIVE to dir, so an absolute pattern used to
             // match nothing and glob returned [].
-            if (!pattern.empty() && pattern[0] == '/' && args.size() < 2) {
-                size_t wild = pattern.find_first_of("*?[");
-                size_t from = (wild == std::string::npos) ? pattern.size() - 1 : wild;
-                size_t slash = pattern.rfind('/', from);
-                if (slash != std::string::npos) {
-                    dir = (slash == 0) ? "/" : pattern.substr(0, slash);
-                    pattern = pattern.substr(slash + 1);
-                }
-            }
+            splitAbsoluteGlob(pattern, dir, args.size() > 1);
             bool recursive = pattern.find("**") != std::string::npos;
             std::vector<fs::path> results;
             std::error_code ec;
@@ -600,6 +608,45 @@ void registerFsModule(const VMApi &api) {
   }
   return arr;
 });
+
+    // fs.globArgs(pattern[, dir]) - bash-compatible argument globbing: the
+    // matches when any exist, otherwise the literal pattern in a one-element
+    // array (bash's default behavior for unmatched unquoted globs). This is
+    // what the REPL shell layer splices into command argv arrays.
+    api.registerFunction(
+        "fs.globArgs", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeNull();
+            std::string original = api.resolveString(args[0]);
+            std::string pattern = original;
+            std::string dir = ".";
+            if (args.size() > 1)
+                dir = api.resolveString(args[1]);
+            splitAbsoluteGlob(pattern, dir, args.size() > 1);
+            std::vector<fs::path> results;
+            std::error_code ec;
+            if (fs::is_directory(dir, ec)) {
+                bool recursive = pattern.find("**") != std::string::npos;
+                std::string basePattern = pattern;
+                if (recursive) {
+                    size_t pos = pattern.find("**/");
+                    if (pos != std::string::npos) {
+                        basePattern = pattern.substr(pos + 3);
+                        if (basePattern.empty())
+                            basePattern = "*";
+                    }
+                }
+                globSearch(dir, basePattern, recursive, results);
+            }
+            auto arr = api.makeArray();
+            if (results.empty()) {
+                api.push(arr, api.makeString(original));
+                return arr;
+            }
+            for (const auto &p : results)
+                api.push(arr, api.makeString(p.string()));
+            return arr;
+        });
 
     // fs.find(dir, pattern) - recursive search by basename pattern
     // (default "*"). The find/xargs shape:
@@ -1159,6 +1206,7 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "walk", api.makeFunctionRef("fs.walk"));
     api.setField(fsObj, "traverse", api.makeFunctionRef("fs.traverse"));
     api.setField(fsObj, "glob", api.makeFunctionRef("fs.glob"));
+    api.setField(fsObj, "globArgs", api.makeFunctionRef("fs.globArgs"));
     api.setField(fsObj, "find", api.makeFunctionRef("fs.find"));
     api.setField(fsObj, "watch", api.makeFunctionRef("fs.watch"));
     api.setField(fsObj, "watchTree", api.makeFunctionRef("fs.watchTree"));

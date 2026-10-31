@@ -9,6 +9,33 @@ All notable changes to Havel are documented here.
 
 ---
 
+## 2026-10-31 - REPL shell mode
+
+### Added
+- The REPL speaks shell: `:shell` toggles a bash-shaped input mode
+  (`havel[sh]>`); `:havel` or a bare `exit` returns. Pipelines, redirects
+  (`>`, `>>`, `<`), `$(...)`, globs, `$VAR`, `cd`, `export`, `echo`, `pwd`,
+  `!!`, `!$`. Control flow stays Havel (`for f in *.log { ... }`); bash-only
+  syntax (`[[ ]]`, `$@`, `(( ))`, arrays, `declare`, subshells, `&`, `2>&1`)
+  is rejected with a suggestion.
+- `process.pipe([cmd, ...])` / `process.pipe([[cmd, ...], ...])`: run a
+  command or a pipeline with real pipes and direct exec (quoted arguments
+  keep their spaces); optional second argument is stdin. Returns the last
+  stage's result object.
+- `fs.globArgs(pattern)`: bash-style argument globbing - the matches, or the
+  literal pattern in a one-element array when nothing matches.
+- `shell.translate(line)`: the shell-to-Havel translator as a callable
+  (`{ok, source, error}`); this is what the REPL's `:shell` layer runs.
+- `:save [file.hv]`: write the session out as a runnable script.
+- Launcher: direct-exec runs feed and close the child's stdin (pipeline
+  stages, and commands that read stdin no longer hang).
+
+### Changed
+- Shell mode prints like a shell: command stdout verbatim, stderr on the
+  error stream, `[exit N]` after a failing command; `cd`/`export` are silent.
+
+---
+
 ## 2026-10-30 - Bash-shaped CLI and shell pipelines
 
 ### Added

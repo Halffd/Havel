@@ -188,6 +188,14 @@ void registerConfigModule(const VMApi &api) {
     // __vivify: cfg.Debug.X = Y auto-creates an object at cfg.Debug.
     api.setField(configObj, "__vivify", Value::makeBool(true));
   }
+  // Marks this global object as the module contract for `use "std/config"`:
+  // loadModule binds it instead of the .hv wrapper, whose namespace lacks
+  // the live section objects (cfg.Gaming.Classes read the wrapper as a
+  // marker-only shell). Explicit so other plugin objects - bit, math_native,
+  // log, random carry only private fns while their public API lives in an
+  // .hv sidecar - keep the normal module path (binding them regressed
+  // bit.arshift to null in the smoke suite, Oct 31).
+  api.setField(configObj, "__module_object", Value::makeBool(true));
   // NOTE: __autosave_root is deliberately NOT enabled. Enabling it makes
   // the VM's OBJECT_SET hook mirror `cfg.X.Y = z` writes into the config
   // store, and that path currently persists the WRONG value: for

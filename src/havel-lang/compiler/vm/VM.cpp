@@ -6260,30 +6260,30 @@ Value VM::loadModule(const std::string &path) {
     }
   }
 
-  // Plugin-registered GLOBAL OBJECTS win over .hv wrapper namespaces: a
-  // plugin like config registers `config.<fn>` host functions AND a
-  // same-basename vivified object carrying section sub-objects. Scripts
-  // bind `use "std/config" as cfg` to whatever loadModule returns, and
-  // their member access (cfg.Gaming.Classes) needs the SECTION OBJECTS.
-  // The .hv wrapper (modules/std/config.hv) only re-exports the functions
-  // - binding it left cfg.Gaming a marker-only shell (v0.3.8 A/B: the old
-  // binary bound the host object). Fires only when the plugin's own fns
-  // are registered under this module's basename AND a global object with
-  // that basename exists; plain fn-namespace plugins without a global
-  // object are unaffected.
+  // Global objects marked __module_object win over the .hv wrapper for
+  // their basename. config registers `config.<fn>` host functions AND a
+  // same-basename vivified object carrying section sub-objects, then
+  // marks it; scripts bind `use "std/config" as cfg` to whatever
+  // loadModule returns and their member access (cfg.Gaming.Classes)
+  // needs the SECTION OBJECTS. The .hv wrapper (modules/std/config.hv)
+  // only re-exports functions - binding it left cfg.Gaming a
+  // marker-only shell (v0.3.8 A/B: the old binary bound the host
+  // object). The marker is explicit because plugin objects that merely
+  // carry private fns while the public API lives in an .hv sidecar
+  // (bit, math_native, log, random) MUST keep the normal module path -
+  // binding those objects regressed bit.arshift to null in the smoke
+  // suite (block-only bisect leg, Oct 31).
   {
     std::filesystem::path pBase(path);
     std::string modBasename = pBase.stem().string();
-    bool pluginFnsRegistered = false;
-    for (const auto &[name, value] : host_function_globals_) {
-      if (name.rfind(modBasename + ".", 0) == 0) {
-        pluginFnsRegistered = true;
-        break;
+    auto gObjIt = globals.find(modBasename);
+    if (gObjIt != globals.end() && gObjIt->second.isObjectId()) {
+      bool isModuleObject = false;
+      if (auto *objEntry = heap_.object(gObjIt->second.asObjectId())) {
+        if (auto *marker = objEntry->get("__module_object"))
+          isModuleObject = marker->isBool() && marker->asBool();
       }
-    }
-    if (pluginFnsRegistered) {
-      auto gObjIt = globals.find(modBasename);
-      if (gObjIt != globals.end() && gObjIt->second.isObjectId()) {
+      if (isModuleObject) {
         Value globalExports = gObjIt->second;
         moduleLoader_.putCache(canonicalKey, globalExports);
         pinModuleCacheExports(canonicalKey, globalExports);

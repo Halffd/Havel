@@ -566,6 +566,19 @@ void registerFsModule(const VMApi &api) {
             if (args.size() > 1) {
                 dir = api.resolveString(args[1]);
             }
+            // Absolute patterns carry their own base directory: split
+            // "/tmp/x/*.log" into dir "/tmp/x" + pattern "*.log". The walker
+            // matches entries RELATIVE to dir, so an absolute pattern used to
+            // match nothing and glob returned [].
+            if (!pattern.empty() && pattern[0] == '/' && args.size() < 2) {
+                size_t wild = pattern.find_first_of("*?[");
+                size_t from = (wild == std::string::npos) ? pattern.size() - 1 : wild;
+                size_t slash = pattern.rfind('/', from);
+                if (slash != std::string::npos) {
+                    dir = (slash == 0) ? "/" : pattern.substr(0, slash);
+                    pattern = pattern.substr(slash + 1);
+                }
+            }
             bool recursive = pattern.find("**") != std::string::npos;
             std::vector<fs::path> results;
             std::error_code ec;
@@ -587,6 +600,28 @@ void registerFsModule(const VMApi &api) {
   }
   return arr;
 });
+
+    // fs.find(dir, pattern) - recursive search by basename pattern
+    // (default "*"). The find/xargs shape:
+    //   fs.find(".", "*.txt").filter(fn(p) { fs.size(p) > 1024 })
+    api.registerFunction(
+        "fs.find", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeNull();
+            std::string dir = api.resolveString(args[0]);
+            std::string pattern =
+                args.size() > 1 ? api.resolveString(args[1]) : "*";
+            std::error_code ec;
+            if (!fs::is_directory(dir, ec))
+                return Value::makeNull();
+            std::vector<fs::path> results;
+            globSearch(dir, pattern, true, results);
+            auto arr = api.makeArray();
+            for (const auto &p : results) {
+                api.push(arr, api.makeString(p.string()));
+            }
+            return arr;
+        });
 
     // fs.watch (inotify-based directory watcher)
     api.registerFunction(
@@ -1124,6 +1159,7 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "walk", api.makeFunctionRef("fs.walk"));
     api.setField(fsObj, "traverse", api.makeFunctionRef("fs.traverse"));
     api.setField(fsObj, "glob", api.makeFunctionRef("fs.glob"));
+    api.setField(fsObj, "find", api.makeFunctionRef("fs.find"));
     api.setField(fsObj, "watch", api.makeFunctionRef("fs.watch"));
     api.setField(fsObj, "watchTree", api.makeFunctionRef("fs.watchTree"));
     api.setField(fsObj, "open", api.makeFunctionRef("fs.open"));

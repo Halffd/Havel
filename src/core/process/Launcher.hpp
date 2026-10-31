@@ -53,6 +53,10 @@ struct LaunchParams {
     bool inheritHandles = false;
     uint32_t timeoutMs = 0;
     bool detachFromParent = false;  // If true, child will survive parent process death
+    // Bytes written to the child's stdin before the write end is closed
+    // (sync shell runs). Empty still closes stdin immediately: a child that
+    // reads stdin (cat, wc with no file) must see EOF, not a hang.
+    std::string input = "";
 };
 
 // MSVC's <stdio.h> defines stdout/stderr as macros expanding to

@@ -10,7 +10,9 @@ description: "CLI flags, execution modes, and environment variables for the Have
 ```bash
 havel [options] <script.hv>
 havel [options] --repl
-havel [options] -E 'code'
+havel [options] -c 'code'          # run inline code
+havel [options] -e 'expr'          # evaluate and print one expression
+havel [options] -E 'code'          # alias of --code
 havel [options] --build <script.hv>
 havel [options] --test <dir>
 havel [options] --lint <file.hv>
@@ -27,6 +29,43 @@ havel [options] --lint <file.hv>
 | **Test directory** | `havel --test dir/` | Run all `.hv` files as tests |
 | **Lint only** | `havel --lint file.hv` | Syntax/check only, no execution |
 | **Build bytecode** | `havel --build file.hv -o out.hvc` | Compile to bytecode |
+| **Inline code** | `havel -c 'code'` | Run code from the command line |
+| **Inline expression** | `havel -e 'expr'` | Evaluate one expression, print it |
+
+### Inline Code
+
+`-c`/`--code` (`-E`/`--eval` are aliases) runs code from the argument, so
+one-liners need no temp file. `-e`/`--eval-print` evaluates a single
+expression and prints its value:
+
+```bash
+havel -c 'print(1 + 1)'
+havel -c 'for f in fs.glob("*.log") { print(f) }'
+havel -e '2 + 2'
+havel -e '"a,b".split(",")'
+```
+
+### Shebang Scripts
+
+A script whose first line is `#!/usr/bin/env havel` is directly executable:
+
+```bash
+#!/usr/bin/env havel
+
+for f in fs.glob("*.log") {
+    if fs.read(f) ~ "ERROR" {
+        fs.copy(f, "/tmp/errors/" + f)
+    }
+}
+```
+
+```bash
+chmod +x collect_errors.hv
+./collect_errors.hv
+```
+
+With `havel` on `PATH`, the kernel runs the script through `env havel`,
+which executes it as a normal script.
 
 ## Compiler Pipeline Selection
 
@@ -89,7 +128,7 @@ havel --full-aot --target aot script.hv -o script
 
 | Flag | Description |
 |------|-------------|
-| `-e`, `--error` | Stop on first error/warning |
+| `--error` | Stop on first error/warning |
 | `--log-level LEVEL` | Log level: `debug`, `info`, `warning`, `error`, `fatal` |
 | `--log-file PATH` | Write logs to file |
 | `--log-no-color` | Disable ANSI colors |

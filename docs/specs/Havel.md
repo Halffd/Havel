@@ -2517,7 +2517,9 @@ havel -h
 |--------|-------------|
 | `--run`, `-r` | Run script in pure mode (no IO/hotkeys) |
 | `--repl` | Start interactive REPL |
-| `--error`, `-e` | Stop on first error/warning |
+| `--error` | Stop on first error/warning |
+| `--code`, `-c` | Run inline code (aliases: `--eval`, `-E`) |
+| `--eval-print`, `-e` | Evaluate one expression and print its value |
 | `--help`, `-h` | Show help |
 
 ### Pure Mode (--run)

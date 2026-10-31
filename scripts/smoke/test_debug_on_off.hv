@@ -1,0 +1,16 @@
+// test_debug_on_off.hv
+// What: debug.on() raises the language trace flags and returns true;
+//       debug.off() clears them. The "set -x / set +x" pair.
+// Expected: exit 0, no output on success.
+// smoke: timeout = 30
+
+if debug.isOn("all") { print("FAIL: flags set before on()"); exit(1) }
+
+_on = debug.on()
+if !_on { print("FAIL: debug.on() should return true"); exit(1) }
+if !debug.isOn("all") { print("FAIL: flags not set after on()"); exit(1) }
+
+debug.off()
+if debug.isOn("all") { print("FAIL: flags still set after off()"); exit(1) }
+
+exit(0)

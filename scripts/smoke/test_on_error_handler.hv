@@ -1,0 +1,21 @@
+// test_on_error_handler.hv
+// What: on_error registers a handler for uncaught runtime errors. The
+//       handler runs before the default report and receives an error
+//       object ({message, kind}); calling exit() takes over the exit code.
+// Expected: handler observes the error, prints a marker, exits 0.
+// smoke: timeout = 30
+
+on_error(fn(e) {
+    if !e.message.includes("non-callable") {
+        print("FAIL: unexpected error message: " + e.message)
+        exit(1)
+    }
+    print("on_error handled")
+    exit(0)
+})
+
+_missing = null
+_missing()
+
+print("FAIL: unreachable after uncaught error")
+exit(1)

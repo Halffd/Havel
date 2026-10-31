@@ -821,6 +821,28 @@ ProcessResult Launcher::executeShell(const std::string &command,
       return result;
     }
 
+    // Feed stdin, then close the write end so the child sees EOF. Before
+    // this, the parent held stdin open and wrote nothing: any command that
+    // reads stdin blocked until havel's timeout (none by default), so
+    // runCapture("cat") and every `cmd | cmd` pipeline hung forever.
+    if (!params.input.empty()) {
+      const char *ptr = params.input.data();
+      size_t remaining = params.input.size();
+      while (remaining > 0) {
+        ssize_t written = write(pipe_stdin[1], ptr, remaining);
+        if (written > 0) {
+          ptr += written;
+          remaining -= static_cast<size_t>(written);
+          continue;
+        }
+        if (written < 0 && errno == EINTR)
+          continue;
+        break; // EPIPE: child closed stdin or already exited
+      }
+    }
+    close(pipe_stdin[1]);
+    pipe_stdin[1] = -1;
+
     // Set non-blocking mode for pipes
     fcntl(pipe_stdout[0], F_SETFL, O_NONBLOCK);
     fcntl(pipe_stderr[0], F_SETFL, O_NONBLOCK);
@@ -911,8 +933,9 @@ ProcessResult Launcher::executeShell(const std::string &command,
     result.out = stdout_data;
     result.err = stderr_data;
 
-    // Clean up pipes
-    close(pipe_stdin[1]);
+    // Clean up pipes (stdin write end was already closed before the wait)
+    if (pipe_stdin[1] >= 0)
+      close(pipe_stdin[1]);
     close(pipe_stdout[0]);
     close(pipe_stderr[0]);
 

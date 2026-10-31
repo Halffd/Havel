@@ -2374,7 +2374,7 @@ size_t spaces = 0;
 while ((look == ' ' || look == '\t') && !isAtEnd()) { advance(); look = peek(); spaces++; }
 if (isAlpha(look) || look == '+' || look == '!' || look == '^' ||
 look == '#' || look == '@' || look == '~' || look == '$' ||
-look == '*') {
+look == '*' || look == '`') {
 currentTokens.push_back(makeToken("|", TokenType::Pipe));
 continue;
 }
@@ -2406,6 +2406,8 @@ prevType == TokenType::String ||
 prevType == TokenType::InterpolatedString ||
 prevType == TokenType::MultilineString ||
 prevType == TokenType::RegexString ||
+prevType == TokenType::Backtick ||
+prevType == TokenType::InterpolatedBacktick ||
 prevType == TokenType::CloseParen ||
 prevType == TokenType::CloseBracket ||
 prevType == TokenType::Not ||

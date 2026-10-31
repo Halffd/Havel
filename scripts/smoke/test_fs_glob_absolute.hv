@@ -1,0 +1,33 @@
+// test_fs_glob_absolute.hv
+// What: fs.glob accepts absolute patterns (splits them into base dir +
+//       pattern) and the two-argument form (pattern, dir).
+// Why: `fs.glob("/var/log/*.log")` returned [] before - the walker matched
+//      entries relative to dir, so absolute patterns never matched.
+// Expected: exit 0, no output on success. Cleans up after itself.
+// smoke: timeout = 30
+
+_dir = "/tmp/havel_smoke_glob_abs"
+`rm -rf /tmp/havel_smoke_glob_abs`
+
+fs.mkdirAll(_dir)
+fs.write(_dir + "/a.log", "x")
+fs.write(_dir + "/b.log", "y")
+fs.write(_dir + "/c.txt", "z")
+
+_abs = fs.glob(_dir + "/*.log")
+if _abs.len() != 2 { print("FAIL: absolute glob len=" + str(_abs.len())); exit(1) }
+
+_rel = fs.glob("*.log", _dir)
+if _rel.len() != 2 { print("FAIL: dir-arg glob len=" + str(_rel.len())); exit(1) }
+
+_all = fs.glob("*", _dir)
+if _all.len() != 3 { print("FAIL: star glob len=" + str(_all.len())); exit(1) }
+
+// fs.find is the recursive form: a nested match must be found.
+fs.mkdirAll(_dir + "/sub")
+fs.write(_dir + "/sub/d.log", "w")
+_rec = fs.find(_dir, "*.log")
+if _rec.len() != 3 { print("FAIL: find len=" + str(_rec.len())); exit(1) }
+
+`rm -rf /tmp/havel_smoke_glob_abs`
+exit(0)

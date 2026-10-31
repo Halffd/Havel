@@ -20,6 +20,7 @@ inline constexpr const char *kModuleGlobals[] = {
     "Regex",
     "String",
     "Type",
+    "__on_error_handler",
     "altTab",
     "alt_tab_gui",
     "alttab",

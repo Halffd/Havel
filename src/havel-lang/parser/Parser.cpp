@@ -2411,7 +2411,9 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
     auto nextType = at().type;
     bool isPipeline = (nextType == TokenType::Identifier || nextType == TokenType::OpenParen ||
-                       nextType == TokenType::At || nextType == TokenType::AtAt);
+                       nextType == TokenType::At || nextType == TokenType::AtAt ||
+                       nextType == TokenType::InterpolatedBacktick ||
+                       nextType == TokenType::Backtick);
     if (isPipeline) {
       auto pipeline = makeNodeAt<ast::PipelineExpression>(
           token, std::vector<std::unique_ptr<ast::Expression>>{});

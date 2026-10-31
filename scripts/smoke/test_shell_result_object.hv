@@ -1,0 +1,23 @@
+// test_shell_result_object.hv
+// What: backtick command capture returns a process result object
+//       (success / exitCode / stdout / stderr), and str() of it is stdout.
+// Why: bash-shaped `$?` semantics for shell commands.
+// Expected: exit 0, no output on success.
+// smoke: timeout = 30
+
+_ok = `echo hello`
+if !_ok.success { print("FAIL: success should be true"); exit(1) }
+if _ok.exitCode != 0 { print("FAIL: exitCode=" + str(_ok.exitCode)); exit(1) }
+if _ok.stdout.trim() != "hello" { print("FAIL: stdout=" + _ok.stdout); exit(1) }
+if str(_ok).trim() != "hello" { print("FAIL: str() -> " + str(_ok)); exit(1) }
+
+_bad = `false`
+if _bad.success { print("FAIL: false must not be success"); exit(1) }
+if _bad.exitCode != 1 { print("FAIL: exitCode=" + str(_bad.exitCode)); exit(1) }
+
+_err = `sh -c "echo problem >&2; exit 3"`
+if _err.success { print("FAIL: exit 3 must not be success"); exit(1) }
+if _err.exitCode != 3 { print("FAIL: exitCode=" + str(_err.exitCode)); exit(1) }
+if !_err.stderr.includes("problem") { print("FAIL: stderr=" + _err.stderr); exit(1) }
+
+exit(0)

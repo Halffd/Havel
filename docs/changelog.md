@@ -9,6 +9,38 @@ All notable changes to Havel are documented here.
 
 ---
 
+## 2026-10-30 - Bash-shaped CLI and shell pipelines
+
+### Added
+- `havel -c 'code'` runs inline code (`-E`/`--eval` remain as aliases)
+- `havel -e 'expr'` evaluates one expression and prints its value
+- Backtick captures and `$!` return a process **result object**: `.success`,
+  `.exitCode`, `.stdout`, `.stderr`; `str()` of it is `.stdout`
+- **Shell pipelines**: `` `cmd1` | `cmd2` `` feeds each stage's stdout into
+  the next stage's stdin and evaluates to the last stage's result. Function
+  stages chain on the result: `` `printf ...` | lines | grep "x" | count ``
+- `fs.glob()` accepts absolute patterns (`/var/log/*.log`)
+- `string.lines()`, `array.grep(pattern)`
+- `on_error(fn(e) { ... })` - script-level uncaught-error handler
+- `debug.on()` / `debug.off()` - language trace flags + debug log level
+- Shebang scripts: `#!/usr/bin/env havel` + `chmod +x` runs the file directly
+  (documented in getting-started/running-programs)
+
+### Changed
+- `-e` now means `--eval-print`; `--error` keeps the long form only
+- `-c` now means `--code`; `--config` keeps the long form only
+- Shell runs close the child's stdin after piping any input; a child that
+  reads stdin (e.g. `cat` with no file) no longer hangs
+
+### Notes
+- `!(`cmd`)` truthiness is not implemented yet: the JIT truthiness bridge is
+  bit-only (heap-less), so object truthiness cannot follow `.success` without
+  a runtime-ABI change. Use `!(`cmd`.success)` for the same intent.
+- `debug.on()`/`debug.off()` require the module form: bare `on`/`off` remain
+  statement keywords, so use the exported `debug` object fields.
+
+---
+
 ## [Unreleased]
 
 ### Added

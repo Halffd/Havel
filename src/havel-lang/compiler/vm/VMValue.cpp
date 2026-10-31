@@ -151,6 +151,19 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     auto *obj = heap_.object(value.asObjectId());
     if (!obj)
       return "{}";
+    // Process results (backticks, $!, runResult) render as their stdout:
+    // str()/interpolation stay text-shaped while .success / .exitCode /
+    // .stderr remain reachable as ordinary fields.
+    auto *procMarker = obj->get("__proc_result");
+    if (procMarker && procMarker->isBool() && procMarker->asBool()) {
+      auto *outVal = obj->get("stdout");
+      if (outVal && outVal->isStringId()) {
+        auto *s = heap_.string(outVal->asStringId());
+        if (s)
+          return *s;
+      }
+      return "";
+    }
     if (visitedIds.count(value.asObjectId()))
       return "{...}";
     visitedIds.insert(value.asObjectId());

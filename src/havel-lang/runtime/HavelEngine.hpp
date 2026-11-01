@@ -35,6 +35,7 @@
 #include "core/io/IO.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "../stdlib/HotkeyModule.hpp"
+#include "../stdlib/RuntimeErrorTracker.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
@@ -46,6 +47,8 @@
 #include <memory>
 #include <string>
 #include <cstdlib>
+#include <algorithm>
+#include <stdexcept>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -724,8 +727,17 @@ public:
       }
     }
 
-    // Process all goroutines until they're done
-    processGoroutines();
+    // Process all goroutines until they're done. An uncaught script error
+    // escaping a goroutine is converted here (see
+    // convertUncaughtScriptError) so it cannot run past the launcher's
+    // std::exception boundary into std::terminate.
+    try {
+      processGoroutines();
+    } catch (const compiler::ScriptError &e) {
+      convertUncaughtScriptError(e);
+    } catch (const compiler::ScriptThrow &t) {
+      convertUncaughtScriptError(t);
+    }
 
     // Return the script result from the VM stack (if any)
     if (vm_->getStackSizePublic() > 0) {
@@ -917,7 +929,15 @@ public:
         ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
       return;
     }
-    vm_->tickScheduler();
+    // Same conversion as execute(): a goroutine error must not escape the
+    // engine as a non-std exception (std::terminate in the launcher).
+    try {
+      vm_->tickScheduler();
+    } catch (const compiler::ScriptError &e) {
+      convertUncaughtScriptError(e);
+    } catch (const compiler::ScriptThrow &t) {
+      convertUncaughtScriptError(t);
+    }
   }
 
   // REPL runs disable the HotkeyWait keep-alive in processGoroutines so
@@ -949,6 +969,45 @@ public:
   bool isAutoReload() const { return auto_reload_enabled_.load(); }
 
 private:
+  // ScriptError is a plain struct, not std::exception-derived, so an
+  // uncaught script error escaping a goroutine ran past every launcher
+  // boundary (ScriptStrategy catches std::exception) into std::terminate:
+  // `go fn() { x = nil; y = x.foo }` aborted the process instead of
+  // reporting. Report + convert like Pipeline::execute does, handing the
+  // launcher the std::exception it already handles.
+  [[noreturn]] void convertUncaughtScriptError(const compiler::ScriptError &e) {
+    std::string msg = e.message;
+    if (msg == "Uncaught exception" || msg.empty()) {
+      // The dispatch conversion carries the real message in the value and
+      // leaves `message` as a generic placeholder. String values resolve
+      // through the VM so the text (not `<string:629>`) is reported.
+      std::string v;
+      if (vm_ && (e.value.isStringValId() || e.value.isStringId()))
+        v = vm_->resolveStringKey(e.value);
+      else
+        v = e.value.toString();
+      if (!v.empty() && v != "null")
+        msg = v;
+    }
+    ::havel::errors::ErrorReporter::instance().errorAt(
+        ::havel::errors::ErrorStage::VM, msg,
+        static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
+        static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
+    ::havel::stdlib::notifyRuntimeError(msg);
+    throw std::runtime_error(msg);
+  }
+  [[noreturn]] void convertUncaughtScriptError(const compiler::ScriptThrow &t) {
+    std::string msg;
+    if (vm_ && (t.value.isStringValId() || t.value.isStringId()))
+      msg = vm_->resolveStringKey(t.value);
+    else
+      msg = t.value.toString();
+    ::havel::errors::ErrorReporter::instance().error(
+        ::havel::errors::ErrorStage::VM, msg);
+    ::havel::stdlib::notifyRuntimeError(msg);
+    throw std::runtime_error(msg);
+  }
+
   // The mtime-poll watcher body, shared by setAutoReload and the
   // deferred start in execute(). Polls every 250ms; on change pushes
   // FILE_READY to the event queue.

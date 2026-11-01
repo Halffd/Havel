@@ -538,8 +538,132 @@ std::string argvExpr(const std::vector<Word>& words, Ctx& ctx, std::string& err)
   return out;
 }
 
-// Full command line (may contain `|`, `<`, `>`) as a process.pipe(...) call,
-// wrapped in a redirect when one is present.
+// Stage words that mean a HAVEL function stage rather than a binary. Kept
+// deliberately small: names that are also common binaries (grep, sort, head,
+// tail, wc, cat, find, cut) stay commands.
+bool isHavelStageName(const std::string& name, bool isFirst) {
+  if (!isBareIdent(name))
+    return false;
+  if (isFirst)
+    // Bare Havel verbs with no binary counterpart.
+    return name == "print" || name == "count" || name == "lines";
+  for (const char* k : {"split", "filter", "count", "lines", "print", "map",
+                        "where", "len", "keys", "values"}) {
+    if (name == k)
+      return true;
+  }
+  return false;
+}
+
+bool stageIsHavel(const Stage& st, bool isFirst) {
+  if (st.words.empty())
+    return false;
+  const Word& w = st.words[0];
+  if (w.quoted || w.segs.size() != 1 || w.segs[0].kind != Segment::Literal)
+    return false;
+  return isHavelStageName(w.segs[0].text, isFirst);
+}
+
+// A Havel stage's call expression. `filter 'pattern'` (string argument)
+// becomes grep(pattern) - the substring filter the user means, since Havel's
+// filter takes a predicate function.
+std::string havelStageExpr(const Stage& st, Ctx& ctx, std::string& err) {
+  const Word& w = st.words[0];
+  std::string name = w.segs[0].text;
+  std::string args;
+  for (size_t i = 1; i < st.words.size(); ++i) {
+    std::string e = wordExpr(st.words[i], ctx, err);
+    if (!err.empty())
+      return "";
+    if (!args.empty())
+      args += ", ";
+    args += e;
+  }
+  if (name == "filter" && !args.empty() && st.words.size() == 2 &&
+      st.words[1].segs.size() == 1 && st.words[1].segs[0].kind == Segment::Literal)
+    name = "grep";  // `| filter 'chrome'` is a substring filter
+  if (args.empty())
+    return name;
+  return name + "(" + args + ")";
+}
+
+// Path-ish expression for a word: `~/x` expands to sys.home() + "/x".
+std::string pathWordExpr(const Word& w, Ctx& ctx, std::string& err) {
+  std::string e = wordExpr(w, ctx, err);
+  if (!err.empty())
+    return "";
+  if (w.segs.size() == 1 && w.segs[0].kind == Segment::Literal) {
+    const std::string& lit = w.segs[0].text;
+    if (lit == "~")
+      return "sys.home()";
+    if (startsWith(lit, "~/"))
+      return "sys.home() + " + havelQuote(lit.substr(1));
+  }
+  return e;
+}
+
+// Build the source for a tokenized pipeline: consecutive command stages
+// collapse into one process.pipe call (real OS pipes); Havel stages chain
+// with the pipe operator. A command stage after a Havel stage is rejected -
+// the piped value would become process.pipe's stage list, not its stdin.
+std::string buildPipelineSource(const std::vector<Stage>& stages, Ctx& ctx,
+                                std::string& err, const std::string& stdinExpr) {
+  struct Run {
+    bool havel = false;
+    std::vector<const Stage*> stages;
+  };
+  std::vector<Run> runs;
+  for (size_t i = 0; i < stages.size(); ++i) {
+    bool hv = stageIsHavel(stages[i], i == 0);
+    if (runs.empty() || runs.back().havel != hv) {
+      Run r;
+      r.havel = hv;
+      runs.push_back(std::move(r));
+    }
+    runs.back().stages.push_back(&stages[i]);
+  }
+
+  std::string out;
+  for (size_t ri = 0; ri < runs.size(); ++ri) {
+    Run& run = runs[ri];
+    if (run.havel) {
+      for (const Stage* st : run.stages) {
+        std::string e = havelStageExpr(*st, ctx, err);
+        if (!err.empty())
+          return "";
+        out += out.empty() ? e : " | " + e;
+      }
+      continue;
+    }
+    // Command run: one process.pipe call.
+    std::string stagesExpr;
+    if (run.stages.size() == 1) {
+      stagesExpr = argvExpr(run.stages[0]->words, ctx, err);
+    } else {
+      stagesExpr = "[";
+      for (size_t i = 0; i < run.stages.size(); ++i) {
+        if (i)
+          stagesExpr += ", ";
+        stagesExpr += argvExpr(run.stages[i]->words, ctx, err);
+        if (!err.empty())
+          return "";
+      }
+      stagesExpr += "]";
+    }
+    if (!err.empty())
+      return "";
+    std::string call = "process.pipe(" + stagesExpr;
+    if (ri == 0 && !stdinExpr.empty())
+      call += ", " + stdinExpr;
+    call += ")";
+    out += out.empty() ? call : " | " + call;
+  }
+  return out;
+}
+
+// Full command line (may contain `|`, `<`, `>`) as a process.pipe(...) call
+// (or a mixed process.pipe | havelStage chain), wrapped in a redirect when
+// one is present.
 std::string translateCommandText(const std::string& cmdline, Ctx& ctx, std::string& err) {
   std::vector<Token> toks;
   if (!tokenize(cmdline, toks, err))
@@ -584,6 +708,7 @@ std::string translateCommandText(const std::string& cmdline, Ctx& ctx, std::stri
   }
 
   // Validate stages.
+  bool anyHavel = false;
   for (size_t i = 0; i < stages.size(); ++i) {
     Stage& st = stages[i];
     if (st.words.empty()) {
@@ -595,47 +720,39 @@ std::string translateCommandText(const std::string& cmdline, Ctx& ctx, std::stri
             "pipeline instead";
       return "";
     }
-    if (st.hasIn && st.inFile.segs.empty()) {
-      err = "'<' needs a file operand";
+    if (st.hasIn && (i != 0 || st.inFile.segs.empty())) {
+      err = "'<' is only supported on the first command of a pipeline";
       return "";
     }
     if (st.hasOut && st.outFile.segs.empty()) {
       err = "'>' needs a file operand";
       return "";
     }
+    if (stageIsHavel(st, i == 0))
+      anyHavel = true;
   }
 
   std::string stdinExpr;
   if (stages[0].hasIn)
-    stdinExpr = "fs.read(" + wordExpr(stages[0].inFile, ctx, err) + ")";
+    stdinExpr = "fs.read(" + pathWordExpr(stages[0].inFile, ctx, err) + ")";
   if (!err.empty())
     return "";
 
-  std::string stagesExpr;
-  if (stages.size() == 1) {
-    stagesExpr = argvExpr(stages[0].words, ctx, err);
-  } else {
-    stagesExpr = "[";
-    for (size_t i = 0; i < stages.size(); ++i) {
-      if (i)
-        stagesExpr += ", ";
-      stagesExpr += argvExpr(stages[i].words, ctx, err);
-      if (!err.empty())
-        return "";
-    }
-    stagesExpr += "]";
-  }
-  if (!err.empty())
-    return "";
-
-  std::string call = "process.pipe(" + stagesExpr;
-  if (!stdinExpr.empty())
-    call += ", " + stdinExpr;
-  call += ")";
-
+  // Output redirection is only defined for pure command pipelines: the
+  // written value is the pipeline's stdout.
   const Stage& last = stages.back();
+  if (last.hasOut && anyHavel) {
+    err = "'>' is only supported for command pipelines - capture the Havel "
+          "result first (x = ...) and use fs.write";
+    return "";
+  }
+
+  std::string call = buildPipelineSource(stages, ctx, err, stdinExpr);
+  if (!err.empty())
+    return "";
+
   if (last.hasOut) {
-    std::string fileExpr = wordExpr(last.outFile, ctx, err);
+    std::string fileExpr = pathWordExpr(last.outFile, ctx, err);
     if (!err.empty())
       return "";
     std::string fn = last.append ? "fs.append" : "fs.write";
@@ -806,15 +923,47 @@ std::string translateStructural(const std::string& header, const std::string& bo
   std::string out = h;
 
   if (!hw.empty() && hw[0] == "for") {
-    // for NAME in <iterable>
-    size_t p = h.find(" in ");
-    if (p == std::string::npos) {
-      err = "for-loop needs Havel's `for name in <iterable> { ... }` shape";
-      return "";
+    // for NAME in <iterable> - and Havel's paren form for (a, b) in <map>.
+    std::string varPart, iterRaw;
+    if (startsWith(h, "for (")) {
+      // for (a, b) in <iterable>: keep Havel's destructuring paren form.
+      size_t close = h.find(')');
+      size_t in = h.find(" in ");
+      if (close == std::string::npos || in == std::string::npos || in < close) {
+        err = "for (a, b) loop needs Havel's `for (a, b) in <iterable> { ... }` shape";
+        return "";
+      }
+      varPart = trimCopy(h.substr(3, close - 3));
+      iterRaw = trimCopy(h.substr(in + 4));
+    } else {
+      size_t p = h.find(" in ");
+      if (p == std::string::npos) {
+        err = "for-loop needs Havel's `for name in <iterable> { ... }` shape";
+        return "";
+      }
+      varPart = trimCopy(h.substr(3, p - 3));
+      iterRaw = trimCopy(h.substr(p + 4));
     }
-    std::string varPart = trimCopy(h.substr(3, p - 3));
-    std::string iterRaw = trimCopy(h.substr(p + 4));
-    if (!isBareIdent(varPart)) {
+    if (varPart.find(',') != std::string::npos) {
+      // Multi-iterator: register both names as block locals; Havel's paren
+      // form carries them (used for maps: for (k, v) in m { ... }). The
+      // input may or may not include the parens; emit exactly one pair.
+      std::string inner = varPart;
+      while (!inner.empty() && (inner.front() == '(' || inner.front() == ' '))
+        inner.erase(inner.begin());
+      while (!inner.empty() && (inner.back() == ')' || inner.back() == ' '))
+        inner.pop_back();
+      auto names = splitWordsSimple(inner);
+      for (auto& nm : names) {
+        while (!nm.empty() && (nm.front() == ','))
+          nm.erase(nm.begin());
+        while (!nm.empty() && (nm.back() == ','))
+          nm.pop_back();
+        if (isBareIdent(nm))
+          ctx.locals.insert(nm);
+      }
+      varPart = "(" + trimCopy(inner) + ")";
+    } else if (!isBareIdent(varPart)) {
       err = "for-loop variable must be a plain name";
       return "";
     }
@@ -826,8 +975,15 @@ std::string translateStructural(const std::string& header, const std::string& bo
     if (tokenize(iterRaw, toks, terr) && toks.size() == 1 && toks[0].kind == Token::WordT &&
         wordIsGlob(toks[0].word)) {
       iterExpr = "fs.glob(" + havelQuote(wordLiteral(toks[0].word)) + ")";
+    } else if (isBareIdent(iterRaw) && iterRaw == "glob") {
+      iterExpr = "fs.glob";  // bare `glob` in Havel terms
     } else {
       iterExpr = replaceVarRefs(iterRaw, ctx);
+      // Bare `glob("~/Documents")` (no fs. prefix) maps to fs.glob.
+      if (startsWith(iterExpr, "glob("))
+        iterExpr = "fs." + iterExpr;
+      else if (startsWith(iterExpr, "glob ("))
+        iterExpr = "fs." + iterExpr.substr(0, 4) + iterExpr.substr(5);
     }
     out = "for " + varPart + " in " + iterExpr;
   } else if (!hw.empty() && (hw[0] == "if" || hw[0] == "while")) {
@@ -982,6 +1138,12 @@ std::string translateOneStatement(const std::string& raw, Ctx& ctx, std::string&
           if (!err.empty())
             return "";
           rhsExpr = call + ".stdout.trim()";
+        } else if (rhs.find('|') != std::string::npos) {
+          // `x = cmd | cmd` (or a mixed chain): the RHS is a pipeline.
+          std::string call = translateCommandText(rhs, ctx, err);
+          if (!err.empty())
+            return "";
+          rhsExpr = call;
         } else {
           std::vector<Token> toks;
           std::string terr;
@@ -1015,6 +1177,14 @@ std::string translateOneStatement(const std::string& raw, Ctx& ctx, std::string&
   std::vector<std::string> words = splitWordsSimple(line);
   std::string first = words.empty() ? "" : words[0];
 
+  // Paren-less call: `print "too many"`, `print a, b` - Havel accepts these,
+  // so keep them Havel (the shell layer only rewrites `echo`, not print).
+  if (isBareIdent(first)) {
+    std::string rest = trimCopy(line.substr(first.size()));
+    if (!rest.empty() && rest[0] == '"' && first == "print")
+      return replaceVarRefs(line, ctx);
+  }
+
   // ---- builtins -----------------------------------------------------------
   if (first == "cd") {
     std::string arg = trimCopy(line.substr(2));
@@ -1024,7 +1194,7 @@ std::string translateOneStatement(const std::string& raw, Ctx& ctx, std::string&
     std::string terr;
     if (!tokenize(arg, toks, terr) || toks.size() != 1 || toks[0].kind != Token::WordT)
       return fail(err, "cd takes one path");
-    std::string e = wordExpr(toks[0].word, ctx, err);
+    std::string e = pathWordExpr(toks[0].word, ctx, err);
     if (!err.empty())
       return "";
     return "shell.cd(" + e + ")";

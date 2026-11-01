@@ -1,7 +1,9 @@
 # The first print() line carries a leading ANSI reset, breaking `^`-anchored parsing
 
-**Status:** OPEN (cosmetic, exit-code-neutral). Pre-existing on main and
-havel-2. **Retraction note:** an earlier version of this entry claimed the
+**Status:** FIXED (LoggerC.c, havel-2 tip). The reset now precedes the
+trailing newline; `grep -c '^XONE$'` on the reproducer = 1 and the full
+fast-tier smoke stays 342/342. Non-TTY output includes the colour codes
+unchanged otherwise. **Retraction note:** an earlier version of this entry claimed the
 first print was *lost*. That was wrong - it was a grep artifact: the print is
 present, but the line begins with the colour reset `ESC[0m` bled from the
 preceding logger line, so `grep '^XONE'` (and any line-anchored parser)

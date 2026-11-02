@@ -5,6 +5,23 @@ description: "Extern declarations and bindings to C++/Rust types."
 
 # Extern Types Reference
 
+## Implementation status
+
+**Extern FUNCTIONS are implemented** (havel-2, Oct 31): an `extern { fn ... }`
+block declares native functions so the resolver accepts their names
+regardless of what the compiling VM has registered, and the module load
+verifies each name against the host registrations (`__extern_check`),
+failing with the missing name if absent. Calling an extern-declared function
+dispatches exactly like any host function; parameter/return type annotations
+are parsed and recorded as documentation of the native signature (the
+language is dynamically typed). See also
+`scripts/smoke/test_extern_function_decl.hv` (positive) and
+`scripts/smoke/test_extern_missing.hv` (negative).
+
+**Extern TYPES and extern CONSTANTS below are NOT implemented yet** - they are
+the reference for the planned shape (`type`/`val` members, `registerExternType`/
+`registerExternMethod`, `Value::makeExtern`); no code exists for them today.
+
 ## Overview
 
 The `extern` keyword declares types and functions implemented in native code (C++/Rust) that can be used from Havel.

@@ -197,6 +197,7 @@ void optimizeJumps();  // Jump threading optimization
       std::vector<const ast::LambdaExpression *> &out) const;
   void compileStatement(const ast::Statement &statement);
   void compileUseStatement(const ast::UseStatement &statement);
+  void compileExternBlock(const ast::ExternBlock &statement);
     void compileWithStatement(const ast::WithStatement &statement);
   void compileDecoratorStatement(const ast::DecoratorStatement &statement);
   void compileExpression(const ast::Expression &expression);

@@ -1,0 +1,77 @@
+// smoke: timeout = 60
+// An extern declaration of a name the host never registered must fail at
+// module load, name the missing function, and exit non-zero.
+//
+// Host runtime_errors are FATAL in this VM: they are not catchable by
+// `try/catch` (verified: `try { sleep("x") } catch (e) {...}` terminates with
+// "Execution error" and never reaches the catch - VMDispatch converts host
+// errors through handleScriptThrow, which has no handler to bind at that
+// point). The assertion therefore runs the failing fixture as a CHILD
+// process and checks its exit code and output, the same shape as
+// scripts/smoke/test_issue_dsl_input_sugar_lint_only.hv.
+//
+// Negative-control design: the second fixture is identical except the extern
+// is a REGISTERED host function, so a pass there proves the first failure is
+// the missing-name check and not an unrelated startup failure.
+use "fs"
+use "process"
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_extern_decl_${sys.pid()}"
+BAD_FIXTURE = "${FIXTURE_DIR}/missing_extern.hv"
+GOOD_FIXTURE = "${FIXTURE_DIR}/registered_extern.hv"
+fs.mkdir(FIXTURE_DIR)
+
+// Locate the havel binary: HAVEL_BINARY wins when set; otherwise probe the
+// layouts hvtest uses (cwd = repo root, or cwd = the build dir).
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-debug/havel", "${cwd}/build-release/havel", "${cwd}/havel"]
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+// --------------------------------------------------------------- negative
+fs.write(BAD_FIXTURE, """
+extern { fn never_registered_extern_xyz() }
+exit(0)
+""")
+
+res = process.run("\"${havel_bin}\" \"${BAD_FIXTURE}\" 2>&1")
+assert(res.exitCode != 0, "unregistered extern must fail the module load (got exit 0)")
+assert(res.stdout.find("never_registered_extern_xyz") >= 0,
+       "the failure must name the missing extern; output was: ${res.stdout}")
+
+// --------------------------------------------------------------- positive
+fs.write(GOOD_FIXTURE, """
+extern { fn exit(code: int) -> nil }
+exit(0)
+""")
+
+res2 = process.run("\"${havel_bin}\" \"${GOOD_FIXTURE}\" 2>&1")
+assert(res2.exitCode == 0,
+       "registered extern must pass the load-time check; output was: ${res2.stdout}")
+
+// ----------------------------------------------------------- arity mismatch
+// sleep is registered with arity 1; a declaration that disagrees must be
+// caught by the same load-time check (only names whose registration recorded
+// an arity are compared).
+ARITY_FIXTURE = "${FIXTURE_DIR}/wrong_arity.hv"
+fs.write(ARITY_FIXTURE, """
+extern { fn sleep(a: int, b: int) -> nil }
+exit(0)
+""")
+res3 = process.run("\"${havel_bin}\" \"${ARITY_FIXTURE}\" 2>&1")
+assert(res3.exitCode != 0, "wrong-arity extern must fail the load (got exit 0)")
+assert(res3.stdout.find("arity") >= 0,
+       "the failure must mention the arity mismatch; output was: ${res3.stdout}")
+
+fs.remove(FIXTURE_DIR)
+print("PASS: unregistered extern fails at load, by name; wrong arity fails; registered extern passes")
+return 0

@@ -150,6 +150,15 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
         }
       }
     }
+  } else if (statement->kind == ast::NodeType::ExternBlock) {
+    // `extern { fn name(...) }`: the declaration itself makes the native
+    // name resolvable regardless of what the compiling VM has registered;
+    // the load-time __extern_check (emitted by the bytecode compiler)
+    // verifies the host actually provides it.
+    const auto &ext = static_cast<const ast::ExternBlock &>(*statement);
+    for (const auto &fn : ext.functions) {
+      extern_functions_[fn.name] = fn.paramCount;
+    }
   } else if (statement->kind == ast::NodeType::UseStatement) {
     const auto &use = static_cast<const ast::UseStatement &>(*statement);
     if (!use.isFileImport) {
@@ -1323,6 +1332,11 @@ case ast::NodeType::UseStatement:
   // Global imports already handled in first pass of resolve()
   break;
 
+case ast::NodeType::ExternBlock:
+  // Declarations only - collected in the first pass; nothing to resolve
+  // here (the bytecode compiler emits the load-time check).
+  break;
+
 case ast::NodeType::ImportStatement:
   // Global imports already handled in first pass of resolve()
   break;
@@ -2262,6 +2276,11 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   if (function_index == 0) {
     if (top_level_functions_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
+    }
+    // `extern { fn name(...) }`: native dispatch by name, like any host
+    // function (LOAD_GLOBAL + CALL at runtime).
+    if (extern_functions_.count(name) > 0) {
+      return ResolvedBinding{ResolvedBindingKind::HostFunction, 0, 0, name, false};
     }
     if (global_variables_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};

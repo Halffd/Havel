@@ -3668,6 +3668,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::ExternBlock: {
+    compileExternBlock(static_cast<const ast::ExternBlock &>(statement));
+    break;
+  }
+
   case ast::NodeType::ImportStatement: {
     compileImportStatement(static_cast<const ast::ImportStatement &>(statement));
     break;
@@ -3785,6 +3790,29 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program, ModuleLoader 
   module_loader_ = &loader;
   base_path_ = basePath;
   return compile(program);
+}
+
+// `extern { fn name(...) }`: one load-time check per declaration.
+//
+//   __extern_check(name, arity)
+//
+// The names resolve like host functions (the resolver binds them as
+// HostFunction; calls emit LOAD_GLOBAL + CALL), so the check only has to
+// verify the host registered each name - a missing native fails at module
+// load with the declared name instead of at first call with an opaque
+// dispatch error. Emitted as a plain host call (no new opcode), which keeps
+// the JIT path untouched.
+void ByteCompiler::compileExternBlock(const ast::ExternBlock &statement) {
+  for (const auto &fn : statement.functions) {
+    uint32_t checkSid = addStringConstant("__extern_check");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(checkSid));
+    uint32_t nameSid = addStringConstant(fn.name);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameSid)));
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeInt(static_cast<int64_t>(fn.paramCount))));
+    emit(OpCode::CALL, 2);
+    emit(OpCode::POP);
+  }
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {

@@ -26,6 +26,7 @@ All notable changes to Havel are documented here.
 - **Brightness panel UI** (`scripts/app/brightness_panel.hv`) - full GUI with sliders, monitor selector, presets
 - **All brightness setters now apply to all monitors** when no monitor index is provided
 - **Python-style tracebacks** for runtime errors with full call stack, file/line/column, and function names
+- `fs.glob` matches full path patterns through POSIX `glob()` (tilde, `{a,b}` braces, character classes), returns sorted results, and yields `[]` for no match or a missing directory; `fs.glob_many`, `fs.glob_dirs`, `fs.glob_files` were added
 
 ### Changed
 - Build system: modes 0-16 with granular feature flags

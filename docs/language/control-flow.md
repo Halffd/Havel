@@ -57,12 +57,22 @@ Use `break` to exit.
 ## For Loop
 
 ```hv
-// Single iterator
+// Single iterator: binds the element (arrays/strings/ranges) or the
+// value (objects/sets).
 for item in collection {
     // body
 }
 
-// Key-value iteration
+// Multiple iterators, no parentheses needed: the first binds the
+// position/key, the second the element/value.
+//   arrays/strings/ranges: (index, value)
+//   objects/sets:          (key, value)
+for i, v in [10, 20, 30] { sum += v }   // i = 0,1,2 ; v = 10,20,30
+for key, value in {a: 1, b: 2} { ... }  // key = a,b ; value = 1,2
+for i, ch in "abc" { ... }              // i = 0,1,2 ; ch = a,b,c
+for i, n in 0..2 { ... }                // i = n = 0,1,2
+
+// The parenthesized form is equivalent (kept for readability):
 for (key, value) in object {
     // body
 }

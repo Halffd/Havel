@@ -1315,6 +1315,51 @@ tiering fast-tick budget work, the boxed-upvalues goroutine fix). Rule:
   LAST, with both sides' gates as verifier - never two sessions merging
   independently and hoping the gate catches drift.
 
+## Reactive hotkeys and `when`: the operation order is the contract
+
+The var-change path (`src/core/init/Havel.cpp`, `src/havel-lang/runtime/
+HavelEngine.hpp` - `setOnVarChangedSync`), the conditional-hotkey getters
+(`HotkeyModule::__get_grab` / `__get_enabled`) and the goroutine-error
+boundary (`HavelEngine::convertUncaughtScriptError`) encode a load-bearing
+order of operations. Do not reorder, hoist, "simplify" or bypass any of it.
+
+This is a protected zone, held to the same bar as the GC and JIT/tiering
+(which require `scripts/ci/jit-parity-test.sh` with pasted output). Every
+change here MUST carry, in the commit message:
+
+1. a named defect or gap it closes, reproducible - not "cleanup", not
+   "consistency", not "seemed off". The subsystem's bug history (pin leak,
+   when-teardown, suspended-fiber visibility, goroutine-error abort) is
+   evidence that unmotivated changes here surface hours later;
+2. a regression test that fails before the change and passes after,
+   targeting the exact failure mode - "the existing suite still passes" is
+   not a safety signal in this subsystem;
+3. an explicit blast-radius note: what the change does NOT touch among
+   pin/unpin lifetimes, interval lifecycles, fiber scheduling and GC
+   visibility, mode transitions, and hotkey re-registration.
+
+Concretely:
+
+* Conditional-hotkey grab/enabled state is re-evaluated and APPLIED before
+  when-branch bodies run. An exit branch must observe the post-transition
+  state; bodies-first showed `enabled=true grab=true` on a just-deactivated
+  binding.
+* `enabled` / `grab` reads must go through the live prototype getters.
+  Reading the raw object field is stale for any binding without a host
+  object (every `saved = key => ...` inside a `when` body).
+* HavelEngine defers the conditional re-eval to the scheduler tick while a
+  goroutine dispatch frame is active. That deferral is not optional:
+  synchronous re-eval from there wedges the host FFI (window.active()
+  never returns).
+* `ScriptError` is a plain struct, NOT `std::exception`: an uncaught
+  goroutine error without the engine-boundary conversion terminates the
+  process (SIGABRT). The conversion catches stay.
+* Locking tests (manual-run): `scripts/tests/test_when_block_hotkey_
+  lifecycle.hv`, `test_when_exit_observes_ungrab.hv`,
+  `test_when_assigned_hotkey_conditional.hv`; the boundary gate
+  `scripts/ci/goroutine-error-exit-test.sh`. History, file map and how to
+  change the area safely: `docs/contributing/reactive-hotkeys.md`.
+
 ## Multi-agent coordination
 
 Multiple OpenCode sessions may work on this repository in separate Git worktrees.

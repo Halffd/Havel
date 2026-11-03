@@ -33,20 +33,38 @@ Two full-suite smoke runs on the same commit were destroyed by this:
 342/342 at 5.2 s/test. So the failures measured the host, not the code; but
 each ruined run costs ~2-3 hours.
 
-## Hypotheses (unverified, in order)
+## Observed mechanism (Nov 3, /proc + strace)
 
-1. Host-level IO starvation on the shared /host mount (D-state clang/cargo/
-   havel-wm seen repeatedly) stalls havel's startup before its first output;
-   anything with a pipe + timeout downstream then reports a timeout.
-2. A startup-init wait that polls an external service (IO devices, X11,
-   dbus, at-spi) with no timeout - slow/hung during the storms.
-   `HAVEL_HEADLESS=1` was set for all the runs above, so headless did not
-   prevent it.
+- During a hang, the havel process is `State: D (disk sleep)`,
+  `wchan: folio_wait_bit_common`, 1 thread, fds normal. That wchan is a
+  **page-fault wait on filesystem IO** - the process is not deadlocked, it
+  is waiting for a page to arrive from storage.
+- `strace -f -e trace=openat,read,mmap` of a hung run: startup proceeds
+  normally (libraries open/mmap with results), then **no further syscalls
+  for the rest of the timeout** - consistent with waiting on mapped-page
+  faults (which produce no syscall entries).
+- A fully LOCAL copy (binary + modules under /tmp, local disk) hangs the
+  same way, so it is not specific to /host's virtiofs.
+- Context at the time: `/host` is a 953G share at **98% full** under heavy
+  concurrent writes from another session (its `havel-wm` processes sat in D
+  state), and the VM's own disk is `/dev/vda2`, 76% full on the same host.
+  Both /host and the VM disk back onto the same physical host - when the
+  host's storage queues up, every page-in in the VM (from ANY mount) can
+  stall for tens of seconds.
+
+## Conclusion (mechanism observed; no havel-side defect identified)
+
+The linger is **host storage congestion**, not a havel bug: havel waits on
+page-ins like any process; under the congestion its startup/first-output
+exceeds any downstream timeout, which the smoke runner reports as
+`(timeout)`. `HAVEL_HEADLESS=1` is irrelevant (no external service is
+involved).
 
 ## Next step
 
-Reproduce on a quiet box with `strace -f -e trace=openat,connect,read,poll`
-(or gdb attach during the hang's S state) and capture the startup wait.
-Also add per-run timing instrumentation to `hvtest` (report wall time per
-test) so a future storm is obvious from the summary instead of requiring
-log archaeology.
+- Do not debug this inside havel. Re-run gates only in a quiet window
+  (load-gated runners did `load<3`, but the load average misses IO-blocked
+  D-state load - gate on `ps -eo stat | grep -c '^D'` == 0 instead).
+- Optional harness help: make `hvtest` report per-test wall time in the
+  summary so a storm is visible without log archaeology, and treat
+  "first output never arrived" timeouts distinctly from real hangs.

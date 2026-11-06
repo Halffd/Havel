@@ -9,6 +9,28 @@ All notable changes to Havel are documented here.
 
 ---
 
+## 2026-11-03 - Shell blocks inside scripts
+
+### Added
+- `sh { ... }` runs shell-shaped lines from a script: the block is translated
+  by the same layer as the REPL's `:shell` mode (process.pipe pipelines,
+  `cd`/`export`/`echo`, `>`/`>>`/`<` redirects, `[ -f x ]` tests) and the
+  translated statements execute inline. `$name` / `${expr}` resolve to the
+  enclosing scope's Havel variables - `notify-send "${w.title}"`,
+  `sleep 1.5`, `kill w.pid`.
+- `$(cmd)` works as an expression in Havel source (`out = $(echo hi)`); it
+  compiles to `runResult(cmd)` and yields the same result object as
+  backticks.
+- `shell.translate` gained a script mode for the block translation; the REPL
+  keeps bash environment semantics for unknown `$names`.
+
+### Changed
+- Unsupported bash syntax inside `sh { }` now fails the compile with the
+  same suggestion the REPL prints (e.g. "use go { ... } for background
+  execution") instead of a generic parse error.
+
+---
+
 ## 2026-10-31 - REPL shell mode
 
 ### Added

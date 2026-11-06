@@ -22,6 +22,11 @@
 
 namespace havel::repl {
 
+// How `$name` / `${name}` resolve. Repl: names that are not session globals
+// read the process environment (bash semantics). Script (`sh { ... }` in a
+// .hv file): every name is a Havel variable of the enclosing scope.
+enum class TranslateMode { Repl, Script };
+
 // Result of translating shell-shaped input into Havel.
 struct ShellTranslation {
   bool ok = true;
@@ -39,12 +44,14 @@ struct ShellTranslation {
 // enclosing block, tracked internally) is emitted as that variable;
 // otherwise it reads the process environment at run time.
 ShellTranslation translateShellLine(const std::string& line,
-                                    const std::unordered_set<std::string>* knownGlobals);
+                                    const std::unordered_set<std::string>* knownGlobals,
+                                    TranslateMode mode = TranslateMode::Repl);
 
 // Translate a whole accumulated shell-mode block (multi-line input).
 // Control-flow lines keep Havel's grammar; statements inside their braces and
 // shell-shaped statements on their own lines are translated per line.
 ShellTranslation translateShellBlock(const std::string& block,
-                                     const std::unordered_set<std::string>* knownGlobals);
+                                     const std::unordered_set<std::string>* knownGlobals,
+                                     TranslateMode mode = TranslateMode::Repl);
 
 }  // namespace havel::repl

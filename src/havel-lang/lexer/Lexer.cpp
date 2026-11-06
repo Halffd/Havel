@@ -1100,6 +1100,71 @@ Token Lexer::scanRegexLiteral() {
  return makeToken(value, TokenType::RegexLiteral, "/" + raw + "/");
 }
 
+Token Lexer::scanShellBlock() {
+  // The caller consumed `sh` (kept as the token) and `{`. Capture the body
+  // raw to the matching '}': character level, quote aware, brace counted so
+  // `${var}` interpolations and Havel control-flow braces inside the block
+  // stay balanced. Comments are preserved as text (the shell layer strips
+  // them); nothing here needs to understand shell syntax.
+  std::string body;
+  int depth = 1;
+  bool inS = false, inD = false;
+  size_t startLine = line, startColumn = column;
+  while (!isAtEnd()) {
+    char c = peek();
+    if (inS) {
+      if (c == '\'')
+        inS = false;
+      body += advance();
+      continue;
+    }
+    if (inD) {
+      if (c == '\\' && peek(1) != '\0') {
+        body += advance();
+        if (!isAtEnd())
+          body += advance();
+        continue;
+      }
+      if (c == '"')
+        inD = false;
+      body += advance();
+      continue;
+    }
+    if (c == '\'') {
+      inS = true;
+      body += advance();
+      continue;
+    }
+    if (c == '"') {
+      inD = true;
+      body += advance();
+      continue;
+    }
+    if (c == '{') {
+      depth++;
+      body += advance();
+      continue;
+    }
+    if (c == '}') {
+      depth--;
+      if (depth == 0) {
+        advance();  // closing brace
+        break;
+      }
+      body += advance();
+      continue;
+    }
+    body += advance();
+  }
+  size_t savedLine = line, savedColumn = column;
+  line = startLine;
+  column = startColumn;
+  Token tok = makeToken(body, TokenType::ShBlock, "sh {" + body + "}");
+  line = savedLine;
+  column = savedColumn;
+  return tok;
+}
+
 Token Lexer::scanShellCommand(bool captureOutput) {
   // $ already consumed, just return the $ as a token
   // The parser will handle the expression that follows
@@ -2568,6 +2633,54 @@ continue;
         advance(); // consume '!'
         captureOutput = true;
       }
+      // `$(` is command substitution in a Havel expression (x = $(cmd)):
+      // lex a word so the parser sees a normal expression, and rewrite the
+      // token into a runResult call by wrapping the inner command text.
+      if (!isAtEnd() && peek() == '(') {
+        // Find the matching ')' (nesting-aware, quote-aware) and re-emit
+        // `$<inner>` as a ShellCommandCapture token - the parser compiles
+        // that to runResult, which is exactly the substitution semantics.
+        std::string inner;
+        int depth = 1;
+        bool inS = false, inD = false;
+        // Walk from '(' using a local cursor; the lexer's own position is
+        // advanced afterwards with advance() calls.
+        size_t j = position + 1;
+        while (j < source.length() && depth > 0) {
+          char d = source[j];
+          if (inS) {
+            if (d == '\'') inS = false;
+          } else if (inD) {
+            if (d == '\\' && j + 1 < source.length()) j++;
+            else if (d == '"') inD = false;
+          } else if (d == '\'') inS = true;
+          else if (d == '"') inD = true;
+          else if (d == '(') depth++;
+          else if (d == ')') {
+            depth--;
+            if (depth == 0) break;
+          }
+          inner += d;
+          j++;
+        }
+        if (depth != 0) {
+          reportError("unterminated $( ... ) substitution");
+          currentTokens.push_back(makeToken("$", TokenType::ShellCommand, "$"));
+          continue;
+        }
+        // Consume the source up to and including ')' via advance(): the
+        // cursor is at '(', so advance once for '(' plus inner.size() times.
+        advance(); // '('
+        for (size_t k = 0; k < inner.size(); ++k)
+          advance();
+        advance(); // ')'
+        std::string val = "$!" + inner;
+        currentTokens.push_back(makeToken(val, TokenType::ShellCommandCapture, val));
+        if (debug_lexer) {
+          havel::debug("LEX: {} (substitution)", currentTokens.back().toString());
+        }
+        continue;
+      }
 
       // Don't skip whitespace - let parser handle it
       // Just emit the token and let parser parse the expression
@@ -2892,6 +3005,23 @@ continue;
       currentTokens.push_back(scanHotkey());
     } else {
       currentTokens.push_back(scanIdentifier());
+      // `sh { ... }` is a shell block: the body is captured raw (character
+      // level, brace/quote aware) so the shell layer can translate it
+      // without the Havel tokenizer tripping over shell syntax like
+      // `./*.hv` or `ls -la`. `sh` stays an ordinary identifier otherwise.
+      if (currentTokens.back().type == TokenType::Identifier &&
+          currentTokens.back().value == "sh") {
+        size_t look = position;
+        while (look < source.length() &&
+               (source[look] == ' ' || source[look] == '\t'))
+          look++;
+        if (look < source.length() && source[look] == '{') {
+          while (!isAtEnd() && (peek() == ' ' || peek() == '\t'))
+            advance();
+          advance(); // '{'
+          currentTokens.back() = scanShellBlock();
+        }
+      }
     }
     continue;
   }

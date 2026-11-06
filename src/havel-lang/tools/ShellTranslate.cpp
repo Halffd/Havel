@@ -53,10 +53,11 @@ std::string havelQuote(const std::string& s) {
   return out;
 }
 
-// A word of a shell command: literal pieces plus $VAR / $(cmd) segments.
+// A word of a shell command: literal pieces plus $VAR / $(cmd) / ${expr}
+// segments.
 struct Segment {
-  enum Kind { Literal, Var, Subst } kind = Literal;
-  std::string text;  // literal text, variable name, or substitution payload
+  enum Kind { Literal, Var, Subst, Expr } kind = Literal;
+  std::string text;  // literal text, name, substitution payload, or Havel expr
 };
 
 struct Word {
@@ -79,6 +80,37 @@ struct Token {
   enum Kind { WordT, Pipe, In, Out, Append, Semi } kind = WordT;
   Word word;
 };
+
+// At source[i] == '$' with source[i+1] == '{': consume the interpolation
+// (brace-balanced) and fill `seg` with the inner text as an Expr segment.
+bool consumeDollarBrace(const std::string& s, size_t& i, Segment& seg,
+                        std::string& err) {
+  const size_t n = s.size();
+  i += 2;  // past '$' and '{'
+  int depth = 1;
+  std::string inner;
+  while (i < n && depth > 0) {
+    char c = s[i];
+    if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) {
+        i++;
+        break;
+      }
+    }
+    inner += c;
+    i++;
+  }
+  if (depth != 0) {
+    err = "unterminated ${ ... } interpolation";
+    return false;
+  }
+  seg.kind = Segment::Expr;
+  seg.text = trimCopy(inner);
+  return true;
+}
 
 // ============================================================================
 // tokenizer
@@ -234,6 +266,20 @@ bool tokenize(const std::string& line, std::vector<Token>& out, std::string& err
             i += 2;
             continue;
           }
+          if (d == '$' && i + 1 < n && line[i + 1] == '{') {
+            if (!lit.empty()) {
+              Segment s;
+              s.kind = Segment::Literal;
+              s.text = lit;
+              w.segs.push_back(std::move(s));
+              lit.clear();
+            }
+            Segment seg;
+            if (!consumeDollarBrace(line, i, seg, err))
+              return false;
+            w.segs.push_back(std::move(seg));
+            continue;
+          }
           if (d == '$' && i + 1 < n && (isIdentStart(line[i + 1]) || line[i + 1] == '(')) {
             if (!lit.empty()) {
               Segment s;
@@ -304,6 +350,13 @@ bool tokenize(const std::string& line, std::vector<Token>& out, std::string& err
         s.kind = Segment::Literal;
         s.text = std::string(1, line[i++]);
         w.segs.push_back(std::move(s));
+        continue;
+      }
+      if (ch == '$' && i + 1 < n && line[i + 1] == '{') {
+        Segment seg;
+        if (!consumeDollarBrace(line, i, seg, err))
+          return false;
+        w.segs.push_back(std::move(seg));
         continue;
       }
       if (ch == '$' && i + 1 < n && (isIdentStart(line[i + 1]) || line[i + 1] == '(')) {
@@ -384,6 +437,7 @@ bool tokenize(const std::string& line, std::vector<Token>& out, std::string& err
 struct Ctx {
   const std::unordered_set<std::string>* known = nullptr;
   std::unordered_set<std::string> locals;
+  TranslateMode mode = TranslateMode::Repl;
 
   bool isLocalOrKnown(const std::string& n) const {
     if (locals.count(n))
@@ -394,6 +448,10 @@ struct Ctx {
 
 std::string varExpr(const std::string& name, const Ctx& ctx) {
   if (ctx.isLocalOrKnown(name))
+    return "str(" + name + ")";
+  // Scripts (`sh { ... }` in a .hv file) mean the Havel variable of the
+  // enclosing scope; the REPL falls back to the process environment.
+  if (ctx.mode == TranslateMode::Script)
     return "str(" + name + ")";
   return "(sys.env(" + havelQuote(name) + ") || \"\")";
 }
@@ -416,6 +474,13 @@ std::string segmentExpr(const Segment& seg, Ctx& ctx, std::string& err) {
     // Command substitution reads stdout; bash strips the trailing newlines,
     // trim() also drops leading whitespace (documented in the REPL help).
     return "(" + inner + ").stdout.trim()";
+  }
+  case Segment::Expr: {
+    // `${...}`: a bare name follows the same variable rules as `$name`;
+    // anything else is a Havel expression (e.g. `${w.title}`).
+    if (isBareIdent(seg.text))
+      return varExpr(seg.text, ctx);
+    return "(" + seg.text + ")";
   }
   }
   return havelQuote("");
@@ -1245,15 +1310,40 @@ std::string translateOneStatement(const std::string& raw, Ctx& ctx, std::string&
     if (!tokenize(rest, toks, terr))
       return fail(err, terr);
     std::string joined;
+    Word outFile;
+    bool hasOut = false, append = false;
     for (const auto& t : toks) {
+      if (t.kind == Token::Out || t.kind == Token::Append) {
+        hasOut = true;
+        append = (t.kind == Token::Append);
+        continue;
+      }
+      if (t.kind == Token::In)
+        return fail(err, "echo input redirection is not supported");
       if (t.kind != Token::WordT)
-        return fail(err, "echo arguments must be words (no pipes or redirects)");
+        return fail(err, "echo arguments must be words (no pipes)");
+      if (hasOut && outFile.segs.empty()) {
+        outFile = t.word;  // the redirect target
+        continue;
+      }
       std::string e = wordExpr(t.word, ctx, err);
       if (!err.empty())
         return "";
       if (!joined.empty())
         joined += " + \" \" + ";
       joined += e;
+    }
+    if (joined.empty())
+      joined = "\"\"";
+    if (hasOut) {
+      if (outFile.segs.empty())
+        return fail(err, "echo output redirection needs a file");
+      std::string fileExpr = pathWordExpr(outFile, ctx, err);
+      if (!err.empty())
+        return "";
+      // `echo x > f` writes the text; no REPL value is printed.
+      return std::string(append ? "fs.append(" : "fs.write(") + fileExpr + ", " +
+             joined + ")";
     }
     return "print(" + joined + ")";
   }
@@ -1278,13 +1368,20 @@ std::string translateOneStatement(const std::string& raw, Ctx& ctx, std::string&
     bool hasBody = false;
     if (b != std::string::npos) {
       size_t close = line.rfind('}');
-      if (close == std::string::npos || close < b)
-        return fail(err, "unbalanced '{' in " + first + " line");
-      std::string tail = trimCopy(line.substr(close + 1));
-      if (!tail.empty())
-        return fail(err, "unexpected text after '}'");
-      body = line.substr(b + 1, close - b - 1);
-      hasBody = true;
+      if (close == std::string::npos) {
+        // Multi-line block: `for f in *.log {` with the body on following
+        // lines. Emit the translated header and let the block translator
+        // handle the body lines and the closing '}'.
+        hasBody = false;
+      } else {
+        if (close < b)
+          return fail(err, "unbalanced '{' in " + first + " line");
+        std::string tail = trimCopy(line.substr(close + 1));
+        if (!tail.empty())
+          return fail(err, "unexpected text after '}'");
+        body = line.substr(b + 1, close - b - 1);
+        hasBody = true;
+      }
     }
     return translateStructural(header, body, hasBody, ctx, err);
   }
@@ -1357,10 +1454,12 @@ bool sourceIsSilent(const std::string& src) {
 }  // namespace
 
 ShellTranslation translateShellLine(const std::string& line,
-                                    const std::unordered_set<std::string>* knownGlobals) {
+                                    const std::unordered_set<std::string>* knownGlobals,
+                                    TranslateMode mode) {
   ShellTranslation result;
   Ctx ctx;
   ctx.known = knownGlobals;
+  ctx.mode = mode;
   std::string err;
   std::string s = translateStatement(line, ctx, err);
   if (!err.empty()) {
@@ -1374,10 +1473,12 @@ ShellTranslation translateShellLine(const std::string& line,
 }
 
 ShellTranslation translateShellBlock(const std::string& block,
-                                     const std::unordered_set<std::string>* knownGlobals) {
+                                     const std::unordered_set<std::string>* knownGlobals,
+                                     TranslateMode mode) {
   ShellTranslation result;
   Ctx ctx;
   ctx.known = knownGlobals;
+  ctx.mode = mode;
 
   std::string out;
   std::string err;

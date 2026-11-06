@@ -99,6 +99,40 @@ Every shell line is translated to Havel before it runs (`shell.translate`
 does the same transformation for scripts), so `:save file.hv` writes the
 session out as a runnable script.
 
+### Shell Blocks in Scripts
+
+The same shell layer is available in scripts as `sh { ... }`: each line
+inside is translated and runs inline, and `$name` / `${expr}` resolve to
+the Havel variables of the enclosing scope:
+
+```hv
+w = window.active()
+print(w)
+sh {
+    notify-send "${w.title}"
+    sleep 1.5
+    kill w.pid
+}
+```
+
+Control flow inside a block keeps Havel's grammar, so a loop over files
+reads:
+
+```hv
+sh {
+    for f in *.log {
+        grep -c ERROR $f
+    }
+}
+```
+
+The translation is the same one the REPL uses (`shell.translate`): commands
+and pipelines become `process.pipe` chains, `cd`/`export`/`echo` become
+`shell.cd`/`shell.env`/`print`, `[ -f x ]` becomes `fs.isFile("x")`, and
+redirects (`>`, `>>`, `<`) become `fs.write`/`fs.append`/`fs.read`. The
+unsupported-bash rejection list applies here too (the block fails to
+*compile* with the same suggestion the REPL prints).
+
 ## Compiler Pipeline Selection
 
 | Flag | Description |

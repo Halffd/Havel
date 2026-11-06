@@ -467,6 +467,7 @@ std::unique_ptr<BytecodeChunk> ByteCompiler::compileImpl(const ast::Program &pro
   // std::cerr << "DEBUG: known_globals_ size = " << known_globals_.size() << std::endl;
   // for (const auto& g : known_globals_) std::cerr << "  known: " << g << std::endl;
   lexical_resolution_ = resolver.resolve(program);
+  extern_arities_ = resolver.externFunctions();
   if (!resolver.errors().empty()) {
     // Collect all errors
     std::ostringstream oss;
@@ -7438,6 +7439,30 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     }
 
     if (binding->kind == ResolvedBindingKind::HostFunction) {
+      // extern { } declarations carry a signature the compiler can trust, so
+      // a wrong-arity call is rejected at compile time instead of throwing at
+      // runtime - after a hotkey block or mouse handler may have partially
+      // run. Host functions NOT declared via extern keep the existing
+      // runtime arity check (the compiler only knows their name, not their
+      // arity, unless the caller declares it). Spread calls are not
+      // statically sized and are skipped.
+      if (auto extIt = extern_arities_.find(binding->name);
+          extIt != extern_arities_.end()) {
+        bool hasSpread = false;
+        for (const auto &arg : expression.args) {
+          if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+            hasSpread = true;
+            break;
+          }
+        }
+        if (!hasSpread && expression.args.size() != extIt->second) {
+          COMPILER_THROW("extern function '" + binding->name +
+                         "' is declared with " +
+                         std::to_string(extIt->second) +
+                         " parameter(s), called with " +
+                         std::to_string(expression.args.size()));
+        }
+      }
       // Host function - call via LOAD_GLOBAL + CALL, expanding spread args
       uint32_t strId = addStringConstant(binding->name);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));

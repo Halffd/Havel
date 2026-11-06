@@ -329,6 +329,10 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   LexicalResolutionResult lexical_resolution_;
   bool strict_mode_ = false;
 
+  // extern { } declarations from the resolver's first pass (name -> declared
+  // arity), used to reject wrong-arity extern calls at compile time.
+  std::unordered_map<std::string, size_t> extern_arities_;
+
 	// Pre-known globals (from previous REPL sessions)
   std::unordered_set<std::string> known_globals_;
   std::unordered_set<std::string> known_class_names_;

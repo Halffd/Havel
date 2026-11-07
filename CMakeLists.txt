@@ -2053,6 +2053,7 @@ src/havel-lang/lsp/main.cpp
   src/havel-lang/ast/AST.cpp
   src/havel-lang/lexer/Lexer.cpp
   src/havel-lang/parser/Parser.cpp
+  src/havel-lang/tools/ShellTranslate.cpp
   src/c/LoggerC.c
   src/c/Config.c
   src/dl/Loader.c
@@ -3392,6 +3393,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/ast/AST.cpp
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
+        src/havel-lang/tools/ShellTranslate.cpp
         src/core/io/KeyMap.cpp
         src/c/LoggerC.c
         src/c/Config.c
@@ -3414,6 +3416,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         src/havel-lang/ast/AST.cpp
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
+        src/havel-lang/tools/ShellTranslate.cpp
         src/core/io/KeyMap.cpp
         src/c/LoggerC.c
         src/c/Config.c

@@ -1,0 +1,113 @@
+// smoke: timeout = 120
+// Regression: cfg.set() from a MODULE scope must not crash with
+// "VMApi::setField: expected object".
+//
+// Root cause (Nov 3 2026, user script hotkeys0.3.hv): the config plugin
+// registered the live config object into the globals map of the scope that
+// was active at registration time, and its call-time lookup read ONLY that
+// ambient map. When the main script imported "std/config" FIRST and a
+// module imported it later, the module's import hit the module cache (no
+// re-registration) and the module sandbox never carried the global - the
+// lookup returned null and the repopulate called setField(null), which
+// throws "VMApi::setField: expected object" and kills the script.
+//
+// The failing shape, reduced to the minimum:
+//   main:   use "std/config" as cfg   // registers the object in MAIN scope
+//           use "writer"               // module imports config, calls set
+//   module: use "std/config" as cfg
+//           cfg.set("Probe.Key", "v")
+//
+// The fixture runs in a CHILD PROCESS with HOME pointed at a sandbox
+// directory: the config store writes to $HOME/.config/havel/, and this
+// suite must never touch the developer's real config.
+//
+// A host runtime_error is fatal in this VM (not catchable by try/catch),
+// so the assertion is on the child's exit code and output - the same shape
+// as scripts/smoke/test_extern_missing.hv.
+//
+// Negative control: the same fixture WITHOUT the main-scope import is
+// expected to pass too (the module's own import registers the object in
+// the module scope). If BOTH passed before the fix, the test would be
+// vacuous; the main-scope leg is the one that crashed.
+use "fs"
+use "process"
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_cfg_scope_${sys.pid()}"
+SANDBOX_HOME = "${FIXTURE_DIR}/home"
+MODULE_FILE = "${FIXTURE_DIR}/writer.hv"
+MAIN_WITH_IMPORT = "${FIXTURE_DIR}/main_with_import.hv"
+MAIN_NO_IMPORT = "${FIXTURE_DIR}/main_no_import.hv"
+fs.mkdir(FIXTURE_DIR)
+fs.mkdir(SANDBOX_HOME)
+
+// Locate the havel binary: HAVEL_BINARY wins when set; otherwise probe the
+// layouts hvtest uses (cwd = repo root, or cwd = the build dir).
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-debug/havel", "${cwd}/build-release/havel", "${cwd}/havel"]
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+// The module writes through the config object from a module scope.
+fs.write(MODULE_FILE, """
+use "std/config" as cfg
+cfg.set("Probe.ScopeKey", "from-module")
+print("module: cfg.set returned")
+""")
+
+// Main script that imports std/config BEFORE the module: this is the
+// ordering that made the config object land in the main scope while the
+// module ran in its own sandbox.
+fs.write(MAIN_WITH_IMPORT, """
+use "std/config" as cfg
+print("main: config imported")
+use "writer"
+print("main: module imported")
+""")
+
+// Negative control: no main-scope import, so the module's own import
+// registers the object in the module scope.
+fs.write(MAIN_NO_IMPORT, """
+use "writer"
+print("main: module imported")
+""")
+
+// ------------------------------------------------- failing shape (fixed)
+res = process.run("HOME=\"${SANDBOX_HOME}\" \"${havel_bin}\" \"${MAIN_WITH_IMPORT}\" 2>&1")
+assert(res.exitCode == 0,
+       "cfg.set() from a module scope must not crash; exit ${res.exitCode}, output: ${res.stdout}")
+assert(res.stdout.find("expected object") < 0,
+       "cfg.set() from a module scope must not throw setField errors; output: ${res.stdout}")
+assert(res.stdout.find("module: cfg.set returned") >= 0,
+       "the module's cfg.set() must have completed; output: ${res.stdout}")
+assert(res.stdout.find("main: module imported") >= 0,
+       "the main script must have continued past the module import; output: ${res.stdout}")
+
+// ------------------------------------------------- negative control
+res2 = process.run("HOME=\"${SANDBOX_HOME}\" \"${havel_bin}\" \"${MAIN_NO_IMPORT}\" 2>&1")
+assert(res2.exitCode == 0,
+       "the no-main-import shape must also pass; exit ${res2.exitCode}, output: ${res2.stdout}")
+
+// The value the module wrote must be readable through the config store.
+READBACK_FILE = "${FIXTURE_DIR}/readback.hv"
+fs.write(READBACK_FILE, """
+use "std/config" as cfg
+print("readback: ${cfg.get(\"Probe.ScopeKey\")}")
+""")
+readback = process.run("HOME=\"${SANDBOX_HOME}\" \"${havel_bin}\" \"${READBACK_FILE}\" 2>&1")
+assert(readback.exitCode == 0,
+       "the readback script must run; exit ${readback.exitCode}, output: ${readback.stdout}")
+assert(readback.stdout.find("from-module") >= 0,
+       "the value written from the module scope must be readable; output: ${readback.stdout}")
+
+fs.remove(FIXTURE_DIR)
+print("PASS: cfg.set() from a module scope updates the live config object and does not crash")
+return 0

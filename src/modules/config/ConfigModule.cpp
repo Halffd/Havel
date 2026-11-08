@@ -223,14 +223,40 @@ void registerConfigModule(const VMApi &api) {
   // returns long before a script calls config.set, and the referenced
   // VMApi lived in activateLazyModule's stack frame - the later call read
   // a garbage vm_ and died with EINVAL in GCHeap's mutex (gdb, Oct 30).
-  auto configObjAtCall = [api]() -> Value {
-    auto &g = api.vm().getGlobals();
-    auto it = g.find("config");
-    if (it != g.end() && it->second.isObjectId())
-      return it->second;
+  // Scope-aware lookup of the live config object. The object is registered
+  // into the globals map of whichever scope was active when the plugin
+  // registered, so the AMBIENT map alone is not enough: a host call made
+  // from a module sandbox must update the same object the script reads.
+  //
+  // The ambient-only lookup broke whenever the main script imported
+  // "std/config" BEFORE the module that calls cfg.set(): the first import
+  // registered the object in the main scope, the module's own import hit
+  // the module cache (no re-registration), and the module sandbox never
+  // carried the global - configObjAtCall() returned null and the
+  // repopulate threw "VMApi::setField: expected object"
+  // (hotkeys0.3.hv -> start.hv, Nov 3 2026).
+  //
+  // findGlobalValueByName walks the same scopes a global read can reach:
+  // ambient, module base layer, then the pushed scope frames.
+  //
+  // Fallback: the object this registration created or reused. The plugin
+  // REUSES an existing "config" global when one is present, so this is the
+  // same object the script reads - it is the live object even when no scope
+  // lookup finds it (e.g. the base layer was captured before this plugin
+  // registered).
+  auto configObjAtCall = [api, configObj]() -> Value {
+    Value found;
+    if (api.vm().findGlobalValueByName("config", &found) && found.isObjectId())
+      return found;
+    if (configObj.isObjectId())
+      return configObj;
     return Value::makeNull();
   };
   auto repopulate = [api](Value configObj) {
+    // No live config object in this scope: the C-level store was still
+    // updated by the caller, there is simply nothing to refresh here.
+    if (!configObj.isObjectId())
+      return;
     for (const auto &key : Configs::Get().GetAllKeys()) {
       setNestedField(api, configObj, key,
                      stringToValue(api, Configs::Get().Get<std::string>(key, "")));
@@ -292,7 +318,8 @@ void registerConfigModule(const VMApi &api) {
       api.push(arr, api.makeString(p));
     return arr;
   });
-  api.registerFunction("config.restore", [api, configObj](const std::vector<Value> &args) {
+  api.registerFunction("config.restore",
+                       [api, configObjAtCall, repopulate](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("config.restore() requires a backup index (0 = newest)");
     long long index = std::stoll(api.toString(args[0]));
@@ -300,11 +327,10 @@ void registerConfigModule(const VMApi &api) {
       throw std::runtime_error("config.restore() index must be >= 0");
     bool ok = Configs::Get().RestoreBackup(static_cast<size_t>(index));
     if (ok) {
-      // Reflect the restored values in the config object, the same way load
-      // and set do.
-      for (const auto &key : Configs::Get().GetAllKeys())
-        setNestedField(api, configObj, key,
-                       stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+      // Reflect the restored values in the LIVE config object, the same way
+      // load and set do. The object captured at registration time can live
+      // in a different scope than the script's (see configObjAtCall).
+      repopulate(configObjAtCall());
     }
     return Value::makeBool(ok);
   });

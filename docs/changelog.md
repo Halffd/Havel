@@ -9,7 +9,7 @@ All notable changes to Havel are documented here.
 
 ---
 
-## 2026-11-03 - Shell blocks inside scripts
+## 2026-11-06 - Shell blocks inside scripts
 
 ### Added
 - `sh { ... }` runs shell-shaped lines from a script: the block is translated

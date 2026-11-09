@@ -408,6 +408,33 @@ public:
       current_script_dir_; // Directory of the currently executing script (for relative imports)
   // Keep module BytecodeChunks alive so exported closures can reference them
   std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
+  // Authoritative module-globals map per module chunk: the post-__main__
+  // snapshot every $module_fn_ wrapper and re-pointed closure shares.
+  // Closures created during __main__ (or aliases of them captured into
+  // per-factory snapshot copies) can carry a stale/NULL module_globals;
+  // they resolve their module's map through this registry instead, so
+  // lazily-built module state (pratt's BP_TABLE) has exactly one home
+  // regardless of which closure alias a call site found.
+  std::unordered_map<const BytecodeChunk *, std::shared_ptr<std::unordered_map<std::string, Value>>>
+      module_globals_by_chunk_;
+  std::shared_ptr<std::unordered_map<std::string, Value>>
+  moduleGlobalsForChunk(const BytecodeChunk *chunk) const {
+    if (!chunk)
+      return nullptr;
+    auto it = module_globals_by_chunk_.find(chunk);
+    return it == module_globals_by_chunk_.end() ? nullptr : it->second;
+  }
+  // The sidecar a closure reads module state through: its own when set,
+  // else the chunk-registry map. Callers must treat a still-null result
+  // as "no module map" (main-chunk code, unregistered chunks).
+  std::shared_ptr<std::unordered_map<std::string, Value>>
+  closureModuleGlobals(const GCHeap::RuntimeClosure *closure) const {
+    if (!closure)
+      return nullptr;
+    if (closure->module_globals)
+      return closure->module_globals;
+    return moduleGlobalsForChunk(closure->chunk);
+  }
   // Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
   std::shared_ptr<BytecodeChunk> main_chunk_;
   // Keep REPL chunks alive so closures/functions from previous lines remain valid
@@ -2135,9 +2162,10 @@ public:
     const auto &cf = currentFrame();
     if (cf.closure_id != 0) {
       auto *closure = heap_.closure(cf.closure_id);
-      if (closure && closure->module_globals) {
-        auto sideIt = closure->module_globals->find(name);
-        if (sideIt != closure->module_globals->end()) {
+      auto closure_mg = closureModuleGlobals(closure);
+      if (closure_mg) {
+        auto sideIt = closure_mg->find(name);
+        if (sideIt != closure_mg->end()) {
           *out = sideIt->second;
           return true;
         }
@@ -2157,6 +2185,28 @@ public:
       }
     }
     return false;
+  }
+
+  // Layer probes for the [gg] global-read diagnostic (CoreRuntimeExports):
+  // report which resolution layer a compiled-code global read hits, so a
+  // context-dependent miss can be attributed (ambient swap vs sidecar
+  // absence vs true undefined). Order mirrors resolveGlobalPublic.
+  bool ambientHasGlobalPublic(const std::string &name) const {
+    return globals.find(name) != globals.end();
+  }
+  bool hostFunctionTableHasPublic(const std::string &name) const {
+    return host_function_globals_.find(name) != host_function_globals_.end();
+  }
+  bool frameSidecarHasGlobalPublic(const std::string &name) const {
+    const auto &cf = currentFrame();
+    if (cf.closure_id == 0)
+      return false;
+    auto *closure = heap_.closure(cf.closure_id);
+    return closure && closure->module_globals &&
+           closure->module_globals->find(name) != closure->module_globals->end();
+  }
+  bool baseModuleGlobalsHasPublic(const std::string &name) const {
+    return baseModuleGlobals_ && baseModuleGlobals_->find(name) != baseModuleGlobals_->end();
   }
 
   // True when `obj_id` names a namespace-style object: one reachable as
@@ -2226,14 +2276,19 @@ public:
     return false;
   }
 
+  std::shared_ptr<std::unordered_map<std::string, Value>>
+  moduleGlobalsForChunkPublic(const BytecodeChunk *chunk) {
+    return moduleGlobalsForChunk(chunk);
+  }
   void persistModuleGlobalPublic(const std::string &name, const Value &value) {
     const auto &cf = currentFrame();
     if (cf.closure_id == 0)
       return;
     auto *closure = heap_.closure(cf.closure_id);
-    if (!closure || !closure->module_globals)
+    auto closure_mg = closureModuleGlobals(closure);
+    if (!closure_mg)
       return;
-    (*closure->module_globals)[name] = value;
+    (*closure_mg)[name] = value;
     if (frame_count_ > 0) {
       auto &wf = frame_arena_[frame_count_ - 1];
       if (std::find(wf.written_globals.begin(), wf.written_globals.end(), name) ==

@@ -3212,9 +3212,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     if (closure->chunk) {
       resolve_chunk = closure->chunk;
     }
-    if (closure->module_globals) {
-      closure_globals = closure->module_globals;
-    }
+    closure_globals = closureModuleGlobals(closure);
   } else {
     // Class prototypes are constructors: calling a class object builds an instance.
     if (callee_value.isObjectId()) {
@@ -3844,9 +3842,7 @@ void VM::doTailCall(Value callee_value, std::vector<Value> args) {
     if (closure->chunk) {
       resolve_chunk = closure->chunk;
     }
-    if (closure->module_globals) {
-      tail_closure_globals = closure->module_globals;
-    }
+    tail_closure_globals = closureModuleGlobals(closure);
   } else {
     std::string typeInfo = "unknown";
     if (callee_value.isNull())
@@ -5628,7 +5624,21 @@ Value VM::deepWrapModuleFunctions(
             // Sync the module sidecar with writes made through the
             // installed ambient, then restore the caller's map. No-push
             // nested calls leave both to the outer frame's completion.
-            *moduleGlobals = std::move(globals);
+            // MERGE, not wholesale move: the ambient was a copy of the
+            // sidecar at entry, and keys added to the sidecar from
+            // OUTSIDE this wrapper meanwhile (persistModuleGlobalPublic
+            // dual-writes from closure contexts - e.g. pratt's
+            // lazily-built BP_TABLE) must survive the completion. The
+            // old `*moduleGlobals = std::move(globals)` replaced the
+            // map with the stale entry snapshot, dropped those keys,
+            // and the next lazy read rebuilt the table into whichever
+            // map it saw; a consult racing that rebuild read a
+            // half-built table and the tiered self-hosted parse
+            // silently mis-associated expressions (acc 469 vs 429 on
+            // the 130-line repro).
+            for (auto &kv : globals) {
+              (*moduleGlobals)[kv.first] = std::move(kv.second);
+            }
             popGlobals();
           }
           globals_mirror_object_id_ = savedMirrorId;
@@ -6302,6 +6312,10 @@ Value VM::loadModule(const std::string &path) {
           ownChunk = ownIt->second;
         if (!ownChunk)
           return; // cannot verify ownership, leave closures untouched
+        // Register as the chunk's authoritative module map (mirrors the
+        // first-load registration): closures with a stale/null
+        // module_globals resolve through moduleGlobalsForChunk.
+        module_globals_by_chunk_[ownChunk.get()] = cachedGlobals;
 
         for (auto &[func_name, func_val] : globals) {
           if (!func_val.isClosureId())
@@ -6314,6 +6328,14 @@ Value VM::loadModule(const std::string &path) {
           auto it = cachedGlobals->find(func_name);
           if (it != cachedGlobals->end() && it->second.isClosureId() &&
               it->second.asClosureId() == func_val.asClosureId()) {
+            // HAVEL_TRACE_WRAPPER=1: cache-restore re-pointing changes which
+            // sidecar map a closure reads - a stale cached map (missing
+            // lazily-built state like pratt's BP_TABLE) makes subsequent
+            // global reads miss and re-run the lazy build.
+            if (const char *mw_env = std::getenv("HAVEL_TRACE_WRAPPER");
+                mw_env && mw_env[0] == '1') {
+              std::fprintf(stderr, "[fixup] %s repoint %s\n", moduleKey.c_str(), func_name.c_str());
+            }
             closure->module_globals = cachedGlobals;
           }
         }
@@ -7399,6 +7421,11 @@ load_from_source:
   // This includes runtime variables like 'flags = DebugFlags()'.
   // Use this for wrapping exports and for cached module loads.
   auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+  // Register as this chunk's authoritative module map: closures created
+  // with a stale/null module_globals (module-load-time CLOSURE creations
+  // and their aliases captured into snapshot copies) resolve through
+  // moduleGlobalsForChunk so lazily-built module state has one home.
+  module_globals_by_chunk_[chunk.get()] = moduleGlobalsForCache;
 
   // Update all closures in the module's globals to use this snapshot as their
   // module_globals. This allows them to access module-level variables (like

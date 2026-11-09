@@ -2133,8 +2133,13 @@ uint64_t havel_vm_closure_new(void *vm_ptr, uint32_t func_index) {
 
   auto &mainChunk = vm->getMainChunk();
   if (mainChunk && chunk != mainChunk.get()) {
+    // Prefer the chunk's registered authoritative module map: a
+    // snapshot copy here was the stale-fork bug for lazily-built module
+    // state (compiled closure creation re-copied pre-BP_TABLE content).
+    auto registered = vm->moduleGlobalsForChunkPublic(chunk);
     closure.module_globals =
-        std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
+        registered ? registered
+                   : std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
   }
 
   for (const auto &descriptor : target->upvalues) {

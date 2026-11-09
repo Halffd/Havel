@@ -247,16 +247,57 @@ void registerConfigModule(const VMApi &api) {
   // returns long before a script calls config.set, and the referenced
   // VMApi lived in activateLazyModule's stack frame - the later call read
   // a garbage vm_ and died with EINVAL in GCHeap's mutex (gdb, Oct 30).
-  auto configObjAtCall = [api]() -> Value {
-    // Look the global up across EVERY scope a script-level read reaches
-    // (ambient, module base layer, pushed frames) - not just the ambient
-    // map. A config.set() issued while a module is loading ran with the
-    // MODULE's sandbox as the ambient scope, where "config" is not bound:
-    // the lookup returned null and the repopulate below called setField
-    // on it, throwing "VMApi::setField: expected object" and killing the
-    // script (gdb, Nov 8: hotkeys0.3.hv -> start.hv -> cfg.set).
+  // Scope-aware lookup of the live config object. The object is registered
+  // into the globals map of whichever scope was active when the plugin
+  // registered, so the AMBIENT map alone is not enough: a host call made
+  // from a module sandbox must update the same object the script reads.
+  //
+  // The ambient-only lookup broke whenever the main script imported
+  // "std/config" BEFORE the module that calls cfg.set(): the first import
+  // registered the object in the main scope, the module's own import hit
+  // the module cache (no re-registration), and the module sandbox never
+  // carried the global - configObjAtCall() returned null and the
+  // repopulate threw "VMApi::setField: expected object"
+  // (hotkeys0.3.hv -> start.hv, Nov 3 2026).
+  //
+  // The live config object is the one this registration created or reused:
+  // the plugin REUSES an existing "config" global when one is present, and
+  // that global is what `use "std/config"` binds (the __module_object
+  // contract in VM::loadModule). It is therefore the object the script
+  // reads and the object a write must land on.
+  //
+  // The scope lookup is only a fallback, and it must reject the .hv
+  // WRAPPER: in a module scope, `use "std/config"` binds the wrapper
+  // namespace under the name "config", and that wrapper is an object too.
+  // Refreshing the wrapper would leave the live object stale - the write
+  // would be visible through the config store but the script's
+  // cfg.<Section>.<Key> read would still return null. Only an object
+  // carrying the __module_object marker is the live config object.
+  // Capture VMApi BY VALUE: it is a shallow {VM*, ServiceRegistry*}
+  // handle, so the copy is valid for the lambdas' lifetime. Capturing by
+  // reference (or capturing a lambda that itself captured by reference)
+  // dangles: registerConfigModule returns long before config.set runs,
+  // and the references pointed into its parameter/stack frame. That is
+  // the exact class of bug the header comment above documents (gdb Oct
+  // 30: garbage vm_ read, EINVAL inside GCHeap's mutex); the current
+  // manifestation is a SIGSEGV inside GCHeap::ownerThread when
+  // configObjAtCall later calls isLiveConfigObject through its
+  // by-value api copy (gdb Nov 9: config.set -> $_15 -> $_16 ->
+  // VMApi::hasField -> heap_.object with this=0x49ced31def949800).
+  auto isLiveConfigObject = [api](Value candidate) {
+    if (!candidate.isObjectId())
+      return false;
+    if (!api.hasField(candidate, "__module_object"))
+      return false;
+    Value marker = api.getField(candidate, "__module_object");
+    return marker.isBool() && marker.asBool();
+  };
+  auto configObjAtCall = [api, configObj, isLiveConfigObject]() -> Value {
+    if (isLiveConfigObject(configObj))
+      return configObj;
     Value found;
-    if (api.findGlobalValue("config", &found) && found.isObjectId())
+    if (api.vm().findGlobalValueByName("config", &found) &&
+        isLiveConfigObject(found))
       return found;
     return Value::makeNull();
   };

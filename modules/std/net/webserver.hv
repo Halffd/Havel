@@ -43,14 +43,17 @@ fn WebResponse(clientConn) {
         if self.sent { return }
         
         statusPhrase = "OK"
-        if self.status == 404 { statusPhrase = "Not Found" }
+        if self.status == 400 { statusPhrase = "Bad Request" }
+        else if self.status == 403 { statusPhrase = "Forbidden" }
+        else if self.status == 404 { statusPhrase = "Not Found" }
+        else if self.status == 405 { statusPhrase = "Method Not Allowed" }
         else if self.status == 500 { statusPhrase = "Internal Server Error" }
         else if self.status == 201 { statusPhrase = "Created" }
         else if self.status == 204 { statusPhrase = "No Content" }
         else if self.status == 301 { statusPhrase = "Moved Permanently" }
         else if self.status == 302 { statusPhrase = "Found" }
 
-        respStr = "HTTP/1.1 {self.status} {statusPhrase}\r\n"
+        respStr = "HTTP/1.1 ${self.status} ${statusPhrase}\r\n"
         respStr = respStr + "Server: Havel-WebFramework/1.0\r\n"
         
         if contentType != null && !self.headers.has("Content-Type") {
@@ -58,13 +61,13 @@ fn WebResponse(clientConn) {
         }
         
         if body != null {
-            respStr = respStr + "Content-Length: {#body}\r\n"
+            respStr = respStr + "Content-Length: ${#body}\r\n"
         } else {
             respStr = respStr + "Content-Length: 0\r\n"
         }
 
         for k in self.headers.keys() {
-            respStr = respStr + "{k}: {self.headers[k]}\r\n"
+            respStr = respStr + "${k}: ${self.headers[k]}\r\n"
         }
         respStr = respStr + "\r\n"
 
@@ -94,8 +97,13 @@ fn WebResponse(clientConn) {
         _send("", null)
     }
 
+    // NOTE: self.status holds the response CODE (int). The setter is exposed
+    // as setStatus so the field and the method never share one name —
+    // assigning the method to self.status clobbered the field with a closure,
+    // which interpolated "<fn ...>" into the HTTP status line of every
+    // plain res.json()/res.html() response and broke _send's phrase lookup.
     self.header = _setHeader
-    self.status = _setStatus
+    self.setStatus = _setStatus
     self.send = _send
     self.json = _json
     self.html = _html
@@ -431,7 +439,7 @@ fn WebApplication() {
 
 fn logger() {
     fn(req, res, next) {
-        print("{req.method} {req.path}")
+        print("${req.method} ${req.path}")
         next()
     }
 }

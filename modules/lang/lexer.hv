@@ -3,7 +3,6 @@
 // Uses codepoint array indexing for O(1) character access
 // tid = integer token type for fast parser dispatch (avoids string comparisons)
 
-
 // --- Token type integer IDs (for fast parser dispatch) ---
 TID = {
     Identifier: 1, Number: 2, String: 3, RegexString: 4, MultilineString: 5,
@@ -22,6 +21,7 @@ TID = {
     With: 72, Where: 73, Select: 74, And: 75, Or: 76, Not: 77,
     Is: 78, Matches: 79, WaitGroup: 80, Wait: 81, Defer: 82,
     ShellCommand: 83, ShellCommandCapture: 84,
+    Emit: 161,
     OpenParen: 85, CloseParen: 86, OpenBrace: 87, CloseBrace: 88,
     BangOpenBrace: 89, OpenBracket: 90, CloseBracket: 91,
     Dot: 92, Comma: 93, Semicolon: 94, Colon: 95, ColonColon: 96,
@@ -73,7 +73,7 @@ KEYWORDS = {
     "go": "Go", "sync": "Sync", "async": "Async", "channel": "Channel", "co": "Co",
     "config": "Config", "devices": "Devices", "modes": "Modes",
     "pool": "Pool", "signal": "Signal", "group": "Group",
-    "on": "On", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
+    "on": "On", "emit": "Emit", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
     "dsl": "Dsl", "del": "Del", "from": "From",
     "as": "As", "use": "Use", "with": "With", "where": "Where", "select": "Select",
     "true": "True", "false": "False", "null": "Null", "nil": "Null",

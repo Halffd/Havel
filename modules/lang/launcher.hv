@@ -91,12 +91,14 @@ fn parseArgs(args) {
             }
         }
         else if arg == "--lint" {
+            // No value of its own: the following bare argument (the file
+            // path) must fall through to the scriptFiles branch below.
+            // Skipping it here made --lint tokenize an empty program and
+            // report success on any input (broken files included).
             lcfg.lintOnly = true
-            i = i + 1
         }
         else if arg == "--format" {
             lcfg.formatOnly = true
-            i = i + 1
         }
         else if arg == "--eval" || arg == "-E" {
             i = i + 1

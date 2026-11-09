@@ -1324,6 +1324,20 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     Value key_value = popStack();
     Value object = popStack();
 
+    // Reading a property of nil is a script-level error, raised as a
+    // catchable ScriptThrow: silently yielding null made `x.field` on an
+    // unassigned value indistinguishable from a real null field and left
+    // `try { ... } catch { ... }` guards unreachable (see
+    // io/test_conditional.hv's `catch { "ERROR: pHk not assigned" }` and
+    // scripts/tests/test_when_block_hotkey_lifecycle.hv). `?.` uses
+    // JUMP_IF_NULL codegen and still yields null without reaching here.
+    if (object.isNull()) {
+      auto keyStr = resolveKey(key_value);
+      std::string propName = keyStr ? *keyStr : std::string("?");
+      throw ScriptThrow{Value::makeStringId(
+          heap_.allocateString("Cannot read property '" + propName + "' of nil").id)};
+    }
+
     // Handle interval/timeout objects
     if (object.isIntervalId() || object.isTimeoutId()) {
       auto key = resolveKey(key_value);
@@ -2031,7 +2045,24 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       // importing script's `use` line - the consumer, not the module that
       // actually performed the failing assignment - which sent debugging a
       // 2000-line config away from a 1-line module bug.
-      COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname,
+      //
+      // This also fires once on EVERY daemon exit (14/14 in the 2026-10-18
+      // daemon log) from a callback drained during the exit unwind, and the
+      // production build lost the script location there. Name the executing
+      // module and the exit state so one reproduction identifies which
+      // callback performs the failing assignment.
+      std::string ctx;
+      if (current_chunk) {
+        for (const auto &[name, mc] : module_chunks_) {
+          if (mc.get() == current_chunk) {
+            ctx += " in module " + name;
+            break;
+          }
+        }
+      }
+      if (exit_requested_.load())
+        ctx += " (vm exit in progress)";
+      COMPILER_THROW_AT(std::string("OBJECT_SET expects object container, got ") + tname + ctx,
                         instruction);
     }
 

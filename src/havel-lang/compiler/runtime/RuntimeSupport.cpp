@@ -25,164 +25,189 @@
 
 // SHA-256 implementation (simplified, no external deps)
 namespace {
-    const uint32_t K[64] = {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-    };
+const uint32_t K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
-    void sha256_transform(uint32_t state[8], const uint8_t block[64]) {
-        uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
-        uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
-        uint32_t w[64];
+void sha256_transform(uint32_t state[8], const uint8_t block[64]) {
+  uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+  uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+  uint32_t w[64];
 
-        for (int i = 0; i < 16; ++i) {
-            w[i] = (block[i*4] << 24) | (block[i*4+1] << 16) | (block[i*4+2] << 8) | block[i*4+3];
-        }
-        for (int i = 16; i < 64; ++i) {
-            uint32_t s0 = ((w[i-15] >> 7) | (w[i-15] << 25)) ^ ((w[i-15] >> 18) | (w[i-15] << 14)) ^ (w[i-15] >> 3);
-            uint32_t s1 = ((w[i-2] >> 17) | (w[i-2] << 15)) ^ ((w[i-2] >> 19) | (w[i-2] << 13)) ^ (w[i-2] >> 10);
-            w[i] = w[i-16] + s0 + w[i-7] + s1;
-        }
+  for (int i = 0; i < 16; ++i) {
+    w[i] = (block[i * 4] << 24) | (block[i * 4 + 1] << 16) | (block[i * 4 + 2] << 8) |
+           block[i * 4 + 3];
+  }
+  for (int i = 16; i < 64; ++i) {
+    uint32_t s0 = ((w[i - 15] >> 7) | (w[i - 15] << 25)) ^ ((w[i - 15] >> 18) | (w[i - 15] << 14)) ^
+                  (w[i - 15] >> 3);
+    uint32_t s1 = ((w[i - 2] >> 17) | (w[i - 2] << 15)) ^ ((w[i - 2] >> 19) | (w[i - 2] << 13)) ^
+                  (w[i - 2] >> 10);
+    w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+  }
 
-        for (int i = 0; i < 64; ++i) {
-            uint32_t s1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
-            uint32_t ch = (e & f) ^ (~e & g);
-            uint32_t temp1 = h + s1 + ch + K[i] + w[i];
-            uint32_t s0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
-            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-            uint32_t temp2 = s0 + maj;
-            h = g; g = f; f = e; e = d + temp1;
-            d = c; c = b; b = a; a = temp1 + temp2;
-        }
-        state[0] += a; state[1] += b; state[2] += c; state[3] += d;
-        state[4] += e; state[5] += f; state[6] += g; state[7] += h;
-    }
+  for (int i = 0; i < 64; ++i) {
+    uint32_t s1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
+    uint32_t ch = (e & f) ^ (~e & g);
+    uint32_t temp1 = h + s1 + ch + K[i] + w[i];
+    uint32_t s0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
+    uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+    uint32_t temp2 = s0 + maj;
+    h = g;
+    g = f;
+    f = e;
+    e = d + temp1;
+    d = c;
+    c = b;
+    b = a;
+    a = temp1 + temp2;
+  }
+  state[0] += a;
+  state[1] += b;
+  state[2] += c;
+  state[3] += d;
+  state[4] += e;
+  state[5] += f;
+  state[6] += g;
+  state[7] += h;
+}
 
-    std::array<uint8_t, 32> sha256(const uint8_t* data, size_t len) {
-        uint32_t state[8] = {
-            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-        };
-        size_t pos = 0;
-        while (len >= 64) {
-            sha256_transform(state, data + pos);
-            pos += 64;
-            len -= 64;
-        }
-        uint8_t block[64] = {0};
-        memcpy(block, data + pos, len);
-        block[len] = 0x80;
-        size_t bit_len = (pos + len) * 8;
-        if (len >= 56) {
-            sha256_transform(state, block);
-            memset(block, 0, 64);
-        }
-        block[63] = bit_len & 0xFF;
-        block[62] = (bit_len >> 8) & 0xFF;
-        block[61] = (bit_len >> 16) & 0xFF;
-        block[60] = (bit_len >> 24) & 0xFF;
-        block[59] = (bit_len >> 32) & 0xFF;
-        block[58] = (bit_len >> 40) & 0xFF;
-        block[57] = (bit_len >> 48) & 0xFF;
-        block[56] = (bit_len >> 56) & 0xFF;
-        sha256_transform(state, block);
-        std::array<uint8_t, 32> out;
-        for (int i = 0; i < 8; ++i) {
-            out[i*4] = state[i] >> 24;
-            out[i*4+1] = state[i] >> 16;
-            out[i*4+2] = state[i] >> 8;
-            out[i*4+3] = state[i];
-        }
-        return out;
-    }
+std::array<uint8_t, 32> sha256(const uint8_t *data, size_t len) {
+  uint32_t state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                       0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+  size_t pos = 0;
+  while (len >= 64) {
+    sha256_transform(state, data + pos);
+    pos += 64;
+    len -= 64;
+  }
+  uint8_t block[64] = {0};
+  memcpy(block, data + pos, len);
+  block[len] = 0x80;
+  size_t bit_len = (pos + len) * 8;
+  if (len >= 56) {
+    sha256_transform(state, block);
+    memset(block, 0, 64);
+  }
+  block[63] = bit_len & 0xFF;
+  block[62] = (bit_len >> 8) & 0xFF;
+  block[61] = (bit_len >> 16) & 0xFF;
+  block[60] = (bit_len >> 24) & 0xFF;
+  block[59] = (bit_len >> 32) & 0xFF;
+  block[58] = (bit_len >> 40) & 0xFF;
+  block[57] = (bit_len >> 48) & 0xFF;
+  block[56] = (bit_len >> 56) & 0xFF;
+  sha256_transform(state, block);
+  std::array<uint8_t, 32> out;
+  for (int i = 0; i < 8; ++i) {
+    out[i * 4] = state[i] >> 24;
+    out[i * 4 + 1] = state[i] >> 16;
+    out[i * 4 + 2] = state[i] >> 8;
+    out[i * 4 + 3] = state[i];
+  }
+  return out;
+}
 
-    std::array<uint8_t, 32> sha256_file(const std::string& path) {
-        std::ifstream f(path, std::ios::binary);
-        if (!f) return {};
-        std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
-        return sha256(buf.data(), buf.size());
-    }
+std::array<uint8_t, 32> sha256_file(const std::string &path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f)
+    return {};
+  std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
+  return sha256(buf.data(), buf.size());
+}
 
-    // Hash an .hvc's deterministic content: every byte before the first
-    // appended trailer section, EXCLUDING the embedded pipeline-fingerprint
-    // field. Rationale (self-reference fix): recompiling a module whose
-    // .hvc is a fingerprint input rewrites that file, and the only bytes
-    // that change are the fingerprint field itself plus any appended
-    // globals trailer - the compiled chunk body is deterministic. Hashing
-    // the whole file made every stamped fingerprint an intermediate state
-    // that never matched the next boot's recomputed fingerprint, so the
-    // fingerprint-input modules (lang.emitter/pratt/lexer/scope) recompiled
-    // from source on EVERY boot (strace-observed rename during a plain run)
-    // and the cache never stabilized. Hashing the stable region makes every
-    // stamp converge to the same value; an emitter/pratt change still
-    // rewrites the chunk body and invalidates the identity.
-    std::optional<std::array<uint8_t, 32>> sha256_hvc_stable(const std::string& path) {
-        std::ifstream f(path, std::ios::binary);
-        if (!f) return std::nullopt;
-        std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
-        if (buf.size() < 8 || std::memcmp(buf.data(), "HVC2", 4) != 0) {
-            return std::nullopt;
-        }
-        // Parse the header to locate the fingerprint field's byte range.
-        size_t pos = 4;
-        auto read = [&buf, &pos](void* out, size_t size) -> bool {
-            if (pos + size > buf.size()) return false;
-            std::memcpy(out, buf.data() + pos, size);
-            pos += size;
-            return true;
-        };
-        uint32_t version = 0;
-        if (!read(&version, sizeof(version))) return std::nullopt;
-        uint32_t flags = 0;
-        if (!read(&flags, sizeof(flags))) return std::nullopt;
-        std::optional<std::pair<size_t, size_t>> fp_range;
-        if ((flags & 1) && version >= 3) {
-            uint32_t idLen = 0;
-            if (!read(&idLen, sizeof(idLen))) return std::nullopt;
-            if (pos + idLen > buf.size()) return std::nullopt;
-            pos += idLen;
-        }
-        if ((flags & 2) && version >= 5) {
-            uint32_t fpLen = 0;
-            if (!read(&fpLen, sizeof(fpLen))) return std::nullopt;
-            if (pos + fpLen > buf.size()) return std::nullopt;
-            fp_range = {pos, pos + fpLen};
-            pos += fpLen;
-        }
-        if (version >= 6) {
-            uint8_t optFlags[2] = {0, 0};
-            if (!read(optFlags, sizeof(optFlags))) return std::nullopt;
-        }
-        // Chunk-body end: everything before the FIRST trailer marker, so
-        // runtime-appended globals trailers never enter the hash.
-        const size_t body_end = havel::compiler::ValueSerializer::chunkDataEnd(buf);
-        if (body_end == 0 || body_end > buf.size()) return std::nullopt;
-        if (body_end < pos) return std::nullopt;
-        // Hash [0, body_end) skipping the fingerprint field.
-        std::vector<uint8_t> stable;
-        stable.reserve(body_end);
-        const size_t fp_start = fp_range ? fp_range->first : body_end;
-        const size_t fp_end = fp_range ? fp_range->second : body_end;
-        stable.insert(stable.end(), buf.begin(), buf.begin() + static_cast<ptrdiff_t>(fp_start));
-        stable.insert(stable.end(), buf.begin() + static_cast<ptrdiff_t>(fp_end),
-                      buf.begin() + static_cast<ptrdiff_t>(body_end));
-        return sha256(stable.data(), stable.size());
-    }
+// Hash an .hvc's deterministic content: every byte before the first
+// appended trailer section, EXCLUDING the embedded pipeline-fingerprint
+// field. Rationale (self-reference fix): recompiling a module whose
+// .hvc is a fingerprint input rewrites that file, and the only bytes
+// that change are the fingerprint field itself plus any appended
+// globals trailer - the compiled chunk body is deterministic. Hashing
+// the whole file made every stamped fingerprint an intermediate state
+// that never matched the next boot's recomputed fingerprint, so the
+// fingerprint-input modules (lang.emitter/pratt/lexer/scope) recompiled
+// from source on EVERY boot (strace-observed rename during a plain run)
+// and the cache never stabilized. Hashing the stable region makes every
+// stamp converge to the same value; an emitter/pratt change still
+// rewrites the chunk body and invalidates the identity.
+std::optional<std::array<uint8_t, 32>> sha256_hvc_stable(const std::string &path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f)
+    return std::nullopt;
+  std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
+  if (buf.size() < 8 || std::memcmp(buf.data(), "HVC2", 4) != 0) {
+    return std::nullopt;
+  }
+  // Parse the header to locate the fingerprint field's byte range.
+  size_t pos = 4;
+  auto read = [&buf, &pos](void *out, size_t size) -> bool {
+    if (pos + size > buf.size())
+      return false;
+    std::memcpy(out, buf.data() + pos, size);
+    pos += size;
+    return true;
+  };
+  uint32_t version = 0;
+  if (!read(&version, sizeof(version)))
+    return std::nullopt;
+  uint32_t flags = 0;
+  if (!read(&flags, sizeof(flags)))
+    return std::nullopt;
+  std::optional<std::pair<size_t, size_t>> fp_range;
+  if ((flags & 1) && version >= 3) {
+    uint32_t idLen = 0;
+    if (!read(&idLen, sizeof(idLen)))
+      return std::nullopt;
+    if (pos + idLen > buf.size())
+      return std::nullopt;
+    pos += idLen;
+  }
+  if ((flags & 2) && version >= 5) {
+    uint32_t fpLen = 0;
+    if (!read(&fpLen, sizeof(fpLen)))
+      return std::nullopt;
+    if (pos + fpLen > buf.size())
+      return std::nullopt;
+    fp_range = {pos, pos + fpLen};
+    pos += fpLen;
+  }
+  if (version >= 6) {
+    uint8_t optFlags[2] = {0, 0};
+    if (!read(optFlags, sizeof(optFlags)))
+      return std::nullopt;
+  }
+  // Chunk-body end: everything before the FIRST trailer marker, so
+  // runtime-appended globals trailers never enter the hash.
+  const size_t body_end = havel::compiler::ValueSerializer::chunkDataEnd(buf);
+  if (body_end == 0 || body_end > buf.size())
+    return std::nullopt;
+  if (body_end < pos)
+    return std::nullopt;
+  // Hash [0, body_end) skipping the fingerprint field.
+  std::vector<uint8_t> stable;
+  stable.reserve(body_end);
+  const size_t fp_start = fp_range ? fp_range->first : body_end;
+  const size_t fp_end = fp_range ? fp_range->second : body_end;
+  stable.insert(stable.end(), buf.begin(), buf.begin() + static_cast<ptrdiff_t>(fp_start));
+  stable.insert(stable.end(), buf.begin() + static_cast<ptrdiff_t>(fp_end),
+                buf.begin() + static_cast<ptrdiff_t>(body_end));
+  return sha256(stable.data(), stable.size());
+}
 
 }
 
 // Macro for throwing errors with source location info
-#define COMPILER_THROW(msg) \
-  do { \
-    ::havel::errors::ErrorReporter::instance().report( \
-        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg)); \
-    throw std::runtime_error(std::string(msg) + " [" __FILE__ ":" + std::to_string(__LINE__) + "]"); \
+#define COMPILER_THROW(msg)                                                                        \
+  do {                                                                                             \
+    ::havel::errors::ErrorReporter::instance().report(                                             \
+        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg));                                  \
+    throw std::runtime_error(std::string(msg) + " [" __FILE__ ":" + std::to_string(__LINE__) +     \
+                             "]");                                                                 \
   } while (0)
 
 namespace havel::compiler {
@@ -190,7 +215,7 @@ namespace havel::compiler {
 // The compiler's own bytecode caches the pipeline fingerprint is derived
 // from. Single source of truth: computePipelineFingerprint hashes exactly
 // these, and isPipelineFingerprintInput() matches against the same list.
-static const char* kFingerprintInputs[] = {
+static const char *kFingerprintInputs[] = {
     "lang.emitter.hvc",
     "lang.pratt.hvc",
     "lang.lexer.hvc",
@@ -210,205 +235,196 @@ static const char* kFingerprintInputs[] = {
 // no-op rebuilds do not invalidate the cache. Fallback when no note is
 // found: the executable's byte size.
 static std::string binaryBuildIdHex() {
-    static const std::string memo = []() -> std::string {
-        // Read ONLY the ELF header, the program-header table and each
-        // PT_NOTE payload - never the whole executable. Reading every byte
-        // of /proc/self/exe here cost ~45s per invocation on the 100MB
-        // debug binaries (istreambuf_iterator, one byte at a time), and it
-        // runs at boot: module resolution fingerprints the pipeline, so
-        // every `havel run` paid it before the first line of script
-        // executed. The note payloads are a few KB, so seeking to them
-        // costs ~10ms. The produced value is unchanged - byte-identical to
-        // the whole-file parse on real binaries, shared libraries,
-        // truncated ELF and non-ELF inputs.
-        std::ifstream self("/proc/self/exe", std::ifstream::binary);
-        if (!self) {
-            return {};
+  static const std::string memo = []() -> std::string {
+    // Read ONLY the ELF header, the program-header table and each
+    // PT_NOTE payload - never the whole executable. Reading every byte
+    // of /proc/self/exe here cost ~45s per invocation on the 100MB
+    // debug binaries (istreambuf_iterator, one byte at a time), and it
+    // runs at boot: module resolution fingerprints the pipeline, so
+    // every `havel run` paid it before the first line of script
+    // executed. The note payloads are a few KB, so seeking to them
+    // costs ~10ms. The produced value is unchanged - byte-identical to
+    // the whole-file parse on real binaries, shared libraries,
+    // truncated ELF and non-ELF inputs.
+    std::ifstream self("/proc/self/exe", std::ifstream::binary);
+    if (!self) {
+      return {};
+    }
+    // Same fallback identity the whole-file parse produced via
+    // bytes.size(), for every path below that yields no build-id.
+    const auto sizeFallback = []() -> std::string {
+      std::ifstream sz("/proc/self/exe", std::ifstream::binary);
+      if (!sz) {
+        return "size:0";
+      }
+      sz.seekg(0, std::ios::end);
+      const auto n = sz.tellg();
+      return "size:" + std::to_string(n < 0 ? 0 : static_cast<long long>(n));
+    };
+    Elf64_Ehdr ehdr{};
+    self.read(reinterpret_cast<char *>(&ehdr), sizeof(ehdr));
+    if (self.gcount() != static_cast<std::streamsize>(sizeof(ehdr)) ||
+        memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0) {
+      return {};
+    }
+    // e_phnum is 16-bit. PN_XNUM (0xffff) extended numbering is not
+    // emitted by these binaries and the whole-file parser did not
+    // follow it either, so the table is bounded rather than trusted.
+    const size_t phnum = ehdr.e_phnum;
+    if (phnum == 0 || phnum > 4096) {
+      return sizeFallback();
+    }
+    std::vector<Elf64_Phdr> phdrs(phnum);
+    const size_t phdrBytes = phnum * sizeof(Elf64_Phdr);
+    self.seekg(static_cast<std::streamoff>(ehdr.e_phoff));
+    self.read(reinterpret_cast<char *>(phdrs.data()), static_cast<std::streamsize>(phdrBytes));
+    if (self.gcount() != static_cast<std::streamsize>(phdrBytes)) {
+      return sizeFallback();
+    }
+    for (const auto &phdr : phdrs) {
+      if (phdr.p_type != PT_NOTE) {
+        continue;
+      }
+      // A PT_NOTE payload is a few hundred bytes; the cap stops a
+      // corrupt p_filesz from driving the allocation below.
+      if (phdr.p_filesz < 12 || phdr.p_filesz > (1u << 24)) {
+        continue;
+      }
+      std::string note(static_cast<size_t>(phdr.p_filesz), '\0');
+      self.clear();
+      self.seekg(static_cast<std::streamoff>(phdr.p_offset));
+      self.read(note.data(), static_cast<std::streamsize>(note.size()));
+      if (self.gcount() != static_cast<std::streamsize>(note.size())) {
+        continue;
+      }
+      size_t pos = 0;
+      while (pos + 12 <= note.size()) {
+        Elf64_Nhdr nhdr{};
+        std::memcpy(&nhdr, note.data() + pos, sizeof(nhdr));
+        const size_t nameOff = pos + sizeof(Elf64_Nhdr);
+        const size_t descOff = nameOff + ((nhdr.n_namesz + 3) & ~3u);
+        const size_t next = descOff + ((nhdr.n_descsz + 3) & ~3u);
+        if (descOff + nhdr.n_descsz > note.size() || next > note.size() || next <= pos) {
+          break;
         }
-        // Same fallback identity the whole-file parse produced via
-        // bytes.size(), for every path below that yields no build-id.
-        const auto sizeFallback = []() -> std::string {
-            std::ifstream sz("/proc/self/exe", std::ifstream::binary);
-            if (!sz) {
-                return "size:0";
-            }
-            sz.seekg(0, std::ios::end);
-            const auto n = sz.tellg();
-            return "size:" + std::to_string(n < 0 ? 0 : static_cast<long long>(n));
-        };
-        Elf64_Ehdr ehdr{};
-        self.read(reinterpret_cast<char*>(&ehdr), sizeof(ehdr));
-        if (self.gcount() != static_cast<std::streamsize>(sizeof(ehdr)) ||
-            memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0) {
-            return {};
+        if (nhdr.n_type == NT_GNU_BUILD_ID && nhdr.n_namesz >= 4 &&
+            memcmp(note.data() + nameOff, "GNU", 3) == 0) {
+          std::ostringstream hex;
+          hex << std::hex << std::setfill('0');
+          for (size_t b = 0; b < nhdr.n_descsz; ++b) {
+            hex << std::setw(2) << static_cast<unsigned>(static_cast<uint8_t>(note[descOff + b]));
+          }
+          return hex.str();
         }
-        // e_phnum is 16-bit. PN_XNUM (0xffff) extended numbering is not
-        // emitted by these binaries and the whole-file parser did not
-        // follow it either, so the table is bounded rather than trusted.
-        const size_t phnum = ehdr.e_phnum;
-        if (phnum == 0 || phnum > 4096) {
-            return sizeFallback();
-        }
-        std::vector<Elf64_Phdr> phdrs(phnum);
-        const size_t phdrBytes = phnum * sizeof(Elf64_Phdr);
-        self.seekg(static_cast<std::streamoff>(ehdr.e_phoff));
-        self.read(reinterpret_cast<char*>(phdrs.data()),
-                  static_cast<std::streamsize>(phdrBytes));
-        if (self.gcount() != static_cast<std::streamsize>(phdrBytes)) {
-            return sizeFallback();
-        }
-        for (const auto& phdr : phdrs) {
-            if (phdr.p_type != PT_NOTE) {
-                continue;
-            }
-            // A PT_NOTE payload is a few hundred bytes; the cap stops a
-            // corrupt p_filesz from driving the allocation below.
-            if (phdr.p_filesz < 12 || phdr.p_filesz > (1u << 24)) {
-                continue;
-            }
-            std::string note(static_cast<size_t>(phdr.p_filesz), '\0');
-            self.clear();
-            self.seekg(static_cast<std::streamoff>(phdr.p_offset));
-            self.read(note.data(), static_cast<std::streamsize>(note.size()));
-            if (self.gcount() != static_cast<std::streamsize>(note.size())) {
-                continue;
-            }
-            size_t pos = 0;
-            while (pos + 12 <= note.size()) {
-                Elf64_Nhdr nhdr{};
-                std::memcpy(&nhdr, note.data() + pos, sizeof(nhdr));
-                const size_t nameOff = pos + sizeof(Elf64_Nhdr);
-                const size_t descOff = nameOff + ((nhdr.n_namesz + 3) & ~3u);
-                const size_t next = descOff + ((nhdr.n_descsz + 3) & ~3u);
-                if (descOff + nhdr.n_descsz > note.size() ||
-                    next > note.size() || next <= pos) {
-                    break;
-                }
-                if (nhdr.n_type == NT_GNU_BUILD_ID && nhdr.n_namesz >= 4 &&
-                    memcmp(note.data() + nameOff, "GNU", 3) == 0) {
-                    std::ostringstream hex;
-                    hex << std::hex << std::setfill('0');
-                    for (size_t b = 0; b < nhdr.n_descsz; ++b) {
-                        hex << std::setw(2)
-                            << static_cast<unsigned>(
-                                   static_cast<uint8_t>(note[descOff + b]));
-                    }
-                    return hex.str();
-                }
-                pos = next;
-            }
-        }
-        return sizeFallback();
-    }();
-    return memo;
+        pos = next;
+      }
+    }
+    return sizeFallback();
+  }();
+  return memo;
 }
 
-std::string computePipelineFingerprint(const std::string& cacheDir) {
-    // Identity of the self-hosted compiler: the bytecode caches of the
-    // modules that ARE the compiler. Order is fixed so the hash is stable.
-    // Memoize per (dir, mtime, size): this runs on every bare-name module
-    // resolution (checkBcCache) and hashing ~1.5MB of compiler caches each
-    // time would dominate resolution. The inputs only change when the
-    // build re-emits them, which always bumps mtime and usually size.
-    struct MemoKey {
-        std::string dir;
-        long long mtimeNs = 0;
-        uintmax_t totalSize = 0;
-    };
-    struct MemoEntry {
-        MemoKey key;
-        std::string fingerprint;
-    };
-    static std::mutex memoMutex;
-    static std::optional<MemoEntry> memo;
-
+std::string computePipelineFingerprint(const std::string &cacheDir) {
+  // Identity of the self-hosted compiler: the bytecode caches of the
+  // modules that ARE the compiler. Order is fixed so the hash is stable.
+  // Memoize per (dir, mtime, size): this runs on every bare-name module
+  // resolution (checkBcCache) and hashing ~1.5MB of compiler caches each
+  // time would dominate resolution. The inputs only change when the
+  // build re-emits them, which always bumps mtime and usually size.
+  struct MemoKey {
+    std::string dir;
+    long long mtimeNs = 0;
+    uintmax_t totalSize = 0;
+  };
+  struct MemoEntry {
     MemoKey key;
-    key.dir = cacheDir;
-    {
-        std::error_code ec;
-        for (const char* input : kFingerprintInputs) {
-            const std::string path = cacheDir.empty()
-                                         ? std::string(input)
-                                         : cacheDir + "/" + input;
-            if (!std::filesystem::exists(path, ec) || ec) {
-                // No self-hosted compiler caches in this environment:
-                // C++-pipeline-only. The binary's build-id alone is the
-                // compiler identity - still stamped, never empty, so
-                // entries written by a different binary are rejected
-                // instead of silently served.
-                const std::string buildId = binaryBuildIdHex();
-                return buildId.empty() ? std::string() : "bin:" + buildId;
-            }
-            key.totalSize += std::filesystem::file_size(path, ec);
-            if (ec) return std::string();
-            key.mtimeNs = std::max(
-                key.mtimeNs,
-                static_cast<long long>(std::chrono::duration_cast<
-                    std::chrono::nanoseconds>(
-                    std::filesystem::last_write_time(path, ec)
-                        .time_since_epoch())
-                    .count()));
-            if (ec) return std::string();
-        }
-    }
-    {
-        std::lock_guard<std::mutex> lock(memoMutex);
-        if (memo && memo->key.dir == key.dir &&
-            memo->key.mtimeNs == key.mtimeNs &&
-            memo->key.totalSize == key.totalSize) {
-            return memo->fingerprint;
-        }
-    }
+    std::string fingerprint;
+  };
+  static std::mutex memoMutex;
+  static std::optional<MemoEntry> memo;
 
-    // A missing/unreadable input falls back to the binary-only identity
-    // above or, when even that is unavailable, an unstamped legacy entry.
-    // (Existence was verified above; the reads below can still race with
-    // re-emits, in which case the entry simply serializes unstamped this
-    // run and gets stamped on the next.)
-    std::string combined = "bin:" + binaryBuildIdHex() + ";";
-    for (const char* input : kFingerprintInputs) {
-        const std::string path = cacheDir.empty()
-                                     ? std::string(input)
-                                     : cacheDir + "/" + input;
-        // Hash the STABLE region of each input (chunk body, fingerprint
-        // field excluded) - see sha256_hvc_stable. Hashing the whole file
-        // self-referenced the caches being stamped: every rewrite of a
-        // fingerprint-input .hvc changed the fingerprint, so those modules
-        // recompiled from source on every boot and the cache never
-        // stabilized.
-        auto hash = sha256_hvc_stable(path);
-        if (!hash) {
-            return std::string();
-        }
-        static const char hexDigits[] = "0123456789abcdef";
-        for (uint8_t b : *hash) {
-            combined += hexDigits[b >> 4];
-            combined += hexDigits[b & 0x0F];
-        }
-        combined += ";";
+  MemoKey key;
+  key.dir = cacheDir;
+  {
+    std::error_code ec;
+    for (const char *input : kFingerprintInputs) {
+      const std::string path = cacheDir.empty() ? std::string(input) : cacheDir + "/" + input;
+      if (!std::filesystem::exists(path, ec) || ec) {
+        // No self-hosted compiler caches in this environment:
+        // C++-pipeline-only. The binary's build-id alone is the
+        // compiler identity - still stamped, never empty, so
+        // entries written by a different binary are rejected
+        // instead of silently served.
+        const std::string buildId = binaryBuildIdHex();
+        return buildId.empty() ? std::string() : "bin:" + buildId;
+      }
+      key.totalSize += std::filesystem::file_size(path, ec);
+      if (ec)
+        return std::string();
+      key.mtimeNs = std::max(
+          key.mtimeNs,
+          static_cast<long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                     std::filesystem::last_write_time(path, ec).time_since_epoch())
+                                     .count()));
+      if (ec)
+        return std::string();
     }
-    // Fold the per-input hashes into one printable fingerprint.
-    auto folded = sha256(reinterpret_cast<const uint8_t*>(combined.data()),
-                         combined.size());
-    std::string out;
-    out.reserve(folded.size() * 2);
-    for (uint8_t b : folded) {
-        static const char hexDigits[] = "0123456789abcdef";
-        out += hexDigits[b >> 4];
-        out += hexDigits[b & 0x0F];
+  }
+  {
+    std::lock_guard<std::mutex> lock(memoMutex);
+    if (memo && memo->key.dir == key.dir && memo->key.mtimeNs == key.mtimeNs &&
+        memo->key.totalSize == key.totalSize) {
+      return memo->fingerprint;
     }
-    {
-        std::lock_guard<std::mutex> lock(memoMutex);
-        memo = MemoEntry{key, out};
+  }
+
+  // A missing/unreadable input falls back to the binary-only identity
+  // above or, when even that is unavailable, an unstamped legacy entry.
+  // (Existence was verified above; the reads below can still race with
+  // re-emits, in which case the entry simply serializes unstamped this
+  // run and gets stamped on the next.)
+  std::string combined = "bin:" + binaryBuildIdHex() + ";";
+  for (const char *input : kFingerprintInputs) {
+    const std::string path = cacheDir.empty() ? std::string(input) : cacheDir + "/" + input;
+    // Hash the STABLE region of each input (chunk body, fingerprint
+    // field excluded) - see sha256_hvc_stable. Hashing the whole file
+    // self-referenced the caches being stamped: every rewrite of a
+    // fingerprint-input .hvc changed the fingerprint, so those modules
+    // recompiled from source on every boot and the cache never
+    // stabilized.
+    auto hash = sha256_hvc_stable(path);
+    if (!hash) {
+      return std::string();
     }
-    return out;
+    static const char hexDigits[] = "0123456789abcdef";
+    for (uint8_t b : *hash) {
+      combined += hexDigits[b >> 4];
+      combined += hexDigits[b & 0x0F];
+    }
+    combined += ";";
+  }
+  // Fold the per-input hashes into one printable fingerprint.
+  auto folded = sha256(reinterpret_cast<const uint8_t *>(combined.data()), combined.size());
+  std::string out;
+  out.reserve(folded.size() * 2);
+  for (uint8_t b : folded) {
+    static const char hexDigits[] = "0123456789abcdef";
+    out += hexDigits[b >> 4];
+    out += hexDigits[b & 0x0F];
+  }
+  {
+    std::lock_guard<std::mutex> lock(memoMutex);
+    memo = MemoEntry{key, out};
+  }
+  return out;
 }
 
-bool isPipelineFingerprintInput(const std::string& cacheName) {
-    for (const char* input : kFingerprintInputs) {
-        if (cacheName == input) return true;
-    }
-    return false;
+bool isPipelineFingerprintInput(const std::string &cacheName) {
+  for (const char *input : kFingerprintInputs) {
+    if (cacheName == input)
+      return true;
+  }
+  return false;
 }
 
 // ============================================================================
@@ -419,123 +435,121 @@ namespace {
 // Cumulative serve counter. Atomic so parallel compile callers (test-suite
 // workers) can bump it safely.
 std::atomic<uint64_t> g_incremental_cache_hits{0};
-}  // namespace
+} // namespace
 
 uint64_t incrementalCacheHits() {
-    return g_incremental_cache_hits.load(std::memory_order_relaxed);
+  return g_incremental_cache_hits.load(std::memory_order_relaxed);
 }
 
-std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string& compileUnitName,
-                                                   const std::string& sourceText,
-                                                   bool request_strict,
-                                                   bool request_optimized) {
-    // Every gate below can refuse to serve. Without the reason, a permanent
-    // cache miss looks identical to a cold cache, so name the gate that
-    // rejected. Opt-in, on the same channel as the [compile] block in
-    // Pipeline.cpp (HAVEL_STARTUP_TIMING=1).
-    const bool trace = ::havel::startup_timing_enabled();
-    auto reject = [trace](const char* reason, const std::string& detail = {}) {
-        if (trace) {
-            fprintf(stderr, "[compile] cache.reject: %s%s%s\n", reason,
-                    detail.empty() ? "" : " (", detail.c_str());
-            if (!detail.empty()) fprintf(stderr, "[compile] cache.reject.detail: %s\n", detail.c_str());
-            fflush(stderr);
-        }
-        return std::optional<BytecodeChunk>{};
-    };
-    if (compileUnitName.empty() || sourceText.empty()) {
-        return reject("empty-unit-or-source");
+std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string &compileUnitName,
+                                                   const std::string &sourceText,
+                                                   bool request_strict, bool request_optimized) {
+  // Every gate below can refuse to serve. Without the reason, a permanent
+  // cache miss looks identical to a cold cache, so name the gate that
+  // rejected. Opt-in, on the same channel as the [compile] block in
+  // Pipeline.cpp (HAVEL_STARTUP_TIMING=1).
+  const bool trace = ::havel::startup_timing_enabled();
+  auto reject = [trace](const char *reason, const std::string &detail = {}) {
+    if (trace) {
+      fprintf(stderr, "[compile] cache.reject: %s%s%s\n", reason, detail.empty() ? "" : " (",
+              detail.c_str());
+      if (!detail.empty())
+        fprintf(stderr, "[compile] cache.reject.detail: %s\n", detail.c_str());
+      fflush(stderr);
     }
-    const std::string cacheName =
-        havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
-    if (cacheName.empty()) {
-        return reject("no-cache-name");
-    }
-    const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
-    const std::filesystem::path hvcPath =
-        std::filesystem::path(cacheDir) / (cacheName + ".hvc");
-    std::error_code ec;
-    if (!std::filesystem::exists(hvcPath, ec) || ec) {
-        return reject("no-entry", hvcPath.string());
-    }
+    return std::optional<BytecodeChunk>{};
+  };
+  if (compileUnitName.empty() || sourceText.empty()) {
+    return reject("empty-unit-or-source");
+  }
+  const std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
+  if (cacheName.empty()) {
+    return reject("no-cache-name");
+  }
+  const std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
+  const std::filesystem::path hvcPath = std::filesystem::path(cacheDir) / (cacheName + ".hvc");
+  std::error_code ec;
+  if (!std::filesystem::exists(hvcPath, ec) || ec) {
+    return reject("no-entry", hvcPath.string());
+  }
 
-    // Header-prefix read only (same discipline as ModuleLoader's
-    // checkBcCache): .hvc files can be megabytes; never load the whole file
-    // just to validate identity.
-    const auto srcInfo = ValueSerializer::peekSourceInfoFile(hvcPath.string());
-    if (!srcInfo.hasInfo) {
-        // Legacy entry without embedded identity: cannot validate. Compile
-        // fresh (the fresh compile re-stamps the entry).
-        return reject("entry-without-identity");
-    }
+  // Header-prefix read only (same discipline as ModuleLoader's
+  // checkBcCache): .hvc files can be megabytes; never load the whole file
+  // just to validate identity.
+  const auto srcInfo = ValueSerializer::peekSourceInfoFile(hvcPath.string());
+  if (!srcInfo.hasInfo) {
+    // Legacy entry without embedded identity: cannot validate. Compile
+    // fresh (the fresh compile re-stamps the entry).
+    return reject("entry-without-identity");
+  }
 
-    // Pipeline gate (mirrors checkBcCache): reject when BOTH the entry and
-    // the current compiler identity are stamped and differ. An emitter fix
-    // produces different bytecode from identical source; the stale entry
-    // must not serve.
-    if (!srcInfo.pipelineFingerprint.empty()) {
-        const std::string currentFp = computePipelineFingerprint(cacheDir);
-        if (!currentFp.empty() && currentFp != srcInfo.pipelineFingerprint) {
-            return reject("pipeline-fingerprint-drift",
-                          srcInfo.pipelineFingerprint.substr(0, 12) + " != " +
-                              currentFp.substr(0, 12));
-        }
+  // Pipeline gate (mirrors checkBcCache): reject when BOTH the entry and
+  // the current compiler identity are stamped and differ. An emitter fix
+  // produces different bytecode from identical source; the stale entry
+  // must not serve.
+  if (!srcInfo.pipelineFingerprint.empty()) {
+    const std::string currentFp = computePipelineFingerprint(cacheDir);
+    if (!currentFp.empty() && currentFp != srcInfo.pipelineFingerprint) {
+      return reject("pipeline-fingerprint-drift",
+                    srcInfo.pipelineFingerprint.substr(0, 12) + " != " + currentFp.substr(0, 12));
     }
+  }
 
-    // Compile-option gate (version-6 entries): strict lexical resolution
-    // and bytecode optimization both change what a compile produces, so an
-    // entry built with different options must not be served. Entries
-    // without recorded flags (v4/v5) are rejected conservatively and heal
-    // to stamped on the next compile.
-    if (!srcInfo.has_compile_flags ||
-        srcInfo.compiled_strict != request_strict ||
-        srcInfo.compiled_optimized != request_optimized) {
-        return reject("compile-option-mismatch",
-                      "stored strict=" + std::to_string(srcInfo.compiled_strict) +
-                          " opt=" + std::to_string(srcInfo.compiled_optimized) +
-                          " has_flags=" + std::to_string(srcInfo.has_compile_flags) +
-                          " | requested strict=" + std::to_string(request_strict) +
-                          " opt=" + std::to_string(request_optimized));
-    }
+  // Compile-option gate (version-6 entries): strict lexical resolution
+  // and bytecode optimization both change what a compile produces, so an
+  // entry built with different options must not be served. Entries
+  // without recorded flags (v4/v5) are rejected conservatively and heal
+  // to stamped on the next compile.
+  if (!srcInfo.has_compile_flags || srcInfo.compiled_strict != request_strict ||
+      srcInfo.compiled_optimized != request_optimized) {
+    return reject("compile-option-mismatch",
+                  "stored strict=" + std::to_string(srcInfo.compiled_strict) +
+                      " opt=" + std::to_string(srcInfo.compiled_optimized) +
+                      " has_flags=" + std::to_string(srcInfo.has_compile_flags) +
+                      " | requested strict=" + std::to_string(request_strict) +
+                      " opt=" + std::to_string(request_optimized));
+  }
 
-    // Source gate: the embedded identity is the size + sha256 of the source
-    // file at write time; hash the live in-memory text the caller would
-    // compile. Identical content reuses; diverged content recompiles.
-    bool allZero = true;
-    for (uint8_t b : srcInfo.hash) {
-        if (b != 0) { allZero = false; break; }
+  // Source gate: the embedded identity is the size + sha256 of the source
+  // file at write time; hash the live in-memory text the caller would
+  // compile. Identical content reuses; diverged content recompiles.
+  bool allZero = true;
+  for (uint8_t b : srcInfo.hash) {
+    if (b != 0) {
+      allZero = false;
+      break;
     }
-    if (allZero) {
-        // Entry written from a source path that did not exist at write
-        // time (in-memory units): no content identity to validate against.
-        return reject("zero-source-hash", srcInfo.path);
-    }
-    if (srcInfo.size != sourceText.size()) {
-        return reject("source-size-differs",
-                      std::to_string(srcInfo.size) + " != " +
-                          std::to_string(sourceText.size()));
-    }
-    const auto liveHash = sha256(reinterpret_cast<const uint8_t*>(sourceText.data()),
-                                 sourceText.size());
-    if (liveHash != srcInfo.hash) {
-        return reject("source-hash-differs", srcInfo.path);
-    }
+  }
+  if (allZero) {
+    // Entry written from a source path that did not exist at write
+    // time (in-memory units): no content identity to validate against.
+    return reject("zero-source-hash", srcInfo.path);
+  }
+  if (srcInfo.size != sourceText.size()) {
+    return reject("source-size-differs",
+                  std::to_string(srcInfo.size) + " != " + std::to_string(sourceText.size()));
+  }
+  const auto liveHash =
+      sha256(reinterpret_cast<const uint8_t *>(sourceText.data()), sourceText.size());
+  if (liveHash != srcInfo.hash) {
+    return reject("source-hash-differs", srcInfo.path);
+  }
 
-    // Validated: load the chunk (mmap for big files, same as module loads).
-    ValueSerializer serializer;
-    auto chunk = serializer.loadChunk(hvcPath.string());
-    if (!chunk) {
-        return reject("entry-unreadable", hvcPath.string());
-    }
-    g_incremental_cache_hits.fetch_add(1, std::memory_order_relaxed);
-    return chunk;
+  // Validated: load the chunk (mmap for big files, same as module loads).
+  ValueSerializer serializer;
+  auto chunk = serializer.loadChunk(hvcPath.string());
+  if (!chunk) {
+    return reject("entry-unreadable", hvcPath.string());
+  }
+  g_incremental_cache_hits.fetch_add(1, std::memory_order_relaxed);
+  return chunk;
 }
 
 // ============================================================================
 // NativeFunctionBridge Implementation
 // ============================================================================
 
-void NativeFunctionBridge::registerFunction(const std::string& name, NativeFunction func) {
+void NativeFunctionBridge::registerFunction(const std::string &name, NativeFunction func) {
   RegisteredFunction reg;
   reg.func = func;
   reg.info.name = name;
@@ -544,11 +558,10 @@ void NativeFunctionBridge::registerFunction(const std::string& name, NativeFunct
   functions_[name] = reg;
 }
 
-void NativeFunctionBridge::registerFunction(const std::string& name,
-                                            NativeFunctionVariadic func,
+void NativeFunctionBridge::registerFunction(const std::string &name, NativeFunctionVariadic func,
                                             int arity) {
   // Wrap variadic function
-  NativeFunction wrapper = [func](const std::vector<Value>& args) -> Value {
+  NativeFunction wrapper = [func](const std::vector<Value> &args) -> Value {
     return func(std::span<const Value>(args));
   };
 
@@ -560,14 +573,13 @@ void NativeFunctionBridge::registerFunction(const std::string& name,
   functions_[name] = reg;
 }
 
-Value NativeFunctionBridge::call(const std::string& name,
-                                         const std::vector<Value>& args) const {
+Value NativeFunctionBridge::call(const std::string &name, const std::vector<Value> &args) const {
   auto it = functions_.find(name);
   if (it == functions_.end()) {
     COMPILER_THROW("Native function not found: " + name);
   }
 
-  const auto& reg = it->second;
+  const auto &reg = it->second;
 
   // Check arity if known
   if (reg.info.arity >= 0 && static_cast<int>(args.size()) != reg.info.arity) {
@@ -577,12 +589,12 @@ Value NativeFunctionBridge::call(const std::string& name,
   return reg.func(args);
 }
 
-bool NativeFunctionBridge::hasFunction(const std::string& name) const {
+bool NativeFunctionBridge::hasFunction(const std::string &name) const {
   return functions_.count(name) > 0;
 }
 
-std::optional<NativeFunctionBridge::FunctionInfo> NativeFunctionBridge::getFunctionInfo(
-    const std::string& name) const {
+std::optional<NativeFunctionBridge::FunctionInfo>
+NativeFunctionBridge::getFunctionInfo(const std::string &name) const {
   auto it = functions_.find(name);
   if (it != functions_.end()) {
     return it->second.info;
@@ -592,14 +604,14 @@ std::optional<NativeFunctionBridge::FunctionInfo> NativeFunctionBridge::getFunct
 
 std::vector<std::string> NativeFunctionBridge::listFunctions() const {
   std::vector<std::string> result;
-  for (const auto& [name, _] : functions_) {
+  for (const auto &[name, _] : functions_) {
     (void)_;
     result.push_back(name);
   }
   return result;
 }
 
-void NativeFunctionBridge::unregisterFunction(const std::string& name) {
+void NativeFunctionBridge::unregisterFunction(const std::string &name) {
   functions_.erase(name);
 }
 
@@ -607,16 +619,19 @@ void NativeFunctionBridge::clear() {
   functions_.clear();
 }
 
-bool NativeFunctionBridge::checkArity(const std::string& name, size_t argCount) const {
+bool NativeFunctionBridge::checkArity(const std::string &name, size_t argCount) const {
   auto info = getFunctionInfo(name);
-  if (!info) return false;
-  if (info->isVariadic) return true;
+  if (!info)
+    return false;
+  if (info->isVariadic)
+    return true;
   return static_cast<int>(argCount) == info->arity;
 }
 
-std::optional<int> NativeFunctionBridge::getArity(const std::string& name) const {
+std::optional<int> NativeFunctionBridge::getArity(const std::string &name) const {
   auto info = getFunctionInfo(name);
-  if (info) return info->arity;
+  if (info)
+    return info->arity;
   return std::nullopt;
 }
 
@@ -629,7 +644,8 @@ RuntimeTypeSystem::RuntimeTypeSystem() {
 }
 
 void RuntimeTypeSystem::registerBuiltinTypes() {
-  auto makeInfo = [](Type type, const char* name, size_t size, bool ref, bool callable, bool iterable) {
+  auto makeInfo = [](Type type, const char *name, size_t size, bool ref, bool callable,
+                     bool iterable) {
     TypeInfo info;
     info.type = type;
     info.name = name;
@@ -656,7 +672,7 @@ void RuntimeTypeSystem::registerBuiltinTypes() {
   registerType(Type::NativeData, makeInfo(Type::NativeData, "native", 0, true, false, false));
 }
 
-void RuntimeTypeSystem::registerType(Type type, const TypeInfo& info) {
+void RuntimeTypeSystem::registerType(Type type, const TypeInfo &info) {
   typeRegistry_[type] = info;
   nameToType_[info.name] = type;
 }
@@ -669,127 +685,156 @@ std::optional<RuntimeTypeSystem::TypeInfo> RuntimeTypeSystem::getTypeInfo(Type t
   return std::nullopt;
 }
 
-RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value& value) {
-  if (value.isNull()) return Type::Null;
-  if (value.isBool()) return Type::Boolean;
-  if (value.isInt()) return Type::Integer;
-  if (value.isDouble()) return Type::Float;
-  if (value.isStringValId() || value.isStringId()) return Type::String;
-  if (value.isArrayId()) return Type::Array;
-  if (value.isObjectId()) return Type::Object;
-  if (value.isFunctionObjId()) return Type::Function;
-  if (value.isClosureId()) return Type::Closure;
-  if (value.isHostFuncId()) return Type::Function;
-  if (value.isBoundMethodId()) return Type::Function;
+RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value &value) {
+  if (value.isNull())
+    return Type::Null;
+  if (value.isBool())
+    return Type::Boolean;
+  if (value.isInt())
+    return Type::Integer;
+  if (value.isDouble())
+    return Type::Float;
+  if (value.isStringValId() || value.isStringId())
+    return Type::String;
+  if (value.isArrayId())
+    return Type::Array;
+  if (value.isObjectId())
+    return Type::Object;
+  if (value.isFunctionObjId())
+    return Type::Function;
+  if (value.isClosureId())
+    return Type::Closure;
+  if (value.isHostFuncId())
+    return Type::Function;
+  if (value.isBoundMethodId())
+    return Type::Function;
 
-  if (value.isEnumId()) return Type::Enum;
-  if (value.isIteratorId()) return Type::Iterator;
+  if (value.isEnumId())
+    return Type::Enum;
+  if (value.isIteratorId())
+    return Type::Iterator;
   return Type::Null;
 }
 
-std::string RuntimeTypeSystem::typeName(const Value& value) {
+std::string RuntimeTypeSystem::typeName(const Value &value) {
   RuntimeTypeSystem rts;
   auto info = rts.getTypeInfo(getType(value));
-  if (info) return info->name;
+  if (info)
+    return info->name;
   return "unknown";
 }
 
-bool RuntimeTypeSystem::isTruthy(const Value& value) {
-  if (value.isNull()) return false;
-  if (value.isBool()) return value.asBool();
-  if (value.isInt()) return value.asInt() != 0;
-  if (value.isDouble()) return value.asDouble() != 0.0;
-  if (value.isStringValId()) return true; // All strings are truthy
-  if (value.isPtr()) return value.asPtr() != nullptr; // null ptr is falsy
-  return true; // All reference types are truthy
+bool RuntimeTypeSystem::isTruthy(const Value &value) {
+  if (value.isNull())
+    return false;
+  if (value.isBool())
+    return value.asBool();
+  if (value.isInt())
+    return value.asInt() != 0;
+  if (value.isDouble())
+    return value.asDouble() != 0.0;
+  if (value.isStringValId())
+    return true; // All strings are truthy
+  if (value.isPtr())
+    return value.asPtr() != nullptr; // null ptr is falsy
+  return true;                       // All reference types are truthy
 }
 
-bool RuntimeTypeSystem::isNull(const Value& value) {
+bool RuntimeTypeSystem::isNull(const Value &value) {
   return value.isNull();
 }
 
-bool RuntimeTypeSystem::isNumber(const Value& value) {
+bool RuntimeTypeSystem::isNumber(const Value &value) {
   return value.isInt() || value.isDouble();
 }
 
-bool RuntimeTypeSystem::isInteger(const Value& value) {
+bool RuntimeTypeSystem::isInteger(const Value &value) {
   return value.isInt();
 }
 
-bool RuntimeTypeSystem::isString(const Value& value) {
+bool RuntimeTypeSystem::isString(const Value &value) {
   return value.isStringValId();
 }
 
-bool RuntimeTypeSystem::isArray(const Value& value) {
+bool RuntimeTypeSystem::isArray(const Value &value) {
   return value.isArrayId();
 }
 
-bool RuntimeTypeSystem::isObject(const Value& value) {
+bool RuntimeTypeSystem::isObject(const Value &value) {
   return value.isObjectId();
 }
 
-bool RuntimeTypeSystem::isCallable(const Value& value) {
+bool RuntimeTypeSystem::isCallable(const Value &value) {
   Type type = getType(value);
   RuntimeTypeSystem rts;
   auto info = rts.getTypeInfo(type);
   return info && info->isCallable;
 }
 
-std::optional<int64_t> RuntimeTypeSystem::toInteger(const Value& value) {
-  if (value.isInt()) return value.asInt();
-  if (value.isDouble()) return static_cast<int64_t>(value.asDouble());
-  if (value.isBool()) return value.asBool() ? 1 : 0;
+std::optional<int64_t> RuntimeTypeSystem::toInteger(const Value &value) {
+  if (value.isInt())
+    return value.asInt();
+  if (value.isDouble())
+    return static_cast<int64_t>(value.asDouble());
+  if (value.isBool())
+    return value.asBool() ? 1 : 0;
   // TODO: string pool lookup for string conversion
   return std::nullopt;
 }
 
-std::optional<double> RuntimeTypeSystem::toFloat(const Value& value) {
-  if (value.isDouble()) return value.asDouble();
-  if (value.isInt()) return static_cast<double>(value.asInt());
+std::optional<double> RuntimeTypeSystem::toFloat(const Value &value) {
+  if (value.isDouble())
+    return value.asDouble();
+  if (value.isInt())
+    return static_cast<double>(value.asInt());
   // TODO: string pool lookup for string conversion
   return std::nullopt;
 }
 
-std::optional<std::string> RuntimeTypeSystem::toString(const Value& value) {
-  if (value.isInt()) return std::to_string(value.asInt());
-  if (value.isDouble()) return std::to_string(value.asDouble());
-  if (value.isBool()) return value.asBool() ? "true" : "false";
-  if (value.isNull()) return "null";
+std::optional<std::string> RuntimeTypeSystem::toString(const Value &value) {
+  if (value.isInt())
+    return std::to_string(value.asInt());
+  if (value.isDouble())
+    return std::to_string(value.asDouble());
+  if (value.isBool())
+    return value.asBool() ? "true" : "false";
+  if (value.isNull())
+    return "null";
   // TODO: string pool lookup for string conversion
   return "<object>"; // Simplified
 }
 
-std::optional<bool> RuntimeTypeSystem::toBoolean(const Value& value) {
+std::optional<bool> RuntimeTypeSystem::toBoolean(const Value &value) {
   return isTruthy(value);
 }
 
-Value RuntimeTypeSystem::convert(const Value& value, Type targetType) {
+Value RuntimeTypeSystem::convert(const Value &value, Type targetType) {
   Type sourceType = getType(value);
-  if (sourceType == targetType) return value;
+  if (sourceType == targetType)
+    return value;
 
   switch (targetType) {
-    case Type::Integer: {
-      auto result = toInteger(value);
-      return result ? *result : Value(nullptr);
-    }
-    case Type::Float: {
-      auto result = toFloat(value);
-      return result ? Value::makeDouble(*result) : Value::makeNull();
-    }
-    case Type::String: {
-      auto result = toString(value);
-      // TODO: string pool integration
-      return result ? Value::makeNull() : Value::makeNull();
-    }
-    case Type::Boolean:
-      return Value::makeBool(toBoolean(value).value_or(false));
-    default:
-      return Value::makeNull();
+  case Type::Integer: {
+    auto result = toInteger(value);
+    return result ? *result : Value(nullptr);
+  }
+  case Type::Float: {
+    auto result = toFloat(value);
+    return result ? Value::makeDouble(*result) : Value::makeNull();
+  }
+  case Type::String: {
+    auto result = toString(value);
+    // TODO: string pool integration
+    return result ? Value::makeNull() : Value::makeNull();
+  }
+  case Type::Boolean:
+    return Value::makeBool(toBoolean(value).value_or(false));
+  default:
+    return Value::makeNull();
   }
 }
 
-bool RuntimeTypeSystem::checkType(const Value& value, Type expected,
-                                  std::string& errorMessage) {
+bool RuntimeTypeSystem::checkType(const Value &value, Type expected, std::string &errorMessage) {
   Type actual = getType(value);
   RuntimeTypeSystem rts;
   if (actual == expected || rts.isSubtype(actual, expected)) {
@@ -799,94 +844,123 @@ bool RuntimeTypeSystem::checkType(const Value& value, Type expected,
   auto actualInfo = rts.getTypeInfo(actual);
   auto expectedInfo = rts.getTypeInfo(expected);
 
-  errorMessage = "Type mismatch: expected " +
-                 (expectedInfo ? expectedInfo->name : "unknown") +
-                 ", got " +
-                 (actualInfo ? actualInfo->name : "unknown");
+  errorMessage = "Type mismatch: expected " + (expectedInfo ? expectedInfo->name : "unknown") +
+                 ", got " + (actualInfo ? actualInfo->name : "unknown");
   return false;
 }
 
-bool RuntimeTypeSystem::equals(const Value& a, const Value& b) {
+bool RuntimeTypeSystem::equals(const Value &a, const Value &b) {
   if (getType(a) != getType(b)) {
     // Try numeric comparison
     if (isNumber(a) && isNumber(b)) {
       auto ai = toInteger(a);
       auto bi = toInteger(b);
-      if (ai && bi) return *ai == *bi;
+      if (ai && bi)
+        return *ai == *bi;
 
       auto ad = toFloat(a);
       auto bd = toFloat(b);
-      if (ad && bd) return *ad == *bd;
+      if (ad && bd)
+        return *ad == *bd;
     }
     return false;
   }
 
   // Same type - compare values directly
-  if (a.isNull()) return true; // null == null
-  if (a.isBool()) return a.asBool() == b.asBool();
-  if (a.isInt()) return a.asInt() == b.asInt();
-  if (a.isDouble()) return a.asDouble() == b.asDouble();
-  if (a.isStringValId()) return a.asStringValId() == b.asStringValId();
-  if (a.isFunctionObjId()) return a.asFunctionObjId() == b.asFunctionObjId();
-  if (a.isHostFuncId()) return a.asHostFuncId() == b.asHostFuncId();
-  if (a.isArrayId()) return a.asArrayId() == b.asArrayId();
-  if (a.isObjectId()) return a.asObjectId() == b.asObjectId();
-  if (a.isRangeId()) return a.asRangeId() == b.asRangeId();
-  if (a.isIteratorId()) return a.asIteratorId() == b.asIteratorId();
+  if (a.isNull())
+    return true; // null == null
+  if (a.isBool())
+    return a.asBool() == b.asBool();
+  if (a.isInt())
+    return a.asInt() == b.asInt();
+  if (a.isDouble())
+    return a.asDouble() == b.asDouble();
+  if (a.isStringValId())
+    return a.asStringValId() == b.asStringValId();
+  if (a.isFunctionObjId())
+    return a.asFunctionObjId() == b.asFunctionObjId();
+  if (a.isHostFuncId())
+    return a.asHostFuncId() == b.asHostFuncId();
+  if (a.isArrayId())
+    return a.asArrayId() == b.asArrayId();
+  if (a.isObjectId())
+    return a.asObjectId() == b.asObjectId();
+  if (a.isRangeId())
+    return a.asRangeId() == b.asRangeId();
+  if (a.isIteratorId())
+    return a.asIteratorId() == b.asIteratorId();
 
-  if (a.isEnumId()) return a.asEnumId() == b.asEnumId();
-  if (a.isClosureId()) return a.asClosureId() == b.asClosureId();
+  if (a.isEnumId())
+    return a.asEnumId() == b.asEnumId();
+  if (a.isClosureId())
+    return a.asClosureId() == b.asClosureId();
   return false;
 }
 
-int RuntimeTypeSystem::compare(const Value& a, const Value& b) {
+int RuntimeTypeSystem::compare(const Value &a, const Value &b) {
   if (!isNumber(a) || !isNumber(b)) {
     return 0; // Can't compare
   }
 
   auto ad = toFloat(a);
   auto bd = toFloat(b);
-  if (!ad || !bd) return 0;
+  if (!ad || !bd)
+    return 0;
 
-  if (*ad < *bd) return -1;
-  if (*ad > *bd) return 1;
+  if (*ad < *bd)
+    return -1;
+  if (*ad > *bd)
+    return 1;
   return 0;
 }
 
-std::string RuntimeTypeSystem::stringify(const Value& value) {
+std::string RuntimeTypeSystem::stringify(const Value &value) {
   auto result = toString(value);
   return result ? *result : "<unknown>";
 }
 
-size_t RuntimeTypeSystem::hash(const Value& value) {
-  if (value.isInt()) return std::hash<int64_t>{}(value.asInt());
-  if (value.isDouble()) return std::hash<double>{}(value.asDouble());
-  if (value.isBool()) return std::hash<bool>{}(value.asBool());
-  if (value.isStringValId()) return std::hash<uint32_t>{}(value.asStringValId());
-  if (value.isNull()) return 0;
+size_t RuntimeTypeSystem::hash(const Value &value) {
+  if (value.isInt())
+    return std::hash<int64_t>{}(value.asInt());
+  if (value.isDouble())
+    return std::hash<double>{}(value.asDouble());
+  if (value.isBool())
+    return std::hash<bool>{}(value.asBool());
+  if (value.isStringValId())
+    return std::hash<uint32_t>{}(value.asStringValId());
+  if (value.isNull())
+    return 0;
   // For reference types, hash the ID
-  if (value.isArrayId()) return std::hash<uint32_t>{}(value.asArrayId());
-  if (value.isObjectId()) return std::hash<uint32_t>{}(value.asObjectId());
-  if (value.isFunctionObjId()) return std::hash<uint32_t>{}(value.asFunctionObjId());
-  if (value.isHostFuncId()) return std::hash<uint32_t>{}(value.asHostFuncId());
+  if (value.isArrayId())
+    return std::hash<uint32_t>{}(value.asArrayId());
+  if (value.isObjectId())
+    return std::hash<uint32_t>{}(value.asObjectId());
+  if (value.isFunctionObjId())
+    return std::hash<uint32_t>{}(value.asFunctionObjId());
+  if (value.isHostFuncId())
+    return std::hash<uint32_t>{}(value.asHostFuncId());
   return 0;
 }
 
 bool RuntimeTypeSystem::isSubtype(Type subtype, Type supertype) const {
-  if (subtype == supertype) return true;
+  if (subtype == supertype)
+    return true;
 
   auto info = getTypeInfo(subtype);
-  if (!info) return false;
+  if (!info)
+    return false;
 
   for (Type base : info->baseTypes) {
-    if (isSubtype(base, supertype)) return true;
+    if (isSubtype(base, supertype))
+      return true;
   }
 
   return false;
 }
 
 bool RuntimeTypeSystem::canConvert(Type from, Type to) const {
-  if (from == to || isSubtype(from, to)) return true;
+  if (from == to || isSubtype(from, to))
+    return true;
 
   // Numeric conversions
   if ((from == Type::Integer || from == Type::Float) &&
@@ -895,10 +969,12 @@ bool RuntimeTypeSystem::canConvert(Type from, Type to) const {
   }
 
   // To string
-  if (to == Type::String) return true;
+  if (to == Type::String)
+    return true;
 
   // To boolean
-  if (to == Type::Boolean) return true;
+  if (to == Type::Boolean)
+    return true;
 
   return false;
 }
@@ -911,7 +987,7 @@ void IterableFactory::registerIterator(RuntimeTypeSystem::Type type, IteratorCre
   creators_[type] = creator;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Value& value) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Value &value) {
   RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
   auto it = creators_.find(type);
@@ -931,34 +1007,35 @@ std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Value& v
   return nullptr;
 }
 
-bool IterableFactory::isIterable(const Value& value) const {
+bool IterableFactory::isIterable(const Value &value) const {
   RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
-  if (creators_.count(type) > 0) return true;
+  if (creators_.count(type) > 0)
+    return true;
 
   auto info = RuntimeTypeSystem().getTypeInfo(type);
   return info && info->isIterable;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createArrayIterator(const Value& array) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createArrayIterator(const Value &array) {
   (void)array;
   // TODO: Implement array iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createObjectIterator(const Value& object) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createObjectIterator(const Value &object) {
   (void)object;
   // TODO: Implement object iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createRangeIterator(const Value& range) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createRangeIterator(const Value &range) {
   (void)range;
   // TODO: Implement range iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createStringIterator(const Value& string) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createStringIterator(const Value &string) {
   (void)string;
   // TODO: Implement string iterator
   return nullptr;
@@ -968,7 +1045,7 @@ std::unique_ptr<IteratorProtocol> IterableFactory::createStringIterator(const Va
 // ExceptionHandler Implementation
 // ============================================================================
 
-void ExceptionHandler::pushTryBlock(const TryBlock& block) {
+void ExceptionHandler::pushTryBlock(const TryBlock &block) {
   tryBlocks_.push_back(block);
 }
 
@@ -978,15 +1055,15 @@ void ExceptionHandler::popTryBlock() {
   }
 }
 
-std::optional<uint32_t> ExceptionHandler::findHandler(const Value& exception,
-                                                       uint32_t currentAddress) const {
+std::optional<uint32_t> ExceptionHandler::findHandler(const Value &exception,
+                                                      uint32_t currentAddress) const {
   (void)exception;
 
   // Search from innermost to outermost
   for (auto it = tryBlocks_.rbegin(); it != tryBlocks_.rend(); ++it) {
     if (currentAddress >= it->startAddress && currentAddress < it->endAddress) {
       // Find matching catch clause
-      for (const auto& clause : it->catchClauses) {
+      for (const auto &clause : it->catchClauses) {
         (void)clause;
         // Type checking would go here
         return clause.handlerAddress;
@@ -998,12 +1075,14 @@ std::optional<uint32_t> ExceptionHandler::findHandler(const Value& exception,
 }
 
 bool ExceptionHandler::hasFinallyBlock() const {
-  if (tryBlocks_.empty()) return false;
+  if (tryBlocks_.empty())
+    return false;
   return tryBlocks_.back().finallyAddress.has_value();
 }
 
 uint32_t ExceptionHandler::getFinallyAddress() const {
-  if (tryBlocks_.empty()) return 0;
+  if (tryBlocks_.empty())
+    return 0;
   return tryBlocks_.back().finallyAddress.value_or(0);
 }
 
@@ -1013,7 +1092,7 @@ void ExceptionHandler::unwindTo(uint32_t targetDepth) {
   }
 }
 
-void ExceptionHandler::setPendingException(const Value& ex) {
+void ExceptionHandler::setPendingException(const Value &ex) {
   pendingException_ = ex;
 }
 
@@ -1033,20 +1112,20 @@ void ExceptionHandler::clearPendingException() {
 // ValueSerializer Implementation
 // ============================================================================
 
-std::string ValueSerializer::serialize(const Value& value, Format format) {
+std::string ValueSerializer::serialize(const Value &value, Format format) {
   switch (format) {
-    case Format::Binary:
-      return std::string(serializeBinary(value).begin(), serializeBinary(value).end());
-    case Format::JSON:
-      return serializeJSON(value);
-    case Format::MessagePack:
-      // Not implemented
-      return "";
+  case Format::Binary:
+    return std::string(serializeBinary(value).begin(), serializeBinary(value).end());
+  case Format::JSON:
+    return serializeJSON(value);
+  case Format::MessagePack:
+    // Not implemented
+    return "";
   }
   return "";
 }
 
-std::vector<uint8_t> ValueSerializer::serializeBinary(const Value& value) {
+std::vector<uint8_t> ValueSerializer::serializeBinary(const Value &value) {
   std::vector<uint8_t> result;
 
   // Simple binary format: type tag + data
@@ -1065,7 +1144,7 @@ std::vector<uint8_t> ValueSerializer::serializeBinary(const Value& value) {
     result.push_back(3);
     // Simplified - just write bytes
     double val = value.asDouble();
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&val);
+    const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&val);
     result.insert(result.end(), bytes, bytes + sizeof(double));
   } else if (value.isStringValId()) {
     result.push_back(4);
@@ -1079,350 +1158,404 @@ std::vector<uint8_t> ValueSerializer::serializeBinary(const Value& value) {
   return result;
 }
 
-std::string ValueSerializer::serializeJSON(const Value& value) {
+std::string ValueSerializer::serializeJSON(const Value &value) {
   return valueToJson(value);
 }
 
-std::optional<Value> ValueSerializer::deserialize(const std::string& data,
-                                                           Format format) {
+std::optional<Value> ValueSerializer::deserialize(const std::string &data, Format format) {
   switch (format) {
-    case Format::Binary:
-      return deserializeBinary(std::vector<uint8_t>(data.begin(), data.end()));
-    case Format::JSON:
-      return deserializeJSON(data);
-    case Format::MessagePack:
-      return std::nullopt;
+  case Format::Binary:
+    return deserializeBinary(std::vector<uint8_t>(data.begin(), data.end()));
+  case Format::JSON:
+    return deserializeJSON(data);
+  case Format::MessagePack:
+    return std::nullopt;
   }
   return std::nullopt;
 }
 
 std::optional<Value> ValueSerializer::deserializeBinary(std::span<const uint8_t> data) {
-  if (data.empty()) return std::nullopt;
+  if (data.empty())
+    return std::nullopt;
 
   uint8_t type = data[0];
 
   switch (type) {
-    case 0:
-      return nullptr;
-    case 1:
-      if (data.size() < 2) return std::nullopt;
-      return data[1] != 0;
-    case 2:
-      if (data.size() < 9) return std::nullopt;
-      {
-        int64_t val = 0;
-        for (int i = 0; i < 8; ++i) {
-          val |= static_cast<int64_t>(data[1 + i]) << (i * 8);
-        }
-        return val;
-      }
-    case 3:
-      if (data.size() < 9) return std::nullopt;
-      {
-        double val;
-        memcpy(&val, &data[1], sizeof(double));
-        return val;
-      }
-    case 4:
-      if (data.size() < 5) return std::nullopt;
-      {
-        uint32_t len = 0;
-        for (int i = 0; i < 4; ++i) {
-          len |= static_cast<uint32_t>(data[1 + i]) << (i * 8);
-        }
-        if (data.size() < 5 + len) return std::nullopt;
-        std::string str(data.begin() + 5, data.begin() + 5 + len);
-        // TODO: string pool integration
-        return Value::makeNull();
-      }
-    default:
+  case 0:
+    return nullptr;
+  case 1:
+    if (data.size() < 2)
       return std::nullopt;
+    return data[1] != 0;
+  case 2:
+    if (data.size() < 9)
+      return std::nullopt;
+    {
+      int64_t val = 0;
+      for (int i = 0; i < 8; ++i) {
+        val |= static_cast<int64_t>(data[1 + i]) << (i * 8);
+      }
+      return val;
+    }
+  case 3:
+    if (data.size() < 9)
+      return std::nullopt;
+    {
+      double val;
+      memcpy(&val, &data[1], sizeof(double));
+      return val;
+    }
+  case 4:
+    if (data.size() < 5)
+      return std::nullopt;
+    {
+      uint32_t len = 0;
+      for (int i = 0; i < 4; ++i) {
+        len |= static_cast<uint32_t>(data[1 + i]) << (i * 8);
+      }
+      if (data.size() < 5 + len)
+        return std::nullopt;
+      std::string str(data.begin() + 5, data.begin() + 5 + len);
+      // TODO: string pool integration
+      return Value::makeNull();
+    }
+  default:
+    return std::nullopt;
   }
 }
 
-std::optional<Value> ValueSerializer::deserializeJSON(const std::string& json) {
+std::optional<Value> ValueSerializer::deserializeJSON(const std::string &json) {
   return jsonToValue(json);
 }
 
-std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath) {
-    return serializeChunk(chunk, sourcePath, std::string());
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk &chunk,
+                                                     const std::string &sourcePath) {
+  return serializeChunk(chunk, sourcePath, std::string());
 }
 
-std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
-                                                      const std::string& pipelineFingerprint) {
-    // Convenience form for writers with no compile-option information: stamps
-    // the entry as compiled without strict resolution and without bytecode
-    // optimization. The incremental serve path then only accepts it for a
-    // request that also asks for neither, so an entry written this way can
-    // never be served to an option-carrying compile. Callers that compile with
-    // options should use the 5-argument form.
-    return serializeChunk(chunk, sourcePath, pipelineFingerprint, false, false);
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk &chunk,
+                                                     const std::string &sourcePath,
+                                                     const std::string &pipelineFingerprint) {
+  // Convenience form for writers with no compile-option information: stamps
+  // the entry as compiled without strict resolution and without bytecode
+  // optimization. The incremental serve path then only accepts it for a
+  // request that also asks for neither, so an entry written this way can
+  // never be served to an option-carrying compile. Callers that compile with
+  // options should use the 5-argument form.
+  return serializeChunk(chunk, sourcePath, pipelineFingerprint, false, false);
 }
 
-std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath,
-                                                      const std::string& pipelineFingerprint,
-                                                      bool compiled_strict, bool compiled_optimized,
-                                                      const std::string& compiledText) {
-    std::vector<uint8_t> data;
-    auto append = [&data](const void* ptr, size_t size) {
-        if (ptr == nullptr || size == 0) return;
-        data.insert(data.end(), static_cast<const uint8_t*>(ptr),
-                    static_cast<const uint8_t*>(ptr) + size);
-    };
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk &chunk,
+                                                     const std::string &sourcePath,
+                                                     const std::string &pipelineFingerprint,
+                                                     bool compiled_strict, bool compiled_optimized,
+                                                     const std::string &compiledText) {
+  std::vector<uint8_t> data;
+  auto append = [&data](const void *ptr, size_t size) {
+    if (ptr == nullptr || size == 0)
+      return;
+    data.insert(data.end(), static_cast<const uint8_t *>(ptr),
+                static_cast<const uint8_t *>(ptr) + size);
+  };
 
-    // Header: "HVC2" magic (version 3 adds per-function flags, version 4
-    // adds variadic_param_index, version 5 adds the pipeline fingerprint,
-    // version 6 adds the compiled-with compile-option flags)
-    append("HVC2", 4);
+  // Header: "HVC2" magic (version 3 adds per-function flags, version 4
+  // adds variadic_param_index, version 5 adds the pipeline fingerprint,
+  // version 6 adds the compiled-with compile-option flags)
+  append("HVC2", 4);
 
-    // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index,
-    // 5 = pipeline fingerprint for self-hosted-compiled entries,
-    // 6 = compile-option flags for the incremental serve path)
-    //
-    // Always 6. Whether the pipeline fingerprint is present is recorded
-    // separately, in flags bit 1. Deriving the version from the fingerprint's
-    // presence conflated two independent facts: with no fingerprint the entry
-    // became v4, carried no compile-option flags, and the serve path's
-    // compile-option gate (which rejects entries without recorded flags) could
-    // never be satisfied - so those entries were written on every run and
-    // never served, i.e. no cache hit at all. That is reachable in any
-    // environment where the four self-hosted-compiler modules are not in the
-    // cache dir yet, which makes computePipelineFingerprint return "".
-    // v6 readers already tolerate an absent fingerprint (the fingerprint gate
-    // is conditional on it being non-empty).
-    uint32_t version = 6;
-    append(&version, sizeof(version));
+  // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index,
+  // 5 = pipeline fingerprint for self-hosted-compiled entries,
+  // 6 = compile-option flags for the incremental serve path)
+  //
+  // Always 6. Whether the pipeline fingerprint is present is recorded
+  // separately, in flags bit 1. Deriving the version from the fingerprint's
+  // presence conflated two independent facts: with no fingerprint the entry
+  // became v4, carried no compile-option flags, and the serve path's
+  // compile-option gate (which rejects entries without recorded flags) could
+  // never be satisfied - so those entries were written on every run and
+  // never served, i.e. no cache hit at all. That is reachable in any
+  // environment where the four self-hosted-compiler modules are not in the
+  // cache dir yet, which makes computePipelineFingerprint return "".
+  // v6 readers already tolerate an absent fingerprint (the fingerprint gate
+  // is conditional on it being non-empty).
+  uint32_t version = 7;
+  append(&version, sizeof(version));
 
-    // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint,
-    // bit 2 = compiled with strict lexical resolution, bit 3 = compiled
-    // with bytecode optimization)
-    uint32_t flags = 0;
-    // Embed compiler build ID so .hvc is invalidated when compiler changes.
-    // This prevents stale cache when the compiler generates different function
-    // indices for the same source file.
-    const std::string compiler_build_id = __DATE__ " " __TIME__;
-    flags |= 1;
-    if (!pipelineFingerprint.empty()) flags |= 2;
-    if (version >= 6) {
-        if (compiled_strict) flags |= 4;
-        if (compiled_optimized) flags |= 8;
-    }
-    append(&flags, sizeof(flags));
+  // Flags (bit 0 = has compiler build ID, bit 1 = has pipeline fingerprint,
+  // bit 2 = compiled with strict lexical resolution, bit 3 = compiled
+  // with bytecode optimization)
+  uint32_t flags = 0;
+  // Embed compiler build ID so .hvc is invalidated when compiler changes.
+  // This prevents stale cache when the compiler generates different function
+  // indices for the same source file.
+  const std::string compiler_build_id = __DATE__ " " __TIME__;
+  flags |= 1;
+  if (!pipelineFingerprint.empty())
+    flags |= 2;
+  if (version >= 6) {
+    if (compiled_strict)
+      flags |= 4;
+    if (compiled_optimized)
+      flags |= 8;
+  }
+  append(&flags, sizeof(flags));
 
-    // Compiler build ID (when flags bit 0 is set)
-    if (flags & 1) {
-        uint32_t idLen = static_cast<uint32_t>(compiler_build_id.size());
-        append(&idLen, sizeof(idLen));
-        append(compiler_build_id.data(), idLen);
-    }
+  // Compiler build ID (when flags bit 0 is set)
+  if (flags & 1) {
+    uint32_t idLen = static_cast<uint32_t>(compiler_build_id.size());
+    append(&idLen, sizeof(idLen));
+    append(compiler_build_id.data(), idLen);
+  }
 
-    // Pipeline fingerprint (when flags bit 1 is set, version 5): identity of
-    // the self-hosted compiler (emitter/pratt bytecode caches) that produced
-    // this chunk. A user module compiled by an older emitter must not be
-    // served after an emitter change even though its SOURCE hash still
-    // matches - observed live: scripts/tests/unit entries kept serving
-    // pre-fix bytecode after emitter/pratt fixes landed.
-    if (flags & 2) {
-        uint32_t fpLen = static_cast<uint32_t>(pipelineFingerprint.size());
-        append(&fpLen, sizeof(fpLen));
-        append(pipelineFingerprint.data(), fpLen);
-    }
+  // Pipeline fingerprint (when flags bit 1 is set, version 5): identity of
+  // the self-hosted compiler (emitter/pratt bytecode caches) that produced
+  // this chunk. A user module compiled by an older emitter must not be
+  // served after an emitter change even though its SOURCE hash still
+  // matches - observed live: scripts/tests/unit entries kept serving
+  // pre-fix bytecode after emitter/pratt fixes landed.
+  if (flags & 2) {
+    uint32_t fpLen = static_cast<uint32_t>(pipelineFingerprint.size());
+    append(&fpLen, sizeof(fpLen));
+    append(pipelineFingerprint.data(), fpLen);
+  }
 
-    // Compile-option flags (version 6, bits 2/3): the strict lexical
-    // resolution and optimization settings the entry was built with. Read
-    // back by peekSourceInfo so the incremental serve path can require an
-    // exact match against the request's compile options.
-    if (version >= 6) {
-        uint8_t optFlags[2] = {static_cast<uint8_t>(compiled_strict ? 1 : 0),
-                               static_cast<uint8_t>(compiled_optimized ? 1 : 0)};
-        append(optFlags, sizeof(optFlags));
-    }
+  // Compile-option flags (version 6, bits 2/3): the strict lexical
+  // resolution and optimization settings the entry was built with. Read
+  // back by peekSourceInfo so the incremental serve path can require an
+  // exact match against the request's compile options.
+  if (version >= 6) {
+    uint8_t optFlags[2] = {static_cast<uint8_t>(compiled_strict ? 1 : 0),
+                           static_cast<uint8_t>(compiled_optimized ? 1 : 0)};
+    append(optFlags, sizeof(optFlags));
+  }
 
-    // Source path
-    std::string srcPath = sourcePath;
-    uint32_t srcPathLen = static_cast<uint32_t>(srcPath.size());
-    append(&srcPathLen, sizeof(srcPathLen));
-    if (srcPathLen > 0) append(srcPath.data(), srcPathLen);
+  // Source path
+  std::string srcPath = sourcePath;
+  uint32_t srcPathLen = static_cast<uint32_t>(srcPath.size());
+  append(&srcPathLen, sizeof(srcPathLen));
+  if (srcPathLen > 0)
+    append(srcPath.data(), srcPathLen);
 
-    // Source size + hash
-    uint64_t srcSize = 0;
-    std::array<uint8_t, 32> srcHash{};
-    if (!compiledText.empty()) {
-        srcSize = compiledText.size();
-        srcHash = sha256(reinterpret_cast<const uint8_t*>(compiledText.data()),
-                         compiledText.size());
-    } else if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
-        srcSize = std::filesystem::file_size(srcPath);
-        srcHash = sha256_file(srcPath);
-    }
-    append(&srcSize, sizeof(srcSize));
-    append(srcHash.data(), srcHash.size());
+  // Source size + hash
+  uint64_t srcSize = 0;
+  std::array<uint8_t, 32> srcHash{};
+  if (!compiledText.empty()) {
+    srcSize = compiledText.size();
+    srcHash = sha256(reinterpret_cast<const uint8_t *>(compiledText.data()), compiledText.size());
+  } else if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+    srcSize = std::filesystem::file_size(srcPath);
+    srcHash = sha256_file(srcPath);
+  }
+  append(&srcSize, sizeof(srcSize));
+  append(srcHash.data(), srcHash.size());
 
-    const auto& functions = chunk.getAllFunctions();
-    const auto& strings = chunk.getAllStrings();
+  const auto &functions = chunk.getAllFunctions();
+  const auto &strings = chunk.getAllStrings();
 
-    // Number of functions (uint32_t)
-    uint32_t numFuncs = static_cast<uint32_t>(functions.size());
-    append(&numFuncs, sizeof(numFuncs));
+  // Number of functions (uint32_t)
+  uint32_t numFuncs = static_cast<uint32_t>(functions.size());
+  append(&numFuncs, sizeof(numFuncs));
 
   // Number of strings (uint32_t)
   uint32_t numStrings = static_cast<uint32_t>(strings.size());
   append(&numStrings, sizeof(numStrings));
 
   // Serialize string table
-  for (const auto& s : strings) {
+  for (const auto &s : strings) {
     uint32_t len = static_cast<uint32_t>(s.size());
     append(&len, sizeof(len));
-    if (!s.empty()) append(s.data(), s.size());
+    if (!s.empty())
+      append(s.data(), s.size());
   }
 
-    // Serialize functions
-    for (const auto& func : functions) {
-        uint32_t nameLen = static_cast<uint32_t>(func.name.size());
-        append(&nameLen, sizeof(nameLen));
-        if (!func.name.empty()) append(func.name.data(), func.name.size());
+  // Serialize functions
+  for (const auto &func : functions) {
+    uint32_t nameLen = static_cast<uint32_t>(func.name.size());
+    append(&nameLen, sizeof(nameLen));
+    if (!func.name.empty())
+      append(func.name.data(), func.name.size());
 
-        append(&func.param_count, sizeof(func.param_count));
-        append(&func.local_count, sizeof(func.local_count));
+    append(&func.param_count, sizeof(func.param_count));
+    append(&func.local_count, sizeof(func.local_count));
 
-        // Function flags: is_generator, is_timer_closure
-        uint8_t funcFlags = (func.is_generator ? 1 : 0) | (func.is_timer_closure ? 2 : 0);
-        append(&funcFlags, sizeof(funcFlags));
+    // Function flags: is_generator, is_timer_closure
+    uint8_t funcFlags = (func.is_generator ? 1 : 0) | (func.is_timer_closure ? 2 : 0);
+    append(&funcFlags, sizeof(funcFlags));
 
-        // Serialize param_names
-        uint32_t numParamNames = static_cast<uint32_t>(func.param_names.size());
-        append(&numParamNames, sizeof(numParamNames));
-        for (const auto& name : func.param_names) {
-            uint32_t len = static_cast<uint32_t>(name.size());
-            append(&len, sizeof(len));
-            if (!name.empty()) append(name.data(), len);
-        }
+    // Serialize param_names
+    uint32_t numParamNames = static_cast<uint32_t>(func.param_names.size());
+    append(&numParamNames, sizeof(numParamNames));
+    for (const auto &name : func.param_names) {
+      uint32_t len = static_cast<uint32_t>(name.size());
+      append(&len, sizeof(len));
+      if (!name.empty())
+        append(name.data(), len);
+    }
 
-        // variadic_param_index (HVC4+)
-        append(&func.variadic_param_index, sizeof(func.variadic_param_index));
+    // variadic_param_index (HVC4+)
+    append(&func.variadic_param_index, sizeof(func.variadic_param_index));
 
-        // Constants (per-function)
-        uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
-        append(&numConsts, sizeof(numConsts));
-        for (const auto& c : func.constants) {
-            if (c.isStringValId()) {
-                uint8_t tag = 1;
-                append(&tag, sizeof(tag));
-                uint32_t strIdx = c.asStringValId();
-                const std::string& str = chunk.getString(strIdx);
-                uint32_t len = static_cast<uint32_t>(str.size());
-                append(&len, sizeof(len));
-                if (!str.empty()) append(str.data(), str.size());
-            } else if (c.isFunctionObjId()) {
-                uint8_t tag = 2;
-                append(&tag, sizeof(tag));
-                uint32_t fnIdx = c.asFunctionObjId();
-                append(&fnIdx, sizeof(fnIdx));
-            } else {
-                uint8_t tag = 0;
-                append(&tag, sizeof(tag));
-                uint64_t raw = c.rawBits();
-                append(&raw, sizeof(raw));
-            }
-        }
+    // Constants (per-function)
+    uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
+    append(&numConsts, sizeof(numConsts));
+    for (const auto &c : func.constants) {
+      if (c.isStringValId()) {
+        uint8_t tag = 1;
+        append(&tag, sizeof(tag));
+        uint32_t strIdx = c.asStringValId();
+        const std::string &str = chunk.getString(strIdx);
+        uint32_t len = static_cast<uint32_t>(str.size());
+        append(&len, sizeof(len));
+        if (!str.empty())
+          append(str.data(), str.size());
+      } else if (c.isFunctionObjId()) {
+        uint8_t tag = 2;
+        append(&tag, sizeof(tag));
+        uint32_t fnIdx = c.asFunctionObjId();
+        append(&fnIdx, sizeof(fnIdx));
+      } else {
+        uint8_t tag = 0;
+        append(&tag, sizeof(tag));
+        uint64_t raw = c.rawBits();
+        append(&raw, sizeof(raw));
+      }
+    }
 
     // Upvalues (per-function)
     uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
     append(&numUp, sizeof(numUp));
-    for (const auto& u : func.upvalues) {
-        append(&u.index, sizeof(u.index));
-        append(&u.captures_local, sizeof(u.captures_local));
+    for (const auto &u : func.upvalues) {
+      append(&u.index, sizeof(u.index));
+      append(&u.captures_local, sizeof(u.captures_local));
     }
 
     // Default values (per-function)
     uint32_t numDefaults = static_cast<uint32_t>(func.default_values.size());
     append(&numDefaults, sizeof(numDefaults));
-    for (const auto& dv : func.default_values) {
-        if (!dv.has_value()) {
-            uint8_t tag = 0;
-            append(&tag, sizeof(tag));
-        } else if (dv->isStringValId()) {
-            uint8_t tag = 1;
-            append(&tag, sizeof(tag));
-            uint32_t strIdx = dv->asStringValId();
-            const std::string& str = chunk.getString(strIdx);
-            uint32_t len = static_cast<uint32_t>(str.size());
-            append(&len, sizeof(len));
-            if (!str.empty()) append(str.data(), str.size());
-        } else if (dv->isFunctionObjId()) {
-            uint8_t tag = 2;
-            append(&tag, sizeof(tag));
-            uint32_t fnIdx = dv->asFunctionObjId();
-            append(&fnIdx, sizeof(fnIdx));
-        } else {
-            uint8_t tag = 3;
-            append(&tag, sizeof(tag));
-            uint64_t raw = dv->rawBits();
-            append(&raw, sizeof(raw));
-        }
+    for (const auto &dv : func.default_values) {
+      if (!dv.has_value()) {
+        uint8_t tag = 0;
+        append(&tag, sizeof(tag));
+      } else if (dv->isStringValId()) {
+        uint8_t tag = 1;
+        append(&tag, sizeof(tag));
+        uint32_t strIdx = dv->asStringValId();
+        const std::string &str = chunk.getString(strIdx);
+        uint32_t len = static_cast<uint32_t>(str.size());
+        append(&len, sizeof(len));
+        if (!str.empty())
+          append(str.data(), str.size());
+      } else if (dv->isFunctionObjId()) {
+        uint8_t tag = 2;
+        append(&tag, sizeof(tag));
+        uint32_t fnIdx = dv->asFunctionObjId();
+        append(&fnIdx, sizeof(fnIdx));
+      } else {
+        uint8_t tag = 3;
+        append(&tag, sizeof(tag));
+        uint64_t raw = dv->rawBits();
+        append(&raw, sizeof(raw));
+      }
     }
 
     // Instructions (per-function)
-        uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
-        append(&numInstr, sizeof(numInstr));
-        for (const auto& instr : func.instructions) {
-            uint8_t opcode = static_cast<uint8_t>(instr.opcode);
-            append(&opcode, sizeof(opcode));
-            uint32_t numOps = static_cast<uint32_t>(instr.operands.size());
-            append(&numOps, sizeof(numOps));
-            for (const auto& op : instr.operands) {
-                if (op.isStringValId()) {
-                    uint8_t tag = 1;
-                    append(&tag, sizeof(tag));
-                    uint32_t strIdx = op.asStringValId();
-                    const std::string& str = chunk.getString(strIdx);
-                    uint32_t len = static_cast<uint32_t>(str.size());
-                    append(&len, sizeof(len));
-                    if (!str.empty()) append(str.data(), str.size());
-                } else if (op.isFunctionObjId()) {
-                    uint8_t tag = 2;
-                    append(&tag, sizeof(tag));
-                    uint32_t fnIdx = op.asFunctionObjId();
-                    append(&fnIdx, sizeof(fnIdx));
-                } else {
-                    uint8_t tag = 0;
-                    append(&tag, sizeof(tag));
-                    uint64_t raw = op.rawBits();
-                    append(&raw, sizeof(raw));
-                }
-            }
-        }
+    uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
+    append(&numInstr, sizeof(numInstr));
+    // Per-instruction source locations (v7+). Without these a function loaded
+    // from the cache has an empty instruction_locations vector, so every
+    // runtime error raised from cached bytecode loses its file:line:col - and
+    // the same script then reports a different error depending on whether it
+    // was compiled this run or served from the cache.
+    uint32_t numLocs = static_cast<uint32_t>(func.instruction_locations.size());
+    append(&numLocs, sizeof(numLocs));
+    for (const auto &loc : func.instruction_locations) {
+      uint32_t locLen = static_cast<uint32_t>(loc.filename.size());
+      append(&locLen, sizeof(locLen));
+      if (locLen > 0) append(loc.filename.data(), locLen);
+      append(&loc.line, sizeof(loc.line));
+      append(&loc.column, sizeof(loc.column));
+      append(&loc.length, sizeof(loc.length));
     }
+    for (const auto &instr : func.instructions) {
+      uint8_t opcode = static_cast<uint8_t>(instr.opcode);
+    append(&opcode, sizeof(opcode));
+    uint32_t numOps = static_cast<uint32_t>(instr.operands.size());
+    append(&numOps, sizeof(numOps));
+    for (const auto &op : instr.operands) {
+      if (op.isStringValId()) {
+        uint8_t tag = 1;
+        append(&tag, sizeof(tag));
+        uint32_t strIdx = op.asStringValId();
+        const std::string &str = chunk.getString(strIdx);
+        uint32_t len = static_cast<uint32_t>(str.size());
+        append(&len, sizeof(len));
+        if (!str.empty())
+          append(str.data(), str.size());
+      } else if (op.isFunctionObjId()) {
+        uint8_t tag = 2;
+        append(&tag, sizeof(tag));
+        uint32_t fnIdx = op.asFunctionObjId();
+        append(&fnIdx, sizeof(fnIdx));
+      } else {
+        uint8_t tag = 0;
+        append(&tag, sizeof(tag));
+        uint64_t raw = op.rawBits();
+        append(&raw, sizeof(raw));
+      }
+    }
+      // Per-instruction source location (v7+). This is the one the VM's
+      // COMPILER_THROW_AT macro reads to build "... at line:col"; the
+      // function-level instruction_locations vector is a parallel copy used
+      // by the frame-based error paths and the debug tracer. Both must
+      // survive a cache round-trip or a runtime error reports a different
+      // message depending on whether the module was compiled this run or
+      // served from the cache.
+      uint8_t hasLoc = instr.location.has_value() ? 1 : 0;
+      append(&hasLoc, sizeof(hasLoc));
+      if (hasLoc) {
+        const SourceLocation &loc = *instr.location;
+        uint32_t locLen = static_cast<uint32_t>(loc.filename.size());
+        append(&locLen, sizeof(locLen));
+        if (locLen > 0)
+          append(loc.filename.data(), locLen);
+        append(&loc.line, sizeof(loc.line));
+        append(&loc.column, sizeof(loc.column));
+        append(&loc.length, sizeof(loc.length));
+      }
+    }
+  }
 
-    return data;
+return data;
 }
 
-std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk) {
-    return serializeChunk(chunk, "");
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk &chunk) {
+  return serializeChunk(chunk, "");
 }
 
 // Serialize globals - placeholder, actual serialization done in VM with heap access
-std::vector<uint8_t> ValueSerializer::serializeChunkWithGlobals(const BytecodeChunk& chunk,
-                                                                const std::unordered_map<std::string, Value>& globals,
-                                                                const std::string& sourcePath) {
-    // First serialize the chunk normally
-    std::vector<uint8_t> data = serializeChunk(chunk, sourcePath);
-    
-    // Append globals section marker
-    auto append = [&data](const void* ptr, size_t size) {
-        if (ptr == nullptr || size == 0) return;
-        data.insert(data.end(), static_cast<const uint8_t*>(ptr),
-                    static_cast<const uint8_t*>(ptr) + size);
-    };
-    
-    // Globals section marker: "GLBS"
-    append("GLBS", 4);
-    
-    // Placeholder - actual serialization done in VM
-    uint32_t numGlobals = 0;
-    append(&numGlobals, sizeof(numGlobals));
-    
-    return data;
+std::vector<uint8_t>
+ValueSerializer::serializeChunkWithGlobals(const BytecodeChunk &chunk,
+                                           const std::unordered_map<std::string, Value> &globals,
+                                           const std::string &sourcePath) {
+  // First serialize the chunk normally
+  std::vector<uint8_t> data = serializeChunk(chunk, sourcePath);
+
+  // Append globals section marker
+  auto append = [&data](const void *ptr, size_t size) {
+    if (ptr == nullptr || size == 0)
+      return;
+    data.insert(data.end(), static_cast<const uint8_t *>(ptr),
+                static_cast<const uint8_t *>(ptr) + size);
+  };
+
+  // Globals section marker: "GLBS"
+  append("GLBS", 4);
+
+  // Placeholder - actual serialization done in VM
+  uint32_t numGlobals = 0;
+  append(&numGlobals, sizeof(numGlobals));
+
+  return data;
 }
 
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
@@ -1430,15 +1563,17 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
   size_t pos = 0;
   uint32_t hvc_version = 0;
 
-  auto read = [&data, &pos](void* out, size_t size) -> bool {
-    if (pos + size > data.size()) return false;
+  auto read = [&data, &pos](void *out, size_t size) -> bool {
+    if (pos + size > data.size())
+      return false;
     std::memcpy(out, data.data() + pos, size);
     pos += size;
     return true;
   };
 
   // Check header: "HVC1" or "HVC2" magic
-  if (data.size() < 4) return std::nullopt;
+  if (data.size() < 4)
+    return std::nullopt;
   bool is_v2 = false;
   if (data[0] == 'H' && data[1] == 'V' && data[2] == 'C' && data[3] == '2') {
     is_v2 = true;
@@ -1447,28 +1582,33 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
   }
   pos = 4;
 
-    if (is_v2) {
-        // HVC2: read version, flags, source path, source size, source hash
-        if (!read(&hvc_version, sizeof(hvc_version))) return std::nullopt;
-        if (hvc_version < 2 || hvc_version > 6) return std::nullopt;
-        ::havel::debug("[RTS-DEBUG] hvc_version = " + std::to_string(hvc_version));
+  if (is_v2) {
+    // HVC2: read version, flags, source path, source size, source hash
+    if (!read(&hvc_version, sizeof(hvc_version)))
+      return std::nullopt;
+    if (hvc_version < 2 || hvc_version > 7)
+      return std::nullopt;
+    ::havel::debug("[RTS-DEBUG] hvc_version = " + std::to_string(hvc_version));
 
     uint32_t flags = 0;
-    if (!read(&flags, sizeof(flags))) return std::nullopt;
+    if (!read(&flags, sizeof(flags)))
+      return std::nullopt;
 
     // Compiler build ID (when flags bit 0 is set, HVC3+ only)
     if ((flags & 1) && hvc_version >= 3) {
-        uint32_t idLen = 0;
-        if (!read(&idLen, sizeof(idLen))) return std::nullopt;
-        std::string compiler_id(idLen, '\0');
-        if (idLen > 0) {
-            if (pos + idLen > data.size()) return std::nullopt;
-            std::memcpy(compiler_id.data(), data.data() + pos, idLen);
-            pos += idLen;
-        }
-        // Build ID is diagnostic only; we don't reject on mismatch.
-        // The source SHA-256 hash handles source changes, and the format
-        // version handles major compiler format changes.
+      uint32_t idLen = 0;
+      if (!read(&idLen, sizeof(idLen)))
+        return std::nullopt;
+      std::string compiler_id(idLen, '\0');
+      if (idLen > 0) {
+        if (pos + idLen > data.size())
+          return std::nullopt;
+        std::memcpy(compiler_id.data(), data.data() + pos, idLen);
+        pos += idLen;
+      }
+      // Build ID is diagnostic only; we don't reject on mismatch.
+      // The source SHA-256 hash handles source changes, and the format
+      // version handles major compiler format changes.
     }
 
     // Pipeline fingerprint (version 5, flags bit 1): identity of the
@@ -1477,10 +1617,12 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     // peekSourceInfo and reject stale-pipeline entries before
     // deserialization.
     if ((flags & 2) && hvc_version >= 5) {
-        uint32_t fpLen = 0;
-        if (!read(&fpLen, sizeof(fpLen))) return std::nullopt;
-        if (pos + fpLen > data.size()) return std::nullopt;
-        pos += fpLen;
+      uint32_t fpLen = 0;
+      if (!read(&fpLen, sizeof(fpLen)))
+        return std::nullopt;
+      if (pos + fpLen > data.size())
+        return std::nullopt;
+      pos += fpLen;
     }
 
     // Compile-option flags (version 6, flags bits 2/3): the strict
@@ -1489,27 +1631,32 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     // (loadCachedScriptChunk) reads them via peekSourceInfo and compares
     // against the request's compile options before serving.
     if (hvc_version >= 6) {
-        uint8_t optFlags[2] = {0, 0};
-        if (!read(optFlags, sizeof(optFlags))) return std::nullopt;
+      uint8_t optFlags[2] = {0, 0};
+      if (!read(optFlags, sizeof(optFlags)))
+        return std::nullopt;
     }
 
     // Source path
     uint32_t srcPathLen = 0;
-    if (!read(&srcPathLen, sizeof(srcPathLen))) return std::nullopt;
+    if (!read(&srcPathLen, sizeof(srcPathLen)))
+      return std::nullopt;
     std::string srcPath;
     if (srcPathLen > 0) {
-      if (pos + srcPathLen > data.size()) return std::nullopt;
-      srcPath.assign(reinterpret_cast<const char*>(data.data() + pos), srcPathLen);
+      if (pos + srcPathLen > data.size())
+        return std::nullopt;
+      srcPath.assign(reinterpret_cast<const char *>(data.data() + pos), srcPathLen);
       pos += srcPathLen;
     }
 
     // Source size
     uint64_t srcSize = 0;
-    if (!read(&srcSize, sizeof(srcSize))) return std::nullopt;
+    if (!read(&srcSize, sizeof(srcSize)))
+      return std::nullopt;
 
     // Source hash
     std::array<uint8_t, 32> srcHash{};
-    if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
+    if (!read(srcHash.data(), srcHash.size()))
+      return std::nullopt;
 
     // Validate hash if the recorded source path exists. A missing
     // source is NOT grounds for rejection: release installs ship .hvc
@@ -1523,27 +1670,33 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     // recompiling from source when it does not.
     if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
       auto actualSize = std::filesystem::file_size(srcPath);
-      if (actualSize != srcSize) return std::nullopt;
+      if (actualSize != srcSize)
+        return std::nullopt;
       auto actualHash = sha256_file(srcPath);
-      if (actualHash != srcHash) return std::nullopt;
+      if (actualHash != srcHash)
+        return std::nullopt;
     }
   }
 
   // Number of functions
   uint32_t numFuncs = 0;
-  if (!read(&numFuncs, sizeof(numFuncs))) return std::nullopt;
+  if (!read(&numFuncs, sizeof(numFuncs)))
+    return std::nullopt;
 
   // Number of strings
   uint32_t numStrings = 0;
-  if (!read(&numStrings, sizeof(numStrings))) return std::nullopt;
+  if (!read(&numStrings, sizeof(numStrings)))
+    return std::nullopt;
 
   // Deserialize string table
   for (uint32_t s = 0; s < numStrings; ++s) {
     uint32_t len = 0;
-    if (!read(&len, sizeof(len))) return std::nullopt;
+    if (!read(&len, sizeof(len)))
+      return std::nullopt;
     std::string str(len, '\0');
     if (len > 0) {
-      if (pos + len > data.size()) return std::nullopt;
+      if (pos + len > data.size())
+        return std::nullopt;
       std::memcpy(str.data(), data.data() + pos, len);
       pos += len;
     }
@@ -1554,10 +1707,12 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
   for (uint32_t f = 0; f < numFuncs; ++f) {
     // Function name
     uint32_t nameLen = 0;
-    if (!read(&nameLen, sizeof(nameLen))) return std::nullopt;
+    if (!read(&nameLen, sizeof(nameLen)))
+      return std::nullopt;
     std::string funcName(nameLen, '\0');
     if (nameLen > 0) {
-      if (pos + nameLen > data.size()) return std::nullopt;
+      if (pos + nameLen > data.size())
+        return std::nullopt;
       std::memcpy(funcName.data(), data.data() + pos, nameLen);
       pos += nameLen;
     }
@@ -1565,188 +1720,275 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     // Read param_count and local_count first
     uint32_t param_count = 0;
     uint32_t local_count = 0;
-    if (!read(&param_count, sizeof(param_count))) return std::nullopt;
-    if (!read(&local_count, sizeof(local_count))) return std::nullopt;
+    if (!read(&param_count, sizeof(param_count)))
+      return std::nullopt;
+    if (!read(&local_count, sizeof(local_count)))
+      return std::nullopt;
 
     // Function flags (HVC3+): is_generator, is_timer_closure
     uint8_t funcFlags = 0;
     if (hvc_version >= 3) {
-        if (!read(&funcFlags, sizeof(funcFlags))) return std::nullopt;
+      if (!read(&funcFlags, sizeof(funcFlags)))
+        return std::nullopt;
     }
 
-        // Read param_names
-        uint32_t numParamNames = 0;
-        if (!read(&numParamNames, sizeof(numParamNames))) return std::nullopt;
-        std::vector<std::string> param_names;
-        param_names.reserve(numParamNames);
-        for (uint32_t i = 0; i < numParamNames; ++i) {
-            uint32_t len = 0;
-            if (!read(&len, sizeof(len))) return std::nullopt;
-            std::string name(len, '\0');
-            if (len > 0) {
-                if (pos + len > data.size()) return std::nullopt;
-                std::memcpy(name.data(), data.data() + pos, len);
-                pos += len;
-            }
-            param_names.push_back(std::move(name));
-        }
+    // Read param_names
+    uint32_t numParamNames = 0;
+    if (!read(&numParamNames, sizeof(numParamNames)))
+      return std::nullopt;
+    std::vector<std::string> param_names;
+    param_names.reserve(numParamNames);
+    for (uint32_t i = 0; i < numParamNames; ++i) {
+      uint32_t len = 0;
+      if (!read(&len, sizeof(len)))
+        return std::nullopt;
+      std::string name(len, '\0');
+      if (len > 0) {
+        if (pos + len > data.size())
+          return std::nullopt;
+        std::memcpy(name.data(), data.data() + pos, len);
+        pos += len;
+      }
+      param_names.push_back(std::move(name));
+    }
 
-        BytecodeFunction func(funcName, param_count, local_count);
-        func.param_names = std::move(param_names);
-        func.is_generator = (funcFlags & 1) != 0;
-        func.is_timer_closure = (funcFlags & 2) != 0;
+    BytecodeFunction func(funcName, param_count, local_count);
+    func.param_names = std::move(param_names);
+    func.is_generator = (funcFlags & 1) != 0;
+    func.is_timer_closure = (funcFlags & 2) != 0;
 
-        // variadic_param_index (HVC4+)
-        if (hvc_version >= 4) {
-            if (!read(&func.variadic_param_index, sizeof(func.variadic_param_index))) return std::nullopt;
-        } else {
-            func.variadic_param_index = UINT32_MAX;
-        }
+    // variadic_param_index (HVC4+)
+    if (hvc_version >= 4) {
+      if (!read(&func.variadic_param_index, sizeof(func.variadic_param_index)))
+        return std::nullopt;
+    } else {
+      func.variadic_param_index = UINT32_MAX;
+    }
 
-        // Constants (per-function)
-        uint32_t numConsts = 0;
-        if (!read(&numConsts, sizeof(numConsts))) return std::nullopt;
-        for (uint32_t c = 0; c < numConsts; ++c) {
-            uint8_t tag = 0;
-            if (!read(&tag, sizeof(tag))) return std::nullopt;
-            if (tag == 1) {
-                // StringValId - resolve via chunk string table
-                uint32_t len = 0;
-                if (!read(&len, sizeof(len))) return std::nullopt;
-                std::string str(len, '\0');
-                if (len > 0) {
-                    if (pos + len > data.size()) return std::nullopt;
-                    std::memcpy(str.data(), data.data() + pos, len);
-                    pos += len;
-                }
-                uint32_t strId = chunk.addString(std::move(str));
-                func.constants.push_back(Value::makeStringValId(strId));
-            } else if (tag == 2) {
-                // FunctionObjId
-                uint32_t fnIdx = 0;
-                if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
-                func.constants.push_back(Value::makeFunctionObjId(fnIdx));
-                if (funcName == "skipWhitespace" && c == 0) {
-                    // std::cerr << "[DBG-DESER] fn=" << funcName
-                    //           << " const[" << c << "] tag=2 FunctionObjId fnIdx=" << fnIdx
-                    //           << " raw=" << std::hex << func.constants.back().rawBits() << std::dec
-                    //           << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
-                    //           << "\n";
-                }
-            } else {
-                // Raw value (int, double, bool, null)
-                uint64_t raw = 0;
-                if (!read(&raw, sizeof(raw))) return std::nullopt;
-                func.constants.push_back(Value::fromRawBits(raw));
-                if (funcName == "skipWhitespace" && c == 0) {
-                    // std::cerr << "[DBG-DESER] fn=" << funcName
-                    //           << " const[" << c << "] tag=" << (int)tag << " raw=" << std::hex << raw << std::dec
-                    //           << " val_raw=" << std::hex << func.constants.back().rawBits() << std::dec
-                    //           << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
-                    //           << " isInt=" << func.constants.back().isInt()
-                    //           << " isNull=" << func.constants.back().isNull()
-                    //           << "\n";
-                }
-            }
+    // Constants (per-function)
+    uint32_t numConsts = 0;
+    if (!read(&numConsts, sizeof(numConsts)))
+      return std::nullopt;
+    for (uint32_t c = 0; c < numConsts; ++c) {
+      uint8_t tag = 0;
+      if (!read(&tag, sizeof(tag)))
+        return std::nullopt;
+      if (tag == 1) {
+        // StringValId - resolve via chunk string table
+        uint32_t len = 0;
+        if (!read(&len, sizeof(len)))
+          return std::nullopt;
+        std::string str(len, '\0');
+        if (len > 0) {
+          if (pos + len > data.size())
+            return std::nullopt;
+          std::memcpy(str.data(), data.data() + pos, len);
+          pos += len;
         }
+        uint32_t strId = chunk.addString(std::move(str));
+        func.constants.push_back(Value::makeStringValId(strId));
+      } else if (tag == 2) {
+        // FunctionObjId
+        uint32_t fnIdx = 0;
+        if (!read(&fnIdx, sizeof(fnIdx)))
+          return std::nullopt;
+        func.constants.push_back(Value::makeFunctionObjId(fnIdx));
+        if (funcName == "skipWhitespace" && c == 0) {
+          // std::cerr << "[DBG-DESER] fn=" << funcName
+          //           << " const[" << c << "] tag=2 FunctionObjId fnIdx=" << fnIdx
+          //           << " raw=" << std::hex << func.constants.back().rawBits() << std::dec
+          //           << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
+          //           << "\n";
+        }
+      } else {
+        // Raw value (int, double, bool, null)
+        uint64_t raw = 0;
+        if (!read(&raw, sizeof(raw)))
+          return std::nullopt;
+        func.constants.push_back(Value::fromRawBits(raw));
+        if (funcName == "skipWhitespace" && c == 0) {
+          // std::cerr << "[DBG-DESER] fn=" << funcName
+          //           << " const[" << c << "] tag=" << (int)tag << " raw=" << std::hex << raw <<
+          //           std::dec
+          //           << " val_raw=" << std::hex << func.constants.back().rawBits() << std::dec
+          //           << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
+          //           << " isInt=" << func.constants.back().isInt()
+          //           << " isNull=" << func.constants.back().isNull()
+          //           << "\n";
+        }
+      }
+    }
 
     // Upvalues (per-function)
     uint32_t numUp = 0;
-    if (!read(&numUp, sizeof(numUp))) return std::nullopt;
+    if (!read(&numUp, sizeof(numUp)))
+      return std::nullopt;
     for (uint32_t u = 0; u < numUp; ++u) {
-        UpvalueDescriptor uv;
-        if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
-        if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
-        func.upvalues.push_back(uv);
+      UpvalueDescriptor uv;
+      if (!read(&uv.index, sizeof(uv.index)))
+        return std::nullopt;
+      if (!read(&uv.captures_local, sizeof(uv.captures_local)))
+        return std::nullopt;
+      func.upvalues.push_back(uv);
     }
 
     // Default values (per-function)
     uint32_t numDefaults = 0;
-    if (!read(&numDefaults, sizeof(numDefaults))) return std::nullopt;
+    if (!read(&numDefaults, sizeof(numDefaults)))
+      return std::nullopt;
     for (uint32_t d = 0; d < numDefaults; ++d) {
-        uint8_t dvTag = 0;
-        if (!read(&dvTag, sizeof(dvTag))) return std::nullopt;
-        if (dvTag == 0) {
-            func.default_values.push_back(std::nullopt);
-        } else if (dvTag == 1) {
-            uint32_t len = 0;
-            if (!read(&len, sizeof(len))) return std::nullopt;
-            std::string str(len, '\0');
-            if (len > 0) {
-                if (pos + len > data.size()) return std::nullopt;
-                std::memcpy(str.data(), data.data() + pos, len);
-                pos += len;
-            }
-            uint32_t strId = chunk.addString(std::move(str));
-            func.default_values.push_back(Value::makeStringValId(strId));
-        } else if (dvTag == 2) {
-            uint32_t fnIdx = 0;
-            if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
-            func.default_values.push_back(Value::makeFunctionObjId(fnIdx));
-        } else if (dvTag == 3) {
-            uint64_t raw = 0;
-            if (!read(&raw, sizeof(raw))) return std::nullopt;
-            func.default_values.push_back(Value::fromRawBits(raw));
-        } else {
-            func.default_values.push_back(std::nullopt);
+      uint8_t dvTag = 0;
+      if (!read(&dvTag, sizeof(dvTag)))
+        return std::nullopt;
+      if (dvTag == 0) {
+        func.default_values.push_back(std::nullopt);
+      } else if (dvTag == 1) {
+        uint32_t len = 0;
+        if (!read(&len, sizeof(len)))
+          return std::nullopt;
+        std::string str(len, '\0');
+        if (len > 0) {
+          if (pos + len > data.size())
+            return std::nullopt;
+          std::memcpy(str.data(), data.data() + pos, len);
+          pos += len;
         }
+        uint32_t strId = chunk.addString(std::move(str));
+        func.default_values.push_back(Value::makeStringValId(strId));
+      } else if (dvTag == 2) {
+        uint32_t fnIdx = 0;
+        if (!read(&fnIdx, sizeof(fnIdx)))
+          return std::nullopt;
+        func.default_values.push_back(Value::makeFunctionObjId(fnIdx));
+      } else if (dvTag == 3) {
+        uint64_t raw = 0;
+        if (!read(&raw, sizeof(raw)))
+          return std::nullopt;
+        func.default_values.push_back(Value::fromRawBits(raw));
+      } else {
+        func.default_values.push_back(std::nullopt);
+      }
     }
 
     // Instructions (per-function)
-        uint32_t numInstr = 0;
-        if (!read(&numInstr, sizeof(numInstr))) return std::nullopt;
-
-        for (uint32_t i = 0; i < numInstr; ++i) {
-            uint8_t opcode = 0;
-            if (!read(&opcode, sizeof(opcode))) return std::nullopt;
-
-            uint32_t numOps = 0;
-            if (!read(&numOps, sizeof(numOps))) return std::nullopt;
-
-            std::vector<Value> operands;
-            for (uint32_t o = 0; o < numOps; ++o) {
-                uint8_t opTag = 0;
-                if (!read(&opTag, sizeof(opTag))) return std::nullopt;
-                if (opTag == 1) {
-                    // StringValId operand
-                    uint32_t len = 0;
-                    if (!read(&len, sizeof(len))) return std::nullopt;
-                    std::string str(len, '\0');
-                    if (len > 0) {
-                        if (pos + len > data.size()) return std::nullopt;
-                        std::memcpy(str.data(), data.data() + pos, len);
-                        pos += len;
-                    }
-                    uint32_t strId = chunk.addString(std::move(str));
-                    operands.push_back(Value::makeStringValId(strId));
-                } else if (opTag == 2) {
-                    // FunctionObjId operand
-                    uint32_t fnIdx = 0;
-                    if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
-                    operands.push_back(Value::makeFunctionObjId(fnIdx));
-                } else {
-                    // Raw value operand
-                    uint64_t opVal = 0;
-                    if (!read(&opVal, sizeof(opVal))) return std::nullopt;
-                    operands.push_back(Value::fromRawBits(opVal));
-                }
-            }
-
-            func.instructions.push_back(Instruction(static_cast<OpCode>(opcode), std::move(operands)));
+    uint32_t numInstr = 0;
+    if (!read(&numInstr, sizeof(numInstr)))
+      return std::nullopt;
+    // Per-instruction source locations (v7+). Read before the instruction
+    // stream so a short or older entry fails cleanly rather than mis-parsing
+    // as instructions.
+    std::vector<SourceLocation> locs;
+    if (hvc_version >= 7) {
+      uint32_t numLocs = 0;
+      if (!read(&numLocs, sizeof(numLocs)))
+        return std::nullopt;
+      locs.resize(numLocs);
+      for (uint32_t i = 0; i < numLocs; ++i) {
+        uint32_t locLen = 0;
+        if (!read(&locLen, sizeof(locLen)))
+          return std::nullopt;
+        if (locLen > 0) {
+          if (pos + locLen > data.size())
+            return std::nullopt;
+          locs[i].filename.assign(reinterpret_cast<const char *>(data.data() + pos), locLen);
+          pos += locLen;
         }
-
-        chunk.addFunction(std::move(func));
+        if (!read(&locs[i].line, sizeof(locs[i].line)))
+          return std::nullopt;
+        if (!read(&locs[i].column, sizeof(locs[i].column)))
+          return std::nullopt;
+        if (!read(&locs[i].length, sizeof(locs[i].length)))
+          return std::nullopt;
+      }
     }
 
-    // Check for GLBS marker (globals section) - stop parsing here
-    if (pos + 4 <= data.size()) {
-        const uint8_t* ptr = data.data() + pos;
-        if (ptr[0] == 'G' && ptr[1] == 'L' && ptr[2] == 'B' && ptr[3] == 'S') {
-            // Found globals section marker, stop parsing
+    for (uint32_t i = 0; i < numInstr; ++i) {
+      uint8_t opcode = 0;
+      if (!read(&opcode, sizeof(opcode)))
+        return std::nullopt;
+
+      uint32_t numOps = 0;
+      if (!read(&numOps, sizeof(numOps)))
+        return std::nullopt;
+
+      std::vector<Value> operands;
+      for (uint32_t o = 0; o < numOps; ++o) {
+        uint8_t opTag = 0;
+        if (!read(&opTag, sizeof(opTag)))
+          return std::nullopt;
+        if (opTag == 1) {
+          // StringValId operand
+          uint32_t len = 0;
+          if (!read(&len, sizeof(len)))
+            return std::nullopt;
+          std::string str(len, '\0');
+          if (len > 0) {
+            if (pos + len > data.size())
+              return std::nullopt;
+            std::memcpy(str.data(), data.data() + pos, len);
+            pos += len;
+          }
+          uint32_t strId = chunk.addString(std::move(str));
+          operands.push_back(Value::makeStringValId(strId));
+        } else if (opTag == 2) {
+          // FunctionObjId operand
+          uint32_t fnIdx = 0;
+          if (!read(&fnIdx, sizeof(fnIdx)))
+            return std::nullopt;
+          operands.push_back(Value::makeFunctionObjId(fnIdx));
+        } else {
+          // Raw value operand
+          uint64_t opVal = 0;
+          if (!read(&opVal, sizeof(opVal)))
+            return std::nullopt;
+          operands.push_back(Value::fromRawBits(opVal));
         }
+      }
+
+      // Per-instruction source location (v7+), mirroring the writer.
+      std::optional<SourceLocation> loc;
+      if (hvc_version >= 7) {
+        uint8_t hasLoc = 0;
+        if (!read(&hasLoc, sizeof(hasLoc)))
+          return std::nullopt;
+        if (hasLoc) {
+          SourceLocation sl;
+          uint32_t locLen = 0;
+          if (!read(&locLen, sizeof(locLen)))
+            return std::nullopt;
+          if (locLen > 0) {
+            if (pos + locLen > data.size())
+              return std::nullopt;
+            sl.filename.assign(reinterpret_cast<const char *>(data.data() + pos), locLen);
+            pos += locLen;
+          }
+          if (!read(&sl.line, sizeof(sl.line)))
+            return std::nullopt;
+          if (!read(&sl.column, sizeof(sl.column)))
+            return std::nullopt;
+          if (!read(&sl.length, sizeof(sl.length)))
+            return std::nullopt;
+          loc = std::move(sl);
+        }
+      }
+
+      func.instructions.push_back(
+          Instruction(static_cast<OpCode>(opcode), std::move(operands), std::move(loc)));
     }
 
-    return chunk;
+    func.instruction_locations = std::move(locs);
+    chunk.addFunction(std::move(func));
+  }
+
+  // Check for GLBS marker (globals section) - stop parsing here
+  if (pos + 4 <= data.size()) {
+    const uint8_t *ptr = data.data() + pos;
+    if (ptr[0] == 'G' && ptr[1] == 'L' && ptr[2] == 'B' && ptr[3] == 'S') {
+      // Found globals section marker, stop parsing
+    }
+  }
+
+  return chunk;
 }
 
 // mmap-based deserialization for zero-copy bytecode loading
@@ -1757,12 +1999,11 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 // which also crosses the marker-less partial sections interrupted
 // writes leave behind; a backward walk from EOF stops at the first
 // gap and would keep parsing garbage as chunk data.
-static size_t chunkDataSizeExcludingGlobalsTrailer(const uint8_t* data, size_t size) {
-  return ValueSerializer::chunkDataEnd(
-      std::span<const uint8_t>(data, size));
+static size_t chunkDataSizeExcludingGlobalsTrailer(const uint8_t *data, size_t size) {
+  return ValueSerializer::chunkDataEnd(std::span<const uint8_t>(data, size));
 }
 
-std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string& filePath) {
+std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string &filePath) {
   int fd = open(filePath.c_str(), O_RDONLY);
   if (fd < 0) {
     ::havel::warn("[RTS-MMAP] failed to open {}: {}", filePath, strerror(errno));
@@ -1782,7 +2023,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
     return std::nullopt;
   }
 
-  void* mapped = mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
+  void *mapped = mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
   close(fd);
 
   if (mapped == MAP_FAILED) {
@@ -1792,7 +2033,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
 
   // Create span from mapped memory, excluding any trailing GLBS globals
   // section appended by VM::writeGlobalsToHvc
-  const uint8_t* data = static_cast<const uint8_t*>(mapped);
+  const uint8_t *data = static_cast<const uint8_t *>(mapped);
   size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data, fileSize);
   std::span<const uint8_t> span(data, effSize);
 
@@ -1800,13 +2041,14 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
   auto result = deserializeChunk(span);
 
   // Unmap
-  munmap(const_cast<void*>(static_cast<const void*>(mapped)), fileSize);
+  munmap(const_cast<void *>(static_cast<const void *>(mapped)), fileSize);
 
   return result;
 }
 
 // Load bytecode chunk from file (mmap if large, read if small)
-std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& filePath, size_t mmapThreshold) {
+std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string &filePath,
+                                                        size_t mmapThreshold) {
   struct stat st;
   if (stat(filePath.c_str(), &st) != 0) {
     return std::nullopt;
@@ -1818,41 +2060,49 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
   } else {
     ::havel::debug("[RTS-MMAP] using read for {} ({} bytes)", filePath, st.st_size);
     std::ifstream file(filePath, std::ios::binary);
-    if (!file) return std::nullopt;
-    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (!file)
+      return std::nullopt;
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
     size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data.data(), data.size());
     return deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
   }
 }
 
 size_t ValueSerializer::chunkDataEnd(std::span<const uint8_t> data) {
-  if (data.size() < 8) return data.size();
+  if (data.size() < 8)
+    return data.size();
   // No trailer at all: the whole span is chunk data (or a corrupt mix
   // we cannot reason about - caller treats it as full size).
   const auto firstIt =
-      std::search(data.begin(), data.end(),
-                  reinterpret_cast<const uint8_t *>("GLBS"),
+      std::search(data.begin(), data.end(), reinterpret_cast<const uint8_t *>("GLBS"),
                   reinterpret_cast<const uint8_t *>("GLBS") + 4);
-  if (firstIt == data.end()) return data.size();
+  if (firstIt == data.end())
+    return data.size();
   const size_t firstMarker = static_cast<size_t>(firstIt - data.begin());
-  if (firstMarker + 8 > data.size()) return data.size();
+  if (firstMarker + 8 > data.size())
+    return data.size();
   uint32_t gsize = 0;
   std::memcpy(&gsize, data.data() + firstMarker + 4, sizeof(gsize));
   // Marker must sit at chunk_end + globals_size.
-  if (static_cast<uint64_t>(gsize) + 8 > firstMarker) return data.size();
+  if (static_cast<uint64_t>(gsize) + 8 > firstMarker)
+    return data.size();
   const size_t chunkEnd = firstMarker - gsize;
-  if (chunkEnd == 0) return data.size();
+  if (chunkEnd == 0)
+    return data.size();
   return chunkEnd;
 }
 
-ValueSerializer::SourceInfo ValueSerializer::peekSourceInfoFile(const std::string& filePath) {
+ValueSerializer::SourceInfo ValueSerializer::peekSourceInfoFile(const std::string &filePath) {
   SourceInfo info;
   std::ifstream in(filePath, std::ios::binary);
-  if (!in) return info;
+  if (!in)
+    return info;
   std::array<uint8_t, 4096> buf{};
-  in.read(reinterpret_cast<char*>(buf.data()), buf.size());
+  in.read(reinterpret_cast<char *>(buf.data()), buf.size());
   const std::streamsize got = in.gcount();
-  if (got <= 0) return info;
+  if (got <= 0)
+    return info;
   info = peekSourceInfo(std::span<const uint8_t>(buf.data(), static_cast<size_t>(got)));
   return info;
 }
@@ -1860,8 +2110,9 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfoFile(const std::strin
 ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint8_t> data) {
   SourceInfo info;
   size_t pos = 0;
-  auto read = [&data, &pos](void* out, size_t size) -> bool {
-    if (pos + size > data.size()) return false;
+  auto read = [&data, &pos](void *out, size_t size) -> bool {
+    if (pos + size > data.size())
+      return false;
     std::memcpy(out, data.data() + pos, size);
     pos += size;
     return true;
@@ -1874,26 +2125,32 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
   pos = 4;
 
   uint32_t version = 0;
-  if (!read(&version, sizeof(version))) return info;
-  if (version < 2 || version > 6) return info;
+  if (!read(&version, sizeof(version)))
+    return info;
+  if (version < 2 || version > 7)
+    return info;
 
   uint32_t flags = 0;
-  if (!read(&flags, sizeof(flags))) return info;
+  if (!read(&flags, sizeof(flags)))
+    return info;
 
   if ((flags & 1) && version >= 3) {
     uint32_t idLen = 0;
-    if (!read(&idLen, sizeof(idLen))) return info;
-    if (idLen > data.size() || pos + idLen > data.size()) return info;
+    if (!read(&idLen, sizeof(idLen)))
+      return info;
+    if (idLen > data.size() || pos + idLen > data.size())
+      return info;
     pos += idLen;
   }
 
   // Pipeline fingerprint (version 5, flags bit 1)
   if ((flags & 2) && version >= 5) {
     uint32_t fpLen = 0;
-    if (!read(&fpLen, sizeof(fpLen))) return info;
-    if (fpLen > data.size() || pos + fpLen > data.size()) return info;
-    info.pipelineFingerprint.assign(reinterpret_cast<const char*>(data.data()) + pos,
-                                    fpLen);
+    if (!read(&fpLen, sizeof(fpLen)))
+      return info;
+    if (fpLen > data.size() || pos + fpLen > data.size())
+      return info;
+    info.pipelineFingerprint.assign(reinterpret_cast<const char *>(data.data()) + pos, fpLen);
     pos += fpLen;
   }
 
@@ -1903,25 +2160,29 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
   // the request's options.
   if (version >= 6) {
     uint8_t optFlags[2] = {0, 0};
-    if (!read(optFlags, sizeof(optFlags))) return info;
+    if (!read(optFlags, sizeof(optFlags)))
+      return info;
     info.compiled_strict = optFlags[0] != 0;
     info.compiled_optimized = optFlags[1] != 0;
     info.has_compile_flags = true;
   }
 
   uint32_t srcPathLen = 0;
-  if (!read(&srcPathLen, sizeof(srcPathLen))) return info;
+  if (!read(&srcPathLen, sizeof(srcPathLen)))
+    return info;
   if (srcPathLen > 0) {
-    if (pos + srcPathLen > data.size()) return info;
-    info.path.assign(reinterpret_cast<const char*>(data.data() + pos),
-                     srcPathLen);
+    if (pos + srcPathLen > data.size())
+      return info;
+    info.path.assign(reinterpret_cast<const char *>(data.data() + pos), srcPathLen);
     pos += srcPathLen;
   }
 
   uint64_t srcSize = 0;
-  if (!read(&srcSize, sizeof(srcSize))) return info;
+  if (!read(&srcSize, sizeof(srcSize)))
+    return info;
   std::array<uint8_t, 32> srcHash{};
-  if (!read(srcHash.data(), srcHash.size())) return info;
+  if (!read(srcHash.data(), srcHash.size()))
+    return info;
 
   // Writers that passed a sourcePath always record a nonzero hash
   // alongside a nonzero size; the no-sourcePath form leaves both zero.
@@ -1931,11 +2192,15 @@ ValueSerializer::SourceInfo ValueSerializer::peekSourceInfo(std::span<const uint
   return info;
 }
 
-std::string ValueSerializer::valueToJson(const Value& value) {
-  if (value.isNull()) return "null";
-  if (value.isBool()) return value.asBool() ? "true" : "false";
-  if (value.isInt()) return std::to_string(value.asInt());
-  if (value.isDouble()) return std::to_string(value.asDouble());
+std::string ValueSerializer::valueToJson(const Value &value) {
+  if (value.isNull())
+    return "null";
+  if (value.isBool())
+    return value.asBool() ? "true" : "false";
+  if (value.isInt())
+    return std::to_string(value.asInt());
+  if (value.isDouble())
+    return std::to_string(value.asDouble());
   if (value.isStringValId()) {
     // TODO: string pool integration
     return "\"<string>\"";
@@ -1943,25 +2208,32 @@ std::string ValueSerializer::valueToJson(const Value& value) {
   return "null";
 }
 
-Value ValueSerializer::jsonToValue(const std::string& json) {
+Value ValueSerializer::jsonToValue(const std::string &json) {
   // Simplified JSON parsing
-  if (json == "null") return nullptr;
-  if (json == "true") return true;
-  if (json == "false") return false;
+  if (json == "null")
+    return nullptr;
+  if (json == "true")
+    return true;
+  if (json == "false")
+    return false;
 
   // Try integer
   try {
     size_t pos;
     int64_t val = std::stoll(json, &pos);
-    if (pos == json.size()) return val;
-  } catch (...) {}
+    if (pos == json.size())
+      return val;
+  } catch (...) {
+  }
 
   // Try double
   try {
     size_t pos;
     double val = std::stod(json, &pos);
-    if (pos == json.size()) return val;
-  } catch (...) {}
+    if (pos == json.size())
+      return val;
+  } catch (...) {
+  }
 
   // String (remove quotes)
   if (json.size() >= 2 && json.front() == '"' && json.back() == '"') {

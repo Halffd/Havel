@@ -352,7 +352,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value value = locals[abs];
+    Value value = this->loadLocalRouted(abs);
 
     if (hot_func_cb_) {
       auto &frame = currentFrame();
@@ -392,8 +392,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
 
-    locals[abs] = value;
-    heap_.writeBarrier(Value::makeNull(), value);
+    this->storeLocalRouted(abs, value);
     break;
   }
 
@@ -417,8 +416,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
 
-    locals[abs] = value;
-    heap_.writeBarrier(Value::makeNull(), value);
+    this->storeLocalRouted(abs, value);
     break;
   }
 
@@ -426,7 +424,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value &val = locals[abs];
+    Value val = this->loadLocalRouted(abs);
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -440,9 +438,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     if (val.isInt()) {
       val = Value::makeInt(val.asInt() + 1);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else if (val.isDouble()) {
       val = Value::makeDouble(val.asDouble() + 1.0);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else {
       COMPILER_THROW("Cannot increment non-numeric value");
@@ -454,7 +454,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value &val = locals[abs];
+    Value val = this->loadLocalRouted(abs);
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -468,9 +468,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     if (val.isInt()) {
       val = Value::makeInt(val.asInt() - 1);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else if (val.isDouble()) {
       val = Value::makeDouble(val.asDouble() - 1.0);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else {
       COMPILER_THROW("Cannot decrement non-numeric value");
@@ -482,7 +484,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value old = locals[abs];
+    Value old = this->loadLocalRouted(abs);
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -493,9 +495,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     pushStack(old);
     if (old.isInt()) {
-      locals[abs] = Value::makeInt(old.asInt() + 1);
+      this->storeLocalRouted(abs, Value::makeInt(old.asInt() + 1));
     } else if (old.isDouble()) {
-      locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+      this->storeLocalRouted(abs, Value::makeDouble(old.asDouble() + 1.0));
     } else {
       COMPILER_THROW("Cannot increment non-numeric value");
     }
@@ -506,7 +508,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t var_index = instruction.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value old = locals[abs];
+    Value old = this->loadLocalRouted(abs);
     if (hot_func_cb_) {
       auto &frame = currentFrame();
       if (frame.ip < frame.function->type_feedback.size()) {
@@ -517,9 +519,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     pushStack(old);
     if (old.isInt()) {
-      locals[abs] = Value::makeInt(old.asInt() - 1);
+      this->storeLocalRouted(abs, Value::makeInt(old.asInt() - 1));
     } else if (old.isDouble()) {
-      locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+      this->storeLocalRouted(abs, Value::makeDouble(old.asDouble() - 1.0));
     } else {
       COMPILER_THROW("Cannot decrement non-numeric value");
     }
@@ -947,7 +949,7 @@ op_LOAD_VAR:
     uint32_t var_index = inst.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    pushStack(locals[abs]);
+    pushStack(this->loadLocalRouted(abs));
     counter++;
     if ((counter & 8191) == 0) {
       // Scheduler time-slice: when a tick budget is armed, return at this
@@ -998,7 +1000,7 @@ op_STORE_VAR:
     if (immutable_locals_.count(abs)) {
       COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
     }
-    locals[abs] = value;
+    this->storeLocalRouted(abs, value);
     counter++;
     if ((counter & 8191) == 0) {
       // Scheduler time-slice: when a tick budget is armed, return at this
@@ -1836,12 +1838,14 @@ op_INCLOCAL:
     uint32_t var_index = inst.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value &val = locals[abs];
+    Value val = this->loadLocalRouted(abs);
     if (val.isInt()) {
       val = Value::makeInt(val.asInt() + 1);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else if (val.isDouble()) {
       val = Value::makeDouble(val.asDouble() + 1.0);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else {
       COMPILER_THROW("Cannot increment non-numeric value");
@@ -1891,12 +1895,14 @@ op_DECLOCAL:
     uint32_t var_index = inst.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value &val = locals[abs];
+    Value val = this->loadLocalRouted(abs);
     if (val.isInt()) {
       val = Value::makeInt(val.asInt() - 1);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else if (val.isDouble()) {
       val = Value::makeDouble(val.asDouble() - 1.0);
+    this->storeLocalRouted(abs, val);
       pushStack(val);
     } else {
       COMPILER_THROW("Cannot decrement non-numeric value");
@@ -1946,12 +1952,12 @@ op_INCLOCAL_POST:
     uint32_t var_index = inst.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value old = locals[abs];
+    Value old = this->loadLocalRouted(abs);
     pushStack(old);
     if (old.isInt()) {
-      locals[abs] = Value::makeInt(old.asInt() + 1);
+      this->storeLocalRouted(abs, Value::makeInt(old.asInt() + 1));
     } else if (old.isDouble()) {
-      locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+      this->storeLocalRouted(abs, Value::makeDouble(old.asDouble() + 1.0));
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -1998,12 +2004,12 @@ op_DECLOCAL_POST:
     uint32_t var_index = inst.operands[0].asInt();
     uint32_t abs = this->toAbsoluteLocal(var_index);
     this->ensureLocalIndex(abs);
-    Value old = locals[abs];
+    Value old = this->loadLocalRouted(abs);
     pushStack(old);
     if (old.isInt()) {
-      locals[abs] = Value::makeInt(old.asInt() - 1);
+      this->storeLocalRouted(abs, Value::makeInt(old.asInt() - 1));
     } else if (old.isDouble()) {
-      locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+      this->storeLocalRouted(abs, Value::makeDouble(old.asDouble() - 1.0));
     }
     counter++;
     if ((counter & 8191) == 0) {

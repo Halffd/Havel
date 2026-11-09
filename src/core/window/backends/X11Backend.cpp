@@ -60,6 +60,10 @@ std::optional<X11Backend::ActiveWindowContext> X11Backend::GetActiveWindowContex
   return ActiveWindowContext{display, root, activeWindowId};
 }
 
+void X11Backend::invalidateActiveWindowCache() {
+  activeCache_ = ActiveWindowCache{};
+}
+
 wID X11Backend::getActiveWindow() {
   if (cacheValid() && activeCache_.id != 0) {
     return activeCache_.id;

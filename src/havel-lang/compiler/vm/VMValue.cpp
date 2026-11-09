@@ -11,11 +11,11 @@
 namespace havel::compiler {
 
 std::string VM::toString(const Value &value) {
- std::unordered_set<uint32_t> visited;
- return toStringInternal(value, visited, 0);
+  std::unordered_set<uint32_t> visited;
+  return toStringInternal(value, visited, 0);
 }
 
-const std::string* VM::getStringPtr(const Value &value) const {
+const std::string *VM::getStringPtr(const Value &value) const {
   if (value.isStringId()) {
     return heap_.string(value.asStringId());
   }
@@ -29,12 +29,17 @@ bool VM::toBoolPublic(const Value &value) {
   return isTruthy(value);
 }
 
-std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds, int depth) {
-  if (depth > 8) return "...";
+std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds,
+                                 int depth) {
+  if (depth > 8)
+    return "...";
 
-  if (value.isNull()) return "null";
-  if (value.isBool()) return value.asBool() ? "true" : "false";
-  if (value.isInt()) return std::to_string(value.asInt());
+  if (value.isNull())
+    return "null";
+  if (value.isBool())
+    return value.asBool() ? "true" : "false";
+  if (value.isInt())
+    return std::to_string(value.asInt());
   if (value.isDouble()) {
     std::ostringstream out;
     out << value.asDouble();
@@ -58,81 +63,85 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     }
     return "<string:" + std::to_string(value.asStringId()) + ">";
   }
-   if (value.isFunctionObjId()) {
-      // Function object from bytecode - use metadata for display
-      uint32_t idx = value.asFunctionObjId();
+  if (value.isFunctionObjId()) {
+    // Function object from bytecode - use metadata for display
+    uint32_t idx = value.asFunctionObjId();
+    const BytecodeFunction *bf = nullptr;
+    if (current_chunk && idx < current_chunk->getFunctionCount()) {
+      bf = current_chunk->getFunction(idx);
+    }
+    if (!bf) {
+      for (const auto &pc : persistent_chunks_) {
+        if (idx < pc->getFunctionCount()) {
+          const auto *candidate = pc->getFunction(idx);
+          if (candidate && candidate->name != "__main__") {
+            bf = candidate;
+            break;
+          }
+        }
+      }
+    }
+    if (bf) {
+      std::string result = "<fn " + bf->name;
+      if (!bf->param_names.empty()) {
+        result += "(";
+        for (size_t i = 0; i < bf->param_names.size(); ++i) {
+          if (i > 0)
+            result += ", ";
+          result += bf->param_names[i];
+        }
+        result += ")";
+      }
+      result += ">";
+      return result;
+    }
+    return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
+  }
+  if (value.isClosureId()) {
+    // Closure - use metadata for display
+    auto *closure = heap_.closure(value.asClosureId());
+    if (closure) {
+      uint32_t idx = closure->function_index;
       const BytecodeFunction *bf = nullptr;
       if (current_chunk && idx < current_chunk->getFunctionCount()) {
-         bf = current_chunk->getFunction(idx);
+        bf = current_chunk->getFunction(idx);
       }
       if (!bf) {
-         for (const auto &pc : persistent_chunks_) {
-            if (idx < pc->getFunctionCount()) {
-               const auto *candidate = pc->getFunction(idx);
-               if (candidate && candidate->name != "__main__") {
-                  bf = candidate;
-                  break;
-               }
+        for (const auto &pc : persistent_chunks_) {
+          if (idx < pc->getFunctionCount()) {
+            const auto *candidate = pc->getFunction(idx);
+            if (candidate && candidate->name != "__main__") {
+              bf = candidate;
+              break;
             }
-         }
+          }
+        }
       }
       if (bf) {
-         std::string result = "<fn " + bf->name;
-         if (!bf->param_names.empty()) {
-            result += "(";
-            for (size_t i = 0; i < bf->param_names.size(); ++i) {
-               if (i > 0) result += ", ";
-               result += bf->param_names[i];
-            }
-            result += ")";
-         }
-         result += ">";
-         return result;
+        std::string result = "<fn " + bf->name;
+        if (!bf->param_names.empty()) {
+          result += "(";
+          for (size_t i = 0; i < bf->param_names.size(); ++i) {
+            if (i > 0)
+              result += ", ";
+            result += bf->param_names[i];
+          }
+          result += ")";
+        }
+        result += ">";
+        return result;
       }
-      return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
-  }
-   if (value.isClosureId()) {
-      // Closure - use metadata for display
-      auto *closure = heap_.closure(value.asClosureId());
-      if (closure) {
-         uint32_t idx = closure->function_index;
-         const BytecodeFunction *bf = nullptr;
-         if (current_chunk && idx < current_chunk->getFunctionCount()) {
-            bf = current_chunk->getFunction(idx);
-         }
-         if (!bf) {
-            for (const auto &pc : persistent_chunks_) {
-               if (idx < pc->getFunctionCount()) {
-                  const auto *candidate = pc->getFunction(idx);
-                  if (candidate && candidate->name != "__main__") {
-                     bf = candidate;
-                     break;
-                  }
-               }
-            }
-         }
-         if (bf) {
-            std::string result = "<fn " + bf->name;
-            if (!bf->param_names.empty()) {
-               result += "(";
-               for (size_t i = 0; i < bf->param_names.size(); ++i) {
-                  if (i > 0) result += ", ";
-                  result += bf->param_names[i];
-               }
-               result += ")";
-            }
-            result += ">";
-            return result;
-         }
-      }
-      return "<closure:" + std::to_string(value.asClosureId()) + ">";
+    }
+    return "<closure:" + std::to_string(value.asClosureId()) + ">";
   }
   if (value.isArrayId()) {
     auto *arr = heap_.array(value.asArrayId());
-    if (!arr) return "[]";
+    if (!arr)
+      return "[]";
     std::string result = "[";
     for (size_t i = 0; i < arr->size(); ++i) {
-      if (i > 0) result += ", ";
+      if (i > 0)
+        result += ", ";
       result += toStringInternal((*arr)[i], visitedIds, depth + 1);
     }
     result += "]";
@@ -140,222 +149,252 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
   }
   if (value.isObjectId()) {
     auto *obj = heap_.object(value.asObjectId());
-if (!obj) return "{}";
-if (visitedIds.count(value.asObjectId())) return "{...}";
-visitedIds.insert(value.asObjectId());
+    if (!obj)
+      return "{}";
+    if (visitedIds.count(value.asObjectId()))
+      return "{...}";
+    visitedIds.insert(value.asObjectId());
 
-auto* isClass = obj->get("__is_class");
-auto* isStruct = obj->get("__is_struct");
+    auto *isClass = obj->get("__is_class");
+    auto *isStruct = obj->get("__is_struct");
 
-if (isClass && isClass->isBool() && isClass->asBool()) {
-auto* nameVal = obj->get("__name");
-std::string className = (nameVal && nameVal->isStringValId() && current_chunk)
-? current_chunk->getString(nameVal->asStringValId()) : "class";
-visitedIds.erase(value.asObjectId());
-return "<class " + className + ">";
-}
-if (isStruct && isStruct->isBool() && isStruct->asBool()) {
-auto* nameVal = obj->get("__name");
-std::string structName = (nameVal && nameVal->isStringValId() && current_chunk)
-? current_chunk->getString(nameVal->asStringValId()) : "struct";
-visitedIds.erase(value.asObjectId());
-return "<struct " + structName + ">";
-}
-
- Value* classOrStruct = obj->get("__class");
- if (!classOrStruct) classOrStruct = obj->get("__struct");
-
- if (classOrStruct && classOrStruct->isObjectId()) {
- auto* proto = heap_.object(classOrStruct->asObjectId());
- while (proto) {
-		for (const char *name : {"op_toString", "toString"}) {
-			auto* methodVal = proto->get(name);
-			if (methodVal && (methodVal->isFunctionObjId() || methodVal->isClosureId() || methodVal->isHostFuncId())) {
-				visitedIds.erase(value.asObjectId());
-				try {
-					Value result = callFunctionSync(*methodVal, {value});
-					visitedIds.insert(value.asObjectId());
-					if (result.isStringValId() && current_chunk) {
-						return current_chunk->getString(result.asStringValId());
-					} else if (result.isStringId()) {
-						if (auto* s = heap_.string(result.asStringId())) return *s;
-					} else if (result.isInt()) {
-						return std::to_string(result.asInt());
-					} else if (result.isDouble()) {
-						std::ostringstream out;
-						out << result.asDouble();
-						return out.str();
-					} else if (result.isBool()) {
-						return result.asBool() ? "true" : "false";
-					} else if (!result.isNull()) {
-						return toStringInternal(result, visitedIds, depth + 1);
-					}
-				} catch (...) {
-				}
-				visitedIds.insert(value.asObjectId());
-				break;
-			}
-		}
- auto* parentVal = proto->get("__parent");
- if (parentVal && parentVal->isObjectId()) {
- proto = heap_.object(parentVal->asObjectId());
- } else {
- break;
- }
- }
- }
-
- std::string result = "{";
- bool first = true;
- for (const auto &[key, val] : *obj) {
- if (key.size() >= 2 && key[0] == '_' && key[1] == '_') {
- continue;
- }
- if (!first) result += ", ";
- first = false;
- result += key + ": " + toStringInternal(val, visitedIds, depth + 1);
- }
- result += "}";
- return result;
-  }
-    if (value.isHostFuncId()) {
-        uint32_t idx = value.asHostFuncId();
-        if (idx < host_function_names_.size()) {
-            return "<fn " + host_function_names_[idx] + ">";
-        }
-        return "<fn:" + std::to_string(idx) + ">";
+    if (isClass && isClass->isBool() && isClass->asBool()) {
+      auto *nameVal = obj->get("__name");
+      std::string className = (nameVal && nameVal->isStringValId() && current_chunk)
+                                  ? current_chunk->getString(nameVal->asStringValId())
+                                  : "class";
+      visitedIds.erase(value.asObjectId());
+      return "<class " + className + ">";
     }
-    if (value.isSetId()) {
-        auto *set = heap_.set(value.asSetId());
-        if (!set) return "{}";
-        std::string result = "{";
+    if (isStruct && isStruct->isBool() && isStruct->asBool()) {
+      auto *nameVal = obj->get("__name");
+      std::string structName = (nameVal && nameVal->isStringValId() && current_chunk)
+                                   ? current_chunk->getString(nameVal->asStringValId())
+                                   : "struct";
+      visitedIds.erase(value.asObjectId());
+      return "<struct " + structName + ">";
+    }
+
+    Value *classOrStruct = obj->get("__class");
+    if (!classOrStruct)
+      classOrStruct = obj->get("__struct");
+
+    if (classOrStruct && classOrStruct->isObjectId()) {
+      auto *proto = heap_.object(classOrStruct->asObjectId());
+      while (proto) {
+        for (const char *name : {"op_toString", "toString"}) {
+          auto *methodVal = proto->get(name);
+          if (methodVal && (methodVal->isFunctionObjId() || methodVal->isClosureId() ||
+                            methodVal->isHostFuncId())) {
+            visitedIds.erase(value.asObjectId());
+            try {
+              Value result = callFunctionSync(*methodVal, {value});
+              visitedIds.insert(value.asObjectId());
+              if (result.isStringValId() && current_chunk) {
+                return current_chunk->getString(result.asStringValId());
+              } else if (result.isStringId()) {
+                if (auto *s = heap_.string(result.asStringId()))
+                  return *s;
+              } else if (result.isInt()) {
+                return std::to_string(result.asInt());
+              } else if (result.isDouble()) {
+                std::ostringstream out;
+                out << result.asDouble();
+                return out.str();
+              } else if (result.isBool()) {
+                return result.asBool() ? "true" : "false";
+              } else if (!result.isNull()) {
+                return toStringInternal(result, visitedIds, depth + 1);
+              }
+            } catch (...) {
+            }
+            visitedIds.insert(value.asObjectId());
+            break;
+          }
+        }
+        auto *parentVal = proto->get("__parent");
+        if (parentVal && parentVal->isObjectId()) {
+          proto = heap_.object(parentVal->asObjectId());
+        } else {
+          break;
+        }
+      }
+    }
+
+    std::string result = "{";
+    bool first = true;
+    for (const auto &[key, val] : *obj) {
+      if (key.size() >= 2 && key[0] == '_' && key[1] == '_') {
+        continue;
+      }
+      if (!first)
+        result += ", ";
+      first = false;
+      result += key + ": " + toStringInternal(val, visitedIds, depth + 1);
+    }
+    result += "}";
+    return result;
+  }
+  if (value.isHostFuncId()) {
+    uint32_t idx = value.asHostFuncId();
+    if (idx < host_function_names_.size()) {
+      return "<fn " + host_function_names_[idx] + ">";
+    }
+    return "<fn:" + std::to_string(idx) + ">";
+  }
+  if (value.isSetId()) {
+    auto *set = heap_.set(value.asSetId());
+    if (!set)
+      return "{}";
+    std::string result = "{";
     bool first = true;
     for (const auto &pair : *set) {
-      if (!first) result += ", ";
+      if (!first)
+        result += ", ";
       first = false;
       result += pair.first;
     }
-        result += "}";
-        return result;
+    result += "}";
+    return result;
+  }
+  if (value.isEnumId()) {
+    uint32_t enumId = value.asEnumId();
+    uint32_t typeId = value.asEnumTypeId();
+    auto it = heap_.enums_.find(enumId);
+    if (it == heap_.enums_.end())
+      return "<enum:invalid>";
+    uint32_t tag = it->second.first;
+    const auto &payload = it->second.second;
+    std::string typeName =
+        (typeId < heap_.enumTypes_.size()) ? heap_.enumTypes_[typeId].name : "enum";
+    std::string variantName =
+        (typeId < heap_.enumTypes_.size() && tag < heap_.enumTypes_[typeId].variantNames.size())
+            ? heap_.enumTypes_[typeId].variantNames[tag]
+            : std::to_string(tag);
+    std::string result = typeName + "." + variantName;
+    if (!payload.empty()) {
+      result += "(";
+      for (size_t i = 0; i < payload.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += toStringInternal(payload[i], visitedIds, depth + 1);
+      }
+      result += ")";
     }
-    if (value.isEnumId()) {
-        uint32_t enumId = value.asEnumId();
-        uint32_t typeId = value.asEnumTypeId();
-        auto it = heap_.enums_.find(enumId);
-        if (it == heap_.enums_.end()) return "<enum:invalid>";
-        uint32_t tag = it->second.first;
-        const auto &payload = it->second.second;
-        std::string typeName = (typeId < heap_.enumTypes_.size()) ? heap_.enumTypes_[typeId].name : "enum";
-        std::string variantName = (typeId < heap_.enumTypes_.size() && tag < heap_.enumTypes_[typeId].variantNames.size())
-            ? heap_.enumTypes_[typeId].variantNames[tag] : std::to_string(tag);
-        std::string result = typeName + "." + variantName;
-        if (!payload.empty()) {
-            result += "(";
-            for (size_t i = 0; i < payload.size(); ++i) {
-                if (i > 0) result += ", ";
-                result += toStringInternal(payload[i], visitedIds, depth + 1);
-            }
-            result += ")";
-        }
-        return result;
-    }
-    if (value.isChannelId()) {
-        return "<channel:" + std::to_string(value.asChannelId()) + ">";
-    }
-    if (value.isPtr()) {
-        return "<ptr:" + std::to_string(reinterpret_cast<uint64_t>(value.asPtr())) + ">";
-    }
-    return "unknown";
+    return result;
+  }
+  if (value.isChannelId()) {
+    return "<channel:" + std::to_string(value.asChannelId()) + ">";
+  }
+  if (value.isIntervalId()) {
+    return "<interval:" + std::to_string(value.asIntervalId()) + ">";
+  }
+  if (value.isTimeoutId()) {
+    return "<timeout:" + std::to_string(value.asTimeoutId()) + ">";
+  }
+  if (value.isWaitGroupId()) {
+    return "<waitgroup:" + std::to_string(value.asWaitGroupId()) + ">";
+  }
+  if (value.isCoroutineId()) {
+    return "<coroutine:" + std::to_string(value.asCoroutineId()) + ">";
+  }
+  if (value.isThreadId()) {
+    return "<thread:" + std::to_string(value.asThreadId()) + ">";
+  }
+  if (value.isPtr()) {
+    return "<ptr:" + std::to_string(reinterpret_cast<uint64_t>(value.asPtr())) + ">";
+  }
+  return "unknown";
 }
 
 // Type conversion helpers
 int64_t VM::toInt(const Value &value) const {
-    if (value.isInt()) {
-        return value.asInt();
+  if (value.isInt()) {
+    return value.asInt();
+  }
+  if (value.isDouble()) {
+    return static_cast<int64_t>(value.asDouble());
+  }
+  if (value.isBool()) {
+    return value.asBool() ? 1 : 0;
+  }
+  if (value.isStringValId()) {
+    if (current_chunk) {
+      try {
+        return std::stoll(current_chunk->getString(value.asStringValId()));
+      } catch (...) {
+        return 0;
+      }
     }
-    if (value.isDouble()) {
-        return static_cast<int64_t>(value.asDouble());
+  }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      try {
+        return std::stoll(*s);
+      } catch (...) {
+        return 0;
+      }
     }
-    if (value.isBool()) {
-        return value.asBool() ? 1 : 0;
-    }
-    if (value.isStringValId()) {
-        if (current_chunk) {
-            try {
-                return std::stoll(current_chunk->getString(value.asStringValId()));
-            } catch (...) {
-                return 0;
-            }
-        }
-    }
-    if (value.isStringId()) {
-        if (auto *s = heap_.string(value.asStringId())) {
-            try {
-                return std::stoll(*s);
-            } catch (...) {
-                return 0;
-            }
-        }
-    }
-    return 0;
+  }
+  return 0;
 }
 
 double VM::toFloat(const Value &value) const {
-    if (value.isDouble()) {
-        return value.asDouble();
+  if (value.isDouble()) {
+    return value.asDouble();
+  }
+  if (value.isInt()) {
+    return static_cast<double>(value.asInt());
+  }
+  if (value.isBool()) {
+    return value.asBool() ? 1.0 : 0.0;
+  }
+  if (value.isStringValId()) {
+    if (current_chunk) {
+      try {
+        return std::stod(current_chunk->getString(value.asStringValId()));
+      } catch (...) {
+        return 0.0;
+      }
     }
-    if (value.isInt()) {
-        return static_cast<double>(value.asInt());
+  }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      try {
+        return std::stod(*s);
+      } catch (...) {
+        return 0.0;
+      }
     }
-    if (value.isBool()) {
-        return value.asBool() ? 1.0 : 0.0;
-    }
-    if (value.isStringValId()) {
-        if (current_chunk) {
-            try {
-                return std::stod(current_chunk->getString(value.asStringValId()));
-            } catch (...) {
-                return 0.0;
-            }
-        }
-    }
-    if (value.isStringId()) {
-        if (auto *s = heap_.string(value.asStringId())) {
-            try {
-                return std::stod(*s);
-            } catch (...) {
-                return 0.0;
-            }
-        }
-    }
-    return 0.0;
+  }
+  return 0.0;
 }
 
 bool VM::toBool(const Value &value) const {
-    if (value.isBool()) {
-        return value.asBool();
+  if (value.isBool()) {
+    return value.asBool();
+  }
+  if (value.isInt()) {
+    return value.asInt() != 0;
+  }
+  if (value.isDouble()) {
+    return value.asDouble() != 0.0;
+  }
+  if (value.isStringValId()) {
+    if (current_chunk) {
+      return !current_chunk->getString(value.asStringValId()).empty();
     }
-    if (value.isInt()) {
-        return value.asInt() != 0;
+    return true;
+  }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      return !s->empty();
     }
-    if (value.isDouble()) {
-        return value.asDouble() != 0.0;
-    }
-    if (value.isStringValId()) {
-        if (current_chunk) {
-            return !current_chunk->getString(value.asStringValId()).empty();
-        }
-        return true;
-    }
-    if (value.isStringId()) {
-        if (auto *s = heap_.string(value.asStringId())) {
-            return !s->empty();
-        }
-        return true;
-    }
-    if (value.isRegexValId()) {
-        return true;
-    }
+    return true;
+  }
+  if (value.isRegexValId()) {
+    return true;
+  }
   // Collections: JavaScript truthiness (all collections are truthy, even empty)
   if (value.isArrayId() || value.isObjectId() || value.isSetId()) {
     return true;
@@ -386,10 +425,9 @@ bool VM::valuesEqualDeep(const Value &left, const Value &right) const {
   return valuesEqualDeep(left, right, visited_array_pairs, visited_object_pairs);
 }
 
-bool VM::valuesEqualDeep(
-    const Value &left, const Value &right,
-    std::unordered_set<uint64_t> &visited_array_pairs,
-    std::unordered_set<uint64_t> &visited_object_pairs) const {
+bool VM::valuesEqualDeep(const Value &left, const Value &right,
+                         std::unordered_set<uint64_t> &visited_array_pairs,
+                         std::unordered_set<uint64_t> &visited_object_pairs) const {
   if (left.isNull() || right.isNull()) {
     return left.isNull() && right.isNull();
   }
@@ -408,8 +446,8 @@ bool VM::valuesEqualDeep(
     auto r = valueAsString(right);
     return r.has_value() && (*l == *r);
   }
-  if (left.isStringValId() || left.isStringId() || left.isRegexValId() ||
-      right.isStringValId() || right.isStringId() || right.isRegexValId()) {
+  if (left.isStringValId() || left.isStringId() || left.isRegexValId() || right.isStringValId() ||
+      right.isStringId() || right.isRegexValId()) {
     return false;
   }
 
@@ -437,8 +475,7 @@ bool VM::valuesEqualDeep(
     }
 
     for (size_t i = 0; i < l_arr->size(); i++) {
-      if (!valuesEqualDeep((*l_arr)[i], (*r_arr)[i], visited_array_pairs,
-                           visited_object_pairs)) {
+      if (!valuesEqualDeep((*l_arr)[i], (*r_arr)[i], visited_array_pairs, visited_object_pairs)) {
         return false;
       }
     }
@@ -473,8 +510,7 @@ bool VM::valuesEqualDeep(
       if (it == r_obj->end()) {
         return false;
       }
-      if (!valuesEqualDeep(l_value, it->second, visited_array_pairs,
-                           visited_object_pairs)) {
+      if (!valuesEqualDeep(l_value, it->second, visited_array_pairs, visited_object_pairs)) {
         return false;
       }
     }
@@ -490,53 +526,63 @@ bool VM::valuesEqualDeep(
   if (left.isFunctionObjId() && right.isFunctionObjId()) {
     return left.asFunctionObjId() == right.asFunctionObjId();
   }
-    if (left.isHostFuncId() && right.isHostFuncId()) {
-        return left.asHostFuncId() == right.asHostFuncId();
-    }
+  if (left.isHostFuncId() && right.isHostFuncId()) {
+    return left.asHostFuncId() == right.asHostFuncId();
+  }
 
-    if (left.isEnumId() && right.isEnumId()) {
-        if (left.asEnumId() == right.asEnumId()) return true;
-        uint32_t lId = left.asEnumId();
-        uint32_t rId = right.asEnumId();
-        auto lIt = heap_.enums_.find(lId);
-        auto rIt = heap_.enums_.find(rId);
-        if (lIt == heap_.enums_.end() || rIt == heap_.enums_.end()) return false;
-        if (left.asEnumTypeId() != right.asEnumTypeId()) return false;
-        if (lIt->second.first != rIt->second.first) return false;
-        const auto &lPayload = lIt->second.second;
-        const auto &rPayload = rIt->second.second;
-        if (lPayload.size() != rPayload.size()) return false;
-        for (size_t i = 0; i < lPayload.size(); ++i) {
-            if (!valuesEqualDeep(lPayload[i], rPayload[i], visited_array_pairs, visited_object_pairs)) return false;
-        }
-        return true;
-    }
-
-    if (left.isSetId() && right.isSetId()) {
-      const auto *lset = heap_.set(left.asSetId());
-      const auto *rset = heap_.set(right.asSetId());
-      if (!lset || !rset) return false;
-      if (lset->size() != rset->size()) return false;
-      for (const auto &elem : *lset) {
-        bool found = false;
-        for (const auto &r_elem : *rset) {
-          if (valuesEqualDeep(elem.second, r_elem.second, visited_array_pairs, visited_object_pairs)) {
-            found = true;
-            break;
-          }
-        }
-        if (!found) return false;
-      }
+  if (left.isEnumId() && right.isEnumId()) {
+    if (left.asEnumId() == right.asEnumId())
       return true;
+    uint32_t lId = left.asEnumId();
+    uint32_t rId = right.asEnumId();
+    auto lIt = heap_.enums_.find(lId);
+    auto rIt = heap_.enums_.find(rId);
+    if (lIt == heap_.enums_.end() || rIt == heap_.enums_.end())
+      return false;
+    if (left.asEnumTypeId() != right.asEnumTypeId())
+      return false;
+    if (lIt->second.first != rIt->second.first)
+      return false;
+    const auto &lPayload = lIt->second.second;
+    const auto &rPayload = rIt->second.second;
+    if (lPayload.size() != rPayload.size())
+      return false;
+    for (size_t i = 0; i < lPayload.size(); ++i) {
+      if (!valuesEqualDeep(lPayload[i], rPayload[i], visited_array_pairs, visited_object_pairs))
+        return false;
     }
+    return true;
+  }
 
-    return false;
+  if (left.isSetId() && right.isSetId()) {
+    const auto *lset = heap_.set(left.asSetId());
+    const auto *rset = heap_.set(right.asSetId());
+    if (!lset || !rset)
+      return false;
+    if (lset->size() != rset->size())
+      return false;
+    for (const auto &elem : *lset) {
+      bool found = false;
+      for (const auto &r_elem : *rset) {
+        if (valuesEqualDeep(elem.second, r_elem.second, visited_array_pairs,
+                            visited_object_pairs)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found)
+        return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 std::optional<std::string> VM::resolveKey(const Value &value) const {
-    const auto& cf = currentFrame();
-    const BytecodeChunk* chunk = cf.chunk ? cf.chunk : current_chunk;
-    return ::havel::compiler::keyFromValue(value, &heap_, chunk);
+  const auto &cf = currentFrame();
+  const BytecodeChunk *chunk = cf.chunk ? cf.chunk : current_chunk;
+  return ::havel::compiler::keyFromValue(value, &heap_, chunk);
 }
 
 // Value utility functions
@@ -593,7 +639,8 @@ bool VM::isTruthy(const Value &value) {
   }
 
   // Step 8: functions are always truthy
-    if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId() || value.isBoundMethodId()) {
+  if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId() ||
+      value.isBoundMethodId()) {
     return true;
   }
 
@@ -603,9 +650,9 @@ bool VM::isTruthy(const Value &value) {
   // silently never ran its body - the timer kept ticking forever and the
   // handle was then dropped. A handle is either a live object or null, and
   // null is already handled in step 1.
-  if (value.isIntervalId() || value.isTimeoutId() || value.isChannelId() ||
-      value.isWaitGroupId() || value.isThreadId() || value.isCoroutineId() ||
-      value.isIteratorId() || value.isStringCursorId()) {
+  if (value.isIntervalId() || value.isTimeoutId() || value.isChannelId() || value.isWaitGroupId() ||
+      value.isThreadId() || value.isCoroutineId() || value.isIteratorId() ||
+      value.isStringCursorId()) {
     return true;
   }
 
@@ -672,27 +719,27 @@ std::optional<int64_t> VM::parseSleepUntilTarget(const Value &value) const {
 }
 
 std::string VM::resolveStringKey(const Value &value) const {
-    if (value.isStringValId()) {
-        uint32_t id = value.asStringValId();
-        if (current_chunk) {
-            auto& strs = current_chunk->getAllStrings();
-            if (id < strs.size()) {
-                return strs[id];
-            }
-        }
-        if (main_chunk_) {
-            auto& strs = main_chunk_->getAllStrings();
-            if (id < strs.size()) {
-                return strs[id];
-            }
-        }
+  if (value.isStringValId()) {
+    uint32_t id = value.asStringValId();
+    if (current_chunk) {
+      auto &strs = current_chunk->getAllStrings();
+      if (id < strs.size()) {
+        return strs[id];
+      }
     }
-    if (value.isStringId()) {
-        if (auto *s = heap_.string(value.asStringId())) {
-            return *s;
-        }
+    if (main_chunk_) {
+      auto &strs = main_chunk_->getAllStrings();
+      if (id < strs.size()) {
+        return strs[id];
+      }
     }
-    return const_cast<VM*>(this)->toString(value);
+  }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      return *s;
+    }
+  }
+  return const_cast<VM *>(this)->toString(value);
 }
 
 } // namespace havel::compiler

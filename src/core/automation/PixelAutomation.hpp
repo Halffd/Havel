@@ -12,7 +12,10 @@
 
 namespace havel {
 
-struct Color {
+// HAVEL_EXPORT: the pixel module plugin resolves Color::fromHex from the
+// host executable; without the attribute the symbol compiles hidden and
+// dlopen fails with an undefined symbol.
+struct HAVEL_EXPORT Color {
     int r = 0, g = 0, b = 0, a = 255;
 
     Color() = default;

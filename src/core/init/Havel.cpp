@@ -153,6 +153,7 @@ void Havel::initialize(bool isStartup) {
   hostContext->hotkeyManager = hotkeyManager.get();
   hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
+  hostContext->automationManager = automationManager.get();
   hostContext->brightnessManager = brightnessManager.get();
 
   // Create VM
@@ -328,7 +329,15 @@ void Havel::initialize(bool isStartup) {
     if (!scheduler || !bytecodeVM)
       return;
     auto *vm_ = bytecodeVM.get();
-    if (auto *watcherRegistry = executionEngine->getWatcherRegistry()) {
+    // Fibers whose `when` condition transitioned on this change. Their
+    // bodies run AFTER the conditional-hotkey grab re-eval below so a when
+    // exit branch observes the post-transition grab/enabled state. Running
+    // the bodies first showed a stale snapshot: the exit branch read
+    // enabled=true grab=true and the flip only landed afterwards
+    // (scripts/tests/test_when_exit_observes_ungrab.hv pins this ordering).
+    std::vector<compiler::Fiber *> firedBodies;
+    auto *watcherRegistry = executionEngine->getWatcherRegistry();
+    if (watcherRegistry) {
       auto fired = watcherRegistry->onVariableChanged(
           var_name,
           [vm_, watcherRegistry](uint32_t wid) -> bool {
@@ -360,17 +369,7 @@ void Havel::initialize(bool isStartup) {
             } catch (...) {
             }
           });
-      for (auto *fiber : fired) {
-        if (fiber) {
-          try {
-            compiler::Value body_func =
-                compiler::Value::makeFunctionObjId(fiber->current_function_id);
-            vm_->call(body_func, {});
-          } catch (...) {
-          }
-        }
-      }
-      vm_->processSignalBindings(var_name);
+      firedBodies.assign(fired.begin(), fired.end());
     }
     scheduler->forEachConditionalHotkey([vm_, this, &var_name](compiler::Scheduler::Goroutine *g) {
       if (!g)
@@ -389,7 +388,14 @@ void Havel::initialize(bool isStartup) {
       if (g->suspension_reason.load(std::memory_order_acquire) !=
           compiler::Scheduler::SuspensionReason::HotkeyWait)
         return;
-      if (g->hotkey_condition_deps.empty() || g->hotkey_condition_deps.count(var_name) == 0)
+      // "__active_window__" is the focus-transition sentinel from the
+      // periodic window poll: conditions that read window state record
+      // only the static "window" namespace global, so match ALL
+      // conditional hotkeys on this sentinel and let the live re-eval
+      // decide.
+      if (var_name != "__active_window__" &&
+          (g->hotkey_condition_deps.empty() ||
+           g->hotkey_condition_deps.count(var_name) == 0))
         return;
       auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
       if (!condVal)
@@ -415,20 +421,47 @@ void Havel::initialize(bool isStartup) {
       g->hotkey_condition_last_result = conditionMet;
       if (prev == conditionMet)
         return;
-      if (conditionMet) {
-        if (!g->hotkey_condition_alias.empty()) {
-          if (hotkeyManager)
-            hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, true);
-          ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
-        }
-      } else {
-        if (!g->hotkey_condition_alias.empty()) {
-          if (hotkeyManager)
-            hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, false);
-          ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
-        }
+      // Id-based, never alias: several `when` branches can register the
+      // same key string (one goroutine each), so SetHotkeyGrab(alias)
+      // would toggle the FIRST hotkey registered under that alias — a
+      // different branch's grab. This path mirrored the re-eval code in
+      // ExecutionEngine/HotkeyModule after they were fixed to route by
+      // id; it must follow. hotkey_id is the HotkeyModule context id,
+      // hotkey_os_id the IO-side registration id (0 = no OS grab).
+      if (debugging::debug_var_changed) {
+        ::havel::debug("[Havel] cond gid={} alias='{}' {}->{} osId={} grab={}",
+                       g->id, g->hotkey_condition_alias, prev, conditionMet,
+                       g->hotkey_os_id, conditionMet);
+      }
+      if (g->hotkey_os_id > 0) {
+        if (hotkeyManager)
+          hotkeyManager->SetHotkeyGrabById(g->hotkey_os_id, conditionMet);
+      } else if (!g->hotkey_condition_alias.empty()) {
+        if (hotkeyManager)
+          hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, conditionMet);
+      }
+      if (!g->hotkey_id.empty()) {
+        ::havel::stdlib::HotkeyModule::setGrabById(*vm_, g->hotkey_id, conditionMet);
+      } else if (!g->hotkey_condition_alias.empty()) {
+        ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, conditionMet);
       }
     });
+
+    // When-branch bodies run last: an exit branch observes the grab/enabled
+    // state the re-eval above just applied. processSignalBindings keeps its
+    // historical position relative to the bodies.
+    for (auto *fiber : firedBodies) {
+      if (fiber) {
+        try {
+          compiler::Value body_func =
+              compiler::Value::makeFunctionObjId(fiber->current_function_id);
+          vm_->call(body_func, {});
+        } catch (...) {
+        }
+      }
+    }
+    if (watcherRegistry)
+      vm_->processSignalBindings(var_name);
   });
 
   if (hotkeyManager) {
@@ -700,11 +733,47 @@ void Havel::initialize(bool isStartup) {
       while (timerRunning) {
         auto now = std::chrono::steady_clock::now();
 
-        // Window check (only if timer is still running)
+        // Window check: detect active-window transitions and re-evaluate
+        // conditional hotkeys whose conditions read window state.
+        // `when window.title contains "x" { K => {...} }` compiles to a
+        // condition closure whose dependency set records only the static
+        // `window` namespace global — nothing ever stores to it, so the
+        // dep-driven re-eval (onVariableChanged) never fires for focus
+        // changes. Without this poll, grab state was frozen at the value
+        // computed at registration.
+        // Runs on the timer thread; the re-eval itself is deferred to the
+        // VM thread (callFunctionSync from here would cross live VM
+        // state, the window_goroutine_monitor wedge). emitVariableChanged
+        // routes through setOnVarChangedSync, which re-evaluates
+        // synchronously on the VM thread via the scheduler's deferred
+        // queue.
         if (timerRunning &&
             std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >=
                 WINDOW_CHECK_INTERVAL_MS) {
           if (timerRunning && hotkeyManager) {
+            static uint64_t lastActiveWindow = 0;
+            uint64_t active = 0;
+            try {
+              active = WindowManager::getActiveWindow();
+            } catch (...) {
+            }
+            if (active != lastActiveWindow) {
+              if (debugging::debug_var_changed) {
+                ::havel::debug(
+                    "[Havel] focus poll t={}us prev=0x{:x} cur=0x{:x}",
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count(),
+                    lastActiveWindow, active);
+              }
+              lastActiveWindow = active;
+              WindowManager::InvalidateActiveWindowCache();
+              if (bytecodeVM && scheduler) {
+                scheduler->deferToVM([vm = bytecodeVM.get()]() {
+                  vm->emitVariableChanged("__active_window__");
+                });
+              }
+            }
           }
           lastWindowCheck = now;
         }

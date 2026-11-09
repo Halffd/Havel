@@ -1,0 +1,129 @@
+// test_closure_capture_constructs.hv — closure capture across the
+// constructs that carry closures: hotkey actions, when-blocks, mode
+// conditions, goroutines, loops, nested closures and class methods.
+//
+// Background: a lambda's frame was sized from the compiler's own local
+// counter instead of the resolver's slot count, so a local declared
+// before a loop was clobbered by the loop body inside a closure (see
+// test_closure_frame_locals.hv for that shape). This test covers the
+// CONSTRUCTS that host closures, so a regression in any of them is
+// caught here.
+//
+// Fixed: captured locals are boxed (born-closed cells shared by the
+// defining function and every closure), so a goroutine's write to an
+// enclosing FUNCTION-LOCAL is now visible to the parent. That case is
+// covered by scripts/smoke/test_goroutine_local_write.hv; the object and
+// module-global paths below are regression locks for the always-working
+// routes.
+
+fails = 0
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        fails = fails + 1
+    }
+}
+
+// (1) hotkey action captures a function-local
+fn hotkeyCase() {
+    local = 5
+    F19 => {
+        print("HOTKEY-LOCAL ${local}")
+    }
+    return local
+}
+check("hotkey action keeps its local", hotkeyCase() == 5)
+
+// (2) when-block hotkey captures a function-local
+fn whenCase() {
+    local = 6
+    F17 when local == 6 => {
+        print("WHEN-LOCAL ${local}")
+    }
+    return local
+}
+check("when-block keeps its local", whenCase() == 6)
+
+// (3) mode-conditioned hotkey captures a function-local
+fn modeCase() {
+    local = 7
+    F16 when mode gaming => {
+        print("MODE-LOCAL ${local}")
+    }
+    return local
+}
+check("mode-conditioned hotkey keeps its local", modeCase() == 7)
+
+// (4) goroutine READS an enclosing local
+fn goroutineReadCase() {
+    local = 8
+    go {
+        print("GO-LOCAL ${local}")
+    }
+    sleep(300)
+    return local
+}
+check("goroutine reads the enclosing local", goroutineReadCase() == 8)
+
+// (5) goroutine writes an OBJECT - visible to the parent
+shared = {n: 0}
+fn goroutineObjectCase() {
+    go {
+        shared.n = 42
+    }
+    sleep(400)
+    return shared.n
+}
+check("goroutine write through an object is visible", goroutineObjectCase() == 42)
+
+// (6) goroutine writes a MODULE-LEVEL global - visible to the parent
+globalCounter = 0
+fn goroutineGlobalCase() {
+    go {
+        globalCounter = 7
+    }
+    sleep(400)
+    return globalCounter
+}
+check("goroutine write to a module global is visible", goroutineGlobalCase() == 7)
+
+// (7) closure created inside a loop accumulates into the enclosing local
+fn loopCase() {
+    total = 0
+    items = [1, 2, 3]
+    for x in items {
+        add = fn() { total = total + x }
+        add()
+    }
+    return total
+}
+check("closure created in a loop accumulates", loopCase() == 6)
+
+// (8) nested closures share the outermost local
+fn nestedCase() {
+    base = 1
+    mid = fn() {
+        inner = fn() { base = base + 10 }
+        inner()
+    }
+    mid()
+    return base
+}
+check("nested closure shares the outermost local", nestedCase() == 11)
+
+// (9) class method closure mutates the instance field
+class Counter {
+    n: int
+    fn @(n) { @n = n }
+    fn bump() {
+        @n = @n + 1
+        return @n
+    }
+}
+c = Counter(3)
+check("class method mutates its field", c.bump() == 4)
+
+print(fails == 0 ? "ALL PASS" : "FAILURES: " + fails)
+shell.exit(fails == 0 ? 0 : 1)

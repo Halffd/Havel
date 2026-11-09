@@ -336,6 +336,14 @@ public:
   int bc_execute_depth_ = 0;
   GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>> open_upvalues;
+  // Boxed-local support: functions whose locals were captured at runtime by
+  // the CLOSURE opcode. Derived from actual captures - no compiler-side list
+  // to keep in sync. The tiering gate refuses these functions because
+  // compiled code writes flat slots and would diverge from the box cells.
+  std::unordered_set<const BytecodeFunction *> functions_with_captured_locals_;
+  bool functionCapturesLocals(const BytecodeFunction *f) const {
+    return functions_with_captured_locals_.count(f) != 0;
+  }
   std::unordered_map<std::string, Value> globals;
   mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
   // Thread-safe module loading: protects modules_loading_ and coordinates
@@ -836,6 +844,44 @@ public:
   void pushStack(Value value);
   uint32_t toAbsoluteLocal(uint32_t local_index);
   void ensureLocalIndex(uint32_t absolute_index);
+
+  // ===== Boxed (captured) local routing =====
+  // A local captured by an inner closure lives in a heap UpvalueCell that is
+  // born CLOSED: from its first capture on, the cell is the authoritative
+  // storage and the flat slot holds a stale copy only. Every local access in
+  // the defining scope therefore consults the box map first (one membership
+  // test on an empty map when nothing is captured anywhere) and falls
+  // through to the slot otherwise. This is what makes a goroutine's write to
+  // an enclosing function-local visible to the parent: both sides read and
+  // write the same heap cell, which no fiber snapshot touches.
+  // Callers keep the ensureLocalIndex(abs) they already do for the slot path;
+  // storeLocalRouted re-ensures defensively.
+  Value loadLocalRouted(uint32_t abs) {
+    if (!open_upvalues.empty()) {
+      auto it = open_upvalues.find(abs);
+      if (it != open_upvalues.end() && it->second) {
+        return it->second->closed_value;
+      }
+    }
+    return locals[abs];
+  }
+  void storeLocalRouted(uint32_t abs, const Value &value) {
+    if (!open_upvalues.empty()) {
+      auto it = open_upvalues.find(abs);
+      if (it != open_upvalues.end() && it->second) {
+        it->second->closed_value = value;
+        heap_.writeBarrier(Value::makeNull(), value);
+        return;
+      }
+    }
+    ensureLocalIndex(abs);
+    locals[abs] = value;
+    heap_.writeBarrier(Value::makeNull(), value);
+  }
+  // Capture (or reuse) the box cell for an absolute slot, moving the slot's
+  // current value into the cell. Stamps the capturing function for the
+  // tiering gate. Called from the CLOSURE opcode's captures_local path.
+  std::shared_ptr<GCHeap::UpvalueCell> boxLocal(uint32_t abs, uint32_t frame_rel_index);
   void doReturn();
 
   // Extracted opcode handlers to reduce stack frame size
@@ -937,6 +983,14 @@ public:
   // Cheap probe for JIT safe points: would a collection run right now?
   // (budget exceeded or externally requested, and not suspended.)
   bool gcCollectionPendingPublic() const { return !gcSuspended() && heap_.shouldMaybeCollect(); }
+  // C-API string interning: havel_pushstring routes strings through the
+  // VM's own heap so every string value shares one id space and one
+  // resolver (resolveStringKey). The old C-API side table used a private
+  // counter whose ids collided with chunk string-table indices - a host
+  // function's literal argument resolved to an unrelated previously
+  // pushed string (observed live: settings("AAA","BBB") stored a stale
+  // zoom-status JSON as the key).
+  uint32_t internHeapString(const std::string &s) { return heap_.allocateString(s).id; }
   void collectGarbage();
   void stepGarbageCollection(size_t work_budget = 128);
   void drainFinalizers();
@@ -980,6 +1034,18 @@ public:
   size_t getStackSizePublic() const { return stack.size(); }
   void loadFiberStatePublic(Fiber *fiber) { loadFiberState(fiber); }
   void saveFiberStatePublic(Fiber *fiber) { saveFiberState(fiber); }
+
+  // Root provider for SUSPENDED fibers: the GC's root scan covers the VM's
+  // live frame state only; a suspended goroutine's saved state (locals,
+  // operand stack, return value, callables) holds heap values invisible to
+  // every collection - after enough collections they were freed and the
+  // fiber's next access failed with 'unknown object id'. The engine
+  // installs this once at startup; every collection invokes it.
+  void setFiberRootsCallback(std::function<void(std::vector<Value> &)> cb) {
+    fiber_roots_callback_ = std::move(cb);
+  }
+
+  std::function<void(std::vector<Value> &)> fiber_roots_callback_;
   // Fire yield_callback_ if set (guarded the same way the dispatch loop's
   // periodicYieldCheck does NOT guard: the inline-yield reentrancy guard
   // lives in HavelEngine::processGoroutinesInline, so calling this from a
@@ -1647,6 +1713,19 @@ public:
       return; // never worth compiling (empty or above the tier-1 cap)
     }
     if (hotness < tier1_threshold_) {
+      return;
+    }
+    // Captured-locals refusal: a local captured by an inner closure lives in
+    // a born-closed box cell (the authoritative storage); the flat slot only
+    // holds a stale copy. Compiled code writes flat slots directly, so a
+    // tiered function with captured locals would diverge from its boxes.
+    // Refusal is derived at runtime from actual CLOSURE captures - there is
+    // no compiler-side list to keep in sync (functions_with_captured_locals_).
+    if (functionCapturesLocals(&func)) {
+      tier1_refused_count_.fetch_add(1);
+      ::havel::debug("[tiering] {} tier-1 refused: function has captured locals "
+                     "(box coherence); interpreter fallback",
+                     func.name);
       return;
     }
     const std::string key = func.name;

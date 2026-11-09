@@ -1,0 +1,113 @@
+// livelinkctl.hv — command-line client for the livelink.hv daemon.
+//
+// The daemon is HTTP-only; this is the control surface. Every command is one
+// HTTP call against http://HOST:PORT/api/*, so a debugging session exercises
+// exactly the same path the dashboard does.
+//
+// Usage:
+//   havel run livelinkctl.hv -- status
+//   havel run livelinkctl.hv -- stream
+//   havel run livelinkctl.hv -- switch <url> [title]
+//   havel run livelinkctl.hv -- refresh
+//   havel run livelinkctl.hv -- streams
+//   havel run livelinkctl.hv -- shutdown
+//
+// Environment: LIVELINK_URL (default http://127.0.0.1:3000).
+
+use { get as httpGet, postJson as httpPostJson } from "net/http"
+use { parse as jsonParse, stringify as jsonStringify } from "std/json"
+use shell
+
+fn baseUrl() {
+  custom = sys.env("LIVELINK_URL")
+  if custom != null && custom != "" {
+    if custom[#custom-1:#custom] == "/" {
+      custom[0:#custom-1]
+    } else {
+      custom
+    }
+  } else {
+    "http://127.0.0.1:3000"
+  }
+}
+
+fn show(obj) {
+  print(jsonStringify(obj, "  "))
+}
+
+fn fail(msg) {
+  print("[livelinkctl] ${msg}")
+  shell.exit(1)
+}
+
+fn getCmd(path) {
+  r = httpGet("${baseUrl()}${path}", null, 10000)
+  if r == null {
+    fail("no response from ${baseUrl()} - is the daemon running?")
+  }
+  if r.status != 200 {
+    fail("HTTP ${r.status} from ${path}: ${r.body}")
+  }
+  jsonParse(r.body)
+}
+
+fn postCmd(path, payload) {
+  r = httpPostJson("${baseUrl()}${path}", payload, null, 10000)
+  if r == null {
+    fail("no response from ${baseUrl()} - is the daemon running?")
+  }
+  if r.status != 200 {
+    fail("HTTP ${r.status} from ${path}: ${r.body}")
+  }
+  jsonParse(r.body)
+}
+
+args = []
+if sys.argv != null {
+  args = sys.argv()
+}
+// havel run livelinkctl.hv -- <command> [args...] puts the interpreter binary
+// at argv[0] and the command tail after it.
+cmd = []
+i = 1
+while i < #args {
+  a = args[i]
+  l = #a
+  if !(l > 3 && a[l-3:l] == ".hv") {
+    cmd.push(a)
+  }
+  i = i + 1
+}
+
+if #cmd == 0 {
+  print("usage: havel run livelinkctl.hv -- <status|stream|switch <url> [title]|refresh|streams|shutdown>")
+  shell.exit(1)
+}
+
+command = cmd[0]
+
+if command == "status" {
+  show(getCmd("/api/status"))
+} else if command == "stream" {
+  show(getCmd("/api/stream"))
+} else if command == "switch" {
+  if #cmd < 2 {
+    fail("switch requires a url: livelinkctl.hv switch <url> [title]")
+  }
+  payload = {url: cmd[1]}
+  if #cmd >= 3 {
+    payload.title = cmd[2]
+  }
+  show(postCmd("/api/stream", payload))
+} else if command == "refresh" {
+  show(postCmd("/api/refresh", {}))
+} else if command == "streams" {
+  show(getCmd("/api/streams"))
+} else if command == "shutdown" {
+  show(postCmd("/api/shutdown", {}))
+} else {
+  print("unknown command: '${command}'")
+  print("usage: havel run livelinkctl.hv -- <status|stream|switch <url> [title]|refresh|streams|shutdown>")
+  print("usage: havel run livelinkctl.hv -- <status|stream|switch <url> [title]|refresh|streams|shutdown>")
+  shell.exit(1)
+}

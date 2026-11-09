@@ -1968,6 +1968,13 @@ endforeach()
 add_executable(havel
     src/main.cpp
     src/utils/LsanSuppressions.cpp
+    # Plugin symbol anchors - MUST be an executable object, not an archive
+    # member: the linker only pulls archive members to satisfy references
+    # from included objects, so an anchor living in havel_core.a is itself
+    # skipped and forces nothing (observed: AudioService.cpp.o never pulled,
+    # its HAVEL_EXPORT symbols absent from the dynamic symbol table). Being
+    # an executable object guarantees the anchor's relocations are processed.
+    src/host/plugin_symbol_anchors.cpp
 )
 
 target_link_libraries(havel PRIVATE
@@ -2248,6 +2255,37 @@ target_link_libraries(havel_api_test PRIVATE
   )
 
 # brightness_test disabled - replaced by modules/app/brightness/brightness.hv (FFI-based)
+
+# ctest support for every build type (the drift guards and the embedding
+# invariant register below; previously only Debug builds had ctest).
+enable_testing()
+
+# ------------------------------------------------------------------------
+# Embedding invariant (architectural): an executable that links ONLY
+# libhavel_lang + libhavel_core must build, run and stay Qt-free. If a Qt
+# symbol re-enters the language/core archives, this target fails to link
+# (it deliberately does not link Qt) and embedding-qt-invariant fails in
+# ctest. See scripts/ci/embedding-qt-audit.sh.
+add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
+# havel_core sits in the documented havel_core <-> havel_runtime symbol
+# cycle with the havel_runtime/havel_compiler archives (the same archives
+# havel_lang expands to). Without the group the single-pass archive scan
+# drops members pulled late (EventBridge/FileWatcher -> EventRuntime,
+# ExecutionEngine -> HotkeyActionWrapper) and the link fails with undefined
+# references. Link the concrete archives inside the group exactly like
+# havel-lsp does; havel_lang must not be wrapped because CMake expands an
+# INTERFACE library's transitive archives outside the group markers.
+target_link_libraries(embedding_minimal PRIVATE
+
+    ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+)
+target_include_directories(embedding_minimal PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+add_test(NAME embedding_minimal COMMAND embedding_minimal)
+add_test(NAME embedding-qt-invariant
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ci/embedding-qt-audit.sh ${CMAKE_BINARY_DIR})
+
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
@@ -2983,6 +3021,50 @@ add_havel_module_plugin(browser      ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/B
 add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FormatModule.cpp)
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
+# The http plugin is the only compilation unit that calls curl. The main
+# executable's -lcurl is dropped by --as-needed (it never references curl
+# itself), so "resolve from the main exe at runtime" does not work for the
+# plugin: loading it died with 'undefined symbol: curl_global_init'. Link
+# the shared lib explicitly.
+target_link_libraries(havel_mod_http PRIVATE ${CURL_LIBRARIES})
+
+# Python bridge plugin. The interpreter is reached exclusively through this
+# dlopen'd module - havel_core/havel_lang never reference CPython (the Qt
+# rule, applied to libpython). python3-embed is the pkg-config name for the
+# embedding ABI and links the SHARED libpython, which is what a dlopen'd
+# module wants; find_package(Development.Module) provides no usable
+# Python3_LIBRARIES (it links the interpreter's own symbols instead), so it is
+# only a fallback, via Development.Embed.
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(PYEMBED python3-embed)
+endif()
+if(PYEMBED_FOUND)
+    add_havel_module_plugin(python ${CMAKE_SOURCE_DIR}/src/modules/python/PythonModule.cpp)
+    target_include_directories(havel_mod_python PRIVATE ${PYEMBED_INCLUDE_DIRS})
+    target_link_libraries(havel_mod_python PRIVATE ${PYEMBED_LIBRARIES})
+else()
+    find_package(Python3 COMPONENTS Development.Embed QUIET)
+    if(Python3_Development.Embed_FOUND)
+        add_havel_module_plugin(python ${CMAKE_SOURCE_DIR}/src/modules/python/PythonModule.cpp)
+        target_link_libraries(havel_mod_python PRIVATE Python3::Python)
+    else()
+        message(STATUS "no embeddable libpython found: py.* bridge plugin not built")
+    endif()
+endif()
+
+# Lua 5.4 bridge plugin, same seam.
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(LUA54 lua5.4)
+    if(LUA54_FOUND)
+        add_havel_module_plugin(lua ${CMAKE_SOURCE_DIR}/src/modules/lua/LuaModule.cpp)
+        target_include_directories(havel_mod_lua PRIVATE ${LUA54_INCLUDE_DIRS})
+        target_link_libraries(havel_mod_lua PRIVATE ${LUA54_LIBRARIES})
+    else()
+        message(STATUS "lua5.4 not found: lua.* bridge plugin not built")
+    endif()
+endif()
 # HotkeyModule stays in main binary — host bridges use its C++ class directly
 # MathModule is in the static lib (registered eagerly by
 # registerDefaultHostFunctions) — lazy plugin registration hit the
@@ -3401,6 +3483,25 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
+
+    # Drift guard for the three token-name registries: TokenType enum ->
+    # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
+    # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member
+    # with no table row, and tokenize() then tags the token tid=null, which
+    # reaches the Pratt binding-power lookup as a null object key (the
+    # `emit` regression). Pure header test.
+    add_executable(token_type_names_drift_test
+        tests/token_type_names_drift_ut.cpp
+    )
+    target_include_directories(token_type_names_drift_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+    )
+    target_compile_definitions(token_type_names_drift_test PRIVATE
+        LEXER_HV_PATH="${CMAKE_SOURCE_DIR}/modules/lang/lexer.hv")
+    target_compile_features(token_type_names_drift_test PRIVATE cxx_std_23)
+    target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core

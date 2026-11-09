@@ -311,6 +311,15 @@ private:
   std::unique_ptr<ast::Statement> parseWaitStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
   std::unique_ptr<ast::Expression> parseHotkeyExpression(const Token &hotkeyToken);
+  // Hotkey binding with a caller-supplied condition and/or action block.
+  std::unique_ptr<ast::Expression>
+  parseHotkeyExpressionEx(const Token &hotkeyToken,
+                          std::unique_ptr<ast::Expression> conditionExpr,
+                          std::unique_ptr<ast::BlockStatement> actionOverride);
+  // hotkey("F12", cond, onTrue, onFalse) - the register-style statement form.
+  std::unique_ptr<ast::Statement>
+  buildBranchedHotkeyBinding(ast::CallExpression &call, const Token &token);
+  uint64_t hotkey_branch_counter_ = 0;
   std::unique_ptr<ast::Expression> parseTildeHotkeyExpression();
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();

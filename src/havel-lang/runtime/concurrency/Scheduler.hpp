@@ -791,6 +791,7 @@ private:
 
   // Goroutine storage and queues
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
+
   mutable std::mutex goroutines_mutex_;
   // Atomic: spawn() runs on the VM thread, but foreign threads can reach it
   // too - a detached timer thread calling invokeCallback whose script body

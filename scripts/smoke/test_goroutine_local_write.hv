@@ -1,0 +1,85 @@
+// Goroutine writes to an enclosing FUNCTION-LOCAL are visible to the parent.
+//
+// Background: a goroutine's write to a captured function-local used to be
+// lost - fibers snapshot their locals, and the captured local was an open
+// upvalue cell pointing into a frame slot that did not survive the fiber
+// switch (docs/known-issues/goroutine-local-write.md). The fix boxes
+// captured locals: the cell is born closed and owns the value; the defining
+// function's accesses route through the same cell (loadLocalRouted /
+// storeLocalRouted), so both sides share one heap value no fiber snapshot
+// touches. Reads always worked; this locks in the write direction in both
+// ways, plus the object and module-global paths as regressions.
+//
+// smoke: timeout = 60
+
+fails = 0
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        fails = fails + 1
+    }
+}
+
+// (1) THE fix: goroutine writes the enclosing function-local
+fn goroutineWriteCase() {
+    w = 0
+    go {
+        w = 42
+    }
+    sleep(400)
+    return w
+}
+check("goroutine write to function-local is visible", goroutineWriteCase() == 42)
+
+// (2) bidirectional: parent writes after spawn, goroutine reads the new value
+fn parentThenGo() {
+    v = 1
+    go {
+        sleep(150)
+        v = v + 10
+    }
+    sleep(50)
+    v = v + 100
+    sleep(400)
+    return v
+}
+r = parentThenGo()
+check("parent and goroutine share the boxed local", r == 111)
+
+// (3) repeated goroutines accumulate into the same local
+fn goroutineAccumulateCase() {
+    acc = 0
+    go { acc = acc + 1 }
+    go { acc = acc + 2 }
+    go { acc = acc + 4 }
+    sleep(500)
+    return acc
+}
+check("multiple goroutines accumulate into the box", goroutineAccumulateCase() == 7)
+
+// (4) regression: write through an object still visible
+shared = {n: 0}
+fn goroutineObjectCase() {
+    go {
+        shared.n = 42
+    }
+    sleep(400)
+    return shared.n
+}
+check("goroutine write through an object is visible", goroutineObjectCase() == 42)
+
+// (5) regression: module-level global write still visible
+globalCounter = 0
+fn goroutineGlobalCase() {
+    go {
+        globalCounter = 7
+    }
+    sleep(400)
+    return globalCounter
+}
+check("goroutine write to a module global is visible", goroutineGlobalCase() == 7)
+
+print(fails == 0 ? "ALL PASS" : "FAILURES: " + fails)
+shell.exit(fails == 0 ? 0 : 1)

@@ -1,0 +1,62 @@
+// Tests fs.glob / fs.glob_many / fs.glob_dirs / fs.glob_files.
+//
+// what: path-pattern matching via POSIX glob() (*, ?, [abc], [a-z], {a,b},
+//   ~), the recursive `**` walk, sorted deterministic results, and the
+//   directory/file filters.
+// why: fs.glob used to match only filenames inside a dir, return null for
+//   a missing dir (crashing iteration), and return filesystem order (so
+//   `for f in fs.glob(...)` was non-deterministic).
+// expected: every assertion passes, nothing printed on success.
+// Runs anywhere: builds its own fixture under /tmp and removes it.
+
+base = "/tmp/havel_fs_glob_smoke"
+fs.rmdir(base, true)
+assert(fs.mkdirAll("${base}/sub"), "fixture mkdir failed")
+assert(fs.write("${base}/a.log", "a"), "fixture write failed")
+assert(fs.write("${base}/b.log", "b"), "fixture write failed")
+assert(fs.write("${base}/c.txt", "c"), "fixture write failed")
+
+// Basic match + sorted order.
+logs = fs.glob("${base}/*.log")
+assert(logs.len == 2, "expected 2 logs, got ${logs}")
+assert(logs[0] == "${base}/a.log" && logs[1] == "${base}/b.log", "logs not sorted: ${logs}")
+
+// Brace expansion (GLOB_BRACE) and character classes.
+braced = fs.glob("${base}/*.{log,txt}")
+assert(braced.len == 3, "brace expansion: ${braced}")
+classed = fs.glob("${base}/[ab].log")
+assert(classed.len == 2, "char class: ${classed}")
+
+// No matches = [] (not null, not an error); missing dir is not an error.
+assert(fs.glob("${base}/nope/*.xyz").len == 0, "missing dir should yield []")
+assert(fs.glob("${base}/*.nosuch").len == 0, "no match should yield []")
+assert(fs.glob("*.log", "/nonexistent_dir").len == 0, "missing walk dir should yield []")
+
+// Deterministic across calls.
+first = fs.glob("${base}/*")
+second = fs.glob("${base}/*")
+assert(first.len == second.len, "nondeterministic length")
+i = 0
+while i < first.len {
+    assert(first[i] == second[i], "nondeterministic order at ${i}")
+    i = i + 1
+}
+
+// Directory / file filters.
+dirs = fs.glob_dirs("${base}/*")
+assert(dirs.len == 1 && dirs[0] == "${base}/sub", "glob_dirs: ${dirs}")
+files = fs.glob_files("${base}/*")
+assert(files.len == 3, "glob_files: ${files}")
+assert(files.filter(fn(p) { fs.isDir(p) }).len == 0, "glob_files leaked a dir: ${files}")
+
+// Union of patterns, de-duplicated and sorted.
+union_ = fs.glob_many(["${base}/*.log", "${base}/*.txt", "${base}/*.log"])
+assert(union_.len == 3, "glob_many dedupe: ${union_}")
+assert(union_[0] == "${base}/a.log" && union_[1] == "${base}/b.log" && union_[2] == "${base}/c.txt", "glob_many sorted: ${union_}")
+
+// Recursive `**`, anchored at the literal path prefix.
+deep = fs.glob("${base}/**/*.log")
+assert(deep.len == 2, "recursive glob: ${deep}")
+
+fs.rmdir(base, true)
+print("test_fs_glob passed")

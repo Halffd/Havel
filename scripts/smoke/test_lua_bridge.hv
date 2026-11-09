@@ -1,0 +1,70 @@
+// test_lua_bridge.hv — smoke-safe checks for the lua.* Lua 5.4 bridge.
+//
+// Pure computation: no display, no input, no network. The bridge is a
+// dlopen'd module plugin (havel_mod_lua.so) - when it is missing the test
+// SKIPS (a machine without liblua is not a failure of the language).
+
+use lua
+use fs
+
+if lua.version() == null || lua.version() == "" {
+    print("SKIP: no liblua on this machine")
+    shell.exit(0)
+}
+
+// The counter lives in an object: a closure captures locals by value, so a
+// plain local would not see the increments.
+st = {fails: 0}
+check = fn(name, cond) {
+    if cond {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name)
+        st.fails = st.fails + 1
+    }
+}
+
+check("lua.version mentions 5.4", lua.version() ~ "5.4")
+check("lua.eval arithmetic", lua.eval("return 1 + 1") == 2)
+check("lua.eval float", lua.eval("return 0.5 * 4") == 2.0)
+check("lua.eval string concat", lua.eval("return 'a' .. 'b'") == "ab")
+check("lua.eval table -> array", lua.eval("return {1, 2, 3}")[2] == 3)
+check("lua.eval table -> object", lua.eval("return {a = 7}")["a"] == 7)
+check("lua.eval nil is null", lua.eval("return nil") == null)
+check("lua.eval bool", lua.eval("return true") == true)
+
+// A Lua file: globals and a returned table are both callable.
+path = "/tmp/havel_lua_bridge_test.lua"
+fs.write(path, "function greet(name)\n  return 'hi ' .. name\nend\n\nlocal M = {}\nfunction M.score(x)\n  return x * 3\nend\nreturn M\n")
+
+bot = lua.load(path)
+check("lua.load returns object", type(bot) == "object")
+check("lua global function callable", bot.greet("you") == "hi you")
+check("lua table method callable", bot.score(14) == 42)
+
+// Release the loaded state, then the materialized environment must fail
+// cleanly (a throw) rather than crash the process on a closed lua_State.
+// The temp file stays for this section so `bot` remains a real loaded env;
+// it is removed after.
+lua.release(bot)
+released = false
+try {
+    bot.greet("you")
+} catch e {
+    released = true
+}
+check("post-release call throws, does not crash", released)
+
+fs.remove(path)
+
+// Lua errors surface as script-visible failures, not crashes.
+failed = false
+try {
+    lua.eval("error('boom')")
+} catch e {
+    failed = true
+}
+check("lua error surfaces", failed)
+
+print(st.fails == 0 ? "ALL PASS" : "FAILURES: " + st.fails)
+shell.exit(st.fails == 0 ? 0 : 1)

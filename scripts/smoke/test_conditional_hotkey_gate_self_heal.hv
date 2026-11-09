@@ -1,0 +1,99 @@
+// Regression: a conditional hotkey whose condition reads HOST-side state
+// (window.title, time.millis(), ...) has no dep-set entry that ever
+// changes via a VM store, so the dep-driven re-eval never fires for it.
+// Its OS grab and HotkeyModule context grab/enabled stayed frozen at the
+// registration-time condition result: a hotkey registered while its
+// condition was true kept its OS grab armed forever, and the context
+// kept reporting grab=true even after the condition went false.
+// The live dispatch gate (VM::hotkeyConditionAllows) is the only code
+// that observes the real value at press time; it must self-heal the
+// grab state (by id, not alias) when its live eval contradicts the last
+// recorded result.
+//
+// time.millis() is the safe stand-in for window.title: its return value
+// changes with no VM global store, so the flip produces no VAR_CHANGED
+// event - exactly the window-title reactivity hole, hermetic (no
+// display, no filesystem, no user state).
+//
+// Expectation: registered with condition true, the grab arms. After
+// the time condition flips false (host-side, invisible to the dep
+// tracker), the first press hits the gate: the live eval reads false,
+// blocks the body, AND heals grab to false.
+//
+// Uses F24 + hotkey.trigger: no OS input is injected.
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+fn grabbedF24Count() {
+    arr = hotkey.list()
+    n = 0
+    for hk in arr {
+        if hk.key == "F24" && hk.grab {
+            n = n + 1
+        }
+    }
+    return n
+}
+
+hits = 0
+
+// Condition reads host-side time: true until flip_after, then false.
+// Registered with the condition TRUE so the initial grab arms.
+flip_after = time.millis() + 400
+
+when time.millis() < flip_after {
+    F24 => {
+        hits = hits + 1
+    }
+}
+
+// Steady state before the flip: condition true, grab armed.
+waited = time.millis() + 2000
+while grabbedF24Count() != 1 && time.millis() < waited {
+    sleep(5)
+}
+check("grab armed while condition true", grabbedF24Count() == 1)
+
+// Fires on a press while the condition holds.
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while hits == 0 && time.millis() < waited {
+    sleep(5)
+}
+check("fires while condition true", hits == 1)
+
+// Let the host-side value flip: time passes the deadline. No global
+// store happens, so no dep-driven re-eval fires; the stale grab stays
+// armed (observing the stale grab IS the point).
+while time.millis() < flip_after + 100 {
+    sleep(20)
+}
+check("stale grab still armed before press", grabbedF24Count() == 1)
+
+// The press reaches the gate; the live eval reads the flipped value:
+// body blocked AND grab healed to false.
+hotkey.trigger("F24")
+sleep(300)
+check("body blocked after condition flip", hits == 1)
+waited = time.millis() + 2000
+while grabbedF24Count() != 0 && time.millis() < waited {
+    sleep(5)
+}
+check("grab healed to false at the gate", grabbedF24Count() == 0)
+
+if failures > 0 {
+    print("FAIL conditional_hotkey_gate_self_heal: " + failures + " check(s) failed")
+    exit(1)
+}
+print("PASS conditional_hotkey_gate_self_heal")
+// Persistent hotkey goroutines keep the process alive; exit explicitly.
+exit(0)

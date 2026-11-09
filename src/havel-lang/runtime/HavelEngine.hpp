@@ -35,9 +35,11 @@
 #include "core/io/IO.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "../stdlib/HotkeyModule.hpp"
+#include "../stdlib/RuntimeErrorTracker.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "core/BrightnessManager.hpp"
+#include "core/automation/AutomationManager.hpp"
 #include <filesystem>
 #include <thread>
 #include <atomic>
@@ -45,6 +47,8 @@
 #include <memory>
 #include <string>
 #include <cstdlib>
+#include <algorithm>
+#include <stdexcept>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -93,9 +97,10 @@ public:
     if (!config_.headlessMode) {
       brightnessManager_ = std::make_shared<BrightnessManager>();
     }
+    automationManager_ = std::make_shared<automation::AutomationManager>(io_holder_);
     auto hostAPI = std::make_shared<HostAPI>(
         io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, automationManager_.get(), nullptr, nullptr, nullptr,
         config_.headlessMode ? nullptr : brightnessManager_.get());
     initializeFull(hostAPI, config_.leanMinimalStartup);
   }
@@ -394,6 +399,7 @@ public:
     vm_->setOnVarChangedSync([this](const std::string &var_name) {
       if (!watcher_registry_ || !vm_)
         return;
+      std::vector<compiler::Fiber *> firedBodies;
       auto fired = watcher_registry_->onVariableChanged(
           var_name,
           [this](compiler::WatcherRegistry::WatcherId wid) -> bool {
@@ -428,20 +434,7 @@ public:
             } catch (...) {
             }
           });
-      for (auto *fiber : fired) {
-        if (!fiber)
-          continue;
-        try {
-          uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
-          vm_->current_when_watcher_id_ = fiber->watcher_id;
-          compiler::Value body_func =
-              compiler::Value::makeFunctionObjId(fiber->current_function_id);
-          vm_->call(body_func, {});
-          vm_->current_when_watcher_id_ = prev_when_watcher;
-        } catch (...) {
-        }
-      }
-      vm_->processSignalBindings(var_name);
+      firedBodies.assign(fired.begin(), fired.end());
       // Conditional-hotkey re-eval: defer to scheduler tick when we're
       // inside a goroutine's dispatch loop, run inline otherwise.
       // Synchronous re-eval from inside a goroutine frame nests a
@@ -469,6 +462,28 @@ public:
       } else {
         reevalConditionalHotkeys(var_name);
       }
+
+      // When-branch bodies run last: an exit branch observes the
+      // grab/enabled state the re-eval above just applied. In the deferred
+      // branch the flip lands at the next processGoroutines drain; the
+      // bodies then still see the pre-drain state - that case cannot
+      // re-eval synchronously without wedging the active dispatch frame
+      // (see the comment above). processSignalBindings keeps its
+      // historical position relative to the bodies.
+      for (auto *fiber : firedBodies) {
+        if (!fiber)
+          continue;
+        try {
+          uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
+          vm_->current_when_watcher_id_ = fiber->watcher_id;
+          compiler::Value body_func =
+              compiler::Value::makeFunctionObjId(fiber->current_function_id);
+          vm_->call(body_func, {});
+          vm_->current_when_watcher_id_ = prev_when_watcher;
+        } catch (...) {
+        }
+      }
+      vm_->processSignalBindings(var_name);
     });
 
     // Wire a drain into the VM so host getters (e.g. Hotkey.grab) that
@@ -530,7 +545,13 @@ public:
               g->suspension_reason.load(std::memory_order_acquire) !=
                   compiler::Scheduler::SuspensionReason::HotkeyWait)
             return;
-          if (!g->hotkey_condition_deps.empty() && g->hotkey_condition_deps.count(var_name) == 0)
+          // "__active_window__" (focus-transition sentinel, see
+          // Havel::startPeriodicTimer): window-reading conditions record
+          // only the static "window" namespace global, so the sentinel
+          // matches ALL conditional hotkeys and the live eval decides.
+          if (var_name != "__active_window__" &&
+              !g->hotkey_condition_deps.empty() &&
+              g->hotkey_condition_deps.count(var_name) == 0)
             return;
           auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
           if (!condVal)
@@ -706,8 +727,17 @@ public:
       }
     }
 
-    // Process all goroutines until they're done
-    processGoroutines();
+    // Process all goroutines until they're done. An uncaught script error
+    // escaping a goroutine is converted here (see
+    // convertUncaughtScriptError) so it cannot run past the launcher's
+    // std::exception boundary into std::terminate.
+    try {
+      processGoroutines();
+    } catch (const compiler::ScriptError &e) {
+      convertUncaughtScriptError(e);
+    } catch (const compiler::ScriptThrow &t) {
+      convertUncaughtScriptError(t);
+    }
 
     // Return the script result from the VM stack (if any)
     if (vm_->getStackSizePublic() > 0) {
@@ -899,7 +929,15 @@ public:
         ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
       return;
     }
-    vm_->tickScheduler();
+    // Same conversion as execute(): a goroutine error must not escape the
+    // engine as a non-std exception (std::terminate in the launcher).
+    try {
+      vm_->tickScheduler();
+    } catch (const compiler::ScriptError &e) {
+      convertUncaughtScriptError(e);
+    } catch (const compiler::ScriptThrow &t) {
+      convertUncaughtScriptError(t);
+    }
   }
 
   // REPL runs disable the HotkeyWait keep-alive in processGoroutines so
@@ -931,6 +969,45 @@ public:
   bool isAutoReload() const { return auto_reload_enabled_.load(); }
 
 private:
+  // ScriptError is a plain struct, not std::exception-derived, so an
+  // uncaught script error escaping a goroutine ran past every launcher
+  // boundary (ScriptStrategy catches std::exception) into std::terminate:
+  // `go fn() { x = nil; y = x.foo }` aborted the process instead of
+  // reporting. Report + convert like Pipeline::execute does, handing the
+  // launcher the std::exception it already handles.
+  [[noreturn]] void convertUncaughtScriptError(const compiler::ScriptError &e) {
+    std::string msg = e.message;
+    if (msg == "Uncaught exception" || msg.empty()) {
+      // The dispatch conversion carries the real message in the value and
+      // leaves `message` as a generic placeholder. String values resolve
+      // through the VM so the text (not `<string:629>`) is reported.
+      std::string v;
+      if (vm_ && (e.value.isStringValId() || e.value.isStringId()))
+        v = vm_->resolveStringKey(e.value);
+      else
+        v = e.value.toString();
+      if (!v.empty() && v != "null")
+        msg = v;
+    }
+    ::havel::errors::ErrorReporter::instance().errorAt(
+        ::havel::errors::ErrorStage::VM, msg,
+        static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
+        static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
+    ::havel::stdlib::notifyRuntimeError(msg);
+    throw std::runtime_error(msg);
+  }
+  [[noreturn]] void convertUncaughtScriptError(const compiler::ScriptThrow &t) {
+    std::string msg;
+    if (vm_ && (t.value.isStringValId() || t.value.isStringId()))
+      msg = vm_->resolveStringKey(t.value);
+    else
+      msg = t.value.toString();
+    ::havel::errors::ErrorReporter::instance().error(
+        ::havel::errors::ErrorStage::VM, msg);
+    ::havel::stdlib::notifyRuntimeError(msg);
+    throw std::runtime_error(msg);
+  }
+
   // The mtime-poll watcher body, shared by setAutoReload and the
   // deferred start in execute(). Polls every 250ms; on change pushes
   // FILE_READY to the event queue.
@@ -1053,6 +1130,8 @@ private:
   std::shared_ptr<HotkeyManager> hotkeyManager_;
   std::shared_ptr<WindowManager> windowManager_;
   std::shared_ptr<BrightnessManager> brightnessManager_;
+  std::shared_ptr<automation::AutomationManager> automationManager_;
+
 #ifdef HAVEL_ENABLE_LLVM
   // Backend abstraction (TODO #18): the engine owns the ORC JIT through the
   // CompilerBackend boundary. The VM's tiering hooks keep talking to the
@@ -1239,8 +1318,12 @@ private:
           held.push_back(g);
           continue;
         }
-        failing_g = g;
+        // Same exit invariant as processGoroutines: no user dispatch after
+        // exit was requested mid-iteration (see the guard there).
+        if (vm_->exit_requested_.load())
+          break;
 
+         failing_g = g;
         // Conditional `when` hotkey: re-check the condition on every trigger
         // and re-park when false, so its body never runs for this press.
         if (!vm_->hotkeyConditionAllows(g)) {
@@ -1476,8 +1559,12 @@ private:
       // overwrote the goroutine's fiber with __main__'s bytecode position:
       // on resume it executed main's deadline loop instead of its own body,
       // parked for 5ms, got woken, and looped forever (40 zombies,
-      // "every goroutine must finish, got 0" -
-      // test_timer_stress_many_timers, failing 1-in-3 even at load 0.4).
+      // "every goroutine must finish, got 0" - and the all-or-nothing
+      // goroutines:0 variant where every goroutine_done store was lost).
+      // test_timer_stress_many_timers failed 1-in-3 even at load 0.4 on
+      // havel-3 (b4a8a5e9) and deterministically under load on main; this
+      // comment is the union of havel-3's aa8bbbea8 and main's 1130ff567,
+      // which fixed the same defect independently.
       if (h && h->state != compiler::Scheduler::GoroutineState::Suspended &&
           h->state != compiler::Scheduler::GoroutineState::Done) {
         if (h->state == compiler::Scheduler::GoroutineState::Created) {
@@ -1635,9 +1722,20 @@ private:
         continue;
       }
 
+      // Exit invariant: once exit was requested (exit()/sys.exit from any
+      // goroutine), no further user bytecode may dispatch. The loop-top
+      // check is not enough: a goroutine's own dispatch or a timer/
+      // deferred callback inside this iteration can request exit, and the
+      // pre-dispatch work above (timer wakeups, event dispatch) then handed
+      // the pump a goroutine whose captured upvalue cells are being closed
+      // by the exiting main script - resuming it computed on torn state
+      // and threw Type mismatch (test_hk_starvation_repeated flake,
+      // traced: dispatching gid=4 exit_req=1).
+      if (vm_->exit_requested_.load())
+        break;
+
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);
-      // Conditional `when` hotkey gate — see VM::hotkeyConditionAllows.
       if (!vm_->hotkeyConditionAllows(g)) {
         continue;
       }
@@ -1655,7 +1753,7 @@ private:
         }
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          dispatchTick(g);
+        dispatchTick(g);
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {

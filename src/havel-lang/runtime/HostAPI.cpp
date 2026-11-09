@@ -13,7 +13,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
                  PixelAutomation *pixelAutomation,
-                 AutomationManager *automationManager, FileManager *fileManager,
+                 automation::AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
                  BrightnessManager *brightnessManager,
                 const std::vector<std::string> &commandLineArgs)
@@ -57,7 +57,7 @@ GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
 ClipboardManager *HostAPI::GetClipboardManager() { return clipboardManager; }
 PixelAutomation *HostAPI::GetPixelAutomation() { return pixelAutomation; }
-AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
+automation::AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
 FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
@@ -95,7 +95,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
                  PixelAutomation *pixelAutomation,
-                 AutomationManager *automationManager, FileManager *fileManager,
+                 automation::AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
                  BrightnessManager *brightnessManager,
                 const std::vector<std::string> &commandLineArgs)
@@ -221,7 +221,7 @@ GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
 ClipboardManager *HostAPI::GetClipboardManager() { return clipboardManager; }
 PixelAutomation *HostAPI::GetPixelAutomation() { return pixelAutomation; }
-AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
+automation::AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
 FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }

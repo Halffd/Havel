@@ -127,7 +127,7 @@ cd Havel
 ### Environment Variables
 
 ```bash
-# Parallel jobs (default: all cores)
+# Parallel jobs (default: auto, capped; --threads overrides)
 THREADS=8 ./build.sh build
 
 # Sanitizer levels (Debug builds only)
@@ -136,6 +136,17 @@ THREADS=8 ./build.sh build
 ./build.sh --tsan build                 # ThreadSanitizer (mode 16)
 ./build.sh --no-asan build              # disable ASAN
 ```
+
+### Tests
+
+```bash
+./build.sh test --kind quick    # seconds - fast inner loop
+./build.sh test --kind gate     # the pre-merge gate
+```
+
+See `docs/contributing/build-system.md` for the full command reference:
+fleet operations across checkouts, disk reclamation, resource limits, and
+timing history.
 
 ### Portable Builds (for Distribution)
 

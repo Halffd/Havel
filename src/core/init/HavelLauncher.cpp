@@ -292,10 +292,17 @@ static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig &c
 }
 
 static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
-  return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-                                   inst.getWindowManagerPtr(), inst.getAudioManager(), nullptr,
-                                   nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                   inst.getBrightnessManagerPtr());
+  // HostAPI ctor order: io, hotkeyManager, config, windowManager, audioManager,
+  // guiManager, screenshotManager, clipboardManager, pixelAutomation,
+  // automationManager, fileManager, processManager, mapManager,
+  // brightnessManager, commandLineArgs. automationManager was passed as
+  // nullptr, so HostContext.automationManager was null and the automation.*
+  // host functions had no manager to drive (they stubbed false).
+  return std::make_shared<HostAPI>(
+      inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
+      inst.getWindowManagerPtr(), inst.getAudioManager(), nullptr, nullptr,
+      nullptr, nullptr, inst.getAutomationManager(), nullptr, nullptr,
+      nullptr, inst.getBrightnessManagerPtr());
 }
 
 // Lint check: assignment used in condition position (if/while/do-while/
@@ -1851,6 +1858,13 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--debug-events" || arg == "-dev") {
+      // Input-path debugging: event pump + grab lifecycle (EventListener)
+      // and evdev adapter reads. debug() output is level-gated, so raise
+      // the log level too or the flags produce nothing visible.
+      debugging::debug_event_listener = true;
+      debugging::debug_evdev = true;
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "--trace" || arg == "-t") {
       cfg.traceExecution = true;
     } else if (arg == "--optimize-bytecode" || arg == "-O") {
@@ -2298,6 +2312,7 @@ Options:
   -de, --debug-engine Enable engine debugging
    -dio, --debug-io    Enable IO debugging
    -dhk, --debug-hotkeys Enable hotkey debugging
+   -dev, --debug-events  Enable input event + grab debugging (event listener, evdev)
    --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
    -e, --error         Stop on first error/warning
   -E, --eval CODE     Run inline Havel code

@@ -47,7 +47,7 @@ class GUIManager;
 class ScreenshotManager;
 class ClipboardManager;
 class PixelAutomation;
-class AutomationManager;
+namespace automation { class AutomationManager; }
 class FileManager;
 class ProcessManager;
 class BrightnessManager;
@@ -102,7 +102,7 @@ struct HostContext {
   class ScreenshotManager *screenshotManager = nullptr;
   class ClipboardManager *clipboardManager = nullptr;
   class PixelAutomation *pixelAutomation = nullptr;
-  class AutomationManager *automationManager = nullptr;
+  class automation::AutomationManager *automationManager = nullptr;
   class FileManager *fileManager = nullptr;
   class ProcessManager *processManager = nullptr;
   class net::NetworkManager *networkManager = nullptr;

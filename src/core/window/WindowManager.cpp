@@ -542,6 +542,10 @@ std::vector<WindowInfo> WindowManager::getAllWindows() {
   get().ensureBackend();
   return get().getBackend().getAllWindows();
 }
+void WindowManager::InvalidateActiveWindowCache() {
+  get().ensureBackend();
+  get().getBackend().invalidateActiveWindowCache();
+}
 
 uint64_t WindowManager::getActiveWindow() {
   return static_cast<uint64_t>(GetActiveWindow());

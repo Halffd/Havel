@@ -5,6 +5,9 @@
 #include "../core/CraneliftBackend.hpp"
 #endif
 #include "host/ServiceRegistry.hpp"
+#include "../../../core/hotkey/HotkeyManager.hpp"
+#include "../../../core/window/WindowManager.hpp"
+#include "stdlib/HotkeyModule.hpp"
 #include <iostream>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -2143,6 +2146,16 @@ bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
   if (!condVal)
     return true;
 
+  // Focus transitions race the press: the condition's window.title() /
+  // window.class() reads flow through the active-window cache, whose TTL
+  // can serve the PREVIOUS window for up to CACHE_TTL after an alt-tab.
+  // A press landing in that window passed the gate on stale data and ran
+  // the body in the wrong window. Drop the cache before every gate eval
+  // so the condition observes the current focus. Inert on backends
+  // without a cache; null WindowManager under tests/headless.
+  if (context_ && context_->windowManager)
+    context_->windowManager->InvalidateActiveWindowCache();
+  bool prev_result = g->hotkey_condition_last_result;
   g->hotkey_condition_last_result = false;
   bool conditionMet = false;
   try {
@@ -2156,6 +2169,34 @@ bool VM::hotkeyConditionAllows(Scheduler::Goroutine *g) {
     conditionMet = false;
   }
 
+  // Gate trace: the press arrived, the condition ran live, here is the
+  // decision. Cross-reference against the [Havel] cond ... TRANSITION lines
+  // (grab toggles) to see whether a wrong-window fire was a stale window
+  // read inside this eval (gate said true but window had changed) or a
+  // grab/ungrab ordering gap (gate false, OS still routing keys to us).
+  if (debugging::debug_hotkeys) {
+    ::havel::debug("[VM] gate gid={} key='{}' t={}us allow={} (prev={})",
+                   g->id, g->hotkey_condition_alias,
+                   std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                       .count(),
+                   conditionMet, prev_result);
+  }
+  // Self-heal: if the live eval contradicts the last recorded result, the
+  // dep-driven re-eval never observed the change (window-namespace
+  // conditions track only the static "window" global, which nothing
+  // stores to, so no VAR_CHANGED ever fires for them). Sync OS grab +
+  // context grab NOW, by id, so a stale grab stops consuming the key.
+  // Without this, a hotkey whose condition read true at registration kept
+  // its OS grab armed forever: the gate blocked the body but the keypress
+  // was still eaten by the handler.
+  if (conditionMet != prev_result) {
+    if (context_ && context_->hotkeyManager && g->hotkey_os_id > 0)
+      static_cast<havel::HotkeyManager *>(context_->hotkeyManager)
+          ->SetHotkeyGrabById(g->hotkey_os_id, conditionMet);
+    if (!g->hotkey_id.empty())
+      ::havel::stdlib::HotkeyModule::setGrabById(*this, g->hotkey_id, conditionMet);
+  }
   if (conditionMet) {
     g->hotkey_condition_last_result = true;
     return true;
@@ -3306,6 +3347,38 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   if (!callee) {
     COMPILER_THROW("Function index not found: " + std::to_string(function_index));
   }
+  // Materialize chunk-relative StringValIds in arguments when the call
+  // crosses a chunk boundary. A StringValId indexes the string table of the
+  // chunk that created it; once the value flows into a callee frame running
+  // another module's chunk, any lazy resolution there (json.stringify
+  // walking an object, string ops, wrapper re-materialization) indexes the
+  // WRONG table. Observed: an /api/status handler (main chunk) built
+  // {status: "online", ...} and passed it to a webserver-module closure;
+  // json.stringify's module wrapper then materialized the object against
+  // the WEBSERVER table and the fields became ".css"/".html". Do it here,
+  // while current_chunk is still the CALLER's chunk — the chunk that owns
+  // the args' StringValIds — and pin the args first: materialization
+  // allocates, and these args live only in this C++ vector, invisible to
+  // the GC root scan (same gap as the module wrappers).
+  if (resolve_chunk && current_chunk && resolve_chunk != current_chunk) {
+    bool args_need_materialize = false;
+    for (const auto &a : args) {
+      if (a.isStringValId() || a.isObjectId() || a.isArrayId()) {
+        args_need_materialize = true;
+        break;
+      }
+    }
+    if (args_need_materialize) {
+      std::vector<GCRoot> argRoots;
+      argRoots.reserve(args.size());
+      for (const auto &a : args) {
+        argRoots.emplace_back(*this, a);
+      }
+      for (auto &a : args) {
+        a = deepMaterializeStrings(a, current_chunk);
+      }
+    }
+  }
   // Pack variadic args for variadic functions
   packVariadicArgs(args, callee);
 
@@ -4194,6 +4267,17 @@ void VM::maybeCollectGarbageWithExtraRoots(const std::vector<Value> &extra_roots
   // JIT safe-point roots (spilled native-frame values) ride the same
   // extra-roots slot as the scheduler's.
   scheduler_roots.insert(scheduler_roots.end(), extra_roots.begin(), extra_roots.end());
+  // Boxed (captured) local cells: a born-closed cell owns its variable's
+  // value. The cell itself is a shared_ptr held by closures and by the
+  // open_upvalues map, but if every closure holding it became unreachable
+  // while the defining frame is still live (it reads through the box map),
+  // the VALUE inside the cell has no other reference - root it here so a
+  // collection cannot free what loadLocalRouted would still hand out.
+  for (const auto &[_, cell] : open_upvalues) {
+    if (cell && !cell->is_open && !cell->closed_value.isNull()) {
+      scheduler_roots.push_back(cell->closed_value);
+    }
+  }
   heap_.maybeCollectGarbage(
       stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
       [this](uint32_t index) -> std::optional<Value> {
@@ -4228,6 +4312,14 @@ void VM::collectGarbage() {
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
   }
+  // Boxed (captured) local cells: see maybeCollectGarbageWithExtraRoots -
+  // born-closed cells own their variable's value even when no reachable
+  // closure still holds the cell.
+  for (const auto &[_, cell] : open_upvalues) {
+    if (cell && !cell->is_open && !cell->closed_value.isNull()) {
+      scheduler_roots.push_back(cell->closed_value);
+    }
+  }
   heap_.collectGarbage(
       stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
       [this](uint32_t index) -> std::optional<Value> {
@@ -4246,6 +4338,14 @@ void VM::stepGarbageCollection(size_t work_budget) {
   std::vector<Value> scheduler_roots;
   if (scheduler_) {
     scheduler_roots = scheduler_->getGCRoots();
+  }
+  // Boxed (captured) local cells: see maybeCollectGarbageWithExtraRoots -
+  // born-closed cells own their variable's value even when no reachable
+  // closure still holds the cell.
+  for (const auto &[_, cell] : open_upvalues) {
+    if (cell && !cell->is_open && !cell->closed_value.isNull()) {
+      scheduler_roots.push_back(cell->closed_value);
+    }
   }
   heap_.stepGarbageCollection(
       stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
@@ -4726,6 +4826,36 @@ void VM::ensureLocalIndex(uint32_t absolute_index) {
     size_t new_size = static_cast<size_t>(absolute_index) + 1;
     locals.resize(new_size, nullptr);
   }
+}
+
+std::shared_ptr<GCHeap::UpvalueCell> VM::boxLocal(uint32_t abs, uint32_t frame_rel_index) {
+  auto it = open_upvalues.find(abs);
+  if (it != open_upvalues.end() && it->second) {
+    return it->second;
+  }
+  ensureLocalIndex(abs);
+  auto cell = std::make_shared<GCHeap::UpvalueCell>();
+  // Born CLOSED: the cell owns the value from its first capture on and the
+  // flat slot holds a stale copy only. This is what makes a goroutine's
+  // write to an enclosing function-local visible to the parent - both sides
+  // route through this heap cell (loadLocalRouted/storeLocalRouted and the
+  // LOAD/STORE_UPVALUE handlers), which no fiber snapshot touches. See
+  // docs/known-issues/goroutine-local-write.md.
+  cell->is_open = false;
+  cell->open_index = frame_rel_index; // vestigial, kept for diagnostics
+  cell->locals_base = abs >= frame_rel_index ? abs - frame_rel_index : 0;
+  cell->closed_value = locals[abs];
+  open_upvalues.emplace(abs, cell);
+  if (frame_count_ > 0) {
+    auto &frame = frame_arena_[frame_count_ - 1];
+    if (frame.function) {
+      // Stamp the defining function for the tiering gate: compiled code
+      // writes flat slots and would diverge from the box (maybeTierUp
+      // refuses these functions).
+      functions_with_captured_locals_.insert(frame.function);
+    }
+  }
+  return cell;
 }
 
 void VM::doReturn() {
@@ -5251,6 +5381,15 @@ Value VM::deepWrapModuleFunctions(
         wrapperName,
         [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey,
          fnCapturedField, wantsSelf, depth, visited](const std::vector<Value> &args) -> Value {
+          // Pin argument values for the wrapper's duration: same GC-root gap
+          // as the $module_closure_ wrapper (see the rationale there). Args
+          // held only in this C++ vector are invisible to the root scan, and
+          // deepMaterializeStrings below allocates per field.
+          std::vector<GCRoot> argRoots;
+          argRoots.reserve(args.size());
+          for (const auto &argVal : args) {
+            argRoots.emplace_back(*this, argVal);
+          }
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
           bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
@@ -5538,6 +5677,22 @@ Value VM::deepWrapModuleFunctions(
           auto *rc2 = heap_.closure(closureId);
           if (!rc2 || !rc2->chunk)
             return Value::makeNull();
+
+          // Pin argument values for the whole wrapper execution. These args
+          // live only in this C++ vector — invisible to the GC's root scan —
+          // and deepMaterializeStrings (below) allocates per field, which can
+          // trigger a collection. Without pinning, a collection here frees an
+          // argument object mid-iteration; its storage is reused by the next
+          // allocation and the materialized write-back lands in a foreign
+          // object (observed: an /api/status response object's fields
+          // overwritten with unrelated values — "clock": "text/css" — after
+          // the receiver-injection fix first routed real object args through
+          // this wrapper).
+          std::vector<GCRoot> argRoots;
+          argRoots.reserve(args.size());
+          for (const auto &argVal : args) {
+            argRoots.emplace_back(*this, argVal);
+          }
 
           auto *savedChunk = current_chunk;
           // Push caller globals and swap ambient to the closure's module

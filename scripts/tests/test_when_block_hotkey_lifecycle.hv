@@ -1,0 +1,82 @@
+// Regression test: when-block hotkey lifecycle (headless twin of
+// scripts/tests/io/test_conditional.hv's pHk section) plus catchable nil
+// property reads.
+//
+// what: a binding assigned inside `when title_ ~ "mpv" {}` must
+//   (1) not exist before the when activates - probing it raises a
+//       CATCHABLE error, so `try { pHk.enabled } catch { }` reaches the
+//       catch instead of silently reading null;
+//   (2) register conditionally and grab while the when is active;
+//   (3) be ungrabbed + disabled when the when deactivates, as observed by
+//       the sibling `when !(...)` branch itself;
+//   (4) re-arm on re-entry.
+// why: io/test_conditional.hv relies on all four. Before the fixes: nil
+//   property reads returned null (catch unreachable, startup guards
+//   false-fired), and the exit branch observed the pre-transition
+//   enabled/grab state (bodies ran before the grab re-eval).
+// expected: PASS. Pre-fix: the nil probe prints "did not throw" or the
+//   exit branch reads enabled=true grab=true.
+// run: ./build-debug/havel scripts/tests/test_when_block_hotkey_lifecycle.hv
+//   (manual-run; registers `p` briefly and releases it on deactivation;
+//   no input injection)
+title_ = ""
+pHk = nil
+
+// (1) nil property read must throw and be caught.
+try {
+  _probe = pHk.enabled
+  print("FAIL: nil property read did not throw (probe=${_probe})")
+  exit(1)
+} catch {
+  print("INFO: nil property read raised a catchable error")
+}
+
+// (2)+(3) gated registration; the exit branch checks the ungrab itself.
+seenExitCount = 0
+when title_ ~ "mpv" {
+  pHk = p => print("P pressed in mpv")
+}
+when !(title_ ~ "mpv") {
+  if pHk != nil {
+    seenExitCount = seenExitCount + 1
+    if pHk.enabled || pHk.grab {
+      print("FAIL: exit branch sees enabled=${pHk.enabled} grab=${pHk.grab} (bodies ran before the grab re-eval)")
+      exit(1)
+    }
+  }
+}
+
+title_ = "mpv"
+sleep(500)
+if pHk == nil {
+  print("FAIL: when body did not create the binding")
+  exit(1)
+}
+if !pHk.enabled || !pHk.grab {
+  print("FAIL: binding not grabbing inside mpv: enabled=${pHk.enabled} grab=${pHk.grab}")
+  exit(1)
+}
+if !(str(pHk).includes("Conditional hotkey")) {
+  print("FAIL: binding not registered conditionally: ${pHk}")
+  exit(1)
+}
+
+title_ = "zzz"
+sleep(200)
+if seenExitCount == 0 {
+  print("FAIL: exit branch never ran")
+  exit(1)
+}
+
+// (4) re-entry re-arms the binding.
+title_ = "mpv"
+sleep(500)
+if pHk == nil || !pHk.enabled || !pHk.grab {
+  print("FAIL: binding did not re-arm on re-entry: ${pHk}")
+  exit(1)
+}
+title_ = "zzz"
+sleep(200)
+
+print("PASS: when-block hotkey lifecycle (nil catch, gated registration, exit ungrab, re-arm)")
+exit(0)

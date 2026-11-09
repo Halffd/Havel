@@ -105,8 +105,14 @@ public:
   std::string getProcessCmdline(pid_t pid) override;
 
   bool initialize() override;
-  void shutdown() override;
 
+  // Drop the active-window snapshot so the next getActiveWindow*() call
+  // re-queries X11 instead of serving the stale pre-transition
+  // id/title/class. Called on focus transitions before conditional-hotkey
+  // conditions are (re-)evaluated: a condition's window.title() read must
+  // observe the CURRENT focus, not the cached pre-alt-tab one.
+  void shutdown() override;
+  void invalidateActiveWindowCache() override;
 private:
   WindowManagerDetector detector;
   std::string wmName;

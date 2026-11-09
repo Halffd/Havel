@@ -3,23 +3,125 @@
 
 ## Build System
 
-Primary build: `./build.sh [mode] [command]`
+Primary build: `./build.sh [--mode N] <command>`. Modes 0-20 are unchanged
+(`5 build` still means full release with LLVM); what changed is everything
+around them. Full help: `./build.sh help`.
 
-| Mode | Type | Tests | Havel Lang | LLVM | Build Dir |
-|------|------|-------|------------|------|-----------|
-| 0 | Debug | ✓ | ✓ | ✓ | build-debug |
-| 5 | Release | ✓ | ✓ | ✓ | build-release |
-| 6 | Debug | ✓ | ✓ | ✗ | build-debug (default) |
-| 8 | Debug | ✗ | ✓ | ✗ | build-debug |
-| 9 | Release | ✓ | ✓ | ✗ | build-release |
+```bash
+# lifecycle (mode default 6 = Debug+Tests+Lang, no LLVM)
+./build.sh build
+./build.sh rebuild              # clean + build
+./build.sh 5 build              # full release with LLVM
+./build.sh run script.hv        # runs the built binary, prints its commit
 
-Other modes (1-4, 7, 10-13) exist in build.sh BUILD_CONFIGS; the table lists the common ones.
+# tests - four kinds, the distinction matters
+./build.sh test --kind quick    # seconds: the two fast gtest targets
+./build.sh test --kind gate     # THE pre-merge gate: hvtest --smoke --slow-too
+./build.sh test --kind smoke    # hvtest --smoke only
+./build.sh test --kind ctest    # full ctest
 
-Common commands:
+# fleet - every sibling checkout (/host/havel, /host/havel-2, ...)
+./build.sh fleet status         # what is built where, commits, staleness, sizes
+./build.sh fleet build          # build all workspaces
+./build.sh fleet test           # test all workspaces
+
+# disk - 23G of build dirs across trees; dry-run by default
+./build.sh gc                           # report only
+./build.sh gc --prune --older-than 14d --yes
+./build.sh gc --hardlink --yes          # dedupe identical plugin .so
+./build.sh gc --ccache-zero --yes
+
+# resource limits (persisted in ~/.cache/havel-build/limits.conf)
+./build.sh limit show
+./build.sh limit set max-parallel 2
+./build.sh limit set ccache-size 8G     # applies to ccache immediately
+
+# live processes (any agent's builds) + timing history
+./build.sh jobs
+./build.sh pause <pid> | resume <pid> | stop <pid>
+./build.sh report                # avg/min/max per workspace, mode, command
+./build.sh doctor
+```
+
+### Queueing in the foreground (no backgrounding allowed)
+
+Two agents running `build.sh build` into the same build directory interleave
+two cmake runs over one dir and corrupt each other. Every build and test takes
+a lock on its workspace + build dir, so the second one WAITS instead of
+colliding. The wait is always in the foreground - there is no background mode
+and no polling to clean up.
+
+The normal habit, when you suspect someone else may be building:
+
+```bash
+# 1. Look before you leap: what is built, and what is currently running?
+./build.sh status
+./build.sh jobs
+
+# 2a. Queue it. If another agent holds the lock, this BLOCKS in the
+#     foreground with a progress line every 30s, then builds, then
+#     fires the notifier with the exit status. Nothing to babysit,
+#     nothing left running when your session dies.
+./build.sh queue build
+./build.sh queue test --kind gate
+./build.sh queue fleet build        # every workspace, in order
+
+# 2b. Or just wait them out, running nothing yourself:
+./build.sh await                    # waits on this tree's default build lock
+./build.sh await havel-3-build-debug-build
+./build.sh locks                    # who holds what, right now
+```
+
+What you will see while queued (this is the whole point - the wait is visible,
+not a silent hang):
+
+```
+[warn] lock 'havel-3-build-debug-test' is held (pid 418124 bash) - queueing in foreground
+  still queued: 30s elapsed, holder: pid 418124 bash
+  still queued: 60s elapsed, holder: pid 418124 bash
+[ok]   lock acquired after 60s
+```
+
+The notifier fires when a queued run finishes: a terminal bell, a desktop
+notification if a display is reachable, and an entry in
+`~/.cache/havel-build/notifications.log`. Read that file to catch up on what
+completed while you were away. `./build.sh notify "text"` emits one manually.
+
+Rules that make this safe:
+
+- Plain `build`, `rebuild`, `test`, `fleet` and their `queue` forms all take
+  the same per-directory lock, so they serialize against each other. You do
+  not have to remember to use `queue` - but prefer it, because only it
+  notifies.
+- `await` never runs anything: it is the polite "I'll go after you" that
+  leaves the other agent's build untouched.
+- If your session dies mid-build, the lock's recorded pid dies with it; the
+  next `locks` call reports the lock free and the next run takes it. No stale
+  lock can wedge the tree.
+- Never `kill -9` a build to "clear" a lock. Use `./build.sh stop <pid>`, which
+  takes down the whole tree cleanly and lets the lock release normally.
+
+Conventions that are now script-enforced:
+
+- Every build/test run records duration and exit status to
+  `~/.cache/havel-build/times.jsonl`; `report` reads it. Check `report`
+  before claiming a build is "usually fast".
+- `status` and `which` never trust file mtimes: they ask each binary what
+  commit it contains. See the "Always name the exact binary path" rule below.
+- `pause`/`resume`/`stop` signal a process and its descendants, never the
+  process group - a build inherits the caller's pgid, so a group signal
+  freezes the shell that started it.
+- `gc --prune` and `--hardlink` are no-ops without `--yes`.
+- Every build and test takes a per-workspace+build-dir lock, so concurrent
+  runs queue behind each other in the foreground instead of interleaving two
+  cmake runs into one directory. See "Queueing in the foreground" above.
+- `help`'s mode table is generated from `BUILD_CONFIGS` at runtime; the old
+  hand-written one claimed mode 16 had tests enabled and omitted modes 17-20.
+
+Common commands (legacy forms still work):
 - `./build.sh 5 build` - Full release with LLVM
 - `./build.sh 6 build` - Fast debug (no LLVM)
-- `./build.sh test` - Run all tests
-- `./build.sh detect` - Show system dependencies
+- `./build.sh detect` - environment check (now `doctor`)
 
 ## Executables
 
@@ -236,6 +338,45 @@ Optional (graceful fallback):
 - **Release builds**: Thin LTO + native march + visibility hidden
 - **LLVM ↔ Havel Lang**: LLVM JIT requires ENABLE_HAVEL_LANG (auto-enabled if missing)
 - **Qt6/MOC conflicts**: `#define True=1`, `#define False=0`, etc. to fix keyword conflicts
+
+### Always name the exact binary path
+
+**Never write `havel`, `the debug build`, or `build-debug/havel` without the
+absolute path.** A checkout accumulates many build directories, and the same
+relative path means different binaries in different trees. Both of these have
+happened here:
+
+- You run `/host/havel-3/build-debug/havel` while the user runs
+  `/host/havel/build-debug/havel`. Same filename, different trees, different
+  commits. The user's result then does not reproduce with "the same" binary.
+- A newer mtime does not mean newer code: `build-release/havel` was touched
+  more recently than `build-tsan/havel` while carrying an older commit.
+
+Rules:
+
+1. Every build, run, test and gate invocation uses the **absolute path**:
+   `/host/havel-3/build-debug/havel script.hv`, never `./build-debug/havel` or
+   a bare `havel`.
+2. Before claiming a result, state which binary produced it, with the path AND
+   the commit it self-reports (`havel --version` prints `commit <sha>`).
+3. When you did not build it, say so. Do not present a pre-existing binary's
+   output as evidence for your change.
+4. Rebuilding the `havel` target does NOT rebuild the module plugins. If you
+   changed anything under `src/modules/`, build `havel_mod_<name>` too, or the
+   binary will load a stale `modules/havel_mod_*.so` and your change will appear
+   to do nothing. This cost real debugging time twice.
+
+Run `scripts/which-havel.sh` to see every built binary, which tree it belongs
+to, which commit it actually contains, and whether its module plugins are
+stale:
+
+```bash
+scripts/which-havel.sh            # table + which one to use
+scripts/which-havel.sh --path     # just the recommended path
+scripts/which-havel.sh --json     # machine-readable
+```
+
+Exit 0 only when a runnable binary matches `HEAD`; exit 1 when none does.
 
 ## Development
 
@@ -1159,6 +1300,75 @@ If the evidence does not establish completion, continue investigating or report 
 * For commands that exceed the available foreground timeout, use a persistent terminal or a supported wait mechanism rather than launching another build.
 * Report the actual exit status and relevant final output. Do not claim success merely because an executable exists.
 * Preserve existing build processes and artifacts unless explicitly instructed to terminate or clean them.
+* Do not use sudo to work around permission errors in shared directories.
+  A permission error in /host is itself a finding — report it, do not route
+  around it. (Observed: a session built a shared build dir as root via
+  sudo, leaving 5253 root-owned files that blocked every other session's
+  incremental build until they were chowned back. The virtiofs UID mapping
+  was also wrong at the time; both were fixed, but the sudo build was the
+  wrong response either way.)
+
+## Shared hot paths: ownership before convergence
+
+`VM::doCall` / `VM::callFunction` and the `CLOSURE` opcode in
+`VMControlFlow.cpp` are the hottest, most-merged region in the repo. Three
+independent changes have converged there (the lambda frame-size fix, the
+tiering fast-tick budget work, the boxed-upvalues goroutine fix). Rule:
+
+* Before landing a change that touches `doCall`, `callFunction`, the
+  `CLOSURE` opcode, or the fiber locals/upvalue machinery, claim the region
+  in coordination AND record the claim in
+  `docs/known-issues/goroutine-local-write.md` (the tracking file for the
+  open boxed-upvalues defect). One session owns the region until its change
+  lands and the gates (smoke + jit-parity) pass on the merged tree.
+* Hand merges in that region are done by the session whose change lands
+  LAST, with both sides' gates as verifier - never two sessions merging
+  independently and hoping the gate catches drift.
+
+## Reactive hotkeys and `when`: the operation order is the contract
+
+The var-change path (`src/core/init/Havel.cpp`, `src/havel-lang/runtime/
+HavelEngine.hpp` - `setOnVarChangedSync`), the conditional-hotkey getters
+(`HotkeyModule::__get_grab` / `__get_enabled`) and the goroutine-error
+boundary (`HavelEngine::convertUncaughtScriptError`) encode a load-bearing
+order of operations. Do not reorder, hoist, "simplify" or bypass any of it.
+
+This is a protected zone, held to the same bar as the GC and JIT/tiering
+(which require `scripts/ci/jit-parity-test.sh` with pasted output). Every
+change here MUST carry, in the commit message:
+
+1. a named defect or gap it closes, reproducible - not "cleanup", not
+   "consistency", not "seemed off". The subsystem's bug history (pin leak,
+   when-teardown, suspended-fiber visibility, goroutine-error abort) is
+   evidence that unmotivated changes here surface hours later;
+2. a regression test that fails before the change and passes after,
+   targeting the exact failure mode - "the existing suite still passes" is
+   not a safety signal in this subsystem;
+3. an explicit blast-radius note: what the change does NOT touch among
+   pin/unpin lifetimes, interval lifecycles, fiber scheduling and GC
+   visibility, mode transitions, and hotkey re-registration.
+
+Concretely:
+
+* Conditional-hotkey grab/enabled state is re-evaluated and APPLIED before
+  when-branch bodies run. An exit branch must observe the post-transition
+  state; bodies-first showed `enabled=true grab=true` on a just-deactivated
+  binding.
+* `enabled` / `grab` reads must go through the live prototype getters.
+  Reading the raw object field is stale for any binding without a host
+  object (every `saved = key => ...` inside a `when` body).
+* HavelEngine defers the conditional re-eval to the scheduler tick while a
+  goroutine dispatch frame is active. That deferral is not optional:
+  synchronous re-eval from there wedges the host FFI (window.active()
+  never returns).
+* `ScriptError` is a plain struct, NOT `std::exception`: an uncaught
+  goroutine error without the engine-boundary conversion terminates the
+  process (SIGABRT). The conversion catches stay.
+* Locking tests (manual-run): `scripts/tests/test_when_block_hotkey_
+  lifecycle.hv`, `test_when_exit_observes_ungrab.hv`,
+  `test_when_assigned_hotkey_conditional.hv`; the boundary gate
+  `scripts/ci/goroutine-error-exit-test.sh`. History, file map and how to
+  change the area safely: `docs/contributing/reactive-hotkeys.md`.
 
 ## Multi-agent coordination
 

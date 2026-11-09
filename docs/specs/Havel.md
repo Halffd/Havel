@@ -26,7 +26,9 @@ Core Philosophy
 	* Declarative Simplicity - Define what you want, not how to achieve it
 	* Functional Flow - Data flows through transformation pipelines
 	* Automation First - Built specifically for hotkeys and workflow automation
-	* Platform Agnostic - Write once, run everywhere
+	* Platform Honest - X11 is complete; Wayland works where the compositor
+	  exposes the protocol (wlroots: nearly everything; GNOME/KDE: the
+	  support matrix in docs/index.md says exactly what works where)
 	* **AHK-Inspired Ergonomics** - Fast typing beats academic purity
 
 ## Ergonomic Syntax Features

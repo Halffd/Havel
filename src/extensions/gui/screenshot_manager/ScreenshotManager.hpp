@@ -5,9 +5,11 @@
 #include "ScreenRegionSelector.hpp"
 #include "../clipboard_manager/ClipboardManager.hpp"
 
+#include "havel-lang/common/Export.hpp"
+
 namespace havel {
 
-class ScreenshotManager : public QMainWindow {
+class HAVEL_EXPORT ScreenshotManager : public QMainWindow {
     Q_OBJECT
 
 public:

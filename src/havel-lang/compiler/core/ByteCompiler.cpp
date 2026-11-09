@@ -1634,19 +1634,18 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     }
   }
 
-  // Compute max local slot from the resolver's lambda_local_counts, exactly
-  // like compileFunctionDeclaration/methods/__main__ do. Assignment stores
-  // emit the resolver's binding.slot directly without bumping
-  // next_local_index, so without this seed leaveFunction computed
-  // local_count = 0 for a lambda whose body uses locals - the interpreter
-  // ignores local_count (it sizes frames by use), but the JIT/AOT lowering
-  // allocates exactly local_count vlocals and aborted on vlocals[0] of an
-  // empty vector (AOT: `go fn f() { i = 0 }` crashed STORE_VAR at ip 2).
+  // Frame size floor from the resolver. The resolver counts the slots a
+  // scope chain needs (ctx.next_slot); the compiler's own counter can be
+  // smaller, and an undersized lambda frame lets the body's locals spill
+  // into neighbouring slots - a local object clobbered by a loop body
+  // ("ARRAY_SET expects array/set/object container"). The main script,
+  // function, class-method and struct-method paths all take this floor;
+  // lambdas did not.
   uint32_t max_slot = static_cast<uint32_t>(lambda.parameters.size());
-  auto lambda_local_it = lexical_resolution_.lambda_local_counts.find(&lambda);
-  if (lambda_local_it != lexical_resolution_.lambda_local_counts.end() &&
-      lambda_local_it->second > max_slot) {
-    max_slot = lambda_local_it->second;
+  auto lambda_slots_it = lexical_resolution_.lambda_local_counts.find(&lambda);
+  if (lambda_slots_it != lexical_resolution_.lambda_local_counts.end() &&
+      lambda_slots_it->second > max_slot) {
+    max_slot = lambda_slots_it->second;
   }
 
   BytecodeFunction bf("<lambda>", static_cast<uint32_t>(lambda.parameters.size()), max_slot);

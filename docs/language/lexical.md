@@ -176,6 +176,11 @@ Regular (non-f) strings only support `$var` short form; use f-strings for full e
 | `.?` | Safe navigation (deprecated, use `?.`) | `obj.?field` |
 | `?.` | Optional chaining | `obj?.field` |
 
+Reading a property of `nil` with `.` raises a catchable error
+(`Cannot read property 'field' of nil`) - it is never silently `nil`.
+Use `?.` for null-safe access, which yields `nil` without raising. The
+error is catchable: `try { x.field } catch { ... }`.
+
 ### Special/Misc
 
 | Operator | Meaning | Example |

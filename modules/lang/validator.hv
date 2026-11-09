@@ -231,6 +231,11 @@ fn _validateStmt(node, ctx) {
         return
     }
 
+    if k == "EmitStatement" {
+        if node.payload != null { _validateExpr(node.payload, ctx) }
+        return
+    }
+
     // remaining statement types don't need validation
 }
 

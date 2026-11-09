@@ -1,0 +1,39 @@
+// Regression: cfg.set() called from a MODULE's top level must not kill the
+// importing script.
+//
+// Failure (Nov 8, gdb): hotkeys0.3.hv -> start.hv (a module) -> cfg.set ->
+// config.set -> repopulate(configObjAtCall()) -> setNestedField ->
+// setField(null, ...) -> throw "VMApi::setField: expected object".
+//
+// Cause: the config module resolved the "config" global through
+// api.vm().getGlobals(), which is the AMBIENT scope. A module body runs in
+// the module sandbox (a fresh globals map), so "config" was not bound there:
+// the lookup returned null and the repopulate path handed that null to
+// setField. The lookup must search the same scope chain a script-level
+// global read uses (ambient -> module base layer -> pushed frames).
+//
+// The fixture module's top level calls cfg.set(), which is exactly the
+// shape that failed. Runs in a sandbox HOME so the developer's real config
+// file is never touched.
+//
+// Expected: the module loads, the value it wrote is visible through the
+// importing script's cfg, exit 0.
+
+use "std/config" as cfg
+use "config_scope_fixture/setter" as setter
+use sys
+
+home = sys.env("HOME")
+if !home || home == "" {
+  home = sys.tmpdir()
+}
+
+value = setter.readBack()
+assert value == "from-module", "module-level cfg.set must be visible to the importing script, got '${value}'"
+
+// The importing script's own cfg must see the same value.
+direct = cfg.get("Smoke.ConfigScope", "")
+assert direct == "from-module", "script-level cfg.get must see the module's write, got '${direct}'"
+
+print("PASS: config_set_in_module_scope")
+process.exit(0)

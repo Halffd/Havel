@@ -1,6 +1,5 @@
-// smoke: timeout = 90
-// Regression: hpkg's toolchain store (per-commit havel binaries).
 // smoke: timeout = 180
+// Regression: hpkg's toolchain store (per-commit havel binaries).
 //
 // The version manager keeps one directory per commit under
 // ~/.havel/toolchains/<commit>/ with the binary, the test runner and a .info

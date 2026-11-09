@@ -1,4 +1,4 @@
-// smoke: timeout = 60
+// smoke: timeout = 180
 // An extern declaration of a name the host never registered must fail at
 // module load, name the missing function, and exit non-zero.
 //
@@ -13,6 +13,12 @@
 // Negative-control design: the second fixture is identical except the extern
 // is a REGISTERED host function, so a pass there proves the first failure is
 // the missing-name check and not an unrelated startup failure.
+//
+// The 180s header budget covers three child startups: a headless havel on
+// this box needs ~21s to reach its first prompt (display-connection retries
+// plus module loading), so three children plus the parent exceed the old
+// 60s bound even though every assertion passed. The per-child `timeout 60`
+// keeps a wedged child bounded instead of hanging the suite.
 use "fs"
 use "process"
 
@@ -43,7 +49,17 @@ extern { fn never_registered_extern_xyz() }
 exit(0)
 """)
 
-res = process.run("\"${havel_bin}\" \"${BAD_FIXTURE}\" 2>&1")
+// The children run headless: they inherit this process's environment, and
+// on a live desktop DISPLAY/WAYLAND_DISPLAY make every child pay the
+// display-connection retries (three children x ~45s = 2m22s, over the 60s
+// header timeout - the test timed out on the gate even though every
+// assertion passed). Stripping the display env and forcing
+// HAVEL_HEADLESS=1 keeps each child at a few seconds. `env -u` is a no-op
+// for a variable that is not set.
+CHILD_ENV = "env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR HAVEL_HEADLESS=1"
+CHILD_CMD = "${CHILD_ENV} timeout 60 \"${havel_bin}\""
+
+res = process.run("${CHILD_CMD} \"${BAD_FIXTURE}\" 2>&1")
 assert(res.exitCode != 0, "unregistered extern must fail the module load (got exit 0)")
 assert(res.stdout.find("never_registered_extern_xyz") >= 0,
        "the failure must name the missing extern; output was: ${res.stdout}")
@@ -54,7 +70,7 @@ extern { fn exit(code: int) -> nil }
 exit(0)
 """)
 
-res2 = process.run("\"${havel_bin}\" \"${GOOD_FIXTURE}\" 2>&1")
+res2 = process.run("${CHILD_CMD} \"${GOOD_FIXTURE}\" 2>&1")
 assert(res2.exitCode == 0,
        "registered extern must pass the load-time check; output was: ${res2.stdout}")
 
@@ -67,7 +83,7 @@ fs.write(ARITY_FIXTURE, """
 extern { fn sleep(a: int, b: int) -> nil }
 exit(0)
 """)
-res3 = process.run("\"${havel_bin}\" \"${ARITY_FIXTURE}\" 2>&1")
+res3 = process.run("${CHILD_CMD} \"${ARITY_FIXTURE}\" 2>&1")
 assert(res3.exitCode != 0, "wrong-arity extern must fail the load (got exit 0)")
 assert(res3.stdout.find("arity") >= 0,
        "the failure must mention the arity mismatch; output was: ${res3.stdout}")

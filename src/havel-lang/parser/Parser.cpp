@@ -3169,19 +3169,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                  "'else if' and must directly follow an if body");
   }
 
-  // Context-sensitive decorator detection:
-  // [decorator] or [decorator(args)] at statement start = decorator
-  // Must be followed by a declaration (fn, class, etc.)
-  // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
-  // Distinguish from [a, b, c] = ... array destructuring by lookahead:
-  // Decorator: [identifier] followed by declaration
-  // Array: [expression, ...] or [pattern] = value
-  // Pattern: [a, b] (comma indicates array, not decorator)
-  if (at().type == havel::TokenType::OpenBracket && at(1).type == havel::TokenType::Identifier &&
-      (at(2).type == havel::TokenType::CloseBracket || at(2).type == havel::TokenType::OpenParen)) {
-    // Lookahead to find what comes after the [...] decorator(s)
-    // Save position and scan forward, consuming all stacked decorator brackets
-    size_t savePos = position;
   // `extern { ... }`: soft keyword, not a lexer keyword, so `extern` stays a
   // normal identifier everywhere else (assignment targets, member access,
   // parameter names). Only `extern` directly followed by `{` is the native

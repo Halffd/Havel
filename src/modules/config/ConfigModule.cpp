@@ -194,10 +194,16 @@ void registerConfigModule(const VMApi &api) {
   // section (measured: cfg.Gaming.Classes -> {} while config.Gaming had
   // the keys; scripts/tests chain probes Oct 27).
   Value configObj = Value::makeNull();
-  auto &globals = api.vm().getGlobals();
-  auto existing = globals.find("config");
-  if (existing != globals.end() && existing->second.isObjectId()) {
-    configObj = existing->second;
+  // Search every scope a script-level global read reaches (ambient, module
+  // base layer, pushed frames), not just the ambient map: when the plugin
+  // registers during a MODULE load, the ambient scope is that module's
+  // sandbox, where the script's "config" global is not bound - the lookup
+  // missed it, built a SECOND config object, and the script's config global
+  // kept pointing at the first one (the "two configObj instances" case
+  // below).
+  Value existingConfig;
+  if (api.findGlobalValue("config", &existingConfig) && existingConfig.isObjectId()) {
+    configObj = existingConfig;
   } else {
     configObj = api.makeObject();
     // Markers must be set BEFORE repopulating: setNestedField copies
@@ -242,13 +248,24 @@ void registerConfigModule(const VMApi &api) {
   // VMApi lived in activateLazyModule's stack frame - the later call read
   // a garbage vm_ and died with EINVAL in GCHeap's mutex (gdb, Oct 30).
   auto configObjAtCall = [api]() -> Value {
-    auto &g = api.vm().getGlobals();
-    auto it = g.find("config");
-    if (it != g.end() && it->second.isObjectId())
-      return it->second;
+    // Look the global up across EVERY scope a script-level read reaches
+    // (ambient, module base layer, pushed frames) - not just the ambient
+    // map. A config.set() issued while a module is loading ran with the
+    // MODULE's sandbox as the ambient scope, where "config" is not bound:
+    // the lookup returned null and the repopulate below called setField
+    // on it, throwing "VMApi::setField: expected object" and killing the
+    // script (gdb, Nov 8: hotkeys0.3.hv -> start.hv -> cfg.set).
+    Value found;
+    if (api.findGlobalValue("config", &found) && found.isObjectId())
+      return found;
     return Value::makeNull();
   };
   auto repopulate = [api](Value configObj) {
+    // Nothing to repopulate when the object could not be resolved (the
+    // store itself was already updated by the caller). Bail out instead
+    // of handing null to setField.
+    if (!configObj.isObjectId())
+      return;
     for (const auto &key : Configs::Get().GetAllKeys()) {
       setNestedField(api, configObj, key,
                      stringToValue(api, Configs::Get().Get<std::string>(key, "")));

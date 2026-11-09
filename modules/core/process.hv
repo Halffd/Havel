@@ -168,17 +168,17 @@ fn _exit(reason) {
 }
 
 // Try-catch with exit trapping
-fn catch(fun) {
-    return try(fun)
+fn catchCall(fun) {
+    return tryCall(fun)
 }
 
-fn try(fun) {
+fn tryCall(fun) {
     return fun()
 }
 
 // Catch exit signals
 fn catch_exit(fun) {
-    return catch(fun)
+    return catchCall(fun)
 }
 
 // ============================================================================
@@ -253,8 +253,8 @@ fn send(pid, msg) {
     _send(pid, msg)
 }
 
-fn receive(patterns, timeout) {
-    return _receive(patterns, timeout)
+fn receive(patterns, time_ms) {
+    return _receive(patterns, time_ms)
 }
 
 // Selective receive with timeout
@@ -293,8 +293,8 @@ fn _send(pid, msg) {
     return _vm_send(pid, msg)
 }
 
-fn _receive(patterns, timeout) {
-    return _vm_receive(patterns, timeout)
+fn _receive(patterns, time_ms) {
+    return _vm_receive(patterns, time_ms)
 }
 
 fn _receive_after(patterns, after) {
@@ -309,8 +309,8 @@ fn _vm_send(pid, msg) {
     return _vm_send_impl(pid, msg)
 }
 
-fn _vm_receive(patterns, timeout) {
-    return _vm_receive_impl(patterns, timeout)
+fn _vm_receive(patterns, time_ms) {
+    return _vm_receive_impl(patterns, time_ms)
 }
 
 fn _vm_receive_after(patterns, after) {
@@ -351,8 +351,8 @@ fn _vm_send_impl(pid, msg) {
     return _vm_send_impl(pid, msg)
 }
 
-fn _vm_receive_impl(patterns, timeout) {
-    return _vm_receive_impl(patterns, timeout)
+fn _vm_receive_impl(patterns, time_ms) {
+    return _vm_receive_impl(patterns, time_ms)
 }
 
 fn _vm_receive_after_impl(patterns, after) {
@@ -471,8 +471,8 @@ fn _vm_send(pid, msg) {
     return _vm_send_impl(pid, msg)
 }
 
-fn _vm_receive(patterns, timeout) {
-    return _vm_receive_impl(patterns, timeout)
+fn _vm_receive(patterns, time_ms) {
+    return _vm_receive_impl(patterns, time_ms)
 }
 
 fn _vm_receive_after(patterns, after) {
@@ -504,8 +504,8 @@ fn _vm_send_impl(pid, msg) {
     return _vm_send_impl(pid, msg)
 }
 
-fn _vm_receive_impl(patterns, timeout) {
-    return _vm_receive_impl(patterns, timeout)
+fn _vm_receive_impl(patterns, time_ms) {
+    return _vm_receive_impl(patterns, time_ms)
 }
 
 fn _vm_receive_after_impl(patterns, after) {
@@ -536,8 +536,8 @@ fn _vm_send_impl(pid, msg) {
     return _vm_send_impl(pid, msg)
 }
 
-fn _vm_receive_impl(patterns, timeout) {
-    return _vm_receive_impl(patterns, timeout)
+fn _vm_receive_impl(patterns, time_ms) {
+    return _vm_receive_impl(patterns, time_ms)
 }
 
 fn _vm_receive_after_impl(patterns, after) {

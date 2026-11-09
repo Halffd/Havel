@@ -41,6 +41,7 @@ struct HotkeyContextData {
     CallbackId callback;
     bool enabled;
     bool grab = false;
+    uint64_t context_root_id = 0;
     CallbackId condition_callback = 0;
     uint32_t hostObjectId = 0;
     int64_t triggerCount = 0;
@@ -1173,6 +1174,26 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     vm.setHostObjectField(objRef, "grab", Value::makeBool(ctx->grab));
     return Value::makeBool(ctx->grab);
   });
+  // enabled - live enabled state, mirror of __get_grab. Without this the
+  // read hit the plain object field, which only tracks the context when it
+  // has a host object (ctx->hostObjectId != 0). A script-assigned binding
+  // (`saved = key => ...`) then kept its registration-time `enabled` while
+  // the live context had already flipped: a when-gated binding deactivating
+  // left the exit branch reading enabled=true although the grab re-eval had
+  // set ctx->enabled=false. scripts/tests/test_when_exit_observes_ungrab.hv
+  // pins this.
+  api.registerPrototypeMethod("Hotkey", "__get_enabled", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    vm.drainConditionalHotkeyPending();
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    vm.setHostObjectField(objRef, "enabled", Value::makeBool(ctx->enabled));
+    return Value::makeBool(ctx->enabled);
+  });
 
   // ===== Dynamic Update Methods =====
 
@@ -1514,18 +1535,38 @@ bool HotkeyModule::removeById(VM &vm, const std::string &hotkeyId) {
     return false;
   }
   
-  // Get the goroutine ID before erasing
+  // Capture the lifetime data before erasing: the pins were created at
+  // registration (InputBridge pins the context object and registers the
+  // action/condition closures as callbacks, each of which pins a root).
+  // Releasing them here makes hotkey.remove() root-neutral mid-session;
+  // before this, only the VM shutdown drain released them, so a
+  // register/remove cycle (e.g. hotkeys0.3's fuckedUp()) leaked three
+  // external roots per cycle for the process lifetime - measured by
+  // scripts/tests/test_hotkey_root_lifetime.hv (180 roots after 60 cycles).
   uint32_t gid = it->second->goroutine_id;
   std::string alias = it->second->alias;
-  
+  CallbackId actionCb = it->second->callback;
+  CallbackId condCb = it->second->condition_callback;
+  uint64_t contextRootId = it->second->context_root_id;
+
   // Remove from hotkey contexts
   g_hotkeyContexts.erase(it);
-  
+
+  // Release the registration pins (unpin/release are idempotent, so the
+  // shutdown drain overlap is safe).
+  vm.releaseCallback(actionCb);
+  if (condCb != 0) {
+    vm.releaseCallback(condCb);
+  }
+  if (contextRootId != 0) {
+    vm.unpinExternalRoot(contextRootId);
+  }
+
   // Clean up the persistent goroutine in the scheduler
   if (gid != 0 && vm.getScheduler()) {
     vm.getScheduler()->removeHotkeyByAlias(alias);
   }
-  
+
   return true;
 }
 
@@ -1605,6 +1646,11 @@ Value HotkeyModule::rebuildHotkeyContext(VM &vm, const std::string &hotkeyId) {
 void HotkeyModule::setGoroutineId(const std::string &hotkeyId, uint32_t gid) {
     auto *ctx = getHotkeyContextDataMutable(hotkeyId);
     if (ctx) ctx->goroutine_id = gid;
+}
+
+void HotkeyModule::setContextRootId(const std::string &hotkeyId, uint64_t rootId) {
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (ctx) ctx->context_root_id = rootId;
 }
 
 std::string HotkeyModule::resolveUniqueId(const std::string &preferredId) {

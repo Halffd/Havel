@@ -175,11 +175,34 @@ struct MediaService::Impl {
     // string pools) alive past the last connection unref; only
     // dbus_shutdown() releases them. Without this, every havel exit
     // reports ~1.6KB of libdbus leaks under LeakSanitizer even after the
-    // MediaService is destroyed. Register once per process, only when a
-    // session bus connection was actually taken.
+    // MediaService is destroyed.
+    //
+    // Ordering is load-bearing, twice over:
+    //   1. dbus_bus_get sets exit_on_disconnect on the shared connection;
+    //      dbus_shutdown() tears it down while still flagged and libdbus
+    //      then _exit(1)s silently - every `havel run` on a dbus desktop
+    //      died with exit code 1 after the script's own output. Clearing
+    //      the flag first keeps the process alive (verified with a
+    //      minimal libdbus repro).
+    //   2. dbus_shutdown() bumps libdbus's generation counter, which
+    //      invalidates every DBusConnection* - a later unref asserts
+    //      ("connection->generation == _dbus_current_generation") and
+    //      SIGABRTs. So the cleanup must do the entire teardown in one
+    //      place: clear flag, unref our connection, null the member so
+    //      ~Impl cannot touch the stale pointer, and only then shut down.
+    // Static destruction order between translation units is unspecified,
+    // so the destructor may run after this cleanup; the null guard is
+    // what makes that safe.
     static std::once_flag dbus_shutdown_once;
-    std::call_once(dbus_shutdown_once, []() {
-      havel::registerExitCleanup([]() { dbus_shutdown(); });
+    std::call_once(dbus_shutdown_once, [this]() {
+      havel::registerExitCleanup([this]() {
+        if (connection) {
+          dbus_connection_set_exit_on_disconnect(connection, FALSE);
+          dbus_connection_unref(connection);
+          connection = nullptr;
+        }
+        dbus_shutdown();
+      });
     });
 
     find_active_player();
@@ -187,7 +210,13 @@ struct MediaService::Impl {
 
   ~Impl() {
     if (connection) {
+      // Clear before unref: if this destructor runs before the exit
+      // cleanup, the connection would otherwise sit in libdbus's shared
+      // cache still flagged, and the cleanup's dbus_shutdown() would
+      // _exit(1) again. Both orderings must be safe.
+      dbus_connection_set_exit_on_disconnect(connection, FALSE);
       dbus_connection_unref(connection);
+      connection = nullptr;
     }
   }
 

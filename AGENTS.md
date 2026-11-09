@@ -1043,6 +1043,16 @@ the task.
 
 Commit completed work.
 
+When committing while another session's unstaged work is in the tree:
+`git commit <pathspec>` commits the WORKING TREE contents of those paths,
+bypassing the index — staged index surgery (`git update-index
+--cacheinfo` with a constructed blob) is undone by it (observed twice:
+826bd97c, 1a4c216c2, both re-split with `git reset --soft HEAD~1` and a
+plain `git commit` of the index). For partial-file commits, stage the
+exact content, then commit with NO pathspec, and verify with
+`git show --stat HEAD` plus `git diff` that the other session's hunks
+are still unstaged before pushing.
+
 ## Failure is information
 
 A failed test, timeout, crash, or unexpected result is a useful result.
@@ -1315,6 +1325,51 @@ tiering fast-tick budget work, the boxed-upvalues goroutine fix). Rule:
   LAST, with both sides' gates as verifier - never two sessions merging
   independently and hoping the gate catches drift.
 
+## Reactive hotkeys and `when`: the operation order is the contract
+
+The var-change path (`src/core/init/Havel.cpp`, `src/havel-lang/runtime/
+HavelEngine.hpp` - `setOnVarChangedSync`), the conditional-hotkey getters
+(`HotkeyModule::__get_grab` / `__get_enabled`) and the goroutine-error
+boundary (`HavelEngine::convertUncaughtScriptError`) encode a load-bearing
+order of operations. Do not reorder, hoist, "simplify" or bypass any of it.
+
+This is a protected zone, held to the same bar as the GC and JIT/tiering
+(which require `scripts/ci/jit-parity-test.sh` with pasted output). Every
+change here MUST carry, in the commit message:
+
+1. a named defect or gap it closes, reproducible - not "cleanup", not
+   "consistency", not "seemed off". The subsystem's bug history (pin leak,
+   when-teardown, suspended-fiber visibility, goroutine-error abort) is
+   evidence that unmotivated changes here surface hours later;
+2. a regression test that fails before the change and passes after,
+   targeting the exact failure mode - "the existing suite still passes" is
+   not a safety signal in this subsystem;
+3. an explicit blast-radius note: what the change does NOT touch among
+   pin/unpin lifetimes, interval lifecycles, fiber scheduling and GC
+   visibility, mode transitions, and hotkey re-registration.
+
+Concretely:
+
+* Conditional-hotkey grab/enabled state is re-evaluated and APPLIED before
+  when-branch bodies run. An exit branch must observe the post-transition
+  state; bodies-first showed `enabled=true grab=true` on a just-deactivated
+  binding.
+* `enabled` / `grab` reads must go through the live prototype getters.
+  Reading the raw object field is stale for any binding without a host
+  object (every `saved = key => ...` inside a `when` body).
+* HavelEngine defers the conditional re-eval to the scheduler tick while a
+  goroutine dispatch frame is active. That deferral is not optional:
+  synchronous re-eval from there wedges the host FFI (window.active()
+  never returns).
+* `ScriptError` is a plain struct, NOT `std::exception`: an uncaught
+  goroutine error without the engine-boundary conversion terminates the
+  process (SIGABRT). The conversion catches stay.
+* Locking tests (manual-run): `scripts/tests/test_when_block_hotkey_
+  lifecycle.hv`, `test_when_exit_observes_ungrab.hv`,
+  `test_when_assigned_hotkey_conditional.hv`; the boundary gate
+  `scripts/ci/goroutine-error-exit-test.sh`. History, file map and how to
+  change the area safely: `docs/contributing/reactive-hotkeys.md`.
+
 ## Multi-agent coordination
 
 Multiple OpenCode sessions may work on this repository in separate Git worktrees.
@@ -1351,3 +1406,35 @@ Multiple OpenCode sessions may work on this repository in separate Git worktrees
 - After merging, handoff with `agent handoff <merge-task> "merged <branch>" --commit <hash>`.
 - Cherry-pick rules: cherry-picking into another worktree is merging small. Same
   broadcast rule applies.
+
+## Defect Discovery and Session Handoffs
+
+When discovering a bug, lifetime hazard, resource leak, unsafe ownership
+pattern, or other actionable defect:
+
+1. **Fix it and add a regression test** when it is within the task's scope
+   and can be changed safely.
+2. Otherwise, record confirmed defects in `docs/known-issues/` with a
+   descriptive filename, evidence, a minimal safe reproducer, relevant
+   source locations, and a concrete next step.
+3. Record unconfirmed hazards separately as hypotheses. Never present an
+   inference as a verified root cause.
+4. Before finishing, search existing known-issues entries and relevant
+   source comments for related findings. Link related defects instead of
+   creating duplicate reports.
+5. Include the durable issue path, test added or run, test result, and
+   remaining uncertainty in the session handoff.
+6. Never claim a defect is fixed merely because the code builds or a narrow
+   test passes. Verify the specific failure mode and its regression test.
+7. Do not run scripts that generate hardware input, interact with live
+   applications, or create unsafe external side effects as diagnostic tests.
+   Use safe synthetic tests where possible.
+
+Rationale: a defect explained in a source comment but not converted into a
+tracked artifact (issue + reproducer + test) will be rediscovered from
+scratch by the next session at full diagnostic cost. The pin-leak at
+`src/host/module/bridges/InputBridge.cpp` ("The id was dropped here before:
+pinExternalRoot returns the only handle that can release the root, so
+discarding it pinned one root per hotkey binding for the whole process")
+is the worked example: diagnosed, explained in a comment, and left there
+until re-diagnosis cost another session real time.

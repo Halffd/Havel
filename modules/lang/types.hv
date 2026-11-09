@@ -429,6 +429,10 @@ if k == "DeferStatement" {
 	if node.expression != null { inferExpr(node.expression, env) }
 	return
 }
+if k == "EmitStatement" {
+	if node.payload != null { inferExpr(node.payload, env) }
+	return
+}
 if k == "WaitExpression" {
 	if node.target != null { inferExpr(node.target, env) }
 	return

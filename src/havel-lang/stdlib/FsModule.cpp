@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <glob.h>
 #endif
 
 #include "havel-lang/core/Value.hpp"
@@ -187,6 +188,81 @@ static void globSearch(const fs::path &dir, const std::string &pattern,
             globSearch(entry.path(), pattern, recursive, results);
         }
     }
+}
+
+// POSIX glob() wrapper - the only place the OS pattern matcher is invoked.
+// GLOB_TILDE expands ~; GLOB_BRACE (glibc/GNU) expands {a,b}; *, ?, [abc],
+// [a-z] are standard. Matches are explicitly sorted (POSIX glob sorts
+// unless GLOB_NOSORT, and scripts want deterministic order); no matches is
+// an empty vector, never an error (GLOB_NOMATCH is the normal empty case).
+static std::vector<std::string> posixGlobSorted(const std::string &pattern) {
+    std::vector<std::string> matches;
+#ifndef _WIN32
+    glob_t result;
+    int flags = GLOB_TILDE;
+#ifdef GLOB_BRACE
+    flags |= GLOB_BRACE;
+#endif
+    if (glob(pattern.c_str(), flags, nullptr, &result) == 0) {
+        matches.reserve(result.gl_pathc);
+        for (size_t i = 0; i < result.gl_pathc; ++i)
+            matches.emplace_back(result.gl_pathv[i]);
+        globfree(&result);
+    }
+#else
+    (void)pattern;
+#endif
+    std::sort(matches.begin(), matches.end());
+    return matches;
+}
+
+// Shared fs.glob body.
+//  - one-arg, no `**`: the pattern names paths directly and goes through
+//    POSIX glob().
+//  - `**` patterns and the two-arg form: recursive filename walk. The
+//    search root is `dir` (or, for one-arg `path/**/base`, the literal
+//    path prefix before `**`); the base pattern is the remainder after
+//    `**/`. A missing search root yields an empty result, not null.
+// Always sorted; sorted order is what scripts iterate deterministically.
+static std::vector<std::string> runGlob(const std::string &pattern, std::string dir,
+                                        bool hasDir) {
+    const bool recursive = pattern.find("**") != std::string::npos;
+    if (!hasDir && !recursive) {
+        return posixGlobSorted(pattern);
+    }
+
+    std::vector<std::string> out;
+    std::string basePattern = pattern;
+    if (recursive) {
+        size_t pos = pattern.find("**/");
+        if (pos != std::string::npos) {
+            std::string prefix = pattern.substr(0, pos);
+            while (!prefix.empty() && prefix.back() == '/')
+                prefix.pop_back();
+            if (!prefix.empty() && !hasDir)
+                dir = prefix;
+            basePattern = pattern.substr(pos + 3);
+        }
+        if (basePattern.empty())
+            basePattern = "*";
+    }
+    if (dir.empty())
+        dir = ".";
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec))
+        return out;
+    std::vector<fs::path> results;
+    globSearch(dir, basePattern, recursive, results);
+    out.reserve(results.size());
+    for (const auto &p : results)
+        out.push_back(p.string());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+static bool globPathIsDir(const std::string &p) {
+    std::error_code ec;
+    return fs::is_directory(p, ec);
 }
 
 struct FileHandle {
@@ -572,42 +648,72 @@ void registerFsModule(const VMApi &api) {
   return arr2;
 });
 
-    // fs.glob (pattern matching with * and **)
+    // fs.glob(pattern[, dir])
+    //   one-arg: `pattern` names paths directly - POSIX glob() with
+    //     GLOB_TILDE (~) and GLOB_BRACE ({a,b}). Results sorted; no
+    //     matches = [] (a missing directory is not an error).
+    //   `**` patterns and the legacy two-arg form: recursive filename
+    //     walk; see runGlob above.
     api.registerFunction(
         "fs.glob", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string pattern = api.resolveString(args[0]);
-            std::string dir = ".";
-            if (args.size() > 1) {
-                dir = api.resolveString(args[1]);
-            }
-            // Absolute patterns carry their own base directory: split
-            // "/tmp/x/*.log" into dir "/tmp/x" + pattern "*.log". The walker
-            // matches entries RELATIVE to dir, so an absolute pattern used to
-            // match nothing and glob returned [].
-            splitAbsoluteGlob(pattern, dir, args.size() > 1);
-            bool recursive = pattern.find("**") != std::string::npos;
-            std::vector<fs::path> results;
-            std::error_code ec;
-            if (!fs::is_directory(dir, ec))
+            bool hasDir = args.size() > 1;
+            std::string dir = hasDir ? api.resolveString(args[1]) : std::string();
+            auto out = runGlob(pattern, dir, hasDir);
+            auto arr = api.makeArray();
+            for (const auto &s : out)
+                api.push(arr, api.makeString(s));
+            return arr;
+        });
+
+    // fs.glob_many([patterns]) - union of several patterns, de-duplicated
+    // and sorted. Each pattern matches like fs.glob's one-arg form.
+    api.registerFunction(
+        "fs.glob_many", [api](const std::vector<Value> &args) {
+            if (args.empty() || !args[0].isArrayId())
                 return Value::makeNull();
-            std::string basePattern = pattern;
-            if (recursive) {
-                size_t pos = pattern.find("**/");
-                if (pos != std::string::npos) {
-                    basePattern = pattern.substr(pos + 3);
-                    if (basePattern.empty())
-                        basePattern = "*";
-                }
+            std::set<std::string> seen;
+            uint32_t n = api.length(args[0]);
+            for (uint32_t i = 0; i < n; ++i) {
+                std::string p = api.resolveString(api.getAt(args[0], i));
+                for (auto &m : runGlob(p, std::string(), false))
+                    seen.insert(std::move(m));
             }
-  globSearch(dir, basePattern, recursive, results);
-  auto arr = api.makeArray();
-  for (const auto &p : results) {
-    api.push(arr, api.makeString(p.string()));
-  }
-  return arr;
-});
+            auto arr = api.makeArray();
+            for (const auto &s : seen)
+                api.push(arr, api.makeString(s));
+            return arr;
+        });
+
+    // fs.glob_dirs(pattern) - matches that are directories only.
+    api.registerFunction(
+        "fs.glob_dirs", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeNull();
+            std::string pattern = api.resolveString(args[0]);
+            auto arr = api.makeArray();
+            for (const auto &s : runGlob(pattern, std::string(), false)) {
+                if (globPathIsDir(s))
+                    api.push(arr, api.makeString(s));
+            }
+            return arr;
+        });
+
+    // fs.glob_files(pattern) - matches that are not directories.
+    api.registerFunction(
+        "fs.glob_files", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeNull();
+            std::string pattern = api.resolveString(args[0]);
+            auto arr = api.makeArray();
+            for (const auto &s : runGlob(pattern, std::string(), false)) {
+                if (!globPathIsDir(s))
+                    api.push(arr, api.makeString(s));
+            }
+            return arr;
+        });
 
     // fs.globArgs(pattern[, dir]) - bash-compatible argument globbing: the
     // matches when any exist, otherwise the literal pattern in a one-element
@@ -1206,8 +1312,9 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "walk", api.makeFunctionRef("fs.walk"));
     api.setField(fsObj, "traverse", api.makeFunctionRef("fs.traverse"));
     api.setField(fsObj, "glob", api.makeFunctionRef("fs.glob"));
-    api.setField(fsObj, "globArgs", api.makeFunctionRef("fs.globArgs"));
-    api.setField(fsObj, "find", api.makeFunctionRef("fs.find"));
+    api.setField(fsObj, "glob_many", api.makeFunctionRef("fs.glob_many"));
+    api.setField(fsObj, "glob_dirs", api.makeFunctionRef("fs.glob_dirs"));
+    api.setField(fsObj, "glob_files", api.makeFunctionRef("fs.glob_files"));
     api.setField(fsObj, "watch", api.makeFunctionRef("fs.watch"));
     api.setField(fsObj, "watchTree", api.makeFunctionRef("fs.watchTree"));
     api.setField(fsObj, "open", api.makeFunctionRef("fs.open"));

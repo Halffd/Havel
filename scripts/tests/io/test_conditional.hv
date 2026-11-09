@@ -119,7 +119,27 @@ fn modeEval(win) {
 // ============================================================
 // OTHER HOTKEYS
 // ============================================================
-pHk = p if title_ ~ "mpv" => print("P pressed in mpv")
+pHk = nil
+when title_ ~ "mpv" {
+  pHk = p => print("P pressed in mpv")
+  print "On mpv $pHk"
+  if !pHk.enabled || !pHk.grab {
+    print "ERROR pHk when block"
+  }
+}
+when !(title_ ~ "mpv"){
+  print "Out of mpv $pHk"
+  try {
+    if !pHk.enabled {
+      print "ERROR: when block not disabling hotkeys on exit"
+    }
+    if !pHk.grab {
+      print "ERROR: when block not ungrabbing hotkeys on exit"
+    }
+  } catch {
+    print "ERROR: pHk not assigned"
+  }
+}
 vHk = ^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
 +s if mode == "gaming" => {
     winid = window.active().id

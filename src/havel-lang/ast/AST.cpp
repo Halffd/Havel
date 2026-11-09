@@ -538,6 +538,16 @@ void visitTryExpression(const TryExpression &node) override {
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitExternBlock(const ExternBlock &node) override {
+    out << getIndent() << "ExternBlock {" << std::endl;
+    indentLevel++;
+    for (const auto &fn : node.functions) {
+      out << getIndent() << "fn " << fn.name << "/" << fn.paramCount << std::endl;
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitUseStatement(const UseStatement &node) override {
     out << getIndent() << "UseStatement {" << std::endl;
     indentLevel++;

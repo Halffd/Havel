@@ -42,6 +42,7 @@ const std::unordered_map<havel::TokenType, std::string> TOKEN_TYPE_NAMES = {
     {havel::TokenType::Impl, "Impl"},
     {havel::TokenType::This, "This"},
     {havel::TokenType::On, "On"},
+    {havel::TokenType::Emit, "Emit"},
     {havel::TokenType::Off, "Off"},
     {havel::TokenType::When, "When"},
     {havel::TokenType::Mode, "Mode"},

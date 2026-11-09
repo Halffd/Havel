@@ -1324,6 +1324,20 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     Value key_value = popStack();
     Value object = popStack();
 
+    // Reading a property of nil is a script-level error, raised as a
+    // catchable ScriptThrow: silently yielding null made `x.field` on an
+    // unassigned value indistinguishable from a real null field and left
+    // `try { ... } catch { ... }` guards unreachable (see
+    // io/test_conditional.hv's `catch { "ERROR: pHk not assigned" }` and
+    // scripts/tests/test_when_block_hotkey_lifecycle.hv). `?.` uses
+    // JUMP_IF_NULL codegen and still yields null without reaching here.
+    if (object.isNull()) {
+      auto keyStr = resolveKey(key_value);
+      std::string propName = keyStr ? *keyStr : std::string("?");
+      throw ScriptThrow{Value::makeStringId(
+          heap_.allocateString("Cannot read property '" + propName + "' of nil").id)};
+    }
+
     // Handle interval/timeout objects
     if (object.isIntervalId() || object.isTimeoutId()) {
       auto key = resolveKey(key_value);

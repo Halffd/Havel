@@ -74,6 +74,17 @@ struct VMApi {
            vm().hostFunctionGlobals().find(name) != vm().hostFunctionGlobals().end();
   }
 
+  // Look a global up across every scope a script-level read can reach:
+  // the ambient map, the shared module base layer, then the pushed
+  // globals_stack_ frames (innermost first) - the same chain LOAD_GLOBAL
+  // uses. getGlobals() alone only sees the AMBIENT map, which during a
+  // module load is the module's sandbox: a host function invoked from a
+  // module then sees the module's names, not the script's globals, and
+  // any lookup of a script-global object comes back empty.
+  bool findGlobalValue(const std::string &name, Value *out) const {
+    return vm().findGlobalValueByName(name, out);
+  }
+
   void setGlobalIfNew(const std::string &name, Value value) const {
     if (!hasGlobal(name)) vm().setGlobal(name, std::move(value));
   }

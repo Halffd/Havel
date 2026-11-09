@@ -392,10 +392,27 @@ void havel_getindex(HavelState* H, int idx, int i) {
     const auto& v = H->stack[arr_idx];
     if (v.isArrayId()) {
         auto arrId = v.asArrayId();
+        // C-API sidecar array first (pusharray/arrayappend created it)...
         auto it = H->arrays.find(arrId);
-        if (it != H->arrays.end() && i >= 0 && i < static_cast<int>(it->second.size())) {
-            H->stack.push_back(it->second[static_cast<size_t>(i)]);
+        if (it != H->arrays.end()) {
+            if (i >= 0 && i < static_cast<int>(it->second.size())) {
+                H->stack.push_back(it->second[static_cast<size_t>(i)]);
+            } else {
+                H->stack.push_back(havel::core::Value::makeNull());
+            }
             return;
+        }
+        // ...then the VM heap: script-created arrays ([1,2,3]) live there
+        // with ids from a separate space. Without this fallback they
+        // serialized as [] (operator[] even INSERTED an empty sidecar
+        // entry for the heap id).
+        if (H->vm) {
+            if (auto* arr = H->vm->getHeap().array(arrId)) {
+                if (i >= 0 && i < static_cast<int>(arr->size())) {
+                    H->stack.push_back((*arr)[static_cast<size_t>(i)]);
+                    return;
+                }
+            }
         }
     }
     H->stack.push_back(havel::core::Value::makeNull());
@@ -446,7 +463,19 @@ int havel_arraylen(HavelState* H, int idx) {
     if (i < 0 || i >= t) return 0;
     const auto& v = H->stack[i];
     if (v.isArrayId()) {
-        return static_cast<int>(H->arrays[v.asArrayId()].size());
+        // Sidecar arrays (havel_pusharray) first; VM-heap arrays
+        // (script literals like [1,2,3]) fall back to the heap so they
+        // report their real length instead of 0 - and operator[] no
+        // longer inserts an empty sidecar entry for heap ids.
+        auto it = H->arrays.find(v.asArrayId());
+        if (it != H->arrays.end()) {
+            return static_cast<int>(it->second.size());
+        }
+        if (H->vm) {
+            if (auto* arr = H->vm->getHeap().array(v.asArrayId())) {
+                return static_cast<int>(arr->size());
+            }
+        }
     }
     return 0;
 }

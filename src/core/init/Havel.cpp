@@ -329,7 +329,15 @@ void Havel::initialize(bool isStartup) {
     if (!scheduler || !bytecodeVM)
       return;
     auto *vm_ = bytecodeVM.get();
-    if (auto *watcherRegistry = executionEngine->getWatcherRegistry()) {
+    // Fibers whose `when` condition transitioned on this change. Their
+    // bodies run AFTER the conditional-hotkey grab re-eval below so a when
+    // exit branch observes the post-transition grab/enabled state. Running
+    // the bodies first showed a stale snapshot: the exit branch read
+    // enabled=true grab=true and the flip only landed afterwards
+    // (scripts/tests/test_when_exit_observes_ungrab.hv pins this ordering).
+    std::vector<compiler::Fiber *> firedBodies;
+    auto *watcherRegistry = executionEngine->getWatcherRegistry();
+    if (watcherRegistry) {
       auto fired = watcherRegistry->onVariableChanged(
           var_name,
           [vm_, watcherRegistry](uint32_t wid) -> bool {
@@ -361,17 +369,7 @@ void Havel::initialize(bool isStartup) {
             } catch (...) {
             }
           });
-      for (auto *fiber : fired) {
-        if (fiber) {
-          try {
-            compiler::Value body_func =
-                compiler::Value::makeFunctionObjId(fiber->current_function_id);
-            vm_->call(body_func, {});
-          } catch (...) {
-          }
-        }
-      }
-      vm_->processSignalBindings(var_name);
+      firedBodies.assign(fired.begin(), fired.end());
     }
     scheduler->forEachConditionalHotkey([vm_, this, &var_name](compiler::Scheduler::Goroutine *g) {
       if (!g)
@@ -448,6 +446,22 @@ void Havel::initialize(bool isStartup) {
         ::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, conditionMet);
       }
     });
+
+    // When-branch bodies run last: an exit branch observes the grab/enabled
+    // state the re-eval above just applied. processSignalBindings keeps its
+    // historical position relative to the bodies.
+    for (auto *fiber : firedBodies) {
+      if (fiber) {
+        try {
+          compiler::Value body_func =
+              compiler::Value::makeFunctionObjId(fiber->current_function_id);
+          vm_->call(body_func, {});
+        } catch (...) {
+        }
+      }
+    }
+    if (watcherRegistry)
+      vm_->processSignalBindings(var_name);
   });
 
   if (hotkeyManager) {

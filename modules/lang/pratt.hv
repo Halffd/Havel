@@ -23,7 +23,7 @@ GoStatement, WhenBlock, WithStatement, DecoratorStatement,
 OnModeStatement, OffModeStatement, OnReloadStatement, OnStartStatement,
 OnTapStatement, OnComboStatement, OnKeyDownStatement, OnKeyUpStatement, OnMessageStatement,
 ModesBlock, ModeBlock, ModeDefinition, ConfigSection, InputStatement, MultipleAssignment, QueryExpression,
-ConfigBlock, SleepStatement, DeferStatement, WaitExpression, WaitGroupExpression, ErrorNode,
+ConfigBlock, SleepStatement, DeferStatement, EmitStatement, WaitExpression, WaitGroupExpression, ErrorNode,
 ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, ProtocolDeclaration, ImplDeclaration,
 TypeParam, isNode, prettyPrint,
 WildcardPattern, ArrayPattern, ObjectPattern, ConstructorPattern, OrPattern, RangePattern,
@@ -105,6 +105,13 @@ fn getBindingPower(ttype) {
         // module-level and has no access to the current Parser.
         return BP_NONE
     }
+    // A null ttype here means a token with no tid reached the Pratt loop
+    // (lexer produced an unlisted type, or a synthetic token was built
+    // without one). probing the table with null crashes the whole VM
+    // (OBJECT index null-key); BP_NONE degrades to a parse error instead.
+    if ttype == null {
+        return BP_NONE
+    }
     r = getBPTABLE()[ttype]
     if r != null: return r
     return BP_NONE
@@ -112,6 +119,9 @@ fn getBindingPower(ttype) {
 
 // --- getRightBindingPower: lower rbp for right-associative operators ---
 fn getRightBindingPower(ttype) {
+    if ttype == null {
+        return BP_NONE
+    }
     r = getRBPTABLE()[ttype]
     if r != null: return r
     return getBindingPower(ttype)
@@ -222,6 +232,7 @@ fn getKeywordIdents() {
     KEYWORD_IDENTS[TID.Dsl] = true
     KEYWORD_IDENTS[TID.Pool] = true; KEYWORD_IDENTS[TID.Signal] = true; KEYWORD_IDENTS[TID.Group] = true; KEYWORD_IDENTS[TID.Modes] = true
     KEYWORD_IDENTS[TID.Sleep] = true; KEYWORD_IDENTS[TID.Yield] = true; KEYWORD_IDENTS[TID.WaitGroup] = true; KEYWORD_IDENTS[TID.Wait] = true; KEYWORD_IDENTS[TID.Defer] = true
+    KEYWORD_IDENTS[TID.Emit] = true
     KEYWORD_IDENTS
 }
 
@@ -784,7 +795,11 @@ advance()
 return inner
 }
 else if tt == TID.At {
-if current().tid == TID.Identifier {
+// Field after @: a plain identifier, or the `emit` keyword token (soft
+// identifier per Lexer::isSoftIdentifier, e.g. @emit("property-change")
+// in modules/app/mpv.hv). Other soft keywords keep the standalone-@
+// self-reference path to preserve existing behavior.
+if current().tid == TID.Identifier or current().tid == TID.Emit {
 field = advance()
 return AtExpression(field.value, l, c)
 }
@@ -2622,6 +2637,15 @@ if tt == TID.Defer {
 }
         // DSL statements
         if tt == TID.On { return parseOnStatement() }
+        // `emit <name> [payload]` statement; a bare `emit` followed by
+        // anything else is a soft identifier (param/variable reference),
+        // mirroring the C++ Parser.cpp TokenType::Emit case.
+        if tt == TID.Emit {
+          if at(1).tid == TID.Identifier || at(1).tid == TID.String || at(1).tid == TID.MultilineString {
+            return parseEmitStatement()
+          }
+          // fall through to the expression path: `emit` as a name
+        }
         if tt == TID.Mode {
           if at(1).tid == TID.Identifier || at(1).tid == TID.String { return parseModeBlockStatement() }
           return ExpressionStatement(parseExpr(0), l, c)
@@ -3976,6 +4000,24 @@ fn parseOnStatement() {
   }
 
   return error("Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', 'keyup', or message variable after 'on'", l, c)
+}
+
+// `emit <name> [payload]` - publish an event on the event bus. Mirrors
+// Parser::parseEmitStatement (C++): the event name is a bare identifier or
+// a string literal, the payload is an optional object literal. `emit` in
+// every other position is a soft identifier (fn/param/member named emit).
+fn parseEmitStatement() {
+  l = current().line
+  c = current().col
+  advance() // consume 'emit'
+  skipNewlines()
+  nameTok = advance()
+  eventName = nameTok.value
+  payload = null
+  if current().tid == TID.OpenBrace {
+    payload = parseObjectLiteral(false, false)
+  }
+  EmitStatement(eventName, payload, l, c)
 }
 
 fn parseOnModeStatementBody() {

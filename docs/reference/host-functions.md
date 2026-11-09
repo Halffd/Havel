@@ -318,7 +318,10 @@ comparisons instead, e.g. `type(x) == "int"`.
 | `fs.writable` | `(path: str) -> bool` | Is writable |
 | `fs.walk` | `(path: str) -> array` | Walk directory tree |
 | `fs.traverse` | `(path: str) -> array` | Traverse directory tree |
-| `fs.glob` | `(pattern: str) -> array` | Glob match |
+| `fs.glob` | `(pattern: str, dir?: str) -> array` | Path glob: POSIX `glob()` (`*`, `?`, `[abc]`, `{a,b}`, `~`), `**` recursive walk, sorted results, no match = `[]` |
+| `fs.glob_many` | `(patterns: array) -> array` | Union of several glob patterns, de-duplicated and sorted |
+| `fs.glob_dirs` | `(pattern: str) -> array` | Glob matches that are directories |
+| `fs.glob_files` | `(pattern: str) -> array` | Glob matches that are not directories |
 | `fs.open` | `(path: str, mode: str) -> handle` | Open file handle |
 | `fs.tempFile` | `() -> str` | Temporary file path |
 | `fs.atomicWrite` | `(path: str, content: str) -> nil` | Atomic write |

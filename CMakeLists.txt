@@ -2268,14 +2268,16 @@ enable_testing()
 # (it deliberately does not link Qt) and embedding-qt-invariant fails in
 # ctest. See scripts/ci/embedding-qt-audit.sh.
 add_executable(embedding_minimal tests/embedding/minimal_embed.cpp)
+# havel_core sits in the documented havel_core <-> havel_runtime symbol
+# cycle with the havel_runtime/havel_compiler archives (the same archives
+# havel_lang expands to). Without the group the single-pass archive scan
+# drops members pulled late (EventBridge/FileWatcher -> EventRuntime,
+# ExecutionEngine -> HotkeyActionWrapper) and the link fails with undefined
+# references. Link the concrete archives inside the group exactly like
+# havel-lsp does; havel_lang must not be wrapped because CMake expands an
+# INTERFACE library's transitive archives outside the group markers.
 target_link_libraries(embedding_minimal PRIVATE
-    # The three havel archives reference each other cyclically: havel_core's
-    # EventBridge/FileWatcher call into havel_runtime's EventRuntime, and
-    # havel_compiler into both. A plain list leaves them in scan order, so
-    # core's references to EventRuntime are unresolved when runtime is scanned
-    # first - this target failed to link the first time anything built it,
-    # because no earlier build had ever reached it. Same group form as
-    # io_key_parse_test / pixel_provider_test.
+
     ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
 )
 target_include_directories(embedding_minimal PRIVATE
@@ -3490,6 +3492,25 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
+
+    # Drift guard for the three token-name registries: TokenType enum ->
+    # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
+    # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member
+    # with no table row, and tokenize() then tags the token tid=null, which
+    # reaches the Pratt binding-power lookup as a null object key (the
+    # `emit` regression). Pure header test.
+    add_executable(token_type_names_drift_test
+        tests/token_type_names_drift_ut.cpp
+    )
+    target_include_directories(token_type_names_drift_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+    )
+    target_compile_definitions(token_type_names_drift_test PRIVATE
+        LEXER_HV_PATH="${CMAKE_SOURCE_DIR}/modules/lang/lexer.hv")
+    target_compile_features(token_type_names_drift_test PRIVATE cxx_std_23)
+    target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core

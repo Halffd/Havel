@@ -184,15 +184,43 @@ static Value configDispatch(const VMApi &api, const std::vector<Value> &args) {
 static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value);
 
 void registerConfigModule(const VMApi &api) {
-  // Create config object first so load/set handlers can repopulate it
-  auto configObj = api.makeObject();
-  // Markers must be set BEFORE repopulating: setNestedField copies
-  // __autosave_root down to each section it creates, so sections built from
-  // keys already on disk would otherwise get no marker and their writes would
-  // never reach the config store.
-  // __vivify: cfg.Debug.X = Y auto-creates an object at cfg.Debug.
-  api.setField(configObj, "__vivify", Value::makeBool(true));
-  // NOTE: __autosave_root is deliberately NOT enabled here. Enabling it makes
+  // Idempotent registration: if a `config` global object already exists
+  // (this plugin can be registered more than once - eager scan + lazy
+  // module load both call register_fn), REUSE it and repopulate in place.
+  // Building a fresh object each time left two configObj instances alive:
+  // whichever one a script captured (`cfg = _store` in std/config.hv, or
+  // the bare global) saw the OTHER one's section data, so cfg.Gaming
+  // resolved to a marker-only vivify shell instead of the populated
+  // section (measured: cfg.Gaming.Classes -> {} while config.Gaming had
+  // the keys; scripts/tests chain probes Oct 27).
+  Value configObj = Value::makeNull();
+  // Search every scope a script-level global read reaches (ambient, module
+  // base layer, pushed frames), not just the ambient map: when the plugin
+  // registers during a MODULE load, the ambient scope is that module's
+  // sandbox, where the script's "config" global is not bound - the lookup
+  // missed it, built a SECOND config object, and the script's config global
+  // kept pointing at the first one (the "two configObj instances" case
+  // below).
+  Value existingConfig;
+  if (api.findGlobalValue("config", &existingConfig) && existingConfig.isObjectId()) {
+    configObj = existingConfig;
+  } else {
+    configObj = api.makeObject();
+    // Markers must be set BEFORE repopulating: setNestedField copies
+    // __vivify down to each section it creates, so sections built from
+    // keys already on disk would otherwise get no marker.
+    // __vivify: cfg.Debug.X = Y auto-creates an object at cfg.Debug.
+    api.setField(configObj, "__vivify", Value::makeBool(true));
+  }
+  // Marks this global object as the module contract for `use "std/config"`:
+  // loadModule binds it instead of the .hv wrapper, whose namespace lacks
+  // the live section objects (cfg.Gaming.Classes read the wrapper as a
+  // marker-only shell). Explicit so other plugin objects - bit, math_native,
+  // log, random carry only private fns while their public API lives in an
+  // .hv sidecar - keep the normal module path (binding them regressed
+  // bit.arshift to null in the smoke suite, Oct 31).
+  api.setField(configObj, "__module_object", Value::makeBool(true));
+  // NOTE: __autosave_root is deliberately NOT enabled. Enabling it makes
   // the VM's OBJECT_SET hook mirror `cfg.X.Y = z` writes into the config
   // store, and that path currently persists the WRONG value: for
   // `cfg.Fresh.S = "hello"` the hook sees the assigned name as a string and
@@ -207,27 +235,58 @@ void registerConfigModule(const VMApi &api) {
                    stringToValue(api, Configs::Get().Get<std::string>(key, "")));
   }
 
+  // Call-time lookup of the config object: the closures below must mutate
+  // the SAME object the script reads (the `config` global), not whatever
+  // instance was current at registration - plugin registration can run in
+  // more than one VM context, and a captured configObj left the script's
+  // global holding section shells that never received later config.set
+  // values (measured: config.set("Debug.ForceMinimal", 0) updated the C map
+  // but config.Debug.ForceMinimal stayed a vivified shell).
+  // Capture VMApi BY VALUE (it is a shallow {VM*, ServiceRegistry*} handle).
+  // Capturing the parameter by reference dangled: registerConfigModule
+  // returns long before a script calls config.set, and the referenced
+  // VMApi lived in activateLazyModule's stack frame - the later call read
+  // a garbage vm_ and died with EINVAL in GCHeap's mutex (gdb, Oct 30).
+  auto configObjAtCall = [api]() -> Value {
+    // Look the global up across EVERY scope a script-level read reaches
+    // (ambient, module base layer, pushed frames) - not just the ambient
+    // map. A config.set() issued while a module is loading ran with the
+    // MODULE's sandbox as the ambient scope, where "config" is not bound:
+    // the lookup returned null and the repopulate below called setField
+    // on it, throwing "VMApi::setField: expected object" and killing the
+    // script (gdb, Nov 8: hotkeys0.3.hv -> start.hv -> cfg.set).
+    Value found;
+    if (api.findGlobalValue("config", &found) && found.isObjectId())
+      return found;
+    return Value::makeNull();
+  };
+  auto repopulate = [api](Value configObj) {
+    // Nothing to repopulate when the object could not be resolved (the
+    // store itself was already updated by the caller). Bail out instead
+    // of handing null to setField.
+    if (!configObj.isObjectId())
+      return;
+    for (const auto &key : Configs::Get().GetAllKeys()) {
+      setNestedField(api, configObj, key,
+                     stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+    }
+  };
+
   // Register namespace methods for config.load(), config.get(), etc.
-  api.registerFunction("config.load", 1, [api, configObj](const std::vector<Value> &args) {
+  api.registerFunction("config.load", 1, [api, configObjAtCall, repopulate](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("config.load() requires path");
     Configs::Get().Load(api.toString(args[0]));
     // Repopulate config object from C-level Configs after load
-    for (const auto &key : Configs::Get().GetAllKeys()) {
-      setNestedField(api, configObj, key,
-                     stringToValue(api, Configs::Get().Get<std::string>(key, "")));
-    }
+    repopulate(configObjAtCall());
     return Value::makeBool(true);
   });
   api.registerFunction("config.get",
                        [api](const std::vector<Value> &args) { return configGet(api, args); });
-  api.registerFunction("config.set", [api, configObj](const std::vector<Value> &args) {
+  api.registerFunction("config.set", [api, configObjAtCall, repopulate](const std::vector<Value> &args) {
     auto result = configSet(api, args);
     // Repopulate config object from C-level Configs after set
-    for (const auto &key : Configs::Get().GetAllKeys()) {
-      setNestedField(api, configObj, key,
-                     stringToValue(api, Configs::Get().Get<std::string>(key, "")));
-    }
+    repopulate(configObjAtCall());
     return result;
   });
   api.registerFunction("config.save",

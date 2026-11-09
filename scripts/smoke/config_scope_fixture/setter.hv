@@ -1,0 +1,18 @@
+// Fixture for test_issue_config_set_in_module_scope.hv.
+//
+// This module's TOP LEVEL calls cfg.set(). The module body runs in the VM's
+// module sandbox (a fresh globals map), not the importing script's scope, so
+// the config module's call-time lookup for the "config" global must search
+// every scope a script-level global read reaches - not just the ambient map.
+// Before the fix the lookup saw only the sandbox, found nothing, and the
+// repopulate path called setField on a null object:
+//   Execution error: VMApi::setField: expected object
+// which killed the importing script.
+
+use "std/config" as cfg
+
+cfg.set("Smoke.ConfigScope", "from-module")
+
+fn readBack() {
+  return cfg.get("Smoke.ConfigScope", "")
+}

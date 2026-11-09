@@ -264,7 +264,18 @@ static void havel_log(HavelLogger* logger, HavelLoggerLevel level, const char* m
 
     if (logger->consoleOutput) {
         if (logger->coloredOutput) {
-            fprintf(stdout, "%s%s%s", levelColor(level), logMessage, kColorReset);
+            // Reset must precede the trailing newline: emitting it after
+            // ("%s%s%s" with logMessage ending in \n) leaves ESC[0m at the
+            // start of the NEXT write - the script's first print line -
+            // which defeats ^-anchored parsing of havel output
+            // (docs/known-issues/ansi-reset-prefixes-first-print-line.md).
+            size_t len = strlen(logMessage);
+            if (len > 0 && logMessage[len - 1] == '\n') {
+                fprintf(stdout, "%s%.*s%s\n", levelColor(level), (int)(len - 1), logMessage,
+                        kColorReset);
+            } else {
+                fprintf(stdout, "%s%s%s", levelColor(level), logMessage, kColorReset);
+            }
         } else {
             fputs(logMessage, stdout);
         }

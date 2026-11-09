@@ -1544,6 +1544,43 @@ void VM::registerDefaultHostFunctions() {
     return v;
   });
 
+  // __extern_check(name, arity) - load-time resolution for `extern { ... }`
+  // declarations (docs/reference/extern-types.md). The bytecode compiler
+  // emits one call per declared native function at the block's position, so
+  // a name the host never registered fails at module load, by name, instead
+  // of at first call with an opaque dispatch error.
+  //
+  // Resolution uses lookupGlobalByKey - the same lookup LOAD_GLOBAL/CALL
+  // perform - so the check cannot pass for a name the call would miss.
+  // Arity is compared only when the registration recorded one (the 2-arg
+  // registerHostFunction overload accepts any argument count).
+  registerHostFunction("__extern_check", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[1].isInt()) {
+      COMPILER_THROW("__extern_check(name, arity)");
+    }
+    std::string name;
+    if (args[0].isStringId() || args[0].isStringValId()) {
+      name = resolveStringKey(args[0]);
+    }
+    if (name.empty()) {
+      COMPILER_THROW("__extern_check requires a function name");
+    }
+    if (lookupGlobalByKey(name).isNull()) {
+      COMPILER_THROW("extern function '" + name +
+                     "' is not registered by the host");
+    }
+    auto metaIt = host_function_meta_.find(name);
+    if (metaIt != host_function_meta_.end() && metaIt->second.arity.has_value()) {
+      const size_t declared = static_cast<size_t>(args[1].asInt());
+      if (*metaIt->second.arity != declared) {
+        COMPILER_THROW("extern function '" + name + "' is registered with arity " +
+                       std::to_string(*metaIt->second.arity) + ", declared with " +
+                       std::to_string(declared));
+      }
+    }
+    return Value::makeNull();
+  });
+
   // eval(code_string) - Parse and execute Havel code at runtime
   // Returns the result of the last expression
   registerHostFunction("eval", 1, [this](const std::vector<Value> &args) {
@@ -3821,6 +3858,16 @@ void VM::registerDefaultHostFunctions() {
         (*o)["total_closures"] =
             Value::makeInt(static_cast<int64_t>(heap_.closures().size()));
         return Value::makeObjectId(obj.id);
+      });
+
+  registerHostFunction(
+      "gc_external_root_count", 0, [this](const std::vector<Value> &) -> Value {
+        // Read-only observability for root-lifetime regression tests: a
+        // script can register/discard host-held objects (hotkey bindings,
+        // timers, callbacks), force a sweep, and assert the count returns
+        // to baseline. Leaked pins (e.g. a bridge dropping the unpin handle)
+        // are otherwise only visible as the shutdown warning.
+        return Value::makeInt(static_cast<int64_t>(heap_.externalRootCount()));
       });
 
   registerHostFunction(

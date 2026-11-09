@@ -198,8 +198,22 @@ public:
       if (envStdlib && envStdlib[0] != '\0') {
         stdlibPath = envStdlib;
       } else {
+        // The stdlib path is <modules>/std, matching Havel.cpp and
+        // HavelLauncher.cpp. install_paths::stdlibRoot() returns the
+        // modules ROOT, which leaves resolve()'s step-4 direct file miss
+        // and falls into the stdlibPath_ SUBDIRECTORY WALK - and that
+        // walk is in readdir order, so a name present in two subdirs
+        // resolves by directory-creation history, not priority.
+        // Observed: 'use process' (from modules/app/window.hv) resolved
+        // to modules/core/process.hv on havel-stable but
+        // modules/std/process.hv on main, purely because the two trees'
+        // /modules readdir 'core' before 'std' in one and after in the
+        // other. core/process.hv then failed to parse. Pointing at
+        // modules/std makes step 4 hit the intended file first.
         stdlibPath = install_paths::stdlibRoot();
-        if (stdlibPath.empty()) {
+        if (!stdlibPath.empty()) {
+          stdlibPath += "/std";
+        } else {
           auto exePath = Env::executable();
           if (!exePath.empty()) {
             stdlibPath =

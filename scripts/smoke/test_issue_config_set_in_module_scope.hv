@@ -56,11 +56,20 @@ if !havel_bin || havel_bin == "" {
     assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
 }
 
-// The module writes through the config object from a module scope.
+// The module writes through the config object from a module scope and
+// reads the value back through the SAME object - the object the main
+// scope holds. This is the property the fix restores: the write must land
+// on the live object, not on a scope-local copy.
+//
+// The read-back is IN-PROCESS on purpose: config.set persists to disk only
+// on an explicit save (the host bridge's config.set takes an optional
+// save flag), so a separate process would race the file write.
 fs.write(MODULE_FILE, """
 use "std/config" as cfg
 cfg.set("Probe.ScopeKey", "from-module")
+value = cfg.get("Probe.ScopeKey", "missing")
 print("module: cfg.set returned")
+print("module: readback " + value)
 """)
 
 // Main script that imports std/config BEFORE the module: this is the
@@ -88,6 +97,8 @@ assert(res.stdout.find("expected object") < 0,
        "cfg.set() from a module scope must not throw setField errors; output: ${res.stdout}")
 assert(res.stdout.find("module: cfg.set returned") >= 0,
        "the module's cfg.set() must have completed; output: ${res.stdout}")
+assert(res.stdout.find("module: readback from-module") >= 0,
+       "the value written from the module scope must read back on the same object; output: ${res.stdout}")
 assert(res.stdout.find("main: module imported") >= 0,
        "the main script must have continued past the module import; output: ${res.stdout}")
 
@@ -97,10 +108,16 @@ assert(res2.exitCode == 0,
        "the no-main-import shape must also pass; exit ${res2.exitCode}, output: ${res2.stdout}")
 
 // The value the module wrote must be readable through the config store.
+// config.get() takes (key, default) - the host bridge rejects a single
+// argument - so the read-back passes an explicit default.
+// The fixture body deliberately contains NO '$': the outer triple-quoted
+// string would interpolate it, and an interpolation containing escaped
+// quotes is not valid Havel source.
 READBACK_FILE = "${FIXTURE_DIR}/readback.hv"
 fs.write(READBACK_FILE, """
 use "std/config" as cfg
-print("readback: ${cfg.get(\"Probe.ScopeKey\")}")
+value = cfg.get("Probe.ScopeKey", "missing")
+print(value)
 """)
 readback = process.run("HOME=\"${SANDBOX_HOME}\" \"${havel_bin}\" \"${READBACK_FILE}\" 2>&1")
 assert(readback.exitCode == 0,

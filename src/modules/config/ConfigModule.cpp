@@ -260,20 +260,45 @@ void registerConfigModule(const VMApi &api) {
   // repopulate threw "VMApi::setField: expected object"
   // (hotkeys0.3.hv -> start.hv, Nov 3 2026).
   //
-  // findGlobalValueByName walks the same scopes a global read can reach:
-  // ambient, module base layer, then the pushed scope frames.
+  // The live config object is the one this registration created or reused:
+  // the plugin REUSES an existing "config" global when one is present, and
+  // that global is what `use "std/config"` binds (the __module_object
+  // contract in VM::loadModule). It is therefore the object the script
+  // reads and the object a write must land on.
   //
-  // Fallback: the object this registration created or reused. The plugin
-  // REUSES an existing "config" global when one is present, so this is the
-  // same object the script reads - it is the live object even when no scope
-  // lookup finds it (e.g. the base layer was captured before this plugin
-  // registered).
-  auto configObjAtCall = [api, configObj]() -> Value {
-    Value found;
-    if (api.vm().findGlobalValueByName("config", &found) && found.isObjectId())
-      return found;
-    if (configObj.isObjectId())
+  // The scope lookup is only a fallback, and it must reject the .hv
+  // WRAPPER: in a module scope, `use "std/config"` binds the wrapper
+  // namespace under the name "config", and that wrapper is an object too.
+  // Refreshing the wrapper would leave the live object stale - the write
+  // would be visible through the config store but the script's
+  // cfg.<Section>.<Key> read would still return null. Only an object
+  // carrying the __module_object marker is the live config object.
+  // Capture VMApi BY VALUE: it is a shallow {VM*, ServiceRegistry*}
+  // handle, so the copy is valid for the lambdas' lifetime. Capturing by
+  // reference (or capturing a lambda that itself captured by reference)
+  // dangles: registerConfigModule returns long before config.set runs,
+  // and the references pointed into its parameter/stack frame. That is
+  // the exact class of bug the header comment above documents (gdb Oct
+  // 30: garbage vm_ read, EINVAL inside GCHeap's mutex); the current
+  // manifestation is a SIGSEGV inside GCHeap::ownerThread when
+  // configObjAtCall later calls isLiveConfigObject through its
+  // by-value api copy (gdb Nov 9: config.set -> $_15 -> $_16 ->
+  // VMApi::hasField -> heap_.object with this=0x49ced31def949800).
+  auto isLiveConfigObject = [api](Value candidate) {
+    if (!candidate.isObjectId())
+      return false;
+    if (!api.hasField(candidate, "__module_object"))
+      return false;
+    Value marker = api.getField(candidate, "__module_object");
+    return marker.isBool() && marker.asBool();
+  };
+  auto configObjAtCall = [api, configObj, isLiveConfigObject]() -> Value {
+    if (isLiveConfigObject(configObj))
       return configObj;
+    Value found;
+    if (api.vm().findGlobalValueByName("config", &found) &&
+        isLiveConfigObject(found))
+      return found;
     return Value::makeNull();
   };
   auto repopulate = [api](Value configObj) {

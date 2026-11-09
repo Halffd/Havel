@@ -192,14 +192,24 @@ extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id) {
   // HAVEL_TRACE_GG=1: log every compiled-code global read with its result.
   if (const char *gg_env = std::getenv("HAVEL_TRACE_GG"); gg_env && gg_env[0] == '1') {
     Value probe;
+    const char *layer = "miss";
+    if (vm->ambientHasGlobalPublic(name)) {
+      layer = "ambient";
+    } else if (vm->hostFunctionTableHasPublic(name)) {
+      layer = "host";
+    } else if (vm->frameSidecarHasGlobalPublic(name)) {
+      layer = "sidecar";
+    } else if (vm->baseModuleGlobalsHasPublic(name)) {
+      layer = "base";
+    }
     const bool found = vm->resolveGlobalPublic(name, &probe);
     std::string extra;
     if (probe.isHostFuncId()) {
       auto hfn = vm->getHostFunctionName(probe.asHostFuncId());
       extra = " host_fn=" + hfn.value_or("<bad-idx:" + std::to_string(probe.asHostFuncId()) + ">");
     }
-    std::fprintf(stderr, "[gg] %s -> 0x%llx%s%s\n", name.c_str(),
-                 static_cast<unsigned long long>(probe.rawBits()), extra.c_str(),
+    std::fprintf(stderr, "[gg] %s -> 0x%llx%s layer=%s%s\n", name.c_str(),
+                 static_cast<unsigned long long>(probe.rawBits()), extra.c_str(), layer,
                  found ? "" : " (UNRESOLVED)");
     if (!found)
       return Value::makeNull().rawBits();

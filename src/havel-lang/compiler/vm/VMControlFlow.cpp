@@ -827,7 +827,8 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
 
     if (!found_host && vm_func.isNull()) {
       // Pop args and receiver before pushing null result
-      for (uint32_t i = 0; i < arg_count; ++i) popStack();
+      for (uint32_t i = 0; i < arg_count; ++i)
+        popStack();
       Value recv = popStack(); // receiver
       // Pipe-stage disambiguation: `x | name` parses as a pipeline whenever
       // name is an identifier (the lexer emits BitwiseOr, but led() re-reads
@@ -1468,19 +1469,30 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
 
     std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
     if (main_chunk_ && current_chunk != main_chunk_.get()) {
-      // For module chunks, share the parent frame's module_globals dict instead
-      // of copying vm.globals. Closures created here must observe writes done
-      // by sibling module functions (e.g. pratt::pos incremented inside nud so
-      // parseExpr sees the new position on its next ::pos read). Sharing one
-      // dict pointer across all closures in a module keeps :: globals coherent.
-      // The fresh dict is created lazily at module load (VM::loadModule line 4158)
-      // and re-used for every closure created in the chunk.
+      // For module chunks, share the module's authoritative globals dict
+      // instead of copying vm.globals. Closures created here must observe
+      // writes done by sibling module functions (e.g. pratt::pos incremented
+      // inside nud so parseExpr sees the new position on its next ::pos
+      // read). Sharing one dict pointer across all closures in a module
+      // keeps :: globals coherent. Resolution order: the parent frame's
+      // module_globals, then the chunk registry (the post-__main__ map every
+      // re-pointed closure and $module_fn_ wrapper carries). The old
+      // last-resort ambient COPY was the snapshot-fork bug: every closure
+      // created under a module-load-time parent chain (whose top-level
+      // closures carry module_globals=nullptr by design) got a PRIVATE
+      // stale copy - lazily-built module state (pratt's BP_TABLE) then
+      // forked per copy, and a reader racing a rebuild saw a half-built
+      // table (tiered self-hosted parse silently mis-associated
+      // expressions). A registered chunk never falls back to a copy.
       uint32_t parent_cid = currentFrame().closure_id;
       if (parent_cid != 0) {
         auto *pclosure = heap_.closure(parent_cid);
         if (pclosure && pclosure->module_globals) {
           closure_globals = pclosure->module_globals;
         }
+      }
+      if (!closure_globals) {
+        closure_globals = moduleGlobalsForChunk(current_chunk);
       }
       if (!closure_globals) {
         closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);

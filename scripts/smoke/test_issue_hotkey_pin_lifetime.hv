@@ -1,0 +1,109 @@
+// Regression test: hotkey bindings must not leak GC external roots.
+//
+// what: register hotkeys, then remove them - one at a time and in bulk -
+//   and assert the external root count returns to the pre-registration
+//   baseline.
+// why: two pin leaks lived in the hotkey binding lifetime:
+//   (1) The action/condition closure pins (registerCallback pins an
+//       external root and returns that root id AS the callback id) had no
+//       shutdown drain. ~VM released host_function_gc_roots_,
+//       module_cache_gc_roots_ and tracked_external_roots_, but NOT the
+//       callback pins, so every binding still live at shutdown left one
+//       root behind. Measured 263 roots still pinned at VM shutdown for a
+//       130-hotkey config.
+//   (2) removeAll()/clearAll() cleared the binding map without releasing
+//       the action/condition/context pins, leaking them for the whole
+//       process - even mid-session, where the count is observable.
+// how: gc_external_root_count() exposes the heap's live pin count. Each
+//   hotkey pins an action closure, a condition closure and a context
+//   object, so the count grows by a known amount per registration and must
+//   come back down when the binding goes away.
+// expected: the count returns to baseline after hotkey.remove() and after
+//   removeAll(); the process exits with no "external roots still pinned"
+//   warning.
+// run: ./build-debug/hvtest --smoke test_issue_hotkey_pin_lifetime
+//   (headless-safe: registers bindings on F-key names and removes them;
+//   no key is ever pressed, so no input is injected)
+
+use hotkey
+
+fails = 0
+
+check = fn(name, ok, detail) {
+    if ok {
+        print("PASS: " + name)
+    } else {
+        print("FAIL: " + name + " - " + detail)
+        fails = fails + 1
+    }
+}
+
+// ---------------------------------------------------------------------------
+// (2) removeAll() must release the pins of the bindings it drops.
+// ---------------------------------------------------------------------------
+base = gc_external_root_count()
+print("baseline_roots=" + str(base))
+
+h1 = F13 => { print("never") }
+h2 = F14 => { print("never") }
+registered = gc_external_root_count()
+print("after_register=" + str(registered))
+check("registration pins the bindings",
+      registered > base,
+      "expected more roots than baseline, got " + str(registered) + " (baseline " + str(base) + ")")
+
+removed = h1.removeAll()
+print("removeAll_returned=" + str(removed))
+gc_collect_full()
+gc_collect()
+afterRemoveAll = gc_external_root_count()
+print("after_removeAll=" + str(afterRemoveAll))
+check("removeAll releases every binding's pins",
+      afterRemoveAll <= base,
+      "expected <= baseline " + str(base) + ", got " + str(afterRemoveAll))
+
+// ---------------------------------------------------------------------------
+// (1) hotkey.remove() must release the pins of a single binding.
+// ---------------------------------------------------------------------------
+h3 = F15 => { print("never") }
+h4 = F16 => { print("never") }
+afterReg2 = gc_external_root_count()
+print("after_register_2=" + str(afterReg2))
+
+hotkey.remove("F15")
+hotkey.remove("F16")
+gc_collect_full()
+gc_collect()
+afterRemove = gc_external_root_count()
+print("after_remove=" + str(afterRemove))
+check("hotkey.remove releases every binding's pins",
+      afterRemove <= base,
+      "expected <= baseline " + str(base) + ", got " + str(afterRemove))
+
+// ---------------------------------------------------------------------------
+// A conditional binding pins THREE roots (action closure, condition closure,
+// context object). Removing it must release all three.
+// ---------------------------------------------------------------------------
+h5 = hotkey("F17", fn() { return true }) => { print("never") }
+afterCond = gc_external_root_count()
+print("after_conditional_register=" + str(afterCond))
+check("a conditional binding pins more than an unconditional one",
+      afterCond > afterRemove,
+      "expected > " + str(afterRemove) + ", got " + str(afterCond))
+
+hotkey.remove("F17")
+gc_collect_full()
+gc_collect()
+afterCondRemove = gc_external_root_count()
+print("after_conditional_remove=" + str(afterCondRemove))
+check("a removed conditional binding releases all three pins",
+      afterCondRemove <= base,
+      "expected <= baseline " + str(base) + ", got " + str(afterCondRemove))
+
+if fails == 0 {
+    print("ALL PASS")
+    exit(0)
+} else {
+    print("FAILURES: " + str(fails))
+    exit(1)
+}

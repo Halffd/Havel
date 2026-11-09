@@ -602,7 +602,29 @@ api.registerPrototypeMethod("Hotkey", "removeAll", 1, [&vm](const std::vector<Va
 
 	std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
 	size_t count = g_hotkeyContexts.size();
+	// Release each binding's registration pins before dropping the map
+	// entry: the action callback, the condition callback and the context
+	// object root. Clearing the map without this leaked three external
+	// roots per binding for the process lifetime - a register/removeAll
+	// cycle (hotkeys0.3's fuckedUp()) accumulated them indefinitely.
+	// removeById() releases the same three handles for the single-key
+	// path; this loop is the bulk equivalent, done inline because
+	// removeById re-takes g_hotkeyContextsMutex (not recursive).
 	for (auto &[id, data] : g_hotkeyContexts) {
+		if (data) {
+			vm.releaseCallback(data->callback);
+			if (data->condition_callback != 0) {
+				vm.releaseCallback(data->condition_callback);
+			}
+			if (data->context_root_id != 0) {
+				vm.unpinExternalRoot(data->context_root_id);
+			}
+			if (data->goroutine_id != 0) {
+				if (auto *sched = vm.getScheduler()) {
+					sched->removeHotkeyByAlias(data->alias);
+				}
+			}
+		}
 		hostCtx->hotkeyManager->RemoveHotkey(data ? data->alias : id);
 	}
 	g_hotkeyContexts.clear();
@@ -616,7 +638,23 @@ api.registerPrototypeMethod("Hotkey", "clearAll", 1, [&vm](const std::vector<Val
 
 	std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
 	size_t count = g_hotkeyContexts.size();
+	// Same pin release as removeAll - the two were copy-identical, so the
+	// alias inherited the same leak.
 	for (auto &[id, data] : g_hotkeyContexts) {
+		if (data) {
+			vm.releaseCallback(data->callback);
+			if (data->condition_callback != 0) {
+				vm.releaseCallback(data->condition_callback);
+			}
+			if (data->context_root_id != 0) {
+				vm.unpinExternalRoot(data->context_root_id);
+			}
+			if (data->goroutine_id != 0) {
+				if (auto *sched = vm.getScheduler()) {
+					sched->removeHotkeyByAlias(data->alias);
+				}
+			}
+		}
 		hostCtx->hotkeyManager->RemoveHotkey(data ? data->alias : id);
 	}
 	g_hotkeyContexts.clear();

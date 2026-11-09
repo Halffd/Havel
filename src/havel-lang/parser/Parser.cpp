@@ -3182,6 +3182,30 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Lookahead to find what comes after the [...] decorator(s)
     // Save position and scan forward, consuming all stacked decorator brackets
     size_t savePos = position;
+  // `extern { ... }`: soft keyword, not a lexer keyword, so `extern` stays a
+  // normal identifier everywhere else (assignment targets, member access,
+  // parameter names). Only `extern` directly followed by `{` is the native
+  // declaration block (docs/reference/extern-types.md).
+  if (at().type == havel::TokenType::Identifier && at().value == "extern" &&
+      at(1).type == havel::TokenType::OpenBrace) {
+    return parseExternBlock();
+  }
+
+    // Context-sensitive decorator detection:
+    // [decorator] or [decorator(args)] at statement start = decorator
+    // Must be followed by a declaration (fn, class, etc.)
+    // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
+    // Distinguish from [a, b, c] = ... array destructuring by lookahead:
+    // Decorator: [identifier] followed by declaration
+    // Array: [expression, ...] or [pattern] = value
+    // Pattern: [a, b] (comma indicates array, not decorator)
+    if (at().type == havel::TokenType::OpenBracket &&
+        at(1).type == havel::TokenType::Identifier &&
+        (at(2).type == havel::TokenType::CloseBracket ||
+         at(2).type == havel::TokenType::OpenParen)) {
+        // Lookahead to find what comes after the [...] decorator(s)
+        // Save position and scan forward, consuming all stacked decorator brackets
+        size_t savePos = position;
 
     bool isDecorator = false;
     for (;;) {
@@ -9084,6 +9108,128 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
   }
 
   failAt(at(), "Expected module name or file path after 'use'");
+  return nullptr;
+}
+
+// extern { fn native_add(a: int, b: int) -> int  fn native_ping() }
+//
+// Declares functions implemented outside Havel. Parameter and return types
+// are parsed and recorded as source names - the language itself is
+// dynamically typed, so annotations document the native signature; the
+// load-time check verifies the host actually registered each name.
+std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
+  auto keyword = at();
+  advance(); // consume 'extern'
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'extern'");
+    return nullptr;
+  }
+  advance(); // consume '{'
+
+  auto block = makeNodeAt<havel::ast::ExternBlock>(keyword);
+
+  // Type names: identifier/keyword, optionally qualified (mod.Type), or a
+  // braced type literal ({ x: int, y: int }) which is skipped balanced.
+  auto parseTypeName = [&]() -> std::string {
+    if (at().type == havel::TokenType::OpenBrace) {
+      int depth = 0;
+      while (notEOF()) {
+        if (at().type == havel::TokenType::OpenBrace) {
+          depth++;
+        } else if (at().type == havel::TokenType::CloseBrace) {
+          depth--;
+          if (depth == 0) {
+            advance();
+            break;
+          }
+        }
+        advance();
+      }
+      return "{...}";
+    }
+    if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+      std::string typeName = advance().value;
+      while (at().type == havel::TokenType::Dot &&
+             (at(1).type == havel::TokenType::Identifier ||
+              isKeywordToken(at(1).type))) {
+        advance(); // consume '.'
+        typeName += "." + advance().value;
+      }
+      return typeName;
+    }
+    return "";
+  };
+
+  while (notEOF()) {
+    while (isSkippableToken(at()) ||
+           at().type == havel::TokenType::Semicolon ||
+           at().type == havel::TokenType::Comma) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBrace) {
+      advance(); // consume '}'
+      return block;
+    }
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' or '}' inside extern block");
+      return nullptr;
+    }
+    advance(); // consume 'fn'
+    while (isSkippableToken(at())) advance();
+
+    if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+      failAt(at(), "Expected function name in extern declaration");
+      return nullptr;
+    }
+    havel::ast::ExternFunctionDecl decl;
+    decl.name = advance().value;
+    while (isSkippableToken(at())) advance();
+
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after extern function name '" + decl.name + "'");
+      return nullptr;
+    }
+    advance(); // consume '('
+
+    while (notEOF() && at().type != havel::TokenType::CloseParen) {
+      while (isSkippableToken(at()) || at().type == havel::TokenType::Comma) {
+        advance();
+      }
+      if (at().type == havel::TokenType::CloseParen) break;
+      if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+        failAt(at(), "Expected parameter name in extern function '" + decl.name + "'");
+        return nullptr;
+      }
+      advance(); // consume parameter name
+      decl.paramCount++;
+      std::string typeName;
+      if (at().type == havel::TokenType::Colon) {
+        advance(); // consume ':'
+        while (isSkippableToken(at())) advance();
+        typeName = parseTypeName();
+      }
+      decl.paramTypes.push_back(typeName);
+    }
+    if (at().type == havel::TokenType::CloseParen) {
+      advance(); // consume ')'
+    } else {
+      failAt(at(), "Expected ')' in extern function '" + decl.name + "'");
+      return nullptr;
+    }
+
+    // Optional return type: -> Type
+    while (isSkippableToken(at())) advance();
+    if (at().type == havel::TokenType::ReturnType) {
+      advance(); // consume '->'
+      while (isSkippableToken(at())) advance();
+      decl.returnType = parseTypeName();
+    }
+
+    block->functions.push_back(std::move(decl));
+  }
+
+  failAt(at(), "Unterminated extern block - expected '}'");
   return nullptr;
 }
 

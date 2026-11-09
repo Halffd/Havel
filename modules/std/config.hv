@@ -149,26 +149,13 @@ fn status() {
     return _store.status()
 }
 
-// {exists, valid, problems, duplicateSections, duplicateKeys, malformedLines}
+// {exists, valid, problems, duplicateSections, malformedLines}
 fn validate(filename) {
     return _store.validate(filename)
 }
 
 fn validate() {
     return _store.validate("havel.cfg")
-}
-
-// Collapse duplicate [Section] headers and duplicate key assignments by
-// rewriting the file in canonical form. The in-memory config already merged
-// them on load, so this is about making the file on disk match and reporting
-// what was collapsed. Takes a backup first; a clean file is left untouched.
-// {valid, written, duplicateSections, duplicateKeys, malformedLines, backup}
-fn dedupe() {
-    return _store.dedupe()
-}
-
-fn dedupe(filename) {
-    return _store.dedupe(filename)
 }
 
 // Existing backups, newest first.
@@ -190,26 +177,16 @@ fn conf_path() {
     return _store.get("_config_path", "")
 }
 
-// Live section objects on the module namespace. The host `config` global
-// (set by registerConfigModule) is a __vivify object carrying one sub-object
-// per config section; `use "std/config" as X` binds THIS module's namespace,
-// not that global, so scripts doing X.Gaming.Classes read null without this.
-// Publishing the live sub-objects via _G (dynamic module exports) restores
-// the pre-refactor semantics: cfg.Gaming.Classes reads the section value
-// and writes are visible to config { } blocks and conf.* accesses (they all
-// share one object). Sections created by a later config.load()/reload() are
-// not re-published here - use cfg.get("Section.Key") for those.
-_cfgSections = config.keys()
-_i = 0
-_n = #_cfgSections
-while _i < _n {
-    _k = _cfgSections[_i]
-    _dot = _k.find(".")
-    if _dot > 0 {
-        _sec = _k[0:_dot]
-        if !_sec.startsWith("_") {
-            _G[_sec] = config[_sec]
-        }
-    }
-    _i = _i + 1
-}
+// Compatibility: cfg = config (for scripts using 'use "std/config" as cfg')
+cfg = _store
+
+// NOTE (Oct 31): the live-section publish that used to live here
+// (`_G[_sec] = _store[_sec]`) was REMOVED. When loadModule binds the
+// host config object for `use "std/config"` (the __module_object
+// contract), _G IS that object, and `_store[_sec]` (a bracket field
+// read) returns null whenever the field is not materialised yet - the
+// assignment then wrote those nulls back, permanently poisoning
+// config.Gaming/Compiler/Mouse and with them every cfg.<Section>.<Key>
+// dot read (which then auto-vivified an empty shell).
+// Sections are materialised on the object by the config module's own
+// registration repopulate; nothing needs to publish them here.

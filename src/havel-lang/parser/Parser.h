@@ -345,6 +345,7 @@ private:
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();
   std::unique_ptr<ast::Statement> parseUseStatement();
+  std::unique_ptr<ast::Statement> parseExternBlock();
   std::unique_ptr<ast::Statement> parseDecoratorStatement();
     std::unique_ptr<ast::Statement> parseAtDecoratorStatement();
   std::unique_ptr<ast::Statement> parseWithStatement();

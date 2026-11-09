@@ -46,6 +46,7 @@ enum class NodeType {
   Module,
   ImportStatement, // import List from "std/collections"
   UseStatement,    // use io, use media
+  ExternBlock,     // extern { fn native(a: int) -> int }
  WithStatement, // with io { ... }
 
   // Core functional expressions
@@ -3339,6 +3340,41 @@ struct UseStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Extern declaration block: native functions implemented outside Havel,
+// declared so the resolver accepts their names and the module load verifies
+// the host actually registered them (docs/reference/extern-types.md).
+//
+//   extern {
+//       fn native_add(a: int, b: int) -> int
+//       fn native_ping()
+//   }
+struct ExternFunctionDecl {
+  std::string name;
+  size_t paramCount = 0;
+  std::vector<std::string> paramTypes; // "" when a parameter has no annotation
+  std::string returnType;              // "" when omitted
+};
+
+struct ExternBlock : public Statement {
+  std::vector<ExternFunctionDecl> functions;
+
+  ExternBlock() { kind = NodeType::ExternBlock; }
+
+  std::string toString() const override {
+    std::string result = "ExternBlock{[";
+    for (size_t i = 0; i < functions.size(); ++i) {
+      result += "fn " + functions[i].name + "/" +
+                std::to_string(functions[i].paramCount);
+      if (i < functions.size() - 1)
+        result += ", ";
+    }
+    result += "]}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // With Statement (with io { ... })
 struct WithStatement : public Statement {
     std::unique_ptr<Expression> object; // The expression to bind
@@ -3466,6 +3502,7 @@ virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement &node) = 0;
   virtual void visitUseStatement(const UseStatement &node) = 0;
+  virtual void visitExternBlock(const ExternBlock &node) = 0;
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitTupleExpression(const TupleExpression &node) = 0;
@@ -3931,6 +3968,10 @@ inline void ImportStatement::accept(ASTVisitor &visitor) const {
 
 inline void UseStatement::accept(ASTVisitor &visitor) const {
   visitor.visitUseStatement(*this);
+}
+
+inline void ExternBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitExternBlock(*this);
 }
 
 inline void WithStatement::accept(ASTVisitor &visitor) const {

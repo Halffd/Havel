@@ -1043,6 +1043,16 @@ the task.
 
 Commit completed work.
 
+When committing while another session's unstaged work is in the tree:
+`git commit <pathspec>` commits the WORKING TREE contents of those paths,
+bypassing the index — staged index surgery (`git update-index
+--cacheinfo` with a constructed blob) is undone by it (observed twice:
+826bd97c, 1a4c216c2, both re-split with `git reset --soft HEAD~1` and a
+plain `git commit` of the index). For partial-file commits, stage the
+exact content, then commit with NO pathspec, and verify with
+`git show --stat HEAD` plus `git diff` that the other session's hunks
+are still unstaged before pushing.
+
 ## Failure is information
 
 A failed test, timeout, crash, or unexpected result is a useful result.

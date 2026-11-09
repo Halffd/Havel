@@ -467,6 +467,7 @@ std::unique_ptr<BytecodeChunk> ByteCompiler::compileImpl(const ast::Program &pro
   // std::cerr << "DEBUG: known_globals_ size = " << known_globals_.size() << std::endl;
   // for (const auto& g : known_globals_) std::cerr << "  known: " << g << std::endl;
   lexical_resolution_ = resolver.resolve(program);
+  extern_arities_ = resolver.externFunctions();
   if (!resolver.errors().empty()) {
     // Collect all errors
     std::ostringstream oss;
@@ -3667,6 +3668,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::ExternBlock: {
+    compileExternBlock(static_cast<const ast::ExternBlock &>(statement));
+    break;
+  }
+
   case ast::NodeType::ImportStatement: {
     compileImportStatement(static_cast<const ast::ImportStatement &>(statement));
     break;
@@ -3784,6 +3790,29 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program, ModuleLoader 
   module_loader_ = &loader;
   base_path_ = basePath;
   return compile(program);
+}
+
+// `extern { fn name(...) }`: one load-time check per declaration.
+//
+//   __extern_check(name, arity)
+//
+// The names resolve like host functions (the resolver binds them as
+// HostFunction; calls emit LOAD_GLOBAL + CALL), so the check only has to
+// verify the host registered each name - a missing native fails at module
+// load with the declared name instead of at first call with an opaque
+// dispatch error. Emitted as a plain host call (no new opcode), which keeps
+// the JIT path untouched.
+void ByteCompiler::compileExternBlock(const ast::ExternBlock &statement) {
+  for (const auto &fn : statement.functions) {
+    uint32_t checkSid = addStringConstant("__extern_check");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(checkSid));
+    uint32_t nameSid = addStringConstant(fn.name);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameSid)));
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeInt(static_cast<int64_t>(fn.paramCount))));
+    emit(OpCode::CALL, 2);
+    emit(OpCode::POP);
+  }
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
@@ -7409,6 +7438,30 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     }
 
     if (binding->kind == ResolvedBindingKind::HostFunction) {
+      // extern { } declarations carry a signature the compiler can trust, so
+      // a wrong-arity call is rejected at compile time instead of throwing at
+      // runtime - after a hotkey block or mouse handler may have partially
+      // run. Host functions NOT declared via extern keep the existing
+      // runtime arity check (the compiler only knows their name, not their
+      // arity, unless the caller declares it). Spread calls are not
+      // statically sized and are skipped.
+      if (auto extIt = extern_arities_.find(binding->name);
+          extIt != extern_arities_.end()) {
+        bool hasSpread = false;
+        for (const auto &arg : expression.args) {
+          if (arg && arg->kind == ast::NodeType::SpreadExpression) {
+            hasSpread = true;
+            break;
+          }
+        }
+        if (!hasSpread && expression.args.size() != extIt->second) {
+          COMPILER_THROW("extern function '" + binding->name +
+                         "' is declared with " +
+                         std::to_string(extIt->second) +
+                         " parameter(s), called with " +
+                         std::to_string(expression.args.size()));
+        }
+      }
       // Host function - call via LOAD_GLOBAL + CALL, expanding spread args
       uint32_t strId = addStringConstant(binding->name);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));

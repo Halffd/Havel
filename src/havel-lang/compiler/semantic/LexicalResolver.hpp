@@ -84,6 +84,14 @@ public:
   void setStrictMode(bool strict) { strict_mode_ = strict; }
   bool strictMode() const { return strict_mode_; }
 
+  // Extern declarations collected in the first pass (name -> declared arity).
+  // The bytecode compiler uses this to reject wrong-arity calls at compile
+  // time: the declaration carries a signature the compiler can trust, unlike
+  // plain host registrations whose arity is only known at runtime.
+  const std::unordered_map<std::string, size_t> &externFunctions() const {
+    return extern_functions_;
+  }
+
   const std::vector<std::string> &errors() const { return errors_; }
 
 private:
@@ -129,6 +137,12 @@ private:
   LexicalResolutionResult result_;
   std::vector<std::string> errors_;
   std::unordered_set<std::string> top_level_functions_;
+
+  // `extern { fn name(...) }` declarations: name -> declared arity. These
+  // resolve as host functions (runtime dispatch by name); the bytecode
+  // compiler emits a load-time `__extern_check` per declaration so a name
+  // the host never registered fails fast and by name.
+  std::unordered_map<std::string, size_t> extern_functions_;
   std::unordered_set<std::string> top_level_structs_;
   std::unordered_set<std::string> global_variables_;  // Top-level let declarations
   std::unordered_set<std::string> known_globals_;  // Pre-known globals (from previous REPL lines)

@@ -88,6 +88,7 @@ enum class TokenType {
   RegexLiteral,        // /pattern/ for regex
   ShellCommand,        // $ command for shell execution
   ShellCommandCapture, // $! command (capture output)
+  ShBlock,             // sh { ... } shell block; value = raw body
   Hotkey,
   Arrow,       // => (fat arrow for lambdas)
   ReturnType,  // -> (thin arrow for return types)
@@ -324,6 +325,7 @@ bool isAtEnd() const;
   Token scanBacktick(bool isMultiline = false);
   Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);
+  Token scanShellBlock();
   Token scanIdentifier();
     Token scanHotkey();
     bool isHotkeyLookahead();

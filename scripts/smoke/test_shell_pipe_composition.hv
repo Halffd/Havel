@@ -1,0 +1,28 @@
+// test_shell_pipe_composition.hv
+// What: backtick stages compose as a process pipeline - each stage's stdout
+//       is the next stage's stdin; the value is the last stage's result
+//       object. Function stages (`... | lines | count`) also work.
+// Why: the bash `cat f | grep x | wc -l` shape in one language.
+// Expected: exit 0, no output on success.
+// smoke: timeout = 60
+
+_sorted = `printf "banana\napple\ncherry\n"` | `sort`
+if !_sorted.success { print("FAIL: pipeline not success: " + str(_sorted.exitCode)); exit(1) }
+if _sorted.stdout != "apple\nbanana\ncherry\n" { print("FAIL: sorted=" + _sorted.stdout); exit(1) }
+
+_first = `printf "b\na\n"` | `sort` | `head -1`
+if _first.stdout.trim() != "a" { print("FAIL: head=" + _first.stdout); exit(1) }
+
+_count = `printf "1\n2\n3\n"` | lines | count
+if _count != 3 { print("FAIL: count=" + str(_count)); exit(1) }
+
+_grep = `printf "keep-one\nskip\nkeep-two\n"` | lines | grep "keep"
+if _grep.len() != 2 { print("FAIL: grep len=" + str(_grep.len())); exit(1) }
+
+// The pipeline value is the LAST stage's result (shell semantics without
+// pipefail): a failing tail must surface as success=false.
+_bad = `echo boom` | `false`
+if _bad.success { print("FAIL: failing stage must not be success"); exit(1) }
+if _bad.exitCode != 1 { print("FAIL: exitCode=" + str(_bad.exitCode)); exit(1) }
+
+exit(0)

@@ -243,9 +243,16 @@ loadScriptFiles(const std::vector<std::string> &files) {
   return {{code, names}};
 }
 
-static void appendEval(std::string &code, std::string &names, const std::string &eval) {
+static void appendEval(std::string &code, std::string &names, const std::string &eval,
+                       bool printResult = false) {
   if (!eval.empty()) {
-    code += eval + "\n";
+    // -e/--eval-print: wrap the expression so its value is printed, the
+    // `havel -e '1+1'` -> 2 shape. -c/--code/-E stay silent.
+    if (printResult) {
+      code += "print(" + eval + ")\n";
+    } else {
+      code += eval + "\n";
+    }
     if (!names.empty())
       names += " + ";
     names += "<eval>";
@@ -259,6 +266,52 @@ static void readFromStdIn(std::string &code, std::string &names) {
     code = ss.str();
     names = "<stdin>";
   }
+}
+
+// Script-level uncaught-error hook: `on_error(fn(e) { ... })` stores the
+// handler in a VM global (set by the on_error host function); every strategy
+// invokes it where it would report "Execution error". The handler receives
+// {message, kind}; when it returns instead of calling exit(), the default
+// report is emitted and exit 1 requested here.
+static int dispatchScriptErrorHandler(havel::compiler::VM *vm,
+                                      const std::string &message) {
+  using havel::compiler::Value;
+  if (!vm)
+    return -1;
+  static thread_local bool in_handler = false;
+  if (in_handler)
+    return -1; // a throwing handler is reported, not re-dispatched
+  auto &globals = vm->getGlobals();
+  auto it = globals.find("__on_error_handler");
+  if (it == globals.end())
+    return -1;
+  const Value handler = it->second;
+  if (!(handler.isFunctionObjId() || handler.isClosureId() ||
+        handler.isHostFuncId()))
+    return -1;
+  auto obj = vm->createHostObject();
+  auto msgRef = vm->getHeap().allocateString(message);
+  auto kindRef = vm->getHeap().allocateString("runtime");
+  vm->setHostObjectField(obj, "message", Value::makeStringId(msgRef.id));
+  vm->setHostObjectField(obj, "kind", Value::makeStringId(kindRef.id));
+  in_handler = true;
+  try {
+    vm->callFunction(handler, {Value::makeObjectId(obj.id)});
+  } catch (const std::exception &e) {
+    error("on_error handler failed: {}", e.what());
+  } catch (...) {
+    error("on_error handler failed: unknown exception");
+  }
+  in_handler = false;
+  // The handler may take over the exit (exit(n) requests it on the VM).
+  // If it returned without one, report and request exit 1 HERE: falling
+  // back into the strategy's post-error path after the handler re-entered
+  // the VM wedges shutdown (observed: the process sat until SIGTERM).
+  if (!vm->exitRequested()) {
+    error("Execution error: {}", message);
+    vm->requestExit(1);
+  }
+  return static_cast<int>(vm->exit_code_.load());
 }
 
 static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig &cfg) {
@@ -708,6 +761,9 @@ public:
               info("Execution completed successfully");
             } catch (const std::exception &e) {
               havel::startup_timing_report("runBytecodePipeline", exec_t0);
+              int handled = dispatchScriptErrorHandler(bytecodeVM, e.what());
+              if (handled >= 0)
+                return handled;
               error("Execution error: {}", e.what());
             }
           }
@@ -749,7 +805,7 @@ public:
     if (!result)
       return 1;
     auto [combinedCode, combinedNames] = *result;
-    appendEval(combinedCode, combinedNames, cfg.evalString);
+    appendEval(combinedCode, combinedNames, cfg.evalString, cfg.evalPrint);
 
     // Parse once to check for hotkey bindings and ui usage
     auto program = parseScript(combinedCode, cfg);
@@ -820,6 +876,9 @@ public:
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
         havel::startup_timing_report("runBytecodePipeline", exec_t0);
       } catch (const std::exception &e) {
+        int handled = dispatchScriptErrorHandler(bytecodeVM, e.what());
+        if (handled >= 0)
+          return handled;
         error("Execution error: {}", e.what());
         return 1;
       }
@@ -858,7 +917,18 @@ public:
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
       auto exec_t0 = havel::startup_now();
-      engine.execute(combinedCode, "__main__", combinedNames);
+      try {
+        engine.execute(combinedCode, "__main__", combinedNames);
+      } catch (const std::exception &e) {
+        // The engine owns the VM that holds __on_error_handler, and it is
+        // only alive here - the outer catch runs after unwinding destroyed
+        // it. Dispatch the script-level handler; when none ran, rethrow so
+        // the outer catch logs and returns 1.
+        int handled = dispatchScriptErrorHandler(engine.vm(), e.what());
+        if (handled >= 0)
+          return handled;
+        throw;
+      }
       havel::startup_timing_report("engine.execute", exec_t0);
 
       if (engine.vm()->exitRequested()) {
@@ -908,7 +978,7 @@ public:
     if (!result)
       return 1;
     auto [combinedCode, combinedNames] = *result;
-    appendEval(combinedCode, combinedNames, cfg.evalString);
+    appendEval(combinedCode, combinedNames, cfg.evalString, cfg.evalPrint);
     readFromStdIn(combinedCode, combinedNames);
 
     havel::parser::Parser parser{
@@ -982,7 +1052,17 @@ public:
 
       auto t1 = std::chrono::high_resolution_clock::now();
       auto exec_t0 = havel::startup_now();
-      engine.execute(combinedCode, "__main__", combinedNames);
+      try {
+        engine.execute(combinedCode, "__main__", combinedNames);
+      } catch (const std::exception &e) {
+        // Same contract as the other strategies: the script-level on_error
+        // handler runs while the engine (and its VM globals) is still alive;
+        // when none ran, the outer catch reports and returns 1.
+        int handled = dispatchScriptErrorHandler(engine.vm(), e.what());
+        if (handled >= 0)
+          return handled;
+        throw;
+      }
       havel::startup_timing_report("engine.execute", exec_t0);
       auto t2 = std::chrono::high_resolution_clock::now();
       bool wantedExit = engine.vm()->exitRequested();
@@ -1277,7 +1357,10 @@ public:
       combinedNames += f;
     }
     if (!cfg.evalString.empty()) {
-      combinedCode += cfg.evalString + "\n";
+      // -e/--eval-print wraps the expression so its value is printed (same
+      // contract as appendEval on the other strategies).
+      combinedCode += cfg.evalPrint ? ("print(" + cfg.evalString + ")\n")
+                                    : (cfg.evalString + "\n");
       if (!combinedNames.empty())
         combinedNames += " + ";
       combinedNames += "<eval>";
@@ -1415,7 +1498,7 @@ public:
     if (cfg.lintOnly)
       appArgList.push_back("--lint");
     if (!cfg.evalString.empty()) {
-      appArgList.push_back("--eval");
+      appArgList.push_back(cfg.evalPrint ? "--eval-print" : "--eval");
       appArgList.push_back(cfg.evalString);
     }
 
@@ -1911,7 +1994,9 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugBytecode = true;
     } else if (arg == "--diff-pipeline" && i + 1 < argc) {
       cfg.diffPipelinePath = argv[++i];
-    } else if (arg == "--error" || arg == "-e") {
+    } else if (arg == "--error") {
+      // The -e short now means --eval-print (python -c/-e style); --error
+      // keeps the long form only.
       // Stop on first error/warning
       cfg.stopOnError = true;
     } else if (arg == "--minimal" || arg == "-m") {
@@ -2010,8 +2095,9 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.emitBinary = true;
       cfg.emitElf = true;
 
-    } else if (arg == "--config" || arg == "-c") {
-      // Config file path
+    } else if (arg == "--config") {
+      // Config file path. The -c short now belongs to --code (inline code),
+      // matching the python -c convention.
       if (i + 1 < argc) {
         Configs::SetPath(argv[++i]);
       }
@@ -2023,9 +2109,19 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.historyFile = argv[++i];
       }
-    } else if (arg == "--eval" || arg == "-E") {
+    } else if (arg == "--eval" || arg == "-E" || arg == "--code" ||
+               arg == "-c") {
       if (i + 1 < argc) {
         cfg.evalString = argv[++i];
+        if (cfg.mode == LaunchConfig::Mode::DAEMON)
+          cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+        cfg.minimalMode = true;
+        cfg.pureStdlib = true;
+      }
+    } else if (arg == "--eval-print" || arg == "-e") {
+      if (i + 1 < argc) {
+        cfg.evalString = argv[++i];
+        cfg.evalPrint = true;
         if (cfg.mode == LaunchConfig::Mode::DAEMON)
           cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
         cfg.minimalMode = true;
@@ -2314,8 +2410,10 @@ Options:
    -dhk, --debug-hotkeys Enable hotkey debugging
    -dev, --debug-events  Enable input event + grab debugging (event listener, evdev)
    --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
-   -e, --error         Stop on first error/warning
+  --error             Stop on first error/warning
+  -c, --code CODE     Run inline code (multi-statement; -E/--eval are aliases)
   -E, --eval CODE     Run inline Havel code
+  -e, --eval-print EXPR  Evaluate one expression and print its value
   -m, --minimal       Minimal mode (no IO/hotkeys/GUI)
   --headless            Headless mode (skip X11/BrightnessManager/EventListener)
   -r, --repl          Start interactive REPL

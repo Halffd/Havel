@@ -205,7 +205,7 @@ The traceback shows:
 
 ```bash
 # Stop on first error
-havel -e script.hv
+havel --error script.hv
 
 # Debug output
 havel -d script.hv
@@ -217,6 +217,19 @@ havel --lint script.hv
 ---
 
 ## Error API (Host Functions)
+
+### From Havel
+
+```hv
+// Script-level uncaught-error handler: runs before the default report.
+// `e` is an object with `message` and `kind`. If the handler returns,
+// the default report and exit code 1 still apply - call exit() to
+// take over the exit code entirely.
+on_error(fn(e) {
+    print("failed: " + e.message)
+    exit(1)
+})
+```
 
 ### From C++
 

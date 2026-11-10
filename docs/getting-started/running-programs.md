@@ -10,7 +10,9 @@ description: "CLI flags, execution modes, and environment variables for the Have
 ```bash
 havel [options] <script.hv>
 havel [options] --repl
-havel [options] -E 'code'
+havel [options] -c 'code'          # run inline code
+havel [options] -e 'expr'          # evaluate and print one expression
+havel [options] -E 'code'          # alias of --code
 havel [options] --build <script.hv>
 havel [options] --test <dir>
 havel [options] --lint <file.hv>
@@ -27,6 +29,109 @@ havel [options] --lint <file.hv>
 | **Test directory** | `havel --test dir/` | Run all `.hv` files as tests |
 | **Lint only** | `havel --lint file.hv` | Syntax/check only, no execution |
 | **Build bytecode** | `havel --build file.hv -o out.hvc` | Compile to bytecode |
+| **Inline code** | `havel -c 'code'` | Run code from the command line |
+| **Inline expression** | `havel -e 'expr'` | Evaluate one expression, print it |
+
+### Inline Code
+
+`-c`/`--code` (`-E`/`--eval` are aliases) runs code from the argument, so
+one-liners need no temp file. `-e`/`--eval-print` evaluates a single
+expression and prints its value:
+
+```bash
+havel -c 'print(1 + 1)'
+havel -c 'for f in fs.glob("*.log") { print(f) }'
+havel -e '2 + 2'
+havel -e '"a,b".split(",")'
+```
+
+### Shebang Scripts
+
+A script whose first line is `#!/usr/bin/env havel` is directly executable:
+
+```bash
+#!/usr/bin/env havel
+
+for f in fs.glob("*.log") {
+    if fs.read(f) ~ "ERROR" {
+        fs.copy(f, "/tmp/errors/" + f)
+    }
+}
+```
+
+```bash
+chmod +x collect_errors.hv
+./collect_errors.hv
+```
+
+With `havel` on `PATH`, the kernel runs the script through `env havel`,
+which executes it as a normal script.
+
+### REPL Shell Mode
+
+The REPL speaks both Havel and shell. `:shell` switches the grammar to
+bash-shaped input (`havel[sh]>`); `:havel` - or a bare `exit` - comes back:
+
+```text
+havel> :shell
+havel[sh]> ls -la | grep txt
+havel[sh]> files = *.log
+havel[sh]> for f in *.log { grep error $f }
+havel[sh]> export LOG_LEVEL=debug
+havel[sh]> echo $LOG_LEVEL
+havel[sh]> cd /tmp
+havel[sh]> :save collect.hv
+```
+
+Accepted: pipelines (`a | b | c`), redirects (`>`, `>>`, `<`), command
+substitution (`x = $(cmd)`), globs (`*.log`), `$VAR` expansion, `cd`,
+`export NAME=value`, `echo`, `pwd`, `exit` (back to Havel mode; `exit N`
+leaves the REPL with status N), and `!!` / `!$` history. Control flow is
+Havel's grammar - `for f in *.log { ... }`, `if [ -f /tmp/x ] { ... }` -
+there is no `then`/`fi`/`done`.
+
+Rejected by design, with a suggestion: `[[ ]]`, `$@`/`$*`/`$#`,
+`(( ))`/`$(( ))`, arrays (`a=(1 2)`), `declare`/`local`/`readonly`,
+subshells, `&` background (use `go { ... }`), `&>` and `2>&1` (process
+results expose `.stderr`).
+
+Every shell line is translated to Havel before it runs (`shell.translate`
+does the same transformation for scripts), so `:save file.hv` writes the
+session out as a runnable script.
+
+### Shell Blocks in Scripts
+
+The same shell layer is available in scripts as `sh { ... }`: each line
+inside is translated and runs inline, and `$name` / `${expr}` resolve to
+the Havel variables of the enclosing scope:
+
+```hv
+w = window.active()
+print(w)
+sh {
+    notify-send "${w.title}"
+    sleep 1.5
+    kill w.pid
+}
+```
+
+Control flow inside a block keeps Havel's grammar, so a loop over files
+reads:
+
+```hv
+sh {
+    for f in *.log {
+        grep -c ERROR $f
+    }
+}
+```
+
+The translation is the same one the REPL uses (`shell.translate`): commands
+and pipelines become `process.pipe` chains, `cd`/`export`/`echo` become
+`shell.cd`/`shell.env`/`print`, `[ -f x ]` becomes `fs.isFile("x")`, and
+redirects (`>`, `>>`, `<`) become `fs.write`/`fs.append`/`fs.read`. The
+unsupported-bash rejection list applies here too (the block fails to
+*compile* with the same suggestion the REPL prints).
 
 ## Compiler Pipeline Selection
 
@@ -89,7 +194,7 @@ havel --full-aot --target aot script.hv -o script
 
 | Flag | Description |
 |------|-------------|
-| `-e`, `--error` | Stop on first error/warning |
+| `--error` | Stop on first error/warning |
 | `--log-level LEVEL` | Log level: `debug`, `info`, `warning`, `error`, `fatal` |
 | `--log-file PATH` | Write logs to file |
 | `--log-no-color` | Disable ANSI colors |

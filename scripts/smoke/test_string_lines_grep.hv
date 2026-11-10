@@ -1,0 +1,23 @@
+// test_string_lines_grep.hv
+// What: string.lines() splits text into an array without a trailing empty
+//       element, and array.grep(pattern) keeps elements containing it.
+// Why: `fs.read(f).lines() | grep "error" | count` - bash-shaped text
+//      filtering without awk/sed.
+// Expected: exit 0, no output on success.
+// smoke: timeout = 30
+
+_text = "alpha\nbeta\ngamma\n"
+_l = _text.lines()
+if _l.len() != 3 { print("FAIL: lines len=" + str(_l.len())); exit(1) }
+if _l[0] != "alpha" || _l[2] != "gamma" { print("FAIL: lines content"); exit(1) }
+
+_e = "".lines()
+if _e.len() != 0 { print("FAIL: empty lines len=" + str(_e.len())); exit(1) }
+
+_only = _text.lines() | grep "et"
+if _only.len() != 1 || _only[0] != "beta" { print("FAIL: grep result"); exit(1) }
+
+_chain = _text.lines() | grep "a" | count
+if _chain != 3 { print("FAIL: chain count=" + str(_chain)); exit(1) }
+
+exit(0)

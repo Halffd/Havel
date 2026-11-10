@@ -75,6 +75,9 @@ bool debugEmitter = false;
   bool pureStdlib = false;
   bool lintOnly = false;
   bool buildOnly = false;
+  // -e/--eval-print: evaluate the inline code as an expression and print
+  // its value. Plain -c/--code/-E/--eval run inline code without printing.
+  bool evalPrint = false;
   // --build-many: batch build in ONE process. Each file's .hvc is
   // cache-checked with the same validation as the single-file path and
   // compiled only on a miss. Amortizes the ~0.2s process boot that

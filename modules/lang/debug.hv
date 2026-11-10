@@ -59,6 +59,31 @@ fn setFlag(flagName, value) {
   }
 }
 
+// debug.on() / debug.off(): the "set -x" / "set +x" pair as one verb.
+// on: every language trace flag on (lexer/parser/ast/bytecode/scope/
+// emitter/types) so the trace helpers above start emitting. off: clears
+// them. Each returns the new state. (These are function DECLARATIONS named
+// on/off - bare uses of `on`/`off` as values are statement keywords, but
+// the names are exported on the module namespace, so scripts call them as
+// debug.on() / debug.off().)
+fn on() {
+  setFlag("all", true)
+  true
+}
+
+fn off() {
+  flags.all = false
+  flags.lexer = false
+  flags.parser = false
+  flags.ast = false
+  flags.bytecode = false
+  flags.gc = false
+  flags.scope = false
+  flags.emitter = false
+  flags.types = false
+  false
+}
+
 // Runtime verbose-logging toggles. The LogModule C++ plugin owns the
 // process-wide Configs flags; in self-hosted runs the plugin may not be
 // activated, so keep module-local mirrors. Contract (smoke
@@ -554,4 +579,8 @@ fn dumpBytecodeSummary() {
  traceBytecode("total: " + str(totalInstrs) + " instrs, " + str(totalConsts) + " consts")
 }
 
-{isOn: isOn, setFlag: setFlag, parseDebugArgs: parseDebugArgs, trace: trace, traceLexer: traceLexer, traceParser: traceParser, traceAst: traceAst, traceBytecode: traceBytecode, traceScope: traceScope, traceEmitter: traceEmitter, traceTypes: traceTypes, traceGc: traceGc, dumpToken: dumpToken, dumpTokenList: dumpTokenList, astKindName: astKindName, dumpAstNode: dumpAstNode, dumpAst: dumpAst, bytecodeStats: bytecodeStats, dumpBytecodeStats: dumpBytecodeStats, dumpBytecode: dumpBytecode, dumpCurrentFunc: dumpCurrentFunc, colorizeBytecodeLine: colorizeBytecodeLine, traceEmit: traceEmit, startTimer: startTimer, endTimer: endTimer, dumpScope: dumpScope, parseBytecodeSummary: parseBytecodeSummary, dumpBytecodeSummary: dumpBytecodeSummary, toggleVerboseConditionLogging: toggleVerboseConditionLogging, toggleVerboseKeyLogging: toggleVerboseKeyLogging, DebugFlags: DebugFlags}
+// Module exports: every top-level name above (isOn, setFlag, on, off, the
+// trace/dump helpers, flags, DBG_*). The object literal that used to sit
+// here was dead code - the loader exports the module namespace, and the
+// literal's `on: on` value form cannot even parse (`on` is a statement
+// keyword in expression position).

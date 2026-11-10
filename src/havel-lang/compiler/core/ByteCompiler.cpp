@@ -5215,6 +5215,37 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::CALL_METHOD,
              std::vector<Value>{Value::makeStringValId(addStringConstant("pipeApply")),
                                 Value(static_cast<uint32_t>(1)), Value::makeBool(true)});
+      } else if (stage->kind == ast::NodeType::ShellCommandExpression) {
+        // Shell stage in a command pipeline: run the stage with the previous
+        // stage's result (its stdout) as stdin, so `cat f` | `grep x` |
+        // `wc -l` composes real processes instead of running detached
+        // commands. The final value is the last stage's result object.
+        const auto &shellStage =
+            static_cast<const ast::ShellCommandExpression &>(*stage);
+        uint32_t runResultSid = addStringConstant("runResult");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(runResultSid));
+        if (shellStage.commandExpr) {
+          compileExpression(*shellStage.commandExpr);
+        } else {
+          uint32_t emptySid = addStringConstant("");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(emptySid)));
+        }
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+      } else if (stage->kind == ast::NodeType::BacktickExpression) {
+        // Plain backticks (no interpolation) are their own AST node holding
+        // a literal command string. A command-pipeline stage runs them with
+        // the previous stage's result as stdin, exactly like the
+        // ShellCommandExpression case above - without this branch the bare
+        // value fallback tried to CALL the previous result object
+        // ("Attempted to call non-callable value of type object").
+        const auto &bt = static_cast<const ast::BacktickExpression &>(*stage);
+        uint32_t btSid = addStringConstant("runResult");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(btSid));
+        uint32_t cmdSid = addStringConstant(bt.command);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(cmdSid)));
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
       } else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);
         if (call.callee && call.callee->kind == ast::NodeType::Identifier) {
@@ -6479,7 +6510,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::BacktickExpression: {
     const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
     {
-      uint32_t strId = addStringConstant("runCapture");
+      // Same result-object contract as ShellCommandExpression capture.
+      uint32_t strId = addStringConstant("runResult");
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     {
@@ -6493,7 +6525,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::ShellCommandExpression: {
     const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);
     if (shellExpr.commandExpr) {
-      const char *funcName = shellExpr.captureOutput ? "runCapture" : "run";
+      // captureOutput ($! and `cmd`) yields the process result object
+      // (success/exitCode/stdout/stderr): bash's $? shape, not a bare
+      // stdout string.
+      const char *funcName = shellExpr.captureOutput ? "runResult" : "run";
       uint32_t strId = addStringConstant(funcName);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       compileExpression(*shellExpr.commandExpr);
@@ -10234,8 +10269,9 @@ void ByteCompiler::compileShellCommandStatement(const ast::ShellCommandStatement
     COMPILER_THROW("Shell command missing expression");
   }
 
-  // Call run() or runCapture() host function
-  const char *funcName = statement.captureOutput ? "runCapture" : "run";
+  // Call run() or runResult() host function ($! statements share the
+  // result-object contract with expressions)
+  const char *funcName = statement.captureOutput ? "runResult" : "run";
   {
     uint32_t strId = addStringConstant(funcName);
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));

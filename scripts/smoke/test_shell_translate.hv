@@ -1,0 +1,103 @@
+// test_shell_translate.hv
+// What: the shell-mode translator (shell.translate, used by the REPL's
+//       :shell layer) turns bash-shaped lines into the documented Havel.
+// Why: the generated calls are the contract - process.pipe for commands and
+//      pipelines, fs.glob for globs, shell.cd / shell.env for cd and export,
+//      print for echo, fs.isFile for [ -f ], and helpful errors for the bash
+//      syntax Havel deliberately rejects.
+// Expected: exit 0, no output on success.
+// smoke: timeout = 30
+
+// Havel interpolates $name inside double-quoted strings, so shell-mode test
+// input containing dollars is assembled from this literal.
+_d = "$"
+
+_t = shell.translate("ls -la")
+if !_t.ok { print("FAIL ls: " + str(_t.error)); exit(1) }
+if !_t.source.includes("process.pipe([\"ls\", \"-la\"])") {
+    print("FAIL ls -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("grep error file.txt | wc -l")
+if !_t.ok { print("FAIL pipe: " + str(_t.error)); exit(1) }
+if !_t.source.includes("process.pipe([[\"grep\", \"error\", \"file.txt\"], [\"wc\", \"-l\"]])") {
+    print("FAIL pipe -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("files = *.log")
+if !_t.ok { print("FAIL glob: " + str(_t.error)); exit(1) }
+if !_t.source.includes("files = fs.glob(\"*.log\")") {
+    print("FAIL glob -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("x = " + _d + "(ls)")
+if !_t.ok { print("FAIL subst: " + str(_t.error)); exit(1) }
+if !_t.source.includes("process.pipe([\"ls\"]).stdout.trim()") {
+    print("FAIL subst -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("export FOO=bar")
+if !_t.ok { print("FAIL export: " + str(_t.error)); exit(1) }
+if !_t.source.includes("shell.env(\"FOO\", \"bar\")") {
+    print("FAIL export -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("cd /tmp")
+if !_t.ok { print("FAIL cd: " + str(_t.error)); exit(1) }
+if !_t.source.includes("shell.cd(\"/tmp\")") {
+    print("FAIL cd -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("echo hello world")
+if !_t.ok { print("FAIL echo: " + str(_t.error)); exit(1) }
+if !_t.source.includes("print(\"hello\" + \" \" + \"world\")") {
+    print("FAIL echo -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("if [ -f /tmp/x ] { echo yes }")
+if !_t.ok { print("FAIL if: " + str(_t.error)); exit(1) }
+if !_t.source.includes("if fs.isFile(\"/tmp/x\") { print(\"yes\") }") {
+    print("FAIL if -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("for f in *.log { cat " + _d + "f }")
+if !_t.ok { print("FAIL for: " + str(_t.error)); exit(1) }
+if !_t.source.includes("for f in fs.glob(\"*.log\")") {
+    print("FAIL for glob -> " + _t.source); exit(1)
+}
+if !_t.source.includes("process.pipe([\"cat\", str(f)])") {
+    print("FAIL for body -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("ls > /tmp/out.txt")
+if !_t.ok { print("FAIL redirect: " + str(_t.error)); exit(1) }
+if !_t.source.includes("fs.write(\"/tmp/out.txt\", process.pipe([\"ls\"]).stdout)") {
+    print("FAIL redirect -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("cat < /tmp/in.txt")
+if !_t.ok { print("FAIL stdin: " + str(_t.error)); exit(1) }
+if !_t.source.includes("process.pipe([\"cat\"], fs.read(\"/tmp/in.txt\"))") {
+    print("FAIL stdin -> " + _t.source); exit(1)
+}
+
+_t = shell.translate("x = 1 + 1")
+if !_t.ok { print("FAIL havel passthrough: " + str(_t.error)); exit(1) }
+if _t.source != "x = 1 + 1" { print("FAIL havel passthrough -> " + _t.source); exit(1) }
+
+// Rejections: the message must name the construct and suggest the Havel way.
+_r = shell.translate("[[ -f x ]]")
+if _r.ok { print("FAIL [[ should be rejected"); exit(1) }
+if !_r.error.includes("[[") { print("FAIL [[ error: " + str(_r.error)); exit(1) }
+
+_r = shell.translate("echo " + _d + "@")
+if _r.ok { print("FAIL $@ should be rejected"); exit(1) }
+
+_r = shell.translate("sleep 1 &")
+if _r.ok { print("FAIL & should be rejected"); exit(1) }
+if !_r.error.includes("go {") { print("FAIL & error: " + str(_r.error)); exit(1) }
+
+_r = shell.translate("echo err 2>&1")
+if _r.ok { print("FAIL 2>&1 should be rejected"); exit(1) }
+
+exit(0)

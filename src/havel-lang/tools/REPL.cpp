@@ -1,4 +1,6 @@
 #include "REPL.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
+#include <cstdlib>
 #include "ReplInputQueue.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../host/ServiceRegistry.hpp"
@@ -411,7 +413,7 @@ void REPL::replInputThreadEntry() {
         // We'll reuse the readline logic but without the event pump
         std::string prompt = awaitingContinuation_.load()
             ? config_.continuePrompt
-            : config_.prompt;
+            : (shellMode_.load() ? std::string("havel[sh]> ") : config_.prompt);
 
         std::string line = readLineNoPump(prompt);
 
@@ -866,6 +868,36 @@ void REPL::printError(const std::string& error, int line, int column, int length
 }
 
 bool REPL::handleCommand(const std::string& input) {
+    // Shell-mode toggles and commands.
+    if (input == ":shell") {
+        shellMode_ = true;
+        std::cout << "shell mode: commands run as subprocesses (:havel or exit returns)\n";
+        return true;
+    }
+    if (input == ":havel") {
+        shellMode_ = false;
+        std::cout << "havel mode\n";
+        return true;
+    }
+    if (input == ":save" || input.rfind(":save ", 0) == 0) {
+        return handleSaveCommand(input);
+    }
+    if (shellMode_) {
+        // In shell mode, `exit` returns to Havel mode (like leaving a
+        // subshell); `exit N` exits the REPL with status N.
+        if (input == "exit") {
+            shellMode_ = false;
+            std::cout << "havel mode\n";
+            return true;
+        }
+        if (input.rfind("exit ", 0) == 0) {
+            requestedExitCode_ = std::atoi(input.c_str() + 5);
+            replThreadRunning_.store(false);
+            inputQueue_.wake();
+            return true;
+        }
+    }
+
     if (input == "exit" || input == "quit" || input == ":q") {
         // This used to be a documented no-op: handleCommand returned an
         // "exit signal" but the caller only skipped accumulation, so
@@ -1090,6 +1122,9 @@ void REPL::showHelp() const {
     std::cout << "  clear, :clear    - Clear screen\n";
     std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
   std::cout << "  :debug - Toggle interactive hvdb debug mode\n";
+  std::cout << " :shell - Enter shell mode (bash-shaped input; :havel or exit returns)\n";
+  std::cout << " :havel - Leave shell mode\n";
+  std::cout << " :save [file.hv] - Write the session out as a runnable script\n";
   std::cout << " :globals - Show known global variables\n";
   std::cout << " :classes - Show known classes, structs, protocols, and impls\n";
   std::cout << " :load <file>, :l <file> - Load and execute a script file\n";
@@ -1109,17 +1144,55 @@ void REPL::showHelp() const {
     std::cout << "\n";
 }
 
-bool REPL::execute(const std::string& code) {
+static std::string lastArgumentOf(const std::string& line);
+
+bool REPL::execute(const std::string& codeIn) {
   if (!initialized) {
     printError("REPL not initialized. Call initialize() first.");
     return false;
   }
 
-  currentCode_ = code;
+  currentCode_ = codeIn;
 
   // Check for REPL commands first
-  if (handleCommand(code)) {
+  if (handleCommand(codeIn)) {
     return true;
+  }
+
+  // Shell mode: translate bash-shaped input into Havel. The original text is
+  // what the prompt/history show; the translated source is what runs and
+  // what :save writes out.
+  std::string code = codeIn;
+  bool translated = false;
+  bool shellSilent = false;
+  if (shellMode_) {
+    if (code == "!!") {
+      if (lastShellLine_.empty()) {
+        printError("shell: no previous command");
+        return false;
+      }
+      code = lastShellLine_;
+      std::cout << code << "\n";
+    }
+    // `!$` is the last argument of the previous command.
+    if (!lastShellArg_.empty()) {
+      size_t p;
+      while ((p = code.find("!$")) != std::string::npos)
+        code.replace(p, 2, lastShellArg_);
+    }
+    auto tr = translateShellBlock(code, &known_globals_);
+    if (!tr.ok) {
+      printError("shell: " + tr.error);
+      return false;
+    }
+    lastShellArg_ = lastArgumentOf(code);
+    lastShellLine_ = codeIn;
+    sessionSources_.push_back(tr.source);
+    code = tr.source;
+    translated = true;
+    shellSilent = tr.silent;
+  } else {
+    sessionSources_.push_back(codeIn);
   }
 
   try {
@@ -1218,15 +1291,97 @@ vm_->storeReplChunk(sharedChunk);
   }
 
   if (!result.isNull()) {
-    std::cout << highlightSource(code) << "\n";
-    std::cout << "  "; // indent
+    if (translated) {
+      if (!shellSilent)
+        printShellResult(result);
+    } else {
+      std::cout << highlightSource(codeIn) << "\n";
+      std::cout << "  "; // indent
 printValue(vm_->toString(result));
+    }
 }
     return true;
   } catch (const std::exception& e) {
     printError(e.what(), currentLine);
     return false;
   }
+}
+
+// Last whitespace-separated token of a shell-mode line, quotes stripped.
+static std::string lastArgumentOf(const std::string& line) {
+  std::string t = line;
+  while (!t.empty() && (t.back() == ' ' || t.back() == '\t'))
+    t.pop_back();
+  size_t sp = t.find_last_of(" \t");
+  std::string last = (sp == std::string::npos) ? t : t.substr(sp + 1);
+  if (last.size() >= 2 && (last.front() == '"' || last.front() == '\'') &&
+      last.back() == last.front())
+    last = last.substr(1, last.size() - 2);
+  return last;
+}
+
+bool REPL::handleSaveCommand(const std::string& input) {
+  std::string path = input.size() > 5 ? input.substr(5) : "";
+  while (!path.empty() && (path.front() == ' ' || path.front() == '\t'))
+    path.erase(path.begin());
+  while (!path.empty() && (path.back() == ' ' || path.back() == '\t'))
+    path.pop_back();
+  if (path.empty())
+    path = "session.hv";
+  std::ofstream out(path);
+  if (!out) {
+    printError("cannot write " + path);
+    return true;
+  }
+  out << "#!/usr/bin/env havel\n\n";
+  for (size_t i = 0; i < sessionSources_.size(); ++i) {
+    out << sessionSources_[i] << "\n";
+    if (i + 1 < sessionSources_.size())
+      out << "\n";
+  }
+  out.close();
+  std::cout << "saved " << sessionSources_.size() << " input(s) to " << path << "\n";
+  return true;
+}
+
+void REPL::printShellResult(const compiler::Value& result) {
+  // Shell mode: print like a shell - stdout verbatim, stderr on the error
+  // stream, and an explicit status marker for non-zero exits.
+  compiler::VMApi api(*vm_);
+  compiler::Value marker = result.isObjectId()
+                               ? api.getField(result, "__proc_result")
+                               : compiler::Value::makeNull();
+  if (!(marker.isBool() && marker.asBool())) {
+    printValue(vm_->toString(result));
+    return;
+  }
+  auto fieldString = [&api, &result](const char* name) -> std::string {
+    compiler::Value v = api.getField(result, name);
+    if (v.isStringId() || v.isStringValId())
+      return api.toString(v);
+    return "";
+  };
+  std::string out = fieldString("stdout");
+  std::string err = fieldString("stderr");
+  std::string spawnError = fieldString("error");
+  compiler::Value codeV = api.getField(result, "exitCode");
+  int64_t code = codeV.isInt() ? codeV.asInt() : 0;
+  for (const std::string& msg : {err, spawnError}) {
+    if (!msg.empty()) {
+      std::cerr << msg;
+      if (msg.back() != '\n')
+        std::cerr << "\n";
+    }
+  }
+  if (!out.empty()) {
+    std::cout << out;
+    if (out.back() != '\n')
+      std::cout << "\n";
+  }
+  // Spawn failures report through `error` and carry exitCode -1; only real
+  // exit statuses get the marker.
+  if (code > 0)
+    std::cerr << "[exit " << code << "]\n";
 }
 
 bool REPL::executeFile(const std::string& filename) {
@@ -1352,7 +1507,8 @@ int REPL::run() {
         outputLog_.close();
     }
 
-    return 0;
+    // Shell mode's `exit N` takes over the REPL's exit status.
+    return requestedExitCode_;
 }
 
 void REPL::replDebugCallback() {

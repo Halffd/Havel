@@ -401,6 +401,22 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["runCapture"] = [ctx = ctx_](const auto &args) {
     return handleProcessRunCapture(args, ctx);
   };
+  options.host_functions["runResult"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRunResult(args, ctx);
+  };
+  // Script-level uncaught-error hook: stores a handler the launcher invokes
+  // (dispatchScriptErrorHandler) before reporting an Execution error.
+  options.host_functions["on_error"] = [ctx = ctx_](const auto &args) {
+    if (args.empty() || !ctx || !ctx->vm)
+      return Value::makeBool(false);
+    const Value &handler = args[0];
+    if (!(handler.isFunctionObjId() || handler.isClosureId() ||
+          handler.isHostFuncId()))
+      return Value::makeBool(false);
+    auto *vm = static_cast<compiler::VM *>(ctx->vm);
+    vm->setGlobal("__on_error_handler", handler);
+    return Value::makeBool(true);
+  };
   options.host_functions["runDetached"] = [ctx = ctx_](const auto &args) {
     return handleProcessRunDetached(args, ctx);
   };
@@ -730,6 +746,84 @@ Value SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
         auto out = std::static_pointer_cast<std::string>(cell);
         auto strRef = vm_->getHeap().allocateString(*out);
         return Value::makeStringId(strRef.id);
+      });
+}
+
+// Bash-shaped command result: success/exitCode/stdout/stderr (+ the
+// __proc_result marker string coercion and pipeline stages key on).
+// Optional second argument is stdin: raw text, or a previous result object
+// (its stdout is forwarded). Backtick captures and every pipeline stage
+// after the first compile to this.
+Value SystemBridge::handleProcessRunResult(const std::vector<Value> &args,
+                                           const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("runResult() requires a command");
+  }
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  std::string cmd;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    cmd = vm ? vm->toString(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
+  } else if (args[0].isArrayId()) {
+    auto arr = ArrayRef{args[0].asArrayId()};
+    size_t len = vm->getHostArrayLength(arr);
+    if (len == 0) {
+      throw std::runtime_error("runResult() requires a non-empty array");
+    }
+    cmd = vm->resolveStringKey(vm->getHostArrayValue(arr, 0));
+    for (size_t i = 1; i < len; ++i) {
+      cmd += " " + vm->resolveStringKey(vm->getHostArrayValue(arr, i));
+    }
+  } else {
+    throw std::runtime_error("runResult() requires a string or array command");
+  }
+
+  // Optional stdin: raw string, or a prior result object (take .stdout).
+  std::string stdinText;
+  if (args.size() > 1 && !args[1].isNull() && vm) {
+    const Value &src = args[1];
+    if (src.isObjectId()) {
+      compiler::VMApi api(*vm);
+      Value prev = api.getField(src, "stdout");
+      if (prev.isStringId() || prev.isStringValId()) {
+        stdinText = vm->toString(prev);
+      }
+    } else if (src.isStringId() || src.isStringValId()) {
+      stdinText = vm->toString(src);
+    }
+  }
+
+  auto *vm_ = vm;
+  compiler::VMApi api(*vm);
+  return api.runBlocking(
+      [cmd, stdinText]() -> compiler::AsyncCxxResult {
+        ::havel::LaunchParams params;
+        params.method = ::havel::Method::Shell;
+        params.input = stdinText;
+        auto result = ::havel::Launcher::run(cmd, params);
+        return std::static_pointer_cast<void>(
+            std::make_shared<::havel::ProcessResult>(std::move(result)));
+      },
+      [vm_](const compiler::AsyncCxxResult &cell) -> Value {
+        auto result = std::static_pointer_cast<::havel::ProcessResult>(cell);
+        auto obj = vm_->createHostObject();
+        auto guard = vm_->makeRoot(Value::makeObjectId(obj.id));
+        const bool ok = result->error.empty() && result->exitCode == 0;
+        vm_->setHostObjectField(obj, "__proc_result", Value::makeBool(true));
+        vm_->setHostObjectField(obj, "success", Value::makeBool(ok));
+        vm_->setHostObjectField(obj, "exitCode",
+                                Value::makeInt(result->exitCode));
+        vm_->setHostObjectField(obj, "pid", Value::makeInt(result->pid));
+        auto outRef = vm_->getHeap().allocateString(result->out);
+        vm_->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
+        auto errOutRef = vm_->getHeap().allocateString(result->err);
+        vm_->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
+        if (result->error.empty()) {
+          vm_->setHostObjectField(obj, "error", Value::makeNull());
+        } else {
+          auto errRef = vm_->getHeap().allocateString(result->error);
+          vm_->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
+        }
+        return Value::makeObjectId(obj.id);
       });
 }
 

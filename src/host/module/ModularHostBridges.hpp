@@ -573,6 +573,8 @@ public:
                                    const HostContext *ctx);
     static Value handleProcessRunCapture(const std::vector<Value> &args,
                                           const HostContext *ctx);
+    static Value handleProcessRunResult(const std::vector<Value> &args,
+                                         const HostContext *ctx);
     static Value handleProcessRunDetached(const std::vector<Value> &args,
                                            const HostContext *ctx);
     static Value handleSystemDetect(const std::vector<Value> &args,

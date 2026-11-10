@@ -61,6 +61,17 @@ if !havel_bin || havel_bin == "" {
 // scope holds. This is the property the fix restores: the write must land
 // on the live object, not on a scope-local copy.
 //
+// The module ALSO uses a `config { ... }` block, which compiles to
+// `conf.key = value; config.set("key", value)` - it needs BOTH the `conf`
+// and the `config` globals to resolve in the module's scope. Before the
+// fix a module scope had neither, so the block failed with
+// "Undefined variable: 'conf'" and the write failed with
+// "VMApi::setField: expected object" - the crash the user reported
+// (hotkeys0.3.hv -> start.hv, Nov 3 2026). The block is what makes this
+// test discriminating: with only cfg.set, the pre-fix plugin also passed
+// (A/B: pre-fix -> exit 0), because the module's own `use "std/config"`
+// happened to register the object in the module scope.
+//
 // The read-back is IN-PROCESS on purpose: config.set persists to disk only
 // on an explicit save (the host bridge's config.set takes an optional
 // save flag), so a separate process would race the file write.
@@ -75,6 +86,9 @@ if !havel_bin || havel_bin == "" {
 // cfg.set + cfg.save -> "from-module").
 fs.write(MODULE_FILE, """
 use "std/config" as cfg
+config {
+  Probe.BlockKey = "from-block"
+}
 cfg.set("Probe.ScopeKey", "from-module")
 cfg.save()
 value = cfg.get("Probe.ScopeKey", "missing")
@@ -105,6 +119,8 @@ assert(res.exitCode == 0,
        "cfg.set() from a module scope must not crash; exit ${res.exitCode}, output: ${res.stdout}")
 assert(res.stdout.find("expected object") < 0,
        "cfg.set() from a module scope must not throw setField errors; output: ${res.stdout}")
+assert(res.stdout.find("Undefined variable") < 0,
+       "a config {} block in a module scope must resolve conf/config; output: ${res.stdout}")
 assert(res.stdout.find("module: cfg.set returned") >= 0,
        "the module's cfg.set() must have completed; output: ${res.stdout}")
 assert(res.stdout.find("module: readback from-module") >= 0,

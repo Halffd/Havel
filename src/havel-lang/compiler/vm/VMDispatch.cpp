@@ -119,9 +119,10 @@ void VM::executeInstruction(const Instruction &instruction) {
       const auto &cf_fallback = currentFrame();
       if (cf_fallback.closure_id != 0) {
         auto *closure_fb = heap_.closure(cf_fallback.closure_id);
-        if (closure_fb && closure_fb->module_globals) {
-          auto sideIt = closure_fb->module_globals->find(name);
-          if (sideIt != closure_fb->module_globals->end()) {
+        auto closure_mg_fb = closureModuleGlobals(closure_fb);
+        if (closure_mg_fb) {
+          auto sideIt = closure_mg_fb->find(name);
+          if (sideIt != closure_mg_fb->end()) {
             // Heal ambient so subsequent reads hit the fast path.
             globals[name] = sideIt->second;
             trackGlobalAccess(name);
@@ -230,8 +231,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     // module functions maintain module-global state (caches, etc).
     if (cf_store.closure_id != 0) {
       auto *closure = heap_.closure(cf_store.closure_id);
-      if (closure && closure->module_globals) {
-        (*closure->module_globals)[name] = value;
+      auto closure_mg_store = closureModuleGlobals(closure);
+      if (closure_mg_store) {
+        (*closure_mg_store)[name] = value;
         // Track the key so doReturn can refresh the caller's
         // stale globals copy cheaply (per-key, not full map).
         if (!frame_arena_.empty() && frame_count_ > 0) {
@@ -258,7 +260,14 @@ void VM::executeInstruction(const Instruction &instruction) {
     // modules (display.open's `_root = int` overwrote window.hv's fn _root).
     if (cf_store.closure_id != 0) {
       auto *closure = heap_.closure(cf_store.closure_id);
-      if (closure && !closure->module_globals) {
+      // Mirror only when the writer has NO module map at all (main-chunk
+      // script closures). A module closure whose module_globals field is
+      // null but whose chunk is registered resolves its map through
+      // closureModuleGlobals and already persisted via the dual-write
+      // above; mirroring it by name would stomp same-named functions in
+      // other modules (display.open's `_root = int` overwrote window.hv's
+      // fn _root).
+      if (closure && !closure->module_globals && !moduleGlobalsForChunk(closure->chunk)) {
         for (auto git = globals_stack_.rbegin(); git != globals_stack_.rend(); ++git) {
           auto pushedIt = git->first.find(name);
           if (pushedIt != git->first.end()) {
@@ -329,8 +338,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Persist to shared module_globals (see STORE_GLOBAL above)
     if (cf_imut.closure_id != 0) {
       auto *closure = heap_.closure(cf_imut.closure_id);
-      if (closure && closure->module_globals) {
-        (*closure->module_globals)[name] = value;
+      auto closure_mg_imut = closureModuleGlobals(closure);
+      if (closure_mg_imut) {
+        (*closure_mg_imut)[name] = value;
         // Track the key so doReturn can refresh the caller's
         // stale globals copy cheaply (per-key, not full map).
         if (!frame_arena_.empty() && frame_count_ > 0) {

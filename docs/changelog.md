@@ -9,6 +9,26 @@ All notable changes to Havel are documented here.
 
 ---
 
+## 2026-11-08 - Launcher pipe fixes
+
+### Fixed
+- A pipeline stage that exits early (`... | head -1`) no longer kills the
+  runtime: the write to the closed pipe raised SIGPIPE, whose default
+  disposition terminated havel (the smoke suite reported
+  `test_process_pipe (exit=-13)`, i.e. killed by signal 13). SIGPIPE is now
+  ignored process-wide when nothing else installed a handler, and the
+  write is additionally performed with SIGPIPE blocked on the calling
+  thread, so the write returns EPIPE and the pipeline returns its result.
+- A child that writes more than the pipe buffer (64 KiB on Linux) no longer
+  deadlocks the runtime. The launcher used to wait for the child before
+  draining its stdout, so the child blocked in write() while the parent
+  blocked in waitpid(). Feeding stdin, draining stdout/stderr and reaping
+  the child now happen in one poll loop, which also removes the mirror
+  deadlock in the shell path (feeding all of stdin before draining stdout
+  deadlocked children that write output before consuming their input).
+
+---
+
 ## 2026-11-06 - Shell blocks inside scripts
 
 ### Added

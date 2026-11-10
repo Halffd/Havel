@@ -8,7 +8,33 @@
 // state via getState, resume it via the "SIGCONT" name, then clean up.
 // Expected: STOPPED after SIGSTOP, not STOPPED after SIGCONT, rc 0.
 
-pid = process.runDetached("sleep 55")
+// SIGSTOP is asynchronous POSIX delivery: the target only enters state T
+// once it is next scheduled. A freshly spawned child can sit in kernel
+// state D (uninterruptible I/O while the loader reads the executable from
+// the loaded filesystem) for hundreds of milliseconds, during which the
+// stop stays pending and /proc reports D ("WAITING"). Measured on a loaded
+// machine: 284 ms and 762 ms. A fixed sleep therefore races the kernel;
+// poll for the observable state instead.
+waitForState = fn(pid, wanted, budgetMs) {
+    waited = 0
+    while waited < budgetMs {
+        st = process.getState(pid)
+        if st == wanted { return st }
+        sleep(20)
+        waited = waited + 20
+    }
+    return process.getState(pid)
+}
+
+// "exec sleep 55 >/dev/null 2>&1": the detached child must be the sleep
+// itself, and it must not hold the harness's stdout pipe.
+//  * Without exec, /bin/sh forks a second process for the sleep; that
+//    grandchild keeps the inherited stdout pipe open, so the harness waits
+//    for the pipe to close (i.e. for the whole sleep) before it can finish
+//    the test.
+//  * The redirect keeps the child off the harness's pipe entirely, so the
+//    harness sees EOF as soon as the test process exits.
+pid = process.runDetached("exec sleep 55 >/dev/null 2>&1")
 if pid == nil || pid <= 0 {
     print("FAIL process-toggle: runDetached did not return a pid")
     process.exit(255)
@@ -20,11 +46,24 @@ if okStop != true {
     print("FAIL process-toggle: sendSignal(SIGSTOP) returned ${okStop}")
     process.exit(255)
 }
-sleep(150)
-state = process.getState(pid)
+state = waitForState(pid, "STOPPED", 5000)
 if state != "STOPPED" {
     print("FAIL process-toggle: expected STOPPED, got ${state}")
     process.exit(255)
+}
+
+// Poll until the process is no longer STOPPED (SIGCONT delivery is
+// asynchronous too, and the resumed process may report RUNNING or
+// SLEEPING depending on what it was doing).
+waitUntilNotStopped = fn(pid, budgetMs) {
+    waited = 0
+    while waited < budgetMs {
+        st = process.getState(pid)
+        if st != "STOPPED" { return st }
+        sleep(20)
+        waited = waited + 20
+    }
+    return process.getState(pid)
 }
 
 // Resume via the signal NAME string (both spellings must work).
@@ -33,8 +72,7 @@ if okCont != true {
     print("FAIL process-toggle: sendSignal(\"SIGCONT\") returned ${okCont}")
     process.exit(255)
 }
-sleep(150)
-state2 = process.getState(pid)
+state2 = waitUntilNotStopped(pid, 5000)
 if state2 == "STOPPED" {
     print("FAIL process-toggle: process still STOPPED after SIGCONT")
     process.exit(255)

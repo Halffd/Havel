@@ -4,6 +4,10 @@
 (an invalid cache artifact) is confirmed to be REJECTED by the loader, so
 the misresolution mechanism itself is still unexplained.
 
+**Leading lead (new):** the shared, name-keyed bytecode cache. See
+"Shared-cache TOCTOU" below and the related entry
+`shared-bytecode-cache-cross-worktree-thrash.md` (havel-3, `b3c31da8e`).
+
 ## Symptom
 
 A module's exported functions resolve to the wrong table entry after a
@@ -63,7 +67,7 @@ from source - the calls still resolve correctly.
 ## The unresolved question
 
 The sightings were all in a session where a `.hvc` existed that this
-session's loader would reject. Two candidates remain:
+session's loader would reject. Three candidates remain:
 
 1. The artifact was produced by a build whose fingerprint/hash gates
    behaved differently (an older loader, a different compile-options
@@ -72,10 +76,56 @@ session's loader would reject. Two candidates remain:
 2. The misresolution is not in the cache at all - it is a runtime
    module-globals/closure-alias defect that only manifests in specific
    module shapes (the three sightings used different modules).
+3. The shared, name-keyed cache (see below) served foreign bytecode.
 
 To close this, a sighting needs its EXACT `.hvc` artifact and binary path
 captured BEFORE invalidation. Without both, the next occurrence is
 unreproducible.
+
+## Shared-cache TOCTOU
+
+`~/.cache/havel` is ONE flat namespace shared by every checkout on the
+box, and a module's cache entry is keyed by NAME (`lang.debug.hvc`), not
+by source path. The entry embeds the identity of the source it was
+compiled from (canonical path + sha256), and the loader validates that
+identity against the live source it would resolve
+(`ModuleLoader::checkBcCache`, `src/havel-lang/runtime/ModuleLoader.cpp`).
+When two checkouts hold DIFFERENT content for the same module name, each
+rejects the other's entry and recompiles it - a permanent ping-pong that
+re-stamps the entry on every launch. (havel-3 measured this on
+`modules/lang/debug.hv`: `b980ac796eb0` in havel/havel-2/havel-stable vs
+`ef8d77e6beb1` in havel-3. Entry:
+`shared-bytecode-cache-cross-worktree-thrash.md`, havel-3 `b3c31da8e`.)
+
+That is a LATENCY defect, not yet a misresolution defect - the hash gate
+rejects the foreign entry before it is served. But there is a window in
+the code that could turn it into one:
+
+- `checkBcCache` validates the `.hvc` header (`peekSourceInfoFile`) and
+  compares it against the live source.
+- On a match it returns `makeBcCache(hvcPath, hvPath, modulePath)`, which
+  stores only the PATH (`ModuleLoader.cpp:168`).
+- The file is opened and deserialized much later, in
+  `VM::loadModule` (`src/havel-lang/compiler/vm/VM.cpp:6809`):
+  `serializer.loadChunk(resolved->canonicalPath, 65536)`.
+
+Between the validation and that read, another checkout can `rename` a
+different artifact over the same path. The writer IS atomic
+(`autoCacheBytecodeChunk` writes a tmp file and renames under an
+advisory `flock`, `RuntimeSupport.hpp:481`), so a reader never sees a
+torn file - but it CAN see a COMPLETE, FOREIGN file that was never
+validated. The read is not re-checked against the source identity.
+
+That is the mechanism this defect's shape predicts: a module whose
+export set differs between the two trees (havel-3's `debug.on`/`debug.off`
+do not exist in the others) would resolve against a function table that
+lacks the requested name.
+
+Probe: `/home/agent/havel-logs/toctou_cache_probe.sh` - a havel-2 reader
+racing a havel-3 writer on the shared `lang.debug.hvc` entry, checking
+whether `debug.on()`/`debug.off()` ever resolve in havel-2 (they must
+NOT; they only exist in havel-3's source). Log:
+`~/havel-logs/toctou_cache_probe.log`.
 
 ## Related work
 

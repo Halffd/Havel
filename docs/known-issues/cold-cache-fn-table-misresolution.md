@@ -70,6 +70,32 @@ unreproducible.
   former 6-file WIP, now committed in `9020effb9` on havel-2 and
   `79faf8066` on main) was written by efa39c for this class of defect. It
   is committed, not a demonstrated fix for these sightings.
+
+### Provenance of the committed machinery
+
+The machinery entered the history inside `9020effb9` ("fix(config): stop
+capturing VMApi by reference across a dead frame") on havel-2 and the
+equivalent `79faf8066` on main - commits whose SUBJECT was the config
+capture, not this machinery. The six files it touched
+(`JitRuntimeBridges.cpp`, `VM.cpp`, `VM.hpp`, `VMControlFlow.cpp`,
+`VMDispatch.cpp`, `CoreRuntimeExports.cpp`) were efa39c's unstaged
+working tree at the time. The commit message does not mention them, so
+the machinery's origin is only discoverable from the preservation records.
+
+Verified after the fact: the committed machinery is byte-identical to the
+preserved patch - all 14 `module_globals_by_chunk_` / `closureModuleGlobals`
+lines match `~/havel-logs/preserved/havel2-worktree-ALL-20261024-223358.patch`
+exactly, and 524 of the patch's 531 other added lines are present in HEAD
+(the remaining 7 are superseded by later work: the `wantsSelf` receiver
+rule, `loadLocalRouted`, and the boxed-upvalue capture, all of which HEAD
+carries in newer form). `wip/efa39c-vmcontrolflow` (tip `9858733c8`) and
+`~/havel-logs/wip-efa39c-vmcontrolflow.patch` remain as the preservation
+of record; its `VMControlFlow.cpp` content is now OLDER than HEAD.
+
+efa39c's session was last seen ~18 days before this entry was written and
+the ownership decision was therefore taken here: the machinery is
+committed on both trees, gated, and its correctness test
+(`scripts/smoke/test_vm_opt_001_ambient_globals_swap.hv`) passes.
 - `docs/known-issues/havel-process-linger-during-box-storms.md` - the
   storage-congestion phenomenon that made several reproduction attempts
   inconclusive.

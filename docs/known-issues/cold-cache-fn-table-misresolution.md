@@ -127,6 +127,23 @@ whether `debug.on()`/`debug.off()` ever resolve in havel-2 (they must
 NOT; they only exist in havel-3's source). Log:
 `~/havel-logs/toctou_cache_probe.log`.
 
+**Result: 12/12 rounds, the reader never served foreign bytecode.** Under
+concurrent load (the box was at D-state 15-21 during the run - the
+widest the race window gets), every round produced:
+
+    round N reader rc=0 on_resolved=1 :: READBACK isOn=false READBACK on=null READBACK off=null
+
+`on=null` means the export did NOT resolve in havel-2 - the hash gate
+rejected the foreign entry and the module was recompiled from havel-2's
+own source. So the TOCTOU window is real in the code but did NOT
+manifest here. It remains a theoretical lead, not a demonstrated cause:
+the window is narrow (validate -> rename -> open -> deserialize) and the
+writer's `flock` plus atomic rename make the swap rare.
+
+Recorded as ruled-out-by-experiment, not as a fix. The defect stays open
+with 3 sightings and now 4 independent ruled-out hypotheses (the WIP, a
+stale artifact, unsafe cross-binary reuse, and the shared-cache TOCTOU).
+
 ## Related work
 
 - `module_globals_by_chunk_` / `closureModuleGlobals` machinery (the

@@ -383,6 +383,15 @@ VM::~VM() {
     unpinExternalRoot(rootId);
   }
   tracked_external_roots_.clear();
+  // Callback pins are external roots too (registerCallback returns the root
+  // id as the CallbackId). A binding still live at shutdown - a hotkey
+  // action/condition closure, an event-listener callback - kept its pin
+  // otherwise, and the "N external roots still pinned" warning fired with
+  // one root per live binding (263 for a 130-hotkey config).
+  for (CallbackId cbId : callback_root_ids_) {
+    unpinExternalRoot(cbId);
+  }
+  callback_root_ids_.clear();
   imported_module_globals_.clear();
 
   if (heap_.externalRootCount() > 0) {

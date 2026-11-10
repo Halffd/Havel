@@ -1,0 +1,56 @@
+// test_sh_block.hv
+// What: `sh { ... }` runs shell-shaped lines from a script - each line is
+//       translated through the shell layer (process.pipe, fs.*, shell.cd/env)
+//       and executed inline, with `$var` / `${expr}` resolving to enclosing
+//       Havel variables.
+// Expected: exit 0, no output on success. Cleans up after itself.
+// smoke: timeout = 60
+
+title = "smoke sh"
+w = {title: title, pid: 4242}
+
+// `$(cmd)` substitution is available in Havel expressions too. It yields a
+// process result object: .stdout/.stderr/.exitCode; print() of the object
+// shows its stdout.
+out = $(echo from-subst)
+if !out.success || out.stdout.trim() != "from-subst" {
+    print("FAIL subst=" + str(out.stdout))
+    exit(1)
+}
+
+// A sh block: command lines, variable interpolation, and a control-flow line
+// (Havel grammar with a shell-shaped body).
+sh {
+    echo "sh-block ${w.title} pid=${w.pid}"
+    printf "one\ntwo\n" | head -1
+}
+
+hits = 0
+sh {
+    for f in ./*.hv {
+        print ${f}
+    }
+}
+
+// Redirect and cd are the shell layer's translations.
+dir = "/tmp/havel_smoke_shblock"
+`rm -rf /tmp/havel_smoke_shblock`
+sh {
+    mkdir -p /tmp/havel_smoke_shblock
+    echo written > /tmp/havel_smoke_shblock/out.txt
+    cd /tmp/havel_smoke_shblock
+}
+if !fs.exists("/tmp/havel_smoke_shblock/out.txt") {
+    print("FAIL redirect target missing")
+    exit(1)
+}
+if fs.read("/tmp/havel_smoke_shblock/out.txt").trim() != "written" {
+    print("FAIL redirect content")
+    exit(1)
+}
+sh {
+    cd /
+}
+`rm -rf /tmp/havel_smoke_shblock`
+
+exit(0)

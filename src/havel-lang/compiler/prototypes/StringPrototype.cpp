@@ -99,6 +99,42 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
+  // `lines`: split text into an array of lines (a trailing newline does not
+  // produce an empty last element). The bash `cat f | wc -l` shape:
+  // fs.read(path).lines() | count. Non-string receivers (e.g. a process
+  // result from `cmd`) stringify first, so `cmd` | lines works.
+  auto linesOf = [&vm](const Value& receiver) -> Value {
+    std::string s = extractString(vm, receiver);
+    if (s.empty() && !receiver.isNull() && !receiver.isStringValId() &&
+        !receiver.isStringId()) {
+      s = vm.toString(receiver);
+    }
+    auto arrRef = vm.getHeap().allocateArray();
+    auto* arr = vm.getHeap().array(arrRef.id);
+    if (arr) {
+      size_t start = 0;
+      while (start < s.size()) {
+        size_t nl = s.find('\n', start);
+        if (nl == std::string::npos) {
+          arr->push_back(makeString(vm, s.substr(start)));
+          break;
+        }
+        arr->push_back(makeString(vm, s.substr(start, nl - start)));
+        start = nl + 1;
+      }
+    }
+    return Value::makeArrayId(arrRef.id);
+  };
+  regProtoVar("lines", [&vm, linesOf](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    return linesOf(args[0]);
+  });
+  // Standalone alias so `... | lines` also resolves as a plain function.
+  vm.registerHostFunction("lines", 1, [&vm, linesOf](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    return linesOf(args[0]);
+  });
+
   regProto("has", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");

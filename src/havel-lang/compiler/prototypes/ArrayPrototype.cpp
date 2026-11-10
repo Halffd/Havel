@@ -224,6 +224,25 @@ regProto("select", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
 });
 
+  // `grep`: bash-shaped filter - keep elements whose string form contains
+  // the pattern. `fs.read(p).lines() | grep "error"`.
+  regProto("grep", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isArrayId()) return Value::makeNull();
+    std::string needle = vm.toString(args[1]);
+    if (needle.empty()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateArray();
+    auto* result = vm.getHeap().array(resultRef.id);
+    if (!result) return Value::makeNull();
+    for (const auto& v : *arr) {
+      if (vm.toString(v).find(needle) != std::string::npos) {
+        result->push_back(v);
+      }
+    }
+    return Value::makeArrayId(resultRef.id);
+  });
+
   regProto("filter", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
     if (args[0].isArrayId()) {

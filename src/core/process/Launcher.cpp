@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <spawn.h>
 #include <sys/resource.h>
@@ -26,8 +27,290 @@
 #include <unistd.h>
 #endif
 
+#include <cerrno>
+#include <time.h>
+#include <utility>
+
 #ifdef _WIN32
 #pragma comment(lib, "shell32.lib")
+#endif
+
+#ifndef _WIN32
+// Make sure SIGPIPE can never terminate the process.
+//
+// SIGPIPE's default disposition is to kill the process. The runtime installs
+// a flag-only handler for it in SignalHandler::InstallAsyncHandlers, but
+// that only happens when an EventListener exists; in every other mode
+// (headless scripts, the smoke runner) the disposition stays SIG_DFL and a
+// write to a pipe whose reader is gone killed havel (observed: the smoke
+// suite reported "test_process_pipe (exit=-13)", i.e. killed by signal 13).
+// Ignore it once per process, but only when nothing else installed a
+// handler - an existing handler stays in charge.
+static void ensureSigpipeIgnored() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    struct sigaction current;
+    if (sigaction(SIGPIPE, nullptr, &current) != 0)
+      return;
+    if (current.sa_handler != SIG_DFL)
+      return; // someone else already handles it
+    struct sigaction sa;
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGPIPE, &sa, nullptr);
+  });
+}
+
+// Write to a pipe without dying on SIGPIPE.
+//
+// A pipeline stage that exits early (`... | head -1`) closes the read end
+// while the parent is still feeding it; the next write() then raises
+// SIGPIPE. Block SIGPIPE on the calling thread around the write and drain
+// the pending signal: the write returns EPIPE and the caller treats it like
+// any other short write, exactly as it already does.
+static ssize_t writeNoSigpipe(int fd, const void *buf, size_t count) {
+  ensureSigpipeIgnored();
+
+  sigset_t blockSet, oldSet;
+  sigemptyset(&blockSet);
+  sigaddset(&blockSet, SIGPIPE);
+  if (pthread_sigmask(SIG_BLOCK, &blockSet, &oldSet) != 0)
+    return write(fd, buf, count);
+
+  ssize_t written = write(fd, buf, count);
+
+  // SIGPIPE raised while blocked is pending on this thread; consume it so
+  // it cannot be delivered later, when the mask is restored. sigtimedwait
+  // with a zero timeout returns immediately (EAGAIN when nothing pending).
+  struct timespec zero = {0, 0};
+  sigtimedwait(&blockSet, nullptr, &zero);
+  pthread_sigmask(SIG_SETMASK, &oldSet, nullptr);
+  return written;
+}
+
+// Outcome of pumpChildPipes().
+struct PipePumpResult {
+  std::string out;
+  std::string err;
+  int status = 0;      // raw waitpid() status of the child
+  bool exited = false; // child was reaped
+  std::string error;
+};
+
+// Feed the child's stdin, drain its stdout/stderr and reap it, all in one
+// poll loop.
+//
+// Two deadlocks are avoided by doing this concurrently:
+//  * Waiting for the child before draining stdout deadlocks as soon as the
+//    child writes more than the pipe buffer (64 KiB on Linux) - it blocks
+//    in write() while the parent blocks in waitpid().
+//  * Feeding stdin before draining stdout deadlocks when the child writes
+//    output before consuming all of its input (e.g. `cat` with a large
+//    input): the parent blocks in write(stdin) while the child blocks in
+//    write(stdout).
+//
+// The caller owns the fds; they are closed here. stdinFd is the write end
+// (it is closed as soon as all input was written, so the child sees EOF);
+// stdoutFd/stderrFd are the read ends.
+static PipePumpResult pumpChildPipes(pid_t pid, int stdinFd, int stdoutFd,
+                                     int stderrFd, const std::string &input,
+                                     uint32_t timeoutMs) {
+  PipePumpResult res;
+
+  for (int fd : {stdinFd, stdoutFd, stderrFd}) {
+    if (fd >= 0) {
+      int flags = fcntl(fd, F_GETFL, 0);
+      if (flags >= 0)
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    }
+  }
+
+  // The child sees EOF on stdin when the input is empty: close the write
+  // end right away instead of leaving it open for the whole run.
+  bool stdinOpen = stdinFd >= 0;
+  size_t written = 0;
+  if (stdinOpen && input.empty()) {
+    close(stdinFd);
+    stdinOpen = false;
+  }
+
+  bool stdoutOpen = stdoutFd >= 0;
+  bool stderrOpen = stderrFd >= 0;
+  auto start = std::chrono::steady_clock::now();
+
+  while (true) {
+    // Reap the child first: once it is gone the remaining pipe content is
+    // still ours to read, but no new data can arrive.
+    pid_t w = waitpid(pid, &res.status, WNOHANG);
+    if (w == -1) {
+      res.error = "waitpid failed: " + std::string(strerror(errno));
+      break;
+    }
+    if (w > 0) {
+      res.exited = true;
+      break;
+    }
+
+    if (timeoutMs > 0) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now() - start)
+                         .count();
+      if (elapsed >= timeoutMs) {
+        // Kill the child's whole process group (children get
+        // POSIX_SPAWN_SETPGROUP, so -pid is the group) so shell pipelines
+        // leave no orphans, then escalate to SIGKILL.
+        kill(-pid, SIGTERM);
+        kill(pid, SIGTERM);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        kill(-pid, SIGKILL);
+        kill(pid, SIGKILL);
+        int status = 0;
+        waitpid(pid, &status, 0);
+        res.status = status;
+        res.exited = true;
+        res.error = "Process timed out";
+        break;
+      }
+    }
+
+    struct pollfd fds[3];
+    int nfds = 0;
+    int stdinIdx = -1, stdoutIdx = -1, stderrIdx = -1;
+    if (stdinOpen) {
+      fds[nfds] = {stdinFd, POLLOUT, 0};
+      stdinIdx = nfds++;
+    }
+    if (stdoutOpen) {
+      fds[nfds] = {stdoutFd, POLLIN, 0};
+      stdoutIdx = nfds++;
+    }
+    if (stderrOpen) {
+      fds[nfds] = {stderrFd, POLLIN, 0};
+      stderrIdx = nfds++;
+    }
+
+    if (nfds == 0) {
+      // Nothing left to read or write: wait for the child, honouring the
+      // timeout.
+      while (true) {
+        pid_t r = waitpid(pid, &res.status, WNOHANG);
+        if (r == -1) {
+          res.error = "waitpid failed: " + std::string(strerror(errno));
+          break;
+        }
+        if (r > 0) {
+          res.exited = true;
+          break;
+        }
+        if (timeoutMs > 0) {
+          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+          if (elapsed >= timeoutMs) {
+            kill(-pid, SIGTERM);
+            kill(pid, SIGTERM);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            kill(-pid, SIGKILL);
+            kill(pid, SIGKILL);
+            int status = 0;
+            waitpid(pid, &status, 0);
+            res.status = status;
+            res.exited = true;
+            res.error = "Process timed out";
+            break;
+          }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      break;
+    }
+
+    // Short timeout so the timeout check and the reap stay responsive even
+    // when the child produces no output at all.
+    int n = poll(fds, nfds, 50);
+    if (n < 0) {
+      if (errno == EINTR)
+        continue;
+      res.error = "poll failed: " + std::string(strerror(errno));
+      break;
+    }
+
+    if (stdinIdx >= 0 && (fds[stdinIdx].revents & (POLLOUT | POLLERR | POLLHUP))) {
+      ssize_t w = writeNoSigpipe(stdinFd, input.data() + written,
+                                 input.size() - written);
+      if (w > 0) {
+        written += static_cast<size_t>(w);
+      } else if (w < 0 && errno != EINTR && errno != EAGAIN &&
+                 errno != EWOULDBLOCK) {
+        // EPIPE: the child closed stdin (or exited). Stop feeding it.
+        close(stdinFd);
+        stdinOpen = false;
+      }
+      if (stdinOpen && written >= input.size()) {
+        close(stdinFd);
+        stdinOpen = false;
+      }
+    }
+
+    char buffer[4096];
+    if (stdoutIdx >= 0 &&
+        (fds[stdoutIdx].revents & (POLLIN | POLLHUP | POLLERR))) {
+      ssize_t r = read(stdoutFd, buffer, sizeof(buffer));
+      if (r > 0) {
+        res.out.append(buffer, static_cast<size_t>(r));
+      } else if (r == 0) {
+        stdoutOpen = false; // EOF
+      } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+        stdoutOpen = false;
+      }
+    }
+    if (stderrIdx >= 0 &&
+        (fds[stderrIdx].revents & (POLLIN | POLLHUP | POLLERR))) {
+      ssize_t r = read(stderrFd, buffer, sizeof(buffer));
+      if (r > 0) {
+        res.err.append(buffer, static_cast<size_t>(r));
+      } else if (r == 0) {
+        stderrOpen = false; // EOF
+      } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+        stderrOpen = false;
+      }
+    }
+  }
+
+  // Drain whatever is left in the pipes after the child exited.
+  char buffer[4096];
+  while (stdoutOpen) {
+    ssize_t r = read(stdoutFd, buffer, sizeof(buffer));
+    if (r > 0) {
+      res.out.append(buffer, static_cast<size_t>(r));
+      continue;
+    }
+    if (r < 0 && errno == EINTR)
+      continue;
+    break;
+  }
+  while (stderrOpen) {
+    ssize_t r = read(stderrFd, buffer, sizeof(buffer));
+    if (r > 0) {
+      res.err.append(buffer, static_cast<size_t>(r));
+      continue;
+    }
+    if (r < 0 && errno == EINTR)
+      continue;
+    break;
+  }
+
+  if (stdinOpen)
+    close(stdinFd);
+  // stdoutFd/stderrFd are closed unconditionally: the loop above only
+  // clears the "still has data" flag on EOF, it never closes them.
+  if (stdoutFd >= 0)
+    close(stdoutFd);
+  if (stderrFd >= 0)
+    close(stderrFd);
+  return res;
+}
 #endif
 
 namespace havel {
@@ -305,10 +588,12 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   // Create pipes for output capture when not detaching
   int pipe_stdout[2] = {-1, -1};
   int pipe_stderr[2] = {-1, -1};
+  int pipe_stdin[2] = {-1, -1};
 
   // Create pipes for output capture unless detaching
   if (!params.detachFromParent && params.method == Method::Sync) {
-    if (pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
+    if (pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1 ||
+        pipe(pipe_stdin) == -1) {
       return {-1, -1, false,
               "Failed to create pipes: " + std::string(strerror(errno))};
     }
@@ -318,9 +603,14 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   posix_spawn_file_actions_t actions;
   posix_spawn_file_actions_init(&actions);
 
-  // Redirect stdout/stderr if needed
+  // Redirect stdin/stdout/stderr if needed
   if (!params.detachFromParent && params.method == Method::Sync) {
-    // Close read ends of pipes in child (we only need write ends)
+    // Child reads stdin from the pipe (LaunchParams.input / pipeline stage)
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[1]);
+    posix_spawn_file_actions_adddup2(&actions, pipe_stdin[0], STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipe_stdin[0]);
+
+    // Close read ends of output pipes in child (we only need write ends)
     posix_spawn_file_actions_addclose(&actions, pipe_stdout[0]);
     posix_spawn_file_actions_addclose(&actions, pipe_stderr[0]);
     
@@ -365,6 +655,8 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
 
   if (spawn_result != 0) {
     if (!params.detachFromParent && params.method == Method::Sync) {
+      close(pipe_stdin[0]);
+      close(pipe_stdin[1]);
       close(pipe_stdout[0]);
       close(pipe_stdout[1]);
       close(pipe_stderr[0]);
@@ -383,130 +675,40 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   if (!params.detachFromParent && params.method == Method::Sync) {
     close(pipe_stdout[1]);
     close(pipe_stderr[1]);
+    close(pipe_stdin[0]);
+    pipe_stdin[0] = -1;
   }
 
   if (params.method == Method::Sync) {
-    int status;
+    int status = 0;
     pid_t waitResult;
 
     if (!params.detachFromParent) {
-      // Capture output if we're not detaching
-      std::string stdout_data, stderr_data;
+      // Feed stdin, drain stdout/stderr and reap the child in one poll
+      // loop. Doing the wait before the drain deadlocked every child that
+      // wrote more than the pipe buffer (64 KiB on Linux); feeding stdin
+      // before the drain deadlocked children that write before they
+      // consume their input.
+      PipePumpResult pump = pumpChildPipes(pid, pipe_stdin[1], pipe_stdout[0],
+                                           pipe_stderr[0], params.input,
+                                           params.timeoutMs);
+      pipe_stdin[1] = -1;
+      pipe_stdout[0] = -1;
+      pipe_stderr[0] = -1;
 
-      if (params.timeoutMs > 0) {
-        // Implement timeout with output reading
-        auto start = std::chrono::steady_clock::now();
-        bool timed_out = false;
-        (void)timed_out;
-
-        while (true) {
-          waitResult = waitpid(pid, &status, WNOHANG);
-
-          if (waitResult == -1) {
-            timed_out = true;
-            result.error = "waitpid failed: " + std::string(strerror(errno));
-            result.success = false;
-            break;
-          } else if (waitResult > 0) {
-            // Process completed
-            if (WIFEXITED(status)) {
-              result.exitCode = WEXITSTATUS(status);
-            } else if (WIFSIGNALED(status)) {
-              result.exitCode = -WTERMSIG(status);
-            }
-            break;
-          } else {
-            // Process still running, check timeout and read available output
-            if (params.timeoutMs > 0) {
-              auto now = std::chrono::steady_clock::now();
-              auto elapsed =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(now -
-                                                                        start)
-                      .count();
-
-              if (elapsed >= params.timeoutMs) {
-                // Timeout reached: kill the child's whole process group
-                // (children get POSIX_SPAWN_SETPGROUP, so -pid == the group)
-                // so shell pipelines don't leave orphans, then escalate to
-                // SIGKILL if SIGTERM is ignored.
-                kill(-pid, SIGTERM);
-                kill(pid, SIGTERM);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                kill(-pid, SIGKILL);
-                timed_out = true;
-                result.error = "Process timed out";
-                result.success = false;
-                break;
-              }
-            }
-
-            // Read any available output from stdout pipe
-            char buffer[1024];
-            ssize_t stdout_bytes =
-                read(pipe_stdout[0], buffer, sizeof(buffer) - 1);
-            if (stdout_bytes > 0) {
-              buffer[stdout_bytes] = '\0';
-              stdout_data += std::string(buffer, stdout_bytes);
-            }
-
-            // Read any available output from stderr pipe
-            ssize_t stderr_bytes =
-                read(pipe_stderr[0], buffer, sizeof(buffer) - 1);
-            if (stderr_bytes > 0) {
-              buffer[stderr_bytes] = '\0';
-              stderr_data += std::string(buffer, stderr_bytes);
-            }
-
-            // Sleep briefly to avoid busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-          }
-        }
-
-        // Read any remaining output after the process has terminated
-        char buffer[1024];
-        ssize_t stdout_bytes;
-        while ((stdout_bytes =
-                    read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[stdout_bytes] = '\0';
-          stdout_data += std::string(buffer, stdout_bytes);
-        }
-
-        ssize_t stderr_bytes;
-        while ((stderr_bytes =
-                    read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[stderr_bytes] = '\0';
-          stderr_data += std::string(buffer, stderr_bytes);
-        }
-      } else {
-        // No timeout, just wait for process completion
-        waitResult = waitpid(pid, &status, 0);
-
-        if (waitResult > 0) {
-          if (WIFEXITED(status)) {
-            result.exitCode = WEXITSTATUS(status);
-          } else if (WIFSIGNALED(status)) {
-            result.exitCode = -WTERMSIG(status);
-          }
-        }
-
-        // Read all output after process completion
-        char buffer[1024];
-        ssize_t bytes_read;
-
-        while ((bytes_read = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[bytes_read] = '\0';
-          stdout_data += std::string(buffer, bytes_read);
-        }
-
-        while ((bytes_read = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[bytes_read] = '\0';
-          stderr_data += std::string(buffer, bytes_read);
+      result.out = std::move(pump.out);
+      result.err = std::move(pump.err);
+      if (!pump.error.empty()) {
+        result.error = pump.error;
+        result.success = false;
+      }
+      if (pump.exited) {
+        if (WIFEXITED(pump.status)) {
+          result.exitCode = WEXITSTATUS(pump.status);
+        } else if (WIFSIGNALED(pump.status)) {
+          result.exitCode = -WTERMSIG(pump.status);
         }
       }
-
-      // Store the captured output
-      result.out = stdout_data;
-      result.err = stderr_data;
     } else {
       // For detached processes, just wait normally
       if (params.timeoutMs > 0) {
@@ -537,10 +739,15 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
     }
   }
 
-  // Clean up pipes
+  // Clean up pipes (the read ends were closed by the pump; the write ends
+  // were closed right after spawn).
   if (!params.detachFromParent && params.method == Method::Sync) {
-    close(pipe_stdout[0]);
-    close(pipe_stderr[0]);
+    if (pipe_stdout[0] >= 0)
+      close(pipe_stdout[0]);
+    if (pipe_stderr[0] >= 0)
+      close(pipe_stderr[0]);
+    if (pipe_stdin[1] >= 0)
+      close(pipe_stdin[1]);
   }
 
   return result;
@@ -821,118 +1028,29 @@ ProcessResult Launcher::executeShell(const std::string &command,
       return result;
     }
 
-    // Set non-blocking mode for pipes
-    fcntl(pipe_stdout[0], F_SETFL, O_NONBLOCK);
-    fcntl(pipe_stderr[0], F_SETFL, O_NONBLOCK);
+    // Feed stdin, drain stdout/stderr and reap the child in one poll
+    // loop. Feeding stdin completely before draining stdout deadlocked
+    // children that write output before consuming their input.
+    PipePumpResult pump =
+        pumpChildPipes(pid, pipe_stdin[1], pipe_stdout[0], pipe_stderr[0],
+                       params.input, params.timeoutMs);
+    pipe_stdin[1] = -1;
+    pipe_stdout[0] = -1;
+    pipe_stderr[0] = -1;
 
-    // Wait for process completion with timeout
-    int status;
-    auto start = std::chrono::steady_clock::now();
-    bool timed_out = false;
-
-    // Read output from pipes while waiting for the process to complete
-    std::string stdout_data, stderr_data;
-
-    while (true) {
-      pid_t w = waitpid(pid, &status, WNOHANG);
-
-      if (w == -1) {
-        // Error
-        result.error = "waitpid failed: " + std::string(strerror(errno));
-        result.success = false;
-        break;
-      } else if (w > 0) {
-        // Process completed
-        if (WIFEXITED(status)) {
-          result.exitCode = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-          result.exitCode = 128 + WTERMSIG(status);
-        }
-        result.success = true;
-        break;
-      } else {
-        // Process still running, check timeout and read available output
-        if (params.timeoutMs > 0) {
-          auto now = std::chrono::steady_clock::now();
-          auto elapsed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
-                  .count();
-
-          if (elapsed >= params.timeoutMs) {
-            // Timeout reached: kill the child's process group, escalate.
-            kill(-pid, SIGTERM);
-            kill(pid, SIGTERM);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            kill(-pid, SIGKILL);
-            timed_out = true;
-            result.error = "Process timed out";
-            result.success = false;
-            break;
-          }
-        }
-
-        // Read any available output from stdout pipe
-        char buffer[1024];
-        ssize_t stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1);
-        if (stdout_bytes > 0) {
-          buffer[stdout_bytes] = '\0';
-          stdout_data += std::string(buffer, stdout_bytes);
-        }
-
-        // Read any available output from stderr pipe
-        ssize_t stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1);
-        if (stderr_bytes > 0) {
-          buffer[stderr_bytes] = '\0';
-          stderr_data += std::string(buffer, stderr_bytes);
-        }
-
-        // Sleep for a short time before checking again
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    result.out = std::move(pump.out);
+    result.err = std::move(pump.err);
+    if (!pump.error.empty()) {
+      result.error = pump.error;
+      result.success = false;
+    }
+    if (pump.exited) {
+      if (WIFEXITED(pump.status)) {
+        result.exitCode = WEXITSTATUS(pump.status);
+      } else if (WIFSIGNALED(pump.status)) {
+        result.exitCode = 128 + WTERMSIG(pump.status);
       }
     }
-
-    // Read any remaining output after the process has terminated
-    char buffer[1024];
-    ssize_t stdout_bytes;
-    while ((stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) >
-           0) {
-      buffer[stdout_bytes] = '\0';
-      stdout_data += std::string(buffer, stdout_bytes);
-    }
-
-    ssize_t stderr_bytes;
-    while ((stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) >
-           0) {
-      buffer[stderr_bytes] = '\0';
-      stderr_data += std::string(buffer, stderr_bytes);
-    }
-
-    // Store the captured output
-    result.out = stdout_data;
-    result.err = stderr_data;
-
-    // Clean up pipes
-    close(pipe_stdin[1]);
-    close(pipe_stdout[0]);
-    close(pipe_stderr[0]);
-
-    if (timed_out) {
-      // Wait a bit for the process to terminate
-      int status;
-      for (int i = 0; i < 5; ++i) {
-        if (waitpid(pid, &status, WNOHANG) == pid) {
-          break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      }
-
-      // If still running, force kill it (group: pipelines leave orphans)
-      if (waitpid(pid, &status, WNOHANG) != pid) {
-        kill(-pid, SIGKILL);
-        kill(pid, SIGKILL);
-        waitpid(pid, &status, 0);
-      }
-    } // if (timed_out)
 #endif
 
   return result;

@@ -2593,6 +2593,22 @@ public:
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
 
+  // Callback pins are external roots (registerCallback returns the root id
+  // as the CallbackId). A binding that is still live at shutdown - a hotkey
+  // action/condition closure, an event-listener callback - kept its pin for
+  // the whole process, and nothing released it: ~VM drained
+  // host_function_gc_roots_, module_cache_gc_roots_ and
+  // tracked_external_roots_, but NOT the callback pins. Measured 263 pins
+  // still live at shutdown for a 130-hotkey config (every hotkey pins an
+  // action closure and a conditional one pins a condition closure too).
+  //
+  // Every registered callback id is recorded here and released by ~VM, so a
+  // shutdown ends with zero live external roots. releaseCallback() erases
+  // the id from this set when the binding is removed mid-session, so the
+  // drain and the mid-session release never double-unpin (unpin is
+  // idempotent anyway).
+  std::unordered_set<CallbackId> callback_root_ids_;
+
   // Timeout closure pinning - keeps callback closures alive until timer fires
   // or is cancelled. Returns the callback ID for the pinned closure.
   CallbackId pinTimeoutClosure(uint32_t timeout_id, const Value &closure);

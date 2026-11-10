@@ -1,4 +1,5 @@
 #include "parser/Parser.h"
+#include "havel-lang/tools/ShellTranslate.hpp"
 #include "../../utils/Logger.hpp"
 #include "../common/Debug.hpp"
 #include <array>
@@ -1622,6 +1623,14 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   case TokenType::ShellCommand:
   case TokenType::ShellCommandCapture: {
     bool captureOutput = (token.type == TokenType::ShellCommandCapture);
+    // Substitution form `$(cmd)` arrives as a capture token whose value
+    // already carries the payload ($!cmd) - it is a complete expression on
+    // its own and must not swallow the following statement as its command.
+    if (captureOutput && token.value.size() > 2 &&
+        token.value.rfind("$!", 0) == 0) {
+      auto cmdExpr = makeNodeAt<ast::StringLiteral>(token, token.value.substr(2), false);
+      return makeNodeAt<ast::ShellCommandExpression>(token, std::move(cmdExpr), true);
+    }
     while (at().type == TokenType::NewLine) {
       advance();
     }
@@ -2411,7 +2420,9 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
     auto nextType = at().type;
     bool isPipeline = (nextType == TokenType::Identifier || nextType == TokenType::OpenParen ||
-                       nextType == TokenType::At || nextType == TokenType::AtAt);
+                       nextType == TokenType::At || nextType == TokenType::AtAt ||
+                       nextType == TokenType::InterpolatedBacktick ||
+                       nextType == TokenType::Backtick);
     if (isPipeline) {
       auto pipeline = makeNodeAt<ast::PipelineExpression>(
           token, std::vector<std::unique_ptr<ast::Expression>>{});
@@ -4178,6 +4189,89 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto blk = parseBlockStatement(true, true);
       context.inDslBlock = savedDslBlock;
       return blk;
+    }
+  case havel::TokenType::ShBlock: {
+    // `sh { ... }` - a shell block. The lexer captured the raw body
+    // (Lexer::scanShellBlock); translate it with the shell layer in script
+    // mode ($name / ${expr} are Havel variables of the enclosing scope),
+    // then sub-parse the translated statements into this block.
+    havel::Token shTok = at();
+    advance(); // consume the ShBlock token (value = raw body)
+    auto shTranslation = havel::repl::translateShellBlock(
+        shTok.value, nullptr, havel::repl::TranslateMode::Script);
+    if (!shTranslation.ok)
+      failAt(shTok, "sh block: " + shTranslation.error);
+    std::string blockSource = shTranslation.source;
+    size_t shLine = shTok.line;
+      // Sub-parse each translated statement and splice the resulting AST
+      // statements into a BlockStatement. Token lines restart per statement,
+      // so each is re-anchored to successive lines after the `sh` header to
+      // keep runtime tracebacks pointing inside the block.
+      auto block = makeNode<havel::ast::BlockStatement>();
+      std::string stmt;
+      std::istringstream stream(blockSource);
+      std::string ln;
+      size_t anchor = shLine + 1;
+      auto flushStmt = [&]() {
+        if (stmt.empty())
+          return;
+        havel::Lexer lexer(stmt, debug.lexer);
+        auto savedTokens = tokens;
+        auto savedPosition = position;
+        tokens = lexer.tokenize();
+        position = 0;
+        while (notEOF() && at().type == havel::TokenType::NewLine)
+          advance();
+        // Re-anchor every token of this statement to its block line.
+        for (auto& t : tokens)
+          t.line = anchor;
+        auto lastTok = tokens.empty() ? nullptr : &tokens.back();
+        (void)lastTok;
+        while (notEOF() && at().type != havel::TokenType::EOF_TOKEN) {
+          if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+          }
+          auto st = parseStatement();
+          if (st)
+            block->body.push_back(std::move(st));
+          else
+            break;
+        }
+        tokens = std::move(savedTokens);
+        position = savedPosition;
+        stmt.clear();
+        anchor++;
+      };
+      while (std::getline(stream, ln)) {
+        std::string t = ln;
+        while (!t.empty() && (t.front() == ' ' || t.front() == '\t'))
+          t.erase(t.begin());
+        if (t.empty()) {
+          flushStmt();
+          continue;
+        }
+        if (!stmt.empty())
+          stmt += " ";
+        stmt += t;
+        // A statement ends when braces balance and the line does not end
+        // with an open construct.
+        int depth = 0;
+        bool inS = false, inD = false;
+        for (size_t ci = 0; ci < stmt.size(); ++ci) {
+          char ch = stmt[ci];
+          if (inS) { if (ch == '\'') inS = false; continue; }
+          if (inD) { if (ch == '\\' && ci + 1 < stmt.size()) ci++; else if (ch == '"') inD = false; continue; }
+          if (ch == '\'') inS = true;
+          else if (ch == '"') inD = true;
+          else if (ch == '{' || ch == '(' || ch == '[') depth++;
+          else if (ch == '}' || ch == ')' || ch == ']') depth--;
+        }
+        if (depth <= 0 && !stmt.empty())
+          flushStmt();
+      }
+      flushStmt();
+      return block;
     }
   case havel::TokenType::Less:
     if (context.inInputContext) {

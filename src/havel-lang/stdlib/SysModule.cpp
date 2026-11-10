@@ -880,6 +880,113 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   });
 
   // ========================================================================
+  // process.pipe - run a command or a pipeline, exec'ing directly (no
+  // shell). A flat argv (["ls", "-la"]) is one command; a list of argv
+  // arrays ([["grep", "error", "f.txt"], ["wc", "-l"]]) chains each stage's
+  // stdout into the next stage's stdin - real pipes, no temp files. The
+  // optional second argument is stdin text for the first stage (a string or
+  // a prior result object's .stdout). Quoted arguments keep their spaces,
+  // which shell-string commands cannot do. Returns the LAST stage's result
+  // object; success means exitCode == 0.
+  // ========================================================================
+  api.registerFunction("__proc.pipe", [api](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isArrayId())
+      throw std::runtime_error(
+          "__proc.pipe() requires an argv array or a list of argv arrays");
+
+    auto toArgString = [&api](const Value &v) -> std::string {
+      if (v.isNull())
+        return "";
+      if (v.isStringId() || v.isStringValId())
+        return api.toString(v);
+      if (v.isInt())
+        return std::to_string(v.asInt());
+      if (v.isDouble()) {
+        std::ostringstream ss;
+        ss << v.asDouble();
+        return ss.str();
+      }
+      if (v.isBool())
+        return v.asBool() ? "true" : "false";
+      return api.toString(v);
+    };
+
+    std::vector<std::vector<std::string>> stages;
+    uint32_t n = api.length(args[0]);
+    if (n == 0)
+      throw std::runtime_error("__proc.pipe() requires at least one command");
+
+    Value first = api.getAt(args[0], 0);
+    if (first.isArrayId()) {
+      for (uint32_t i = 0; i < n; ++i) {
+        Value stageVal = api.getAt(args[0], i);
+        if (!stageVal.isArrayId())
+          throw std::runtime_error(
+              "__proc.pipe(): every pipeline stage must be an argv array");
+        std::vector<std::string> argv;
+        uint32_t sn = api.length(stageVal);
+        for (uint32_t j = 0; j < sn; ++j)
+          argv.push_back(toArgString(api.getAt(stageVal, j)));
+        stages.push_back(std::move(argv));
+      }
+    } else {
+      std::vector<std::string> argv;
+      for (uint32_t i = 0; i < n; ++i)
+        argv.push_back(toArgString(api.getAt(args[0], i)));
+      stages.push_back(std::move(argv));
+    }
+
+    // Optional stdin for the first stage: text or a prior result's stdout.
+    std::string stdinText;
+    if (args.size() > 1 && !args[1].isNull()) {
+      if (args[1].isObjectId()) {
+        Value out = api.getField(args[1], "stdout");
+        if (out.isStringId() || out.isStringValId())
+          stdinText = api.toString(out);
+      } else if (args[1].isStringId() || args[1].isStringValId()) {
+        stdinText = api.toString(args[1]);
+      }
+    }
+
+    int64_t lastPid = -1;
+    int32_t lastCode = -1;
+    std::string lastStdout, lastStderr, runError;
+    for (size_t i = 0; i < stages.size(); ++i) {
+      if (stages[i].empty()) {
+        runError = "process.pipe(): empty command in pipeline";
+        break;
+      }
+      LaunchParams params;
+      params.method = Method::Sync;
+      params.input = stdinText;
+      std::string exe = stages[i][0];
+      std::vector<std::string> rest(stages[i].begin() + 1, stages[i].end());
+      auto presult = Launcher::run(exe, rest, params);
+      lastPid = presult.pid;
+      lastCode = presult.exitCode;
+      lastStdout = presult.out;
+      lastStderr = presult.err;
+      if (!presult.error.empty()) {
+        runError = presult.error;
+        break;  // spawn failure or timeout: stop the pipeline
+      }
+      stdinText = presult.out;  // feed the next stage
+    }
+
+    auto obj = api.makeObject();
+    api.setField(obj, "pid", Value::makeInt(lastPid));
+    api.setField(obj, "exitCode", Value::makeInt(static_cast<int64_t>(lastCode)));
+    api.setField(obj, "success", Value::makeBool(runError.empty() && lastCode == 0));
+    api.setField(obj, "error",
+                 runError.empty() ? Value::makeNull() : api.makeString(runError));
+    api.setField(obj, "stdout", api.makeString(lastStdout));
+    api.setField(obj, "stderr", api.makeString(lastStderr));
+    // Same marker the VM uses to stringify process results as their stdout.
+    api.setField(obj, "__proc_result", Value::makeBool(true));
+    return obj;
+  });
+
+  // ========================================================================
   // process.runDetached - run command without waiting, return pid
   // ========================================================================
   api.registerFunction("__proc.runDetached", [api](const std::vector<Value>& args) {
@@ -1074,6 +1181,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   api.setField(processObj, "kill", api.makeFunctionRef("__proc.kill"));
   api.setField(processObj, "nice", api.makeFunctionRef("__proc.nice"));
   api.setField(processObj, "run", api.makeFunctionRef("__proc.run"));
+  api.setField(processObj, "pipe", api.makeFunctionRef("__proc.pipe"));
   api.setField(processObj, "runDetached", api.makeFunctionRef("__proc.runDetached"));
   api.setField(processObj, "spawn", api.makeFunctionRef("__proc.spawn"));
   api.setField(processObj, "wait", api.makeFunctionRef("__proc.wait"));

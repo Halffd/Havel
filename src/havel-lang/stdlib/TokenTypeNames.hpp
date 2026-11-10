@@ -58,6 +58,7 @@ const std::unordered_map<havel::TokenType, std::string> TOKEN_TYPE_NAMES = {
     {havel::TokenType::RegexLiteral, "RegexLiteral"},
     {havel::TokenType::ShellCommand, "ShellCommand"},
     {havel::TokenType::ShellCommandCapture, "ShellCommandCapture"},
+    {havel::TokenType::ShBlock, "ShBlock"},
     {havel::TokenType::Hotkey, "Hotkey"},
     {havel::TokenType::Arrow, "Arrow"},
     {havel::TokenType::ReturnType, "ReturnType"},

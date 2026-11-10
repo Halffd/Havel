@@ -1,0 +1,55 @@
+// test_issue_process_pipe_sigpipe.hv
+// What: a pipeline stage that exits early must not kill the parent.
+//       `... | head -1` closes the reader while the writer is still
+//       feeding it; the parent's write() then raises SIGPIPE. With the
+//       default disposition that terminates havel, so a normal shell
+//       pipeline killed the process (observed: the smoke suite reported
+//       "test_process_pipe (exit=-13)", i.e. killed by signal 13).
+// Why: process.pipe is what every REPL shell command compiles to; a
+//       truncated pipeline (`head`, `grep -m1`, a command that exits on
+//       its own) must return a result, not a dead runtime.
+// Expected: the pipeline returns a result object; havel survives (the
+//           script reaches its own exit) and the first line is the output.
+// smoke: timeout = 60
+
+// A writer with plenty of output: the reader (`head -1`) exits after the
+// first line, so the remaining write hits a closed pipe.
+big = process.pipe([["seq", "1", "20000"], ["head", "-1"]])
+if big == null {
+    print("FAIL pipe returned null")
+    exit(1)
+}
+if big.stdout.trim() != "1" {
+    print("FAIL stdout=" + big.stdout.trim())
+    exit(1)
+}
+
+// The runtime must still be alive and usable after the broken pipe.
+after = process.pipe(["echo", "still-alive"])
+if after.stdout.trim() != "still-alive" {
+    print("FAIL after=" + after.stdout.trim())
+    exit(1)
+}
+
+// A child that writes more than the pipe buffer (64 KiB on Linux) must not
+// deadlock: the parent has to drain stdout while the child is still
+// running, not wait for it first.
+large = process.pipe([["seq", "1", "20000"]])
+if large.stdout.len != 108894 {
+    print("FAIL large len=" + str(large.stdout.len))
+    exit(1)
+}
+if large.stdout.trim().split("\n").len != 20000 {
+    print("FAIL large lines=" + str(large.stdout.trim().split("\n").len))
+    exit(1)
+}
+
+// Same for the shell path (process.run goes through /bin/sh -c): a child
+// writing more than the pipe buffer must not deadlock there either.
+shellLarge = process.run("seq 1 20000")
+if shellLarge.stdout.len != 108894 {
+    print("FAIL shellLarge len=" + str(shellLarge.stdout.len))
+    exit(1)
+}
+
+exit(0)

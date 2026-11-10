@@ -100,18 +100,21 @@ fallback in `VMControlFlow.cpp` (~1420), from three trees:
 2. **Boxed-upvalues gap** (this document, open): captured locals alias frame
    slots; fibers snapshot their locals, so a goroutine's write to an
    enclosing function-local is lost.
-3. **CLOSURE fallback copies the ambient** (havel-2, 2634b6ec2): the
-   fallback for closures whose parent chain lacks `module_globals` copies
+3. **CLOSURE fallback copies the ambient** (fixed on main in `79faf8066`):
+   the fallback for closures whose parent chain lacks `module_globals` copied
    the ambient into a private snapshot. For Parser-factory closures that
-   snapshot is taken while lazy module state is unbuilt, so compiled global
-   reads/writes fork the lazy module build (multiple parallel BP tables; a
+   snapshot was taken while lazy module state is unbuilt, so compiled global
+   reads/writes forked the lazy module build (multiple parallel BP tables; a
    consult racing a rebuild reads an empty table and the Pratt loop ends an
-   expression one operator early - silent wrong ASTs). Main carries the
+   expression one operator early - silent wrong ASTs). Main carried the
    same fallback (`VM.cpp` module-load sites create top-level functions
    with `module_globals = nullptr`, and `VMControlFlow.cpp`'s fallback
-   copies the ambient), so this affects main's tiered self-hosted parsing
-   too. havel-2's fix direction: the fallback must share the module's
-   authoritative sidecar map instead of copying the ambient.
+   copied the ambient), so this affected main's tiered self-hosted parsing
+   too. The fix registers each module chunk's authoritative globals map in
+   `VM::module_globals_by_chunk_` and resolves a closure's sidecar through
+   `VM::closureModuleGlobals` (its own map when set, else the chunk
+   registry). A registered chunk never falls back to an ambient COPY.
+   Landed on havel-3 by merging main (see the Ownership lock section).
 
 ## Ownership lock
 
@@ -139,6 +142,21 @@ machinery must be claimed here before landing. Current claims:
   budget changes are unmerged - both touch the same call paths, and the
   when-block regression found while prototyping boxing (a failed condition
   callback wedged the VM) shows the interaction is real.
+- **havel-3 (this session): main's CLOSURE module-globals registry**,
+  landed on havel-3 by merging main at `47744d5c8` (main's `79faf8066`).
+  Claim on the `CLOSURE` opcode path: `VMControlFlow.cpp`'s closure-global
+  resolution now consults `VM::moduleGlobalsForChunk` before the ambient
+  copy, and `VM.hpp`/`VM.cpp` resolve a closure's sidecar through
+  `VM::closureModuleGlobals`. Files: `VM.hpp`, `VM.cpp`,
+  `VMControlFlow.cpp`, `VMDispatch.cpp`, `JitRuntimeBridges.cpp`,
+  `CoreRuntimeExports.cpp`. havel-3's branch contributed NO code change to
+  these files - the merge brought main's version of them verbatim - so the
+  region has one owner (main's `79faf8066`) and no divergent edit to
+  reconcile. Blast radius: the change does NOT touch fiber locals/upvalue
+  boxing, the tiering fast-tick budget, pin/unpin lifetimes, mode
+  transitions, or hotkey re-registration; it changes only WHICH module
+  globals map a closure resolves against (the authoritative per-chunk map
+  instead of a private ambient copy). Gates: smoke + jit-parity.
 
 ## Retrospective: an untested assertion that misdirected this work
 

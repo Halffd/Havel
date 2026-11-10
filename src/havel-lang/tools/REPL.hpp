@@ -15,6 +15,7 @@
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "ReplInputQueue.hpp"
+#include "ShellTranslate.hpp"
 #include <functional>
 #include <memory>
 #include <string>
@@ -22,6 +23,7 @@
 #include <atomic>
 #include <fstream>
 #include <thread>
+#include <vector>
 
 namespace havel { class IHostAPI; }
 
@@ -179,6 +181,17 @@ private:
     bool handleCommand(const std::string& input);
 
     /**
+     * Handle `:save [file]` - write the session out as a Havel script.
+     */
+    bool handleSaveCommand(const std::string& input);
+
+    /**
+     * Print a value in shell mode: stdout verbatim, stderr to the error
+     * stream, and an exit-status marker for non-zero exits.
+     */
+    void printShellResult(const compiler::Value& result);
+
+    /**
      * Show help message
      */
     void showHelp() const;
@@ -245,6 +258,17 @@ private:
     // Debug mode state
     bool replDebugMode_ = false;
     std::string currentCode_;
+
+    // Shell mode (:shell): bash-shaped input is translated to Havel before
+    // parsing. sessionSources_ keeps every executed input (translated when
+    // shell mode) so :save can write the session out as a runnable script.
+    // Read by the input (producer) thread for the prompt, written by the VM
+    // (consumer) thread from :shell/:havel: atomic for that crossing.
+    std::atomic<bool> shellMode_{false};
+    std::vector<std::string> sessionSources_;
+    std::string lastShellLine_;  // raw text of the previous shell-mode input
+    std::string lastShellArg_;   // its last argument (`!$`)
+    int requestedExitCode_ = 0;  // `exit N` in shell mode
 
     // Readline event hook - pumps events between keystrokes
     static std::function<void()> pumpCallbackForHook_;

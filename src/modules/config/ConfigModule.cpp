@@ -302,9 +302,8 @@ void registerConfigModule(const VMApi &api) {
     return Value::makeNull();
   };
   auto repopulate = [api](Value configObj) {
-    // Nothing to repopulate when the object could not be resolved (the
-    // store itself was already updated by the caller). Bail out instead
-    // of handing null to setField.
+    // No live config object in this scope: the C-level store was still
+    // updated by the caller, there is simply nothing to refresh here.
     if (!configObj.isObjectId())
       return;
     for (const auto &key : Configs::Get().GetAllKeys()) {
@@ -371,7 +370,8 @@ void registerConfigModule(const VMApi &api) {
       api.push(arr, api.makeString(p));
     return arr;
   });
-  api.registerFunction("config.restore", [api, configObj](const std::vector<Value> &args) {
+  api.registerFunction("config.restore",
+                       [api, configObjAtCall, repopulate](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("config.restore() requires a backup index (0 = newest)");
     long long index = std::stoll(api.toString(args[0]));
@@ -379,11 +379,10 @@ void registerConfigModule(const VMApi &api) {
       throw std::runtime_error("config.restore() index must be >= 0");
     bool ok = Configs::Get().RestoreBackup(static_cast<size_t>(index));
     if (ok) {
-      // Reflect the restored values in the config object, the same way load
-      // and set do.
-      for (const auto &key : Configs::Get().GetAllKeys())
-        setNestedField(api, configObj, key,
-                       stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+      // Reflect the restored values in the LIVE config object, the same way
+      // load and set do. The object captured at registration time can live
+      // in a different scope than the script's (see configObjAtCall).
+      repopulate(configObjAtCall());
     }
     return Value::makeBool(ok);
   });

@@ -37,6 +37,12 @@ CallbackId VM::registerCallback(const Value &closure) {
     COMPILER_THROW("Failed to register callback - invalid ID");
   }
 
+  // Record the pin so ~VM can release it. Without this, a binding still
+  // live at shutdown (hotkey action/condition closure, event-listener
+  // callback) kept its external root for the whole process and the
+  // shutdown drain left it pinned.
+  callback_root_ids_.insert(id);
+
   return id;
 }
 
@@ -237,6 +243,11 @@ void VM::releaseCallback(CallbackId id) {
   if (id == INVALID_CALLBACK_ID) {
     return; // Nothing to release
   }
+
+  // Drop the shutdown-drain record: the binding is gone, so the drain must
+  // not try to release it again (unpin is idempotent, but keeping the set
+  // accurate keeps it from growing with every register/remove cycle).
+  callback_root_ids_.erase(id);
 
   // Unpin the external root (GC can now collect it)
   unpinExternalRoot(id);

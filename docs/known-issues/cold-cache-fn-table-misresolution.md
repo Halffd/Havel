@@ -47,6 +47,19 @@ Requires `/dev/uinput` access (`sudo setfacl -m u:agent:rw /dev/uinput`
 after each VM reboot). Without it the probe prints
 `probe: uinput.create returned null` and exits 0 - that is NOT a pass.
 
+### Cache-validation checks (run against the committed machinery)
+
+| scenario | binary | cache | result |
+|----------|--------|-------|--------|
+| cold | havel-2 `a3ea877aa91c` | removed first | 3/3 true (artifact written by the run: 131792 bytes) |
+| warm | havel-2 `a3ea877aa91c` | artifact from the cold run | 3/3 true |
+| cross-session | main `bdd5eef5e70d` | artifact written by havel-2 | 3/3 true |
+| corrupted artifact | main `bdd5eef5e70d` | 12 bytes overwritten at offset 100 | 3/3 true (rejected, module recompiled) |
+
+The corrupted-artifact run is the direct check of the hash gate: the
+artifact fails validation, is discarded, and the module is recompiled
+from source - the calls still resolve correctly.
+
 ## The unresolved question
 
 The sightings were all in a session where a `.hvc` existed that this

@@ -64,9 +64,19 @@ if !havel_bin || havel_bin == "" {
 // The read-back is IN-PROCESS on purpose: config.set persists to disk only
 // on an explicit save (the host bridge's config.set takes an optional
 // save flag), so a separate process would race the file write.
+//
+// The trailing read-back child below runs in a SEPARATE process, so it can
+// only see values that reached the file. cfg.set updates the C store and
+// the live config object but never writes the file; the module therefore
+// calls cfg.save() before exiting so the child reads back what the module
+// scope wrote. Without the save the child reads its own default and the
+// assertion below fails even though the module-scope write landed
+// correctly (verified: cfg.set alone -> "missing" in the child;
+// cfg.set + cfg.save -> "from-module").
 fs.write(MODULE_FILE, """
 use "std/config" as cfg
 cfg.set("Probe.ScopeKey", "from-module")
+cfg.save()
 value = cfg.get("Probe.ScopeKey", "missing")
 print("module: cfg.set returned")
 print("module: readback " + value)

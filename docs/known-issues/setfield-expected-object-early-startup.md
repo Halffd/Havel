@@ -121,6 +121,15 @@ A/B against the pre-fix plugin (same tree, only the lookup hunk reverted):
   object and does not crash` (exit 0)
 - pre-fix plugin: exit 1, `Undefined variable: 'conf'`
 
+A/B on the USER's own `start.hv` (the module whose top level crashed), run
+headless with a sandboxed HOME:
+
+    // probe.hv
+    use { DOLOG, hardware, storage, totalStorage } from "start"
+
+- fixed plugin: exit 0, `probe: start imported DOLOG=1`
+- pre-fix plugin: exit 1, `Undefined variable: 'conf'`
+
 The regression test also covers: the no-main-import shape must pass
 (negative control), the value written from the module scope must read back
 on the same object, and a saved value must be readable from the file by a

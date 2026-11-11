@@ -1,3 +1,4 @@
+// smoke: timeout = 240
 // Regression test: hotkey bindings must not leak GC external roots.
 //
 // what: register hotkeys, then remove them - one at a time and in bulk -
@@ -17,15 +18,23 @@
 // how: gc_external_root_count() exposes the heap's live pin count. Each
 //   hotkey pins an action closure, a condition closure and a context
 //   object, so the count grows by a known amount per registration and must
-//   come back down when the binding goes away.
+//   come back down when the binding goes away. The shutdown drain is only
+//   observable from OUTSIDE the process (~VM logs the leftover count), so
+//   that part runs as a child and asserts on the child's output.
 // expected: the count returns to baseline after hotkey.remove() and after
-//   removeAll(); the process exits with no "external roots still pinned"
-//   warning.
+//   removeAll(); a child that registers bindings and exits logs NO
+//   "external roots still pinned" warning.
 // run: ./build-debug/hvtest --smoke test_issue_hotkey_pin_lifetime
 //   (headless-safe: registers bindings on F-key names and removes them;
 //   no key is ever pressed, so no input is injected)
+// timeout budget: the 240s header covers the parent plus ONE child havel
+//   startup. On a loaded box a headless child needs ~20-60s to reach its
+//   first prompt (display-connection retries plus module loading), and the
+//   default 60s budget cut the assertion off before the child finished.
 
 use hotkey
+use "fs"
+use "process"
 
 fails = 0
 
@@ -99,6 +108,58 @@ print("after_conditional_remove=" + str(afterCondRemove))
 check("a removed conditional binding releases all three pins",
       afterCondRemove <= base,
       "expected <= baseline " + str(base) + ", got " + str(afterCondRemove))
+
+// ---------------------------------------------------------------------------
+// The SHUTDOWN drain. A binding still live when the VM is destroyed keeps
+// its callback pin unless ~VM releases it, and ~VM reports the leftovers:
+//     [VM][GC] N external roots still pinned at VM shutdown
+// That message is only produced while the VM is being destroyed, so the
+// assertion has to run in a CHILD process and read the child's output.
+//
+// Before the fix: 3 hotkeys -> "3 external roots still pinned at VM
+// shutdown"; 130 hotkeys -> 263.
+// ---------------------------------------------------------------------------
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-debug/havel", "${cwd}/build-release/havel", "${cwd}/havel"]
+    havel_bin = ""
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_hotkey_pins_${sys.pid()}"
+CHILD_FIXTURE = "${FIXTURE_DIR}/live_bindings.hv"
+fs.mkdir(FIXTURE_DIR)
+fs.write(CHILD_FIXTURE, """
+use hotkey
+use sys
+// Three unconditional bindings: each pins an action closure and a context
+// object. They are deliberately NOT removed - the point is what the VM
+// still holds when it is destroyed.
+hotkey("F21") => { print("never") }
+hotkey("F22") => { print("never") }
+hotkey("F23") => { print("never") }
+sys.exit(0)
+""")
+
+// Headless: the child inherits this process's environment, and on a live
+// desktop the display-connection retries would push it past the timeout.
+CHILD_CMD = "env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR HAVEL_HEADLESS=1 timeout 60"
+child = process.run("${CHILD_CMD} \"${havel_bin}\" \"${CHILD_FIXTURE}\" 2>&1")
+check("the child exited cleanly",
+      child.exitCode == 0,
+      "expected exit 0, got " + str(child.exitCode))
+check("no external roots are still pinned at VM shutdown",
+      child.stdout.find("external roots still pinned") < 0,
+      "the child logged a shutdown pin warning: " + child.stdout)
+
+fs.remove(FIXTURE_DIR)
 
 if fails == 0 {
     print("ALL PASS")

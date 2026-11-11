@@ -186,6 +186,12 @@ content for the same module name:
 It fails before the fix (both checkouts write the same file; the entry is
 re-stamped on every launch) and passes after.
 
+Measured against the pre-fix binary (`/host/havel`, which has no
+`cacheFileNameForContent`): **FAIL** - `found 1 - the cache key is still
+name-only`. Measured against the fixed binary (`/host/havel-2`, commit
+100b9e49af4d): **PASS** - `lang.thrashprobe.dc061a34.hvc` and
+`lang.thrashprobe.ecf150d9.hvc`, neither re-stamping the other.
+
 The key-derivation logic itself was checked standalone (the same rules
 mirrored into a throwaway C++ program, `/tmp/opencode/cachekey_test.cpp`):
 
@@ -199,6 +205,48 @@ mirrored into a throwaway C++ program, `/tmp/opencode/cachekey_test.cpp`):
     other   -> lang.other.52f042e1
     userthing -> userthing.baecef1e   <- user module: path-hash name
     ALL CHECKS PASSED
+
+### Gate result on the fixed tree
+
+Build: `./build.sh queue build` on commit 100b9e49af4d, rc=0, binary
+self-reports `commit 100b9e49af4d (havel-2, clean)`.
+
+Smoke gate: `./build.sh queue test --kind gate` = **369 passed, 21 failed,
+0 skipped** of 390 files. Every one of the 21 failures is a load
+artifact, not a code defect:
+
+- 20 are `(timeout)`, 1 is `test_issue_qt_namespace_restored (exit=1)`,
+- the box ran the gate at load 11-23 with up to **18 processes in
+  D-state** (`path_openat` / `read_extent_buffer_pages` / `btrfs-transaction`
+  - the host-storage congestion recorded in
+  `havel-process-linger-during-box-storms.md`),
+- **all 21 pass when re-run individually** on the same binary:
+  `~/havel-logs/rerun_gate_failures.sh` = **21 passed, 0 failed, 0 skipped**
+  of 21 files,
+- the same tests time out on `main` WITHOUT this fix, in the same window
+  (`~/havel-logs/gate_main_postmerge.log`: 375 passed, 15 failed - the
+  same closure_*, test_debug_on_off, test_fs_glob_absolute,
+  test_extern_missing, test_hpkg_toolchain_store,
+  test_issue_process_pipe_sigpipe set).
+
+### The added cost
+
+The key derivation hashes the module source, so the fix does one extra
+sha256 per bundled-module lookup. Measured with the project's own sha256
+(1000 iterations per file, `~/havel-logs/measure_hash_cost.sh`):
+
+| module | bytes | us per hash |
+|--------|-------|-------------|
+| `lang/debug.hv` | 18937 | 148.1 |
+| `lang/math/math.hv` | 2616 | 12.4 |
+| `std/array.hv` | 2554 | 19.0 |
+| `app/window.hv` | 60063 | 361.9 |
+
+A full sweep of `modules/lang` (575953 bytes) costs about 5 ms. The
+pre-fix code already hashed the live source during validation
+(`checkBcCache`), so the marginal cost is well under the recompile the
+thrash used to force (2431 ms vs 1735 ms warm, measured in the defect
+section above).
 
 ### Not done: the cache directory is not cleaned up
 

@@ -1,7 +1,8 @@
 # The shared bytecode cache thrashes between worktrees: every launch recompiles the same modules
 
-**Status:** OPEN. Confirmed defect in the cache-key scheme, not an
-environmental artifact. Distinct from
+**Status:** FIXED (cache key is now content-keyed). The fix landed on
+havel-2; the known-issue entry is kept because the failure mode is subtle
+and the fix touches a shared interface. Distinct from
 `havel-process-linger-during-box-storms.md` (that one is host storage
 congestion); this one reproduces on a calm box with load ~1.
 
@@ -80,7 +81,7 @@ writes under an exclusive `flock` and renames, so a reader that has the
 old inode mapped is safe, but every rewrite still forces a full recompile
 and a full re-serialization of the module.
 
-## Reproducer
+## Reproducer (pre-fix behavior)
 
 ```bash
 # two checkouts with different content for the same module name
@@ -91,26 +92,118 @@ cd /host/havel-3   && ./build-debug/havel /tmp/opencode/triv.hv
 strings ~/.cache/havel/lang.debug.hvc | grep -m1 /host/   # -> havel-3
 ```
 
-## Next step
+After the fix the same sequence produces TWO files, one per checkout's
+content, and neither is re-stamped:
 
-Make the cache key carry the source identity, so diverged content gets
-distinct entries instead of fighting over one. Options, in order of
-preference:
+```bash
+ls ~/.cache/havel/lang.debug*.hvc
+#   lang.debug.<8hex-of-havel-3-content>.hvc
+#   lang.debug.<8hex-of-havel-2-content>.hvc
+```
 
-1. **Key by content, not by name.** The cache name already embeds a path
-   hash for user modules (`<stem>.<8-hex-path-hash>.hvc`); the bundled
-   `lang.`/`std.`/`app.` prefixes do not. Extend the same scheme to the
-   bundled names so two checkouts with different content land in different
-   files.
-2. **Key by source path.** Include the checkout in the name (e.g.
-   `lang.debug.<path-hash>.hvc`). This over-partitions - identical content
-   in two checkouts would no longer share - so it is worse than (1) but
-   simpler.
-3. Keep one file per name but store multiple content variants inside it.
-   Most invasive; no benefit over (1).
+## Fix: content-keyed cache entries
 
-Whatever is chosen, the loader's lookup and the writer's path derivation
-(`ModuleLoader::cacheFileNameForSource`, `autoCacheBytecodeChunk`,
-`HavelLauncher`'s precompile path) must agree, and the pipeline-fingerprint
-inputs (`lang.emitter`/`pratt`/`lexer`/`scope`) must keep resolving to a
-single canonical entry or the self-hosted fingerprint logic breaks.
+Implemented option (1) from the original plan - **key by content, not by
+name**.
+
+`ModuleLoader::cacheFileNameForContent(canonicalSourcePath)` is now the
+single derivation point for the flat cache key:
+
+| source | key |
+|--------|-----|
+| bundled module, normal | `<ns>.<rel>.<8-hex-content-hash>` (`lang.debug.a1b2c3d4`) |
+| bundled module, self-hosted compiler | `<ns>.<rel>` (`lang.emitter`) - unchanged |
+| user module | `<stem>.<8-hex-path-hash>` - unchanged |
+
+The content hash is the SHA-256 of the module's SOURCE TEXT, so two
+checkouts whose content for the same module name differs get DIFFERENT
+files, and two checkouts with identical content still share one entry.
+The thrash is gone because neither checkout can invalidate the other's
+entry.
+
+### The load-bearing constraint: the pipeline fingerprint
+
+The four self-hosted-compiler modules (`lang.emitter`, `lang.pratt`,
+`lang.lexer`, `lang.scope`) are the INPUTS of the pipeline fingerprint
+(`computePipelineFingerprint`, `RuntimeSupport.cpp`): the fingerprint is
+the hash of their `.hvc` files. Content-keying them would make the
+fingerprint depend on which variant a loader happened to pick, and the
+fingerprint would change every time the entry was rewritten - the endless
+rebuild cycle the existing comment in `sha256_hvc_stable` describes.
+
+Those four therefore keep their canonical names. The exclusion asks the
+single source of truth (`isPipelineFingerprintInput`, which matches
+`RuntimeSupport.cpp`'s `kFingerprintInputs`) rather than restating the
+four names - a second hardcoded copy of that list would drift. Every
+other bundled module is content-keyed.
+
+### Every call site derives the key the same way
+
+The loader and the writer MUST agree on the name, or the entry written is
+not the entry read. All sites now call `cacheFileNameForContent`:
+
+- `ModuleLoader::flatCacheFor` (loader lookup for a resolved source)
+- `ModuleLoader::resolve` - the bare-name path resolves the live source
+  first, then hashes it to find the content-keyed entry
+- `autoCacheBytecodeChunk` (the writer, `RuntimeSupport.hpp`)
+- `loadCachedScriptChunk` (the incremental serve path,
+  `RuntimeSupport.cpp`)
+- `HavelLauncher`'s precompile and `--build` / `--build-many` paths
+- `VM::loadModule`'s persistent hash-index key
+
+Two places parse a cache key back into a stem and had to learn the new
+shape:
+
+- `findLiveSourceForCacheName` strips the trailing 8-hex content hash
+  before resolving the live source (`lang.debug.a1b2c3d4` -> `debug`).
+- `computeCanonicalPathNoCache`'s cache-dir lookup no longer looks for the
+  exact file `lang.<name>.hv`; it scans the cache dir for
+  `lang.<name>` or `lang.<name>.<8hex>` and takes the newest match.
+
+### The module identity must stay THIS tree's
+
+`computeCanonicalPathNoCache` produces the key the VM identifies a loaded
+module by. With content-keyed entries, the cache directory can hold
+several entries for one module name - one per checkout's content - so
+picking "the newest" arbitrarily would let one process identify a module
+by another checkout's path. The lookup therefore resolves the LIVE source
+first and asks for THAT source's exact content-keyed entry; the
+newest-match scan is only the fallback for the installed-bundle case
+(no live source on the search path), where there is only ever one
+entry per name.
+
+### Regression test
+
+`~/havel-logs/test_cache_thrash.sh` - two checkouts with DIFFERENT
+content for the same module name:
+
+1. the two checkouts must end up with DISTINCT cache files,
+2. the first checkout's entry must NOT be re-stamped by the second one
+   (this is the thrash),
+3. a repeat launch by the first checkout must REUSE its own entry (the
+   warm-cache path still works).
+
+It fails before the fix (both checkouts write the same file; the entry is
+re-stamped on every launch) and passes after.
+
+The key-derivation logic itself was checked standalone (the same rules
+mirrored into a throwaway C++ program, `/tmp/opencode/cachekey_test.cpp`):
+
+    a -> lang.debug.286686ea
+    b -> lang.debug.841e1ae7      <- diverged content: DIFFERENT keys
+    c -> lang.debug.286686ea      <- identical content: SAME key
+    emitter -> lang.emitter       <- fingerprint input: canonical name
+    pratt   -> lang.pratt
+    lexer   -> lang.lexer
+    scope   -> lang.scope
+    other   -> lang.other.52f042e1
+    userthing -> userthing.baecef1e   <- user module: path-hash name
+    ALL CHECKS PASSED
+
+### Not done: the cache directory is not cleaned up
+
+The old name-only entries (`lang.debug.hvc`) are left on disk. They are
+regenerable and harmless - nothing looks them up any more - but they are
+not garbage-collected. A future cleanup pass could remove entries whose
+name no longer matches any live module.
+

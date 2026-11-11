@@ -77,6 +77,12 @@ session's loader would reject. Three candidates remain:
    module-globals/closure-alias defect that only manifests in specific
    module shapes (the three sightings used different modules).
 3. The shared, name-keyed cache (see below) served foreign bytecode.
+   **NOW CLOSED AS A MECHANISM**: the bundled-module cache key is
+   content-derived (`lang.debug.<8-hex-content-hash>`), so a foreign
+   artifact can no longer be served under a key the reader validated -
+   the writer's path carries the content hash the reader looked up, and a
+   foreign artifact lands on a DIFFERENT path. See
+   `shared-bytecode-cache-cross-worktree-thrash.md`.
 
 To close this, a sighting needs its EXACT `.hvc` artifact and binary path
 captured BEFORE invalidation. Without both, the next occurrence is
@@ -85,21 +91,28 @@ unreproducible.
 ## Shared-cache TOCTOU
 
 `~/.cache/havel` is ONE flat namespace shared by every checkout on the
-box, and a module's cache entry is keyed by NAME (`lang.debug.hvc`), not
-by source path. The entry embeds the identity of the source it was
-compiled from (canonical path + sha256), and the loader validates that
-identity against the live source it would resolve
+box. The entry embeds the identity of the source it was compiled from
+(canonical path + sha256), and the loader validates that identity
+against the live source it would resolve
 (`ModuleLoader::checkBcCache`, `src/havel-lang/runtime/ModuleLoader.cpp`).
-When two checkouts hold DIFFERENT content for the same module name, each
-rejects the other's entry and recompiles it - a permanent ping-pong that
-re-stamps the entry on every launch. (havel-3 measured this on
-`modules/lang/debug.hv`: `b980ac796eb0` in havel/havel-2/havel-stable vs
-`ef8d77e6beb1` in havel-3. Entry:
-`shared-bytecode-cache-cross-worktree-thrash.md`, havel-3 `b3c31da8e`.)
 
-That is a LATENCY defect, not yet a misresolution defect - the hash gate
-rejects the foreign entry before it is served. But there is a window in
-the code that could turn it into one:
+**The key is now CONTENT-derived** (`lang.debug.<8-hex-content-hash>`),
+so two checkouts holding different content for the same module name get
+DISTINCT entries and cannot overwrite each other - the ping-pong that
+re-stamped the entry on every launch is fixed (see
+`shared-bytecode-cache-cross-worktree-thrash.md`). Before that fix the
+entry was keyed by NAME alone (`lang.debug.hvc`), each checkout rejected
+the other's entry and recompiled it, and the entry was re-stamped on
+every launch.
+
+The TOCTOU window described below was observed against the OLD name-only
+key. With content-keyed entries the writer can no longer replace the
+file a reader validated under the same path with a foreign one - the
+writer's path now carries the content hash the reader looked up, so a
+foreign artifact lands on a DIFFERENT path. The window is therefore
+closed for bundled modules by construction.
+
+The window that remains (for the paths still shared by name):
 
 - `checkBcCache` validates the `.hvc` header (`peekSourceInfoFile`) and
   compares it against the live source.

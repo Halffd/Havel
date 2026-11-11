@@ -4,9 +4,12 @@
 (an invalid cache artifact) is confirmed to be REJECTED by the loader, so
 the misresolution mechanism itself is still unexplained.
 
-**Leading lead (new):** the shared, name-keyed bytecode cache. See
-"Shared-cache TOCTOU" below and the related entry
-`shared-bytecode-cache-cross-worktree-thrash.md` (havel-3, `b3c31da8e`).
+**The shared, name-keyed bytecode cache is no longer a candidate.** It
+was the leading lead; the content-derived cache key closes that
+mechanism by construction (a foreign artifact can no longer land on the
+path the reader validated). See "Shared-cache TOCTOU" below and the
+related entry `shared-bytecode-cache-cross-worktree-thrash.md`. Two
+candidates remain open - see "The unresolved question".
 
 ## Symptom
 
@@ -67,7 +70,7 @@ from source - the calls still resolve correctly.
 ## The unresolved question
 
 The sightings were all in a session where a `.hvc` existed that this
-session's loader would reject. Three candidates remain:
+session's loader would reject. The candidates:
 
 1. The artifact was produced by a build whose fingerprint/hash gates
    behaved differently (an older loader, a different compile-options
@@ -76,13 +79,14 @@ session's loader would reject. Three candidates remain:
 2. The misresolution is not in the cache at all - it is a runtime
    module-globals/closure-alias defect that only manifests in specific
    module shapes (the three sightings used different modules).
-3. The shared, name-keyed cache (see below) served foreign bytecode.
-   **NOW CLOSED AS A MECHANISM**: the bundled-module cache key is
-   content-derived (`lang.debug.<8-hex-content-hash>`), so a foreign
-   artifact can no longer be served under a key the reader validated -
-   the writer's path carries the content hash the reader looked up, and a
-   foreign artifact lands on a DIFFERENT path. See
-   `shared-bytecode-cache-cross-worktree-thrash.md`.
+
+A third candidate - the shared, name-keyed cache serving foreign
+bytecode - is **CLOSED AS A MECHANISM**: the bundled-module cache key
+is content-derived (`lang.debug.<8-hex-content-hash>`), so a foreign
+artifact can no longer be served under a key the reader validated - the
+writer's path carries the content hash the reader looked up, and a
+foreign artifact lands on a DIFFERENT path. See
+`shared-bytecode-cache-cross-worktree-thrash.md`.
 
 To close this, a sighting needs its EXACT `.hvc` artifact and binary path
 captured BEFORE invalidation. Without both, the next occurrence is

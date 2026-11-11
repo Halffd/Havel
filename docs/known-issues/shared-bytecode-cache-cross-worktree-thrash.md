@@ -319,14 +319,27 @@ the same signature recorded above: a DIFFERENT test fails on each run,
 and each one passes standalone on the same binary.
 
 `XDG_CACHE_HOME` points the whole binary at a scratch cache
-(`ModuleLoader::getDefaultCacheDir` honours it), so a gate can measure
-the merged CODE instead of the cross-tree fingerprint fight:
+(`ModuleLoader::getDefaultCacheDir` honours it), and with it the full
+suite runs in 375 s instead of 1370 s - but it is NOT a usable way to
+gate: a cache outside `$HOME/.cache/havel` makes
+`test_python_bridge` fail under AddressSanitizer with a 2289-byte
+CPython leak. See `python-bridge-cpython-module-leak.md` (pre-existing -
+it reproduces on a binary that predates this work).
 
-    XDG_CACHE_HOME=/tmp/havel-gate-cache ./build.sh 6 queue test --kind gate
+The way to make a gate binary own the shared fingerprint entries is to
+DELETE the four entries and let the binary recreate them:
 
-This is a MEASUREMENT fix for the gate, not a code fix: the residue is
-still there and still needs a per-tree fingerprint (or a per-tree cache
-directory) to go away.
+    rm -f ~/.cache/havel/lang.{emitter,pratt,lexer,scope}.hvc
+    ./build-debug/havel scripts/smoke/<something>.hv   # recreates them
+
+After that the fingerprint falls back to `bin:<build-id>` - a value
+derived from the binary alone - and the drift stops for THAT binary.
+The entries are then re-created on the next launch by whoever runs
+first, so the fight is deferred, not solved.
+
+Neither workaround is a code fix: the residue is still there and still
+needs a per-tree fingerprint (or a per-tree cache directory) to go
+away.
 
 Every failure in every run is a load artifact, not a code defect:
 

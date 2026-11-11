@@ -115,26 +115,23 @@ std::string sha256_hex(const std::string& data) {
     for (uint8_t b : hash) oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
     return oss.str();
 }
+
 } // anonymous namespace
 
 namespace havel {
 
-std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSourcePath) {
-    namespace fs = std::filesystem;
-
-    // Namespace prefix for bundled modules: lang.<stem> / std.<stem>
+namespace {
+// Split a canonical source path into the bundled-module namespace
+// ("lang"/"std"/"app") and the path relative to that namespace root
+// ("math/math" for lang/math/math.hv). Returns false for a source that is
+// not a bundled module.
+bool splitBundledModulePath(const std::string& canonicalSourcePath,
+                            std::string& nsOut,
+                            std::string& relOut) {
     std::string normalized = canonicalSourcePath;
     for (char& c : normalized) {
         if (c == '\\') c = '/';
     }
-    // Bundled-module cache names keep the namespace prefix and encode the
-    // path RELATIVE to the namespace root so a nested module
-    // (lang/math/math.hv) cannot collide with a top-level one
-    // (lang/math.hv): both used to compress to "lang.math", the flat
-    // cache held one bytecode for two different sources, and importing
-    // the nested one served the wrapper's .hvc - whose own `use
-    // "math/math"` then tripped the circular-dependency guard and
-    // dropped every sidecar export (math.randint returned null).
     for (const char* ns : {"lang", "std", "app"}) {
         std::string marker = std::string("/modules/") + ns + "/";
         auto pos = normalized.find(marker);
@@ -147,15 +144,163 @@ std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSou
             for (char& c : rel) {
                 if (c == '/') c = '.';
             }
-            return std::string(ns) + "." + rel;
+            nsOut = ns;
+            relOut = rel;
+            return true;
         }
+    }
+    return false;
+}
+} // anonymous namespace
+
+namespace {
+// Map a bytecode-cache key ("lang.<stem>", "std.<stem>", "app.<stem>",
+// a content-keyed "<ns>.<stem>.<8hex>", or a user flat-cache
+// "stem.<8hex>") back to a live source file with the same stem on the
+// module search path. Returns "" when no live candidate exists
+// (installed bundles / AOT-only deployments).
+std::string findLiveSourceForCacheName(
+    const std::string& hashKey,
+    const std::vector<std::string>& searchPaths) {
+    namespace fs = std::filesystem;
+    std::string stem;
+    for (const char* prefix : {"lang.", "std.", "app."}) {
+      if (hashKey.starts_with(prefix)) {
+        stem = hashKey.substr(std::strlen(prefix));
+        break;
+      }
+    }
+    if (stem.empty()) {
+      // User flat-cache name: stem.<8 hex chars>
+      auto dot = hashKey.rfind('.');
+      if (dot != std::string::npos && hashKey.size() - dot == 9) {
+        stem = hashKey.substr(0, dot);
+      } else {
+        stem = hashKey;
+      }
+    } else {
+      // Content-keyed bundled-module name: strip the trailing
+      // "<8 hex chars>" content hash so the stem resolves to the live
+      // source again ("lang.debug.a1b2c3d4" -> "debug").
+      auto dot = stem.rfind('.');
+      if (dot != std::string::npos && stem.size() - dot == 9) {
+        bool allHex = true;
+        for (size_t i = dot + 1; i < stem.size(); ++i) {
+          char c = stem[i];
+          if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            allHex = false;
+            break;
+          }
+        }
+        if (allHex) {
+          stem = stem.substr(0, dot);
+        }
+      }
+    }
+    // Nested bundled-module cache names carry the subpath with slashes
+    // encoded as dots (lang.math.math <- lang/math/math.hv). Resolve from
+    // the deepest candidate: try the full dotted form as a nested path
+    // first, then fall back to treating the last segment as the stem.
+    // Otherwise "lang.math.math" looked up stem "math" and matched the
+    // top-level lang/math.hv wrapper instead of lang/math/math.hv.
+    std::vector<fs::path> candidates;
+    {
+      std::string nested = stem;
+      size_t lastDot = nested.rfind('.');
+      if (lastDot != std::string::npos) {
+        std::string dir = nested.substr(0, lastDot);
+        std::string leaf = nested.substr(lastDot + 1);
+        for (char& c : dir) {
+          if (c == '.') c = '/';
+        }
+        candidates.push_back(fs::path(dir) / (leaf + ".hv"));
+      }
+    }
+    candidates.push_back(fs::path(stem + ".hv"));
+    for (const auto& sp : searchPaths) {
+      for (const auto& rel : candidates) {
+        fs::path cand = fs::path(sp) / rel;
+        if (fs::exists(cand)) {
+          try { return fs::canonical(cand).string(); }
+          catch (...) { return cand.string(); }
+        }
+      }
+    }
+    return "";
+}
+} // anonymous namespace
+
+std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSourcePath) {
+    namespace fs = std::filesystem;
+
+    // Bundled-module cache names keep the namespace prefix and encode the
+    // path RELATIVE to the namespace root so a nested module
+    // (lang/math/math.hv) cannot collide with a top-level one
+    // (lang/math.hv): both used to compress to "lang.math", the flat
+    // cache held one bytecode for two different sources, and importing
+    // the nested one served the wrapper's .hvc - whose own `use
+    // "math/math"` then tripped the circular-dependency guard and
+    // dropped every sidecar export (math.randint returned null).
+    std::string ns;
+    std::string rel;
+    if (splitBundledModulePath(canonicalSourcePath, ns, rel)) {
+        return ns + "." + rel;
     }
 
     // User module: stem + short hash of the canonical path so two files with
     // the same stem in different directories cannot clobber each other.
+    std::string normalized = canonicalSourcePath;
+    for (char& c : normalized) {
+        if (c == '\\') c = '/';
+    }
     std::string stem = fs::path(normalized).stem().string();
     std::string hash = sha256_hex(normalized);
     return stem + "." + hash.substr(0, 8);
+}
+
+std::string ModuleLoader::cacheFileNameForContent(const std::string& canonicalSourcePath) {
+    namespace fs = std::filesystem;
+
+    // Content-keyed cache name for a BUNDLED module:
+    //   <ns>.<rel>.<8-hex-content-hash>
+    //
+    // ~/.cache/havel is one flat namespace shared by every checkout on the
+    // box, and the bundled-module entries used to be keyed by NAME alone
+    // (lang.debug.hvc). Two checkouts whose content for the same module
+    // name differs therefore fought over ONE file: each launch rejected
+    // the other's entry (the embedded source hash did not match the live
+    // source), recompiled it and re-stamped it with its own identity, so
+    // the next launch rejected that one again - a permanent ping-pong that
+    // rewrote the entry on every launch and cost a full recompile each
+    // time. Keying by CONTENT gives diverged checkouts distinct files
+    // and leaves identical content sharing one entry.
+    //
+    // The four self-hosted-compiler modules (lang.emitter/pratt/lexer/scope)
+    // keep their canonical names: their .hvc files ARE the pipeline
+    // fingerprint's inputs, so their entries must stay single and
+    // resolvable by name. The set lives in one place
+    // (RuntimeSupport.cpp's kFingerprintInputs); ask it, do not restate it.
+    std::string ns;
+    std::string rel;
+    if (splitBundledModulePath(canonicalSourcePath, ns, rel)) {
+        if (havel::compiler::isPipelineFingerprintInput(ns + "." + rel + ".hvc")) {
+            return ns + "." + rel;
+        }
+        std::string contentHash = sha256_file_hex(canonicalSourcePath);
+        if (!contentHash.empty()) {
+            return ns + "." + rel + "." + contentHash.substr(0, 8);
+        }
+        // Unreadable source: fall back to the name-only key. The loader
+        // validates the embedded hash against the live source before
+        // serving, so a name-only entry can never be served for
+        // mismatched content.
+        return ns + "." + rel;
+    }
+
+    // User modules already carry a path hash in their key; the source
+    // path - not the content - is their identity, and a user module is
+    // not shared across checkouts under one name.
+    return cacheFileNameForSource(canonicalSourcePath);
 }
 
 ModuleLoader::~ModuleLoader() {
@@ -233,17 +378,77 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
     std::string canonicalPath;
 
     // 1. lang.<name>.hvc (lang modules take priority)
-    if (fs::exists(fs::path(cacheDir) / ("lang." + name + ".hv"))) {
-      try {
-        return fs::canonical(fs::path(cacheDir) / ("lang." + name + ".hv")).string();
-      } catch (...) {}
+    // Bundled-module cache entries are content-keyed
+    // ("lang.<name>.<8hex>.hv"), so the exact name-only file no longer
+    // exists; match the "<ns>.<name>" prefix and take the newest match.
+    //
+    // "Newest" is only a tie-breaker for the installed-bundle case (no
+    // live source). When a live source IS known, the entry for THIS
+    // tree's content is the only correct one: several checkouts can have
+    // entries for the same module name, and picking another checkout's
+    // copy would make this process identify the module by a foreign
+    // path. So resolve the live source first and ask for its exact
+    // content-keyed entry.
+    auto findCachedHv = [&](const std::string& stemPrefix) -> std::string {
+      // The entry that belongs to THIS tree's content, if any.
+      std::string liveSource =
+          findLiveSourceForCacheName(stemPrefix, searchPaths_);
+      std::string ownEntry;
+      if (!liveSource.empty() && fs::exists(liveSource)) {
+        ownEntry = cacheFileNameForContent(liveSource);
+        fs::path ownHv = fs::path(cacheDir) / (ownEntry + ".hv");
+        if (fs::exists(ownHv)) {
+          try { return fs::canonical(ownHv).string(); }
+          catch (...) { return ownHv.string(); }
+        }
+      }
+      std::error_code dirEc;
+      std::vector<fs::path> matches;
+      for (const auto& entry : fs::directory_iterator(cacheDir, dirEc)) {
+        if (dirEc) break;
+        const std::string fname = entry.path().filename().string();
+        if (!fname.ends_with(".hv")) continue;
+        const std::string stem = fname.substr(0, fname.size() - 3);
+        // Either the plain name ("lang.debug") or the content-keyed name
+        // ("lang.debug.a1b2c3d4"). A longer stem must differ from the
+        // prefix only by a content hash, so "lang.debugger" does not
+        // match the "lang.debug" prefix.
+        if (stem == stemPrefix) {
+          matches.push_back(entry.path());
+        } else if (stem.size() > stemPrefix.size() + 1 &&
+                   stem.starts_with(stemPrefix) &&
+                   stem[stemPrefix.size()] == '.') {
+          const std::string suffix =
+              stem.substr(stemPrefix.size() + 1);
+          if (suffix.size() == 8) {
+            bool allHex = true;
+            for (char c : suffix) {
+              if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                allHex = false;
+                break;
+              }
+            }
+            if (allHex) matches.push_back(entry.path());
+          }
+        }
+      }
+      if (matches.empty()) return "";
+      auto newest = std::max_element(
+          matches.begin(), matches.end(),
+          [](const fs::path& a, const fs::path& b) {
+            return fs::last_write_time(a) < fs::last_write_time(b);
+          });
+      try { return fs::canonical(*newest).string(); }
+      catch (...) { return newest->string(); }
+    };
+
+    if (auto p = findCachedHv("lang." + name); !p.empty()) {
+      return p;
     }
 
     // 2. std.<name>.hvc (stdlib modules)
-    if (fs::exists(fs::path(cacheDir) / ("std." + name + ".hv"))) {
-      try {
-        return fs::canonical(fs::path(cacheDir) / ("std." + name + ".hv")).string();
-      } catch (...) {}
+    if (auto p = findCachedHv("std." + name); !p.empty()) {
+      return p;
     }
 
     // 3. Check script directory for local .hv modules
@@ -319,62 +524,6 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
       }
     }
 
-    return "";
-  }
-
-  // Map a bytecode-cache key ("lang.<stem>", "std.<stem>", "app.<stem>",
-  // or a user flat-cache "stem.<8hex>") back to a live source file with the
-  // same stem on the module search path. Returns "" when no live candidate
-  // exists (installed bundles / AOT-only deployments).
-  static std::string findLiveSourceForCacheName(
-      const std::string& hashKey,
-      const std::vector<std::string>& searchPaths) {
-    namespace fs = std::filesystem;
-    std::string stem;
-    for (const char* prefix : {"lang.", "std.", "app."}) {
-      if (hashKey.starts_with(prefix)) {
-        stem = hashKey.substr(std::strlen(prefix));
-        break;
-      }
-    }
-    if (stem.empty()) {
-      // User flat-cache name: stem.<8 hex chars>
-      auto dot = hashKey.rfind('.');
-      if (dot != std::string::npos && hashKey.size() - dot == 9) {
-        stem = hashKey.substr(0, dot);
-      } else {
-        stem = hashKey;
-      }
-    }
-    // Nested bundled-module cache names carry the subpath with slashes
-    // encoded as dots (lang.math.math <- lang/math/math.hv). Resolve from
-    // the deepest candidate: try the full dotted form as a nested path
-    // first, then fall back to treating the last segment as the stem.
-    // Otherwise "lang.math.math" looked up stem "math" and matched the
-    // top-level lang/math.hv wrapper instead of lang/math/math.hv.
-    std::vector<fs::path> candidates;
-    {
-      std::string nested = stem;
-      size_t lastDot = nested.rfind('.');
-      if (lastDot != std::string::npos) {
-        std::string dir = nested.substr(0, lastDot);
-        std::string leaf = nested.substr(lastDot + 1);
-        for (char& c : dir) {
-          if (c == '.') c = '/';
-        }
-        candidates.push_back(fs::path(dir) / (leaf + ".hv"));
-      }
-    }
-    candidates.push_back(fs::path(stem + ".hv"));
-    for (const auto& sp : searchPaths) {
-      for (const auto& rel : candidates) {
-        fs::path cand = fs::path(sp) / rel;
-        if (fs::exists(cand)) {
-          try { return fs::canonical(cand).string(); }
-          catch (...) { return cand.string(); }
-        }
-      }
-    }
     return "";
   }
 
@@ -538,12 +687,14 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   };
 
   // Check the flat cache for a resolved source file. The cache filename is
-  // derived from the canonical source path (stem + path hash for user
-  // modules), so same-stem files in different directories cannot collide.
+  // derived from the canonical source path - for a bundled module it also
+  // carries a hash of the source CONTENT, so same-stem files in different
+  // directories cannot collide AND two checkouts with diverged content for
+  // the same module name get distinct entries.
   auto flatCacheFor = [&](const std::string& canonicalSrcPath,
                           ResolvedModule::Type srcType)
       -> std::optional<ResolvedModule> {
-    std::string cacheName = cacheFileNameForSource(canonicalSrcPath);
+    std::string cacheName = cacheFileNameForContent(canonicalSrcPath);
     // Validate the bytecode cache (hash + mtime) against the LIVE source
     // file, not the cached .hv copy. Otherwise editing the source after the
     // cache is written never invalidates it, and stale/mismatched bytecode is
@@ -597,26 +748,42 @@ void ModuleLoader::setStdlibPath(const std::string& path) {
   }
 
   // 1. lang.<name>.hvc (lang modules take priority)
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / ("lang." + name + ".hvc"),
-        fs::path(cacheDir) / ("lang." + name + ".hv"),
-        "lang." + name)) {
+  // The bundled-module cache entries are CONTENT-keyed (see
+  // cacheFileNameForContent): the entry for a module is found by
+  // hashing the live source this loader would use and looking the
+  // content-keyed name up. Two checkouts whose content for the same
+  // module name differs therefore get distinct entries instead of
+  // overwriting one shared file on every launch.
+  auto checkBundledCache = [&](const std::string& ns,
+                               const std::string& name) -> std::optional<ResolvedModule> {
+    const std::string bareKey = ns + "." + name;
+    // Resolve the live source for this namespace/name, then derive the
+    // content-keyed cache name from it.
+    std::string liveSource = findLiveSourceForCacheName(bareKey, searchPaths_);
+    std::string cacheKey = bareKey;
+    if (!liveSource.empty() && fs::exists(liveSource)) {
+      cacheKey = cacheFileNameForContent(liveSource);
+    }
+    if (auto bc = checkBcCache(
+          fs::path(cacheDir) / (cacheKey + ".hvc"),
+          fs::path(cacheDir) / (cacheKey + ".hv"),
+          cacheKey)) {
+      return bc;
+    }
+    return std::nullopt;
+  };
+
+  if (auto bc = checkBundledCache("lang", name)) {
     return *bc;
   }
 
   // 2. std.<name>.hvc (stdlib modules)
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / ("std." + name + ".hvc"),
-        fs::path(cacheDir) / ("std." + name + ".hv"),
-        "std." + name)) {
+  if (auto bc = checkBundledCache("std", name)) {
     return *bc;
   }
 
   // 3. app.<name>.hvc (app modules)
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / ("app." + name + ".hvc"),
-        fs::path(cacheDir) / ("app." + name + ".hv"),
-        "app." + name)) {
+  if (auto bc = checkBundledCache("app", name)) {
     return *bc;
   }
 

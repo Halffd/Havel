@@ -462,7 +462,11 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string &compileUni
   if (compileUnitName.empty() || sourceText.empty()) {
     return reject("empty-unit-or-source");
   }
-  const std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
+  // The cache entry is keyed the same way the writer and the loader key
+  // it - a bundled module's key carries a hash of the source content, so
+  // diverged checkouts get distinct entries instead of fighting over one
+  // shared file (ModuleLoader::cacheFileNameForContent).
+  const std::string cacheName = havel::ModuleLoader::cacheFileNameForContent(compileUnitName);
   if (cacheName.empty()) {
     return reject("no-cache-name");
   }

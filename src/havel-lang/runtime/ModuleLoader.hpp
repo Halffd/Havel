@@ -117,6 +117,18 @@ public:
     // `canonicalSourcePath` must be an absolute canonical path.
     static std::string cacheFileNameForSource(const std::string& canonicalSourcePath);
 
+    // Content-keyed flat cache filename for a compiled source file:
+    //   <ns>.<rel>.<8-hex-content-hash>.hvc for bundled modules, so two
+    //   checkouts whose content for the same module name differs get
+    //   DISTINCT entries instead of fighting over one shared file.
+    //   The four self-hosted-compiler modules (lang.emitter/pratt/lexer/
+    //   scope) keep their canonical names - their .hvc files are the
+    //   pipeline fingerprint's inputs and must stay single.
+    //   User modules keep their path-hash name (their identity is the
+    //   path, not the content).
+    // `canonicalSourcePath` must be an absolute canonical path.
+    static std::string cacheFileNameForContent(const std::string& canonicalSourcePath);
+
     std::string getCacheDir() const;
     std::vector<core::Value> cachedValues() const;
 

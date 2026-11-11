@@ -198,11 +198,19 @@ ws_build() { # workspace mode threads
     [ -z "$c_compiler" ] && { err "clang not found for LLVM build"; return 1; }
   fi
 
+  # Cranelift builds are identified by their build-dir prefix; no dedicated
+  # config field, so all crane modes inherit the flag uniformly. Without
+  # this the crane modes configure a binary with NO JIT backend, and every
+  # JIT gate run against them fails with "JIT never tiered".
+  local enable_cranelift="OFF"
+  case "$bdir" in build-crane*) enable_cranelift="ON" ;; esac
+
   local -a cmake_cmd=(cmake -B "$dir"
     -DCMAKE_BUILD_TYPE="$type"
     -DCMAKE_C_COMPILER="$c_compiler"
     -DCMAKE_CXX_COMPILER="$cxx_compiler"
     -DUSE_CLANG=ON
+    -DENABLE_CRANELIFT="$enable_cranelift"
     -DENABLE_LLVM="$llvm")
   if [ "$llvm" = "ON" ]; then
     cmake_cmd+=(-DLLVM_DIR="$llvm_base_dir/lib/cmake/llvm"

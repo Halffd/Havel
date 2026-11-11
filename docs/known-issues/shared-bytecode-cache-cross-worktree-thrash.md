@@ -240,23 +240,56 @@ The cache-key regression test (`~/havel-logs/test_cache_thrash.sh`)
 passes against the same tree: `PASS: diverged checkouts get distinct
 cache entries and neither re-stamps the other's`, exit 0.
 
-Smoke gate: `./build.sh queue test --kind gate` = **369 passed, 21 failed,
-0 skipped** of 390 files. Every one of the 21 failures is a load
-artifact, not a code defect:
+Smoke gate, three runs on the same tree:
 
-- 20 are `(timeout)`, 1 is `test_issue_qt_namespace_restored (exit=1)`,
-- the box ran the gate at load 11-23 with up to **18 processes in
-  D-state** (`path_openat` / `read_extent_buffer_pages` / `btrfs-transaction`
-  - the host-storage congestion recorded in
+| run | load when the gate started | result |
+|-----|---------------------------|--------|
+| 1 | 11-23, up to 18 processes in D-state | 369 passed, 21 failed, 0 skipped of 390 files |
+| 2 | 0.54 (quiet start), rising to ~8 | 387 passed, 3 failed, 0 skipped of 390 files |
+| 3 | 1.12, no other builds | 389 passed, 1 failed, 0 skipped of 390 files |
+
+The failure COUNT falls monotonically as the box quiets (21 -> 3 -> 1),
+and the failing SET changes between runs: `test_on_error_handler` - the
+only failure in run 3 - was in run 1's PASS list and did not fail in
+run 2. A different test failing each time, on the same tree, is the
+signature of resource contention, not a code defect.
+
+Every failure in every run is a load artifact, not a code defect:
+
+- run 1: 20 are `(timeout)`, 1 is `test_issue_qt_namespace_restored
+  (exit=1)`; the box ran at load 11-23 with up to **18 processes in
+  D-state** (`path_openat` / `read_extent_buffer_pages` /
+  `btrfs-transaction` - the host-storage congestion recorded in
   `havel-process-linger-during-box-storms.md`),
 - **all 21 pass when re-run individually** on the same binary:
   `~/havel-logs/rerun_gate_failures.sh` = **21 passed, 0 failed, 0 skipped**
   of 21 files,
+- run 2: the 3 survivors (`test_fs_glob_absolute`,
+  `test_goroutine_local_write`, `test_extern_missing`) all pass
+  standalone, and `test_extern_missing` passes **5 consecutive
+  standalone runs**,
+- run 3: the single survivor (`test_on_error_handler`) passes **5
+  consecutive standalone runs** (each ~3s),
+- `test_extern_missing`'s `exit=1` is not a logic failure: the gate log
+  shows `registered extern must pass the load-time check; output was: `
+  with an EMPTY output - the test's own child `timeout 60` fired
+  because the child took >60s under gate load while it takes ~3s
+  standalone. The test's own header budget (`// smoke: timeout = 180`)
+  was not the binding constraint; the child's inner timeout was,
 - the same tests time out on `main` WITHOUT this fix, in the same window
   (`~/havel-logs/gate_main_postmerge.log`: 375 passed, 15 failed - the
   same closure_*, test_debug_on_off, test_fs_glob_absolute,
   test_extern_missing, test_hpkg_toolchain_store,
   test_issue_process_pipe_sigpipe set).
+
+The fix itself does not slow startup, which is the obvious way a
+cache-key change could have caused mass timeouts. Measured with the
+same binary command (`havel --version`), warm cache:
+
+| binary | run 1 | run 2 | run 3 |
+|--------|-------|-------|-------|
+| post-fix `/host/havel-2/build-debug/havel` | 210 ms | 207 ms | 206 ms |
+| pre-fix `/host/havel/build-debug/havel` (`f77a69e43`) | 212 ms | 321 ms | 217 ms |
 
 ### The added cost
 

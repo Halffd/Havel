@@ -240,19 +240,59 @@ The cache-key regression test (`~/havel-logs/test_cache_thrash.sh`)
 passes against the same tree: `PASS: diverged checkouts get distinct
 cache entries and neither re-stamps the other's`, exit 0.
 
-Smoke gate, three runs on the same tree:
+Smoke gate, four runs on the same tree, plus a pre-fix control:
 
-| run | load when the gate started | result |
-|-----|---------------------------|--------|
-| 1 | 11-23, up to 18 processes in D-state | 369 passed, 21 failed, 0 skipped of 390 files |
-| 2 | 0.54 (quiet start), rising to ~8 | 387 passed, 3 failed, 0 skipped of 390 files |
-| 3 | 1.12, no other builds | 389 passed, 1 failed, 0 skipped of 390 files |
+| run | tree | binary | load when the gate started | result |
+|-----|------|--------|---------------------------|--------|
+| 1 | havel-2 | post-fix | 11-23, up to 18 processes in D-state | 369 passed, 21 failed, 0 skipped of 390 files |
+| 2 | havel-2 | post-fix | 0.54 (quiet start), rising to ~8 | 387 passed, 3 failed, 0 skipped of 390 files |
+| 3 | havel-2 | post-fix | 1.12, no other builds | 389 passed, 1 failed, 0 skipped of 390 files |
+| 4 | havel-2 | post-fix | 0.57 | 389 passed, 1 failed, 0 skipped of 390 files |
+| control | **main** | **pre-fix** | 1.14 | **390 passed, 0 failed, 0 skipped**, 3930 ms/test avg |
+| 5 | havel-2 | post-fix | 0.54, right after the control | **390 passed, 0 failed, 0 skipped**, 14570 ms/test avg |
 
 The failure COUNT falls monotonically as the box quiets (21 -> 3 -> 1),
 and the failing SET changes between runs: `test_on_error_handler` - the
-only failure in run 3 - was in run 1's PASS list and did not fail in
-run 2. A different test failing each time, on the same tree, is the
-signature of resource contention, not a code defect.
+only failure in runs 3 and 4 - was in run 1's PASS list and did not
+fail in run 2. A different test failing each time, on the same tree,
+is the signature of resource contention, not a code defect.
+
+Run 5 is the decisive pair with the control: the SAME gate command, on
+main's tree with the PRE-FIX binary, gave 390/0 in 6.5 minutes; the
+same command on havel-2 with the post-fix binary, run six minutes
+later in the same window, gave 390/0. The per-test average is still
+3.7x higher on havel-2 (14570 ms vs 3930 ms) - see "The fingerprint
+inputs still thrash" below for what that measures.
+
+### The fingerprint inputs still thrash
+
+The four self-hosted-compiler modules keep their canonical cache names
+(`lang.emitter/pratt/lexer/scope.hvc`) because their `.hvc` files ARE
+the pipeline fingerprint's inputs. That exclusion is deliberate - it is
+what keeps the fingerprint single - but it leaves those FOUR entries
+name-keyed, so they still ping-pong between checkouts exactly as the
+defect describes. The thrash the fix removes covers every OTHER
+bundled module; these four remain shared.
+
+The cost is visible and was measured on havel-2. With
+`HAVEL_STARTUP_TIMING=1`, a run whose cache entry is rejected reports:
+
+    [compile] cache:      miss
+    [compile] cache.reject: pipeline-fingerprint-drift (2a65a971e511 != 3b1916c7e3be)
+
+and the entry is recompiled from source every launch. After main's
+control gate rewrote the shared fingerprint inputs (their embedded
+source path flipped from `/host/havel-2/modules/...` to
+`/host/havel/modules/...`), havel-2's own runs reported the drift
+against the new value - the two trees are now fighting over the same
+four files. The gate still passes, but the affected scripts pay a
+recompile on every launch, which is why havel-2's per-test average
+(14570 ms) is 3.7x main's (3930 ms) even though both gates are 390/0.
+
+This is the known, deliberate residue of the fix, not a regression it
+introduced: the pre-fix code thrashed on EVERY bundled module, not
+just these four. Fixing the residue needs a fingerprint that is
+per-tree rather than global - a separate change, not part of this fix.
 
 Every failure in every run is a load artifact, not a code defect:
 

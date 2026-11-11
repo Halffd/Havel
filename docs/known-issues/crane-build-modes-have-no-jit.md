@@ -109,10 +109,25 @@ After rebuilding mode 18 with the fix:
     grep '^ENABLE_CRANELIFT:BOOL=' build-crane-nollvm/CMakeCache.txt
     ENABLE_CRANELIFT:BOOL=ON
 
-The jit-parity gate against that binary is recorded in
-`docs/known-issues/shared-bytecode-cache-cross-worktree-thrash.md`
-(the gate that surfaced this defect), and its output is pasted in the
-commit message of the commit that carries the fix.
+The binary self-reports `commit e8c2057a9e01 (havel-2, clean)`, and the
+jit-parity gate against it is green - every script now actually tiers:
+
+    PASS for_loop_range (tier1=4)
+    PASS for_loop_array (tier1=4)
+    PASS for_loop_break (tier1=4)
+    PASS loop_with_break (tier1=4)
+    PASS do_while (tier1=4)
+    PASS closure_loop_capture (tier1=5)
+    PASS chunk_navigator (tier1=8)
+    PASS test_sorted_bare_global (tier1=6)
+    PASS test_issue_jit_string_ordering (tier1=9)
+    PASS selfhost (tier1=67)
+    jit-parity: 10 passed, 0 failed
+
+Log: `~/havel-logs/thrashfix_parity2.log`. Before the fix the same gate
+reported `FAIL ... JIT never tiered (tier1=0)` on every script
+(`~/havel-logs/thrashfix_verify.log`) - the binary had no JIT at all, so
+`tier1` could only ever be 0.
 
 ## Note for anyone using a crane-mode binary
 

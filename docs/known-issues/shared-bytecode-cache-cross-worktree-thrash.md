@@ -211,6 +211,35 @@ mirrored into a throwaway C++ program, `/tmp/opencode/cachekey_test.cpp`):
 Build: `./build.sh queue build` on commit 100b9e49af4d, rc=0, binary
 self-reports `commit 100b9e49af4d (havel-2, clean)`.
 
+JIT-parity gate (`scripts/ci/jit-parity-test.sh`), run against a
+cranelift-enabled build of the same tree, commit
+`e8c2057a9e01 (havel-2, clean)`, binary
+`/host/havel-2/build-crane-nollvm/havel`
+(`ENABLE_CRANELIFT:BOOL=ON`): **10 passed, 0 failed**, exit 0 - every
+script actually tiers:
+
+    PASS for_loop_range (tier1=4)
+    PASS for_loop_array (tier1=4)
+    PASS for_loop_break (tier1=4)
+    PASS loop_with_break (tier1=4)
+    PASS do_while (tier1=4)
+    PASS closure_loop_capture (tier1=5)
+    PASS chunk_navigator (tier1=8)
+    PASS test_sorted_bare_global (tier1=6)
+    PASS test_issue_jit_string_ordering (tier1=9)
+    PASS selfhost (tier1=67)
+    jit-parity: 10 passed, 0 failed
+
+Log: `~/havel-logs/thrashfix_parity2.log`. The first attempt at this
+gate failed with `JIT never tiered (tier1=0)` on every script - the
+cause was NOT this fix but a defect in `build.sh`, which never passed
+`-DENABLE_CRANELIFT=ON`, so the crane modes built a binary with no JIT
+backend at all. See `crane-build-modes-have-no-jit.md`.
+
+The cache-key regression test (`~/havel-logs/test_cache_thrash.sh`)
+passes against the same tree: `PASS: diverged checkouts get distinct
+cache entries and neither re-stamps the other's`, exit 0.
+
 Smoke gate: `./build.sh queue test --kind gate` = **369 passed, 21 failed,
 0 skipped** of 390 files. Every one of the 21 failures is a load
 artifact, not a code defect:

@@ -294,6 +294,53 @@ introduced: the pre-fix code thrashed on EVERY bundled module, not
 just these four. Fixing the residue needs a fingerprint that is
 per-tree rather than global - a separate change, not part of this fix.
 
+### Post-merge measurement: the residue is what makes a gate flaky
+
+The merged main commit `8bb2d47d` was gated in an isolated worktree
+(`/home/agent/gate-merge-8bb2d47d`) whose binary has a DIFFERENT build
+id from the binary that last wrote the shared fingerprint entries. Every
+launch therefore saw a pipeline-fingerprint drift against the shared
+`lang.emitter/pratt/lexer/scope.hvc` and recompiled the self-hosted
+compiler from source before it could run the script.
+
+Measured on the two tests that failed in successive runs, same binary,
+same worktree:
+
+| cache | test_fs_glob_absolute | test_on_error_handler |
+|-------|------------------------|-----------------------|
+| shared `~/.cache/havel` | 8983 ms | 8266 ms |
+| private `XDG_CACHE_HOME` | 2529 ms | 2456 ms |
+
+Both carry `// smoke: timeout = 30`, so a 3.5x startup multiplier is
+the difference between passing and timing out - and under a 390-file
+suite it is also what pushes the slowest tests past their budgets
+(`test_hpkg_toolchain_store=152051 ms`). The full-suite consequence is
+the same signature recorded above: a DIFFERENT test fails on each run,
+and each one passes standalone on the same binary.
+
+`XDG_CACHE_HOME` points the whole binary at a scratch cache
+(`ModuleLoader::getDefaultCacheDir` honours it), and with it the full
+suite runs in 375 s instead of 1370 s - but it is NOT a usable way to
+gate: a cache outside `$HOME/.cache/havel` makes
+`test_python_bridge` fail under AddressSanitizer with a 2289-byte
+CPython leak. See `python-bridge-cpython-module-leak.md` (pre-existing -
+it reproduces on a binary that predates this work).
+
+The way to make a gate binary own the shared fingerprint entries is to
+DELETE the four entries and let the binary recreate them:
+
+    rm -f ~/.cache/havel/lang.{emitter,pratt,lexer,scope}.hvc
+    ./build-debug/havel scripts/smoke/<something>.hv   # recreates them
+
+After that the fingerprint falls back to `bin:<build-id>` - a value
+derived from the binary alone - and the drift stops for THAT binary.
+The entries are then re-created on the next launch by whoever runs
+first, so the fight is deferred, not solved.
+
+Neither workaround is a code fix: the residue is still there and still
+needs a per-tree fingerprint (or a per-tree cache directory) to go
+away.
+
 Every failure in every run is a load artifact, not a code defect:
 
 - run 1: 20 are `(timeout)`, 1 is `test_issue_qt_namespace_restored

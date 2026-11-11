@@ -497,7 +497,13 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
                                    compiled_strict, compiled_optimized,
                                    compiledText);
 
-    std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
+    // The cache entry is keyed the same way the loader keys it: for a
+    // bundled module the key carries a hash of the SOURCE CONTENT, so two
+    // checkouts whose content for the same module name differs write to
+    // DISTINCT files instead of overwriting one shared entry on every
+    // launch (see ModuleLoader::cacheFileNameForContent). The loader and
+    // the writer must agree on the name, so both call the same helper.
+    std::string cacheName = havel::ModuleLoader::cacheFileNameForContent(compileUnitName);
 
     std::filesystem::path hvcPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hvc");

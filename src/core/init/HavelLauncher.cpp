@@ -1430,7 +1430,9 @@ public:
         std::string canonical = fs::canonical(f, ec).string();
         if (ec)
           canonical = f;
-        std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
+        // Same key derivation as the loader and the cache writer, so the
+        // entry this writes is the entry the loader looks up.
+        std::string cacheName = havel::ModuleLoader::cacheFileNameForContent(canonical);
         std::string cacheDir = havel::Env::cache() + "/havel";
         fs::create_directories(cacheDir, ec);
         auto bytes = serializer.serializeChunk(
@@ -2500,10 +2502,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
   }
 
   // Compute cache path for a module. Uses the same flat-namespace naming as
-  // ModuleLoader::cacheFileNameForSource (lang.<stem>.hvc / std.<stem>.hvc /
-  // <stem>.<path-hash>.hvc) derived from the canonical SOURCE path, so the
-  // resolver finds exactly what was written here. Declared before the batch
-  // path so --build-many can derive per-file cache paths.
+  // ModuleLoader::cacheFileNameForContent (<ns>.<rel>.<content-hash>.hvc for
+  // bundled modules / <stem>.<path-hash>.hvc for user modules) derived from
+  // the canonical SOURCE path, so the resolver finds exactly what was
+  // written here. Declared before the batch path so --build-many can derive
+  // per-file cache paths.
   const auto companionCachePath = [](const std::string &path) {
     if (path.empty()) {
       return std::string{};
@@ -2513,7 +2516,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     if (ec) {
       canonical = path;
     }
-    std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
+    std::string cacheName = havel::ModuleLoader::cacheFileNameForContent(canonical);
 
     std::string cacheDir = havel::Env::cache() + "/havel";
     std::filesystem::create_directories(cacheDir, ec);
@@ -2633,9 +2636,10 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
   }
 
   // Compute cache path for a module. Uses the same flat-namespace naming as
-  // ModuleLoader::cacheFileNameForSource (lang.<stem>.hvc / std.<stem>.hvc /
-  // <stem>.<path-hash>.hvc) derived from the canonical SOURCE path, so the
-  // resolver finds exactly what was written here.
+  // ModuleLoader::cacheFileNameForContent (<ns>.<rel>.<content-hash>.hvc for
+  // bundled modules / <stem>.<path-hash>.hvc for user modules) derived from
+  // the canonical SOURCE path, so the resolver finds exactly what was
+  // written here.
 
   // Determine output path. Bytecode caches live only in ~/.cache/havel; the
   // default output for `--build FILE` is the flat cache path derived from the

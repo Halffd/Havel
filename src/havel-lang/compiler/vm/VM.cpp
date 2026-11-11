@@ -7716,7 +7716,9 @@ load_from_source:
     if (inFlatCache) {
       moduleName = std::filesystem::path(cacheBcPath).stem().string();
     } else {
-      moduleName = moduleLoader_.cacheFileNameForSource(cacheSrcPath);
+      // Same key derivation as the loader's flat-cache lookup, so the
+      // index entry this writes is under the key the loader reads.
+      moduleName = moduleLoader_.cacheFileNameForContent(cacheSrcPath);
     }
     std::string hash = moduleLoader_.sha256FileHex(cacheSrcPath);
     if (!hash.empty()) {

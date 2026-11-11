@@ -1,8 +1,10 @@
 # The shared bytecode cache thrashes between worktrees: every launch recompiles the same modules
 
 **Status:** FIXED (cache key is now content-keyed). The fix landed on
-havel-2; the known-issue entry is kept because the failure mode is subtle
-and the fix touches a shared interface. Distinct from
+havel-2 (commit `100b9e49af4d`) and was merged into havel-3 (merge commit
+`e53de0587`, 2026-11-11); it reached main via the same merge. The
+known-issue entry is kept because the failure mode is subtle and the fix
+touches a shared interface. Distinct from
 `havel-process-linger-during-box-storms.md` (that one is host storage
 congestion); this one reproduces on a calm box with load ~1.
 

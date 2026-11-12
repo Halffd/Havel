@@ -1,4 +1,4 @@
-// smoke: timeout = 240
+// smoke: timeout = 1200
 // Regression test: hotkey bindings must not leak GC external roots.
 //
 // what: register hotkeys, then remove them - one at a time and in bulk -
@@ -27,10 +27,14 @@
 // run: ./build-debug/hvtest --smoke test_issue_hotkey_pin_lifetime
 //   (headless-safe: registers bindings on F-key names and removes them;
 //   no key is ever pressed, so no input is injected)
-// timeout budget: the 240s header covers the parent plus ONE child havel
-//   startup. On a loaded box a headless child needs ~20-60s to reach its
-//   first prompt (display-connection retries plus module loading), and the
-//   default 60s budget cut the assertion off before the child finished.
+// timeout budget: the 1200s header covers the parent plus ONE child havel
+// startup. On a loaded box a headless child needs minutes to reach its
+// first prompt (display-connection retries plus module loading); the
+// default 60s budget cut the assertion off before the child finished.
+// The CHILD's own budget is 900s (see CHILD_CMD below): a child that is
+// killed never destroys its VM, so the drain assertion would pass
+// vacuously. A SIGKILLed child fails the "the child exited cleanly"
+// check instead.
 
 use hotkey
 use "fs"
@@ -150,11 +154,22 @@ sys.exit(0)
 
 // Headless: the child inherits this process's environment, and on a live
 // desktop the display-connection retries would push it past the timeout.
-CHILD_CMD = "env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR HAVEL_HEADLESS=1 timeout 60"
+//
+// The child's timeout must be generous: on a loaded box a headless child
+// needs minutes to reach its first prompt, and a SIGKILLed child never
+// runs ~VM - so a timed-out child logs NO "external roots still pinned"
+// warning and the drain assertion below would pass VACUOUSLY. The
+// "the child exited cleanly" check is what makes the next check meaningful;
+// the profiler dump in the child's output is the second proof that the
+// destructor actually ran.
+CHILD_CMD = "env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR HAVEL_HEADLESS=1 timeout 900"
 child = process.run("${CHILD_CMD} \"${havel_bin}\" \"${CHILD_FIXTURE}\" 2>&1")
 check("the child exited cleanly",
       child.exitCode == 0,
       "expected exit 0, got " + str(child.exitCode))
+check("the child's VM was destroyed, so the drain really ran",
+      child.stdout.find("profiler") >= 0,
+      "the child never reached VM shutdown; its output is: " + child.stdout)
 check("no external roots are still pinned at VM shutdown",
       child.stdout.find("external roots still pinned") < 0,
       "the child logged a shutdown pin warning: " + child.stdout)

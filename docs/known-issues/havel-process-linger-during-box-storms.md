@@ -68,3 +68,35 @@ involved).
 - Optional harness help: make `hvtest` report per-test wall time in the
   summary so a storm is visible without log archaeology, and treat
   "first output never arrived" timeouts distinctly from real hangs.
+
+## Recurrence: Nov 11 2026 (havel-3, post-reboot)
+
+The storm recurred in the same shape, and this time the CONTROL binary was
+measured in the same window as the tree under test, which pins the cause
+outside havel-3:
+
+- The box rebooted at 20:12 while the gate was running, so the gate never
+  completed. Its log shows the familiar pattern - every failure is
+  `(timeout)`, and the failures include sub-second tests
+  (`arithmetic_mod`, `arithmetic_add`, `array_find_indexOf`), which cannot
+  time out for any reason intrinsic to their code.
+- `ps -eo stat | grep -c '^D'` was **19**. The D-state set included `ld`
+  (the dynamic loader) and `havel-wm`, alongside `btrfs-transaction`,
+  `systemd-journal` and btrfs flush kworkers. A process stuck in `ld` is
+  stuck before `main`, so no havel code is even reached.
+- `/host/havel/build-debug/havel --version` - **main's binary, which carries
+  none of the changes under test** - timed out at 60s (rc=124) and again at
+  180s (rc=124). havel-3's binary, under the same load, did eventually
+  start and print `commit e53de05874ff (havel-3, dirty)` (rc=0), but only
+  after ~245s.
+- Load average was 22-34 with 11 users on the box.
+
+Conclusion unchanged and now doubly confirmed: these `(timeout)` failures
+measure the host, not the code. A gate started into such a window will
+report mass timeouts that have nothing to do with the tree under test.
+
+Practical note for the next session: the gate has to be deferred, not
+retried in place. The runner used here waits for `D-state == 0` AND
+`load < 3` before invoking the gate at all, and refuses to start the gate
+after a 6h budget instead of burning a doomed 2-3h run.
+

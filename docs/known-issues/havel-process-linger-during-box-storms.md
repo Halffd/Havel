@@ -62,9 +62,11 @@ involved).
 
 ## Next step
 
-- Do not debug this inside havel. Re-run gates only in a quiet window
-  (load-gated runners did `load<3`, but the load average misses IO-blocked
-  D-state load - gate on `ps -eo stat | grep -c '^D'` == 0 instead).
+- Do not debug this inside havel. Re-run gates only in a quiet window.
+  The usable signal is the STARTUP LATENCY of a havel process, measured
+  directly - see "The gate condition is startup latency, not the load
+  average" below. The load average misses IO-blocked D-state load
+  entirely, and `ps -eo stat | grep -c '^D'` == 0 is only a snapshot.
 - Optional harness help: make `hvtest` report per-test wall time in the
   summary so a storm is visible without log archaeology, and treat
   "first output never arrived" timeouts distinctly from real hangs.
@@ -99,4 +101,57 @@ Practical note for the next session: the gate has to be deferred, not
 retried in place. The runner used here waits for `D-state == 0` AND
 `load < 3` before invoking the gate at all, and refuses to start the gate
 after a 6h budget instead of burning a doomed 2-3h run.
+
+### The gate condition is startup latency, not the load average
+
+The `D-state == 0 AND load < 3` condition proved unusable on this box and
+was replaced by a direct measurement. Two samples of the SAME box, minutes
+apart, while both conditions looked acceptable:
+
+| condition sample | D-state | load | actual `havel --version` |
+|------------------|---------|------|--------------------------|
+| 1 | 0 | 12 | 21706 ms |
+| 2 | 3 | 10 | 92873 ms |
+
+So the proxies said "quiet" while a havel process took 93 seconds to
+start. The load average does not count IO-blocked load at all, and the
+D-state count is a snapshot of a condition that comes and goes.
+
+What the smoke runner actually measures is whether a test process reaches
+its first output before its per-test timeout (`hvtest --timeout`, default
+30 s, the gate uses 300 s). If startup alone costs 93 s, every test times
+out regardless of the code under test. So the gate condition is now the
+STARTUP LATENCY of a havel process, measured directly, with the D-state
+count kept only as a diagnostic in the log.
+
+### Control measurement on the JIT-parity gate (Nov 12 2026)
+
+`scripts/ci/jit-parity-test.sh` reported `7 passed, 3 failed`, and all
+three failures were `interpreted run hung (> 300s)` - never a tiered
+hang, never a tier1=0, never a parity mismatch. The failing scripts were
+`for_loop_break`, `loop_with_break` and `selfhost`.
+
+The "interpreted run" is the REFERENCE run - the plain interpreter with no
+JIT flags. A control settled what that meant:
+
+| binary | tree | JIT backend | result on `for_loop_break` |
+|--------|------|-------------|---------------------------|
+| `/host/havel-3/build-crane-nollvm/havel` | havel-3 (merged) | Cranelift | rc=124 after 305906 ms |
+| `/host/havel-3/build-debug/havel` | havel-3 (merged) | **none** | rc=124 after 281932 ms |
+| `/host/havel/build-debug/havel` | **main** | **none** | rc=124 after 280005 ms |
+
+Main's binary - a different tree, no JIT, untouched by havel-3 - hangs
+identically on the same script. The script prints nothing unless it
+FAILS, so a hung run produces no output at all, which is consistent with
+a stall before the script body rather than with a defect in it.
+
+Load during the measurement was 53-80, and `ps` showed four `cpuhp/4`,
+`cpuhp/8`, `cpuhp/10`, `cpuhp/12` processes pinned at ~40% CPU each for
+an hour - a deliberate CPU stress test from another session, saturating
+the box. Every script in that window was going to time out.
+
+Conclusion: a parity FAIL whose message is `interpreted run hung` is a
+host-storm report, not a JIT finding. Re-run it in a window where the
+startup probe is fast; only a failure in the TIERED run, or a tier1=0,
+or an output mismatch is a JIT result.
 

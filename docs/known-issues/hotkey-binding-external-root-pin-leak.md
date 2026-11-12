@@ -46,6 +46,48 @@ a CHILD process that registers bindings and exits - the shutdown drain is
 only observable from outside the process, so the child asserts that no
 "external roots still pinned" warning is logged).
 
+### Verification on the current tree (Nov 12 2026)
+
+Binary: `/host/havel/build-debug/havel`, self-reporting
+`commit 3ef0fa46ca63 (main, dirty)` = HEAD `3ef0fa46c`.
+
+The SHUTDOWN drain, measured directly (the child must exit gracefully,
+otherwise ~VM never runs and the assertion is vacuous):
+
+    env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR \
+      HAVEL_HEADLESS=1 /host/havel/build-debug/havel <3-live-bindings.hv>
+    -> exit 0
+    -> [profiler] profiler: ... (the destructor ran)
+    -> "external roots still pinned" count: 0
+
+A SIGTERM run of the same script prints NO warning but proves nothing -
+the signal path skips the VM destructor, so the drain never executes. The
+drain assertion must observe a GRACEFUL exit (the profiler dump and the
+exit code are the evidence that the destructor ran).
+
+The USER's own script (`~/scripts/havel/hotkeys0.3.hv`, 130-hotkey config)
+went from **263** "external roots still pinned at VM shutdown" (the
+pre-fix binary in the Nov 8 log) to **0**.
+
+### Box contention caveat for the gates
+
+The gate runs on this box were dominated by another session's 12-process
+CPU-parallel job (load average 50+ on 14 CPUs), not by the code under
+test:
+
+- gate: `smoke: 361 passed, 29 failed, 0 skipped | 390 files` - every
+  failure a `timeout`, and the failing SET changed between runs.
+- the same 29 re-run standalone: the same timeouts.
+- the same 8 re-run with `--timeout 600`: still timeouts.
+- ONE trivial test (`arithmetic_add`, ~4 s on a quiet box) took **611 s**
+  standalone under the load.
+- jit-parity: 9 of 10 scripts failed with "interpreted run hung" - the
+  INTERPRETED (non-JIT) leg hung, which cannot be a JIT defect; the one
+  script that did run passed with `tier1=4` (tiering exercised).
+
+These results are UNVERIFIED, not failures. A clean gate + jit-parity run
+is still owed on a quiet window.
+
 
 ## Symptom
 

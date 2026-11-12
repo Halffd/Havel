@@ -1,6 +1,6 @@
 # A discarded hotkey-binding pin leaked one GC external root per binding for the process lifetime
 
-**Status:** FIXED twice over. (1) Shutdown drain: each hotkey registration
+**Status:** FIXED three times over. (1) Shutdown drain: each hotkey registration
 pins its hotkey-context object with `VM::pinExternalRoot`; the pin handle
 was discarded, so roots stayed live until process exit. `trackExternalRoot`
 hands the handle to the VM shutdown drain
@@ -14,6 +14,38 @@ leaked 3 roots per cycle for the process lifetime - measured 180 roots
 after 60 cycles by `scripts/tests/test_hotkey_root_lifetime.hv` (now the
 regression lock). `gc_external_root_count()` (new, read-only) exposes the
 live pin count for this class of test.
+(3) Callback-pin drain and bulk removal (Nov 9, the defect this file's
+audit table wrongly called covered). Two further leaks survived (1) and
+(2):
+
+- **Callback pins had no shutdown drain.** `VM::registerCallback` pins an
+  external root and returns that root id AS the `CallbackId`
+  (`src/havel-lang/compiler/vm/VMCb.cpp`). `~VM` released
+  `host_function_gc_roots_`, `module_cache_gc_roots_` and
+  `tracked_external_roots_` - but NOT the callback pins. A binding still
+  live at shutdown (a hotkey action closure, a hotkey condition closure, an
+  event-listener callback) therefore kept its pin for the whole process.
+  Measured: 3 hotkeys -> 6 pins live, 3 still pinned at shutdown (the
+  context objects were drained; the callback pins were not); 130-hotkey
+  config -> **263 roots still pinned at VM shutdown**.
+  Fix: `VM::registerCallback` records the id in `callback_root_ids_`,
+  `VM::releaseCallback` erases it, and `~VM` drains the set.
+
+- **`removeAll()` / `clearAll()` dropped the binding map without releasing
+  the pins.** They cleared `g_hotkeyContexts` and released nothing, so the
+  action/condition/context pins of every removed binding leaked for the
+  whole process - observable MID-SESSION, not just at shutdown.
+  Measured: 2 hotkeys -> 4 pins still live after `removeAll()` + GC.
+  Fix: both methods release the same three handles per binding before
+  erasing, inline rather than through `removeById` (which re-takes
+  `g_hotkeyContextsMutex`, which is not recursive) - commit `5b1e8f2c6`.
+
+Regression lock: `scripts/smoke/test_issue_hotkey_pin_lifetime.hv`
+(mid-session pin accounting for removeAll/remove/conditional-remove, plus
+a CHILD process that registers bindings and exits - the shutdown drain is
+only observable from outside the process, so the child asserts that no
+"external roots still pinned" warning is logged).
+
 
 ## Symptom
 
@@ -51,8 +83,8 @@ Every `pinExternalRoot` call site was traced to a release path:
 
 | Site | Release |
 |---|---|
-| InputBridge.cpp hotkey ctx (both register paths) | `trackExternalRoot` → shutdown drain AND `hotkey.remove()` → `setContextRootId`-stored handle released in `removeById` |
-| VMCb.cpp:34 (`registerCallback`) | `releaseCallback` → `unpinExternalRoot` |
+| InputBridge.cpp hotkey ctx (both register paths) | `trackExternalRoot` → shutdown drain AND `hotkey.remove()` → `setContextRootId`-stored handle released in `removeById` AND `removeAll()`/`clearAll()` → `releaseBindingPins()` |
+| VMCb.cpp (`registerCallback`) | `releaseCallback` → `unpinExternalRoot`, plus the `callback_root_ids_` shutdown drain for bindings still live at exit (added Nov 9 - the table previously claimed this site was fully covered, and it was not: `releaseCallback` only runs when the binding is removed mid-session) |
 | VMCollections.cpp:29 | RAII `PinnedRootGuard` |
 | VM.cpp:5531 (module closure wrappers) | `host_function_gc_roots_` → shutdown drain |
 | VM.cpp:5794/5835/6912/7365 (transient copies/exports) | immediate `unpin` after use |

@@ -85,8 +85,71 @@ test:
   INTERPRETED (non-JIT) leg hung, which cannot be a JIT defect; the one
   script that did run passed with `tier1=4` (tiering exercised).
 
-These results are UNVERIFIED, not failures. A clean gate + jit-parity run
-is still owed on a quiet window.
+These results were UNVERIFIED, not failures. The clean gate + jit-parity
+run was completed later - see below.
+
+### Clean gate + jit-parity (Nov 13 2026) - the gates are now GREEN
+
+Binary: `/host/havel/build-debug/havel`, self-reporting
+`commit 93ffea795793 (main, dirty)` = HEAD `93ffea7957` (the tree that
+carries `93ffea795` "tests: make the shutdown-drain assertion
+non-vacuous under load").
+
+Rebuild: `./build.sh 6 build` -> `[ok] build ok in 1190s`, rc=0.
+`./build.sh status` reports `build-debug` at `93ffea7957`, STALE-MOD 0
+(no stale module plugins).
+
+SMOKE GATE - the canonical command, on the DEFAULT bytecode cache, with
+2 workers (`HAVEL_TEST_THREADS=2`) so the box's other sessions get CPU:
+
+    HAVEL_TEST_THREADS=2 ./build.sh queue test --kind gate
+    -> smoke: 390 passed, 0 failed, 0 skipped | 390 files, 8.38766e+06ms
+       tests, 21506.8ms avg
+    -> [FAIL] lines: 0
+    -> exit 0
+
+The gate took ~70 min wall-clock because the box was shared (slowest
+startup `test_hpkg_toolchain_store=139012ms`); every test still
+completed inside its budget - nothing timed out, nothing was skipped.
+
+JIT-PARITY GATE - against a cranelift-enabled build of the same tree
+(`/host/havel-3/build-crane-nollvm/havel`, `ENABLE_CRANELIFT:BOOL=ON`,
+commit `253a3a5ad04e`; `git diff --stat 253a3a5ad04e HEAD -- src/` is
+EMPTY, so its `src/` is byte-identical to main HEAD, and the pin-leak
+fixes `9176128fc` / `5b1e8f2c6` / `560c6b409` are all its ancestors),
+with a PRIVATE cache:
+
+    XDG_CACHE_HOME=<scratch> HAVEL_BIN=/host/havel-3/build-crane-nollvm/havel \
+      TMO=300 scripts/ci/jit-parity-test.sh
+    -> PASS for_loop_range (tier1=4)
+    -> PASS for_loop_array (tier1=4)
+    -> PASS for_loop_break (tier1=4)
+    -> PASS loop_with_break (tier1=4)
+    -> PASS do_while (tier1=4)
+    -> PASS closure_loop_capture (tier1=5)
+    -> PASS chunk_navigator (tier1=8)
+    -> PASS test_sorted_bare_global (tier1=6)
+    -> PASS test_issue_jit_string_ordering (tier1=9)
+    -> PASS selfhost (tier1=67)
+    -> jit-parity: 10 passed, 0 failed
+    -> exit 0
+
+Every script ACTUALLY TIERED (tier1 = 4..67), so the gate is not
+reporting an interpreted run as a JIT pass.
+
+The private cache is required for the parity gate (the shared
+`~/.cache/havel` makes every launch recompile the self-hosted compiler
+first - measured 401 s timeout on the shared cache vs 57 s rc=0 on a
+private one). The private cache trips the PRE-EXISTING CPython leak
+(`docs/known-issues/python-bridge-cpython-module-leak.md`) in the SMOKE
+gate, so the smoke gate above uses the default cache instead: a
+private-cache smoke run gave `smoke: 389 passed, 1 failed` where the one
+failure was `test_python_bridge` with
+`SUMMARY: AddressSanitizer: 2289 byte(s) leaked in 3 allocation(s)` -
+the documented leak, reproduced identically on a binary that carries
+none of the cache-key work, and PASSING on the default cache
+(`./build-debug/hvtest --smoke --timeout 300 test_python_bridge` ->
+`smoke: 1 passed, 0 failed`, 20.2 s).
 
 
 ## Symptom

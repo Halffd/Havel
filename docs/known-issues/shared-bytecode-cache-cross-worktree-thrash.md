@@ -12,6 +12,14 @@ and the fix touches a shared interface. Distinct from
 `havel-process-linger-during-box-storms.md` (that one is host storage
 congestion); this one reproduces on a calm box with load ~1.
 
+The Nov 13 2026 fix also closed the three consecutive havel-3 gate
+failures of Nov 12 (rc=1 at 17:20Z, 20:07Z and 22:58Z, each ~9500s). No
+commit landed between the last failure and the passing run except that
+one; the gate went rc=1 -> rc=0 and the wall time fell from ~9500s to
+~2617s. The failing test was `test_issue_config_set_in_module_scope`,
+which had timed out at its 120s budget; with the fix it passes in
+~30-35s.
+
 ## Mechanism
 
 `~/.cache/havel` is a single flat namespace shared by every checkout on the

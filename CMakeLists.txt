@@ -3493,6 +3493,33 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
 
+    # IO::selectGrabsToRetry - the rule that picks which hotkeys get their
+    # OS-level key grab re-attempted. A failed X11 grab (BadAccess: another
+    # X client owns the key, or holds an active keyboard grab) used to be
+    # swallowed: IO::GrabHotkey discarded the grab result and reported
+    # success, so the binding looked armed while the X server held no grab
+    # for it, and nothing ever retried it. The hotkey then stayed dead for
+    # the rest of the process lifetime.
+    add_executable(io_hotkey_grab_retry_test
+        tests/io_hotkey_grab_retry_ut.cpp
+    )
+    target_include_directories(io_hotkey_grab_retry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_hotkey_grab_retry_test PRIVATE cxx_std_23)
+    target_link_libraries(io_hotkey_grab_retry_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_hotkey_grab_retry_test COMMAND io_hotkey_grab_retry_test)
+
     # Drift guard for the three token-name registries: TokenType enum ->
     # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
     # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member

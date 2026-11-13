@@ -733,6 +733,14 @@ void IO::PumpOnce() {
   if (eventListener) {
     eventListener->PumpOnce();
   }
+  // Re-attempt OS grabs that failed earlier. Rate-limited: the X server
+  // rejects the grab for as long as the other client keeps the keyboard,
+  // and hammering it would be pointless and noisy.
+  auto now = std::chrono::steady_clock::now();
+  if (now - lastGrabRetry_ >= std::chrono::seconds(5)) {
+    lastGrabRetry_ = now;
+    retryFailedGrabs();
+  }
 }
 
 // Backend device management
@@ -943,6 +951,17 @@ void IO::UngrabAll() {
     ioBackend->UnregisterAll();
   if (inputBackend && inputBackendType == InputBackendType::X11) {
     inputBackend->UngrabAllDevices();
+  }
+  // UnregisterAll() does XUngrabKey(AnyKey, AnyModifier, root): it removes
+  // EVERY X11 grab on the server. The tracked set must follow, or
+  // IsHotkeyGrabbed() keeps reporting grabs that no longer exist.
+  //
+  // The DESIRED set is kept: UngrabAll() is used to release grabs
+  // temporarily (the REPL suspends them so keystrokes reach the terminal),
+  // and the bindings still want to be grabbed afterwards.
+  {
+    std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+    osGrabbedHotkeys.clear();
   }
 }
 
@@ -2661,16 +2680,130 @@ bool IO::GrabHotkey(int hotkeyId) {
     warning("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
   }
+  // Remember that this binding is SUPPOSED to hold a grab, independently
+  // of whether the grab could be established right now. retryFailedGrabs()
+  // uses this to re-attempt a grab that failed with BadAccess (another X
+  // client owned the key, or held an active keyboard grab) once that
+  // client lets go.
+  {
+    std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+    desiredGrabbedHotkeys.insert(hotkeyId);
+  }
   if (!hotkey.evdev && ioBackend) {
     bool regOk = ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers),
                                            hotkey.type == HotkeyType::MouseButton);
+    if (!regOk) {
+      // A failed XGrabKey (BadAccess: another client already owns the
+      // combo) used to be swallowed here: regOk was computed and thrown
+      // away, and the function still reported success. The binding then
+      // looked armed - hotkey.list() reported grab=true - while the X
+      // server had no grab for it, so the keypress went to the other
+      // client and the hotkey never fired.
+      error("Failed to grab hotkey '{}' (key={} mods={}) on the X server",
+            hotkey.alias, static_cast<int>(hotkey.key), hotkey.modifiers);
+      // The binding stays ENABLED: it is the script's intent, not the
+      // window system's ability to honour it right now. The retry in
+      // retryFailedGrabs() picks the grab up again.
+      hotkeys[hotkeyId].enabled = true;
+      {
+        std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+        osGrabbedHotkeys.erase(hotkeyId);
+      }
+      return false;
+    }
   } else if (hotkey.evdev) {
   } else {
   }
   hotkeys[hotkeyId].enabled = true;
+  {
+    std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+    osGrabbedHotkeys.insert(hotkeyId);
+  }
   if (debugging::debug_hotkeys)
     debug("Grabbed hotkey: {}", hotkey.alias);
   return true;
+}
+
+bool IO::IsHotkeyGrabbed(int hotkeyId) const {
+  std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+  return osGrabbedHotkeys.count(hotkeyId) != 0;
+}
+
+std::vector<int> IO::selectGrabsToRetry(const std::set<int> &desired,
+                                         const std::set<int> &actual,
+                                         const std::unordered_map<int, HotKey> &hotkeys) {
+  // Pure selection rule for retryFailedGrabs(): which bindings still want
+  // an OS grab, do not have one, and are eligible to be re-grabbed.
+  //
+  // Excluded:
+  //   - bindings that already hold a grab (nothing to retry),
+  //   - bindings that are not enabled (the script does not want them armed),
+  //   - evdev bindings (they have no X11 grab; the evdev device handles
+  //     them),
+  //   - bindings with no keycode (nothing to grab).
+  std::vector<int> pending;
+  for (int id : desired) {
+    if (actual.count(id))
+      continue;
+    auto it = hotkeys.find(id);
+    if (it == hotkeys.end())
+      continue;
+    const HotKey &hk = it->second;
+    if (!hk.enabled || hk.evdev || hk.key == 0)
+      continue;
+    pending.push_back(id);
+  }
+  return pending;
+}
+
+void IO::retryFailedGrabs() {
+  // Re-attempt OS grabs that were requested but could not be established.
+  //
+  // A failed XGrabKey (BadAccess) is TRANSIENT: it means another X client
+  // held that key/modifier combination, or held an active keyboard grab.
+  // The user hits this whenever a long-running child (a game, xdotool, a
+  // screencaster, an IME) takes the keyboard. Without a retry the binding
+  // stayed dead for the rest of the process lifetime while still reporting
+  // grab=true.
+  ensureBackend();
+  if (!ioBackend)
+    return;
+
+  // Lock order is always: hotkeys mutex, then the grab-state mutex. The
+  // rest of the codebase takes them in that order (HotkeyManager::
+  // resumeGrabs holds the hotkeys mutex and then calls io->GrabHotkey,
+  // which takes the grab-state mutex). Taking them the other way round
+  // here would be a lock-order inversion.
+  std::vector<int> pending;
+  {
+    std::lock_guard<std::mutex> hotkeysLock(hotkeysMutex);
+    std::lock_guard<std::mutex> grabLock(osGrabbedHotkeysMutex);
+    pending = selectGrabsToRetry(desiredGrabbedHotkeys, osGrabbedHotkeys, hotkeys);
+  }
+  if (pending.empty())
+    return;
+
+  for (int id : pending) {
+    int key = 0;
+    int modifiers = 0;
+    bool isButton = false;
+    std::string alias;
+    {
+      std::lock_guard<std::mutex> hotkeysLock(hotkeysMutex);
+      auto it = hotkeys.find(id);
+      if (it == hotkeys.end())
+        continue;
+      key = static_cast<int>(it->second.key);
+      modifiers = it->second.modifiers;
+      isButton = it->second.type == HotkeyType::MouseButton;
+      alias = it->second.alias;
+    }
+    if (ioBackend->RegisterHotkey(key, ioBackend->ToPlatformMask(modifiers), isButton)) {
+      std::lock_guard<std::mutex> grabLock(osGrabbedHotkeysMutex);
+      osGrabbedHotkeys.insert(id);
+      info("Re-grabbed hotkey '{}' after a previous failure", alias);
+    }
+  }
 }
 
 bool IO::UngrabHotkey(int hotkeyId) {
@@ -2702,6 +2835,13 @@ bool IO::UngrabHotkey(int hotkeyId) {
     }
   }
   hotkeys[hotkeyId].enabled = false;
+  {
+    std::lock_guard<std::mutex> lock(osGrabbedHotkeysMutex);
+    osGrabbedHotkeys.erase(hotkeyId);
+    // The script asked for no grab: it must not be re-grabbed by the
+    // retry loop either.
+    desiredGrabbedHotkeys.erase(hotkeyId);
+  }
   if (debugging::debug_hotkeys)
     debug("Ungrabbed hotkey: {}", hotkey.alias);
   return true;

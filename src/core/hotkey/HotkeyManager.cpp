@@ -71,6 +71,12 @@ namespace havel
   initializeInputCallbacks();
 }
 
+  bool HotkeyManager::isOsGrabbedById(int id) const {
+    if (id <= 0 || !io)
+      return false;
+    return io->IsHotkeyGrabbed(id);
+  }
+
   void HotkeyManager::setEventQueue(compiler::EventQueue *eq)
   {
     eventQueue_ = eq;
@@ -213,6 +219,13 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
       if (io) {
         io->UngrabAll();
       }
+      // The suspend is now ACTIVE: SetHotkeyGrabById must not re-grab while
+      // suspended, it must only record the intent in pendingGrabs_.
+      // grabsSuspended_ used to be declared and read but NEVER ASSIGNED, so
+      // a grab request arriving during a suspend immediately undid the
+      // suspend (the grab went back while the suspend was still in effect)
+      // and pendingGrabs_ was written but never replayed.
+      grabsSuspended_ = true;
     }
     suspendDepth_++;
     // Don't clear pendingGrabs_ here - let it accumulate
@@ -225,9 +238,22 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
       suspendDepth_--;
       // Only actually re-grab when we reach depth 0
       if (suspendDepth_ == 0) {
+        grabsSuspended_ = false;
         auto &hotkeys = RegisteredHotkeys();
         for (auto &[id, hk] : hotkeys) {
           if (!hk.evdev && hk.enabled) {
+            // hk.grab is the script's intent: true for a binding that wants
+            // the key, false for one whose condition is currently false.
+            // io->UngrabAll() removed EVERY X11 grab on the server, so
+            // this restores the wanted ones and explicitly releases the
+            // unwanted ones.
+            //
+            // This also covers the intents that arrived WHILE the grabs
+            // were suspended: SetHotkeyGrabById always updates hk.grab /
+            // hk.enabled, even when it only records the request in
+            // pendingGrabs_ instead of applying it immediately. So the
+            // state this loop reads is already the post-suspend state -
+            // no separate replay pass is needed.
             if (hk.grab) {
               io->GrabHotkey(id);
             } else {

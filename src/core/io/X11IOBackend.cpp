@@ -19,6 +19,25 @@ X11IOBackend::X11IOBackend(Display *display)
 X11IOBackend::~X11IOBackend() { Cleanup(); }
 
 int X11IOBackend::XErrorHandler(Display *dpy, XErrorEvent *ee) {
+    // This handler used to `return 0` and discard every error. It is
+    // installed on the SHARED DisplayManager connection, so a failed
+    // XGrabKey (BadAccess: another X client owns that key/modifier, or
+    // holds an active keyboard grab) vanished without a trace. The grab
+    // then looked armed - hotkey.list() reported grab=true - while the X
+    // server held no grab for it, and nothing ever retried it.
+    //
+    // Log it. BadWindow (3) and BadDrawable (9) stay suppressed: they are
+    // the routine Wayland/XWayland races that DisplayManager's handler
+    // also suppresses, and they say nothing about hotkey grabs.
+    if (ee->error_code == 3 || ee->error_code == 9) {
+        return 0;
+    }
+    char errorText[256] = {0};
+    XGetErrorText(dpy, ee->error_code, errorText, sizeof(errorText));
+    havel::error("X11 Error: {} (code: {}, request: {}, minor: {})",
+                 errorText, static_cast<int>(ee->error_code),
+                 static_cast<int>(ee->request_code),
+                 static_cast<int>(ee->minor_code));
     return 0;
 }
 

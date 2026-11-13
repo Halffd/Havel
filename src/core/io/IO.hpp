@@ -409,10 +409,34 @@ public:
 
   void AssignHotkey(HotKey hotkey, int id);
 
-  // Add new methods for dynamic hotkey grabbing/ungrabbing
+  // New methods for dynamic hotkey grabbing/ungrabbing
   bool GrabHotkey(int hotkeyId);
 
   bool UngrabHotkey(int hotkeyId);
+
+  // True when the hotkey currently holds an OS-level (X11/evdev) grab.
+  // Distinct from `enabled` (the binding is live) and from the
+  // HotkeyModule context's `grab` flag (what the script asked for): only
+  // this reflects the grab that actually exists in the window system.
+  // A binding can be enabled and report grab=true while the X server has
+  // no grab for it - the state a failed XGrabKey leaves behind.
+  bool IsHotkeyGrabbed(int hotkeyId) const;
+
+  // Re-attempt OS grabs that were requested but could not be established
+  // (X11 BadAccess: another client owned the key, or held an active
+  // keyboard grab). Called from the periodic pump, so a transient grab
+  // failure heals itself instead of killing the hotkey for the rest of
+  // the process lifetime.
+  void retryFailedGrabs();
+
+  // Pure selection rule for retryFailedGrabs(): which bindings still want
+  // an OS grab, do not have one, and are eligible to be re-grabbed.
+  // Excludes bindings that already hold a grab, are not enabled, are
+  // evdev (no X11 grab), or have no keycode. Static and side-effect free
+  // so the rule itself is directly testable.
+  static std::vector<int> selectGrabsToRetry(const std::set<int> &desired,
+                                              const std::set<int> &actual,
+                                              const std::unordered_map<int, HotKey> &hotkeys);
 
   // Method to register callback for any key press
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
@@ -511,6 +535,22 @@ private:
 
   std::set<int> grabbedKeys;
   std::mutex grabbedKeysMutex;
+  // Hotkey ids that currently hold a REAL OS-level grab (X11 XGrabKey /
+  // evdev EVIOCGRAB). Distinct from HotKey::enabled (the binding is live)
+  // and from the HotkeyModule context's `grab` flag (what the script asked
+  // for): only this set reflects the grab that actually exists in the
+  // window system. A binding can be enabled and report grab=true while
+  // the X server holds no grab for it - the state a failed XGrabKey
+  // leaves behind, and the state a suspend/resume cycle used to create.
+  std::set<int> osGrabbedHotkeys;
+  // Hotkey ids that are SUPPOSED to hold an OS-level grab, whether or not
+  // the grab could be established. A grab that failed with BadAccess
+  // (another X client owned the key, or held an active keyboard grab) is
+  // transient; retryFailedGrabs() re-attempts it until it succeeds.
+  std::set<int> desiredGrabbedHotkeys;
+  mutable std::mutex osGrabbedHotkeysMutex;
+  // Last time retryFailedGrabs() ran, so the retry is rate-limited.
+  std::chrono::steady_clock::time_point lastGrabRetry_{};
   bool blockAllInput = false;
 
   bool wasSuspended = false;

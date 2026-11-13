@@ -1,5 +1,6 @@
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+#include "ScriptSourceJoin.hpp"
 #include "havel-lang/compiler/CompilationService.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
@@ -227,7 +228,8 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 
 static std::optional<std::pair<std::string, std::string>>
 loadScriptFiles(const std::vector<std::string> &files) {
-  std::string code;
+  std::vector<std::string> contents;
+  contents.reserve(files.size());
   std::string names;
   for (const auto &f : files) {
     std::string content = readScriptFile(f);
@@ -235,12 +237,15 @@ loadScriptFiles(const std::vector<std::string> &files) {
       error("Failed to read script file: {}", f);
       return std::nullopt;
     }
-    code += content + "\n";
+    contents.push_back(std::move(content));
     if (!names.empty())
       names += " + ";
     names += f;
   }
-  return {{code, names}};
+  // A single file is compiled VERBATIM: the bytecode cache validates an
+  // entry against the exact text it would compile, so a byte the join adds
+  // makes the entry unservable. See ScriptSourceJoin.hpp.
+  return {{joinScriptContents(contents), names}};
 }
 
 static void appendEval(std::string &code, std::string &names, const std::string &eval,
@@ -1343,7 +1348,8 @@ public:
       launcherPath = absPath.string();
 
     // Load user script files to check for hotkeys (like ScriptStrategy does)
-    std::string combinedCode;
+    std::vector<std::string> scriptContents;
+    scriptContents.reserve(cfg.scriptFiles.size());
     std::string combinedNames;
     for (const auto &f : cfg.scriptFiles) {
       std::string content = readScriptFile(f);
@@ -1351,11 +1357,13 @@ public:
         error("Failed to read script file: {}", f);
         return 1;
       }
-      combinedCode += content + "\n";
+      scriptContents.push_back(std::move(content));
       if (!combinedNames.empty())
         combinedNames += " + ";
       combinedNames += f;
     }
+    // A single file is compiled VERBATIM - see ScriptSourceJoin.hpp.
+    std::string combinedCode = joinScriptContents(scriptContents);
     if (!cfg.evalString.empty()) {
       // -e/--eval-print wraps the expression so its value is printed (same
       // contract as appendEval on the other strategies).
@@ -2483,10 +2491,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     isBytecode = true;
     primaryFile = cfg.scriptFiles[0];
   } else {
+    std::vector<std::string> scriptContents;
+    scriptContents.reserve(cfg.scriptFiles.size());
     for (const auto &f : cfg.scriptFiles) {
       std::string content = readScriptFile(f);
       if (!content.empty()) {
-        combinedCode += content + "\n";
+        scriptContents.push_back(std::move(content));
         if (primaryFile.empty())
           primaryFile = f;
       } else {
@@ -2494,6 +2504,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         return 1;
       }
     }
+    // A single file is compiled VERBATIM - see ScriptSourceJoin.hpp.
+    combinedCode = joinScriptContents(scriptContents);
   }
 
   if (combinedCode.empty() && !isBytecode) {

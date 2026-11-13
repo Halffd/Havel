@@ -3512,6 +3512,50 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
 
+    # Bytecode-cache source identity: the writer must stamp the text it
+    # compiled, and the reader must report WHY it refused an entry. A
+    # source-identity mismatch used to be reported as "entry-unreadable",
+    # which points at an IO problem that is not there.
+    add_executable(bytecode_cache_identity_test
+        tests/bytecode_cache_identity_ut.cpp
+    )
+    target_include_directories(bytecode_cache_identity_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(bytecode_cache_identity_test PRIVATE cxx_std_23)
+    target_link_libraries(bytecode_cache_identity_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME bytecode_cache_identity_test COMMAND bytecode_cache_identity_test)
+
+    # The script-source join rule. The launcher used to append a newline to
+    # EVERY file it read, so a single script's compiled text was one byte
+    # longer than the file on disk - and the bytecode cache validates an
+    # entry against the exact text it would compile, so the entry the
+    # compile wrote could never be served. The rule lives in one header so
+    # the launcher and this test cannot drift apart.
+    add_executable(script_source_join_test
+        tests/script_source_join_ut.cpp
+    )
+    target_include_directories(script_source_join_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/core/init
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(script_source_join_test PRIVATE cxx_std_23)
+    target_link_libraries(script_source_join_test PRIVATE
+        GTest::gtest GTest::gtest_main
+    )
+    add_test(NAME script_source_join_test COMMAND script_source_join_test)
+
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
     # resolves on its own, so the link is part of what it verifies.

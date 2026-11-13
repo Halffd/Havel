@@ -9,6 +9,32 @@ All notable changes to Havel are documented here.
 
 ---
 
+## 2026-11-13 - The bytecode cache serves again
+
+### Fixed
+- The incremental bytecode cache never served a single-file script: every
+  launch recompiled from source and rewrote the cache entry. The launcher
+  appended a newline to every file it read, so the text it compiled was one
+  byte longer than the file on disk; the cache entry is keyed by the file's
+  path hash and the serve path validates an entry against the exact text it
+  would compile, so the entry the compile wrote was rejected on the next
+  load ("source-size-differs") and rewritten. The newline is a separator
+  between files, so it now goes between them and not after the last one: a
+  single script is compiled verbatim. The rule lives in one place
+  (`joinScriptContents`, `src/core/init/ScriptSourceJoin.hpp`) and is
+  pinned by `tests/script_source_join_ut.cpp`.
+- A cache entry that was rejected because its embedded source identity did
+  not match the text it was compiled from was reported as
+  "entry-unreadable", which points at an IO problem that is not there (the
+  file parses fine). The real cause is now named: "source-size-differs",
+  "source-hash-differs", "missing" or "malformed".
+- The bytecode-cache writer stamps the text it was given instead of
+  re-reading the file to compute the identity. An edit landing between the
+  compile read and the identity read used to produce an entry describing
+  neither the compiled text nor the file - permanently unservable.
+
+---
+
 ## 2026-11-08 - Launcher pipe fixes
 
 ### Fixed

@@ -155,3 +155,97 @@ host-storm report, not a JIT finding. Re-run it in a window where the
 startup probe is fast; only a failure in the TIERED run, or a tier1=0,
 or an output mismatch is a JIT result.
 
+## Second, code-level contributor: the shared cache lock convoy (Nov 12 2026)
+
+The doc above attributes the mass timeouts to host storage congestion.
+That attribution is INCOMPLETE. A separate, reproducible, code-level
+contributor was measured on this box on 2026-11-12: **launching against
+the SHARED `~/.cache/havel` is several times slower than launching against
+a private cache, and the difference is LOCK WAIT, not IO.**
+
+### The measurement
+
+Same binary, same script (`print("hi")`), same tree, back to back:
+
+| cache | wall | longest blocking waits |
+|-------|------|-------------------------|
+| shared `~/.cache/havel` | 14234 ms, 14784 ms | 4 x ~25 s (futex) |
+| private `XDG_CACHE_HOME=/tmp/...` | 9544 ms, 3506 ms, 3512 ms | 4 x ~5.3 s (futex) |
+
+The difference is NOT attributable to any of the usual suspects - all of
+these were measured and are equal between the two runs:
+
+| quantity | shared | private |
+|----------|--------|---------|
+| total syscalls | 1299 | 1288 |
+| module `.hv` opens | 270 | 268 |
+| `openat` of module sources | identical set | identical set |
+| cache rejections | 1 | 1 |
+
+`--version` costs ~350 ms in both cases and `havel --lint` ~2.5 s, so the
+cost is in the EXECUTE phase, not in process startup or in compilation.
+`time` on the trivial script gives `real 31 s / user 12.2 s / sys 2.4 s`:
+~16 s of the wall time is the process NOT running.
+
+### What the process waits on
+
+`strace -f -T -tt -e trace=futex,...` shows four worker threads plus one
+waiter blocked in `futex` for the whole duration of the stall, and the
+stall length tracks the cache choice exactly (25.2 s shared, 5.3 s
+private). These are the same four threads that queue on the per-entry
+`flock` used by the bytecode-cache writer (`autoCacheBytecodeChunk`,
+`RuntimeSupport.hpp`: `flock(lockFd, LOCK_EX)` around the write+rename).
+
+The shared cache is written by EVERY checkout on the box - `havel`,
+`havel-2`, `havel-3`, `havel-stable` all use `~/.cache/havel` - so a
+launch can queue behind another tree's cache rewrite. The smoke gate
+launches one process per test, so a 390-file suite pays the convoy
+hundreds of times, and each queued launch eats the per-test timeout
+budget. **This is present even on a quiet box**, which is why a gate that
+starts calm can still collapse.
+
+### The specific fight: the four pipeline-fingerprint inputs
+
+The four self-hosted-compiler modules (`lang.emitter`, `lang.pratt`,
+`lang.lexer`, `lang.scope`) are deliberately NOT content-keyed - their
+`.hvc` files ARE the pipeline fingerprint's inputs (see
+`shared-bytecode-cache-cross-worktree-thrash.md`, "The fingerprint inputs
+still thrash"). Their embedded source paths show who owns them:
+
+    lang.emitter   /host/havel/modules      <- main owns it
+    lang.pratt     /host/havel/modules
+    lang.lexer     /host/havel/modules
+    lang.scope     /host/havel/modules
+
+so havel-3's launches fight main's launches over these four files on
+every run. Deleting the four entries stops the drift for the binary that
+recreates them first (measured: 7672 ms -> 7396 ms -> 7127 ms on
+successive launches of the same script).
+
+### Practical consequence for gating
+
+`XDG_CACHE_HOME` points the whole binary at a scratch cache
+(`ModuleLoader::getDefaultCacheDir` honours it) and removes the convoy,
+but it is NOT a usable gate environment on its own: a cache outside
+`$HOME/.cache/havel` makes `test_python_bridge` fail under
+AddressSanitizer with a 2289-byte CPython leak (see
+`python-bridge-cpython-module-leak.md`).
+
+So the shared-cache convoy cannot be gated around by redirecting the
+cache. The fix has to be per-tree fingerprinting (the residue the
+content-keyed cache fix deliberately left behind), or a per-tree cache
+directory by default. Until then, a gate on this box measures the convoy,
+not the tree.
+
+### Distinct from the serve-path defect closed on Nov 13
+
+The convoy above is about LOCK WAIT on entries that are written
+successfully. A separate defect, closed on 2026-11-13, made the
+incremental serve path reject the entry it had just written - so the
+cache never served and every launch rewrote the entry (see
+`shared-bytecode-cache-cross-worktree-thrash.md`, "Fixed defect (Nov 13
+2026)"). The two compound: an entry that cannot be served is rewritten,
+and a rewritten entry queues on the lock. Closing the serve-path defect
+removes the rewrite; it does not remove the cross-tree fingerprint fight
+over the four pipeline-fingerprint inputs.
+

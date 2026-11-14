@@ -188,6 +188,24 @@ all nine. Verified against the same binary:
     const_tuple_destructure, math_sidecar_randint, negative_number
     -> all PASS (no Bytecode error, no Parse error)
 
+The forms themselves, checked against the same binary:
+
+    print replace "hello", "l", "L"  -> heLlo
+    "hello" | replace "l", "L"        -> heLlo
+    string.replace "hello", "l", "L"  -> heLlo
+
+The lexer change (a colon is not regex context) was checked against the
+other colon-introduced constructs, so the change does not silently break
+them:
+
+    ternary `5 > 3 ? "yes" : "no"`    -> yes
+    slice `[1,2,3,4,5][1:3]`          -> [2, 3]
+
+The four `LOAD_CONST` sites were checked individually:
+
+    set literal  {1, 2, 3}            -> len=3, has(1)=true, has(9)=false
+    DSL inline sleep `:1500`          -> --lint exits 0 (no side effects)
+
 ## Related
 
 - `docs/specs/Havel.md` - the `$ command` and sleep-duration contracts that

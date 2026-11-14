@@ -9474,6 +9474,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
   advance(); // consume 'with'
 
+  // The object expression is followed by the block '{ ... }'. Brace-call
+  // sugar must be off while parsing it, or the module name takes the block
+  // as a brace-call argument: in `with math { ... }` the block was consumed
+  // and the parser reported "Expected '{' after with expression". This is
+  // the same guard the other expression-then-block constructs use (repeat,
+  // for, while, and the `on ... where ...` filter).
+  const bool prevAllowBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+
   auto object = parsePrattExpression(51); // stop before 'as' (BP 50)
 
   std::unique_ptr<havel::ast::Identifier> alias;
@@ -9502,7 +9511,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
       auto nextObj = parsePrattExpression(51);
       objects.push_back(std::move(nextObj));
     }
-    // Parse the shared body once.
+    // Parse the shared body once. Brace-call sugar is restored first: the
+    // body is a block of statements, and a statement inside it may use
+    // brace-call sugar legitimately.
+    context.allowBraceSugar = prevAllowBraceSugar;
     if (at().type != havel::TokenType::OpenBrace) {
       failAt(at(), "Expected '{' after with expression");
     }
@@ -9534,6 +9546,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
     return std::move(innerBody.front());
   }
 
+  // The body is a block of statements; brace-call sugar is restored before
+  // it is parsed, because a statement inside may use the sugar legitimately.
+  context.allowBraceSugar = prevAllowBraceSugar;
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after with expression");
   }

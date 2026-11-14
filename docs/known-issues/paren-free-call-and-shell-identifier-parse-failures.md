@@ -192,19 +192,54 @@ after the flag is restored.
 `scripts/smoke/test_event_bus.hv` is the regression test for this: it
 covers both the `where` filter and the handler body that follows it.
 
+### 7b. REGRESSION: the same defect broke `with <module> { ... }`
+
+The `with` statement has the same shape - an object expression followed by
+a block - and was broken by the same change:
+
+    with math {
+      r1 = sqrt(16)
+    }
+
+The module name took the block as a brace-call argument and the parser
+reported "Expected '{' after with expression". The comma-separated form
+(`with math, string { ... }`) was broken the same way.
+
+Fix: the object expression is parsed with `allowBraceSugar` off, and the
+flag is restored before the block body is parsed - a statement inside the
+body may use brace-call sugar legitimately.
+
+`scripts/smoke/test_with_flatten.hv` is the regression test.
+
+Every other construct that parses an expression before a block was checked
+and already had the guard: `match`, `switch`, `case ... of`, `when`,
+`repeat`, `for`, `while`, the DSL `?;` condition and the `where` filter
+above. The remaining `Expected '{' after` sites consume a name or a
+keyword, not an expression, so there is nothing for the brace-call sugar
+to swallow.
+
 ### 8. The smoke gate's debug-build timeouts are not caused by the parser
 
 Several gate runs reported `(timeout)` failures that have nothing to do
-with the parser changes:
+with the parser changes.
 
-- `test_debug_on_off`, `test_fs_glob_absolute`,
-  `test_issue_gc_cursor_string_sweep` - each carries a `smoke: timeout`
-  of 30-60s, and the debug build's ASAN/UBSAN instrumentation makes even a
-  trivial `exit(0)` script take ~43s against ~5s for the release build.
-- The two regression tests added for this fix initially carried
-  `smoke: timeout = 30` and were themselves killed by the same overhead
-  (measured at 24s and 31s). They now carry 120s, matching the other
-  tests that do real work.
+The debug build's ASAN/UBSAN instrumentation makes even a trivial
+`exit(0)` script take ~43s, against ~5s for the release build. Two PRE-FIX
+binaries with no code change between them show the same spread on
+`test_on_error_handler`: 7s (`build-release`, commit `9ad6a2fe2808`) and
+17s (`build-crane-nollvm`, commit `b72c5b7bad3f`). The measurement is a
+property of the build configuration, not of the source.
+
+Under the gate's 392-script concurrency, a test whose own `smoke: timeout`
+is 30s does not fit. The measured standalone durations were 22s for
+`test_debug_on_off` and `test_fs_glob_absolute` (limit 30s), 42s for
+`test_on_error_handler` (limit 30s) and 45s for
+`test_issue_gc_cursor_string_sweep` (limit 60s) - all borderline against
+their own limits, all measured with the debug build.
+
+Those limits are now 120s, matching the other tests that do real work. The
+two regression tests added for this fix initially carried 30s and were
+themselves killed by the same overhead (measured at 24s and 31s).
 
 A prior gate log in this workspace (`test-havel-stable-build-debug-gate.log`,
 Nov 10) already shows the same pattern - four timeout failures on an
@@ -266,6 +301,41 @@ The four `LOAD_CONST` sites were checked individually:
 
     set literal  {1, 2, 3}            -> len=3, has(1)=true, has(9)=false
     DSL inline sleep `:1500`          -> --lint exits 0 (no side effects)
+
+### The `on ... where ...` and `with ... { ... }` regressions
+
+Both were found by the smoke gate, not by inspection - the gate's summary
+was the first evidence that the nested-call-sugar change had broken
+expression-then-block constructs:
+
+    smoke: 390 passed, 2 failed, 0 skipped | 392 files
+    [FAIL] test_on_error_handler (timeout)
+    [FAIL] test_with_flatten (exit=1)
+
+`test_with_flatten` failed with "Expected '{' after with expression". The
+`where` filter had already been found and fixed by hand (commit
+`422fc5570a1f`); `with` had the same shape and was fixed the same way.
+
+Both regression tests pass against `/host/havel/build-debug/havel` (commit
+`422fc5570a1f`, rebuilt with the `with` fix):
+
+    test_with_flatten   -> PASS with-flatten          exit=0
+    test_event_bus      -> PASS event-bus             exit=0
+    test_on_error_handler                              exit=0  (15s)
+
+The four tests whose `smoke: timeout` was raised also pass against that
+binary:
+
+    test_debug_on_off                 exit=0  (15s)
+    test_fs_glob_absolute             exit=0  (17s)
+    test_issue_gc_cursor_string_sweep exit=0  (26s)
+
+The full pre-merge gate passes with the `with` fix in place:
+
+    $ ./build.sh queue test --kind gate
+    tests rc=0 in 3571s
+    smoke: 392 passed, 0 failed, 0 skipped | 392 files, 1.06947e+07ms tests, 27282.3ms avg
+    exit: 0
 
 ## Related
 

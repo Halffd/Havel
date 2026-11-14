@@ -1084,20 +1084,16 @@ Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
   // This handles function calls without parentheses like: print "hello"
   // Also handles: print a ** 5 -> print(a ** 5)
   // Also handles prefix operators: print @id, print !x, print #x
-  if (context.allowBraceSugar &&
-      (at().type == TokenType::String || at().type == TokenType::MultilineString ||
-       at().type == TokenType::RegexString || at().type == TokenType::Number ||
-       at().type == TokenType::Identifier || at().type == TokenType::InterpolatedString ||
-       at().type == TokenType::InterpolatedBacktick || at().type == TokenType::At ||
-       at().type == TokenType::AtAt || at().type == TokenType::Not ||
-       at().type == TokenType::Length)) {
+  if (context.allowBraceSugar && canStartImplicitCallArgument(at().type)) {
     Token arg_token = at();
-    // Parse argument as full expression (with operators), but disable nested implicit calls
-    // to prevent infinite recursion and ensure operators like ** bind tighter than the call
-    bool prevAllow = context.allowBraceSugar;
-    context.allowBraceSugar = false;
+    // Parse argument as full expression (with operators). Nested implicit
+    // calls stay ENABLED so `print replace "a", "b"` parses as
+    // print(replace("a", "b")) - the inner call has to be recognised before
+    // the comma can be read as an argument separator. The sugar is
+    // right-associating (an argument binds tighter than its caller), so the
+    // recursion terminates on the token stream; the parser's depth guard
+    // bounds it.
     auto arg = parsePrattExpression(0);
-    context.allowBraceSugar = prevAllow;
 
     if (!arg) {
       return nullptr;
@@ -1132,6 +1128,14 @@ Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
 std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   if (debug.parser) {
     havel::debug("PRATT: nud for {}", token.toString());
+  }
+
+  // Allow certain keywords to be used as identifiers in expression context.
+  // This enables expressions like: mode == "work" && class == "code". The
+  // set lives in keywordUsableAsIdentifier() (Parser.h) so the
+  // implicit-call argument check derives from the same list.
+  if (keywordUsableAsIdentifier(token.type)) {
+    return makeIdentifier(token);
   }
 
   switch (token.type) {
@@ -1249,17 +1253,6 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     }
     failAt(token, "Unexpected ':' in expression");
   }
-
-  // Allow certain keywords to be used as identifiers in expression context
-  // This enables expressions like: mode == "work" && class == "code"
-  case TokenType::Class:
-  case TokenType::Struct:
-  case TokenType::Enum:
-  case TokenType::Mode:
-  case TokenType::Val:
-  case TokenType::Const:
-  case TokenType::Let:
-    return makeIdentifier(token);
 
   case TokenType::True:
     return makeNodeAt<ast::BooleanLiteral>(token, true);
@@ -1637,8 +1630,14 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     std::unique_ptr<ast::Expression> cmdExpr;
     if (at().type == TokenType::OpenParen || at().type == TokenType::OpenBracket) {
       cmdExpr = parseExpression();
-    } else if (at().type == TokenType::Identifier || at().type == TokenType::String ||
-               at().type == TokenType::MultilineString) {
+    } else if (at().type == TokenType::Identifier) {
+      // A bare identifier names the COMMAND to run, not a variable holding
+      // one - the same rule the statement form uses. `$! var` (a variable
+      // holding a command) is still reachable through the explicit
+      // `$! (var)` form.
+      cmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+      advance(); // consume the identifier
+    } else if (at().type == TokenType::String || at().type == TokenType::MultilineString) {
       cmdExpr = parsePrimaryExpression();
     } else {
       failAt(token, "Shell command requires expression: $ (cmd), $! [array], or $! var");
@@ -4124,8 +4123,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
       cmdExpr = parseExpression();
     } else if (at().type == havel::TokenType::Identifier) {
-      // Just an identifier - parse as primary expression (e.g., $ firefox)
-      cmdExpr = parsePrimaryExpression();
+      // `$ firefox` - a bare identifier names the COMMAND to run, not a
+      // variable holding one. The spec documents this form ("$ command -
+      // Fire-and-forget execution", docs/specs/Havel.md), but the identifier
+      // was compiled as a variable read, so the run() host function received
+      // the VALUE of that variable - and with no such variable the script
+      // died with "Undefined variable: 'firefox'" instead of running
+      // firefox. Wrap the name in a string literal so it names the command.
+      cmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+      advance(); // consume the identifier
     } else if (at().type == havel::TokenType::String ||
                at().type == havel::TokenType::MultilineString ||
                at().type == havel::TokenType::RegexString) {
@@ -4150,7 +4156,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
         nextCmdExpr = parseExpression();
       } else if (at().type == havel::TokenType::Identifier) {
-        nextCmdExpr = parsePrimaryExpression();
+        // A bare identifier names the command, same as the first stage.
+        nextCmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+        advance(); // consume the identifier
       } else if (at().type == havel::TokenType::String ||
                  at().type == havel::TokenType::MultilineString) {
         nextCmdExpr = parsePrimaryExpression();
@@ -4594,10 +4602,31 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
   std::string duration;
   if (at().type == havel::TokenType::Number || at().type == havel::TokenType::String ||
       at().type == havel::TokenType::MultilineString) {
+    const havel::Token &first = at();
     duration = advance().value;
+    // The unit suffix of an unquoted duration is a SEPARATE token: the lexer
+    // splits ":1s" into Number "1" + Identifier "s", and ":500ms" into
+    // Number "500" + Identifier "ms". Taking only the number left the suffix
+    // to be parsed as the next expression, so ":1s" slept for 1ms and then
+    // died with "Unresolved identifier 's'" (observed in the REPL: ":5s"
+    // -> "Undefined variable: 's'"). Re-join a suffix that is DIRECTLY
+    // adjacent to the number - ":1 s" keeps the old, separate-token
+    // behaviour because a space means the author wrote two things.
+    if (first.type == havel::TokenType::Number && at().type == havel::TokenType::Identifier &&
+        at().column == first.column + first.length) {
+      duration += advance().value;
+    }
   } else {
-    // Try to parse as identifier (for unquoted strings like :1h30m)
-    // For now, just consume tokens until newline/semicolon
+    // Unquoted duration: :1h30m, :500ms, :2.5m. The lexer splits the number
+    // and the unit suffix into SEPARATE tokens (Number "1", Identifier "h"),
+    // so a bare `:1s` used to parse the "1" as the duration and leave the
+    // "s" to be resolved as a variable - "Unresolved identifier 's'". Join the
+    // adjacent tokens into one duration string instead; the compiler's
+    // SleepStatement case then hands the whole thing to sleep(), whose
+    // duration parser understands "1s"/"500ms"/"2.5m"/"1h".
+    //
+    // The clock form (:3:10:25) is a wall-clock target, not a duration, and
+    // is handled by the colon-separated form below.
     while (at().type != havel::TokenType::NewLine && at().type != havel::TokenType::Semicolon &&
            at().type != havel::TokenType::EOF_TOKEN && at().type != havel::TokenType::CloseBrace) {
       duration += at().value;
@@ -11986,20 +12015,26 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         args.push_back(std::move(lambda));
       }
       expr = makeNode<havel::ast::CallExpression>(std::move(expr), std::move(args));
-    } else if ((at().type == havel::TokenType::String ||
-                at().type == havel::TokenType::MultilineString ||
-                at().type == havel::TokenType::Number ||
-                at().type == havel::TokenType::Identifier ||
-                at().type == havel::TokenType::InterpolatedString ||
-                at().type == havel::TokenType::At || at().type == havel::TokenType::AtAt ||
-                at().type == havel::TokenType::Not || at().type == havel::TokenType::Length) &&
-               context.allowBraceSugar) {
+    } else if (canStartImplicitCallArgument(at().type) && context.allowBraceSugar) {
       // Implicit call: expression followed by a literal or prefix
       // operator (e.g., print "Hello", print @id, print !x)
       // Only allowed when brace call sugar is enabled
       auto arg = parseUnary();
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(arg));
+      // Comma-separated arguments: `print a, b` -> print(a, b). Without
+      // this, the comma reached the statement parser and it reported
+      // "Expected '=' after comma-separated targets" (the multi-assignment
+      // path) for a plain two-argument call.
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume comma
+        auto nextArg = parseUnary();
+        if (!nextArg) {
+          errorAt(at(), "Expected expression after comma in function call");
+          return nullptr;
+        }
+        args.push_back(std::move(nextArg));
+      }
       expr = makeNode<havel::ast::CallExpression>(std::move(expr), std::move(args));
     } else if (at().type == havel::TokenType::PlusPlus ||
                at().type == havel::TokenType::MinusMinus) {

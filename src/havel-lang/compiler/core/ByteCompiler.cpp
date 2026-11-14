@@ -2844,7 +2844,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     } else {
       // Fallback: duration string (e.g. "500ms", "1s", "2.5m", "1h").
       uint32_t strId = addStringConstant(sleep.duration);
-      emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+      // The constant must go through addConstant(): LOAD_CONST takes a
+      // CONSTANT-POOL index as its operand (VMDispatch reads
+      // operands[0].asInt() and indexes the pool). Emitting the StringValId
+      // directly made the operand a string value, so the pool index was
+      // garbage and sleep() received a value that was not the duration
+      // string - "sleep(): invalid duration format" for every suffixed
+      // duration.
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
     }
     emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
     emit(OpCode::POP); // Discard result
@@ -4425,7 +4432,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         COMPILER_THROW("Set literal contains null element");
       }
       emit(OpCode::DUP);
-      emit(OpCode::LOAD_CONST, Value::makeBool(true));
+      // LOAD_CONST takes a CONSTANT-POOL index as its operand; the value
+      // itself must go through addConstant().
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
       compileExpression(*element);
       emit(OpCode::SET_SET);
     }
@@ -9723,7 +9732,9 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
   if (whenBlock.condition) {
     compileExpression(*whenBlock.condition);
   } else {
-    emit(OpCode::LOAD_CONST, Value::makeBool(true));
+    // LOAD_CONST takes a CONSTANT-POOL index as its operand; the value
+    // itself must go through addConstant().
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
   }
   emit(OpCode::RETURN);
   leaveFunction();
@@ -10253,7 +10264,9 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
         uint32_t strId = addStringConstant("sleep_ms");
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       }
-      emit(OpCode::LOAD_CONST, Value::makeInt(std::stoi(cmd.duration)));
+      // LOAD_CONST takes a CONSTANT-POOL index as its operand; the value
+      // itself must go through addConstant().
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(std::stoi(cmd.duration))));
       emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
       break;
     default:

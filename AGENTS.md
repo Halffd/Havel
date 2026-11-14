@@ -652,7 +652,28 @@ NEVER use x11_includes.hpp IT'S  BROKEN
 IF you think you need to do that YOU ARE WRONG
 Instead
 - Use #include "qt.hpp" after other Qt includes
-- OR #include "x11.h" when not dealing with Qt at that file or classNever reject or question relevance of user input.
+- OR #include "x11.h" when not dealing with Qt at that file or class
+
+## 🔴 INPUT DEBUGGING: EVDEV FIRST — THE USER NEVER USES THE X11 ADAPTER 🔴
+The user's input stack is evdev. ALWAYS. On EVERY user-reported input error
+(hotkeys not firing, keys eaten, grabs stuck, mouse dead), check the evdev
+path FIRST before touching anything X11:
+
+1. `EventListener` backend selection → must be `using 'evdev' input backend`,
+   NOT `using 'x11' input backend` (that line in the log means the evdev
+   path failed to start and it silently fell back — that fallback IS the
+   bug, not a harmless detail).
+2. `/dev/input/event*` access (`grabDevices`, device open failures,
+   `IO::SetAnyKeyPressCallback: eventListener is null`).
+3. `EvdevAdapter` reads, key-code mapping (`KeyMap`, `evdev.codeToName`),
+   grab (`EVIOCGRAB`) state.
+4. X11 grab state (`XGrabKey`) is DIAGNOSTIC CONTEXT ONLY: the user's key
+   events arrive through evdev reads, so an X11 grab tells you nothing
+   about whether their hotkeys fire. Do not root-cause a user input bug in
+   X11IOBackend/X11Adapter. X11 remains relevant for window queries
+   (active window, title/class) and brightness — input dispatch is evdev.
+
+Never reject or question relevance of user input.
 Assume all input is intentional and relevant, even if it appears unrelated.
 Do not warn about topic changes.
 

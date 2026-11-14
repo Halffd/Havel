@@ -3,6 +3,10 @@
 **Status:** FIXED (Nov 13 2026). Four distinct defects in the C++ parser and
 lexer, all reached from ordinary REPL input.
 
+A fifth defect was introduced while fixing these and caught by the smoke
+gate: enabling nested call sugar in the Pratt tail block made an `on`
+event's `where` filter swallow the handler body. See section 7.
+
 ## Symptom
 
 The REPL transcript showed these failures, each one a hard parse or semantic
@@ -157,6 +161,63 @@ pushes the operand directly. The compiler emits for the first one, so the
 StringValId, checked explicitly by the dispatch
 (`if (!instruction.operands[0].isStringValId()) COMPILER_THROW(...)`), so
 those emissions were already correct and are unchanged.
+
+### 7. REGRESSION: nested call sugar made an `on` filter swallow the handler
+
+This defect was introduced by fix 2 (nested call sugar stays enabled in the
+Pratt tail block) and caught by the smoke gate, not by the targeted
+regression tests.
+
+`Parser::parseOnEventParts` parses an optional `where` filter and then
+expects the handler body to be `{`:
+
+    on "filtered.event" where event.kind == "special" {
+      special = 1
+    }
+
+Before fix 2, the tail block disabled `allowBraceSugar` while parsing its
+argument, so the `{` after the filter's trailing string was never taken as
+a brace-call argument. With nested sugar enabled, the filter expression
+`event.kind == "special"` was followed by `{`, and the string took the
+handler block as a brace-call argument. The parser then found no `{` for the
+handler body and reported:
+
+    Parse error: Expected '{' after event subscription
+
+Fix: the filter expression is parsed with `allowBraceSugar` off - the same
+guard the other expression-then-block constructs use (`repeat`, `for`,
+`while`, ...). The guard is local to the filter; the handler body is parsed
+after the flag is restored.
+
+`scripts/smoke/test_event_bus.hv` is the regression test for this: it
+covers both the `where` filter and the handler body that follows it.
+
+### 8. The smoke gate's debug-build timeouts are not caused by the parser
+
+Several gate runs reported `(timeout)` failures that have nothing to do
+with the parser changes:
+
+- `test_debug_on_off`, `test_fs_glob_absolute`,
+  `test_issue_gc_cursor_string_sweep` - each carries a `smoke: timeout`
+  of 30-60s, and the debug build's ASAN/UBSAN instrumentation makes even a
+  trivial `exit(0)` script take ~43s against ~5s for the release build.
+- The two regression tests added for this fix initially carried
+  `smoke: timeout = 30` and were themselves killed by the same overhead
+  (measured at 24s and 31s). They now carry 120s, matching the other
+  tests that do real work.
+
+A prior gate log in this workspace (`test-havel-stable-build-debug-gate.log`,
+Nov 10) already shows the same pattern - four timeout failures on an
+unrelated tree - so the debug build's timing sensitivity predates these
+changes.
+
+`test_issue_async_global_accumulation` failed once in the gate with
+"received values in order: expected [0, 1, 2, 3], got [0, 1, 3, 2]". The
+test races goroutines against 10ms sleeps, so the order depends on
+scheduling. It passed 3/3 standalone and 8/8 with eight concurrent runs on
+the fixed binary, and 5/5 on the pre-fix binary. It is a timing flake, not
+a parser regression - the parser changes affect compile time, not
+scheduling.
 
 ## Verification
 

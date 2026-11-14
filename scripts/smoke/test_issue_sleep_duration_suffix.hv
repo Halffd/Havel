@@ -7,7 +7,7 @@
 //       reached the parser as the bare number 10 and the runtime rejected it
 //       with "sleep(): invalid duration format".
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
+// smoke: timeout = 120
 
 // Milliseconds - the suffix must survive lexing.
 :10ms

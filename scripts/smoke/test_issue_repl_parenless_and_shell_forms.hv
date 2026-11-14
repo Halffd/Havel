@@ -6,7 +6,7 @@
 //         - `_v | replace "l", "L"` (a pipeline stage with a comma list)
 //         - `$! pwd` (a bare identifier names the COMMAND to run)
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
+// smoke: timeout = 120
 
 // A keyword the language allows as an identifier in expression position
 // (SYNTAX.md, "contextually allowed as identifiers"). `mode` is the mode

@@ -7518,7 +7518,17 @@ bool Parser::parseOnEventParts(std::string &nameOut,
   if (at().type == havel::TokenType::Where ||
       (at().type == havel::TokenType::Identifier && at().value == "where")) {
     advance(); // consume "where"
+    // The filter expression is followed by the handler body '{ ... }'.
+    // Brace-call sugar must be off while parsing the filter, or the filter
+    // swallows the handler body as a brace-call argument: in
+    // `where event.kind == "special" { ... }` the trailing string took the
+    // block as its argument and the parser then reported "Expected '{'
+    // after event subscription". This is the same guard the other
+    // expression-then-block constructs use (repeat, for, while, ...).
+    bool prevAllowBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
     filterOut = parseExpression();
+    context.allowBraceSugar = prevAllowBraceSugar;
   }
 
   // Handler body

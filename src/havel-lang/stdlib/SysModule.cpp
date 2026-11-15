@@ -19,6 +19,7 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
@@ -95,6 +96,26 @@ static std::string readFileField(const std::string& path, const std::string& pre
 static std::mutex g_spawnMutex;
 static std::unordered_map<int64_t, std::pair<int, int>> g_spawnPipes;
 #endif
+
+// Stringify one argv element. Non-string values are accepted and stringified
+// (numbers, booleans) instead of being rejected: process.run and
+// process.pipe share this rule so the two entry points cannot drift.
+static std::string procArgString(const VMApi &api, const Value &v) {
+  if (v.isNull())
+    return "";
+  if (v.isStringId() || v.isStringValId())
+    return api.toString(v);
+  if (v.isInt())
+    return std::to_string(v.asInt());
+  if (v.isDouble()) {
+    std::ostringstream ss;
+    ss << v.asDouble();
+    return ss.str();
+  }
+  if (v.isBool())
+    return v.asBool() ? "true" : "false";
+  return api.toString(v);
+}
 
 void registerSysModule(const VMApi &api) {
   api.registerFunction("sys.platform",
@@ -859,21 +880,56 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 
   // ========================================================================
   // process.run - run command synchronously, return {pid, exitCode, success, stdout, stderr, error}
+  //
+  // A string is a shell command line ("cmd arg | other"), an array is an
+  // argv vector that is exec'd directly: no word splitting and no globbing,
+  // so an argument containing spaces stays one argument. Same contract as
+  // the host bridge's process.run and as process.pipe.
   // ========================================================================
   api.registerFunction("__proc.run", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
       api.vm().getScheduler()->yieldCurrentAndCheckTimers();
     if (args.empty())
       throw std::runtime_error("__proc.run() requires a command");
-    std::string cmd = api.resolveString(args[0]);
 
-    auto presult = Launcher::runSync(cmd);
+    havel::ProcessResult presult;
+    if (args[0].isArrayId()) {
+      uint32_t n = api.length(args[0]);
+      if (n == 0)
+        throw std::runtime_error("__proc.run() requires a non-empty array");
+      std::vector<std::string> argv;
+      for (uint32_t i = 0; i < n; ++i)
+        argv.push_back(procArgString(api, api.getAt(args[0], i)));
+      std::vector<std::string> rest(argv.begin() + 1, argv.end());
+      havel::LaunchParams params;
+      params.method = havel::Method::Sync;
+      presult = havel::Launcher::run(argv[0], rest, params);
+    } else {
+      std::string cmd = api.resolveString(args[0]);
+      if (cmd.empty()) {
+        auto obj = api.makeObject();
+        api.setField(obj, "pid", Value::makeInt(-1));
+        api.setField(obj, "exitCode", Value::makeInt(-1));
+        api.setField(obj, "success", Value::makeBool(false));
+        api.setField(obj, "error", api.makeString("__proc.run() requires a non-empty command"));
+        api.setField(obj, "stdout", api.makeString(""));
+        api.setField(obj, "stderr", api.makeString(""));
+        return obj;
+      }
+      presult = havel::Launcher::runSync(cmd);
+    }
 
+    // success follows the EXIT STATUS, not the spawn: a command that ran
+    // and exited non-zero is not a success (modules/std/process.hv's ok(),
+    // capture() and runOrThrow() all depend on it).
+    const bool ok = presult.error.empty() && presult.exitCode == 0;
     auto obj = api.makeObject();
     api.setField(obj, "pid", Value::makeInt(presult.pid));
     api.setField(obj, "exitCode", Value::makeInt(static_cast<int64_t>(presult.exitCode)));
-    api.setField(obj, "success", Value::makeBool(presult.success));
-    api.setField(obj, "error", presult.success ? Value::makeNull() : api.makeString(presult.error));
+    api.setField(obj, "success", Value::makeBool(ok));
+    api.setField(obj, "error",
+                 presult.error.empty() ? Value::makeNull()
+                                       : api.makeString(presult.error));
     api.setField(obj, "stdout", api.makeString(presult.out));
     api.setField(obj, "stderr", api.makeString(presult.err));
     return obj;
@@ -895,20 +951,7 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
           "__proc.pipe() requires an argv array or a list of argv arrays");
 
     auto toArgString = [&api](const Value &v) -> std::string {
-      if (v.isNull())
-        return "";
-      if (v.isStringId() || v.isStringValId())
-        return api.toString(v);
-      if (v.isInt())
-        return std::to_string(v.asInt());
-      if (v.isDouble()) {
-        std::ostringstream ss;
-        ss << v.asDouble();
-        return ss.str();
-      }
-      if (v.isBool())
-        return v.asBool() ? "true" : "false";
-      return api.toString(v);
+      return procArgString(api, v);
     };
 
     std::vector<std::vector<std::string>> stages;
@@ -988,27 +1031,28 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 
   // ========================================================================
   // process.runDetached - run command without waiting, return pid
+  //
+  // A string is a shell command line, an array is an argv vector that is
+  // exec'd directly (same contract as process.run).
   // ========================================================================
   api.registerFunction("__proc.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("__proc.runDetached() requires a command");
 
-    // Accept either "cmd" or ["cmd", "arg1", ...]; the array form is joined
-    // with spaces. This matches the modular bridge registration.
-    std::string cmd;
+    havel::ProcessResult presult;
     if (args[0].isArrayId()) {
       uint32_t n = api.length(args[0]);
       if (n == 0)
         throw std::runtime_error("__proc.runDetached() requires a non-empty array");
-      for (uint32_t i = 0; i < n; ++i) {
-        if (i) cmd += " ";
-        cmd += api.resolveString(api.getAt(args[0], i));
-      }
+      std::vector<std::string> argv;
+      for (uint32_t i = 0; i < n; ++i)
+        argv.push_back(procArgString(api, api.getAt(args[0], i)));
+      std::vector<std::string> rest(argv.begin() + 1, argv.end());
+      presult = havel::Launcher::runDetached(argv[0], rest);
     } else {
-      cmd = api.resolveString(args[0]);
+      std::string cmd = api.resolveString(args[0]);
+      presult = havel::Launcher::runDetached(cmd);
     }
-
-    auto presult = Launcher::runDetached(cmd);
     return Value::makeInt(presult.pid);
   });
 
@@ -1030,30 +1074,46 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     if (pid <= 0)
       throw std::runtime_error("__proc.wait(): process not started");
 
-    int status;
-    pid_t ret = waitpid(pid, &status, 0);
-
-    int exitCode = (ret > 0 && WIFEXITED(status)) ? WEXITSTATUS(status)
-                   : (ret > 0 && WIFSIGNALED(status)) ? -WTERMSIG(status) : -1;
-
-    std::string outStr, errStr;
+    // Take the pipe ends out of the map under the lock; the wait itself
+    // happens outside the lock because it blocks until the child exits.
+    int stdoutFd = -1, stderrFd = -1;
     {
+      std::lock_guard<std::mutex> lock(g_spawnMutex);
       auto pit = g_spawnPipes.find(pid);
       if (pit != g_spawnPipes.end()) {
-        char buf[4096];
-        ssize_t n;
-        while ((n = read(pit->second.first, buf, sizeof(buf))) > 0)
-          outStr.append(buf, n);
-        while ((n = read(pit->second.second, buf, sizeof(buf))) > 0)
-          errStr.append(buf, n);
-        close(pit->second.first);
-        close(pit->second.second);
+        stdoutFd = pit->second.first;
+        stderrFd = pit->second.second;
         g_spawnPipes.erase(pit);
       }
     }
 
+    int exitCode = -1;
+    std::string outStr, errStr;
+    std::string waitError;
+    if (stdoutFd >= 0 || stderrFd >= 0) {
+      // Drain the pipes WHILE the child runs. Waiting first deadlocked
+      // every child that wrote more than the pipe buffer (64 KiB on Linux):
+      // the child blocked in write() while the parent blocked in waitpid().
+      auto res = havel::Launcher::waitAndDrain(pid, stdoutFd, stderrFd);
+      exitCode = res.exitCode;
+      outStr = res.out;
+      errStr = res.err;
+      waitError = res.error;
+    } else {
+      // No pipes registered for this pid (not spawned by process.spawn):
+      // plain wait, no output to collect.
+      int status = 0;
+      pid_t ret = waitpid(pid, &status, 0);
+      exitCode = (ret > 0 && WIFEXITED(status)) ? WEXITSTATUS(status)
+                     : (ret > 0 && WIFSIGNALED(status)) ? -WTERMSIG(status) : -1;
+    }
+
     api.setField(procObj, "exitCode", Value::makeInt(exitCode));
-    api.setField(procObj, "success", Value::makeBool(exitCode == 0 && ret > 0));
+    api.setField(procObj, "success",
+                 Value::makeBool(waitError.empty() && exitCode == 0));
+    api.setField(procObj, "error",
+                 waitError.empty() ? Value::makeNull()
+                                   : api.makeString(waitError));
     api.setField(procObj, "stdout", api.makeString(outStr));
     api.setField(procObj, "stderr", api.makeString(errStr));
 
@@ -1110,6 +1170,11 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     // child its own session: stray signals no longer reach us.
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
+    // The child gets EOF on stdin instead of inheriting havel's stdin: a
+    // spawned helper must not compete with the script for terminal input.
+    // Same contract as the synchronous run paths, which close stdin.
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                     O_RDONLY, 0);
     posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
     posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
     posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);

@@ -1,0 +1,115 @@
+// test_process_run.hv
+// What: process.run() - the synchronous shell wrapper. Covers the result
+//       shape ({pid, exitCode, success, stdout, stderr, error}), exit-code
+//       propagation, separate stdout/stderr capture, exact byte preservation
+//       (no trimming, multi-line), shell feature passthrough, missing
+//       command, and output large enough to fill a pipe buffer.
+// Why: process.run is the primitive behind modules/std/process.hv's
+//      capture()/ok()/runOrThrow(); if success or the captured streams are
+//      wrong, every wrapper built on it is wrong.
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_run.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_run: " + msg)
+        exit(1)
+    }
+}
+
+// ---------------------------------------------------------------- success
+r = process.run("echo hello")
+check(r.pid > 0, "pid should be positive, got ${r.pid}")
+check(r.exitCode == 0, "exitCode should be 0, got ${r.exitCode}")
+check(r.success == true, "success should be true, got ${r.success}")
+check(r.error == nil, "error should be nil on success, got ${r.error}")
+check(r.stdout == "hello\n", "stdout should keep the newline, got '${r.stdout}'")
+check(r.stderr == "", "stderr should be empty, got '${r.stderr}'")
+
+// Output must not be trimmed: process.hv's capture() trims, run() must not.
+r = process.run("printf '  padded  '")
+check(r.stdout == "  padded  ", "run() must not trim stdout, got '${r.stdout}'")
+
+// Multi-line output, order preserved.
+r = process.run("printf 'a\\nb\\nc\\n'")
+check(r.stdout == "a\nb\nc\n", "multi-line stdout mangled: '${r.stdout}'")
+
+// --------------------------------------------------------------- streams
+r = process.run("echo to-out; echo to-err 1>&2")
+check(r.stdout == "to-out\n", "stdout/stderr crossed? stdout='${r.stdout}'")
+check(r.stderr == "to-err\n", "stderr not captured separately: '${r.stderr}'")
+check(r.success == true, "a command that writes stderr and exits 0 is a success")
+
+// ------------------------------------------------------------ exit codes
+r = process.run("exit 3")
+check(r.exitCode == 3, "exit 3 should be reported, got ${r.exitCode}")
+check(r.success == false,
+      "success must be false for exit 3 (modules/std/process.hv ok() depends on this)")
+check(r.stdout == "" && r.stderr == "", "failing command produced no streams")
+
+r = process.run("exit 0")
+check(r.exitCode == 0 && r.success == true, "exit 0 is a success")
+
+// A failing command that prints: the streams are still captured.
+r = process.run("echo out; echo err 1>&2; exit 42")
+check(r.exitCode == 42, "exitCode should be 42, got ${r.exitCode}")
+check(r.stdout == "out\n", "stdout of failing command lost: '${r.stdout}'")
+check(r.stderr == "err\n", "stderr of failing command lost: '${r.stderr}'")
+check(r.success == false, "success must follow the exit status, not the spawn")
+
+// --------------------------------------------------------- shell features
+r = process.run("echo ll | tr a-z A-Z")
+check(r.stdout == "LL\n", "shell pipeline not honoured: '${r.stdout}'")
+
+r = process.run("printf 'x' > /dev/null && echo redirected")
+check(r.stdout == "redirected\n", "shell redirection not honoured: '${r.stdout}'")
+
+r = process.run("echo 'quoted words'")
+check(r.stdout == "quoted words\n", "shell quoting not honoured: '${r.stdout}'")
+
+// ------------------------------------------------------- missing command
+r = process.run("havel_no_such_command_xyz 2>/dev/null")
+check(r.exitCode == 127, "missing command must exit 127, got ${r.exitCode}")
+check(r.success == false, "missing command must not be a success")
+
+// --------------------------------------------------------------- argv form
+// An array is an argv vector that is exec'd directly: no shell word
+// splitting, so an argument containing spaces stays ONE argument.
+r = process.run(["printf", "%s|%s\\n", "two words", "second"])
+check(r.success == true, "argv form should succeed, error=${r.error}")
+check(r.stdout == "two words|second\n",
+      "argv form split its arguments: '${r.stdout}'")
+
+// The argv form is not a shell: no globbing.
+r = process.run(["printf", "%s\\n", "*.does-not-exist"])
+check(r.stdout == "*.does-not-exist\n",
+      "argv form was shell-expanded: '${r.stdout}'")
+
+// The string form IS a shell: quoting is honoured there.
+r = process.run("printf '%s\\n' 'two words'")
+check(r.stdout == "two words\n",
+      "string form lost shell quoting: '${r.stdout}'")
+
+// The two forms agree on the exit status.
+r = process.run(["false"])
+check(r.exitCode == 1, "argv form exitCode should be 1, got ${r.exitCode}")
+check(r.success == false, "argv form must follow the exit status")
+
+// ---------------------------------------------------------- large output
+// 200 KiB is well past a 64 KiB pipe buffer: the reader must drain while
+// the child writes, or this call hangs forever.
+r = process.run("head -c 200000 /dev/zero | tr '\\0' 'x'")
+check(r.exitCode == 0, "large-output command failed: ${r.exitCode}")
+check(r.success == true, "large-output command should succeed")
+outLen = r.stdout.len()
+check(outLen == 200000,
+      "large stdout truncated: len=${outLen} (expected 200000)")
+
+// Large stderr is drained too.
+r = process.run("head -c 100000 /dev/zero | tr '\\0' 'e' 1>&2")
+errLen = r.stderr.len()
+check(errLen == 100000,
+      "large stderr truncated: len=${errLen} (expected 100000)")
+
+print("PASS: process.run captures streams, exit codes, success and errors")
+exit(0)

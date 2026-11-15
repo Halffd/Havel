@@ -6058,12 +6058,27 @@ bool VM::isHostFnNamespaceObject(Value value) const {
   auto *obj = heap_.object(value.asObjectId());
   if (!obj || obj->size() == 0)
     return false;
+  // A native namespace is a bag of host functions; it may also carry scalar
+  // constants (the `process` namespace exposes the SIG* numbers next to its
+  // host functions). Requiring every entry to be a host function made such
+  // a namespace look like plain data, and the IMPORT opcode then stopped at
+  // it - the same-named .hv module (modules/std/process.hv) never loaded and
+  // its exports (capture/runOrThrow/which/exec/output/ok) stayed
+  // unreachable. At least one host function is required so a plain
+  // data object is never mistaken for a namespace.
+  bool sawHostFn = false;
   for (const auto &[k, v] : *obj) {
     (void)k;
-    if (!v.isHostFuncId())
-      return false;
+    if (v.isHostFuncId()) {
+      sawHostFn = true;
+      continue;
+    }
+    if (v.isInt() || v.isDouble() || v.isBool() || v.isStringId() ||
+        v.isStringValId())
+      continue;
+    return false;
   }
-  return true;
+  return sawHostFn;
 }
 
 void VM::registerLazyModule(const std::string &name, std::function<void(struct VMApi &)> initFn,

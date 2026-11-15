@@ -2699,6 +2699,12 @@ public:
   // host fn). `use window` must NOT short-circuit on such a namespace when
   // a same-named .hv module source exists — the module would never load.
   bool isCallableNamespaceObject(Value value) const;
+  // True when `value` is a native namespace object that a same-named .hv
+  // module must be merged INTO: at least one host function, and every other
+  // entry is a scalar constant (the `process` namespace carries the SIG*
+  // numbers next to its host functions - a namespace is not only host
+  // functions). `use { capture } from "process"` must reach
+  // modules/std/process.hv, not stop at the native namespace object.
   bool isHostFnNamespaceObject(Value value) const;
   void activateLazyModule(const std::string &name);
   bool isLazyModuleLoaded(const std::string &name) const;

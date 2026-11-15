@@ -1,0 +1,84 @@
+// test_process_errors.hv
+// What: the error contracts of the process host bridge. Each entry point must
+//       reject bad input by throwing a script-visible error - not by
+//       returning null, crashing the VM, or silently doing nothing (a missing
+//       method used to return null, which is how a pause/resume hotkey
+//       no-opped for weeks). Also pins which inputs are accepted.
+// Why: an unchecked argument here becomes a signal sent to the wrong pid or
+//       a hang in waitpid.
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_errors.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_errors: " + msg)
+        exit(1)
+    }
+}
+
+expectThrow = fn(label, f) {
+    threw = false
+    try {
+        f()
+    } catch e {
+        threw = true
+    }
+    check(threw, "${label} must throw")
+}
+
+// ------------------------------------------------------ missing arguments
+expectThrow("process.run() with no command", fn() { process.run() })
+expectThrow("process.spawn() with no command", fn() { process.spawn() })
+expectThrow("process.wait() with no handle", fn() { process.wait() })
+expectThrow("process.killObj() with no handle", fn() { process.killObj() })
+expectThrow("process.find() with no name", fn() { process.find() })
+expectThrow("process.exists() with no argument", fn() { process.exists() })
+expectThrow("process.getState() with no pid", fn() { process.getState() })
+expectThrow("process.pipe() with no command", fn() { process.pipe() })
+expectThrow("process.runDetached() with no command", fn() { process.runDetached() })
+
+// ------------------------------------------------------------- bad types
+expectThrow("process.wait() with a number", fn() { process.wait(7) })
+expectThrow("process.wait() with an object lacking pid", fn() { process.wait({a: 1}) })
+expectThrow("process.killObj() with a number", fn() { process.killObj(7) })
+expectThrow("process.getState() with a string pid", fn() { process.getState("abc") })
+expectThrow("process.nice() with a string pid", fn() { process.nice("abc", 0) })
+expectThrow("process.nice() with a string value", fn() { process.nice(process.pid(), "high") })
+expectThrow("process.kill() with a string pid", fn() { process.kill("abc", process.SIGTERM) })
+expectThrow("process.pipe() with a string", fn() { process.pipe("echo hi") })
+expectThrow("process.pipe() with an empty array", fn() { process.pipe([]) })
+expectThrow("process.pipe() with a mixed stage list",
+            fn() { process.pipe([["echo", "hi"], "not-an-array"]) })
+expectThrow("process.runDetached() with an empty array", fn() { process.runDetached([]) })
+
+// ----------------------------------------------------- bad signal values
+expectThrow("process.kill() with an unknown signal name",
+            fn() { process.kill(process.pid(), "NOSUCHSIGNAL") })
+expectThrow("process.kill() with only a pid",
+            fn() { process.kill(process.pid()) })
+
+// --------------------------------------------------------- bad nice value
+expectThrow("process.nice() above the maximum", fn() { process.nice(process.pid(), 99) })
+expectThrow("process.nice() below the minimum", fn() { process.nice(process.pid(), -99) })
+
+// ---------------------------------------------------- accepted edge cases
+// These must NOT throw: a rejected-in-error case here would be a regression
+// in the other direction.
+accepted = true
+try {
+    process.kill(process.pid(), 0)          // signal 0 probes without delivering
+    process.nice(process.pid(), 0)
+    process.exists(process.pid())
+} catch e {
+    accepted = false
+}
+check(accepted, "a probe signal, a no-op nice and exists(own pid) must be accepted")
+
+// A failed spawn is reported through the handle, not by throwing.
+p = process.spawn("havel_no_such_command_xyz 2>/dev/null")
+check(p.pid > 0, "spawn of a missing command still returns the shell pid")
+process.wait(p)
+check(p.exitCode == 127, "missing command exit code should be 127, got ${p.exitCode}")
+
+print("PASS: process rejects bad input with script-visible errors")
+exit(0)

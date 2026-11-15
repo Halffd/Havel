@@ -1,0 +1,44 @@
+// test_process_detached.hv
+// What: process.runDetached() in both accepted forms (shell string, argv
+//       array) plus process.pid/ppid identity, and the fact that a detached
+//       child keeps running while the script continues.
+// Why: detached children are how scripts start long-lived helpers. A
+//       runDetached that silently fails (or returns the shell's pid instead
+//       of the child's) is invisible until the helper is missing later.
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_detached.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_detached: " + msg)
+        exit(1)
+    }
+}
+
+// --------------------------------------------------------- shell string
+// exec: the child must BE the sleep, not a sh that fork+execs one. The
+// redirects keep the child off the harness's stdout pipe (otherwise the
+// reader waits for the child to close it, i.e. for the whole sleep).
+pid = process.runDetached("exec sleep 30 >/dev/null 2>&1")
+check(pid > 0, "runDetached should return a positive pid, got ${pid}")
+check(pid != process.pid, "detached pid must not be havel's own pid")
+
+// The script keeps running while the child lives: that is the whole point.
+check(process.exists(pid) == true, "detached child should be alive")
+state = process.getState(pid)
+check(state != "DEAD", "detached child immediately read as DEAD")
+check(state != "ZOMBIE", "detached child immediately read as ZOMBIE")
+
+// ----------------------------------------------------------- argv array
+// The array form is an argv vector that is exec'd directly (no shell word
+// splitting), like process.run's array form.
+arrPid = process.runDetached(["true"])
+check(arrPid > 0, "array-form runDetached should return a positive pid, got ${arrPid}")
+check(arrPid != pid, "a second detached child must get its own pid")
+
+// ------------------------------------------------------------ cleanup
+check(process.kill(pid, process.SIGKILL) == true,
+      "cleanup SIGKILL of the detached child should be accepted")
+
+print("PASS: process.runDetached starts children and reports their pids")
+exit(0)

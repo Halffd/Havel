@@ -1,0 +1,142 @@
+// test_process_signals.hv
+// What: process.find(), exists(), getState(), kill(), sendSignal(), nice()
+//       and the SIG* constants on the process namespace. Covers lookup by
+//       name and by pid, a full SIGSTOP/SIGCONT pause-resume cycle, SIGKILL
+//       termination observed through wait(), and nice() bounds.
+// Why: this is the surface a hotkey script uses to pause/resume/target a
+//       process. It regressed before (missing fields on the namespace object
+//       returned null and silently no-opped), so each member is exercised
+//       through the public names, not the __proc bridge.
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_signals.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_signals: " + msg)
+        exit(1)
+    }
+}
+
+// SIGSTOP/SIGCONT delivery is asynchronous: the target enters state T only
+// once it is next scheduled, so poll instead of sleeping a fixed amount.
+waitForState = fn(pid, wanted, budgetMs) {
+    waited = 0
+    while waited < budgetMs {
+        if process.getState(pid) == wanted { return true }
+        sleep(20)
+        waited = waited + 20
+    }
+    false
+}
+
+waitUntilNotStopped = fn(pid, budgetMs) {
+    waited = 0
+    while waited < budgetMs {
+        if process.getState(pid) != "STOPPED" { return true }
+        sleep(20)
+        waited = waited + 20
+    }
+    false
+}
+
+// The detached shell needs a moment to exec the sleep: until the exec
+// happened the child's comm is still "sh". Poll for the name instead of
+// sampling once, or the lookup races the exec.
+waitForName = fn(pid, name, budgetMs) {
+    waited = 0
+    while waited < budgetMs {
+        found = process.find(name)
+        for p in found {
+            if p == pid { return true }
+        }
+        sleep(20)
+        waited = waited + 20
+    }
+    false
+}
+
+// ---------------------------------------------------------- constants
+check(process.SIGKILL == 9, "SIGKILL should be 9, got ${process.SIGKILL}")
+check(process.SIGTERM == 15, "SIGTERM should be 15, got ${process.SIGTERM}")
+check(process.SIGHUP == 1, "SIGHUP should be 1, got ${process.SIGHUP}")
+check(process.SIGINT == 2, "SIGINT should be 2, got ${process.SIGINT}")
+check(process.SIGSTOP == 19, "SIGSTOP should be 19, got ${process.SIGSTOP}")
+check(process.SIGCONT == 18, "SIGCONT should be 18, got ${process.SIGCONT}")
+
+// ------------------------------------------------------- self and parent
+// process.pid / process.ppid are functions: they must be called.
+check(process.pid() > 0, "process.pid() should be positive, got ${process.pid()}")
+check(process.ppid() > 0, "process.ppid() should be positive, got ${process.ppid()}")
+check(process.pid() != process.ppid(), "pid and ppid must differ")
+check(process.exists(process.pid()) == true, "exists(own pid) should be true")
+check(process.getState(process.pid()) != "DEAD", "our own process must not read as DEAD")
+
+// ----------------------------------------------------------- live child
+// exec so the child IS the sleep binary: its comm is "sleep", which makes the
+// by-name lookup deterministic, and the redirects keep it off our stdout.
+pid = process.runDetached("exec sleep 30 >/dev/null 2>&1")
+check(pid > 0, "runDetached should return a pid, got ${pid}")
+
+// By pid.
+check(process.exists(pid) == true, "exists(live pid) should be true")
+check(process.exists(pid + 1000000) == false,
+      "exists() on an unused pid should be false")
+
+// By name (comm of the exec'd sleep).
+check(waitForName(pid, "sleep", 5000),
+      "find('sleep') must include our child pid ${pid}")
+check(process.exists("sleep") == true, "exists('sleep') should be true")
+check(process.find("havel_no_such_process_xyz").len() == 0,
+      "find() of a nonexistent name should be empty")
+check(process.exists("havel_no_such_process_xyz") == false,
+      "exists() of a nonexistent name should be false")
+
+// A live sleeping child reads as a live state - not DEAD/ZOMBIE, and not
+// STOPPED before we stop it.
+state = process.getState(pid)
+check(state != "DEAD", "live child read as DEAD")
+check(state != "ZOMBIE", "live child read as ZOMBIE")
+check(state != "STOPPED", "live child read as STOPPED before any signal, got ${state}")
+
+// ----------------------------------------------------- pause / resume
+stopped = process.sendSignal(pid, process.SIGSTOP)
+check(stopped == true, "sendSignal(SIGSTOP) should return true")
+check(waitForState(pid, "STOPPED", 5000),
+      "child should be STOPPED after SIGSTOP, saw ${process.getState(pid)}")
+
+resumed = process.sendSignal(pid, process.SIGCONT)
+check(resumed == true, "sendSignal(SIGCONT) should return true")
+check(waitUntilNotStopped(pid, 5000),
+      "child should leave STOPPED after SIGCONT, saw ${process.getState(pid)}")
+
+// Signals can also be named.
+check(process.kill(pid, "SIGSTOP") == true, "kill(pid, 'SIGSTOP') should work")
+check(waitForState(pid, "STOPPED", 5000), "named SIGSTOP should stop the child")
+check(process.kill(pid, process.SIGCONT) == true, "kill(pid, SIGCONT) should work")
+check(waitUntilNotStopped(pid, 5000), "SIGCONT by number should resume")
+
+// -------------------------------------------------------------- kill
+// Kill a child we own and reap it, so "gone" means gone: an unreaped child
+// would linger in /proc as a zombie and exists() would still say true.
+victim = process.spawn("exec sleep 30 >/dev/null 2>&1")
+check(victim.pid > 0, "spawn should return a pid for the kill case")
+check(process.exists(victim.pid) == true, "spawned child should exist")
+check(process.kill(victim.pid, process.SIGKILL) == true, "SIGKILL should be delivered")
+rc = process.wait(victim)
+check(rc < 0, "SIGKILLed child should report a negative exit code, got ${rc}")
+check(process.exists(victim.pid) == false,
+      "a reaped killed child should be gone, pid ${victim.pid}")
+
+// Clean up the paused/resumed detached child (fire and forget: it is not
+// reaped, so only assert the signal was accepted).
+check(process.kill(pid, process.SIGKILL) == true,
+      "cleanup SIGKILL of the detached child should be accepted")
+
+// --------------------------------------------------------------- nice
+// Nice ourselves: 0 is a no-op, and a non-root process may always raise its
+// own niceness.
+check(process.nice(process.pid(), 0) == true, "nice(own pid, 0) should return true")
+check(process.nice(process.pid(), 5) == true, "nice(own pid, 5) should return true")
+
+print("PASS: process signals, states and lookups behave on the public namespace")
+exit(0)

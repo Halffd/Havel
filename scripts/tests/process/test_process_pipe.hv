@@ -1,0 +1,106 @@
+// test_process_pipe.hv
+// What: process.pipe() - shell-free argv execution and multi-stage
+//       pipelines. Covers a flat argv, argv with spaces preserved, chained
+//       stages, stdin as text, stdin from a previous result, last-stage exit
+//       status, a failing middle stage, a missing executable, non-string argv
+//       elements, and empty input.
+// Why: process.pipe is what the REPL shell layer compiles commands to; a
+//      wrong status or a lost argument silently changes what the user's
+//      command means.
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_pipe.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_pipe: " + msg)
+        exit(1)
+    }
+}
+
+// -------------------------------------------------------------- flat argv
+r = process.pipe(["echo", "hello"])
+check(r.success == true, "echo should succeed, error=${r.error}")
+check(r.exitCode == 0, "echo exitCode should be 0, got ${r.exitCode}")
+check(r.stdout == "hello\n", "echo stdout should be 'hello\\n', got '${r.stdout}'")
+check(r.pid > 0, "pipe result should carry the last pid, got ${r.pid}")
+
+// Direct exec: an argument containing spaces stays one argument (no shell
+// word splitting).
+r = process.pipe(["printf", "%s\n", "two words"])
+check(r.stdout == "two words\n", "argv with spaces was split: '${r.stdout}'")
+
+// A glob-looking argument is not expanded - there is no shell here.
+r = process.pipe(["printf", "%s\n", "*.does-not-exist"])
+check(r.stdout == "*.does-not-exist\n", "argv was shell-expanded: '${r.stdout}'")
+
+// ----------------------------------------------------------- argv typing
+// Non-string argv entries are stringified, not rejected.
+r = process.pipe(["echo", 42])
+check(r.success == true, "numeric argv should be accepted, error=${r.error}")
+check(r.stdout == "42\n", "numeric argv stringified wrong: '${r.stdout}'")
+
+r = process.pipe(["echo", true])
+check(r.stdout == "true\n", "bool argv stringified wrong: '${r.stdout}'")
+
+// -------------------------------------------------------- chained stages
+r = process.pipe([["printf", "b\na\nc\n"], ["sort"], ["head", "-1"]])
+check(r.success == true, "pipeline should succeed, error=${r.error}")
+check(r.exitCode == 0, "pipeline exitCode should be 0, got ${r.exitCode}")
+check(r.stdout == "a\n", "pipeline output should be 'a\\n', got '${r.stdout}'")
+
+// A three-stage chain that passes a real stream through.
+r = process.pipe([["seq", "1", "5"], ["grep", "[24]"], ["tr", "\\n", " "]])
+check(r.stdout == "2 4 ", "chain output wrong: '${r.stdout}'")
+
+// --------------------------------------------------------------- stdin
+r = process.pipe(["cat"], "from stdin\n")
+check(r.stdout == "from stdin\n", "stdin text not delivered: '${r.stdout}'")
+
+r = process.pipe([["cat"]], "stage stdin\n")
+check(r.stdout == "stage stdin\n", "stage stdin not delivered: '${r.stdout}'")
+
+// Stdin taken from a previous result's .stdout.
+first = process.pipe(["printf", "piped-in\n"])
+r = process.pipe(["cat"], first)
+check(r.stdout == "piped-in\n", "stdout-as-stdin not delivered: '${r.stdout}'")
+
+// No stdin at all: the child must see EOF, not inherit havel's stdin.
+r = process.pipe(["wc", "-c"])
+check(r.success == true, "wc with no stdin should still exit 0, got ${r.exitCode}")
+check(r.stdout.trim() == "0", "empty stdin should be 0 bytes, got '${r.stdout}'")
+
+// ------------------------------------------------------------ exit codes
+r = process.pipe(["false"])
+check(r.success == false, "false must not be a success")
+check(r.exitCode == 1, "false exitCode should be 1, got ${r.exitCode}")
+check(r.error == nil, "a non-zero exit is not a spawn error, got '${r.error}'")
+
+// The pipeline's status is the LAST stage's status.
+r = process.pipe([["echo", "boom"], ["false"]])
+check(r.success == false, "failing tail must fail the pipeline")
+check(r.exitCode == 1, "failing tail exitCode should be 1, got ${r.exitCode}")
+
+r = process.pipe([["false"], ["echo", "ok"]])
+check(r.success == true,
+      "last stage decides the status; a dead head stage is not a pipeline error")
+
+// ------------------------------------------------------- missing command
+r = process.pipe(["havel_no_such_command_xyz"])
+check(r.success == false, "missing command must not be a success")
+check(r.error != nil, "missing command must carry an error")
+check(r.exitCode != 0, "missing command must not report exit 0, got ${r.exitCode}")
+
+// A missing command in a later stage reports the failure too.
+r = process.pipe([["echo", "x"], ["havel_no_such_command_xyz"]])
+check(r.success == false, "missing middle/late command must fail")
+check(r.error != nil, "missing later stage must carry an error")
+
+// --------------------------------------------------------- large payload
+// 200 KiB through a real pipe: stages must be drained concurrently.
+r = process.pipe([["head", "-c", "200000", "/dev/zero"], ["tr", "\\0", "z"]])
+check(r.exitCode == 0, "large pipeline failed: ${r.exitCode}")
+n = r.stdout.len()
+check(n == 200000, "large pipeline output truncated: len=${n}")
+
+print("PASS: process.pipe runs argv without a shell and chains real pipes")
+exit(0)

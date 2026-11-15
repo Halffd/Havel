@@ -92,6 +92,19 @@ public:
     static ProcessResult runShell(const std::string& cmd);
     static ProcessResult runShellDetached(const std::string& cmd);
     static ProcessResult runDetached(const std::string& cmd);
+    // Detached argv form: exec the vector directly (no shell word splitting)
+    // and return immediately with the child's pid.
+    static ProcessResult runDetached(const std::string& executable,
+                                     const std::vector<std::string>& args);
+
+    // Wait for a child that was spawned outside the Launcher - process.spawn
+    // hands out a pid plus the read ends of its stdout/stderr pipes - and
+    // collect its output. The pipes are drained WHILE the child runs, so a
+    // child that writes more than the pipe buffer (64 KiB on Linux) cannot
+    // block in write() and deadlock the wait. Both fds are closed by this
+    // call. A signalled child reports a negative exit code, matching the
+    // spawn/wait contract; success means "no error and exit code 0".
+    static ProcessResult waitAndDrain(int64_t pid, int stdoutFd, int stderrFd);
     
     // Terminal operations
     static ProcessResult terminal(const std::string& command,

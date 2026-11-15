@@ -1,0 +1,84 @@
+// test_process_spawn_wait.hv
+// What: the two-step process.spawn() + process.wait() pattern. Covers the
+//       returned handle (pid), the exit code reported by wait(), stdout and
+//       stderr capture, failure detection, killing a live child with
+//       killObj(), and a missing command.
+// Why: spawn/wait is what modules/std/process.hv's exec()/output() build on,
+//       and it is the only path that exposes a live pid to the script
+//       (needed for signals).
+// Expected: exit 0, no output on success.
+// Run: hvtest scripts/tests/process/test_process_spawn_wait.hv
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_spawn_wait: " + msg)
+        exit(1)
+    }
+}
+
+// ------------------------------------------------------------ happy path
+p = process.spawn("echo hello spawn")
+check(p.pid > 0, "spawn should return a pid, got ${p.pid}")
+check(p.pid != process.pid, "child pid must differ from havel's own pid")
+rc = process.wait(p)
+check(rc == 0, "wait() should return the exit code 0, got ${rc}")
+check(p.exitCode == 0, "handle exitCode should be 0, got ${p.exitCode}")
+check(p.success == true, "handle success should be true")
+check(p.stdout == "hello spawn\n", "stdout captured wrong: '${p.stdout}'")
+check(p.stderr == "", "stderr should be empty: '${p.stderr}'")
+
+// ------------------------------------------------------------- streams
+p = process.spawn("echo out; echo err 1>&2")
+process.wait(p)
+check(p.stdout == "out\n", "stdout captured wrong: '${p.stdout}'")
+check(p.stderr == "err\n", "stderr captured wrong: '${p.stderr}'")
+check(p.success == true, "exit 0 with stderr output is a success")
+
+// ----------------------------------------------------------- exit codes
+p = process.spawn("false")
+rc = process.wait(p)
+check(rc == 1, "wait() should report exit code 1, got ${rc}")
+check(p.exitCode == 1, "handle exitCode should be 1, got ${p.exitCode}")
+check(p.success == false, "false must not be a success")
+
+p = process.spawn("exit 7")
+process.wait(p)
+check(p.exitCode == 7, "exit 7 should be reported, got ${p.exitCode}")
+check(p.success == false, "exit 7 must not be a success")
+
+// --------------------------------------------------- missing command
+p = process.spawn("havel_no_such_command_xyz 2>/dev/null")
+process.wait(p)
+check(p.exitCode == 127, "missing command should exit 127, got ${p.exitCode}")
+check(p.success == false, "missing command must not be a success")
+
+// ------------------------------------------------------------- killObj
+p = process.spawn("exec sleep 30 >/dev/null 2>&1")
+check(p.pid > 0, "sleep spawn should return a pid")
+killed = process.killObj(p)
+check(killed == true, "killObj should report success for a live child")
+rc = process.wait(p)
+check(rc < 0, "a signal-killed child reports a negative exit code, got ${rc}")
+check(p.exitCode < 0, "handle exitCode should be negative, got ${p.exitCode}")
+check(p.success == false, "a killed child must not be a success")
+
+// -------------------------------------------------------- capture size
+// 32 KiB is under the 64 KiB pipe buffer, so this stays a plain capture
+// check.
+p = process.spawn("head -c 32000 /dev/zero | tr '\\0' 'q'")
+process.wait(p)
+n = p.stdout.len()
+check(n == 32000, "spawn/wait stdout truncated: len=${n} (expected 32000)")
+
+// 200 KiB is well past the 64 KiB pipe buffer. The reader must drain while
+// the child writes: waiting for the child first deadlocks, because the child
+// blocks in write() and never exits (the wait then hangs forever).
+p = process.spawn("head -c 200000 /dev/zero | tr '\\0' 'q'")
+rc = process.wait(p)
+check(rc == 0, "wait() should return 0 for the large-output child, got ${rc}")
+n = p.stdout.len()
+check(n == 200000,
+      "spawn/wait truncated the large stdout: len=${n} (expected 200000)")
+
+print("PASS: process.spawn/wait handles codes, streams and killObj")
+exit(0)

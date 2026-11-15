@@ -416,6 +416,68 @@ ProcessResult Launcher::runDetached(const std::string &cmd) {
   return executeShell(cmd, params);
 }
 
+ProcessResult Launcher::runDetached(const std::string &executable,
+                                    const std::vector<std::string> &args) {
+  if (executable.empty()) {
+    return {-1, -1, false, "Empty executable path"};
+  }
+  LaunchParams params;
+  params.method = Method::Async;
+  params.windowState = WindowState::Normal;
+  params.priority = Priority::Normal;
+  params.detachFromParent = true;
+
+  debug("Running detached command: " + executable);
+  return run(executable, args, params);
+}
+
+// Wait for an externally spawned child while draining its pipes.
+//
+// The wait and the drain MUST happen at the same time: waiting first
+// deadlocks every child that writes more than the pipe buffer (64 KiB on
+// Linux), because the child blocks in write() while the parent blocks in
+// waitpid(). pumpChildPipes() already implements the concurrent
+// feed/drain/reap loop used by the synchronous launch paths; this reuses it
+// instead of duplicating the logic.
+ProcessResult Launcher::waitAndDrain(int64_t pid, int stdoutFd, int stderrFd) {
+  ProcessResult result;
+  result.pid = pid;
+#ifdef _WIN32
+  (void)stdoutFd;
+  (void)stderrFd;
+  result.error = "process.wait() is not supported on Windows";
+  result.success = false;
+  return result;
+#else
+  if (pid <= 0) {
+    result.error = "process not started";
+    result.success = false;
+    return result;
+  }
+
+  pid_t childPid = static_cast<pid_t>(pid);
+  PipePumpResult pump =
+      pumpChildPipes(childPid, -1, stdoutFd, stderrFd, "", 0);
+
+  result.out = std::move(pump.out);
+  result.err = std::move(pump.err);
+  if (!pump.error.empty()) {
+    result.error = pump.error;
+  }
+  if (pump.exited) {
+    if (WIFEXITED(pump.status)) {
+      result.exitCode = WEXITSTATUS(pump.status);
+    } else if (WIFSIGNALED(pump.status)) {
+      // Negative exit code for a signalled child: the spawn/wait contract
+      // reports "killed by signal N" as -N.
+      result.exitCode = -WTERMSIG(pump.status);
+    }
+  }
+  result.success = result.error.empty() && result.exitCode == 0;
+  return result;
+#endif
+}
+
 ProcessResult Launcher::terminal(const std::string &command,
                                  const std::string &terminalType) {
 #ifdef _WIN32
@@ -621,6 +683,21 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
     // Close the original write fds after dup2 (they're duplicated now)
     posix_spawn_file_actions_addclose(&actions, pipe_stdout[1]);
     posix_spawn_file_actions_addclose(&actions, pipe_stderr[1]);
+  } else if (params.detachFromParent) {
+    // Detached: close inherited fds (grabbed devices, X11 sockets, eventfds)
+    // so the child cannot hold device grabs open or receive our wakeup reads.
+    // Same hygiene as the detached shell path.
+    for (int fd = 3; fd < 256; ++fd) {
+      posix_spawn_file_actions_addclose(&actions, fd);
+    }
+    if (params.windowState == WindowState::Hidden) {
+      posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+      posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+      posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null",
+                                       O_RDWR, 0);
+    }
   }
 
   // Prepare argv - must include executable as argv[0]
@@ -642,9 +719,21 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
   sigset_t emptyMask;
   sigemptyset(&emptyMask);
   (void)posix_spawnattr_setsigmask(&attr, &emptyMask);
-  (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
-                                           POSIX_SPAWN_SETPGROUP);
-  (void)posix_spawnattr_setpgroup(&attr, 0);
+  if (params.detachFromParent) {
+    // A detached child must survive the parent's session ending, so it gets
+    // its OWN session (POSIX_SPAWN_SETSID) - a new process group alone would
+    // still leave it in the parent's session.
+    (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                             POSIX_SPAWN_SETSID);
+  } else {
+    // Own process group + clean signal mask: the child must not share havel's
+    // process group (group-directed SIGTERM from wrappers/scripts killed the
+    // whole havel process) and must not inherit our blocked-signal mask
+    // (SIGTERM/SIGHUP are blocked on the main thread for signalfd).
+    (void)posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK |
+                                             POSIX_SPAWN_SETPGROUP);
+    (void)posix_spawnattr_setpgroup(&attr, 0);
+  }
 
   int spawn_result = posix_spawnp(&pid, executable.c_str(), &actions, &attr,
                                   argv.data(), environ);

@@ -1,0 +1,91 @@
+// test_process_module.hv
+// What: the pure-Havel wrapper layer in modules/std/process.hv, imported by
+//       name: capture(), runOrThrow(), which(), exec(), output(), ok() and
+//       the two-string pipe(). Each is checked against the same command run
+//       through process.run()/process.pipe() so a wrapper cannot drift from
+//       the host bridge under it.
+// Why: every script that does `use { capture } from "process"` depends on
+//       these, and the module is not covered by the host-bridge tests.
+// Expected: exit 0, no output on success (capture() of a failing command
+//       logs one warning, which is asserted, not printed as noise).
+// Run: hvtest scripts/tests/process/test_process_module.hv
+
+use { capture, runOrThrow, which, exec, output, ok, pipeShell } from "process"
+
+check = fn(cond, msg) {
+    if !cond {
+        print("FAIL test_process_module: " + msg)
+        exit(1)
+    }
+}
+
+// -------------------------------------------------------------- capture
+check(capture("echo hello") == "hello", "capture() should trim stdout")
+check(capture("printf '  padded  '") == "padded", "capture() should trim both ends")
+check(capture("printf 'a\\nb\\n'") == "a\nb", "capture() should keep inner newlines")
+check(capture("true") == "", "capture() of empty output should be an empty string")
+// Failing command: capture() logs a warning and returns the (empty) stdout
+// instead of throwing - the script decides what a failure means.
+check(capture("exit 4") == "", "capture() of a failing command should return ''")
+// Large output survives the round trip.
+big = capture("head -c 100000 /dev/zero | tr '\\0' 'y'")
+check(big.len() == 100000, "capture() truncated large output: len=${big.len()}")
+
+// ----------------------------------------------------------- runOrThrow
+r = runOrThrow("echo fine")
+check(r.exitCode == 0, "runOrThrow() should return the result on success")
+check(r.stdout == "fine\n", "runOrThrow() should preserve raw stdout")
+
+threw = false
+try {
+    runOrThrow("exit 9")
+} catch e {
+    threw = true
+    msg = str(e)
+    check(msg.includes("9"), "runOrThrow() message should name the exit code: ${msg}")
+}
+check(threw, "runOrThrow() must throw when the command fails")
+
+// --------------------------------------------------------------- which
+shPath = which("sh")
+check(shPath != nil, "which('sh') should resolve")
+check(str(shPath).includes("sh"), "which('sh') should return a path: ${shPath}")
+check(which("havel_no_such_command_xyz") == nil,
+      "which() of a missing command should be nil")
+
+// ---------------------------------------------------------------- exec
+check(exec("exit 7") == 7, "exec() should return the exit code 7")
+check(exec("true") == 0, "exec() should return 0 for success")
+
+// -------------------------------------------------------------- output
+o = output("echo out; echo err 1>&2; exit 5")
+check(o.exitCode == 5, "output() exitCode should be 5, got ${o.exitCode}")
+check(o.stdout == "out\n", "output() stdout wrong: '${o.stdout}'")
+check(o.stderr == "err\n", "output() stderr wrong: '${o.stderr}'")
+
+// ------------------------------------------------------------------ ok
+check(ok("true") == true, "ok() must be true for a command that exits 0")
+check(ok("exit 1") == false, "ok() must be false for a command that exits 1")
+check(ok("havel_no_such_command_xyz 2>/dev/null") == false,
+      "ok() must be false for a missing command")
+
+// ---------------------------------------------------------------- pipe
+// The module's pipeShell() takes two shell strings and pipes the first's
+// stdout into the second. The plain `pipe` name belongs to the native
+// argv-based pipeline (process.pipe), so the shell-string wrapper has its
+// own name.
+p = pipeShell("echo ll", "tr a-z A-Z")
+check(p.success == true, "pipeShell() should succeed, error=${p.error}")
+check(p.stdout == "LL\n", "pipeShell() output wrong: '${p.stdout}'")
+
+p = pipeShell("echo boom", "false")
+check(p.success == false, "pipeShell() must report a failing tail")
+check(p.exitCode == 1, "pipeShell() exitCode should be 1, got ${p.exitCode}")
+
+// Output containing single quotes must survive the round trip.
+q = pipeShell("printf \"it's here\\n\"", "cat")
+check(q.success == true, "pipeShell() with quotes should succeed, error=${q.error}")
+check(q.stdout == "it's here\n", "pipeShell() mangled quoted output: '${q.stdout}'")
+
+print("PASS: modules/std/process.hv wrappers match the host bridge")
+exit(0)

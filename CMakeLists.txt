@@ -10,27 +10,34 @@ set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
 # Stamps the binary with the exact git commit it was built from so
 # regression reports can name the commit ("havel --version" shows it).
 # Falls back to "unknown" outside a git checkout (e.g. tarball builds).
-execute_process(
-  COMMAND git rev-parse --short=12 HEAD
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE HAVEL_BUILD_COMMIT
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  ERROR_QUIET
-  RESULT_VARIABLE _git_commit_rc
-)
-if(NOT _git_commit_rc EQUAL 0)
-  set(HAVEL_BUILD_COMMIT "unknown")
+# A packager that builds from a source tarball can set
+# -DHAVEL_BUILD_COMMIT=<sha> -DHAVEL_BUILD_BRANCH=<name> to stamp the same
+# identity instead of "unknown".
+if(NOT HAVEL_BUILD_COMMIT)
+  execute_process(
+    COMMAND git rev-parse --short=12 HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE HAVEL_BUILD_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE _git_commit_rc
+  )
+  if(NOT _git_commit_rc EQUAL 0)
+    set(HAVEL_BUILD_COMMIT "unknown")
+  endif()
 endif()
-execute_process(
-  COMMAND git rev-parse --abbrev-ref HEAD
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE HAVEL_BUILD_BRANCH
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  ERROR_QUIET
-  RESULT_VARIABLE _git_branch_rc
-)
-if(NOT _git_branch_rc EQUAL 0)
-  set(HAVEL_BUILD_BRANCH "unknown")
+if(NOT HAVEL_BUILD_BRANCH)
+  execute_process(
+    COMMAND git rev-parse --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE HAVEL_BUILD_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE _git_branch_rc
+  )
+  if(NOT _git_branch_rc EQUAL 0)
+    set(HAVEL_BUILD_BRANCH "unknown")
+  endif()
 endif()
 execute_process(
   COMMAND git status --porcelain

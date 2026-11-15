@@ -6,7 +6,6 @@ cmake_minimum_required(VERSION 3.16)
 set(HAVEL_BINARY "@CMAKE_BINARY_DIR@/havel")
 set(OUT_BASE "@CMAKE_BINARY_DIR@/share/havel/modules")
 set(STD_SRC "@CMAKE_SOURCE_DIR@/modules/std")
-set(LANG_SRC "@CMAKE_SOURCE_DIR@/modules/lang")
 set(APP_SRC "@CMAKE_SOURCE_DIR@/modules/app")
 
 if(NOT EXISTS "${HAVEL_BINARY}")
@@ -34,10 +33,10 @@ function(compile_modules src_dir out_dir prefix)
 endfunction()
 
 file(MAKE_DIRECTORY "${OUT_BASE}/std")
-file(MAKE_DIRECTORY "${OUT_BASE}/lang")
 # app modules are optional and have some parser issues - skip for now
+# modules/lang is retired: it is not installed and does not parse under the
+# C++ pipeline, so it must not be part of the release precompile step.
 
 compile_modules("${STD_SRC}" "${OUT_BASE}/std" "std.")
-compile_modules("${LANG_SRC}" "${OUT_BASE}/lang" "lang.")
 
 message(STATUS "Bytecode compilation complete -> ${OUT_BASE}")

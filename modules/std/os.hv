@@ -5,7 +5,7 @@
 
 use ffi
 use fs
-use shell as _shellmod
+use "shell" as _shellmod
 
 _c = ffi.open("libc.so.6")
 if _c == 0 { _c = ffi.open("libc.so") }

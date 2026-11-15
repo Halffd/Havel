@@ -312,6 +312,8 @@ _t_ppppu = ["pointer", "pointer", "pointer", "pointer", "uint64"]
 _t_pppup  = ["pointer", "pointer", "pointer", "uint64", "pointer"]
 _t_ppupp  = ["pointer", "pointer", "uint64", "pointer", "pointer"]
 _t_pupupup = ["pointer", "uint64", "pointer", "uint64", "pointer", "uint64"]
+_t_ppup    = ["pointer", "pointer", "uint64", "pointer"]
+_t_puupp   = ["pointer", "uint64", "uint64", "pointer", "pointer"]
 _t_ppupu   = ["pointer", "pointer", "uint64", "pointer", "uint64"]
 _t_ppuppp  = ["pointer", "pointer", "uint64", "pointer", "pointer", "pointer"]
 _t_pupupuu = ["pointer", "uint64", "pointer", "uint64", "pointer", "uint64", "uint64", "int32"]
@@ -844,7 +846,7 @@ fn kdfDerive(masterKeyHex, ctx, subkeyId, outLen) {
   }
   out = _alloc(outLen)
   if out == 0 { ffi.free(kp[0]); ffi.free(ctxBuf); return null }
-  rc = ffi.call(_sym.crypto_kdf_derive_from_key, "int32", _t_ppup,
+  rc = ffi.call(_sym.crypto_kdf_derive_from_key, "int32", _t_puupp,
                 out, outLen, subkeyId, ctxBuf, kp[0])
   ffi.free(kp[0])
   ffi.free(ctxBuf)

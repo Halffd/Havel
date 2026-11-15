@@ -2,6 +2,19 @@
 // Host bridge: __proc.spawn, __proc.wait, __proc.run, __proc.runDetached,
 // __proc.kill, __proc.killObj, __proc.find, __proc.exists, __proc.nice,
 // __proc.getState
+//
+// The native `process` namespace owns the primitives (run/pipe/spawn/wait/…);
+// this module adds the convenience layer on top of them. Importing it merges
+// its exports into the native namespace, so `use { capture } from "process"`
+// and `process.capture` are the same function.
+//
+// Contract of the primitives (identical for the native namespace and for
+// the __proc host functions):
+//   * a STRING command is a shell command line ("cmd arg | other"),
+//   * an ARRAY command is an argv vector that is exec'd directly: no word
+//     splitting, no globbing, so an argument with spaces stays one argument,
+//   * success follows the EXIT STATUS: a command that ran and exited
+//     non-zero has success == false.
 
 // ============================================================
 // Signal constants
@@ -42,7 +55,7 @@ fn run(cmd) {
 fn capture(cmd) {
  r = __proc.run(cmd)
  if !r.success {
-  log.warn("process.capture failed: " + r.stderr.trim())
+  log.warn("process.capture failed (exit ${r.exitCode}): " + r.stderr.trim())
  }
  r.stdout.trim()
 }
@@ -127,11 +140,19 @@ fn ok(cmd) {
  r.success
 }
 
-// Pipeline: run cmd1, pipe stdout into cmd2
-fn pipe(cmd1, cmd2) {
+// Pipeline of two SHELL command strings: the first command's stdout is
+// piped into the second one.
+//
+// Named pipeShell because the native `pipe` (argv based, no shell) owns the
+// plain name: this wrapper takes shell strings, process.pipe takes argv
+// vectors.
+fn pipeShell(cmd1, cmd2) {
  r1 = __proc.run(cmd1)
  if !r1.success { return {success: false, error: r1.stderr} }
- __proc.run("echo '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
+ // printf '%s' passes the first command's stdout through VERBATIM. echo
+ // would append an extra newline to it, so the second command would see
+ // one more line than the first produced.
+ __proc.run("printf '%s' '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
 }
 
 // Exit the current process with the given exit code

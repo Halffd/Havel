@@ -63,15 +63,15 @@ fn _openWithTerm(command, term) {
 
   // run command in new terminal
   if chosen == "gnome-terminal" {
-    return shell.run("gnome-terminal -- sh -c '{command}; exec $SHELL'")
+    return shell.run("gnome-terminal -- sh -c '{command}; exec \$SHELL'")
   } else if chosen == "konsole" {
-    return shell.run("konsole -e sh -c '{command}; exec $SHELL'")
+    return shell.run("konsole -e sh -c '{command}; exec \$SHELL'")
   } else if chosen == "alacritty" {
-    return shell.run("alacritty -e sh -c '{command}; exec $SHELL'")
+    return shell.run("alacritty -e sh -c '{command}; exec \$SHELL'")
   } else if chosen == "kitty" {
-    return shell.run("kitty sh -c '{command}; exec $SHELL'")
+    return shell.run("kitty sh -c '{command}; exec \$SHELL'")
   }
-  shell.run("{chosen} -e sh -c '{command}; exec $SHELL'")
+  shell.run("{chosen} -e sh -c '{command}; exec \$SHELL'")
 }
 
 // ============================================================

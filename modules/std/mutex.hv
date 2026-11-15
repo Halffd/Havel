@@ -304,7 +304,7 @@ fn withTryLock(mutex, f, timeoutMs=1000) {
     // (compiler defect, reproducible repo-wide - every caller of withLock
     // got both fields null regardless of the callback's result). Build by
     // assignment, which is the safe form, then return.
-    lockResult = func()
+    lockResult = f()
     out = {}
     out["error"] = null
     out["result"] = lockResult

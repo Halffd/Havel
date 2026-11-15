@@ -5,11 +5,15 @@
 // Binary semaphore (mutex-like)
 // ============================================
 
+// Aliased: the classes below have a `@mutex` field, and a bare `mutex`
+// inside a method resolves to that field, not to the module.
+use "mutex" as mutexmod
+
 class BinarySemaphore {
   fn @() {
     @value = 1
-    @mutex = mutex.createSpinlock()
-    @cond = mutex.createCondVar()
+    @mutex = mutexmod.createSpinlock()
+    @cond = mutexmod.createCondVar()
   }
   
   // Wait (P operation) - decrement, block if 0
@@ -84,8 +88,8 @@ class CountingSemaphore {
   fn @(initial=0) {
     if initial < 0 { initial = 0 }
     @value = initial
-    @mutex = mutex.createSpinlock()
-    @cond = mutex.createCondVar()
+    @mutex = mutexmod.createSpinlock()
+    @cond = mutexmod.createCondVar()
   }
   
   // Wait (P operation)
@@ -184,7 +188,7 @@ class BoundedSemaphore {
     @max = max
     if initial > max { initial = max }
     @sem = CountingSemaphore(initial)
-    @mutex = mutex.createSpinlock()
+    @mutex = mutexmod.createSpinlock()
   }
   
   fn wait() {
@@ -317,9 +321,9 @@ class RWLockSemaphore {
     @readers = 0
     @writer = false
     @writeWaiting = 0
-    @mutex = mutex.createSpinlock()
-    @readCond = mutex.createCondVar()
-    @writeCond = mutex.createCondVar()
+    @mutex = mutexmod.createSpinlock()
+    @readCond = mutexmod.createCondVar()
+    @writeCond = mutexmod.createCondVar()
   }
   
   // Read lock
@@ -546,8 +550,8 @@ class SemaphoreBarrier {
   fn @(count) {
     @total = count
     @count = count
-    @mutex = mutex.createSpinlock()
-    @cond = mutex.createCondVar()
+    @mutex = mutexmod.createSpinlock()
+    @cond = mutexmod.createCondVar()
   }
   
   fn wait() {
@@ -631,8 +635,8 @@ class SemaphoreBarrier {
 class SemaphoreLatch {
   fn @(count) {
     @count = count
-    @mutex = mutex.createSpinlock()
-    @cond = mutex.createCondVar()
+    @mutex = mutexmod.createSpinlock()
+    @cond = mutexmod.createCondVar()
   }
   
   fn countDown() {

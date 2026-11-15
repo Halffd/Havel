@@ -1,7 +1,20 @@
 use ffi
+use { bytes } from "string"
 
 libuv = ffi.open("libuv.so.1")
 if libuv == null { libuv = ffi.open("libuv.so") }
+
+// The sync_* helpers below call libc directly instead of going through
+// libuv's request machinery. Those symbols were never resolved, so the whole
+// module failed to load with "Unresolved identifier '_libc_open'".
+libc = ffi.open("libc.so.6")
+if libc == null { libc = ffi.open("libc.so") }
+
+_libc_open = ffi.sym(libc, "open")
+_libc_close = ffi.sym(libc, "close")
+_libc_read = ffi.sym(libc, "read")
+_libc_write = ffi.sym(libc, "write")
+_libc_mkdir = ffi.sym(libc, "mkdir")
 
 _loop = ffi.call(ffi.sym(libuv, "uv_default_loop"), "pointer", [])
 
@@ -342,11 +355,11 @@ fn rename(oldPath, newPath) {
     req = _req()
 cOld = ffi.cstring(oldPath)
   cNew = ffi.cstring(newPath)
-  ffi.call(_uv_fs_rename, "int64", _t_pppppp, _loop, req, cOld, cNew, 0)
+  ffi.call(_uv_fs_rename, "int64", _t_ppppp, _loop, req, cOld, cNew, 0)
   r = _result(req)
   _cleanup(req)
   ffi.free(cOld)
-    ffi.free(cn)
+    ffi.free(cNew)
     return r == 0
 }
 

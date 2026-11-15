@@ -40,9 +40,13 @@ fn origin(category, subsystem, priority) {
   {category: category, subsystem: subsystem, priority: priority}
 }
 
-// Convenience for current location
+// Convenience for current location.
+// The C++ pipeline has no source-location intrinsics (__FILE__/__LINE__/
+// __FUNCTION__ were never implemented), and Logger::Origin is built by
+// LogModule.cpp with empty file/function and line 0 regardless of what the
+// script object carries, so there is nothing to fill these fields with.
 fn here(category, subsystem, priority) {
-  {category: category, subsystem: subsystem, priority: priority, file: __FILE__, line: __LINE__, function: __FUNCTION__}
+  origin(category, subsystem, priority)
 }
 
 // ============================================================

@@ -1,8 +1,7 @@
 # A stale module plugin survives a reconfigure that drops its target
 
-**Status:** OPEN - confirmed build-system hazard, measured on
-`/host/havel-stable/build-release` 2026-11-15. No code defect; the fix is
-build hygiene and is deliberately not landed from a bug investigation.
+**Status:** FIXED (havel-2, 2026-11-16). The modules output dir is now
+pruned of plugins whose target was not configured in this build.
 
 ## What it looks like
 
@@ -63,24 +62,61 @@ looks like the lua/python feature itself is broken.
   ABI headers in that source) and **all 50 plugins `0x27a2110f`**,
   lua + python matching, `lua.eval` working
 
-## Fix direction
+## The fix
 
-At configure time, prune the modules output dir: after all
-`add_havel_module_plugin` calls, enumerate `havel_mod_*.so` in
-`MODULE_PLUGIN_OUTPUT_DIR` and `file(REMOVE ...)` any file whose
-corresponding target was not added. Cheap, deterministic, and it turns
-this failure mode into a clean "module not found".
+`CMakeLists.txt` now does two things.
 
-Alternatively (or additionally) make the rejection message assert the
-more likely cause when the file's mtime predates the last configure:
+1. `add_havel_module_plugin` appends the target name it just created to a
+   directory-scope list, `HAVEL_MODULE_PLUGIN_TARGETS`.
+2. After every `add_havel_module_plugin` call (i.e. at the end of the
+   `ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG` block), it globs
+   `havel_mod_*.so` in `MODULE_PLUGIN_OUTPUT_DIR` and `file(REMOVE ...)`s
+   any file whose stem has **no corresponding target**. The check is
+   `if(NOT TARGET ${_so_name})`, so it does not re-derive the name list -
+   it asks the build system what exists now, which is the same
+   non-duplication rule as the one for host-function name lists.
+   Pruning happens once at configure time, so it cannot race a build.
 
-    module 'X': build id mismatch (plugin ..., host ...) - no plugin
-    target 'havel_mod_X' was configured in this build; the .so is a
-    leftover. Re-run cmake configure (not just build).
+Two things worth knowing if you edit it:
+
+- **Seed the prune list with paths, never with target names.** An earlier
+  draft seeded it with `HAVEL_MODULE_PLUGIN_TARGETS` (names) and appended
+  paths; `file(REMOVE)` then removed *every* file whose path appeared, and
+  the test that planted one orphan deleted all of them. Paths only.
+- **Strip `.so` with `string(REGEX REPLACE)`, not
+  `cmake_path(REMOVE_EXTENSION)`.** The latter is also fine here, but it
+  is easy to mis-audit; the regex form makes the intent obvious and was
+  used in the verified version.
+
+## Verification of the fix
+
+Run against a real build dir (`/home/agent/gate-merge-8bb2d47d`,
+mode 18), with one orphan planted:
+
+    before: 51 plugins
+    $ cmake -S . -B build-crane-nollvm ...
+    -- pruned orphan module plugin: havel_mod_deadplugin.so
+        (no target configured in this build)
+    -- Configuring done (61.8s)
+    -- Generating done (2.8s)
+    RC=0
+    after: 50 plugins
+
+and the surviving 50 are byte-for-byte the known-good set:
+
+    $ ls build-crane-nollvm/modules/*.so | sed 's|.*/||; s|\.so$||' | sort
+      > after.txt
+    $ ls build-crane-nollvm/modules/*.so | sed 's|.*/||; s|\.so$||' | sort
+      > known_good.txt && cmp after.txt known_good.txt   # no output = identical
+
+The host build id was unchanged (`0x558d88ed`) - the prune does not
+trigger a spurious rebuild. The same block also runs clean standalone:
+
+    cmake -P <block>.cmake   # RC=0, correct message per orphan
 
 ## Note on framing
 
-This hazard is NOT itself a defect on havel-2 or main - both produce
+This hazard was not a defect on havel-2 or main - both produce
 consistent builds today. It is recorded because a build that partially
 fails, a target that is renamed, or a `pkg-config` probe that
 intermittently fails will hit it, and the resulting error message
@@ -93,8 +129,18 @@ Related entries:
 - `python-bridge-cpython-module-leak.md` - also a module-plugin
   lifecycle failure, on the runtime side.
 
-## Reproduction to be careful about
+## Testing the prune
 
-Do not test this by planting a fake `.so` in a shared build dir and
-running a script - that pollutes the dir for other sessions. If a
-reproduction is needed, use an isolated worktree.
+Plant one orphan in an **isolated** build dir (never a shared one), then
+configure. The prune message is the pass condition, and the plugin set
+must be unchanged apart from the orphan:
+
+    cp $BUILD/modules/havel_mod_app.so $BUILD/modules/havel_mod_fake.so
+    cmake -S . -B $BUILD ...        # expect: "pruned orphan ... havel_mod_fake.so"
+    ls $BUILD/modules/havel_mod_*.so | wc -l   # back to the original count
+
+Note the prune runs at **configure** time, so it only fires when cmake
+re-runs (a `CMakeLists.txt` edit, a flag change, or an explicit
+configure) - a plain incremental `cmake --build` will not show the
+message. This is intentional: a build-only run is exactly when a stale
+dir must not be silently mutated.

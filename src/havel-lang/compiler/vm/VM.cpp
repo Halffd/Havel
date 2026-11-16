@@ -2901,6 +2901,42 @@ std::string VM::currentSourceLocation() const {
   return std::to_string(loc->line) + ":" + std::to_string(loc->column);
 }
 
+// Re-raise a host-side exception with its call site and executing context
+// attached.
+//
+// A host function can only fail with whatever C++ hands it: a
+// std::system_error from a std::thread or filesystem call, or a
+// std::runtime_error built from strerror(). Both arrive here as a BARE
+// message - "Invalid argument", "No such file or directory" - and the
+// interpreter's catch blocks used to re-throw e.what() verbatim. The
+// launcher then printed exactly that string, with no file, no line and no
+// module, and a reproduction had to start from a grep. This is the same
+// treatment the OBJECT_SET handler and VMApi::setField already apply, in
+// one place so every re-throw gets it.
+//
+// Contributors that already attached their own context are left alone:
+// COMPILER_THROW_AT and VMApi::setField write " at file:line" themselves,
+// so the suffix is only appended when the message does not already carry
+// it, and appending twice never happens.
+void VM::rethrowHostError(const std::exception &e) const {
+  std::string msg = e.what();
+
+  const std::string location = currentSourceLocation();
+  if (!location.empty() && msg.find(" at " + location) == std::string::npos) {
+    msg += " at " + location;
+  }
+  const std::string moduleName = currentModuleName();
+  if (!moduleName.empty() &&
+      msg.find(" in module " + moduleName) == std::string::npos) {
+    msg += " in module " + moduleName;
+  }
+  if (exitRequested() &&
+      msg.find("(vm exit in progress)") == std::string::npos) {
+    msg += " (vm exit in progress)";
+  }
+  throw std::runtime_error(msg);
+}
+
 std::string VM::buildStackTrace(size_t frame_count) const {
   std::string trace;
   if (frame_count == 0) {

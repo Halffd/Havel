@@ -1206,7 +1206,7 @@ op_CALL:
       if (handleScriptThrow(exceptionValue)) {
         // caught
       } else {
-        throw std::runtime_error(e.what());
+        rethrowHostError(e);
       }
     }
     // exit() host calls must stop the script immediately, mirroring the slow
@@ -1324,7 +1324,7 @@ op_RETURN:
       }
     } catch (const std::runtime_error &e) {
       ::havel::stdlib::notifyRuntimeError(e.what());
-      throw std::runtime_error(e.what());
+      rethrowHostError(e);
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -1477,7 +1477,7 @@ op_LOAD_GLOBAL:
       if (handleScriptThrow(exceptionValue)) {
         // caught - continue
       } else {
-        throw std::runtime_error(e.what());
+        rethrowHostError(e);
       }
     }
     counter++;
@@ -1530,7 +1530,7 @@ op_STORE_GLOBAL:
       if (handleScriptThrow(exceptionValue)) {
         // caught
       } else {
-        throw std::runtime_error(e.what());
+        rethrowHostError(e);
       }
     }
     counter++;
@@ -1582,7 +1582,7 @@ op_STORE_IMMUT_GLOBAL:
       ::havel::stdlib::notifyRuntimeError(e.what());
       if (handleScriptThrow(exceptionValue)) {
       } else {
-        throw std::runtime_error(e.what());
+        rethrowHostError(e);
       }
     }
     counter++;
@@ -1630,7 +1630,7 @@ op_STORE_IMMUT_VAR:
     try {
       executeInstruction(inst);
     } catch (const std::runtime_error &e) {
-      throw std::runtime_error(e.what());
+      rethrowHostError(e);
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -1676,7 +1676,7 @@ op_LOAD_UPVALUE:
     try {
       executeInstruction(frm.function->instructions[frm.ip - 1]);
     } catch (const std::runtime_error &e) {
-      throw std::runtime_error(e.what());
+      rethrowHostError(e);
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -1722,7 +1722,7 @@ op_STORE_UPVALUE:
     try {
       executeInstruction(frm.function->instructions[frm.ip - 1]);
     } catch (const std::runtime_error &e) {
-      throw std::runtime_error(e.what());
+      rethrowHostError(e);
     }
     counter++;
     if ((counter & 8191) == 0) {
@@ -3405,7 +3405,7 @@ op_STRING_GET_FAST:
         ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
         } else {
-          throw std::runtime_error(e.what());
+          rethrowHostError(e);
         }
       }
       if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())

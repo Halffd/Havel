@@ -696,7 +696,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     vm.stack = std::move(saved_stack);
     vm.locals = std::move(saved_locals);
     vm.setMainChunkShared(saved_main_chunk);
-    throw std::runtime_error(e.what());
+    vm.rethrowHostError(e);
   } });
 
 
@@ -824,7 +824,7 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         vm.immutable_locals_ = std::move(saved_immutable_locals);
         vm.setMainChunkShared(saved_main_chunk);
         vm.resumeGCWithFullCollect();
-        throw std::runtime_error(e.what());
+        vm.rethrowHostError(e);
     }
 });
 
@@ -1226,7 +1226,7 @@ return result;
       vm.immutable_locals_ = std::move(saved_immutable_locals);
       vm.setMainChunkShared(saved_main_chunk);
       vm.resumeGCWithFullCollect();
-         throw std::runtime_error(e.what());
+         vm.rethrowHostError(e);
       }
     });
 

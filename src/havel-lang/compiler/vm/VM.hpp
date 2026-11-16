@@ -981,6 +981,10 @@ public:
 
   // Source location helper for error messages
   std::string currentSourceLocation() const;
+  // Re-raise a host-side exception with its call site and executing context
+  // attached. See the implementation for why re-throwing e.what() verbatim
+  // made whole classes of failures undiagnosable.
+  [[noreturn]] void rethrowHostError(const std::exception &e) const;
   // Name of the module the current chunk came from ("" for the main
   // script). A host-side error raised inside a module load needs to name
   // the module: the ambient-only-lookup class of defect (see

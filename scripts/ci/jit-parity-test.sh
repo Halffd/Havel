@@ -258,6 +258,18 @@ else
     if [ -z "$sh_tier1" ] || [ "$sh_tier1" -eq 0 ]; then
       echo "FAIL selfhost: tiered run never tier-compiled a parser function (tier1=${sh_tier1:-absent})"
       fail=$((fail + 1))
+    elif [ "${REQUIRE_TIER2:-0}" = "1" ]; then
+      # The candidate loop above honours REQUIRE_TIER2; this section did not,
+      # so "PASS selfhost" was reported with tier2_compiled=0. That made the
+      # LLVM optimizing tier look verified when it had never run.
+      sh_tier2="$(grep -aoE 'tier2_compiled=[0-9]+' "$sh_tier" | head -1 | cut -d= -f2)"
+      if [ -z "$sh_tier2" ] || [ "$sh_tier2" -eq 0 ]; then
+        echo "FAIL selfhost: tier2 never compiled (REQUIRE_TIER2=1, tier2_compiled=${sh_tier2:-absent})"
+        fail=$((fail + 1))
+      else
+        echo "PASS selfhost (tier1=$sh_tier1 tier2=$sh_tier2)"
+        pass=$((pass + 1))
+      fi
     else
       echo "PASS selfhost (tier1=$sh_tier1)"
       pass=$((pass + 1))

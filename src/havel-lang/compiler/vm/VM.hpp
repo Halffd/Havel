@@ -1906,6 +1906,42 @@ public:
     }
   }
 
+  // Drain the queued tier-2 compiles, bounded by PROGRESS rather than by
+  // queue emptiness alone. No-op unless the shutdown-flush flag is set
+  // (HAVEL_TIER2_FLUSH=1 / cfg.tier2_flush_on_shutdown).
+  //
+  // An embedder MUST call this from its shutdown path while the JIT is still
+  // attached. ~VM() alone cannot do the job: Launcher/engine shutdown calls
+  // setJITCompiler(nullptr) before vm_.reset(), so by the time ~VM runs,
+  // backend_ is null, drainPendingTier2Compiles returns at its !backend_
+  // guard, and the queue that a whole run spent filling is dropped
+  // uncompiled. HavelEngine::shutdown() calls this.
+  //
+  // Progress matters for the same reason: drainPendingTier2Compiles returns
+  // WITHOUT draining when no further compile is allowed (HAVEL_TIER2_MAX
+  // reached, no backend). Looping on a queue nothing can ever serve spun at
+  // 100% CPU until the watchdog killed the process (measured: user == real,
+  // sys ~0.07s over 40s, with HAVEL_TIER2_MAX=0 so no compile was even
+  // attempted). One pass that compiled nothing means stop.
+  void flushTier2Queue() {
+    if (!tier2_flush_on_shutdown_) {
+      return;
+    }
+    while (!tier2QueueEmpty()) {
+      const uint64_t compiled_before = tier2_compile_count_.load();
+      size_t remaining = 0;
+      {
+        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+        remaining = tier2_queue_.size();
+      }
+      uint32_t batch =
+          remaining > 32 ? 32 : static_cast<uint32_t>(remaining);
+      drainPendingTier2Compiles(batch);
+      if (tier2_compile_count_.load() == compiled_before)
+        break; // no progress possible - the queue can never drain further
+    }
+  }
+
   bool tier2QueueEmpty() {
     std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
     return tier2_queue_.empty();

@@ -1125,6 +1125,14 @@ public:
       const_cast<HostContext &>(*hostContext_).eventRuntime = nullptr;
     }
     if (vm_) {
+      // Flush queued tier-2 compiles WHILE the JIT is still attached.
+      // HAVEL_TIER2_FLUSH=1 asks for a shutdown drain, but ~VM() cannot do
+      // it: setJITCompiler(nullptr) below releases backend_, and
+      // drainPendingTier2Compiles returns at its !backend_ guard. Without
+      // this the queue a whole run spent filling is dropped uncompiled and
+      // tier2_compiled stays 0 on every run - the LLVM optimizing tier is
+      // then never exercised by anything, gate or run.
+      vm_->flushTier2Queue();
 #ifdef HAVEL_ENABLE_LLVM
       // Drop the backend view before the VM deletes the JIT it owns.
       backend_.reset();

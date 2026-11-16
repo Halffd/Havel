@@ -343,14 +343,11 @@ void VM::closeOpenUpvaluesForSpawn(uint32_t closure_id) {
 }
 
 VM::~VM() {
-  if (tier2_flush_on_shutdown_) {
-    // Optional drain mode: let queued tier2 compiles finish before shutdown.
-    // Compiles run on this (destroying) thread - the VM is no longer
-    // executing, so no frame can be live under the compile.
-    while (!tier2QueueEmpty()) {
-      drainPendingTier2Compiles(4);
-    }
-  }
+  // Safety net for embedders that never call flushTier2Queue() from their own
+  // shutdown path. HavelEngine::shutdown() flushes while the JIT is still
+  // attached; from here the backend is normally already released, so this
+  // runs the same progress-bounded loop and exits immediately.
+  flushTier2Queue();
   if (tiering_enabled_) {
     ::havel::info("[tiering] transitions: tier1={} tier1_refused={} tier2_enqueued={} "
                   "tier2_compiled={} tier2_dup_skipped={}",

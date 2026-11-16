@@ -1,5 +1,6 @@
 /* SysModule.cpp - VM-native stdlib module (system information) */
 #include "SysModule.hpp"
+#include "../../utils/Logger.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -437,6 +438,50 @@ void registerSysModule(const VMApi &api) {
   api.setField(sysObj, "tmpdir", api.makeFunctionRef("sys.tmpdir"));
   api.setField(sysObj, "shell", api.makeFunctionRef("sys.shell"));
   api.setField(sysObj, "uptime", api.makeFunctionRef("sys.uptime"));
+
+  // Load the Havel-side layer (modules/std/sys.hv) and merge its exports
+  // into the namespace object above.
+  //
+  // Without this, the native `sys` namespace exposed ONLY the 16 fields set
+  // above. windowManager(), os(), kernel(), desktopEnv() and
+  // displayProtocol() are defined in modules/std/sys.hv and never reached
+  // the namespace object, so `sys.windowManager()` was null - which is what
+  // made ~/scripts/havel/start.hv line 67 (`wm = sys.windowManager.lower()`)
+  // print `wm: null`.
+  //
+  // Every other native module already loads its .hv layer this way
+  // (ArrayModule, ShellModule, MathModule, ObjectModule, TypeModule, ...);
+  // SysModule was the one that did not.
+  //
+  // Fields are merged onto the namespace object only - unlike ArrayModule,
+  // the module's exports are NOT published as bare globals: sys.hv exports
+  // names like os, kernel, arch, version, pid and home, and binding those
+  // globally would clobber builtins the script author may rely on.
+  Value sysExports;
+  try {
+    sysExports = api.vm().loadModule("sys");
+  } catch (...) {
+  }
+  if (sysExports.isObjectId()) {
+    auto *sysHvObj = api.vm().getHeap().object(sysExports.asObjectId());
+    if (sysHvObj) {
+      for (const auto &[name, value] : *sysHvObj) {
+        if (name.empty() || name[0] == '_')
+          continue;
+        // A field this function already registered is a NATIVE host function
+        // and must win. sys.hv defines platform()/arch()/... as thin
+        // delegators (`fn platform() { sys.platform() }`) that resolve
+        // against this very namespace object, so letting a wrapper replace
+        // the native field closed the loop: sys.platform() called the
+        // wrapper, which called sys.platform() on the same object ->
+        // "module wrapper execution depth exceeded (max 50)".
+        if (api.hasField(sysObj, name))
+          continue;
+        api.setField(sysObj, name, value);
+      }
+    }
+  }
+
   api.setGlobal("sys", sysObj);
 
   auto jitObj = api.makeObject();
@@ -1235,7 +1280,32 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
   auto systemObj = api.makeObject();
   api.setField(systemObj, "detect", api.makeFunctionRef("system.detect"));
   api.setField(systemObj, "hardware", api.makeFunctionRef("system.hardware"));
-  api.setGlobal("system", systemObj);
+  // MERGE into the live `system` object; never fork a second one.
+  //
+  // By the time this runs, VM::registerDefaultHostGlobals has already
+  // installed a `system` object (it carries gc/gcStats - system.detect was
+  // not registered yet, so that object has no detect/hardware), and
+  // VM::loadModule has snapshotted it into baseModuleGlobals_. Replacing
+  // the global here created a SECOND object: the script's top level
+  // resolved the new one, a module context kept resolving the snapshot, and
+  // the snapshot never received detect/hardware. `system.detect()` called
+  // from inside a module function therefore returned null - the whole
+  // `wm: null` class of failure (start.hv's `sys.windowManager.lower()`).
+  //
+  // findGlobalValueByName resolves across the full scope chain, so it finds
+  // the object wherever it is currently bound, not just the ambient map.
+  Value existingSystem;
+  if (api.vm().findGlobalValueByName("system", &existingSystem) &&
+      existingSystem.isObjectId()) {
+    if (!api.hasField(existingSystem, "detect"))
+      api.setField(existingSystem, "detect", api.makeFunctionRef("system.detect"));
+    if (!api.hasField(existingSystem, "hardware"))
+      api.setField(existingSystem, "hardware",
+                   api.makeFunctionRef("system.hardware"));
+    api.setGlobal("system", existingSystem);
+  } else {
+    api.setGlobal("system", systemObj);
+  }
 
   // ========================================================================
   // process namespace object

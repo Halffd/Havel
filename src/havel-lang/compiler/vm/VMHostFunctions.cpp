@@ -4352,20 +4352,40 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(
       system_obj, "gcStats",
       Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
-  auto sysIt = globals.find("system");
-  if (sysIt != globals.end() && sysIt->second.isObjectId()) {
-    ObjectRef existingRef{sysIt->second.asObjectId(), true};
-    auto *existingObj = heap_.object(existingRef.id);
-    if (existingObj) {
-      setHostObjectField(
-          existingRef, "gc",
-          Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
-      setHostObjectField(
-          existingRef, "gcStats",
-          Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
-    } else {
-      setGlobal("system", Value::makeObjectId(system_obj.id));
+  // The object installed below must carry EVERY `system` field, not just the
+  // two set above. An object holding only gc/gcStats is exactly what a module
+  // context resolves (VM::loadModule snapshots it into baseModuleGlobals_),
+  // and `system.detect()` called from inside a module function then returned
+  // null - the whole `wm: null` class of failure. Guarded by hasHostFunction
+  // on purpose: getHostFunctionIndex APPENDS an unregistered name and returns
+  // an index with no implementation, which would turn "not registered yet"
+  // into a call that throws "Host function not found".
+  for (const char *field : {"detect", "hardware"}) {
+    const std::string fnName = std::string("system.") + field;
+    if (hasHostFunction(fnName)) {
+      setHostObjectField(system_obj, field,
+                         Value::makeHostFuncId(getHostFunctionIndex(fnName)));
     }
+  }
+  // Resolve the LIVE `system` object across every scope a global read can
+  // reach - ambient, the shared module base layer, then the pushed
+  // globals_stack_ frames - not the ambient map alone. During a module load
+  // the ambient is the loading module's sandbox, which no longer carries the
+  // stdlib namespace objects, so the ambient-only lookup took the
+  // install-a-fresh-object branch and left TWO `system` objects behind: the
+  // one the script's top level resolves, and the half-populated one a module
+  // captures. Merge into the live object and point the ambient at it so every
+  // later lookup, including loadModule's base-layer snapshot, agrees on ONE.
+  Value liveSystem;
+  if (findGlobalValueByName("system", &liveSystem) &&
+      liveSystem.isObjectId() && heap_.object(liveSystem.asObjectId())) {
+    ObjectRef liveRef{liveSystem.asObjectId(), true};
+    setHostObjectField(liveRef, "gc",
+                       Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
+    setHostObjectField(
+        liveRef, "gcStats",
+        Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
+    setGlobal("system", liveSystem);
   } else {
     setGlobal("system", Value::makeObjectId(system_obj.id));
   }

@@ -1,14 +1,48 @@
 # Module scope resolves a `system` object that has no `detect` field
 
-**Status:** OPEN — root cause localized with a reproducible test and a
-one-line trace; the fix is not landed. Symptom, file map and next step are
-below so the next session does not re-diagnose from scratch.
+**Status:** FIXED. The `wm: null` symptom had **two** independent root
+causes, both landed. Regression test:
+`scripts/tests/test_sys_module_exports.hv`. A/B confirmed the test fails
+before the fix (`sys namespace must expose windowManager from
+modules/std/sys.hv`) and passes after.
 
-This is the defect behind the user's `wm: null` report. It is **not** in
-`WindowManagerDetector`: that class always returns a non-empty name
-(`"Unknown"` at minimum), the bridge substitutes `"unknown"` for an empty
-string, and both `system.detect` implementations always set the
-`windowManager` field. See "Ruled out" for the individual exclusions.
+It is **not** in `WindowManagerDetector`: that class always returns a
+non-empty name (`"Unknown"` at minimum), the bridge substitutes
+`"unknown"` for an empty string, and both `system.detect` implementations
+always set the `windowManager` field. See "Ruled out".
+
+## What was actually wrong
+
+Root cause 1 (the `wm: null` the user saw): `SysModule::registerSysModule`
+never loaded its Havel-side layer. It registered the 16 native `sys.*`
+host functions and published `sysObj`, but never called
+`vm.loadModule("sys")` the way every other native module does
+(ArrayModule, ShellModule, MathModule, ObjectModule, TypeModule, ...).
+`modules/std/sys.hv`'s `windowManager()`, `os()`, `kernel()`,
+`desktopEnv()` and `displayProtocol()` therefore never reached the
+namespace object, so `sys.windowManager` read back as a missing field and
+`start.hv`'s `sys.windowManager.lower()` yielded null.
+
+Root cause 2 (the module-scope null, recorded below when it appeared to
+be the whole story): `SysModule` also REPLACED the `system` global with a
+fresh object *after* `VM::loadModule` had snapshotted the earlier one into
+`baseModuleGlobals_`, so a module context resolved an object carrying only
+`gc`/`gcStats` — `system.detect()` called from inside a module function
+returned null. That is now fixed by merging into the live object rather
+than forking it, and `registerDefaultHostGlobals` resolves the live object
+across the whole scope chain instead of the ambient map alone.
+
+Both defects are masked by a third, separate trap: `sys.windowManager` is
+a **function** (`fn windowManager() { system.detect().windowManager }`),
+never a value — it has always been defined that way since `cc906734`. The
+user's `start.hv:67` wrote `sys.windowManager.lower()` without parens,
+and `.lower()` on a function silently returns null, which is why the
+symptom looked like "the WM detector failed" rather than "the call is
+missing a paren". The user's script was corrected to
+`sys.windowManager().lower()`. `modules/std/os.hv`-style delegators are why
+the merge must skip fields the native layer already registered: letting a
+wrapper replace `sys.platform` closed a self-call loop
+("module wrapper execution depth exceeded (max 50)").
 
 ## Symptom
 

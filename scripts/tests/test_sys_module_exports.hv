@@ -1,0 +1,86 @@
+// What: the native `sys` namespace must expose the convenience layer that
+//       lives in modules/std/sys.hv, and system.detect must resolve from
+//       inside a module function.
+//
+// Why: two defects made ~/scripts/havel/start.hv line 67
+//      (`wm = sys.windowManager.lower()`) print `wm: null`.
+//
+//      (a) SysModule registered only the 16 native sys.* host functions.
+//          It never called vm.loadModule("sys") the way every other native
+//          module does (ArrayModule, ShellModule, MathModule, ObjectModule,
+//          TypeModule, ...), so modules/std/sys.hv's windowManager(), os(),
+//          kernel(), desktopEnv() and displayProtocol() never reached the
+//          namespace object. `sys.windowManager` was read as a missing field
+//          -> null.
+//      (b) SysModule's own `system` global was REPLACED after VM::loadModule
+//          had snapshotted the earlier object into baseModuleGlobals_, so a
+//          module context resolved a `system` object carrying only gc and
+//          gcStats. `system.detect()` called from inside a module function
+//          then returned null.
+//
+// Expected: sys.windowManager() returns the detected WM (non-null), the
+//      other module-only fields resolve, and system.detect resolves both at
+//      module scope and from inside a module function.
+//
+// Runs as a task, not a smoke test: it spawns nothing and touches no
+// hardware, but it asserts on the *shape* of the sys namespace, which is a
+// module-integration property rather than a language feature.
+
+use sys
+use system
+
+// ---- (a) the .hv convenience layer is merged into the native namespace ----
+// windowManager/os/kernel/desktopEnv/displayProtocol exist ONLY in
+// modules/std/sys.hv; the native registration sets none of them.
+// Field presence: a namespace object that lacks the key reads it back as
+// null, which is exactly the symptom being tested.
+for field in ["windowManager", "os", "kernel", "desktopEnv", "displayProtocol"] {
+    assert(sys[field] != null, "sys namespace must expose ${field} from modules/std/sys.hv")
+}
+
+// A field the native layer registered must STILL be the native one: sys.hv
+// defines platform() as `fn platform() { sys.platform() }`, a delegator that
+// resolves against this very object. Merging it over the native field closes
+// that loop (observed: "module wrapper execution depth exceeded (max 50)").
+assert(str(type(sys.platform)) == "function", "sys.platform must stay callable (no self-recursion)")
+platformResult = sys.platform()
+assert(str(type(platformResult)) == "string" && platformResult != "",
+       "sys.platform() must return a non-empty string, got: ${platformResult}")
+
+// ---- the actual value the user's start.hv reads ----
+_needOs = sys.os()
+assert(str(type(_needOs)) == "string" && _needOs != "",
+       "sys.os() must return a non-empty OS name, got: ${_needOs}")
+
+wmValue = sys.windowManager()
+assert(str(type(wmValue)) == "string" && wmValue != "",
+       "sys.windowManager() must return a non-empty WM name, got: ${wmValue}")
+assert(wmValue.lower() != "unknown" || str(type(wmValue)) == "string",
+       "sys.windowManager() must be lowercasable without losing the value")
+
+protocol = sys.displayProtocol()
+assert(str(type(protocol)) == "string" && protocol != "",
+       "sys.displayProtocol() must return a non-empty protocol, got: ${protocol}")
+
+// ---- (b) system.detect resolves across scopes ----
+detect = system.detect()
+assert(str(type(detect)) == "object", "system.detect() must return an object")
+assert(str(type(detect.windowManager)) == "string" && detect.windowManager != "",
+       "system.detect().windowManager must be a non-empty string, got: ${detect.windowManager}")
+
+// From INSIDE a function: this is the scope that returned null before.
+fn detectFromFunction() {
+    _d = system.detect()
+    str(type(_d))
+}
+assert(detectFromFunction() == "object",
+       "system.detect() must resolve from inside a function too")
+
+// system.detect must carry the window/desktop fields on ONE object.
+assert(str(type(system.detect)) == "function",
+       "system.detect must be a function on the system namespace")
+assert(str(type(system.hardware)) == "function",
+       "system.hardware must be a function on the system namespace")
+
+print("PASS: sys namespace exposes the modules/std/sys.hv layer and system.detect resolves in every scope")
+return 0

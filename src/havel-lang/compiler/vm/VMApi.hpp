@@ -92,7 +92,40 @@ struct VMApi {
     void setField(Value obj, const std::string &key,
                   Value value) const {
         if (!obj.isObjectId()) {
-            throw std::runtime_error("VMApi::setField: expected object");
+            // Name the key, the type that was handed over, the executing
+            // module, the call site and the exit state.
+            //
+            // The bare "expected object" message cost real hours: the throw
+            // happens in C++ with no Instruction in scope, so the old text
+            // could not use COMPILER_THROW_AT and said nothing about WHERE.
+            // The same text also appears from a documented defect class
+            // (setField called with a null from an ambient-only global
+            // lookup inside a module sandbox - see
+            // docs/known-issues/setfield-expected-object-early-startup.md),
+            // and that class only ever reproduces from a module scope. One
+            // reproduction must therefore identify which module performed
+            // the failing write, on which line, and whether it happened
+            // during the exit unwind.
+            const char *tname = obj.isNull()     ? "null"
+                               : obj.isInt()    ? "int"
+                               : obj.isDouble() ? "double"
+                               : obj.isBool()   ? "bool"
+                               : obj.isStringId() ? "string"
+                                                  : "other";
+            std::string ctx = "VMApi::setField: expected object for key '"
+                              + key + "', got " + tname;
+            const std::string location = vm().currentSourceLocation();
+            if (!location.empty()) {
+                ctx += " at " + location;
+            }
+            const std::string moduleName = vm().currentModuleName();
+            if (!moduleName.empty()) {
+                ctx += " in module " + moduleName;
+            }
+            if (vm().exitRequested()) {
+                ctx += " (vm exit in progress)";
+            }
+            throw std::runtime_error(ctx);
         }
         vm().setHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, key, std::move(value));
     }

@@ -2852,6 +2852,55 @@ bool VM::handleScriptThrow(const Value &value) {
   return false;
 }
 
+// Source location of the innermost EXECUTING instruction, formatted
+// "file:line:col" (or "line:col" when the chunk has no filename).
+//
+// Host-side failures - VMApi::setField, config.set, a host function that
+// walks a script-supplied object - are raised from C++ with no Instruction
+// in scope, so they could not use COMPILER_THROW_AT. They therefore
+// reported a bare message with no call site, and every reproduction then
+// started with an hour of guessing which assignment failed. This walks the
+// innermost live frame and reads the instruction at its ip, so the same
+// information is available from anywhere the VM is reachable.
+//
+// Empty when nothing is executing (startup module hydration, or a call from
+// an embedder with no VM frame): callers must treat "no location" as a
+// normal outcome, not an error.
+std::string VM::currentSourceLocation() const {
+  const BytecodeChunk *chunk = nullptr;
+  const BytecodeFunction *fn = nullptr;
+  size_t ip = 0;
+
+  if (frame_count_ > 0) {
+    const CallFrame &frame = frame_arena_[frame_count_ - 1];
+    chunk = frame.chunk;
+    fn = frame.function;
+    ip = frame.ip;
+  }
+  if (!chunk) {
+    chunk = current_chunk ? current_chunk : main_chunk_.get();
+  }
+  if (!chunk) {
+    return {};
+  }
+  if (!fn) {
+    // No live function on the frame: the top-level body of the chunk.
+    fn = chunk->getFunction(0);
+  }
+  if (!fn || ip >= fn->instructions.size()) {
+    return {};
+  }
+  const auto &loc = fn->instructions[ip].location;
+  if (!loc.has_value() || loc->line == 0) {
+    return {};
+  }
+  if (!loc->filename.empty()) {
+    return loc->filename + ":" + std::to_string(loc->line) + ":" +
+           std::to_string(loc->column);
+  }
+  return std::to_string(loc->line) + ":" + std::to_string(loc->column);
+}
+
 std::string VM::buildStackTrace(size_t frame_count) const {
   std::string trace;
   if (frame_count == 0) {

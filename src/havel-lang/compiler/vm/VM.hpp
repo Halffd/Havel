@@ -981,6 +981,23 @@ public:
 
   // Source location helper for error messages
   std::string currentSourceLocation() const;
+  // Name of the module the current chunk came from ("" for the main
+  // script). A host-side error raised inside a module load needs to name
+  // the module: the ambient-only-lookup class of defect (see
+  // docs/known-issues/setfield-expected-object-early-startup.md) only ever
+  // fires from a module scope, so "in module X" is what makes a
+  // reproduction identifiable rather than a guess.
+  std::string currentModuleName() const {
+    if (!current_chunk) {
+      return {};
+    }
+    for (const auto &[name, mc] : module_chunks_) {
+      if (mc.get() == current_chunk) {
+        return name;
+      }
+    }
+    return {};
+  }
 
   // Rust-style error formatting with source line and arrow
   int64_t toInt(const Value &value) const;

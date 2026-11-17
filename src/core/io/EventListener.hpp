@@ -2,6 +2,8 @@
 #include "HotkeyExecutor.hpp"
 #include "MouseGestureEngine.hpp"
 #include "InputBackend.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "IOBackend.hpp"
 #include "core/CallbackTypes.hpp"
 #include "../MouseGestureTypes.hpp" // Include mouse gesture types
 #include "core/hotkey/HotkeyManager.hpp"  // Include HotkeyManager
@@ -22,10 +24,6 @@
 #include <unordered_set>
 #include <vector>
 
-#ifdef __linux__
-#include "X11HotkeyMonitor.hpp"
-#endif
-
 namespace havel {
 
 // Forward declarations
@@ -41,12 +39,17 @@ class SignalHandler;
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {
 public:
+  // The modifier bits are the platform-neutral ModifierMasks layout
+  // (see IOBackend.hpp). These used to be spelled out inline, which let
+  // them drift apart from ModifierMasks - and the two disagreed on the
+  // Ctrl/Shift bits, so the X11 path and the grab path disagreed about
+  // which bit meant Ctrl.
   enum Modifier {
     Null = 0,
-    Ctrl = 1 << 0,
-    Shift = 1 << 1,
-    Alt = 1 << 2,
-    Meta = 1 << 3
+    Ctrl = ModifierMasks::CONTROL,
+    Shift = ModifierMasks::SHIFT,
+    Alt = ModifierMasks::ALT,
+    Meta = ModifierMasks::META
   };
   EventListener();
   ~EventListener();
@@ -126,12 +129,6 @@ public:
   void SetMouseMovementCallback(MouseMovementCallback callback) {
     mouseMovementCallback = callback;
   }
-
-#ifdef __linux__
-  bool StartX11Monitor(Display *display);
-  void StopX11Monitor();
-  bool IsX11MonitorRunning() const;
-#endif
 
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
   void SetInputEventCallback(InputEventCallback callback) {
@@ -371,13 +368,6 @@ HotkeyExecutor *hotkeyExecutor = nullptr;
 ExecutorMode executorMode_ = ExecutorMode::Scheduler;
 std::mutex hotkeyExecMutex;
   std::unordered_set<std::string> executingHotkeys;
-
-
-
-// X11 hotkey monitor (separate component)
-#ifdef __linux__
-  std::unique_ptr<X11HotkeyMonitor> x11Monitor;
-#endif
 };
 
 } // namespace havel

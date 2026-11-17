@@ -13,6 +13,21 @@
 
 namespace havel {
 
+// Whether the X11 adapter should re-request the root window event
+// subscription.
+//
+// The X server refuses XSelectInput on the root window (BadAccess) while
+// another client holds an active keyboard or pointer grab: the request
+// would be delivered to the grabbing client instead. The refusal is
+// transient - the other client eventually lets go - but before this rule
+// existed the adapter asked once and never again, so the client received
+// no key events for the rest of the process lifetime.
+//
+// Pure function: no X server, no display, no timing side effects.
+bool ShouldRetrySelectInput(bool subscribed, bool hasDisplay,
+                             std::chrono::steady_clock::time_point now,
+                             std::chrono::steady_clock::time_point nextRetry);
+
 class X11Adapter : public InputBackend {
 public:
     X11Adapter();
@@ -36,6 +51,10 @@ public:
 
     std::vector<int> GetInputFds() const override;
     void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override;
+
+    // Re-request the root window event subscription if the X server
+    // refused it earlier.
+    void Poll() override;
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
@@ -116,11 +135,20 @@ private:
     unsigned int CleanMask(unsigned int mask) const;
 
     void BuildKeycodeMap();
-    void GrabKey(KeyCode keycode, unsigned int modifiers);
-    void UngrabKey(KeyCode keycode, unsigned int modifiers);
-    void GrabButton(unsigned int button, unsigned int modifiers);
-    void UngrabButton(unsigned int button, unsigned int modifiers);
     void UpdateModifierStateInternal(uint32_t code, bool down);
+
+    // Ask the X server to deliver key/button/motion events on the root
+    // window. Returns false when the server refused the request, which
+    // happens (BadAccess) while another client holds an active keyboard or
+    // pointer grab: the request would be delivered to the grabbing client
+    // instead. That refusal is transient - the other client eventually lets
+    // go - so the call is retried until it succeeds.
+    bool SelectRootInputEvents();
+
+    // Retry a refused SelectRootInputEvents(). Called from the poll loop,
+    // which runs continuously, so a grab taken by another client only
+    // delays delivery, it does not kill it.
+    void RetrySelectInput();
 #endif
 
     bool initialized_ = false;
@@ -132,6 +160,15 @@ private:
     Display *display_ = nullptr;
     Window root_ = 0;
     int xfd_ = -1;
+    // True once the root window has been subscribed to key/button/motion
+    // events. False means the X server refused the subscription, so no
+    // events arrive at all.
+    bool rootInputSelected_ = false;
+    // When the next retry of a refused subscription may be attempted. The
+    // poll loop runs every millisecond, and the X server would answer every
+    // one of those requests with BadAccess; retrying once a second is
+    // enough to recover promptly and keeps the X server quiet.
+    std::chrono::steady_clock::time_point nextSelectRetry_{};
 #endif
 
     bool blockInput_ = false;

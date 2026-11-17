@@ -540,10 +540,30 @@ std::optional<BytecodeChunk> loadCachedScriptChunk(const std::string &compileUni
   }
 
   // Validated: load the chunk (mmap for big files, same as module loads).
+  //
+  // The gates above validated the entry's embedded identity against
+  // sourceText - the exact text this request would compile. The
+  // re-validation inside deserializeChunk compares it against the FILE at
+  // the embedded path instead, and those two can differ whenever the
+  // compiled text is not the file verbatim (a multi-file unit compiles
+  // the joined text; the file at the embedded path is one of the parts).
+  // Both checks cannot be active at once: the file-based one would reject
+  // an entry the text-based one just accepted, on every load, and the
+  // cache would never serve. So skip it here - the text validation above
+  // is the stronger one, and it is the one that matches what will
+  // actually be compiled.
   ValueSerializer serializer;
-  auto chunk = serializer.loadChunk(hvcPath.string());
+  std::string loadFailure;
+  auto chunk = serializer.loadChunk(hvcPath.string(), 65536, &loadFailure,
+                                    /*skipSourceRevalidation=*/true);
   if (!chunk) {
-    return reject("entry-unreadable", hvcPath.string());
+    // Name the actual cause. The gates above already rejected the entry
+    // when the source it describes has changed, so a failure here means
+    // the FILE disagrees with its own embedded identity (or cannot be
+    // parsed) - not that the source is stale. Reporting that as
+    // "entry-unreadable" points at an IO problem that is not there.
+    return reject(loadFailure.empty() ? "entry-unreadable" : loadFailure.c_str(),
+                  hvcPath.string());
   }
   g_incremental_cache_hits.fetch_add(1, std::memory_order_relaxed);
   return chunk;
@@ -1562,7 +1582,31 @@ ValueSerializer::serializeChunkWithGlobals(const BytecodeChunk &chunk,
   return data;
 }
 
+// Why the last deserializeChunk/loadChunk attempt failed.
+//
+// deserializeChunk returns nullopt for several unrelated causes, and the
+// caller used to collapse them all into "entry-unreadable" - which points
+// at an IO problem even when the file is perfectly readable and merely
+// describes a source that has since changed. The reason is carried here
+// (thread-local: deserialization can run on worker threads) and copied out
+// by loadChunk.
+namespace {
+thread_local std::string g_deserialize_failure;
+
+// When true, deserializeChunk does not re-validate the entry's embedded
+// source identity against the FILE at the embedded path. Set only by a
+// caller that has already validated the entry against the exact text it
+// compiled - the incremental serve path does, against sourceText. Without
+// the flag, a compiled text that differs from the file by even one byte
+// (a multi-file unit compiles the joined text) is rejected on every load,
+// so the cache never serves.
+thread_local bool g_skip_source_revalidation = false;
+
+void setDeserializeFailure(const char *reason) { g_deserialize_failure = reason; }
+} // namespace
+
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
+  g_deserialize_failure.clear();
   BytecodeChunk chunk;
   size_t pos = 0;
   uint32_t hvc_version = 0;
@@ -1672,13 +1716,30 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     // hash-index/mtime gates and runBuild's reuse gate both refuse
     // stale caches when a live source exists, and fall back to
     // recompiling from source when it does not.
-    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+    //
+    // The re-read compares the entry against the FILE at srcPath. That
+    // is only the right comparison when the file IS the text that was
+    // compiled. It is not always: a multi-file unit compiles the joined
+    // text, and the file at srcPath is only one of the parts, so an
+    // entry correctly stamped with the compiled text would be rejected
+    // here on every single load. A caller that has ALREADY validated the
+    // entry against the exact text it wants (loadCachedScriptChunk does,
+    // against sourceText) must therefore be able to skip this re-read,
+    // or the two validations contradict each other forever.
+    //
+    // g_skip_source_revalidation is set only for that path.
+    if (!g_skip_source_revalidation && !srcPath.empty() &&
+        std::filesystem::exists(srcPath)) {
       auto actualSize = std::filesystem::file_size(srcPath);
-      if (actualSize != srcSize)
+      if (actualSize != srcSize) {
+        setDeserializeFailure("source-size-differs");
         return std::nullopt;
+      }
       auto actualHash = sha256_file(srcPath);
-      if (actualHash != srcHash)
+      if (actualHash != srcHash) {
+        setDeserializeFailure("source-hash-differs");
         return std::nullopt;
+      }
     }
   }
 
@@ -2032,6 +2093,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
 
   if (mapped == MAP_FAILED) {
     ::havel::warn("[RTS-MMAP] mmap failed for {}: {}", filePath, strerror(errno));
+    setDeserializeFailure("unreadable");
     return std::nullopt;
   }
 
@@ -2052,25 +2114,55 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
 
 // Load bytecode chunk from file (mmap if large, read if small)
 std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string &filePath,
-                                                        size_t mmapThreshold) {
+                                                        size_t mmapThreshold,
+                                                        std::string *loadFailureReason,
+                                                        bool skipSourceRevalidation) {
+  g_deserialize_failure.clear();
+  auto fail = [loadFailureReason](const char *reason) {
+    g_deserialize_failure = reason;
+    if (loadFailureReason)
+      *loadFailureReason = reason;
+    return std::optional<BytecodeChunk>{};
+  };
+
   struct stat st;
   if (stat(filePath.c_str(), &st) != 0) {
-    return std::nullopt;
+    return fail("missing");
   }
 
+  // Scoped so the flag cannot leak into an unrelated later call on this
+  // thread (the module loader and the serve path share the thread pool).
+  struct RevalidationScope {
+    bool previous;
+    explicit RevalidationScope(bool skip) : previous(g_skip_source_revalidation) {
+      g_skip_source_revalidation = skip;
+    }
+    ~RevalidationScope() { g_skip_source_revalidation = previous; }
+  } scope(skipSourceRevalidation);
+
+  std::optional<BytecodeChunk> result;
   if (st.st_size >= static_cast<off_t>(mmapThreshold)) {
     ::havel::debug("[RTS-MMAP] using mmap for {} ({} bytes)", filePath, st.st_size);
-    return deserializeChunkMmap(filePath);
+    result = deserializeChunkMmap(filePath);
   } else {
     ::havel::debug("[RTS-MMAP] using read for {} ({} bytes)", filePath, st.st_size);
     std::ifstream file(filePath, std::ios::binary);
     if (!file)
-      return std::nullopt;
+      return fail("unreadable");
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
                               std::istreambuf_iterator<char>());
     size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data.data(), data.size());
-    return deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
+    result = deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
   }
+
+  if (!result) {
+    // deserializeChunk names the cause when it knows one ("malformed"
+    // otherwise); the file-level failures are already distinguished above.
+    const char *reason = g_deserialize_failure.empty() ? "malformed" : g_deserialize_failure.c_str();
+    if (loadFailureReason)
+      *loadFailureReason = reason;
+  }
+  return result;
 }
 
 size_t ValueSerializer::chunkDataEnd(std::span<const uint8_t> data) {

@@ -102,6 +102,17 @@ bool GrabHotkey(int id);      // Grab hotkey by id
   // Test harness: get current queue sizes
   void getQueueStatsForTest(size_t &total, size_t &enabled) const;
 
+  // True when the hotkey currently holds a REAL OS-level grab (X11
+  // XGrabKey / evdev EVIOCGRAB). Distinct from the HotkeyModule context's
+  // `grab` flag, which records what the SCRIPT asked for: a binding can
+  // report grab=true while the window system holds no grab for it, and
+  // then the keypress goes elsewhere and the hotkey never fires.
+  //
+  // Addressed by the IO-side registration id, never the alias: several
+  // `when` branches can register the SAME key string (one goroutine each),
+  // so an alias lookup would report a different branch's binding.
+  bool isOsGrabbedById(int id) const;
+
   
   void loadDebugSettings();
   void applyDebugSettings();

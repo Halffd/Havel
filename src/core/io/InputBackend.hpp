@@ -126,6 +126,14 @@ public:
         (void)ready;
     }
 
+    // Periodic maintenance, called by the owner of the application event
+    // loop on every poll round. Backends use it to recover state that can
+    // be lost to another client: the X11 adapter re-requests the root
+    // window event subscription after the X server refused it, so a key
+    // grab taken by another application only delays event delivery instead
+    // of killing it for the rest of the process lifetime.
+    virtual void Poll() {}
+
     virtual std::pair<int, int> GetMousePosition() const = 0;
     virtual bool GetKeyState(uint32_t code) const = 0;
     virtual uint32_t GetModifiers() const = 0;

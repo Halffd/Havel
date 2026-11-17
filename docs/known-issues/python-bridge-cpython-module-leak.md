@@ -1,10 +1,61 @@
 # The python bridge leaks CPython module state when the bytecode cache is not at `$HOME/.cache/havel`
 
-**Status:** OPEN. Pre-existing - it reproduces on a binary that carries
-none of the cache-key work (verified below). It makes
-`scripts/smoke/test_python_bridge.hv` fail under AddressSanitizer, so it
-turns into a smoke-gate failure for anyone who points the cache
-elsewhere.
+**Status:** FIXED (2026-11-16). The leak was in the python bridge's own
+teardown, not in the self-hosted pipeline it was blamed on - the
+module/builtin-function reference cycle was broken before
+`Py_FinalizeEx()`, and the reference `PyImport_ImportModule()` returned
+was released. The doc's own minimal reproducer now passes with a
+non-default cache.
+
+This entry is kept because the failure mode is subtle: the test prints
+every `PASS:` line and only the AddressSanitizer report fails it, so it
+looks like a flaky gate failure rather than a leak.
+
+**What the fix changed** (`src/modules/python/PythonModule.cpp`):
+
+1. `shutdownPython()` breaks the module <-> builtin-function reference
+   cycle **before** `Py_FinalizeEx()`: `sys.modules` is cleared and
+   `gc.collect()` runs, so the now-unreachable cycles are reclaimed.
+   `Py_FinalizeEx()` is also called with the GIL held - it used to be
+   released first, which CPython's own debug allocator asserts on.
+2. `pyImport` releases the reference `PyImport_ImportModule()` returned.
+   `retainHandle()` takes its OWN strong reference (`Py_INCREF`), so the
+   import's reference was one extra hold for the whole process lifetime:
+   the module stayed alive past `Py_FinalizeEx()` together with its
+   namespace, and the namespace holds the builtin functions that
+   reference it back.
+
+**Verification** (binary `/host/havel-3/build-debug/havel`, commit
+`f38c0359ae4d`, dirty tree):
+
+The minimal reproducer from the "Next step" section below - the suite's
+own invocation, with the cache moved to a fresh directory:
+
+    D=$(mktemp -d)
+    XDG_CACHE_HOME=$D /host/havel-3/build-debug/havel \
+        --run --self-hosted-path out --minimal \
+        scripts/smoke/test_python_bridge.hv
+    # rc=0, 16 PASS lines, no AddressSanitizer report
+
+Before the fix the same command reported
+`SUMMARY: AddressSanitizer: 2289 byte(s) leaked in 3 allocation(s)`.
+
+**Why this matters beyond the leak**: the private-cache workaround was
+previously unusable for gating, because a cache outside `$HOME/.cache`
+turned `test_python_bridge` into a gate failure. With the leak closed, a
+gate can point `XDG_CACHE_HOME` at a scratch directory and avoid the
+box-wide shared-cache convoy - see
+`havel-process-linger-during-box-storms.md`, "Second, code-level
+contributor: the shared cache lock convoy". Measured on this box, the
+same binary and the same trivial script:
+
+| cache | wall |
+|-------|------|
+| shared `~/.cache/havel` | 11.85 s - 27.45 s |
+| private `XDG_CACHE_HOME=/tmp/...` (warm) | 1.45 s - 1.75 s |
+
+The remaining text below describes the defect as it was BEFORE the fix.
+
 
 ## Symptom
 

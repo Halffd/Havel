@@ -1,5 +1,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "core/io/IOBackend.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/io/KeyMap.hpp"
@@ -70,6 +72,12 @@ namespace havel
 {
   initializeInputCallbacks();
 }
+
+  bool HotkeyManager::isOsGrabbedById(int id) const {
+    if (id <= 0 || !io)
+      return false;
+    return io->IsHotkeyGrabbed(id);
+  }
 
   void HotkeyManager::setEventQueue(compiler::EventQueue *eq)
   {
@@ -213,6 +221,13 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
       if (io) {
         io->UngrabAll();
       }
+      // The suspend is now ACTIVE: SetHotkeyGrabById must not re-grab while
+      // suspended, it must only record the intent in pendingGrabs_.
+      // grabsSuspended_ used to be declared and read but NEVER ASSIGNED, so
+      // a grab request arriving during a suspend immediately undid the
+      // suspend (the grab went back while the suspend was still in effect)
+      // and pendingGrabs_ was written but never replayed.
+      grabsSuspended_ = true;
     }
     suspendDepth_++;
     // Don't clear pendingGrabs_ here - let it accumulate
@@ -225,9 +240,22 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
       suspendDepth_--;
       // Only actually re-grab when we reach depth 0
       if (suspendDepth_ == 0) {
+        grabsSuspended_ = false;
         auto &hotkeys = RegisteredHotkeys();
         for (auto &[id, hk] : hotkeys) {
           if (!hk.evdev && hk.enabled) {
+            // hk.grab is the script's intent: true for a binding that wants
+            // the key, false for one whose condition is currently false.
+            // io->UngrabAll() removed EVERY X11 grab on the server, so
+            // this restores the wanted ones and explicitly releases the
+            // unwanted ones.
+            //
+            // This also covers the intents that arrived WHILE the grabs
+            // were suspended: SetHotkeyGrabById always updates hk.grab /
+            // hk.enabled, even when it only records the request in
+            // pendingGrabs_ instead of applying it immediately. So the
+            // state this loop reads is already the post-suspend state -
+            // no separate replay pass is needed.
             if (hk.grab) {
               io->GrabHotkey(id);
             } else {
@@ -494,32 +522,34 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
 
   int HotkeyManager::currentModifierMask() const
   {
+    // ModifierMasks layout - see IOBackend.hpp.
     int mask = 0;
     if (modifierState.leftCtrl || modifierState.rightCtrl)
     {
-      mask |= 1 << 0;
+      mask |= ModifierMasks::CONTROL;
     }
     if (modifierState.leftShift || modifierState.rightShift)
     {
-      mask |= 1 << 1;
+      mask |= ModifierMasks::SHIFT;
     }
     if (modifierState.leftAlt || modifierState.rightAlt)
     {
-      mask |= 1 << 2;
+      mask |= ModifierMasks::ALT;
     }
     if (modifierState.leftMeta || modifierState.rightMeta)
     {
-      mask |= 1 << 3;
+      mask |= ModifierMasks::META;
     }
     return mask;
   }
 
   bool HotkeyManager::checkModifierMatch(int required, bool wildcard) const
   {
-    const bool ctrlRequired = (required & (1 << 0)) != 0;
-    const bool shiftRequired = (required & (1 << 1)) != 0;
-    const bool altRequired = (required & (1 << 2)) != 0;
-    const bool metaRequired = (required & (1 << 3)) != 0;
+    // ModifierMasks layout - see IOBackend.hpp.
+    const bool ctrlRequired = (required & ModifierMasks::CONTROL) != 0;
+    const bool shiftRequired = (required & ModifierMasks::SHIFT) != 0;
+    const bool altRequired = (required & ModifierMasks::ALT) != 0;
+    const bool metaRequired = (required & ModifierMasks::META) != 0;
 
     const bool ctrlPressed = modifierState.leftCtrl || modifierState.rightCtrl;
     const bool shiftPressed = modifierState.leftShift || modifierState.rightShift;
@@ -606,19 +636,19 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
           int keyMod = 0;
           if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL)
           {
-            keyMod = 1 << 0;
+            keyMod = ModifierMasks::CONTROL;
           }
           else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT)
           {
-            keyMod = 1 << 1;
+            keyMod = ModifierMasks::SHIFT;
           }
           else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT)
           {
-            keyMod = 1 << 2;
+            keyMod = ModifierMasks::ALT;
           }
           else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA)
           {
-            keyMod = 1 << 3;
+            keyMod = ModifierMasks::META;
           }
           if ((mods & keyMod) == 0)
           {
@@ -673,19 +703,19 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
         {
           if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL)
           {
-            requiredModifiers |= 1 << 0;
+            requiredModifiers |= ModifierMasks::CONTROL;
           }
           else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT)
           {
-            requiredModifiers |= 1 << 1;
+            requiredModifiers |= ModifierMasks::SHIFT;
           }
           else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT)
           {
-            requiredModifiers |= 1 << 2;
+            requiredModifiers |= ModifierMasks::ALT;
           }
           else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA)
           {
-            requiredModifiers |= 1 << 3;
+            requiredModifiers |= ModifierMasks::META;
           }
         }
         else

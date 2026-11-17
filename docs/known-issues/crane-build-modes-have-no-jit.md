@@ -1,7 +1,9 @@
 # The `build-crane*` modes build a binary with NO JIT backend
 
 **Status:** FIXED (Nov 11 2026, havel-2 `e8c2057a9`). Modes 17/18/19
-now configure with `ENABLE_CRANELIFT=ON`.
+now configure with `ENABLE_CRANELIFT=ON`. The fix was merged into havel-3
+(merge commit `e53de0587`, 2026-11-11) and reached main via the same
+merge.
 
 ## Symptom
 

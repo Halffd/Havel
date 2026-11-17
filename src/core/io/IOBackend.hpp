@@ -14,9 +14,27 @@ struct XkbCharMapping {
   bool needsShift = false;
 };
 
+// The platform-neutral modifier bits.
+//
+// These are the SAME bits the evdev input path uses (EventListener's
+// Modifier enum and the evdev modifier mask in EvdevAdapter):
+//
+//   Ctrl = bit 0, Shift = bit 1, Alt = bit 2, Meta = bit 3
+//
+// One layout for every backend. It used to differ: the non-evdev branch of
+// ParseModifiersAndFlags() produced SHIFT=bit 0 / CONTROL=bit 1, while the
+// hotkey matchers (EventListener::CheckModifierMatch and
+// HotkeyManager::checkModifierMatch) read the evdev layout - Ctrl=bit 0,
+// Shift=bit 1. On the X11 path the two disagreed, so Ctrl and Shift were
+// swapped in the match: a hotkey registered as ^A (Ctrl) was matched as if
+// it required Shift.
+//
+// Every backend's ToAbstractMask()/ToPlatformMask() uses these constants,
+// so aligning them with the evdev layout fixes the X11 path without
+// touching the conversion functions.
 namespace ModifierMasks {
-constexpr int SHIFT = (1 << 0);
-constexpr int CONTROL = (1 << 1);
+constexpr int CONTROL = (1 << 0);
+constexpr int SHIFT = (1 << 1);
 constexpr int ALT = (1 << 2);
 constexpr int META = (1 << 3);
 constexpr int LOCK = (1 << 4);

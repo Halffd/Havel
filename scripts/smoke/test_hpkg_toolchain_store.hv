@@ -125,6 +125,13 @@ fs.write(FIXTURE, "print(\"TOOLCHAIN_RAN\")\n")
 r = process.run(env_prefix + " " + HPKG + " toolchain run " + head + " run " + FIXTURE)
 check("run executes the stored binary", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
 
+// The first argument is a ref only if it resolves to an installed
+// toolchain; otherwise the whole arg list runs under the current one. So
+// a script path as the first argument must reach the current toolchain's
+// havel - not be rejected as an unknown ref.
+r = process.run(env_prefix + " " + HPKG + " toolchain run " + FIXTURE)
+check("run treats a script path as a command, not a ref", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
+
 // --- regress: same command under the selected toolchain, pass and fail.
 r = process.run(env_prefix + " " + HPKG + " toolchain regress " + head + " -- run " + FIXTURE)
 check("regress reports the passing toolchain", r.exitCode == 0 && r.stdout.includes("passed:"))
@@ -174,8 +181,27 @@ r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo /nonexistent-r
 check("tags refuses a non-repository path", r.exitCode == 1 && r.stderr.includes("cannot read tags"))
 
 // --- error paths
+//
+// The first argument of `toolchain run` is a toolchain ref ONLY if it
+// resolves to an INSTALLED toolchain; anything else (a script path, a
+// flag, ...) means "run under the current toolchain". That is deliberate:
+// `hpkg toolchain run ./script.hv` is the natural spelling, and treating
+// the path as a ref name produced the absurd
+// "not installed: /home/.../script.hv".
+//
+// So an uninstalled ref is NOT an error while a default is set - it falls
+// back to the current toolchain. The refusal only happens when there is
+// no default either. The check below therefore uses a store with no
+// default selected, which is the case that must still be refused.
+EMPTY_STORE = "${sys.tmpdir()}/havel_tc_empty_${sys.pid()}"
+r = process.run("env HAVEL_TOOLCHAIN_STORE=" + EMPTY_STORE + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
+check("run refuses an uninstalled ref with no default", r.exitCode == 1 && r.stderr.includes("not an installed toolchain"))
+
+// With a default set, the same uninstalled ref falls back to the current
+// toolchain - the first arg is then part of the command, so the run fails
+// on the missing script rather than on the ref.
 r = process.run(env_prefix + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
-check("run refuses an uninstalled ref", r.exitCode == 1 && r.stderr.includes("not installed"))
+check("run falls back to the current toolchain for an uninstalled ref", r.exitCode == 1 && !r.stderr.includes("not an installed toolchain"))
 
 r = process.run(env_prefix + " " + HPKG + " toolchain install nosuchrefatall")
 check("install refuses an unknown ref", r.exitCode == 1 && r.stderr.includes("ref not found"))
@@ -189,6 +215,7 @@ check("remove refuses to drop the default", r.exitCode == 1 && r.stderr.includes
 // --- clean up
 r = process.run(env_prefix + " " + HPKG + " toolchain use " + head)
 fs.remove_all(STORE)
+fs.remove_all(EMPTY_STORE)
 fs.remove(FIXTURE)
 fs.remove(FAILFIX)
 

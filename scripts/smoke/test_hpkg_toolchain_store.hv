@@ -1,4 +1,4 @@
-// smoke: timeout = 180
+// smoke: timeout = 600
 // Regression: hpkg's toolchain store (per-commit havel binaries).
 //
 // The version manager keeps one directory per commit under
@@ -15,6 +15,31 @@
 // Expected: PASS, exit 0. Fails if any subcommand regresses, if a copied
 // binary cannot start (missing runtime .so beside it), or if selection
 // precedence between HAVEL_TOOLCHAIN and the default file breaks.
+//
+// The timeout is 600 s, not the 180 s it used to be.
+//
+// Every `toolchain run` and `toolchain regress` starts a full havel
+// engine: the COPIED binary has to boot AND compile the stdlib from
+// source, because a fresh toolchain directory has no bytecode cache.
+// There are eight such starts in this script, so the cost is eight
+// engine startups.
+//
+// Measured wall time for the whole script on this box, same binary:
+//
+//   load  2-3   ->  50 s
+//   load  8-11  -> 224 s
+//   load  12    -> 409 s (under hvtest, which adds its own overhead)
+//
+// The script ran with its 180 s budget before the check for the new
+// "a script path is a command, not a ref" behavior was added; that check
+// starts two more engines. A budget that does not cover the work the
+// test actually does turns a load spike into a false failure, and this
+// test has failed that way repeatedly (see the gate-evidence table in
+// docs/known-issues/x11-hotkey-modifier-and-event-delivery.md).
+//
+// 600 s is inside the range the suite already uses for scripts that
+// legitimately start many engines (test_issue_hotkey_pin_lifetime.hv
+// uses 1200 s).
 
 use "fs"
 use "process"

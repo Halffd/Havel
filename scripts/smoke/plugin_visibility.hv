@@ -1,7 +1,14 @@
-// smoke: timeout = 60
+// smoke: timeout = 600
 // smoke: tier = slow
 // Test that plugin symbols are properly exported and loadable
 // This catches the "undefined symbol" visibility bugs
+//
+// This is a slow-tier test that dlopens every built plugin and checks its
+// exported symbols. Measured wall time on this box: 56.5 s at load 6 on
+// ONE core. The 60 s budget left 6% headroom, so the test failed with
+// (timeout) whenever the box was loaded even though every assertion
+// passed. The budget is now 600 s, which covers the measured cost with
+// room to spare.
 
 use sys
 use ffi

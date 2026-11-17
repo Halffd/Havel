@@ -237,6 +237,48 @@ content-keyed cache fix deliberately left behind), or a per-tree cache
 directory by default. Until then, a gate on this box measures the convoy,
 not the tree.
 
+### Update (2026-11-16): the private-cache workaround is usable again
+
+The blocker named above - "a cache outside `$HOME/.cache/havel` makes
+`test_python_bridge` fail under AddressSanitizer with a 2289-byte
+CPython leak" - is **gone**. The leak was in the python bridge's own
+teardown (the module/builtin-function reference cycle and the reference
+`PyImport_ImportModule()` returned), not in the self-hosted pipeline it
+was blamed on; it is fixed in `src/modules/python/PythonModule.cpp` and
+recorded in `python-bridge-cpython-module-leak.md`.
+
+The doc's own minimal reproducer now passes with a non-default cache:
+
+    D=$(mktemp -d)
+    XDG_CACHE_HOME=$D /host/havel-3/build-debug/havel \
+        --run --self-hosted-path out --minimal \
+        scripts/smoke/test_python_bridge.hv
+    # rc=0, 16 PASS lines, no AddressSanitizer report
+
+So a gate can now point `XDG_CACHE_HOME` at a scratch directory and
+avoid the box-wide convoy. Measured on this box, the same binary and
+the same trivial script (`print("x")`):
+
+| cache | wall |
+|-------|------|
+| shared `~/.cache/havel` | 11.85 s - 27.45 s |
+| private `XDG_CACHE_HOME=/tmp/...` (cold, first launch) | 47.72 s |
+| private `XDG_CACHE_HOME=/tmp/...` (warm) | **1.45 s - 1.75 s** |
+
+The private cache is warm after the first launch, and the warm path is
+roughly **8-15x faster** than the shared one - which is the difference
+between a smoke test that starts inside its per-test budget and one that
+does not.
+
+Note that the cold first launch is SLOWER (47.72 s): every module is
+compiled from source and written to the fresh cache. A gate should
+therefore point `XDG_CACHE_HOME` at a **persistent** scratch directory
+for the tree, not at a `mktemp -d` that is discarded between runs.
+
+This does NOT fix the convoy itself - the shared cache is still fought
+over by four checkouts. It makes a gate measurable on this box.
+
+
 ### Distinct from the serve-path defect closed on Nov 13
 
 The convoy above is about LOCK WAIT on entries that are written

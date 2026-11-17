@@ -1,0 +1,88 @@
+// End-to-end check for the X11 hotkey delivery path.
+//
+// what: register a hotkey on the X11 input path and prove that a key
+//   event for it actually arrives and fires the binding - and that the
+//   modifier on the binding is the one that is matched.
+// why: the X11 root-window subscription could be REFUSED by the X server
+//   (BadAccess) - and because havel asked for the key events and the
+//   pointer events in ONE XSelectInput call, the refused pointer bits took
+//   the key events down with them. The process then received NO key events
+//   at all, for its whole lifetime, and every X11 hotkey was dead.
+//
+//   A separate defect swapped Ctrl and Shift in the match on the X11 path,
+//   so a Ctrl hotkey was matched as if it required Shift.
+//
+// expected: PASS - the Ctrl binding fires exactly once for a Ctrl+F24
+//   press, and the Shift binding does not fire for that press.
+//
+//   Note on the plain binding: a hotkey with no modifier matches whatever
+//   modifiers happen to be held (the "ignore modifiers unless explicitly
+//   set" rule), so the plain F24 binding fires for a Ctrl+F24 press too.
+//   That is the documented rule, not a defect - which is why the
+//   discrimination check here uses a DIFFERENT modifier (Shift) instead.
+//
+// run: ./build-debug/havel --io x11 scripts/tests/test_x11_hotkey_delivery.hv
+//   Manual-run: the script registers a real hotkey and a helper process
+//   injects the key. It is NOT in scripts/smoke - injecting real input
+//   must never happen in the automated suite.
+//
+// The injector (scripts/tests/x11inject.c) uses XTest to synthesize the
+// key press, so no physical input is involved. Build it first:
+//   clang -O0 scripts/tests/x11inject.c -o /tmp/opencode/x11inject -lX11 -lXtst
+
+firedCtrl = 0
+firedShift = 0
+
+// The Ctrl modifier is the point of the test: before the layout fix, a
+// Ctrl hotkey was matched as if it required Shift.
+//
+// '^' is the Ctrl shorthand and '+' is the Shift shorthand, so '^F24' is
+// Ctrl+F24 and '^+F24' would be Ctrl+Shift+F24.
+^F24 => {
+    firedCtrl = firedCtrl + 1
+    print("CTRL_FIRED")
+}
+
+// A Shift binding: with the Ctrl/Shift bits swapped, this one would have
+// matched the Ctrl press instead of the Ctrl one.
++F24 => {
+    firedShift = firedShift + 1
+    print("SHIFT_FIRED")
+}
+
+// The hotkeys are registered when the script's top level runs, but the
+// X11 adapter needs its own subscription to be in place before a key event
+// can arrive. Give it a moment, then inject the key from a helper process:
+// the event is synthesized by the X server, so it travels the exact same
+// path as a real key press.
+sleep(1200)
+
+injector = "/tmp/opencode/x11inject"
+if !fs.exists(injector) {
+    print("FAIL: injector missing - build scripts/tests/x11inject.c first")
+    exit(1)
+}
+
+r = process.pipe([injector, "F24", "ctrl"])
+if !r.success {
+    print("FAIL: injector failed: " + str(r.error))
+    exit(1)
+}
+
+// Give the event time to travel from the X server to the binding.
+sleep(1200)
+
+if firedCtrl != 1 {
+    print("FAIL: Ctrl+F24 fired " + str(firedCtrl) + " times, expected 1")
+    exit(1)
+}
+if firedShift != 0 {
+    print("FAIL: Shift+F24 fired " + str(firedShift) + " times for a Ctrl press")
+    exit(1)
+}
+print("PASS: X11 hotkey delivery works and Ctrl is not matched as Shift")
+
+// The registered hotkeys keep the event loop alive, so the process would
+// otherwise linger forever. exit(0) ends it with the assertions above
+// already evaluated.
+exit(0)

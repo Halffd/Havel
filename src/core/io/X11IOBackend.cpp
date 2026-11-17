@@ -121,15 +121,44 @@ void X11IOBackend::SendButton(int button, bool down) {
     XSync(display_, x11::XFalse);
 }
 
+std::vector<unsigned int> GrabMaskVariants(unsigned int modifiers,
+                                            unsigned int numlockMask) {
+    // The lock bits are not part of the base mask: they select WHICH
+    // variants the hotkey is grabbed under, not an extra constraint on the
+    // base. ToPlatformMask() OR-ed them into `modifiers` when the script
+    // asked for a CapsLock/NumLock modifier, and keeping them there made
+    // the plain (no-lock) variant unreachable - so a hotkey that required
+    // CapsLock also fired with CapsLock off, and the plain grab was never
+    // installed, so it was never removed either.
+    const unsigned int lockBits = LockMask | numlockMask;
+    const unsigned int base = modifiers & ~lockBits;
+
+    // Every combination of the two lock modifiers, so the hotkey fires
+    // regardless of the CapsLock/NumLock state. Duplicates are dropped:
+    // numlockMask is 0 on a keymap without NumLock (and can equal
+    // LockMask), which would otherwise install the same grab twice.
+    const unsigned int variants[] = {0, LockMask, numlockMask, numlockMask | LockMask};
+    std::vector<unsigned int> result;
+    result.reserve(4);
+    for (unsigned int variant : variants) {
+        const unsigned int mask = base | variant;
+        bool seen = false;
+        for (unsigned int existing : result) {
+            if (existing == mask) { seen = true; break; }
+        }
+        if (!seen) result.push_back(mask);
+    }
+    return result;
+}
+
 bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {
     if (!display_) return false;
     // First ungrab any existing grab for this key/modifier combo to avoid leaks
     UnregisterHotkey(keycode, modifiers, isButton);
     bool success = true;
     ::Window root = DefaultRootWindow(display_);
-    unsigned int modVariants[] = {0, LockMask, numlockMask_, numlockMask_ | LockMask};
-    for (unsigned int variant : modVariants) {
-        unsigned int finalMods = modifiers | variant;
+    for (unsigned int finalMods :
+         GrabMaskVariants(static_cast<unsigned int>(modifiers), numlockMask_)) {
         int result;
         if (isButton) {
             result = XGrabButton(display_, keycode, finalMods, root, x11::XTrue,
@@ -148,9 +177,12 @@ bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {
 bool X11IOBackend::UnregisterHotkey(int keycode, int modifiers, bool isButton) {
     if (!display_) return false;
     ::Window root = DefaultRootWindow(display_);
-    unsigned int modVariants[] = {0, LockMask, numlockMask_, numlockMask_ | LockMask};
-    for (unsigned int variant : modVariants) {
-        unsigned int finalMods = modifiers | variant;
+    // The SAME mask list the grab was installed under. A different list
+    // here leaves the grab on the X server: the key stays captured after
+    // the hotkey was removed, and the binding keeps stealing it from every
+    // other application.
+    for (unsigned int finalMods :
+         GrabMaskVariants(static_cast<unsigned int>(modifiers), numlockMask_)) {
         if (isButton) {
             XUngrabButton(display_, keycode, finalMods, root);
         } else {
@@ -256,11 +288,18 @@ void X11IOBackend::UpdateNumLockMask() {
     XModifierKeymap *modmap = XGetModifierMapping(display_);
     if (!modmap) return;
     KeyCode nlock = XKeysymToKeycode(display_, XK_Num_Lock);
-    KeyCode slock = XKeysymToKeycode(display_, XK_Scroll_Lock);
-    for (int i = 0; i < 8; i++) {
+    // The FIRST modifier row that carries Num_Lock wins. A keymap can list
+    // the keycode in more than one row, and the previous code took the LAST
+    // match - so the resulting bit depended on the iteration order, and a
+    // change of that order silently changed which masks the hotkeys were
+    // grabbed under.
+    for (int i = 0; i < 8 && numlockMask_ == 0; i++) {
         for (int j = 0; j < modmap->max_keypermod; j++) {
             KeyCode code = modmap->modifiermap[i * modmap->max_keypermod + j];
-            if (code == nlock) numlockMask_ = 1 << i;
+            if (code == nlock && code != 0) {
+                numlockMask_ = 1 << i;
+                break;
+            }
         }
     }
     XFreeModifiermap(modmap);
@@ -271,15 +310,22 @@ int X11IOBackend::GetNumLockMask() {
   return numlockMask_;
 }
 
-int X11IOBackend::ToAbstractMask(int platformMask) const {
+int X11StateToAbstractMask(unsigned int state, unsigned int numlockMask) {
   int result = 0;
-  if (platformMask & ShiftMask)   result |= ModifierMasks::SHIFT;
-  if (platformMask & ControlMask) result |= ModifierMasks::CONTROL;
-  if (platformMask & Mod1Mask)    result |= ModifierMasks::ALT;
-  if (platformMask & Mod4Mask)    result |= ModifierMasks::META;
-  if (platformMask & LockMask)    result |= ModifierMasks::LOCK;
-  if (platformMask & numlockMask_) result |= ModifierMasks::NUMLOCK;
+  if (state & ShiftMask)   result |= ModifierMasks::SHIFT;
+  if (state & ControlMask) result |= ModifierMasks::CONTROL;
+  if (state & Mod1Mask)    result |= ModifierMasks::ALT;
+  if (state & Mod4Mask)    result |= ModifierMasks::META;
+  if (state & LockMask)    result |= ModifierMasks::LOCK;
+  // NumLock is reported only when the server maps it to a modifier bit: on
+  // a keymap without NumLock (numlockMask == 0) its state cannot be told
+  // apart from the other modifiers.
+  if (numlockMask != 0 && (state & numlockMask)) result |= ModifierMasks::NUMLOCK;
   return result;
+}
+
+int X11IOBackend::ToAbstractMask(int platformMask) const {
+  return X11StateToAbstractMask(static_cast<unsigned int>(platformMask), numlockMask_);
 }
 
 int X11IOBackend::ToPlatformMask(int abstractMask) const {

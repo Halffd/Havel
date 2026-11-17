@@ -398,6 +398,13 @@ public:
 
   void MsgBox(const std::string &message);
 
+  // Parses the modifier prefixes and flags of a hotkey string.
+  //
+  // The modifier bits are ALWAYS ModifierMasks (see IOBackend.hpp), for
+  // every backend. The evdev path used to produce the evdev bits inline and
+  // the other backends produced ModifierMasks - the two disagreed on the
+  // Ctrl/Shift bits, so the hotkey matchers (which read the evdev layout)
+  // matched a Ctrl hotkey as if it required Shift on the X11 path.
   static ParsedHotkey ParseModifiersAndFlags(const std::string &input,
                                              bool isEvdev);
   // Returns a platform keycode as an int, not X11 KeyCode: the X11 typedef is

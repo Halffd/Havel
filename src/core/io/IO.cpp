@@ -1773,14 +1773,21 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input, bool isEvdev) 
         // Check if this is followed by '+' or end of string
         if (i + mod.size() == input.size() || input[i + mod.size()] == '+') {
           // Found text modifier
+          //
+          // ONE layout for every backend: ModifierMasks. The evdev branch
+          // used to produce the evdev bits inline ((1 << 0) for ctrl) while
+          // the non-evdev branch produced ModifierMasks - and the two
+          // disagreed on the Ctrl/Shift bits, so the hotkey matchers (which
+          // read the evdev layout) matched a Ctrl hotkey as if it required
+          // Shift on the X11 path.
           if (mod == "ctrl") {
-            result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
+            result.modifiers |= ModifierMasks::CONTROL;
           } else if (mod == "shift") {
-            result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
+            result.modifiers |= ModifierMasks::SHIFT;
           } else if (mod == "alt") {
-            result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
+            result.modifiers |= ModifierMasks::ALT;
           } else if (mod == "meta" || mod == "win") {
-            result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
+            result.modifiers |= ModifierMasks::META;
           }
 
           i += mod.size();
@@ -1816,16 +1823,16 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input, bool isEvdev) 
       result.isX11 = true;
       break;
     case '^':
-      result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
+      result.modifiers |= ModifierMasks::CONTROL;
       break;
     case '+':
-      result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
+      result.modifiers |= ModifierMasks::SHIFT;
       break;
     case '!':
-      result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
+      result.modifiers |= ModifierMasks::ALT;
       break;
     case '#':
-      result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
+      result.modifiers |= ModifierMasks::META;
       break;
     case '*':
       // Wildcard - ignore all current modifiers but don't set repeat=false

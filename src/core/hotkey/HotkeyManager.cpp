@@ -1,5 +1,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "core/io/IOBackend.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/io/KeyMap.hpp"
@@ -520,32 +522,34 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
 
   int HotkeyManager::currentModifierMask() const
   {
+    // ModifierMasks layout - see IOBackend.hpp.
     int mask = 0;
     if (modifierState.leftCtrl || modifierState.rightCtrl)
     {
-      mask |= 1 << 0;
+      mask |= ModifierMasks::CONTROL;
     }
     if (modifierState.leftShift || modifierState.rightShift)
     {
-      mask |= 1 << 1;
+      mask |= ModifierMasks::SHIFT;
     }
     if (modifierState.leftAlt || modifierState.rightAlt)
     {
-      mask |= 1 << 2;
+      mask |= ModifierMasks::ALT;
     }
     if (modifierState.leftMeta || modifierState.rightMeta)
     {
-      mask |= 1 << 3;
+      mask |= ModifierMasks::META;
     }
     return mask;
   }
 
   bool HotkeyManager::checkModifierMatch(int required, bool wildcard) const
   {
-    const bool ctrlRequired = (required & (1 << 0)) != 0;
-    const bool shiftRequired = (required & (1 << 1)) != 0;
-    const bool altRequired = (required & (1 << 2)) != 0;
-    const bool metaRequired = (required & (1 << 3)) != 0;
+    // ModifierMasks layout - see IOBackend.hpp.
+    const bool ctrlRequired = (required & ModifierMasks::CONTROL) != 0;
+    const bool shiftRequired = (required & ModifierMasks::SHIFT) != 0;
+    const bool altRequired = (required & ModifierMasks::ALT) != 0;
+    const bool metaRequired = (required & ModifierMasks::META) != 0;
 
     const bool ctrlPressed = modifierState.leftCtrl || modifierState.rightCtrl;
     const bool shiftPressed = modifierState.leftShift || modifierState.rightShift;
@@ -632,19 +636,19 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
           int keyMod = 0;
           if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL)
           {
-            keyMod = 1 << 0;
+            keyMod = ModifierMasks::CONTROL;
           }
           else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT)
           {
-            keyMod = 1 << 1;
+            keyMod = ModifierMasks::SHIFT;
           }
           else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT)
           {
-            keyMod = 1 << 2;
+            keyMod = ModifierMasks::ALT;
           }
           else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA)
           {
-            keyMod = 1 << 3;
+            keyMod = ModifierMasks::META;
           }
           if ((mods & keyMod) == 0)
           {
@@ -699,19 +703,19 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
         {
           if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL)
           {
-            requiredModifiers |= 1 << 0;
+            requiredModifiers |= ModifierMasks::CONTROL;
           }
           else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT)
           {
-            requiredModifiers |= 1 << 1;
+            requiredModifiers |= ModifierMasks::SHIFT;
           }
           else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT)
           {
-            requiredModifiers |= 1 << 2;
+            requiredModifiers |= ModifierMasks::ALT;
           }
           else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA)
           {
-            requiredModifiers |= 1 << 3;
+            requiredModifiers |= ModifierMasks::META;
           }
         }
         else

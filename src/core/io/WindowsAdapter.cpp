@@ -1,4 +1,6 @@
 #include "InputBackend.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "IOBackend.hpp"
 #include "KeyMap.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
@@ -387,11 +389,12 @@ havel::ModifierState WindowsAdapter::GetModifierState() const {
 
 int WindowsAdapter::GetCurrentModifiersMask() const {
     std::shared_lock<std::shared_mutex> lock(stateMutex_);
+    // ModifierMasks layout - see IOBackend.hpp.
     int mask = 0;
-    if (modifierState_.IsCtrlPressed()) mask |= 1;
-    if (modifierState_.IsShiftPressed()) mask |= 2;
-    if (modifierState_.IsAltPressed()) mask |= 4;
-    if (modifierState_.IsMetaPressed()) mask |= 8;
+    if (modifierState_.IsCtrlPressed()) mask |= ModifierMasks::CONTROL;
+    if (modifierState_.IsShiftPressed()) mask |= ModifierMasks::SHIFT;
+    if (modifierState_.IsAltPressed()) mask |= ModifierMasks::ALT;
+    if (modifierState_.IsMetaPressed()) mask |= ModifierMasks::META;
     return mask;
 }
 
@@ -472,10 +475,11 @@ void WindowsAdapter::ProcessKeyEvent(KBDLLHOOKSTRUCT *kb, bool down) {
         std::unique_lock<std::shared_mutex> lock(stateMutex_);
         keyStates_[evdevCode] = down;
         modifiers_ = 0;
-        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) modifiers_ |= (1 << 0);
-        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) modifiers_ |= (1 << 1);
-        if (GetAsyncKeyState(VK_MENU) & 0x8000) modifiers_ |= (1 << 2);
-        if (GetAsyncKeyState(VK_LWIN) || GetAsyncKeyState(VK_RWIN)) modifiers_ |= (1 << 3);
+        // ModifierMasks layout - see IOBackend.hpp.
+        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) modifiers_ |= ModifierMasks::CONTROL;
+        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) modifiers_ |= ModifierMasks::SHIFT;
+        if (GetAsyncKeyState(VK_MENU) & 0x8000) modifiers_ |= ModifierMasks::ALT;
+        if (GetAsyncKeyState(VK_LWIN) || GetAsyncKeyState(VK_RWIN)) modifiers_ |= ModifierMasks::META;
 
         UpdateModifierStateInternal(mappedCode, down);
 

@@ -1,8 +1,13 @@
 #include "InputBackend.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "IOBackend.hpp"
 #include "KeyMap.hpp"
 #include "utils/Logger.hpp"
 #include "utils/ExitHandler.hpp"
 #include "X11Adapter.hpp"
+#ifdef __linux__
+#include "X11ErrorProbe.hpp"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <shared_mutex>
@@ -19,6 +24,20 @@
 #endif
 
 namespace havel {
+
+bool ShouldRetrySelectInput(bool subscribed, bool hasDisplay,
+                             std::chrono::steady_clock::time_point now,
+                             std::chrono::steady_clock::time_point nextRetry) {
+    // Nothing to do when the subscription is already in place.
+    if (subscribed)
+        return false;
+    // Nothing to do without a connection to ask on.
+    if (!hasDisplay)
+        return false;
+    // The poll loop runs every millisecond. The X server would answer every
+    // one of those requests with BadAccess, so the retry is rate-limited.
+    return now >= nextRetry;
+}
 
 X11Adapter::X11Adapter() = default;
 
@@ -41,10 +60,10 @@ bool X11Adapter::Init() {
     root_ = DefaultRootWindow(display_);
     xfd_ = XConnectionNumber(display_);
 
-    XSelectInput(display_, root_,
-        KeyPressMask | KeyReleaseMask |
-        ButtonPressMask | ButtonReleaseMask |
-        PointerMotionMask | ButtonMotionMask);
+    // The first retry of a refused subscription happens one second from
+    // now, not immediately: the poll loop runs every millisecond.
+    nextSelectRetry_ = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    SelectRootInputEvents();
 
     BuildKeycodeMap();
 
@@ -76,10 +95,100 @@ void X11Adapter::Shutdown() {
         XCloseDisplay(display_);
         display_ = nullptr;
     }
+    // The subscription died with the connection: a later Init() has to ask
+    // for it again.
+    rootInputSelected_ = false;
+    nextSelectRetry_ = {};
 #endif
     g_active_x11_adapter.store(nullptr, std::memory_order_release);
     initialized_ = false;
 }
+
+#ifdef __linux__
+bool X11Adapter::SelectRootInputEvents() {
+    if (!display_) return false;
+    if (rootInputSelected_) return true;
+
+    // The root-window subscription is made in TWO calls, on purpose.
+    //
+    // XSelectInput REPLACES the event mask of the window, and the X server
+    // refuses the whole request - BadAccess - when it selects
+    // ButtonPress/ButtonRelease on the root window while another client
+    // holds an active pointer grab. A refused request leaves the PREVIOUS
+    // mask in place; it does not partially apply.
+    //
+    // Asking for everything in one call therefore had a much wider blast
+    // radius than the actual refusal: the ButtonPress/ButtonRelease bits
+    // were refused, and the key events went down with them - so the client
+    // received NO key events at all, even though a key-only subscription
+    // would have been accepted.
+    //
+    // Splitting the request keeps the blast radius at the bits that were
+    // actually refused:
+    //
+    //   1. key events - must succeed. Without them no hotkey can fire, so
+    //      a refusal here is a real failure and is retried.
+    //   2. pointer events - best effort. A refusal only costs pointer
+    //      events, which the pointer grab already takes away.
+    {
+        ScopedX11ErrorProbe probe(display_);
+        XSelectInput(display_, root_, KeyPressMask | KeyReleaseMask);
+        XSync(display_, False);
+        if (probe.Failed()) {
+            rootInputSelected_ = false;
+            error("X11Adapter: XSelectInput for key events on the root window "
+                  "was refused (error code {}); key events are not delivered "
+                  "until the other client releases its grab",
+                  probe.ErrorCode());
+            return false;
+        }
+    }
+
+    // The key subscription is live now: mark it BEFORE the pointer call so
+    // a pointer refusal cannot take the key subscription down with it.
+    rootInputSelected_ = true;
+
+    // The second call asks for the key bits AGAIN, together with the
+    // pointer bits. XSelectInput REPLACES the whole mask, so a pointer-only
+    // request would WIPE the key subscription that the call above just
+    // installed. Asking for both means:
+    //
+    //   - the call succeeds -> the mask holds key AND pointer events;
+    //   - the call is refused -> the mask keeps the key-only value from the
+    //     call above, because a refused request changes nothing.
+    {
+        ScopedX11ErrorProbe probe(display_);
+        XSelectInput(display_, root_,
+            KeyPressMask | KeyReleaseMask |
+            ButtonPressMask | ButtonReleaseMask |
+            PointerMotionMask | ButtonMotionMask);
+        XSync(display_, False);
+        if (probe.Failed()) {
+            // Not fatal: the key-only subscription from the call above is
+            // still in effect. Only pointer events are missing.
+            warning("X11Adapter: XSelectInput for pointer events on the root "
+                    "window was refused (error code {}); pointer events are "
+                    "not delivered, key events are",
+                    probe.ErrorCode());
+        }
+    }
+
+    debug("X11Adapter: subscribed to root window key events (pointer events "
+          "best effort)");
+    return true;
+}
+
+void X11Adapter::RetrySelectInput() {
+    const auto now = std::chrono::steady_clock::now();
+    if (!ShouldRetrySelectInput(rootInputSelected_, display_ != nullptr, now,
+                                nextSelectRetry_))
+        return;
+    // Move the deadline before the attempt: the attempt itself talks to
+    // the X server, and the next one must not be due before it is done.
+    nextSelectRetry_ = now + std::chrono::seconds(1);
+    SelectRootInputEvents();
+}
+#endif
 
 std::vector<DeviceInfo> X11Adapter::EnumerateDevices() {
     std::vector<DeviceInfo> result;
@@ -213,6 +322,12 @@ void X11Adapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
         XNextEvent(display_, &event);
         ProcessX11Event(event);
     }
+#endif
+}
+
+void X11Adapter::Poll() {
+#ifdef __linux__
+    RetrySelectInput();
 #endif
 }
 
@@ -379,10 +494,11 @@ havel::ModifierState X11Adapter::GetModifierState() const {
 int X11Adapter::GetCurrentModifiersMask() const {
     std::shared_lock<std::shared_mutex> lock(stateMutex_);
     int mask = 0;
-    if (modifierState_.IsCtrlPressed()) mask |= 1;
-    if (modifierState_.IsShiftPressed()) mask |= 2;
-    if (modifierState_.IsAltPressed()) mask |= 4;
-    if (modifierState_.IsMetaPressed()) mask |= 8;
+    // ModifierMasks layout - see IOBackend.hpp.
+    if (modifierState_.IsCtrlPressed()) mask |= ModifierMasks::CONTROL;
+    if (modifierState_.IsShiftPressed()) mask |= ModifierMasks::SHIFT;
+    if (modifierState_.IsAltPressed()) mask |= ModifierMasks::ALT;
+    if (modifierState_.IsMetaPressed()) mask |= ModifierMasks::META;
     return mask;
 }
 
@@ -643,52 +759,31 @@ uint32_t X11Adapter::X11ButtonToEvdev(unsigned int button) const {
 }
 
 uint32_t X11Adapter::X11ModifiersToHavel(unsigned int state) const {
+    // The platform-neutral ModifierMasks layout - the SAME layout the
+    // hotkey matchers read. This used to spell the bits out inline as
+    // (1 << 0) for ctrl and (1 << 1) for shift, which happened to match
+    // the evdev layout but drifted from ModifierMasks (which had Ctrl and
+    // Shift on the opposite bits) - so the X11 path and the grab path
+    // disagreed about which bit meant Ctrl.
     uint32_t mods = 0;
-    if (state & ControlMask) mods |= (1 << 0);
-    if (state & ShiftMask) mods |= (1 << 1);
-    if (state & Mod1Mask) mods |= (1 << 2);
-    if (state & Mod4Mask) mods |= (1 << 3);
+    if (state & ControlMask) mods |= ModifierMasks::CONTROL;
+    if (state & ShiftMask) mods |= ModifierMasks::SHIFT;
+    if (state & Mod1Mask) mods |= ModifierMasks::ALT;
+    if (state & Mod4Mask) mods |= ModifierMasks::META;
     return mods;
 }
 
 unsigned int X11Adapter::HavelModifiersToX11(uint32_t modifiers) const {
     unsigned int state = 0;
-    if (modifiers & (1 << 0)) state |= ControlMask;
-    if (modifiers & (1 << 1)) state |= ShiftMask;
-    if (modifiers & (1 << 2)) state |= Mod1Mask;
-    if (modifiers & (1 << 3)) state |= Mod4Mask;
+    if (modifiers & ModifierMasks::CONTROL) state |= ControlMask;
+    if (modifiers & ModifierMasks::SHIFT) state |= ShiftMask;
+    if (modifiers & ModifierMasks::ALT) state |= Mod1Mask;
+    if (modifiers & ModifierMasks::META) state |= Mod4Mask;
     return state;
 }
 
 unsigned int X11Adapter::CleanMask(unsigned int mask) const {
     return mask & RELEVANT_MODIFIERS;
-}
-
-void X11Adapter::GrabKey(KeyCode keycode, unsigned int modifiers) {
-    if (!display_) return;
-    XGrabKey(display_, keycode, modifiers, root_, True, GrabModeAsync, GrabModeAsync);
-    XGrabKey(display_, keycode, modifiers | Mod2Mask, root_, True, GrabModeAsync, GrabModeAsync);
-    XGrabKey(display_, keycode, modifiers | LockMask, root_, True, GrabModeAsync, GrabModeAsync);
-    XGrabKey(display_, keycode, modifiers | Mod2Mask | LockMask, root_, True, GrabModeAsync, GrabModeAsync);
-}
-
-void X11Adapter::UngrabKey(KeyCode keycode, unsigned int modifiers) {
-    if (!display_) return;
-    XUngrabKey(display_, keycode, modifiers, root_);
-    XUngrabKey(display_, keycode, modifiers | Mod2Mask, root_);
-    XUngrabKey(display_, keycode, modifiers | LockMask, root_);
-    XUngrabKey(display_, keycode, modifiers | Mod2Mask | LockMask, root_);
-}
-
-void X11Adapter::GrabButton(unsigned int button, unsigned int modifiers) {
-    if (!display_) return;
-    XGrabButton(display_, button, modifiers, root_, True,
-        ButtonPressMask | ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
-}
-
-void X11Adapter::UngrabButton(unsigned int button, unsigned int modifiers) {
-    if (!display_) return;
-    XUngrabButton(display_, button, modifiers, root_);
 }
 
 std::unique_ptr<InputBackend> CreateX11Adapter() {

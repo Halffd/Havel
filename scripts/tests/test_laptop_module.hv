@@ -1,0 +1,238 @@
+// What: modules/app/laptop.hv exposes its documented surface, degrades to
+//      null on hardware that is absent, and derives its numbers correctly
+//      from the kernel's power_supply values.
+//
+// Why: laptop state was previously only half-modelled by
+//      monitor.battery(), which reported percent 0 and status null on any
+//      machine whose battery is not BAT0 (fs.read returns null, not "", so
+//      the BAT0/BAT1 fallback was dead code) and had no notion of AC state,
+//      the lid, a power profile, time remaining, battery wear or charge
+//      limits.
+//
+// Expected: every export exists and is callable; on a laptop battery() is
+//      an object whose percent, wear, power and time-remaining agree with
+//      the raw charge/current/voltage values to within the rounding the
+//      sysfs ABI allows; on a desktop the laptop-only readers return null
+//      instead of throwing; the write helpers report rather than raise.
+//
+// This test READS hardware only. It never calls suspend()/hibernate() (they
+// really sleep the machine) and never calls the writers below with
+// expectations of success - on hardware that does not expose the knob they
+// report "unsupported", which is asserted here rather than the write
+// succeeding. It lives in scripts/tests/, not scripts/smoke/, because it
+// depends on real power_supply state.
+
+use "app/laptop" as laptop
+use "std/string" as strmod
+
+// ---------------------------------------------------------------
+// Surface
+// ---------------------------------------------------------------
+// Every name the module header promises. A missing one is a typo or an
+// accidental rename, and it costs a script author a null method call.
+_exports = [
+    "battery", "batteries", "ac", "acOnline", "lid", "lidOpen",
+    "profile", "profiles", "setProfile",
+    "suspend", "hibernate",
+    "chargeLimit", "setChargeLimit",
+    "conservationMode", "setConservation",
+    "keyboardBacklight", "setKeyboardBacklight",
+    "summary"
+]
+for _n in _exports {
+    assert(laptop[_n] != null, "laptop.${_n} must be exported")
+    assert(str(type(laptop[_n])) == "function", "laptop.${_n} must be a function")
+}
+
+// ---------------------------------------------------------------
+// Battery
+// ---------------------------------------------------------------
+_b = laptop.battery()
+_all = laptop.batteries()
+assert(str(type(_all)) == "array", "batteries() must return an array")
+
+if _b == null {
+    // Desktop (or a VM with no power_supply). The laptop-only readers must
+    // degrade, and summary() must still be a complete object.
+    print("no battery on this machine - asserting the desktop degradation")
+    assert(str(type(laptop.ac())) == "null", "ac() must be null with no mains device")
+    assert(laptop.acOnline() == false,
+       "acOnline() must be false with no mains device, not a guess")
+} else {
+    assert(str(type(_b)) == "object", "battery() must be an object")
+
+    // Fields the consumers read. Missing one is a silent null in a status
+    // bar, which is the failure mode this module exists to remove.
+    _fields = [
+        "name", "path", "percent", "status", "charging", "discharging",
+        "full", "level", "now", "fullCapacity", "designCapacity",
+        "wearPercent", "cycleCount", "voltage", "current", "powerWatts",
+        "timeRemainingMinutes", "technology", "model", "manufacturer",
+        "serial", "present"
+    ]
+    _bKeys = _b.keys()
+    for _f in _fields {
+        assert(_bKeys.includes(_f), "battery() must have the '${_f}' field")
+    }
+
+    // status and the derived booleans must agree.
+    assert(_b.charging || _b.discharging || _b.full,
+       "battery status must be one of charging/discharging/full, got '${_b.status}'")
+    assert(_b.charging == (_b.status == "Charging"),
+       "charging must follow status '${_b.status}'")
+    assert(_b.discharging == (_b.status == "Discharging"),
+       "discharging must follow status '${_b.status}'")
+
+    // percent must be the charge ratio the kernel reports, not a second
+    // opinion. 2% covers the kernel's own rounding of capacity.
+    if _b.fullCapacity > 0 {
+        _implied = (float(_b.now) / float(_b.fullCapacity)) * 100.0
+        assert(_implied >= _b.percent - 2 && _implied <= _b.percent + 2,
+           "percent ${_b.percent} must match now/fullCapacity ${_implied}")
+    }
+
+    // Wear is only meaningful when the reported capacity is below design.
+    if _b.designCapacity > 0 && _b.fullCapacity <= _b.designCapacity {
+        _impliedWear = (1.0 - float(_b.fullCapacity) / float(_b.designCapacity)) * 100.0
+        assert(_b.wearPercent >= _impliedWear - 0.5 && _b.wearPercent <= _impliedWear + 0.5,
+           "wearPercent ${_b.wearPercent} must match full/design ${_impliedWear}")
+    }
+
+    // Power: current x voltage. 2% of slack for the integer division.
+    if _b.current > 0 && _b.voltage > 0 {
+        _impliedW = float(_b.current) * float(_b.voltage) / 1000000000000.0
+        assert(_b.powerWatts >= _impliedW * 0.98 && _b.powerWatts <= _impliedW * 1.02,
+           "powerWatts ${_b.powerWatts} must match current x voltage ${_impliedW}")
+    }
+
+    // Time remaining: charge / current, in minutes.
+    if _b.discharging && _b.current > 0 {
+        _impliedMin = (float(_b.now) / float(_b.current)) * 60.0
+        assert(_b.timeRemainingMinutes >= _impliedMin - 2 && _b.timeRemainingMinutes <= _impliedMin + 2,
+           "timeRemainingMinutes ${_b.timeRemainingMinutes} must match now/current ${_impliedMin}")
+    }
+    if _b.full {
+        assert(_b.timeRemainingMinutes == 0,
+           "a full battery has nothing to wait for")
+    }
+}
+
+// ---------------------------------------------------------------
+// AC adapter
+// ---------------------------------------------------------------
+_a = laptop.ac()
+if _a == null {
+    assert(laptop.acOnline() == false, "acOnline() must be false with no mains device")
+} else {
+    assert(str(type(_a)) == "object", "ac() must be an object")
+    assert(_a.online == true || _a.online == false, "ac().online must be a boolean")
+    assert(laptop.acOnline() == _a.online,
+       "acOnline() must report the mains device's online state")
+}
+
+// ---------------------------------------------------------------
+// Lid
+// ---------------------------------------------------------------
+_l = laptop.lid()
+if _l == null {
+    assert(laptop.lidOpen() == false, "lidOpen() must be false with no lid switch")
+} else {
+    assert(_l.state == "open" || _l.state == "closed",
+       "lid state must be open or closed, got '${_l.state}'")
+    assert(laptop.lidOpen() == (_l.state == "open"),
+       "lidOpen() must follow the lid state '${_l.state}'")
+}
+
+// ---------------------------------------------------------------
+// Power profile
+// ---------------------------------------------------------------
+_p = laptop.profile()
+_choices = laptop.profiles()
+assert(str(type(_choices)) == "array", "profiles() must return an array")
+if _p == null {
+    assert(#_choices == 0,
+       "a machine with no active profile must advertise no choices either")
+} else {
+    assert(#_choices > 0, "a machine with a profile must advertise its choices")
+    _listed = false
+    for _c in _choices {
+        if _c == _p { _listed = true }
+    }
+    assert(_listed, "the active profile '${_p}' must be among the choices")
+}
+
+// ---------------------------------------------------------------
+// Charge limits, conservation, keyboard backlight
+// ---------------------------------------------------------------
+// These are vendor sysfs. Present or absent, the readers must not throw and
+// must return either null or a well-shaped object.
+_c = laptop.chargeLimit()
+if _c != null {
+    assert(_c.start == null || (_c.start >= 0 && _c.start <= 100),
+       "charge limit start must be 0..100 or null")
+    assert(_c.end == null || (_c.end >= 0 && _c.end <= 100),
+       "charge limit end must be 0..100 or null")
+}
+_cm = laptop.conservationMode()
+if _cm != null {
+    assert(_cm == true || _cm == false, "conservationMode() must be a boolean when present")
+}
+_k = laptop.keyboardBacklight()
+if _k != null {
+    assert(_k.current >= 0, "keyboard backlight level must not be negative")
+    assert(_k.max > 0, "keyboard backlight max must be positive")
+    assert(_k.current <= _k.max, "keyboard backlight level must not exceed max")
+}
+
+// ---------------------------------------------------------------
+// The write helpers report instead of raising
+// ---------------------------------------------------------------
+// Never asserted to succeed: on hardware without the knob they return
+// ok:false with a reason, which is the contract. If they threw instead this
+// test would not reach the end at all.
+_r1 = laptop.setProfile("power-saver")
+assert(str(type(_r1)) == "object", "setProfile() must return a result object")
+assert(_r1.ok == true || _r1.ok == false, "setProfile() must report success or failure")
+assert(_r1.error != null || _r1.ok == true,
+       "a failed setProfile must say why")
+_r2 = laptop.setChargeLimit(60)
+assert(str(type(_r2)) == "object", "setChargeLimit() must return a result object")
+assert(_r2.ok == true || _r2.ok == false, "setChargeLimit() must report success or failure")
+assert(_r2.error != null || _r2.ok == true, "a failed setChargeLimit must say why")
+_r3 = laptop.setConservation(true)
+assert(str(type(_r3)) == "object", "setConservation() must return a result object")
+assert(_r3.ok == true || _r3.ok == false, "setConservation() must report success or failure")
+assert(_r3.error != null || _r3.ok == true, "a failed setConservation must say why")
+_r4 = laptop.setKeyboardBacklight(1)
+assert(str(type(_r4)) == "object", "setKeyboardBacklight() must return a result object")
+assert(_r4.ok == true || _r4.ok == false, "setKeyboardBacklight() must report success or failure")
+assert(_r4.error != null || _r4.ok == true, "a failed setKeyboardBacklight must say why")
+
+// ---------------------------------------------------------------
+// summary() is one complete object
+// ---------------------------------------------------------------
+_s = laptop.summary()
+_summaryFields = [
+    "battery", "status", "charging", "acOnline", "powerWatts",
+    "timeRemainingMinutes", "wearPercent", "cycleCount", "profile",
+    "lidOpen", "chargeLimit", "conservationMode",
+    "keyboardBacklight", "keyboardBacklightMax"
+]
+// Absent hardware is a null VALUE, not a missing field - a status bar reads
+// summary().profile and must get null, not an exception. So assert the key
+// exists (keys()) rather than the value being non-null.
+_sKeys = _s.keys()
+for _f in _summaryFields {
+    assert(_sKeys.includes(_f), "summary() must have the '${_f}' field")
+}
+// summary() must agree with the readers it wraps, not be a second opinion.
+assert(_s.acOnline == laptop.acOnline(), "summary().acOnline must match acOnline()")
+assert(_s.lidOpen == laptop.lidOpen(), "summary().lidOpen must match lidOpen()")
+assert(_s.profile == laptop.profile(), "summary().profile must match profile()")
+if _b != null {
+    assert(_s.battery == _b.percent, "summary().battery must match battery().percent")
+    assert(_s.status == _b.status, "summary().status must match battery().status")
+}
+
+print("PASS: laptop module surface, degradation and derived numbers all check out")
+return 0

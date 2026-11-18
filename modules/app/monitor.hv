@@ -582,31 +582,40 @@ fn network() {
 // Temperature monitoring
 // ============================================================
 
+// _readTrim(path) — fs.read returns NULL for an unreadable path, and
+// `null == ""` is false in this language, so every `if _v == ""` guard in
+// the readers below never fired. Normalise here instead.
+fn _readTrim(path) {
+    _v = fs.read(path)
+    if _v == null { "" } else { _v.trim() }
+}
+
 fn temperatures() {
     _result = []
     for _e in _shell("ls /sys/class/thermal/").split("\n") {
         _e = _e.trim()
         if _e.find("thermal_zone") == 0 {
-            _temp_str = fs.read("/sys/class/thermal/${_e}/temp")
-            _type_str = fs.read("/sys/class/thermal/${_e}/type")
+            _temp_str = _readTrim("/sys/class/thermal/${_e}/temp")
+            _type_str = _readTrim("/sys/class/thermal/${_e}/type")
             if _temp_str != "" {
-                _result.push({zone: _e, type: _type_str.trim(), temp: float(int(_temp_str.trim())) / 1000.0})
+                _temp_c = float(int(_temp_str)) / 1000.0
+                _result.push({zone: _e, type: _type_str, temp: _temp_c})
             }
         }
     }
     for _h in _shell("ls /sys/class/hwmon/").split("\n") {
         _h = _h.trim()
         if _h.find("hwmon") == 0 {
-            _name = fs.read("/sys/class/hwmon/${_h}/name").trim()
+            _name = _readTrim("/sys/class/hwmon/${_h}/name")
             for _inp in _shell("ls /sys/class/hwmon/${_h}/temp*_input").split("\n") {
                 _inp = _inp.trim()
                 if _inp != "" {
-                    _val_str = fs.read(_inp)
+                    _val_str = _readTrim(_inp)
                     if _val_str != "" {
-                        _temp_c = float(int(_val_str.trim())) / 1000.0
-                        _label = fs.read(_inp.replace("_input", "_label")).trim()
+                        _temp_c = float(int(_val_str)) / 1000.0
+                        _label = _readTrim(_inp.replace("_input", "_label"))
                         if _label == "" { _label = _inp }
-                        _result.push({zone: _h, type: "${name} ${label}", temp: _temp_c})
+                        _result.push({zone: _h, type: "${_name} ${_label}", temp: _temp_c})
                     }
                 }
             }
@@ -619,24 +628,30 @@ fn temperatures() {
 // Battery monitoring
 // ============================================================
 
+// fs.read returns NULL for a file that cannot be opened (no such device,
+// unreadable), never "". Comparing the result to "" therefore never
+// matched, the BAT0/BAT1 fallback below was dead code, and on a machine
+// whose battery is BAT1 every read returned null: battery() reported
+// percent 0 and status null.
 fn _batRead(file) {
     _v = fs.read("/sys/class/power_supply/BAT0/${file}")
-    if _v == "" { _v = fs.read("/sys/class/power_supply/BAT1/${file}") }
+    if _v == null { _v = fs.read("/sys/class/power_supply/BAT1/${file}") }
     _v
 }
 
 fn battery() {
     _cap = _batRead("capacity")
-    if _cap == "" { return null }
+    if _cap == null { return null }
     _pct = int(_cap.trim())
-    _st = _batRead("status").trim()
+    _st = _batRead("status")
+    if _st == null { _st = "Unknown" }
     _power_now = _batRead("power_now")
     _rate = 0
-    if _power_now != "" { _rate = int(_power_now.trim()) }
+    if _power_now != null { _rate = int(_power_now.trim()) }
     _voltage = _batRead("voltage_now")
     _volts = 0
-    if _voltage != "" { _volts = int(_voltage.trim()) }
-    ({percent: _pct, status: _st, powerRate: _rate, voltage: _volts})
+    if _voltage != null { _volts = int(_voltage.trim()) }
+    ({percent: _pct, status: _st.trim(), powerRate: _rate, voltage: _volts})
 }
 
 // ============================================================

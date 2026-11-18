@@ -1,0 +1,36 @@
+// What: float() is callable and returns a double.
+//
+// Why: NumberPrototype.cpp registers float.abs/float.round/... as host
+//      functions, and VM::buildNamespaceGlobals() synthesises a `float`
+//      namespace OBJECT out of that dotted prefix. With no bare `float`
+//      registration standing in front of it, the object won the LOAD_GLOBAL
+//      lookup and float(x) died with "Attempted to call non-callable value
+//      of type object" - not only in scripts but inside modules, which is
+//      why monitor.temperatures(), monitor.gpu() and anything using float()
+//      were unreachable. `int` and `num` survived only because they already
+//      had bare registrations.
+//
+// Expected: float(5) is a double, and the derived arithmetic (percentages,
+//      rates) works - that is the whole point of the conversion.
+
+_f = float(5)
+assert(str(type(_f)) == "double" || str(type(_f)) == "float",
+       "float(5) must return a float, got ${str(type(_f))}")
+assert(_f == 5.0, "float(5) must equal 5.0, got ${_f}")
+
+// the arithmetic that actually broke: a ratio built from sysfs integers
+_total = 3220000
+_full = 2421000
+_wear = (1.0 - float(_full) / float(_total)) * 100.0
+assert(_wear > 24.8 && _wear < 24.9,
+       "wear must compute to 24.81%, got ${_wear}")
+
+// float() inside a module function: the scope that failed hardest, because
+// a module body resolves globals through the module sandbox.
+use monitor
+_t = monitor.temperatures()
+assert(str(type(_t)) == "array",
+       "monitor.temperatures() must return an array (it uses float() internally), got ${str(type(_t))}")
+
+print("PASS: float() is callable and the float arithmetic it feeds is correct")
+return 0

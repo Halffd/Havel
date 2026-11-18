@@ -359,6 +359,7 @@ inline constexpr const char *kHostFunctionNames[] = {
     "extension.load",
     "fileExists",
     "fileSize",
+    "float",
     "fmt",
     "fmt._hexPtr",
     "fmt.b64",

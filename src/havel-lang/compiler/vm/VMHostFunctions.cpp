@@ -1648,6 +1648,20 @@ void VM::registerDefaultHostFunctions() {
     return Value(toFloat(args[0]));
   });
 
+  // float(x) — the documented conversion to a double.
+  //
+  // Without a canonical bare registration the name `float` is taken by the
+  // namespace object buildNamespaceGlobals() synthesises from the float.*
+  // prototype host functions (float.abs, float.round, ... registered by
+  // NumberPrototype.cpp), so `float(x)` resolved to that object and died
+  // with "Attempted to call non-callable value of type object". `int` and
+  // `num` above survive this for exactly the same reason: registerDefault
+  // HostGlobals() puts them in globals as functions first, and
+  // buildNamespaceGlobals() then refuses to overwrite a non-object global.
+  registerHostFunction("float", 1, [this](const std::vector<Value> &args) {
+    return Value(toFloat(args[0]));
+  });
+
   // approx(a, b) / approx(a, b, eps) - fuzzy float comparison.
   // Relative tolerance: |a - b| <= eps * max(1, |a|, |b|)
   // Default eps is 1e-9. Finite identical values compare equal (difference is

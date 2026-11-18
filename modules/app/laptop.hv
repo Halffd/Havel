@@ -1,0 +1,554 @@
+// laptop.hv — Laptop hardware: battery, AC adapter, lid, power profile,
+//             suspend/hibernate, vendor charge limits, keyboard backlight.
+//
+// Provides: battery, batteries, ac, acOnline, lid, lidOpen, profile, profiles,
+//           setProfile, suspend, hibernate, chargeLimit, setChargeLimit,
+//           conservation, setConservation, keyboardBacklight,
+//           setKeyboardBacklight, summary
+//
+// Usage:
+//   use "app/laptop" as laptop
+//   b = laptop.battery()
+//   print("${b.percent}% (${b.status}), ${b.timeRemainingMinutes} min left")
+//   print("AC: ${laptop.acOnline()}  profile: ${laptop.profile()}")
+//
+// Everything reads Linux sysfs/procfs. Absent hardware degrades to null
+// instead of throwing, so one code path serves a laptop and a desktop (only
+// the ACTIONS - setProfile, suspend, the charge-limit writers - can fail,
+// and they report what happened rather than raising).
+//
+// Units follow the kernel's power_supply ABI: current_now in µA,
+// voltage_now in µV, power_now in µW, charge_* in µAh and energy_* in µWh.
+// Both spellings are handled because vendors pick one or the other, and
+// `power_now` is optional - some devices expose only current_now x
+// voltage_now, which is why the rate is derived rather than read blindly.
+//
+// NOTE ON THE OBJECT LITERALS: every value is computed into a local first
+// and the returned literal names only those locals. A literal whose field
+// contains a call to a function defined in THIS module evaluates to that
+// call's value instead of the object (see
+// docs/known-issues/module-object-literal-with-call.md) - an invisible
+// defect that returns a number where an object is expected. Using only
+// variables in the literal is what modules/app/monitor.hv does too.
+
+use fs
+use shell
+use string
+
+_POWER_SUPPLY = "/sys/class/power_supply"
+_LID_PROC = "/proc/acpi/button/lid"
+_PLATFORM_PROFILE = "/sys/firmware/acpi/platform_profile"
+_POWER_STATE = "/sys/power/state"
+
+// Charge-threshold sysfs names, vendor by vendor. Globs are matched in
+// order because the parent directory differs (ThinkPad hides it under
+// thinkpad_acpi, ASUS exposes it on power_supply, some hide it behind hwmon).
+_THRESHOLD_START = [
+    "/sys/class/power_supply/*/charge_control_start_threshold",
+    "/sys/devices/platform/*/charge_control_start_threshold",
+    "/sys/devices/platform/*/hwmon/hwmon*/charge_control_start_threshold",
+    "/sys/bus/platform/drivers/thinkpad_acpi/*/charge_control_start_threshold",
+    "/sys/bus/platform/drivers/thinkpad_hwmon/*/charge_control_start_threshold"
+]
+_THRESHOLD_END = [
+    "/sys/class/power_supply/*/charge_control_end_threshold",
+    "/sys/devices/platform/*/charge_control_end_threshold",
+    "/sys/devices/platform/*/hwmon/hwmon*/charge_control_end_threshold",
+    "/sys/bus/platform/drivers/thinkpad_acpi/*/charge_control_end_threshold",
+    "/sys/bus/platform/drivers/thinkpad_hwmon/*/charge_control_end_threshold"
+]
+_CONSERVATION = [
+    "/sys/devices/platform/*/conservation_mode",
+    "/sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode",
+    "/sys/devices/platform/ideapad_acpi/*/conservation_mode"
+]
+
+// ---------------------------------------------------------------
+// sysfs helpers
+// ---------------------------------------------------------------
+
+// fs.read returns NULL for a file that cannot be opened. That is the
+// signal "this device or attribute is not present", and treating it as ""
+// is what left modules/app/monitor.hv's BAT0/BAT1 fallback as dead code.
+fn _text(path) {
+    _v = fs.read(path)
+    if _v == null { "" } else { _v.trim() }
+}
+
+// _num(path) — the file's integer, 0 when absent or unparseable. Sysfs
+// attributes are newline-terminated, and a missing one must not throw:
+// `int("")` raises, so the guard is the parse boundary, not the read.
+fn _num(path) {
+    _t = _text(path)
+    if _t == "" { 0 } else {
+        try { int(_t) } catch { 0 }
+    }
+}
+
+// _devices(kind) — names of power_supply devices whose `type` is `kind`
+// ("Battery", "Mains"). Scanning beats assuming BAT0: this machine is
+// BAT1, and vendors also use CMB0, BAT1 and ADP1.
+fn _devices(kind) {
+    _out = []
+    for _e in fs.readDir(_POWER_SUPPLY) {
+        if _e.isDir {
+            if _text("${_POWER_SUPPLY}/${_e.name}/type") == kind {
+                _out.push(_e.name)
+            }
+        }
+    }
+    _out
+}
+
+// _firstPath(globs) — the first matching path, or null.
+fn _firstPath(globs) {
+    _found = null
+    for _g in globs {
+        _hits = fs.glob(_g)
+        if #_hits > 0 {
+            _found = _hits[0]
+        }
+    }
+    _found
+}
+
+// ---------------------------------------------------------------
+// Battery
+// ---------------------------------------------------------------
+
+// battery() — the first battery, or null on a desktop.
+fn battery() {
+    _names = _devices("Battery")
+    if #_names == 0 { null } else { _readBattery(_names[0]) }
+}
+
+// batteries() — every battery.
+fn batteries() {
+    _out = []
+    for _n in _devices("Battery") {
+        _out.push(_readBattery(_n))
+    }
+    _out
+}
+
+// _readBattery(name) — one device normalised across the two unit
+// spellings. Charge and energy are both legal, and a device may expose
+// charge_now without power_now, so the rate is computed from
+// current_now x voltage_now when the direct attribute is missing.
+fn _readBattery(name) {
+    _dir = "${_POWER_SUPPLY}/${name}"
+
+    // Stored charge, µAh or µWh.
+    _now = _num("${_dir}/charge_now")
+    if _now == 0 { _now = _num("${_dir}/energy_now") }
+    _full = _num("${_dir}/charge_full")
+    if _full == 0 { _full = _num("${_dir}/energy_full") }
+    _design = _num("${_dir}/charge_full_design")
+    if _design == 0 { _design = _num("${_dir}/energy_full_design") }
+
+    _voltage = _num("${_dir}/voltage_now")
+
+    // Instantaneous current in µA, from current_now or from power_now.
+    // µW / µV = A, so µA = powerUW * 1e6 / voltageUV.
+    _current = _num("${_dir}/current_now")
+    _powerUW = _num("${_dir}/power_now")
+    if _current == 0 && _powerUW != 0 && _voltage != 0 {
+        _current = (_powerUW * 1000000) / _voltage
+    }
+    if _powerUW == 0 && _current != 0 && _voltage != 0 {
+        // µA x µV = (1e-6 A)(1e-6 V) = 1e-12 W, so microwatts are the
+        // product divided by 1e6. Dividing by 1e9 here reported 5 mW for a
+        // laptop drawing 5 W - a factor of 1000.
+        _powerUW = (_current * _voltage) / 1000000
+    }
+    // A charging device reports the charge current; magnitude is what the
+    // time estimate needs.
+    _draw = _current
+    if _draw < 0 { _draw = 0 - _draw }
+
+    _percent = _num("${_dir}/capacity")
+    _status = _text("${_dir}/status")
+    if _status == "" { _status = "Unknown" }
+    _level = _text("${_dir}/capacity_level")
+    _technology = _text("${_dir}/technology")
+    _model = _text("${_dir}/model_name")
+    _manufacturer = _text("${_dir}/manufacturer")
+    _serial = _text("${_dir}/serial_number")
+    _present = _text("${_dir}/present") == "1"
+
+    // Wear is only meaningful when the reported capacity is below design;
+    // a device that still reports design capacity has 0% wear, not a
+    // negative number from rounding.
+    _wear = 0.0
+    if _design > 0 && _full > 0 && _full <= _design {
+        _wear = (1.0 - float(_full) / float(_design)) * 100.0
+    }
+
+    _minutes = _timeLeft(_now, _full, _draw, _powerUW, _status)
+    _watts = float(_powerUW) / 1000000.0
+    _cycles = _num("${_dir}/cycle_count")
+
+    ({
+        name: name,
+        path: _dir,
+        percent: _percent,
+        status: _status,
+        charging: _status == "Charging",
+        discharging: _status == "Discharging",
+        full: _status == "Full",
+        level: _level,
+        now: _now,
+        fullCapacity: _full,
+        designCapacity: _design,
+        wearPercent: _wear,
+        cycleCount: _cycles,
+        voltage: _voltage,
+        current: _draw,
+        powerWatts: _watts,
+        timeRemainingMinutes: _minutes,
+        technology: _technology,
+        model: _model,
+        manufacturer: _manufacturer,
+        serial: _serial,
+        present: _present
+    })
+}
+
+// _timeLeft(...) — minutes until empty (discharging) or until full
+// (charging), 0 when there is nothing to wait for.
+//
+// µAh / µA and µWh / µW both reduce to hours, so the ratio needs no unit
+// conversion. A device that keeps charging at full reports 0 rather than a
+// negative number.
+fn _timeLeft(now, full, currentUA, powerUW, status) {
+    if status == "Full" || now == 0 { 0 } else {
+        _target = now
+        if status == "Charging" && full > now { _target = full - now }
+        _hours = 0.0
+        if currentUA != 0 {
+            _hours = float(_target) / float(currentUA)
+        } else {
+            if powerUW != 0 { _hours = float(_target) / float(powerUW) }
+        }
+        if _hours < 0.0 { 0 } else {
+            (_hours * 60.0).round()
+        }
+    }
+}
+
+// ---------------------------------------------------------------
+// AC adapter
+// ---------------------------------------------------------------
+
+// ac() — the first mains device, or null when running on battery only.
+fn ac() {
+    _names = _devices("Mains")
+    if #_names == 0 { null } else {
+        _n = _names[0]
+        _dir = "${_POWER_SUPPLY}/${_n}"
+        _online = _text("${_dir}/online") == "1"
+        _type = _text("${_dir}/type")
+        ({name: _n, path: _dir, online: _online, type: _type})
+    }
+}
+
+// acOnline() — is any mains device supplying power. False when unplugged
+// AND when there is no mains device at all, which is the conservative
+// answer for "can I burn battery".
+fn acOnline() {
+    _a = ac()
+    if _a == null { false } else { _a.online }
+}
+
+// ---------------------------------------------------------------
+// Lid
+// ---------------------------------------------------------------
+
+// lid() — the lid switch, or null when the kernel exposes none.
+fn lid() {
+    _entries = fs.readDir(_LID_PROC)
+    if #_entries == 0 { null } else {
+        _name = _entries[0].name
+        _path = "${_LID_PROC}/${_name}/state"
+        _raw = _text(_path)
+        // The file reads "state:      open" - take what follows the colon.
+        _state = _raw
+        _colon = _raw.find(":")
+        if _colon != null {
+            _state = _raw[_colon + 1:].trim()
+        }
+        _state = _state.lower()
+        ({name: _name, path: _path, state: _state, open: _state != "closed"})
+    }
+}
+
+// lidOpen() — false for a closed lid and for a machine with no lid switch,
+// so "the lid is open" is only ever true on positive evidence.
+fn lidOpen() {
+    _l = lid()
+    if _l == null { false } else { _l.open }
+}
+
+// ---------------------------------------------------------------
+// Power profile
+// ---------------------------------------------------------------
+
+// profiles() — the choices the firmware advertises, [] when it advertises
+// none (this machine has no platform_profile at all).
+fn profiles() {
+    _c = _text("${_PLATFORM_PROFILE}_choices")
+    _out = []
+    if _c != "" {
+        for _p in _c.split(" ") {
+            _t = _p.trim()
+            if _t != "" { _out.push(_t) }
+        }
+    }
+    _out
+}
+
+// profile() — the active profile, or null when unsupported.
+fn profile() {
+    _p = _text(_PLATFORM_PROFILE)
+    if _p == "" { null } else { _p }
+}
+
+// setProfile(name) — switch the ACPI platform profile. Reported, not
+// thrown: the file is often unwritable without a polkit rule and the
+// caller must be able to show the user why it did not happen.
+fn setProfile(name) {
+    _available = profiles()
+    if #_available == 0 {
+        ({ok: false, profile: name, error: "no platform_profile on this firmware"})
+    } else {
+        _match = false
+        for _p in _available {
+            if _p == name { _match = true }
+        }
+        if !_match {
+            _joined = string.join(_available, ", ")
+            ({ok: false, profile: name, error: "not one of ${_joined}"})
+        } else {
+            if fs.write(_PLATFORM_PROFILE, name) {
+                ({ok: true, profile: name, error: null})
+            } else {
+                ({ok: false, profile: name, error: "write refused (run as root, or a polkit rule)"})
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------
+// Suspend / hibernate
+// ---------------------------------------------------------------
+
+// _sleepTo(state, method) — ask the kernel to enter `state` ("mem" =
+// suspend to RAM, "disk" = hibernate). Writing /sys/power/state needs
+// root, so fall back to systemctl, which goes through logind and normally
+// works unprivileged.
+fn _sleepTo(state, label) {
+    _method = label.lower()
+    if fs.writable(_POWER_STATE) {
+        if fs.write(_POWER_STATE, state) {
+            // Only returns if the resume failed, which the caller should know.
+            ({ok: false, method: "${_method} (sysfs)", error: "resumed - ${state} did not stick"})
+        } else {
+            ({ok: false, method: "${_method} (sysfs)", error: "write to ${_POWER_STATE} refused"})
+        }
+    } else {
+        _r = shell.exec("systemctl ${_method} 2>&1")
+        _code = _r.exitCode
+        _err = _r.stderr.trim()
+        if _code == 0 {
+            ({ok: true, method: "systemctl ${_method}", error: null})
+        } else {
+            ({ok: false, method: "systemctl ${_method}", error: _err})
+        }
+    }
+}
+
+// suspend() — sleep to RAM. Returns a result object; it does not return at
+// all on a machine that stays asleep.
+fn suspend() { _sleepTo("mem", "Suspend") }
+
+// hibernate() — suspend to disk.
+fn hibernate() { _sleepTo("disk", "Hibernate") }
+
+// ---------------------------------------------------------------
+// Vendor charge limits
+// ---------------------------------------------------------------
+
+// chargeLimit() — the start and end thresholds the firmware enforces, or
+// null when this vendor exposes neither. ThinkPad and ASUS both export
+// charge_control_*_threshold under different parents.
+fn chargeLimit() {
+    _start = _firstPath(_THRESHOLD_START)
+    _end = _firstPath(_THRESHOLD_END)
+    if _start == null && _end == null { null } else {
+        _startVal = null
+        if _start != null { _startVal = _num(_start) }
+        _endVal = null
+        if _end != null { _endVal = _num(_end) }
+        ({start: _startVal, end: _endVal, startPath: _start, endPath: _end})
+    }
+}
+
+// setChargeLimit(pct) — cap charging at `pct`, using whichever threshold
+// the vendor exposes (start>0 with end=100, or end=pct on ASUS-style
+// devices). Reported, not thrown.
+fn setChargeLimit(pct) {
+    _limit = chargeLimit()
+    if _limit == null {
+        ({ok: false, percent: pct, error: "this vendor exposes no charge threshold"})
+    } else {
+        _target = pct
+        if _target < 0 { _target = 0 }
+        if _target > 100 { _target = 100 }
+
+        _err = null
+        if _limit.startPath != null {
+            if !fs.write(_limit.startPath, "${_target}") {
+                _err = "write refused: ${_limit.startPath}"
+            }
+        }
+        if _limit.endPath != null && _err == null {
+            if !fs.write(_limit.endPath, "${_target}") {
+                _err = "write refused: ${_limit.endPath}"
+            }
+        }
+        if _err == null {
+            ({ok: true, percent: _target, error: null})
+        } else {
+            ({ok: false, percent: _target, error: _err})
+        }
+    }
+}
+
+// conservationMode() — ASUS/Lenovo "stop at 60%" switch, or null when the
+// vendor does not expose it.
+fn conservationMode() {
+    _p = _firstPath(_CONSERVATION)
+    if _p == null { null } else { _text(_p) == "1" }
+}
+
+// setConservation(enabled) — toggle that switch.
+fn setConservation(enabled) {
+    _p = _firstPath(_CONSERVATION)
+    if _p == null {
+        ({ok: false, enabled: enabled, error: "this vendor exposes no conservation mode"})
+    } else {
+        _v = "0"
+        if enabled { _v = "1" }
+        if fs.write(_p, _v) {
+            ({ok: true, enabled: enabled, error: null})
+        } else {
+            ({ok: false, enabled: enabled, error: "write refused: ${_p}"})
+        }
+    }
+}
+
+// ---------------------------------------------------------------
+// Keyboard backlight
+// ---------------------------------------------------------------
+
+// _kbdBacklightDir() — the LED directory for the keyboard backlight, or
+// null. There is no `type` attribute to match on, so the name is the only
+// signal; ::kbd_backlight is the kernel's spelling.
+fn _kbdBacklightDir() {
+    _found = null
+    for _e in fs.readDir("/sys/class/leds") {
+        if _e.isDir && _e.name.includes("kbd_backlight") {
+            _found = _e.path
+        }
+    }
+    _found
+}
+
+// keyboardBacklight() — current level and maximum, or null on a machine
+// without a lit keyboard.
+fn keyboardBacklight() {
+    _d = _kbdBacklightDir()
+    if _d == null { null } else {
+        _cur = _num("${_d}/brightness")
+        _max = _num("${_d}/max_brightness")
+        ({device: _d, current: _cur, max: _max})
+    }
+}
+
+// setKeyboardBacklight(level) — set the level, clamped to the device's
+// maximum.
+fn setKeyboardBacklight(level) {
+    _k = keyboardBacklight()
+    if _k == null {
+        ({ok: false, level: level, error: "no keyboard backlight on this machine"})
+    } else {
+        _v = level
+        if _v < 0 { _v = 0 }
+        if _v > _k.max { _v = _k.max }
+        if fs.write("${_k.device}/brightness", "${_v}") {
+            ({ok: true, level: _v, error: null})
+        } else {
+            ({ok: false, level: _v, error: "write refused: ${_k.device}/brightness"})
+        }
+    }
+}
+
+// ---------------------------------------------------------------
+// Snapshot
+// ---------------------------------------------------------------
+
+// summary() — everything worth showing in one object, for status bars and
+// low-battery logic. One call, one object, no null-checking by the caller:
+// a desktop gets nulls for the laptop-only fields rather than an error.
+fn summary() {
+    _b = battery()
+    _l = chargeLimit()
+    _k = keyboardBacklight()
+    _p = profile()
+    _lid = lidOpen()
+    _cm = conservationMode()
+    _ac = acOnline()
+
+    _pct = null
+    _status = "None"
+    _charging = false
+    _watts = 0.0
+    _minutes = 0
+    _wear = 0.0
+    _cycles = 0
+    if _b != null {
+        _pct = _b.percent
+        _status = _b.status
+        _charging = _b.charging
+        _watts = _b.powerWatts
+        _minutes = _b.timeRemainingMinutes
+        _wear = _b.wearPercent
+        _cycles = _b.cycleCount
+    }
+
+    _limit = null
+    if _l != null { _limit = _l.end }
+    _kbd = null
+    _kbdMax = null
+    if _k != null {
+        _kbd = _k.current
+        _kbdMax = _k.max
+    }
+
+    ({
+        battery: _pct,
+        status: _status,
+        charging: _charging,
+        acOnline: _ac,
+        powerWatts: _watts,
+        timeRemainingMinutes: _minutes,
+        wearPercent: _wear,
+        cycleCount: _cycles,
+        profile: _p,
+        lidOpen: _lid,
+        chargeLimit: _limit,
+        conservationMode: _cm,
+        keyboardBacklight: _kbd,
+        keyboardBacklightMax: _kbdMax
+    })
+}

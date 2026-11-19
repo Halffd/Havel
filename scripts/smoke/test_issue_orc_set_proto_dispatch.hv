@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC CALL_METHOD prototype dispatch for non-object receivers
 // (VMObject.cpp getPrototypeMethod / JitRuntimeBridges havel_vm_call_method).

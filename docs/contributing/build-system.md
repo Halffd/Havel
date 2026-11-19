@@ -61,8 +61,8 @@ Four kinds, because "run the tests" means very different durations:
 | Kind | What runs | Duration |
 |------|-----------|----------|
 | `quick` | fast gtest subset (`config_store_test`, `window_manager_detector_test`) | seconds |
-| `gate` | `hvtest --smoke --slow-too --timeout 300` — **the pre-merge gate** | ~6-10 min |
-| `smoke` | `hvtest --smoke --timeout 180` (skips slow-tier) | ~3-5 min |
+| `gate` | `hvtest --smoke --slow-too` — **the pre-merge gate** | ~6-10 min |
+| `smoke` | `hvtest --smoke` (skips slow-tier) | ~3-5 min |
 | `ctest` | full ctest | ~8-15 min |
 
 ```bash

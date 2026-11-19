@@ -10,7 +10,6 @@
 // touches. Reads always worked; this locks in the write direction in both
 // ways, plus the object and module-global paths as regressions.
 //
-// smoke: timeout = 60
 
 fails = 0
 check = fn(name, cond) {

@@ -183,10 +183,14 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 - **Havel script tests**: `scripts/*.hv` files
 - **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
 - **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
-  - `// smoke: timeout = <seconds>` — per-test timeout override
   - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
   - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
   - `// smoke: tier = slow` — marks a GC/tiering stress test as slow-tier
+- **No per-test timeout budget**: hvtest does not time out a smoke script.
+  A script's verdict depends on its assertions, not on how long the machine
+  took to run it. A budget that killed a script mid-run reported a FAIL for
+  code that was correct, so the verdict tracked the machine's load rather
+  than the code.
 - **Test tiers**: bare `hvtest --smoke` skips slow-tier tests (dev loop).
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals

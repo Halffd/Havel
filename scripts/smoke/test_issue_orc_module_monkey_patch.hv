@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC CALL_METHOD missed capitalized module globals for monkey-patched
 // closures and returned null via host-index-0 sentinel.

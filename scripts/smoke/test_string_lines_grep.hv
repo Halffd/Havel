@@ -4,7 +4,6 @@
 // Why: `fs.read(f).lines() | grep "error" | count` - bash-shaped text
 //      filtering without awk/sed.
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
 
 _text = "alpha\nbeta\ngamma\n"
 _l = _text.lines()

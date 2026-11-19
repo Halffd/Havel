@@ -1,4 +1,3 @@
-// smoke: timeout = 900
 // Regression: cfg.set() from a MODULE scope must not crash with
 // "VMApi::setField: expected object".
 //

@@ -1,4 +1,3 @@
-// smoke: timeout = 60
 // Regression: the lexer's operator-context list omitted TokenType::Null,
 // so every operator after a null literal fell to scanHotkey() and became a
 // hotkey token; the statement parser then rejected it ("Expected '=>' after

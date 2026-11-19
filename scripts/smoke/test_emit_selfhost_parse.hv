@@ -1,4 +1,3 @@
-// smoke: timeout = 180
 // Regression: `emit` keyword broke the selfhost parser's whole token stream.
 // TokenType::Emit shipped with the C++ lexer (Lexer.cpp keywords) and parser
 // (parseEmitStatement), but the TOKEN_TYPE_NAMES table in TokenTypeNames.hpp

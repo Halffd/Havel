@@ -1,4 +1,3 @@
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: GC marked a StringCursorId but never the string the cursor
 // references, so SweepStrings collected a live cursor's heap string

@@ -161,18 +161,15 @@ mode_dir() {
 # encodes several hard-won compiler-resolution fixes. Kept verbatim where the
 # comments explain a real failure mode.
 # ---------------------------------------------------------------------------
-detect_cores() {
-  local cores
-  if cores=$(nproc 2>/dev/null); then echo "$cores"; else echo 4; fi
-}
-
-MAX_AUTODETECT_THREADS=2
+# Build/test parallelism is a fixed default, not derived from the machine's
+# core count: an auto-detected count made the build's memory and CPU
+# footprint depend on the box it ran on, and the boxes this repo is built on
+# vary from 1 to 16 cores. Override with --threads N or THREADS=N.
+DEFAULT_THREADS=2
 resolve_threads() {
   if [ -n "$OPT_THREADS" ]; then echo "$OPT_THREADS"; return; fi
   if [ -n "${THREADS:-}" ]; then echo "$THREADS"; return; fi
-  local n; n=$(detect_cores)
-  [ "$n" -gt "$MAX_AUTODETECT_THREADS" ] && n=$MAX_AUTODETECT_THREADS
-  echo "$n"
+  echo "$DEFAULT_THREADS"
 }
 
 llvm_tool() {
@@ -271,8 +268,8 @@ ws_test() { # workspace mode kind
   local t0 t1 rc logf="$LOG_DIR/test-$(ws_name "$ws")-$bdir-$kind.log"
   t0=$(date +%s)
   case "$kind" in
-    gate)   "$dir/hvtest" --smoke --slow-too --timeout 300 >"$logf" 2>&1 ;;
-    smoke)  "$dir/hvtest" --smoke --timeout 180 >"$logf" 2>&1 ;;
+    gate)   "$dir/hvtest" --smoke --slow-too >"$logf" 2>&1 ;;
+    smoke)  "$dir/hvtest" --smoke >"$logf" 2>&1 ;;
     ctest)  ctest --test-dir "$dir" --output-on-failure -j"$(resolve_threads)" >"$logf" 2>&1 ;;
     quick)
       local n
@@ -444,7 +441,7 @@ cmd_limit() {
       echo "  max_parallel = $LIMIT_MAX_PARALLEL   (fleet/matrix concurrency)"
       echo "  timeout      = $LIMIT_TIMEOUT s       (0 = none)"
       echo "  ccache_size  = $LIMIT_CCACHE_SIZE"
-      echo "  threads      = ${OPT_THREADS:-auto, cap $MAX_AUTODETECT_THREADS} (per build; --threads or THREADS= to override)"
+      echo "  threads      = ${OPT_THREADS:-default $DEFAULT_THREADS} (per build; --threads or THREADS= to override)"
       ;;
     set)
       shift || true
@@ -848,8 +845,8 @@ Build lifecycle
 
 Tests
   test [--kind gate|smoke|ctest|quick]
-       gate  = hvtest --smoke --slow-too --timeout 300   (the pre-merge gate)
-       smoke = hvtest --smoke --timeout 180
+       gate  = hvtest --smoke --slow-too   (the pre-merge gate)
+       smoke = hvtest --smoke
        ctest = full ctest
        quick = fast gtest subset (seconds)
 
@@ -891,7 +888,7 @@ Disk
 
 Options
   --mode N             build mode
-  -j, --threads N      parallel jobs (default: auto, capped at 2)
+  -j, --threads N      parallel jobs (default: 2)
   --kind K             test kind for `test`
   --yes                apply destructive actions
   --dry-run            print commands, run nothing

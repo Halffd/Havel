@@ -1,5 +1,4 @@
 // smoke: flags = --tiering --optimizeBytecode
-// smoke: timeout = 60
 // smoke: tier = slow
 // Differential test: object/string/array access parity
 

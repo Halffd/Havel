@@ -9,7 +9,10 @@ description: "System information: platform, hardware, environment, and process i
 use sys
 ```
 
-**Source**: `src/havel-lang/stdlib/SysModule.cpp`
+**Source**: `src/havel-lang/stdlib/SysModule.cpp` (native `sys.*` host
+functions) plus `modules/std/sys.hv`, whose convenience layer is merged
+into the same namespace object. `use sys` therefore gives you both surfaces
+under one name.
 
 ---
 
@@ -74,6 +77,69 @@ print(sys.hostname())   // "mycomputer"
 print(sys.username())   // "user"
 print(sys.home())       // "/home/user"
 print(sys.uptime())     // 3600.5
+```
+
+---
+
+## Convenience Layer (from `modules/std/sys.hv`)
+
+These delegate to `system.detect()` and `system.hardware()`, and are only
+reachable because the native registration merges the Havel module into the
+`sys` namespace. Everything below is a **function** — call it.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `sys.isLinux()` | `bool` | `sys.platform() == "Linux"` |
+| `sys.isMac()` | `bool` | `sys.platform() == "MacOS"` |
+| `sys.isWindows()` | `bool` | `sys.platform() == "Windows"` |
+| `sys.isBSD()` | `bool` | `sys.platform() == "BSD"` |
+| `sys.os()` | `str` | Detected OS: `"Linux"`, `"Windows"`, ... |
+| `sys.kernel()` | `str` | Kernel release. |
+| `sys.windowManager()` | `str` | **Window manager**, e.g. `"Cinnamon"`, `"GNOME"`, `"i3"` |
+| `sys.desktopEnv()` | `str` | Raw `XDG_CURRENT_DESKTOP`. |
+| `sys.displayProtocol()` | `str` | `"X11"`, `"Wayland"`, `"Unknown"` |
+| `sys.detect()` | `obj` | The full `system.detect()` object. |
+| `sys.hardware()` | `obj` | The full `system.hardware()` object. |
+| `sys.cpu()` ... `sys.bios()` | various | One-liners over `system.hardware()`. |
+| `sys.summary()` | `obj` | A formatted multi-line summary. |
+
+```hv
+use sys
+
+// The short form of a platform branch:
+if sys.isLinux() {
+  print("${sys.os()} on ${sys.kernel()}, ${sys.displayProtocol()}")
+  print("WM: ${sys.windowManager()}")     // "Cinnamon"  <- note the ()
+}
+
+// Without the parens this is the FUNCTION, so the method call yields null:
+print("WM: ${sys.windowManager}")         // "WM: null"
+```
+
+### `windowManager` is the one people trip on
+
+`sys.windowManager` is a **function**, so `sys.windowManager` without `()`
+is the function object, and calling a string method on it silently yields
+`null` rather than erroring. Write `sys.windowManager()`.
+
+The full-fat alternative, which returns a plain value, is
+`system.detect().windowManager`.
+
+---
+
+## Hardware shortcuts
+
+| Function | Returns |
+|----------|---------|
+| `sys.cpu()` `sys.cpuCores()` `sys.cpuThreads()` `sys.cpuFreq()` `sys.cpuTemp()` | `str`/`int`/`float` |
+| `sys.gpu()` | `str` |
+| `sys.ramTotal()` `sys.ramUsed()` `sys.ramFree()` | `int` (bytes) |
+| `sys.motherboard()` `sys.bios()` | `str` |
+| `sys.storage()` | `array` of disk objects |
+
+```hv
+hw = sys.hardware()                       // or
+print(sys.cpu(), sys.ramTotal() / 1024 / 1024 / 1024, "GB")
 ```
 
 ---
@@ -196,4 +262,4 @@ print("WM: " + detected.windowManager + " (" + detected.displayProtocol + ")")
 ---
 
 **Previous:** [Shell Module](/stdlib/shell)
-**Next:** [HTTP Module →](/stdlib/clipboard)
+**Next:** [Clipboard Module →](/stdlib/clipboard)

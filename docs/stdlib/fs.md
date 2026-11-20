@@ -187,4 +187,4 @@ watcher = fs.watch("config.json", fn(e) {
 ---
 
 **Previous:** [Time Module](/stdlib/time)
-**Next:** [Shell Module →](/stdlib/shell)
+**Next:** [Process Module →](/stdlib/process)

@@ -87,20 +87,35 @@ fn cpu() {
         cores: _cores, freq: _freq})
 }
 
+// Is this a /proc/stat per-core line ("cpu0 ...") rather than the aggregate
+// ("cpu  ...")?
+//
+// Takes the line as a PARAMETER on purpose. Calling `.find`/`.startsWith` on
+// a module-level variable (a for-loop's variable, an assigned local at module
+// scope) resolves the method against the wrong binding and dies with
+// "Attempted to call non-callable value of type string"; the same call with a
+// parameter works. See docs/known-issues/module-object-literal-with-call.md.
+fn _isCpuCoreLine(line) {
+    line.startsWith("cpu") && !line.startsWith("cpu ")
+}
+
 fn cpuPerCore() {
     _stat = fs.read("/proc/stat")
-    if _stat == "" { return [] }
-    _lines = _stat.split("\n")
     _cores = []
-    for _l in _lines {
-        if _l.find("cpu") == 0 && _l.find("cpu ") == null {
-            _nums = _parseCpuLine(_l)
-            if #_nums >= 4 {
-                _idle_t = _nums[3]
-                if #_nums >= 5 { _idle_t = _idle_t + _nums[4] }
-                _total = 0
-                for _n in _nums { _total = _total + _n }
-                _cores.push({idle: _idle_t, total: _total})
+    if _stat != null {
+        _lines = _stat.split("\n")
+        for _l in _lines {
+            if _isCpuCoreLine(_l) {
+                _nums = _parseCpuLine(_l)
+                if #_nums >= 4 {
+                    _idle_t = _nums[3]
+                    if #_nums >= 5 { _idle_t = _idle_t + _nums[4] }
+                    _total = 0
+                    for _n in _nums { _total = _total + _n }
+                    _idle = _idle_t
+                    _tot = _total
+                    _cores.push({idle: _idle, total: _tot})
+                }
             }
         }
     }
@@ -189,8 +204,15 @@ fn disk(path) {
     if #_nums < 6 { return {total: 0, used: 0, free: 0, percent: 0.0, mount: ""} }
     _pct_str = _nums[4]
     _pct_str = _pct_str[0:#_pct_str - 1]
-    ({total: int(_nums[1]), used: int(_nums[2]), free: int(_nums[3]),
-        percent: float(_pct_str), mount: _nums[5]})
+    // Values into locals, then a literal of locals: a literal whose field
+    // holds a call to a function in THIS module evaluates to that call's
+    // value - which returned an int (the total) where an object belonged.
+    _total = int(_nums[1])
+    _used = int(_nums[2])
+    _free = int(_nums[3])
+    _pct = float(_pct_str)
+    _mount = _nums[5]
+    ({total: _total, used: _used, free: _free, percent: _pct, mount: _mount})
 }
 
 fn disks() {
@@ -261,7 +283,11 @@ fn _isDigit(s) {
 fn processList() {
     _pids = []
     for _e in fs.readDir("/proc") {
-        if _isDigit(_e) { _pids.push(int(_e)) }
+        // fs.readDir yields {name, path, isDir, ...} OBJECTS, not strings -
+        // feeding the entry itself to _isDigit/int produced 65 zeroes
+        // instead of the pids, and every processInfo/topProcesses call
+        // downstream then found nothing.
+        if _isDigit(_e.name) { _pids.push(int(_e.name)) }
     }
     _pids
 }
@@ -270,7 +296,11 @@ fn processInfo(pid) {
     _stat = fs.read("/proc/${pid}/stat")
     if _stat == "" { return null }
 
-    _close = _stat.rfind(")")
+    // `rfind` is not a registered string method - it resolves to nothing and
+    // comes back null, which made every processInfo() return null and left
+    // topProcesses() empty. `lastIndexOf` is the same operation and is
+    // registered (see StringPrototype.cpp's regProto list).
+    _close = _stat.lastIndexOf(")")
     if _close == null { return null }
     _after = _stat[_close + 2:#_stat].trim()
     _fields = _after.split(" ")

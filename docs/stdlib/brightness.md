@@ -202,4 +202,4 @@ brightness.applyPreset("night")
 ---
 
 **Previous:** [Window Module](/stdlib/window)
-**Next:** [Hotkey Module →](/stdlib/hotkey)
+**Next:** [Monitor Module →](/stdlib/monitor)

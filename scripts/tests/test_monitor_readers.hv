@@ -1,0 +1,102 @@
+// What: the monitor module's readers return real shapes from /proc and /sys,
+//      not empty arrays, zeros, or a bare number where an object belongs.
+//
+// Why: while documenting modules/app/monitor.hv, four of its readers turned
+//      out to be broken, each silently:
+//      1. disk("/") returned an int (the total) - an object literal whose
+//         field held a call to a same-module function evaluates to that
+//         call's value (docs/known-issues/module-object-literal-with-call.md).
+//      2. cpuPerCore() returned [] - a string method on a module-level
+//         variable fails
+//         (docs/known-issues/module-level-receiver-method-call.md).
+//      3. processList() returned 65 zeroes - fs.readDir yields entry OBJECTS
+//         ({name, path, ...}), not strings; the entry itself was fed to
+//         int().
+//      4. processInfo() returned null and topProcesses() was empty -
+//         `rfind` is not a registered string method (lastIndexOf is), so
+//         every call resolved to null.
+//
+// Expected: disk() is an object with total/used/free/percent/mount;
+//      cpuPerCore() has one entry per core; processList() holds real pids;
+//      processInfo() and topProcesses() return populated objects. On a
+//      machine without /proc these assertions do not hold, so the test is
+//      Linux-only and lives in scripts/tests/, not scripts/smoke/.
+
+use monitor
+use sys
+
+// ---------------------------------------------------------------
+// disk() / disks()
+// ---------------------------------------------------------------
+_d = monitor.disk("/")
+assert(_d != null, "disk('/') must return a value")
+assert(str(type(_d)) == "object",
+       "disk('/') must return an object, got ${str(type(_d))}")
+_dk = _d.keys()
+for _f in ["total", "used", "free", "percent", "mount"] {
+    assert(_dk.includes(_f), "disk('/') must have the '${_f}' field")
+}
+assert(_d.total > 0, "disk('/').total must be positive")
+assert(_d.used + _d.free <= _d.total + 1,
+       "disk used+free must not exceed total (allow 1 byte of rounding)")
+assert(_d.percent >= 0.0 && _d.percent <= 100.0,
+       "disk('/').percent must be 0..100, got ${_d.percent}")
+
+_ds = monitor.disks()
+assert(str(type(_ds)) == "array" && #_ds > 0,
+       "disks() must return a non-empty array, got ${str(type(_ds))} with ${#_ds}")
+for _e in _ds {
+    assert(str(type(_e)) == "object", "each disks() entry must be an object")
+}
+
+// ---------------------------------------------------------------
+// cpuPerCore()
+// ---------------------------------------------------------------
+_c = monitor.cpuPerCore()
+assert(str(type(_c)) == "array", "cpuPerCore() must return an array")
+assert(#_c > 0, "cpuPerCore() must find the cpuN lines in /proc/stat, got ${#_c} cores")
+assert(_c[0].total > 0, "a core's total must accumulate its jiffies")
+
+// cpu() and cpuPerCore() must agree on how many cores there are.
+_agg = monitor.cpu()
+if _agg.cores > 0 {
+    assert(#_c == _agg.cores,
+       "cpuPerCore() found ${#_c} cores but cpu() reports ${_agg.cores}")
+}
+
+// ---------------------------------------------------------------
+// processList() / processInfo() / topProcesses()
+// ---------------------------------------------------------------
+_pids = monitor.processList()
+assert(str(type(_pids)) == "array" && #_pids > 0,
+       "processList() must return pids, got ${str(type(_pids))} with ${#_pids}")
+// The defect: every entry was 0 because the readDir entry object was fed to
+// int(). A real pid is positive, and this process is one of them.
+assert(_pids[0] > 0, "processList() must return real pids, got ${_pids[0]}")
+
+_info = monitor.processInfo(sys.pid())
+assert(_info != null, "processInfo() on our own pid must not be null")
+assert(_info.pid == sys.pid(), "processInfo() must report the pid we asked for")
+assert(_info.threads > 0, "processInfo() must report at least one thread")
+assert(_info.rss > 0, "processInfo() must report a non-zero rss")
+
+_top = monitor.topProcesses("rss", 3)
+assert(str(type(_top)) == "array" && #_top > 0,
+       "topProcesses() must return processes, got ${str(type(_top))} with ${#_top}")
+// sorted by rss, descending
+assert(_top[0].rss >= _top[#_top - 1].rss,
+       "topProcesses() must be sorted by the requested key")
+for _p in _top {
+    assert(_p.rss > 0, "a top process must report a non-zero rss")
+}
+
+// ---------------------------------------------------------------
+// The readers that were already right must stay right
+// ---------------------------------------------------------------
+assert(str(type(monitor.ram())) == "object", "ram() must return an object")
+assert(str(type(monitor.load())) == "object", "load() must return an object")
+assert(str(type(monitor.temperatures())) == "array",
+       "temperatures() must return an array")
+
+print("PASS: monitor readers return real shapes from /proc and /sys")
+return 0

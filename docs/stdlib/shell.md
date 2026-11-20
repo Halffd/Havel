@@ -239,4 +239,4 @@ print("Platform: " + shell.platform())
 ---
 
 **Previous:** [Filesystem Module](/stdlib/fs)
-**Next:** [HTTP Module →](/stdlib/clipboard)
+**Next:** [Sys Module →](/stdlib/sys)

@@ -1,4 +1,3 @@
-// smoke: timeout = 60
 // extern { fn ... } declarations: the declared names resolve to registered
 // host functions, the emitted load-time __extern_check passes for each, and
 // calls dispatch to the host implementations (sleep and exit are registered

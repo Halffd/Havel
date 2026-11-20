@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Auto-call parity controls: direct instance-field fns are returned raw
 // (callback pattern), proto fns with 2+ params are returned raw, proto

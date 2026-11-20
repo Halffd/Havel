@@ -4,7 +4,6 @@
 // Why: `fs.glob("/var/log/*.log")` returned [] before - the walker matched
 //      entries relative to dir, so absolute patterns never matched.
 // Expected: exit 0, no output on success. Cleans up after itself.
-// smoke: timeout = 30
 
 _dir = "/tmp/havel_smoke_glob_abs"
 `rm -rf /tmp/havel_smoke_glob_abs`

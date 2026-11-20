@@ -386,7 +386,27 @@ public:
   std::optional<ChunkWithGlobals> deserializeChunkWithGlobals(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunkMmap(const std::string& filePath);
-  std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536);
+  // loadChunk/deserializeChunk return nullopt for several distinct causes:
+  // the file is missing or unreadable, the bytes do not parse as a chunk,
+  // or the entry's embedded source identity disagrees with the file it
+  // names. The last one is NOT an unreadable file - the file parses fine,
+  // it just does not describe the current source - and reporting it as
+  // "unreadable" sends the reader looking for an IO problem that is not
+  // there. loadFailureReason names the cause so the caller can label it.
+  //
+  // Reasons: "missing", "unreadable", "source-size-differs",
+  // "source-hash-differs", "malformed".
+  //
+  // skipSourceRevalidation: set it when the caller has ALREADY validated
+  // the entry's embedded source identity against the exact text it
+  // compiled. The re-validation inside deserializeChunk compares the
+  // entry against the FILE at the embedded path, which is a different
+  // text whenever the compiled text differs from that file by even one
+  // byte. With both validations active they contradict each other and
+  // the entry can never be served.
+  std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536,
+                                         std::string *loadFailureReason = nullptr,
+                                         bool skipSourceRevalidation = false);
 
   // Source identity embedded by serializeChunk(chunk, sourcePath):
   // {path, byte size, sha256}. size/hash are zero when the chunk was

@@ -14,6 +14,30 @@
 namespace havel::parser {
 
 // ============================================================================
+// KEYWORDS USABLE AS IDENTIFIERS
+// ============================================================================
+
+// The keywords the expression parser accepts in identifier position
+// (`mode == "work" && class == "code"`). This is the SINGLE list: the
+// Pratt parser's nud uses it, and the implicit-call argument check derives
+// from it, so the two can never disagree about which keywords may start an
+// expression.
+inline bool keywordUsableAsIdentifier(TokenType type) {
+  switch (type) {
+  case TokenType::Class:
+  case TokenType::Struct:
+  case TokenType::Enum:
+  case TokenType::Mode:
+  case TokenType::Val:
+  case TokenType::Const:
+  case TokenType::Let:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// ============================================================================
 // PARSER SAFETY GUARDS
 // ============================================================================
 
@@ -81,6 +105,47 @@ struct DebugOptions {
   bool parser = false;
   bool ast = false;
 };
+
+// Tokens that may start an implicit-call argument: `expr ARG` becomes
+// `expr(ARG)` without parentheses. The set must include the keywords that
+// the language allows in expression position, otherwise `print mode` (the
+// `mode` module) stops at the keyword and the statement parser reports
+// "Expected ';' or newline after expression" - the keyword was never
+// consumed as the argument it is.
+//
+// The keyword half of the set is NOT spelled out here: it is derived from
+// `keywordUsableAsIdentifier()`, the single place that decides which
+// keywords `Parser::nud` accepts as an identifier. A second hardcoded list
+// would drift from it and accept arguments the expression parser then
+// rejects.
+inline bool canStartImplicitCallArgument(TokenType type) {
+  if (keywordUsableAsIdentifier(type)) {
+    return true;
+  }
+  switch (type) {
+  case TokenType::String:
+  case TokenType::MultilineString:
+  case TokenType::RegexString:
+  case TokenType::Number:
+  case TokenType::Identifier:
+  case TokenType::InterpolatedString:
+  case TokenType::InterpolatedBacktick:
+  case TokenType::Backtick:
+  case TokenType::At:
+  case TokenType::AtAt:
+  case TokenType::Not:
+  case TokenType::Length:
+  case TokenType::True:
+  case TokenType::False:
+  case TokenType::Null:
+  case TokenType::OpenParen:
+  case TokenType::OpenBracket:
+  case TokenType::OpenBrace:
+    return true;
+  default:
+    return false;
+  }
+}
 
 // ============================================================================
 // PRATT PARSER (Top-Down Operator Precedence)

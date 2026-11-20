@@ -1007,6 +1007,11 @@ for (const auto &err : parser.getErrors()) {
 
     // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
     // compile options this request used (version-6 header).
+    //
+    // The stamped source identity is the text that was COMPILED - the same
+    // text the serve path (loadCachedScriptChunk) validates against, and
+    // for a file-backed unit the same text the module loader validates
+    // against (the launcher compiles a single script file verbatim).
     autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
                          options.strictSemantics, options.optimizeBytecode,
                          source);
@@ -1402,6 +1407,11 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
 
   // Auto-cache compiled chunk to ~/.cache/havel, stamped with the
   // compile options this request used (version-6 header).
+  //
+  // The stamped source identity is the text that was COMPILED - the same
+  // text the serve path (loadCachedScriptChunk) validates against, and for
+  // a file-backed unit the same text the module loader validates against
+  // (the launcher compiles a single script file verbatim).
   autoCacheBytecodeChunk(options.compile_unit_name, *chunk,
                          options.strictSemantics, options.optimizeBytecode,
                          source);

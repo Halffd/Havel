@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Orc array_get audit: interp ARRAY_GET object arm (VMCollections.cpp
 // ~516) runs the op_index overload (class-chain-aware via

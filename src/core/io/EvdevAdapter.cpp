@@ -1,4 +1,6 @@
 #include "InputBackend.hpp"
+// For ModifierMasks: the platform-neutral modifier bit layout.
+#include "IOBackend.hpp"
 #include "KeyMap.hpp"
 #include "UinputDevice.hpp"
 #include "utils/Logger.hpp"
@@ -1041,10 +1043,11 @@ havel::ModifierState EvdevAdapter::GetModifierState() const {
 int EvdevAdapter::GetCurrentModifiersMask() const {
     std::shared_lock<std::shared_mutex> lock(stateMutex_);
     int mask = 0;
-    if (modifierState_.IsCtrlPressed()) mask |= 1;
-    if (modifierState_.IsShiftPressed()) mask |= 2;
-    if (modifierState_.IsAltPressed()) mask |= 4;
-    if (modifierState_.IsMetaPressed()) mask |= 8;
+    // ModifierMasks layout - see IOBackend.hpp.
+    if (modifierState_.IsCtrlPressed()) mask |= ModifierMasks::CONTROL;
+    if (modifierState_.IsShiftPressed()) mask |= ModifierMasks::SHIFT;
+    if (modifierState_.IsAltPressed()) mask |= ModifierMasks::ALT;
+    if (modifierState_.IsMetaPressed()) mask |= ModifierMasks::META;
     return mask;
 }
 
@@ -1372,16 +1375,17 @@ void EvdevAdapter::ProcessMouseButtonEvent(Device &dev, const input_event &ev) {
 }
 
 void EvdevAdapter::UpdateModifiers(uint32_t code, bool down) {
+    // ModifierMasks layout - see IOBackend.hpp.
     uint32_t mask = 0;
     switch (code) {
         case KEY_LEFTCTRL:
-        case KEY_RIGHTCTRL: mask = 1 << 0; break;
+        case KEY_RIGHTCTRL: mask = ModifierMasks::CONTROL; break;
         case KEY_LEFTSHIFT:
-        case KEY_RIGHTSHIFT: mask = 1 << 1; break;
+        case KEY_RIGHTSHIFT: mask = ModifierMasks::SHIFT; break;
         case KEY_LEFTALT:
-        case KEY_RIGHTALT: mask = 1 << 2; break;
+        case KEY_RIGHTALT: mask = ModifierMasks::ALT; break;
         case KEY_LEFTMETA:
-        case KEY_RIGHTMETA: mask = 1 << 3; break;
+        case KEY_RIGHTMETA: mask = ModifierMasks::META; break;
         default: return;
     }
 

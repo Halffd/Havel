@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC ARRAY_SET vstack parity (BytecodeOrcJitLowering.cpp).
 // What: an if-expression arm containing arr[i] = v, inside a hot fn.

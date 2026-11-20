@@ -10,7 +10,6 @@
 //       its own) must return a result, not a dead runtime.
 // Expected: the pipeline returns a result object; havel survives (the
 //           script reaches its own exit) and the first line is the output.
-// smoke: timeout = 60
 
 // A writer with plenty of output: the reader (`head -1`) exits after the
 // first line, so the remaining write hits a closed pipe.

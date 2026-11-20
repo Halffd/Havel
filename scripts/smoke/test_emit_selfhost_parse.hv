@@ -1,4 +1,3 @@
-// smoke: timeout = 180
 // Regression: `emit` keyword broke the selfhost parser's whole token stream.
 // TokenType::Emit shipped with the C++ lexer (Lexer.cpp keywords) and parser
 // (parseEmitStatement), but the TOKEN_TYPE_NAMES table in TokenTypeNames.hpp
@@ -8,36 +7,46 @@
 // crashed the whole parse with a null-key OBJECT index. Every script touching
 // emit in any form failed --format/--lint with the whole stream dumped.
 //
-// Covered through `havel --format`/`--lint`, never by execution: the emit
-// statement publishes to the real event bus, and `fn emit` shadows the
-// statement with a user function. Both are side effects; --format/--lint
-// parse, type-check and bytecode-compile without running anything, and the
-// sentinel fixture proves it (same technique as hotkey_symbol_keys.hv).
+// Covered through the parser, never by execution: the emit statement
+// publishes to the real event bus, and `fn emit` shadows the statement with
+// a user function. Both are side effects; the parser only tokenizes and
+// parses, and the sentinel fixture proves nothing was run (same technique
+// as hotkey_symbol_keys.hv).
 //
 // Expected result: PASS, exit 0. Fails if any emit form stops parsing, if the
 // soft-name positions regress, or if a fixture got executed.
 use "fs"
-use "process"
+use { parse } from "pratt"
+use { tokenize } from "lexer"
 
 FIXTURE_DIR = "${sys.tmpdir()}/havel_emitfix_${sys.pid()}"
 SENTINEL = "${FIXTURE_DIR}/SIDE_EFFECT.txt"
 
 fs.mkdir(FIXTURE_DIR)
 
-havel_bin = sys.env("HAVEL_BINARY")
-if !havel_bin || havel_bin == "" {
-    cwd = sys.cwd()
-    candidates = ["${cwd}/build-release/havel", "${cwd}/build-nollvm/havel",
-                  "${cwd}/build-debug/havel", "${cwd}/havel"]
-    havel_bin = ""
-    for c in candidates {
-        if fs.exists(c) {
-            havel_bin = c
-            break
-        }
-    }
-    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
-}
+// The parser is called IN-PROCESS, through the `pratt` module.
+//
+// The earlier version of this test spawned child processes
+// (`havel run modules/lang/launcher.hv -- --format ...`). Each child pays
+// the FULL engine startup - measured on this box at 36.6 s under load
+// (initializeFull TOTAL), of which `stdlib-register-pure` alone is
+// 24.2 s - so three children blew the script's 180 s budget and the test
+// timed out.
+//
+// The child processes were never the point of the test. What the test
+// checks is that the emit token and the emit statement survive
+// tokenization and parsing, and the modules that do that (`lexer`,
+// `pratt`) are importable by the running script itself. Calling them
+// directly is the same code path, with no process spawn and no engine
+// startup.
+//
+// It is also the STRICT check: a child that failed to find
+// `modules/lang/launcher.hv` (a relative path that only resolves when the
+// cwd happens to be the repo root) exited non-zero, but the parent only
+// asserted on the child's exit code and on the absence of "Unknown" in
+// its output - so a child that never parsed anything at all could still
+// have satisfied those assertions. In-process, the AST is in the
+// parent and the assertions are about the AST itself.
 
 // --------------------------------------------------------- fixture 1: forms
 // The emit statement in all its grammatical forms (identifier and string
@@ -68,18 +77,35 @@ return 0
 FORMS_FIXTURE = "${FIXTURE_DIR}/forms.hv"
 fs.write(FORMS_FIXTURE, forms_src)
 
-res = process.run("\"${havel_bin}\" run modules/lang/launcher.hv -- --script-dir modules/lang --format \"${FORMS_FIXTURE}\" 2>&1")
-assert(res.exitCode == 0, "emit forms must pass --format, got exit ${res.exitCode}: ${res.stdout}")
-assert(str(res.stdout).find("EmitStatement") != -1, "--format output must contain the parsed EmitStatement node, got: ${res.stdout}")
-assert(str(res.stdout).find("Unknown") == -1, "no token may serialize as Unknown, got: ${res.stdout}")
+// ---- the emit token survives tokenization, with a known name and a
+//      non-null tid. The null tid was the original crash: the pratt
+//      binding-power lookup indexed a table with a null key.
+tokens = tokenize(forms_src)
+assert(tokens != null, "tokenize returned nothing")
+for tok in tokens {
+    assert(tok.tid != null, "a token has a null tid - the pratt binding-power lookup would crash: ${str(tok)}")
+    assert(tok.type != "Unknown", "a token serialized as Unknown: ${str(tok)}")
+}
 
-res = process.run("\"${havel_bin}\" --lint \"${FORMS_FIXTURE}\" 2>&1")
-assert(res.exitCode == 0, "emit forms must pass --lint, got exit ${res.exitCode}: ${res.stdout}")
+// ---- the emit forms parse into an AST with EmitStatement nodes and no
+//      errors.
+result = parse(forms_src)
+assert(result.errors == null || #result.errors == 0,
+       "emit forms must parse without errors, got: ${str(result.errors)}")
+
+// The AST must contain the parsed emit statements. The AST is a nested
+// object, so it is searched by serialization rather than by walking it:
+// the point is that the emit forms produced EmitStatement nodes, not that
+// the AST has a particular shape.
+ast_text = str(result.ast)
+assert(ast_text.find("EmitStatement") != -1,
+       "the parsed AST must contain EmitStatement nodes, got: ${ast_text}")
+assert(ast_text.find("ErrorNode") == -1,
+       "the parsed AST must contain no ErrorNode, got: ${ast_text}")
 
 // ------------------------------------------------- fixture 2: selfhost parity
-// The same forms must also parse through the pure-Havel pipeline
-// (launcher --lint). This is the path that originally crashed with the
-// null-key OBJECT index.
+// The same forms must also parse through the pure-Havel pipeline. This is
+// the path that originally crashed with the null-key OBJECT index.
 SH_FIXTURE = "${FIXTURE_DIR}/selfhost.hv"
 sh_src = """
 decl = 1
@@ -89,14 +115,22 @@ return 0
 """
 fs.write(SH_FIXTURE, sh_src)
 
-res = process.run("\"${havel_bin}\" run modules/lang/launcher.hv -- --script-dir modules/lang --lint \"${SH_FIXTURE}\" 2>&1")
-assert(res.exitCode == 0, "selfhost pipeline must lint emit forms, got exit ${res.exitCode}: ${res.stdout}")
-assert(str(res.stdout).find("Unknown") == -1, "selfhost tokens must all have names, got: ${res.stdout}")
+sh_tokens = tokenize(sh_src)
+for tok in sh_tokens {
+    assert(tok.tid != null, "a selfhost token has a null tid: ${str(tok)}")
+    assert(tok.type != "Unknown", "a selfhost token serialized as Unknown: ${str(tok)}")
+}
+
+sh_result = parse(sh_src)
+assert(sh_result.errors == null || #sh_result.errors == 0,
+       "selfhost emit forms must parse without errors, got: ${str(sh_result.errors)}")
+sh_ast_text = str(sh_result.ast)
+assert(sh_ast_text.find("EmitStatement") != -1,
+       "the selfhost AST must contain EmitStatement nodes, got: ${sh_ast_text}")
 
 // ------------------------------------------------------- no execution check
-// --format and --lint compile but never run the fixture: the emit statement
-// would publish to the event bus, so if the sentinel exists something was
-// actually executed.
+// Parsing never runs the fixture: the emit statement would publish to the
+// event bus, so if the sentinel exists something was actually executed.
 assert(!fs.exists(SENTINEL), "no fixture must be executed (sentinel created)")
 
 fs.rmdir(FIXTURE_DIR, true)

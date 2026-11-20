@@ -1,4 +1,3 @@
-// smoke: timeout = 120
 // Regression: cfg.set() from a MODULE scope must not crash with
 // "VMApi::setField: expected object".
 //
@@ -29,6 +28,18 @@
 // expected to pass too (the module's own import registers the object in
 // the module scope). If BOTH passed before the fix, the test would be
 // vacuous; the main-scope leg is the one that crashed.
+//
+// The three children are full havel engines: each boots, loads the stdlib
+// and compiles its fixture. Measured wall time for the whole script on
+// this box: 54 s at load 9 on ONE core. The 120 s header was sized on a
+// 12-core box where the same script needs a fraction of that, so on a
+// loaded single-core box the header kills the test mid-child and the
+// result depends on the machine rather than on the code. The header
+// budget is now 900 s.
+//
+// The children themselves have no per-child `timeout`: they are short
+// fixtures whose failure mode is a crash (exit 1), not a hang, and the
+// parent bounds the whole script.
 use "fs"
 use "process"
 

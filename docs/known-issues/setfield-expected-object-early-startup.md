@@ -115,20 +115,54 @@ Two details that the first attempt got wrong, both caught by the A/B:
 
 ## Verification
 
-A/B against the pre-fix plugin (same tree, only the lookup hunk reverted):
+A/B against the pre-fix plugin, run Nov 11 2026 on one staged tree:
 
 - fixed plugin: `PASS: cfg.set() from a module scope updates the live config
   object and does not crash` (exit 0)
-- pre-fix plugin: exit 1, `Undefined variable: 'conf'`
+- pre-fix plugin: exit 1, `VMApi::setField: expected object`
+
+Both legs used the SAME host binary and the SAME 50-plugin set, with only
+`havel_mod_config.so` swapped; both variants were compiled against one
+pristine header set, so neither leg could be rejected at load:
+
+    host build id : 0x27a2110f
+    plugin ids    : 0x27a2110f   (all 50 plugins)
+    pre-fix exit=1   fixed exit=0
+    A/B RESULT: DISCRIMINATING (pre-fix FAILS, fixed PASSES)
+
+The pre-fix variant is exactly `313dec21e~1` - the commit before the fix -
+so the failing leg exercises the ambient-only lookup itself.
+
+**An earlier A/B was invalid and must not be cited.** It rebuilt the plugin
+in place with `make havel_mod_config` while the host binary in that build
+dir was stale, so the plugin carried a new build id and the loader rejected
+it before any script code ran:
+
+    module 'config': build id mismatch (plugin 0xd5236bf7, host 0x27a2110f)
+
+Its "pre-fix" leg therefore failed in the loader, NOT at the defect, and
+proved nothing about the ambient-only lookup. Any A/B on this defect must
+assert that no leg emits a build-id mismatch.
 
 A/B on the USER's own `start.hv` (the module whose top level crashed), run
-headless with a sandboxed HOME:
+headless with a sandboxed HOME, same staged tree and same construction:
 
-    // probe.hv
+    // probe.hv - lives NEXT TO start.hv, and imports std/config FIRST,
+    // exactly as hotkeys0.3.hv does (line 31: use "std/config" as cfg;
+    // line 35: use {...} from "start"). The import order IS the trigger:
+    // the main scope registers the config object, then start.hv's own
+    // import hits the module CACHE and its sandbox never carries it.
+    use "std/config" as cfg
     use { DOLOG, hardware, storage, totalStorage } from "start"
+    print("probe: start imported DOLOG=" + str(DOLOG))
 
 - fixed plugin: exit 0, `probe: start imported DOLOG=1`
-- pre-fix plugin: exit 1, `Undefined variable: 'conf'`
+- pre-fix plugin: exit 1, `VMApi::setField: expected object`
+
+A probe that imports ONLY `start` (no main-scope `std/config` import) does
+NOT discriminate: start.hv's own `use "std/config"` then registers the
+object in its own sandbox and both legs pass. The main-scope import is
+required for the defect to fire.
 
 The regression test also covers: the no-main-import shape must pass
 (negative control), the value written from the module scope must read back
@@ -136,10 +170,16 @@ on the same object, and a saved value must be readable from the file by a
 separate process. Child processes run with a sandboxed HOME, so the
 developer's real config is never touched.
 
-Earlier verification on the main-line fix (`313dec21e`):
+Earlier verification on the main-line fix (`313dec21e`), recorded before the
+staged-tree A/B above was built. The post-fix rows stand; the pre-fix row
+was produced by the in-place plugin swap whose loader rejection is described
+above, so it must not be read as a clean pre-fix reproduction - the staged
+A/B supersedes it:
 
 - Pre-fix binary: `scripts/smoke/test_issue_config_set_in_module_scope.hv`
   -> `Execution error: VMApi::setField: expected object` (exit 1).
+  [CONTAMINATED: the same run logged a config build-id mismatch; the
+  staged A/B above is the authoritative pre-fix evidence.]
 - Post-fix binary: same test -> `PASS: config_set_in_module_scope` (exit 0).
 - `scripts/tests/test_config_shadow.hv` -> `test config shadow passed` (exit 0).
 - `~/scripts/havel/hotkeys0.3.hv` (sandbox HOME) -> no execution error.

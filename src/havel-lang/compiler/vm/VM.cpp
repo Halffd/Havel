@@ -6832,14 +6832,16 @@ Value VM::loadModule(const std::string &path) {
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
     ValueSerializer serializer;
-    auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536);
+    std::string loadFailure;
+    auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536, &loadFailure);
     if (!deserialized) {
-      // The cached .hvc can't be deserialized (e.g. bytecode format drift
-      // between versions). Drop the stale cache and recompile from source so
+      // The cached .hvc can't be served (e.g. bytecode format drift between
+      // versions, or the entry's embedded identity disagrees with the
+      // source it names). Drop the stale cache and recompile from source so
       // a bad cache never hard-fails the import. The source-compile path
       // writes a fresh cache, so the module self-heals on the next run.
-      ::havel::debug("[BC-CACHE] deserialize failed, recompiling from source: {}",
-                     resolved->canonicalPath);
+      ::havel::debug("[BC-CACHE] deserialize failed ({}), recompiling from source: {}",
+                     loadFailure.empty() ? "unknown" : loadFailure, resolved->canonicalPath);
       std::error_code removeEc;
       std::filesystem::remove(resolved->canonicalPath, removeEc);
       auto reResolved = moduleLoader_.resolve(path, prev_script_dir);
@@ -7219,7 +7221,16 @@ load_from_source:
     // Auto-cache compiled chunk to ~/.cache/havel. Module compiles run the
     // ByteCompiler directly (strict_mode_ defaults false, no optimizer in
     // this path), so the entry is stamped with that exact configuration.
-    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false);
+    //
+    // The source text is passed explicitly so the entry's embedded identity
+    // (size + sha256) describes the text that was actually COMPILED. Without
+    // it, serializeChunk re-reads the file from disk to compute the identity,
+    // and the two reads are independent: an edit landing between the compile
+    // read and the identity read stamps an entry whose identity matches
+    // neither the compiled text nor the file as it was read, and
+    // deserializeChunk then rejects it forever - the entry can never be
+    // served, so the cache silently stops working for that module.
+    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false, source);
   }
 
   // Execute the module in a sandboxed globals context

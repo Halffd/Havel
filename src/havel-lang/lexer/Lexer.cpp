@@ -1897,7 +1897,7 @@ if (isDigit(c) || canBeNegativeNumber) {
  // Check if this looks like a regex (not division)
  // Simple heuristic: if previous non-whitespace token suggests expression
  // context
- bool isRegexContext = currentTokens.empty() ||
+    bool isRegexContext = currentTokens.empty() ||
  currentTokens.back().type == TokenType::OpenParen ||
  currentTokens.back().type == TokenType::OpenBracket ||
  currentTokens.back().type == TokenType::OpenBrace ||
@@ -1910,11 +1910,17 @@ if (isDigit(c) || canBeNegativeNumber) {
  currentTokens.back().type == TokenType::In ||
  currentTokens.back().type == TokenType::Matches ||
  currentTokens.back().type == TokenType::Tilde ||
- currentTokens.back().type == TokenType::Colon ||
  currentTokens.back().type == TokenType::Question ||
  currentTokens.back().type == TokenType::Pipe ||
  currentTokens.back().type == TokenType::NewLine ||
  currentTokens.back().type == TokenType::Semicolon;
+    // A colon is NOT regex context. A colon introduces a sleep duration
+    // (`:1s`, `:500ms`), a slice bound (`[start:end]`) or a label - never a
+    // regex literal. Treating it as regex context silently DESTROYED the
+    // unit suffix of an unquoted duration: the lexer scanned "ms" as a
+    // regex literal (up to the next '/' or EOF) and dropped it, so `:10ms`
+    // reached the parser as the bare number 10 and the runtime rejected it
+    // with "sleep(): invalid duration format".
 
  if (isRegexContext && !isDigit(peek())) {
  currentTokens.push_back(scanRegexLiteral());

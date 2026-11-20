@@ -1686,6 +1686,11 @@ void HotkeyModule::setGoroutineId(const std::string &hotkeyId, uint32_t gid) {
     if (ctx) ctx->goroutine_id = gid;
 }
 
+uint32_t HotkeyModule::getGoroutineId(const std::string &hotkeyId) {
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    return ctx ? ctx->goroutine_id : 0;
+}
+
 void HotkeyModule::setContextRootId(const std::string &hotkeyId, uint64_t rootId) {
     auto *ctx = getHotkeyContextDataMutable(hotkeyId);
     if (ctx) ctx->context_root_id = rootId;

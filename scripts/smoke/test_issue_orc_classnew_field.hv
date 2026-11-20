@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC CALL_METHOD receiver matched the ambient "this" global.
 // (JitRuntimeBridges havel_vm_call_method foundViaModule scan).

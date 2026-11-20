@@ -3,7 +3,6 @@
 //       (success / exitCode / stdout / stderr), and str() of it is stdout.
 // Why: bash-shaped `$?` semantics for shell commands.
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
 
 _ok = `echo hello`
 if !_ok.success { print("FAIL: success should be true"); exit(1) }

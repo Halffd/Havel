@@ -2292,6 +2292,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
   # Pre-merge gate: full tier including slow stress runs. Dev-loop
   # invocations (bare `hvtest --smoke`) skip the slow tier by default.
+  #
+  # No per-test timeout: a smoke script's verdict must depend on its
+  # assertions, not on how long the machine took to run it. A budget that
+  # killed a script mid-run reported a FAIL for code that was correct, and
+  # the verdict then tracked the machine's load rather than the code.
   add_test(NAME hvtest-smoke COMMAND hvtest --smoke --slow-too)
   # Module globals drift guard: fails if a setGlobal() module global is not
   # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
@@ -3547,6 +3552,149 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
 
+    # havel::ModifierMasks and IO::ParseModifiersAndFlags - ONE modifier bit
+    # layout for every backend.
+    #
+    # The defect: the non-evdev branch of ParseModifiersAndFlags() produced
+    # ModifierMasks (SHIFT on bit 0, CONTROL on bit 1), while the evdev
+    # branch produced the bits inline (ctrl on bit 0, shift on bit 1) - and
+    # the hotkey matchers read the evdev layout. On the X11 path the two
+    # layouts disagreed, so a Ctrl hotkey was matched as if it required
+    # Shift, and a Shift hotkey as if it required Ctrl.
+    add_executable(io_modifier_layout_test
+        tests/io_modifier_layout_ut.cpp
+    )
+    target_include_directories(io_modifier_layout_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_modifier_layout_test PRIVATE cxx_std_23)
+    target_link_libraries(io_modifier_layout_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_modifier_layout_test COMMAND io_modifier_layout_test)
+
+    # IO::selectGrabsToRetry - the rule that picks which hotkeys get their
+    # OS-level key grab re-attempted. A failed X11 grab (BadAccess: another
+    # X client owns the key, or holds an active keyboard grab) used to be
+    # swallowed: IO::GrabHotkey discarded the grab result and reported
+    # success, so the binding looked armed while the X server held no grab
+    # for it, and nothing ever retried it. The hotkey then stayed dead for
+    # the rest of the process lifetime.
+    add_executable(io_hotkey_grab_retry_test
+        tests/io_hotkey_grab_retry_ut.cpp
+    )
+    target_include_directories(io_hotkey_grab_retry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_hotkey_grab_retry_test PRIVATE cxx_std_23)
+    target_link_libraries(io_hotkey_grab_retry_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_hotkey_grab_retry_test COMMAND io_hotkey_grab_retry_test)
+
+    # havel::GrabMaskVariants - the rule that decides which X11 modifier
+    # masks a hotkey is grabbed under. The lock bits (CapsLock / NumLock)
+    # were OR-ed into the base mask by ToPlatformMask() and the variant
+    # expansion was applied on top, so the "no lock modifier" variant was
+    # unreachable: it was never grabbed, never ungrabbed, and the removed
+    # hotkey left a stale grab on the X server that kept stealing the key
+    # from every other application.
+    add_executable(io_x11_grab_mask_variants_test
+        tests/io_x11_grab_mask_variants_ut.cpp
+    )
+    target_include_directories(io_x11_grab_mask_variants_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_grab_mask_variants_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_grab_mask_variants_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_grab_mask_variants_test COMMAND io_x11_grab_mask_variants_test)
+
+    # havel::X11StateToAbstractMask - the conversion from an X11 event state
+    # to the platform-neutral ModifierMasks layout.
+    #
+    # The defect: the (now removed) X11HotkeyMonitor compared the X11 event
+    # state DIRECTLY against hotkey.modifiers. The X11 state uses the
+    # server's modifier bits (Shift=0, Lock=1, Control=2, Mod1=3) while
+    # ModifierMasks uses the evdev bits (Ctrl=0, Shift=1, Alt=2, Meta=3).
+    # The layouts are not interchangeable, so such a comparison could never
+    # match a hotkey that carries a modifier.
+    #
+    # The conversion now lives in one shared function used by every X11
+    # consumer, so the layouts cannot drift apart again.
+    add_executable(io_x11_state_mask_test
+        tests/io_x11_state_mask_ut.cpp
+    )
+    target_include_directories(io_x11_state_mask_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_state_mask_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_state_mask_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_state_mask_test COMMAND io_x11_state_mask_test)
+
+    # havel::ShouldRetrySelectInput - the rule that decides whether the X11
+    # adapter re-requests the root window event subscription. The X server
+    # refuses XSelectInput on the root window (BadAccess) while another
+    # client holds an active keyboard or pointer grab, and the refusal
+    # means the client receives no key events at all. The cause is
+    # transient, but the adapter used to ask once in Init() and never
+    # again, so one refusal at startup left the process deaf for its whole
+    # lifetime.
+    add_executable(io_x11_select_input_retry_test
+        tests/io_x11_select_input_retry_ut.cpp
+    )
+    target_include_directories(io_x11_select_input_retry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_select_input_retry_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_select_input_retry_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_select_input_retry_test COMMAND io_x11_select_input_retry_test)
+
     # Drift guard for the three token-name registries: TokenType enum ->
     # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
     # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member
@@ -3565,6 +3713,50 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(token_type_names_drift_test PRIVATE cxx_std_23)
     target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
+
+    # Bytecode-cache source identity: the writer must stamp the text it
+    # compiled, and the reader must report WHY it refused an entry. A
+    # source-identity mismatch used to be reported as "entry-unreadable",
+    # which points at an IO problem that is not there.
+    add_executable(bytecode_cache_identity_test
+        tests/bytecode_cache_identity_ut.cpp
+    )
+    target_include_directories(bytecode_cache_identity_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(bytecode_cache_identity_test PRIVATE cxx_std_23)
+    target_link_libraries(bytecode_cache_identity_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME bytecode_cache_identity_test COMMAND bytecode_cache_identity_test)
+
+    # The script-source join rule. The launcher used to append a newline to
+    # EVERY file it read, so a single script's compiled text was one byte
+    # longer than the file on disk - and the bytecode cache validates an
+    # entry against the exact text it would compile, so the entry the
+    # compile wrote could never be served. The rule lives in one header so
+    # the launcher and this test cannot drift apart.
+    add_executable(script_source_join_test
+        tests/script_source_join_ut.cpp
+    )
+    target_include_directories(script_source_join_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/core/init
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(script_source_join_test PRIVATE cxx_std_23)
+    target_link_libraries(script_source_join_test PRIVATE
+        GTest::gtest GTest::gtest_main
+    )
+    add_test(NAME script_source_join_test COMMAND script_source_join_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core

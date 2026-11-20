@@ -1,0 +1,146 @@
+// What: the laptop module's DEGRADATION contract - absent hardware reads as
+//      null and the write helpers report instead of raising.
+//
+// Why: laptop.hv is one code path for a laptop and a desktop. A module that
+//      threw on a missing /sys node would make a desktop unusable, and a
+//      writer that threw on a refused sysfs write would give the user no
+//      reason they can act on.
+//
+// Expected: ac(), lid(), profile(), chargeLimit(), conservationMode(),
+//      keyboardBacklight() are each null or a well-shaped object; every
+//      writer returns {ok, ...} with an error string when it is refused, and
+//      never throws.
+//
+// Task test (scripts/tests/), not smoke: it reads hardware state. Nothing it
+//      calls can change that state - setProfile/setChargeLimit/
+//      setConservation are refused here (this machine exposes none of them),
+//      and setKeyboardBacklight is deliberately NOT called: there is no
+//      keyboard backlight here, but on a laptop that has one it would change
+//      a real setting.
+
+use laptop
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+// ---------------------------------------------------------------
+// Readers degrade to null, never throw
+// ---------------------------------------------------------------
+_a = laptop.ac()
+check("ac() is null or an object", _a == null || str(type(_a)) == "object")
+if _a != null {
+    check("ac() has online", _a.online == true || _a.online == false)
+    check("ac() has a type", _a.type != null)
+}
+
+_l = laptop.lid()
+check("lid() is null or an object", _l == null || str(type(_l)) == "object")
+if _l != null {
+    check("lid state is open or closed",
+          _l.state == "open" || _l.state == "closed")
+    check("lidOpen agrees with the lid state", laptop.lidOpen() == (_l.state == "open"))
+} else {
+    check("lidOpen is false with no lid switch", laptop.lidOpen() == false)
+}
+
+_p = laptop.profile()
+check("profile() is null or a string",
+      _p == null || str(type(_p)) == "string")
+_choices = laptop.profiles()
+check("profiles() is an array", str(type(_choices)) == "array")
+if _p == null {
+    check("no active profile means no choices", #_choices == 0)
+} else {
+    check("an active profile is among the choices", _choices.includes(_p))
+}
+
+_c = laptop.chargeLimit()
+check("chargeLimit() is null or an object",
+      _c == null || str(type(_c)) == "object")
+if _c != null {
+    _sok = _c.start == null || (_c.start >= 0 && _c.start <= 100)
+    _eok = _c.end == null || (_c.end >= 0 && _c.end <= 100)
+    check("chargeLimit thresholds are 0..100 or null", _sok && _eok)
+}
+
+_cm = laptop.conservationMode()
+check("conservationMode() is null or a bool", _cm == null || _cm == true || _cm == false)
+
+_k = laptop.keyboardBacklight()
+check("keyboardBacklight() is null or an object",
+      _k == null || str(type(_k)) == "object")
+if _k != null {
+    check("keyboard backlight max is positive", _k.max > 0)
+    check("keyboard backlight level is within range", _k.current >= 0 && _k.current <= _k.max)
+}
+
+// ---------------------------------------------------------------
+// The writers report, and never throw
+// ---------------------------------------------------------------
+// Each one either succeeds (the hardware exposes the knob) or comes back
+// with ok:false and a reason. Neither outcome is asserted - what matters is
+// that a result comes back at all and carries the error string when refused.
+report = fn(name, res) {
+    _isObj = str(type(res)) == "object"
+    check(name + " returns a result object", _isObj)
+    if _isObj {
+        check(name + " reports success or failure", res.ok == true || res.ok == false)
+        if res.ok == false {
+            check(name + " explains the refusal", res.error != null && res.error != "")
+        }
+    }
+}
+
+report("setProfile", laptop.setProfile("power-saver"))
+report("setChargeLimit", laptop.setChargeLimit(60))
+report("setConservation", laptop.setConservation(true))
+report("setChargeLimit (out of range)", laptop.setChargeLimit(150))
+report("setProfile (unknown profile)", laptop.setProfile("no-such-profile"))
+
+// setKeyboardBacklight is intentionally NOT called: on a laptop that has a
+// keyboard backlight it changes a real setting, and a test must not.
+check("setKeyboardBacklight is callable", str(type(laptop.setKeyboardBacklight)) == "function")
+
+// ---------------------------------------------------------------
+// summary() is one complete object, laptop or desktop
+// ---------------------------------------------------------------
+_s = laptop.summary()
+check("summary() returns an object", str(type(_s)) == "object")
+_keys = _s.keys()
+_expected = ["battery", "status", "charging", "acOnline", "powerWatts",
+             "timeRemainingMinutes", "wearPercent", "cycleCount", "profile",
+             "lidOpen", "chargeLimit", "conservationMode",
+             "keyboardBacklight", "keyboardBacklightMax"]
+for _f in _expected {
+    check("summary() has '" + _f + "'", _keys.includes(_f))
+}
+// On a desktop every laptop-only field is null rather than missing.
+check("summary().status is a string", str(type(_s.status)) == "string")
+check("summary().acOnline is a bool", _s.acOnline == true || _s.acOnline == false)
+// summary() must agree with the readers it wraps.
+check("summary().acOnline agrees with acOnline()", _s.acOnline == laptop.acOnline())
+check("summary().lidOpen agrees with lidOpen()", _s.lidOpen == laptop.lidOpen())
+check("summary().profile agrees with profile()", _s.profile == laptop.profile())
+
+_b = laptop.battery()
+if _b == null {
+    check("summary().battery is null on a desktop", _s.battery == null)
+} else {
+    check("summary().battery agrees with battery()", _s.battery == _b.percent)
+}
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " laptop degradation checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

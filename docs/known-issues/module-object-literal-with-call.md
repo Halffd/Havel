@@ -170,3 +170,22 @@ was removed rather than committed. What a working test needs:
 
 Until one of those lands, the three checks above are the verification of
 record, and the reproducer in "Symptom" is the fastest way to re-check.
+
+---
+
+## Second gap found by the same document (NOT fixed, deliberately)
+
+`process.spawn` / `process.runDetached` accept only a **string** command.
+`__proc.spawn` in `SysModule.cpp` does `std::string cmd =
+api.resolveString(args[0]);` and then always builds `sh -c cmd`, so an
+array command is stringified into `"[sh, -c, yes ...]"` and handed to
+`/bin/sh`, which reports `[sh,: command not found`. `process.run` does
+not have this problem - `SystemBridge::handleProcessRun` splits the array
+into an executable plus argv and execs it directly.
+
+So the module header's claim that both forms work for "the primitives" is
+true of `run`/`pipe` and false of `spawn`/`wait`. The fix is the same
+split `handleProcessRun` already performs, applied to `__proc.spawn`'s
+argv construction. It was not done here because it changes a launching
+path and the task at hand was test coverage; `scripts/tests/test_process_spawn_wait_pipes.hv`
+therefore drives `spawn` with string commands and says so.

@@ -1,0 +1,89 @@
+// What: the spawn/wait two-step drains the child's pipes WHILE it runs, so
+//      a child writing more than the pipe buffer cannot deadlock the wait.
+//
+// Why: process.wait() waited for the pid and only then read the pipes. A
+//      child that writes more than the 64 KiB pipe buffer blocks in write()
+//      while the parent blocks in waitpid() - both sides wait for the other
+//      forever. The fix reuses the concurrent feed/drain/reap loop.
+//
+// Contract of the two-step (as modules/std/process.hv's exec()/output() use
+// it): spawn returns a handle with .pid; wait() blocks, fills that SAME
+// handle with .exitCode/.stdout/.stderr in place, and returns the exit code
+// as an int.
+//
+// Expected: spawning a child that writes four times the pipe buffer and then
+//      waiting for it completes, fills the handle with all of its output, and
+//      reports the child's exit code.
+//
+// Task test (scripts/tests/), not smoke: it spawns real child processes and
+//      is bounded by an explicit timeout on the wait.
+
+use "process"
+use "sys"
+use "time"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+// A command that writes exactly 256 KiB - four times the pipe buffer - then
+// exits. Under the old wait-then-drain order this child blocks in write() at
+// 64 KiB while the parent blocks in waitpid(): neither ever finishes.
+//
+// A STRING command, because process.spawn accepts only strings: it resolves
+// args[0] to a string and always builds `sh -c cmd`. See the note in
+// docs/known-issues/module-object-literal-with-call.md.
+//
+// `yes | head -c` rather than a shell loop, so the fixture needs no shell
+// variables (which Havel would interpolate out of the command string).
+_BIG = 262144
+_LINE = "012345678901234567890123456789012"
+
+_p = process.spawn("yes ${_LINE} | head -c ${_BIG}")
+check("spawn returns a running pid", _p != null && _p.pid > 0)
+
+_start = time.now()
+_rc = process.wait(_p)
+_elapsed = time.now() - _start
+
+check("wait returns the exit code 0", _rc == 0)
+check("wait does not deadlock (under 30s)", _elapsed < 30000)
+check("all of the pipe output was drained", _p.stdout != null && #_p.stdout.trim() >= _BIG)
+check("stdout is not a truncated prefix", #_p.stdout.trim() >= _BIG)
+
+print("  (drained " + str(#_p.stdout.trim()) + " bytes in " + str(_elapsed) + "ms)")
+
+// ---------------------------------------------------------------
+// stderr is drained too, and separately
+// ---------------------------------------------------------------
+// stderr filling up is the same deadlock on the other pipe. 100 KiB to
+// stderr through a pipeline whose stdout is redirected away - a plain
+// `yes 1>&2 | head` redirects yes off the pipe and head then waits for an
+// EOF that never comes, so the fixture has to keep the pipeline intact.
+_BIGERR = 100000
+_p2 = process.spawn("sh -c 'head -c ${_BIGERR} /dev/zero | tr \"\\000\" e >&2'")
+_rc2 = process.wait(_p2)
+check("stderr is drained while the child runs",
+      _rc2 == 0 && _p2.stderr != null && #_p2.stderr.trim() > 60000)
+
+// ---------------------------------------------------------------
+// A non-zero exit survives the drain, and the streams stay separate
+// ---------------------------------------------------------------
+_p3 = process.spawn("printf out; printf err 1>&2; exit 5")
+_rc3 = process.wait(_p3)
+check("a non-zero exit survives the drain", _rc3 == 5)
+check("stdout and stderr stay separate", _p3.stdout == "out" && _p3.stderr == "err")
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " spawn/wait drain checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

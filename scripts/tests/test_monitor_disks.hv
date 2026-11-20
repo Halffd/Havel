@@ -1,0 +1,80 @@
+// What: monitor.disk() and monitor.disks() report a well-shaped, internally
+//      consistent view of the mount table.
+//
+// Why: while documenting modules/app/monitor.hv, disk() returned an int
+//      (the total) instead of the object - an object literal whose field
+//      held a call to a same-module function evaluated to that call's value.
+//      Fixed by computing the values into locals first.
+//
+// Expected: disk() is an object with total/used/free/percent/mount; used and
+//      free sum to at most the total; percent is 0..100; every disks() entry
+//      has the same shape plus a device.
+//
+// Task test (scripts/tests/), not smoke: it reads the real mount table.
+
+use monitor
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+_d = monitor.disk("/")
+check("disk('/') returns an object", str(type(_d)) == "object")
+_dk = _d.keys()
+for _f in ["total", "used", "free", "percent", "mount"] {
+    check("disk('/') has '" + _f + "'", _dk.includes(_f))
+}
+
+check("disk total is positive", _d.total > 0)
+check("used + free does not exceed total", _d.used + _d.free <= _d.total + 1)
+check("percent is within 0..100", _d.percent >= 0.0 && _d.percent <= 100.0)
+_implied = 100.0 * _d.used / _d.total
+check("percent agrees with used/total",
+      _d.percent >= _implied - 5.0 && _d.percent <= _implied + 5.0)
+check("mount is the requested path", _d.mount == "/")
+
+// A path that is not a mount point still answers - df reports the
+// containing filesystem.
+_other = monitor.disk(sys.home())
+check("disk() answers for any path", _other != null && str(type(_other)) == "object")
+
+// disks() is every mount, each with the same shape plus a device.
+_all = monitor.disks()
+check("disks() returns an array", str(type(_all)) == "array")
+check("disks() found at least one mount", #_all > 0)
+
+for _e in _all {
+    _ek = _e.keys()
+    check("a disks() entry has device", _ek.includes("device"))
+    check("a disks() entry has mount", _ek.includes("mount"))
+    check("a disks() entry has percent", _ek.includes("percent"))
+    check("a disks() entry's percent is 0..100",
+          _e.percent >= 0.0 && _e.percent <= 100.0)
+    break
+}
+
+// Every entry must carry a mount and a device, whatever the container
+// happens to present the root under. Asserting the shape rather than a
+// specific mount name keeps this honest inside a chroot.
+_shape_ok = true
+for _e in _all {
+    if _e.mount == null || _e.device == null {
+        _shape_ok = false
+    }
+}
+check("every disks() entry carries mount and device", _shape_ok == true)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " monitor disk checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

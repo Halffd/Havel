@@ -1,0 +1,119 @@
+// What: the laptop module's UNIT ARITHMETIC - the derived fields
+//      powerWatts, timeRemainingMinutes and wearPercent must follow from the
+//      raw sysfs values, not be asserted independently.
+//
+// Why: while building this module the power derivation divided µA x µV by
+//      1e9 and reported 5 mW for a laptop drawing 5 W - a factor of 1000.
+//      µA x µV is (1e-6 A)(1e-6 V) = 1e-12 W, so microwatts are the product
+//      over 1e6. Nothing caught it because no test cross-checked the numbers.
+//
+// Expected: powerWatts equals current x voltage / 1e12 within rounding;
+//      timeRemainingMinutes equals charge/current x 60 within rounding; and
+//      wearPercent equals 100 x (1 - full/design).
+//
+// Task test (scripts/tests/), not smoke: it reads real battery sysfs. Every
+//      expectation about a live reading is a cross-check against another
+//      reading taken at the same instant, never a fixed number.
+
+use laptop
+use "fs"
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+_b = laptop.battery()
+
+if _b == null {
+    print("SKIP: no battery on this machine - the unit cross-checks have")
+    print("      nothing to run against")
+    sys.exit(0)
+}
+
+check("battery() returns an object", str(type(_b)) == "object")
+
+// ---------------------------------------------------------------
+// Power: microwatts -> watts
+// ---------------------------------------------------------------
+// power_now (µW) when the device exposes it, else current x voltage. Both
+// spellings must land on the same watts figure, so recompute from whichever
+// raw values the object carries and compare.
+if _b.current > 0 && _b.voltage > 0 {
+    _watts = _b.current * _b.voltage / 1000000000000.0
+    check("powerWatts follows current x voltage",
+          _b.powerWatts >= _watts * 0.98 && _b.powerWatts <= _watts * 1.02)
+    // A laptop on battery draws single-digit watts; the 1000x error showed
+    // up as milliwatts, so the magnitude itself is the check.
+    check("powerWatts is a plausible draw, not kilowatts or milliwatts",
+          _b.powerWatts > 0.05 && _b.powerWatts < 200.0)
+}
+
+// ---------------------------------------------------------------
+// Time remaining: charge / current, in hours
+// ---------------------------------------------------------------
+if _b.discharging && _b.current > 0 && _b.now > 0 {
+    _hours = _b.now / _b.current
+    _minutes = _hours * 60.0
+    _lo = _minutes - 3
+    _hi = _minutes + 3
+    check("timeRemainingMinutes follows charge / current",
+          _b.timeRemainingMinutes >= _lo && _b.timeRemainingMinutes <= _hi)
+    // It must not be negative or absurd
+    check("timeRemainingMinutes is not negative", _b.timeRemainingMinutes >= 0)
+    check("timeRemainingMinutes is not more than a day",
+          _b.timeRemainingMinutes <= 1440)
+}
+
+if _b.full {
+    check("a full battery has nothing to wait for", _b.timeRemainingMinutes == 0)
+}
+
+// ---------------------------------------------------------------
+// Wear: full / design
+// ---------------------------------------------------------------
+if _b.designCapacity > 0 && _b.fullCapacity > 0 && _b.fullCapacity <= _b.designCapacity {
+    _wear = (1.0 - _b.fullCapacity / _b.designCapacity) * 100.0
+    _wlo = _wear - 0.5
+    _whi = _wear + 0.5
+    check("wearPercent follows full / design",
+          _b.wearPercent >= _wlo && _b.wearPercent <= _whi)
+    check("wearPercent is not negative", _b.wearPercent >= 0.0)
+    check("wearPercent is not absurd", _b.wearPercent <= 100.0)
+}
+
+// ---------------------------------------------------------------
+// Percent: the kernel's own reported figure
+// ---------------------------------------------------------------
+// Read capacity straight from sysfs and compare with the module's - this is
+// the field that was zero before monitor.hv's _batRead null fix, so it is
+// the one worth pinning.
+_raw = fs.read("/sys/class/power_supply/${_b.name}/capacity")
+if _raw != null {
+    _direct = int(_raw.trim())
+    check("percent matches the sysfs capacity", _b.percent == _direct)
+}
+
+// The status field must be one the kernel actually uses.
+_seen = ["Charging", "Discharging", "Full", "Not charging", "Unknown"]
+_ok = false
+for _s in _seen {
+    if _b.status == _s {
+        _ok = true
+    }
+}
+check("status is a kernel state", _ok == true)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " laptop unit checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

@@ -1,0 +1,105 @@
+// What: the process primitives' two contracts - string vs argv command
+//      forms, and success following the EXIT STATUS.
+//
+// Why: process.run() accepted an array command but joined it into one shell
+//      string with spaces, so an argument containing spaces became several
+//      arguments and any quoting in an argument was reinterpreted by the
+//      shell. Separately, success was the Launcher's spawn outcome rather
+//      than the exit status, so a command that ran and exited non-zero
+//      reported success == true - which is the whole value of the field.
+//
+// Expected: an array command is exec'd directly with no word splitting or
+//      globbing; a string command goes through /bin/sh -c; a non-zero exit
+//      is success == false with the exit code preserved.
+//
+// Task test (scripts/tests/), not smoke: it spawns real child processes.
+
+use "process"
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+// ---------------------------------------------------------------
+// The result object has every documented field
+// ---------------------------------------------------------------
+_r = process.run("printf hi")
+_keys = _r.keys()
+for _f in ["pid", "exitCode", "success", "stdout", "stderr", "error"] {
+    check("result has '" + _f + "'", _keys.includes(_f))
+}
+check("exit 0 is success", _r.success == true && _r.exitCode == 0)
+check("stdout is captured", _r.stdout == "hi")
+
+// ---------------------------------------------------------------
+// success follows the exit status, not the spawn
+// ---------------------------------------------------------------
+for _code in [1, 2, 42] {
+    _r = process.run("exit " + str(_code))
+    check("exit " + str(_code) + " is not success", _r.success == false)
+    check("exit " + str(_code) + " reports the code", _r.exitCode == _code)
+    check("exit " + str(_code) + " has a pid", _r.pid > 0)
+}
+
+// ---------------------------------------------------------------
+// A string command is a shell command line
+// ---------------------------------------------------------------
+_r = process.run("echo a | tr a b")
+check("a string command uses a shell", _r.success == true && _r.stdout.trim() == "b")
+
+// An empty ARRAY is the documented error path (an empty string is still a
+// valid, if useless, shell command line and runs /bin/sh successfully).
+_threw = false
+try {
+    process.run([])
+} catch {
+    _threw = true
+}
+check("an empty array command is rejected", _threw == true)
+_r = process.run("")
+check("an empty string is a no-op shell command", _r.success == true && _r.exitCode == 0)
+
+// ---------------------------------------------------------------
+// An array command is exec'd directly: no word splitting
+// ---------------------------------------------------------------
+// "echo" with one argument containing spaces must arrive as ONE argv
+// element. Through a shell it would become three words.
+_r = process.run(["printf", "%s", "a  b  c"])
+check("an array command keeps one argv element", _r.success == true)
+check("no word splitting", _r.stdout == "a  b  c")
+
+// quoting is not reinterpreted: '$HOME' must survive verbatim. The leading
+// backslash is Havel's own escape so the test source is not interpolated.
+_r = process.run(["printf", "%s", "\$HOME and \`echo x\`"])
+check("no shell expansion in an array argument", _r.stdout == "\$HOME and \`echo x\`")
+
+// ---------------------------------------------------------------
+// Convenience helpers follow the same exit-status contract
+// ---------------------------------------------------------------
+check("ok() true on exit 0", process.ok("true") == true)
+check("ok() false on non-zero", process.ok("false") == false)
+check("capture() returns trimmed stdout", process.capture("printf '  x  '") == "x")
+check("exec() returns the code", process.exec("exit 7") == 7)
+
+_threw = false
+try {
+    process.runOrThrow("exit 3")
+} catch {
+    _threw = true
+}
+check("runOrThrow() throws on failure", _threw == true)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " process contract checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

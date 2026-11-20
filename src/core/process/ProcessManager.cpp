@@ -201,7 +201,14 @@ uint64_t ProcessManager::readProcessCpuTime(int32_t pid) {
 bool ProcessManager::isProcessAlive(pid_t pid) {
   if (pid <= 0)
     return false;
-  return kill(pid, 0) == 0;
+  if (kill(pid, 0) != 0)
+    return false;
+  // kill(pid, 0) also succeeds on a ZOMBIE: the /proc entry stays until the
+  // parent reaps it. A child this process spawned and killed is exactly
+  // that, so without a state check "is it alive?" stayed true for every
+  // process we had already killed and never waited for - which also makes
+  // terminateProcess() spin its whole timeout window.
+  return getProcessState(pid) != ProcessState::ZOMBIE;
 }
 
 bool ProcessManager::sendSignal(pid_t pid, int signal) {

@@ -809,7 +809,27 @@ api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
 #ifndef _WIN32
     if (args[0].isInt()) {
       pid_t pid = static_cast<pid_t>(args[0].asInt());
-      return Value::makeBool(kill(pid, 0) == 0);
+      if (kill(pid, 0) != 0)
+        return Value::makeBool(false);
+      // kill(pid, 0) also succeeds on a ZOMBIE: the /proc entry stays until
+      // the parent reaps it. A child this process spawned and killed is
+      // exactly that, so without a state check "is it running?" stayed true
+      // for every process we had already killed and never waited for.
+      char procPath[64];
+      snprintf(procPath, sizeof(procPath), "/proc/%d/stat", (int)pid);
+      std::ifstream statFile(procPath);
+      if (!statFile.is_open())
+        return Value::makeBool(true);  // kill() answered: assume alive
+      std::string stat((std::istreambuf_iterator<char>(statFile)),
+                       std::istreambuf_iterator<char>());
+      // /proc/<pid>/stat is "<pid> (<comm>) <state> ...". comm may itself
+      // contain spaces or ')', so the state is found after the LAST ')'.
+      size_t rparen = stat.rfind(')');
+      if (rparen == std::string::npos || rparen + 2 >= stat.size())
+        return Value::makeBool(true);
+      if (stat[rparen + 2] == 'Z')
+        return Value::makeBool(false);  // dead, awaiting reap
+      return Value::makeBool(true);
     }
     std::string name = api.resolveString(args[0]);
     return Value::makeBool(havel::utils::processExistsByName(name));

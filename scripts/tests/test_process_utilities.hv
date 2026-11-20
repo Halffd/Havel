@@ -1,0 +1,66 @@
+// What: the process convenience helpers - which() over PATH, find()/exists()
+//      by name, and exists() by PID.
+//
+// Why: which() shells out to `command -v` and used to fail on a command
+//      containing shell metacharacters, and exists() accepted a name and a
+//      PID through separate code paths that disagreed about what "alive"
+//      means for a zombie (fixed: ProcessManager::isProcessAlive now
+//      consults the process state).
+//
+// Expected: which() resolves a real command and returns null for a
+//      nonexistent one; exists() answers for both a name and a PID; find()
+//      returns an array of PIDs.
+//
+// Task test (scripts/tests/), not smoke: it reads the real process table.
+
+use "process"
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+// which(): a command that is certainly on PATH.
+_which_sh = process.which("sh")
+check("which() resolves a real command", _which_sh != null && _which_sh != "")
+
+// which(): a name that cannot exist.
+_check_none = process.which("havel_no_such_command_xyz")
+check("which() returns null for a nonexistent command", _check_none == null)
+
+// exists() by PID - our own process.
+check("exists() is true for our own pid", process.exists(sys.pid()) == true)
+
+// exists() by name - a shell interpreter is always running somewhere in a
+// session, but a vm/container may not have one, so the check accepts the
+// answer rather than asserting a specific one.
+_x = process.exists("sh")
+check("exists() answers for a name", _x == true || _x == false)
+
+// find() returns an array of PIDs.
+_pids = process.find("sh")
+check("find() returns an array", str(type(_pids)) == "array")
+for _p in _pids {
+    check("every find() entry is a pid", _p > 0)
+    break
+}
+
+// process.pid()/ppid() are FUNCTIONS - reading them without () hands back
+// the function object, which is the trap this check pins down.
+check("process.pid is a function", str(type(process.pid)) == "function")
+check("process.pid() returns our pid", process.pid() == sys.pid())
+check("process.ppid() returns a parent pid", process.ppid() > 0)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " process utility checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

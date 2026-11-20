@@ -17,6 +17,8 @@
  */
 #pragma once
 
+#include "havel-lang/common/Export.hpp"
+
 #include <string>
 #include <unordered_set>
 
@@ -43,15 +45,24 @@ struct ShellTranslation {
 // variables in the session. `$name` naming a known global (or a local of the
 // enclosing block, tracked internally) is emitted as that variable;
 // otherwise it reads the process environment at run time.
-ShellTranslation translateShellLine(const std::string& line,
-                                    const std::unordered_set<std::string>* knownGlobals,
-                                    TranslateMode mode = TranslateMode::Repl);
+// HAVEL_EXPORT: the shell module plugin (havel_mod_shell.so) resolves this at
+// load time. The build compiles with -fvisibility=hidden, so without the
+// attribute the symbol is local ('t' in the static symtab) and the plugin dies
+// with "symbol lookup error: havel_mod_shell.so: undefined symbol
+// havel::repl::translateShellLine(...)".
+HAVEL_EXPORT ShellTranslation translateShellLine(
+    const std::string& line,
+    const std::unordered_set<std::string>* knownGlobals,
+    TranslateMode mode = TranslateMode::Repl);
 
 // Translate a whole accumulated shell-mode block (multi-line input).
 // Control-flow lines keep Havel's grammar; statements inside their braces and
 // shell-shaped statements on their own lines are translated per line.
-ShellTranslation translateShellBlock(const std::string& block,
-                                     const std::unordered_set<std::string>* knownGlobals,
-                                     TranslateMode mode = TranslateMode::Repl);
+// HAVEL_EXPORT for the same reason as translateShellLine above: the shell
+// module plugin translates multi-line blocks through it.
+HAVEL_EXPORT ShellTranslation translateShellBlock(
+    const std::string& block,
+    const std::unordered_set<std::string>* knownGlobals,
+    TranslateMode mode = TranslateMode::Repl);
 
 }  // namespace havel::repl

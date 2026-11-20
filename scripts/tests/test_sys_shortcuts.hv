@@ -1,0 +1,95 @@
+// What: the modules/std/sys.hv convenience layer - the hardware one-liners
+//      that delegate to system.hardware(), and the platform predicates.
+//
+// Why: SysModule registered only the 16 native sys.* host functions and
+//      never merged modules/std/sys.hv into the namespace, so
+//      sys.windowManager(), sys.os(), sys.kernel(), sys.cpu() and the rest
+//      were unreachable - `use sys` gave a namespace with 16 fields and no
+//      windowManager, which is what made ~/scripts/havel/start.hv line 67
+//      (`wm = sys.windowManager.lower()`) print `wm: null`.
+//
+// Expected: every shortcut resolves, and each returns exactly the value
+//      system.hardware() reports for the same field - the shortcut is a
+//      delegation, not a second opinion.
+//
+// Task test (scripts/tests/), not smoke: it reads real hardware state.
+
+use "sys"
+use "system"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+_hw = system.hardware()
+
+// Stable fields: each shortcut must return exactly what system.hardware()
+// reports for the same field.
+//
+// cpuFreq, ramUsed and ramFree are deliberately NOT in this list: they are
+// live readings, so the shortcut and the direct read happen at different
+// instants and can never be compared for equality. They are asserted below
+// for type and sign instead.
+_stable = ["cpu", "cpuCores", "cpuThreads", "gpu", "ramTotal",
+           "motherboard", "bios"]
+for _n in _stable {
+    _expected = _hw[_n]
+    _got = sys[_n]()
+    check("sys." + _n + "() delegates to system.hardware()", _got == _expected)
+}
+
+// Live fields: must be numbers (or null on a machine that reports none).
+for _n in ["cpuFreq", "ramUsed", "ramFree"] {
+    _v = sys[_n]()
+    check("sys." + _n + "() is a number or null",
+          _v == null || str(type(_v)) == "int" || str(type(_v)) == "float" || str(type(_v)) == "num")
+}
+
+// The platform predicates agree with sys.platform().
+_p = sys.platform()
+check("isLinux agrees with platform()", sys.isLinux() == (_p == "Linux"))
+check("isMac agrees with platform()", sys.isMac() == (_p == "MacOS"))
+check("isWindows agrees with platform()", sys.isWindows() == (_p == "Windows"))
+check("isBSD agrees with platform()", sys.isBSD() == (_p == "BSD"))
+
+// The module-merged detection shortcuts.
+check("sys.os() returns a string", str(type(sys.os())) == "string")
+// kernel is a version string on a machine whose uname reports one, and null
+// where the host has no kernel string - both are acceptable shapes, an
+// int or an object are not.
+_k = sys.kernel()
+check("sys.kernel() is a string or null",
+      _k == null || str(type(_k)) == "string")
+check("sys.windowManager() returns a string",
+      str(type(sys.windowManager())) == "string")
+check("sys.displayProtocol() returns a string",
+      str(type(sys.displayProtocol())) == "string")
+
+// The trap: sys.windowManager is a FUNCTION. Calling a string method on the
+// function reference silently yields null, which is why the parens matter.
+check("sys.windowManager is a function", str(type(sys.windowManager)) == "function")
+check("sys.windowManager() is not null", sys.windowManager() != null)
+check("sys.windowManager() is not the empty string", sys.windowManager() != "")
+
+// detect()/hardware() are the full objects, not wrappers.
+check("sys.detect() is an object", str(type(sys.detect())) == "object")
+check("sys.hardware() is an object", str(type(sys.hardware())) == "object")
+
+// cpuTemp() may be null on hardware without sensors.
+_t = sys.cpuTemp()
+check("sys.cpuTemp() is a number or null",
+      _t == null || str(type(_t)) == "int" || str(type(_t)) == "float" || str(type(_t)) == "num")
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " sys shortcut checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

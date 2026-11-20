@@ -1,0 +1,93 @@
+// What: signalling a spawned child - process.kill / sendSignal with a named
+//      signal, and process.getState on a live and then a reaped process.
+//
+// Why: kill() took a raw int and named signals were not accepted by the
+//      host-function form, so callers had to translate SIG* names by hand.
+//      The signal constants are ints on the namespace.
+//
+// Expected: a spawned child can be stopped with a named signal, its state is
+//      reported while it runs, and it is gone after the signal.
+//
+// Task test (scripts/tests/), not smoke: it spawns and kills real children.
+//      Every child this test starts is killed before it returns.
+
+use "process"
+use "sys"
+use "time"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+// The signal constants are ints on the namespace.
+check("SIGKILL is an int", process.SIGKILL == 9)
+check("SIGTERM is an int", process.SIGTERM == 15)
+check("SIGSTOP is an int", process.SIGSTOP == 19)
+
+_pid = 0
+
+_p = process.spawn("sleep 60")
+_pid = _p.pid
+check("spawned a long-running child", _pid > 0)
+check("the child exists", process.exists(_pid) == true)
+
+// getState on a live process reports a state string.
+_state = process.getState(_pid)
+check("getState reports a state for a live child", _state != null && _state != "")
+
+// Named signal, by name and by constant.
+_killed = process.kill(_pid, process.SIGTERM)
+check("kill with a constant works", _killed == true)
+
+time.sleep(1000)
+
+if process.exists(_pid) {
+    // still there: force it down so the test cannot leak the child
+    process.kill(_pid, process.SIGKILL)
+    time.sleep(1000)
+}
+check("the child is gone after SIGTERM", process.exists(_pid) == false)
+// A child havel killed but never waited for is a zombie: the /proc entry
+// stays until it is reaped, so getState reports ZOMBIE - which is the honest
+// answer and precisely why exists() has to consult the state.
+_state_after = process.getState(_pid)
+check("a killed child reports ZOMBIE, not a live state", _state_after == "ZOMBIE")
+
+// A signal name string is accepted too.
+_p2 = process.spawn("sleep 60")
+_pid2 = _p2.pid
+_killed2 = process.kill(_pid2, "SIGKILL")
+check("kill accepts a signal name", _killed2 == true)
+time.sleep(800)
+if process.exists(_pid2) {
+    process.kill(_pid2, process.SIGKILL)
+    time.sleep(1000)
+}
+
+// sendSignal is the documented alias.
+_p3 = process.spawn("sleep 60")
+_pid3 = _p3.pid
+check("sendSignal aliases kill", process.sendSignal(_pid3, process.SIGKILL) == true)
+time.sleep(800)
+if process.exists(_pid3) {
+    process.kill(_pid3, process.SIGKILL)
+    time.sleep(1000)
+}
+
+// find() by name races the child's exec, so it is not asserted to a count -
+// only that it answers with an array.
+check("find returns an array", str(type(process.find("sleep"))) == "array")
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " process signal checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

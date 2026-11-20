@@ -18,10 +18,60 @@
 //   3. a raising property must not take the wrap down.
 //
 // Smoke-safe: Python stdlib only, no hardware, no network.
+use "fs"
+use "process"
+use "sys"
 
+// The bridge is a dlopen'd module plugin. `use py` THROWS
+// "Module not found" at the import line when the plugin was never built,
+// so availability has to be established BEFORE the import - the earlier
+// version put the check after it and the documented SKIP was unreachable.
+_avail = false
+_cwd = sys.cwd()
+_cands = ["${_cwd}/build-debug", "${_cwd}/build-release", "${_cwd}"]
+_bin = sys.env("HAVEL_BINARY")
+if _bin != null && _bin != "" && fs.exists(_bin) {
+    _dq = process.run("dirname -- \"${_bin}\"")
+    if _dq.exitCode == 0 {
+        _sd = _dq.stdout.trim()
+        if _sd != "" && fs.exists(_sd + "/havel") {
+            _cands = [_sd, "${_cwd}/build-debug", "${_cwd}/build-release", "${_cwd}"]
+        }
+    }
+}
+for _c in _cands {
+    if fs.exists(_c + "/havel") && fs.exists(_c + "/modules/havel_mod_python.so") {
+        _avail = true
+    }
+}
+if !_avail {
+    print("SKIP: no embeddable libpython on this machine")
+    shell.exit(0)
+}
 use py
 
-if !py.available() {
+
+
+
+_avail = false
+_cwd = sys.cwd()
+_cands = ["${_cwd}/build-debug", "${_cwd}/build-release", "${_cwd}"]
+_bin = sys.env("HAVEL_BINARY")
+if _bin != null && _bin != "" && fs.exists(_bin) {
+    _dq = process.run("dirname -- \"${_bin}\"")
+    if _dq.exitCode == 0 {
+        _sd = _dq.stdout.trim()
+        if _sd != "" && fs.exists(_sd + "/havel") {
+            _cands = [_sd, "${_cwd}/build-debug", "${_cwd}/build-release", "${_cwd}"]
+        }
+    }
+}
+for _c in _cands {
+    if fs.exists(_c + "/havel") && fs.exists(_c + "/modules/havel_mod_python.so") {
+        _avail = true
+    }
+}
+if !_avail {
     print("SKIP: no embeddable libpython on this machine")
     shell.exit(0)
 }

@@ -1,0 +1,77 @@
+// What: process.runDetached and detached-child hygiene - the child gets its
+//      own session, so it neither receives the parent's process-group
+//      signals nor holds our file descriptors open.
+//
+// Why: a detached child used to share havel's process group, so any
+//      group-directed SIGTERM (a `kill 0`, a `timeout` wrapper, a script
+//      trap) killed the whole havel process. It also inherited fds 3..255,
+//      so it could hold a grabbed device or an X11 socket open after havel
+//      exited.
+//
+// Expected: runDetached returns a pid that is alive, belongs to its own
+//      session, and can be killed by the parent.
+//
+// Task test (scripts/tests/), not smoke: it spawns and kills a real child,
+//      and reads /proc. The child is always killed before the test returns.
+
+use "process"
+use "fs"
+use "sys"
+use "time"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+_me = sys.pid()
+_kid = process.runDetached("sleep 60")
+
+check("runDetached returns a pid", _kid > 0)
+check("the detached child is alive", process.exists(_kid) == true)
+
+// The child must be in its OWN session (POSIX_SPAWN_SETSID), not ours. If it
+// shared our session, a group-directed signal would take havel down with it.
+_mygroup = fs.read("/proc/${_me}/stat")
+_kidgroup = fs.read("/proc/${_kid}/stat")
+
+_myfield = ""
+_kidfield = ""
+if _mygroup != null && _kidgroup != null {
+    _myparts = _mygroup.split(" ")
+    _kidparts = _kidgroup.split(" ")
+    // /proc/<pid>/stat field 6 is pgrp, field 7 is session (1-based), so the
+    // whitespace-split index is 4 and 5.
+    if #_myparts > 5 && #_kidparts > 5 {
+        _myfield = _myparts[4] + ":" + _myparts[5]
+        _kidfield = _kidparts[4] + ":" + _kidparts[5]
+    }
+}
+check("the child has its own process group and session",
+      _myfield != "" && _kidfield != "" && _myfield != _kidfield)
+
+// The parent must still be able to kill it.
+check("the parent can kill the detached child", process.kill(_kid, process.SIGKILL) == true)
+time.sleep(800)
+if process.exists(_kid) {
+    time.sleep(800)
+}
+check("the detached child is gone after SIGKILL", process.exists(_kid) == false)
+
+// The child must not hold our fds open: after it exits there is nothing left
+// of it to hold them.
+check("a detached child that exits does not linger",
+      process.exists(_kid) == false)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " detached-child checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

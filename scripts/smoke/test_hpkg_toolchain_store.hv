@@ -20,6 +20,15 @@ use "fs"
 use "process"
 use "sys"
 
+// The toolchain store shells out to git for every remote operation -
+// rev-parse to resolve a ref, worktree add/remove to materialise a commit
+// (src/hpkg). Without git not one check can run, so the whole test skips
+// rather than reporting 21 false failures on a machine with no git.
+if process.run("git --version").exitCode != 0 {
+    print("SKIP: no git on this machine")
+    shell.exit(0)
+}
+
 HPKG = ""
 // Prefer the hpkg built beside the havel binary this suite is running
 // (HVTEST sets HAVEL_BINARY to its own build's havel). Probing

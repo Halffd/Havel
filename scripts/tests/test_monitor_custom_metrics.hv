@@ -1,0 +1,98 @@
+// What: monitor's custom-metric, history and watch machinery - the stateful
+//      half of the module that has no /proc backing.
+//
+// Why: these are the helpers a user's own scripts build on (poll a value,
+//      keep a series, detach a change), and none of them were covered. They
+//      are also pure state, so they are the part of monitor.hv that is
+//      testable anywhere, on a desktop exactly as on a laptop.
+//
+// Expected: metric/metricGet/metrics/metricDel round-trip; history appends
+//      and clears; watch/watchTick/watchResult/watchList follow a registered
+//      and an unregistered name.
+//
+// Task test (scripts/tests/), not smoke: it is pure state, no /proc access,
+//      no children.
+
+use monitor
+use "sys"
+
+_check_count = 0
+_fail_count = 0
+check = fn(name, cond) {
+    _check_count = _check_count + 1
+    if cond {
+        print("  ok   " + name)
+    } else {
+        _fail_count = _fail_count + 1
+        print("  FAIL " + name)
+    }
+}
+
+_tag = str(sys.pid()) + "_" + str(monitor.processCount())
+
+// ---------------------------------------------------------------
+// Metrics
+// ---------------------------------------------------------------
+_key = "probe_" + _tag + "_m"
+monitor.metric(_key, 10)
+check("metricSet then metricGet returns the value", monitor.metricGet(_key) == 10)
+
+monitor.metric(_key, 25)
+check("metricSet overwrites", monitor.metricGet(_key) == 25)
+
+_all = monitor.metrics()
+check("metrics() is an object or array", str(type(_all)) == "object" || str(type(_all)) == "array")
+// Written and read back through metricGet - indexing metrics() directly
+// needs its own shape, and the point of the check is the round-trip.
+check("the metric is still readable after the fact", monitor.metricGet(_key) == 25)
+
+check("metricDel reports success", monitor.metricDel(_key) == true)
+check("metricGet after metricDel is null", monitor.metricGet(_key) == null)
+
+// ---------------------------------------------------------------
+// History
+// ---------------------------------------------------------------
+_hkey = "probe_" + _tag + "_h"
+monitor.history(_hkey, 1)
+monitor.history(_hkey, 2)
+monitor.history(_hkey, 3)
+_h = monitor.historyGet(_hkey)
+check("historyGet is an array", str(type(_h)) == "array")
+check("history appends every sample", #_h == 3)
+
+check("historyNames lists the series", monitor.historyNames().includes(_hkey))
+
+monitor.historyClear(_hkey)
+check("historyClear empties the series", #monitor.historyGet(_hkey) == 0)
+
+// A name that never had data reads back as an empty array, not an error.
+check("historyGet on an unknown name is empty",
+      str(type(monitor.historyGet("probe_no_such_" + _tag))) == "array")
+
+// ---------------------------------------------------------------
+// Watches
+// ---------------------------------------------------------------
+_wkey = "probe_" + _tag + "_w"
+_n = 0
+_counter = fn() {
+    _n = _n + 1
+    _n
+}
+
+monitor.watch(_wkey, _counter, 1000000)
+
+monitor.watchTick(_wkey)
+check("watchTick runs the callback once", monitor.watchResult(_wkey) == 1)
+
+monitor.watchTick(_wkey)
+check("watchTick runs the callback twice", monitor.watchResult(_wkey) == 2)
+
+check("unwatch reports success", monitor.unwatch(_wkey) == true)
+check("watchList loses the watch", monitor.watchList().includes(_wkey) == false)
+check("watchResult after unwatch is null", monitor.watchResult(_wkey) == null)
+
+print("PASS: " + str(_check_count - _fail_count) + "/" + str(_check_count) + " monitor custom-metric checks")
+if _fail_count > 0 {
+    sys.exit(1)
+}
+return 0

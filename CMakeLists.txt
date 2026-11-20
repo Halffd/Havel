@@ -2965,6 +2965,13 @@ file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
   set(MODULE_TARGET "havel_mod_${MODULE_NAME}")
   add_library(${MODULE_TARGET} MODULE ${MODULE_SOURCE})
+  # Record the plugin .so this target produces so the prune below can tell a
+  # legitimately-configured module from an orphan left by a previous build.
+  # Directory scope: add_havel_module_plugin never runs inside another
+  # function, so PARENT_SCOPE is not needed and the list stays visible to the
+  # prune at the end of this block.
+  list(APPEND HAVEL_MODULE_PLUGIN_TARGETS "${MODULE_TARGET}")
+  set(HAVEL_MODULE_PLUGIN_TARGETS "${HAVEL_MODULE_PLUGIN_TARGETS}")
   set_target_properties(${MODULE_TARGET} PROPERTIES
     PREFIX ""
     LIBRARY_OUTPUT_DIRECTORY "${MODULE_PLUGIN_OUTPUT_DIR}"
@@ -3195,6 +3202,53 @@ if(ENABLE_QT AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
   target_include_directories(havel_mod_ui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+endif()
+
+# ==============================================================================
+# PRUNE ORPHAN MODULE PLUGINS
+# ==============================================================================
+# A plugin .so whose target is no longer configured survives in the modules
+# output dir forever (nothing else removes it), and the loader then rejects it
+# on the build-id check - so the module is silently dead with a message that
+# points at "rebuild the module", which is impossible because no target exists.
+# Observed: a reconfigure in which lua5.4/python3-embed were not found left
+# havel_mod_lua.so and havel_mod_python.so stranded while the host and the
+# other 48 plugins were rebuilt with a new build id (the entry in
+# docs/known-issues/stale-module-plugin-survives-reconfigure.md).
+if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
+  file(GLOB _havel_plugin_sos "${MODULE_PLUGIN_OUTPUT_DIR}/havel_mod_*.so")
+  if(_havel_plugin_sos)
+    # Orphans only. Never seed this with target NAMES - file(REMOVE) would
+    # treat them as paths relative to the build dir and, worse, mixing names
+    # and paths is what made an earlier version of this prune legitimate
+    # plugins. Collect full paths, remove only those.
+    set(HAVEL_MODULE_PLUGIN_PRUNE_LIST "")
+    foreach(_so ${_havel_plugin_sos})
+      cmake_path(GET _so FILENAME _so_name)
+      # Strip the trailing .so to get the target name. Do it with
+      # string(REGEX REPLACE): cmake_path(REMOVE_EXTENSION) matches the LAST
+      # dot, and a target name may legitimately contain none, so the naive
+      # call leaves "havel_mod_app.so" intact and the TARGET check then fails
+      # for every file - which deletes every plugin, not just orphans.
+      string(REGEX REPLACE "\\.so$" "" _so_name "${_so_name}")
+      # A target is only "configured" if it exists now; checking TARGET rather
+      # than the name list keeps this correct if a plugin is renamed or a
+      # helper call is added inside a conditional that did not fire.
+      if(NOT TARGET ${_so_name})
+        list(APPEND HAVEL_MODULE_PLUGIN_PRUNE_LIST "${_so}")
+      endif()
+    endforeach()
+    unset(_havel_plugin_sos)
+  endif()
+  # Remove after the loop, never during: removing a file that is still
+  # referenced would fail mid-enumeration on some platforms.
+  if(HAVEL_MODULE_PLUGIN_PRUNE_LIST)
+    file(REMOVE ${HAVEL_MODULE_PLUGIN_PRUNE_LIST})
+    foreach(_p ${HAVEL_MODULE_PLUGIN_PRUNE_LIST})
+      cmake_path(GET _p FILENAME _p_name)
+      message(STATUS "pruned orphan module plugin: ${_p_name} (no target configured in this build)")
+    endforeach()
+  endif()
 endif()
 
 # Export symbols from main executable so plugins can resolve them

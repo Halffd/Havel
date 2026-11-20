@@ -4321,7 +4321,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           COMPILER_THROW("Array literal contains null element");
         }
         emit(OpCode::DUP);
+        // An element is never in tail position: emitting TAIL_CALL here
+        // (which ends in RETURN) abandons the array half-built and returns
+        // the element's value - `[helper()]` returned 7 instead of [7].
+        bool saved_tail_elem = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*element);
+        in_tail_position_ = saved_tail_elem;
         emit(OpCode::ARRAY_PUSH);
         emit(OpCode::POP); // Remove duplicate array from stack (ARRAY_PUSH
                            // pushes container back)
@@ -4391,7 +4397,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           patchJump(endJump, loopEnd);
         } else {
           emit(OpCode::LOAD_VAR, resultSlot);
+          // An element is never in tail position: TAIL_CALL ends in RETURN,
+          // so emitting one for an element abandons the literal half-built
+          // and returns the element's value - `[helper()]` returned 7.
+          bool saved_tail_elem = in_tail_position_;
+          in_tail_position_ = false;
           compileExpression(*element);
+          in_tail_position_ = saved_tail_elem;
           emit(OpCode::ARRAY_PUSH);
           emit(OpCode::STORE_VAR, resultSlot);
         }
@@ -4409,7 +4421,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       if (!element) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       } else {
+        bool saved_tail_elem = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*element);
+        in_tail_position_ = saved_tail_elem;
       }
       emit(OpCode::ARRAY_PUSH);
     }
@@ -4426,7 +4441,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::DUP);
       emit(OpCode::LOAD_CONST, Value::makeBool(true));
+      bool saved_tail_elem = in_tail_position_;
+      in_tail_position_ = false;
       compileExpression(*element);
+      in_tail_position_ = saved_tail_elem;
       emit(OpCode::SET_SET);
     }
     break;
@@ -4445,6 +4463,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         COMPILER_THROW("Collection literal contains null value");
       }
       // OBJECT_SET pushes the object back, so no DUP needed for chaining
+
+      // A field value is never in tail position: emitting TAIL_CALL for it
+      // (TAIL_CALL ends in RETURN) abandons the object half-built and hands
+      // back the call's value - `({a: 1, b: helper()})` returned 7 instead of
+      // the object, silently, because the rest of the literal became dead
+      // bytecode after the RETURN.
+      const bool saved_tail_field = in_tail_position_;
+      in_tail_position_ = false;
 
       // Check for spread
       if (entry.key == "__spread__") {
@@ -4473,6 +4499,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
         emit(OpCode::OBJECT_SET);
       }
+      in_tail_position_ = saved_tail_field;
     }
     break;
   }

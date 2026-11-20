@@ -1,10 +1,9 @@
 # An object literal whose field contains a module-local call evaluates to that call's value
 
-**Status:** OPEN — root cause confirmed with a minimal reproducer; the
-defect is worked around in-tree, not fixed. Regression test that pins the
-workaround's shape: `scripts/tests/test_laptop_module.hv` (it asserts the
-laptop module's derived numbers, which only hold when the literals carry
-variables).
+**Status:** FIXED in `ByteCompiler.cpp`. Root cause confirmed, fixed, and
+the fix verified three ways (see "Verification"). No regression test is
+landed — "Why there is no test" records what stopped it and what a test
+would need.
 
 ## Symptom
 
@@ -98,3 +97,76 @@ works. The reproducer above is the whole test - wrap it as a smoke test
 that asserts `withCall() == {a: 1, b: 7}` and it fails until the parser is
 fixed. Until then, any new module that returns an object must follow the
 locals-first convention.
+---
+
+## Fix
+
+`ByteCompiler.cpp`'s `ArrayLiteral`, `TupleExpression`, `SetExpression`
+and `ObjectLiteral` cases each compiled an element (or field) expression
+without clearing `in_tail_position_`. Every other sub-expression context in
+that switch does exactly this (`IfExpression` at the same site is the
+clearest example), so the four collection literals were the omissions, not
+a missing feature.
+
+Each case now saves the flag, sets it false for the duration of the element
+compile, and restores it. Nothing else changes: a call in genuine tail
+position still emits `TAIL_CALL` and `RETURN`.
+
+## Workaround removed
+
+The locals-first convention (`monitor.hv`, `laptop.hv`, the laptop module's
+header note) is no longer required for correctness. It is kept because it
+reads well, not because it avoids a bug. The reference to it in
+`modules/app/laptop.hv`'s header is still accurate as documentation of
+style.
+
+## Verification
+
+Three independent checks, all against `/builddir/havel-dev/havel`:
+
+1. **Bytecode.** `fn callTail() { ({a: 1, b: seven()}) }` now emits
+   `LOAD_GLOBAL seven` / `CALL` / `LOAD_CONST b` / `OBJECT_SET` — the
+   `RETURN` that used to sit between them is gone, and the last
+   `OBJECT_SET` is reachable again. `fn tailCall() { seven() }` still emits
+   `LOAD_GLOBAL` / `TAIL_CALL` / `RETURN`.
+2. **The original reproducer**, a module with one function per literal kind:
+   `[helper()]` -> `[7]`, `({a: helper()})` -> `{a: 7}`,
+   `[[helper()]]` -> `[[7]]`, `({a: {b: helper()}})` -> `{a: {b: 7}}`
+   (all four returned the bare number before the fix), while literals with
+   no calls still return the literal.
+3. **Tail-call optimisation survived**: `fn countdown(n, acc)` recurses
+   200,000 deep and returns the right answer, which it cannot do without
+   `TAIL_CALL`.
+
+## Why there is no test
+
+A regression test was written and landed as
+`scripts/smoke/test_issue_object_literal_tail_call.hv` (fixture module
+written to a temp dir, compiled and run by a child process with a sandboxed
+HOME and `XDG_CACHE_HOME`, asserting on the child's output) and it
+demonstrated the defect correctly — the A/B was clean: 4/4 FAIL with the
+guards reverted, and the same shape PASSes with them in. It then proved
+non-deterministic in this chroot in both directions.
+
+The cause is a bytecode cache the child cannot be kept away from:
+`ModuleLoader::getCacheDir()` prefers an existing "additional cache
+directory" over `getDefaultCacheDir()`, the fixture's `sys.pid()` is 1/2/3
+in the container so a pid-named fixture dir is reused across runs, and the
+cache key is the module's content hash, so a module compiled by one binary
+is read back by the next. The test was fixed against all of that it could
+reach (a `time.now()` component in the fixture path, `fs.removeAll`
+cleanup, `XDG_CACHE_HOME` into the sandbox) and still flapped.
+
+Shipping a test that fails at random is worse than shipping no test, so it
+was removed rather than committed. What a working test needs:
+
+- a cache knob that reliably disables the module bytecode cache for the
+  child (there is no such env var today), or
+- the fixture module committed as a real file that smoke does not collect
+  (`run_smoke_suite` takes every `scripts/smoke/*.hv`, so a library
+  fixture cannot sit beside its test), or
+- a way to assert on the emitted bytecode — a disassembler over
+  `havel --build` output — which needs no child process and no cache.
+
+Until one of those lands, the three checks above are the verification of
+record, and the reproducer in "Symptom" is the fastest way to re-check.

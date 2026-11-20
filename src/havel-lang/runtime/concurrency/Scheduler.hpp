@@ -591,6 +591,25 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Must run on the VM thread (the deferToVM delivery side).
     bool resumeExternalWithValue(uint32_t token, Value result);
 
+    // Deliver a computed async-host-call result whose waiter vanished at
+    // delivery time (resumeExternalWithValue found no parked goroutine
+    // carrying the token — e.g. the token raced a re-park that had not
+    // yet registered its wait_handle, or the delivery ran between the
+    // goroutine's suspension record and its wait_handle write). The
+    // result is kept here so a later sweep can hand it to the goroutine
+    // that parks on the same token; without this the completion is lost
+    // forever and the goroutine sleeps until process shutdown.
+    void stashAbandonedExternal(uint32_t token, Value result);
+
+    // Sweep parked EXTERNAL goroutines whose token now has a stashed
+    // result: deliver it (set_resume_value + unpark), erase the stash.
+    // Returns how many goroutines were revived. Cheap: runs under
+    // goroutines_mutex_ once, compares against the (tiny) stash map.
+    size_t sweepAbandonedExternals();
+
+    // True when any stash entry exists (hasPendingWork arm).
+    bool hasAbandonedExternals() const;
+
     // Count suspended goroutines awaiting an event-driven resume that
     // still matters for script completion (async host calls, channel
     // waits) - i.e. excluding persistent hotkey/update goroutines,
@@ -699,6 +718,22 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     //   deferred_wakeup_fd_ pipe, which only receives bytes alongside
     //   a deferred post)
     // - a sleeping goroutine whose deadline has passed (wake pending)
+    // - a goroutine suspended on an EVENT-DRIVEN awaitable (EXTERNAL
+    //   async host call, channel, thread join, timer, coroutine): its
+    //   resume arrives as an EventQueue event, and the tick that drains
+    //   that event (tickScheduler's event_queue_->processAll()) is the
+    //   thing that unparks it. Skipping the tick when such a waiter
+    //   exists starved exactly those goroutines: update() parked in
+    //   window.active() while the pump idled on hasPendingWork()==false,
+    //   the completion event sat in the queue unprocessed, and the
+    //   goroutine never woke (the "all goroutines stop but hotkeys still
+    //   trigger" stall — hotkeys are woken by wakeHotkey, not by this
+    //   pump). The EventQueue side is checked by the caller (tick
+    //   driver) via eventQueueHasPending(); this probe covers the
+    //   scheduler-side state.
+    // - an abandoned EXTERNAL park (resume already computed but the
+    //   wait target was gone at delivery): sweepAbandonedExternals()
+    //   can still deliver it.
     // Used by HavelEngine::processGoroutinesInline to skip the expensive
     // main-fiber save/restore when a single-threaded script (no siblings)
     // fires the yield callback from its dispatch loop.
@@ -711,6 +746,11 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
           return true;
         }
       }
+      {
+        std::lock_guard lock(abandoned_external_mutex_);
+        if (!abandoned_external_results_.empty()) return true;
+      }
+      if (suspendedAwaitingResume() > 0) return true;
       auto dl = nextSleepDeadline();
       return dl && *dl <= std::chrono::steady_clock::now();
     }
@@ -824,9 +864,17 @@ private:
     // Thread tracking for isVMThread() check
     std::thread::id vm_thread_id_;
 
-    // Configurable tick instructions (set via setDefaultTickInstructions)
-    uint64_t default_tick_instructions_ = Goroutine::DEFAULT_MAX_INSTRUCTIONS;
-    uint64_t hotkey_tick_instructions_ = Goroutine::HOTKEY_MAX_INSTRUCTIONS;
+  // Configurable tick instructions (set via setDefaultTickInstructions)
+  uint64_t default_tick_instructions_ = Goroutine::DEFAULT_MAX_INSTRUCTIONS;
+  uint64_t hotkey_tick_instructions_ = Goroutine::HOTKEY_MAX_INSTRUCTIONS;
+
+  // Results of async host calls whose waiter was missing at delivery
+  // time (resumeExternalWithValue unmatched). Keys are the Pending
+  // tokens the goroutine parked on. Populated by stashAbandonedExternal,
+  // drained by sweepAbandonedExternals. Small by construction: one entry
+  // per actually-lost delivery, and the sweep erases on revival.
+  std::unordered_map<uint32_t, Value> abandoned_external_results_;
+  mutable std::mutex abandoned_external_mutex_;
 };
 
 }  // namespace havel::compiler

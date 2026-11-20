@@ -952,14 +952,80 @@ bool Scheduler::resumeExternalWithValue(uint32_t token, Value result) {
     }
   }
   if (!target) {
+    // The completion was computed but no goroutine currently carries this
+    // token. Two sub-cases: (a) the goroutine was really removed (script
+    // aborted, teardown) — the stash is harmless and gets swept never;
+    // (b) a race where the goroutine is mid-park (parkIfPendingCallResult
+    // set the wait_handle on the stack path, but its Suspended record /
+    // wait_handle write landed after we scanned). Stash instead of drop:
+    // sweepAbandonedExternals() re-checks every tick and delivers to the
+    // parked goroutine. Dropping here was the "lost FFI resume" that left
+    // goroutines parked forever (update() in window.active() never woke;
+    // all goroutines appeared to stop while hotkeys kept firing).
     ::havel::debug("[Scheduler] resumeExternalWithValue: token {} "
-                   "unmatched (goroutine gone) - dropped",
+                   "unmatched - stashing for sweep",
                    token);
+    stashAbandonedExternal(token, std::move(result));
     return false;
   }
   ::havel::debug("[Scheduler] resumeExternalWithValue: token {} -> gid={}", token, target->id);
   unpark(target);
   return true;
+}
+
+void Scheduler::stashAbandonedExternal(uint32_t token, Value result) {
+  std::lock_guard lock(abandoned_external_mutex_);
+  // Cap the map: an entry is only revived if a goroutine parks on the
+  // exact token again, which effectively never happens for lost tokens
+  // (tokens are monotonic). 64 entries is far beyond any real race
+  // burst; erase-oldest keeps teardown runs from growing unbounded.
+  if (abandoned_external_results_.size() >= 64) {
+    abandoned_external_results_.erase(abandoned_external_results_.begin());
+  }
+  abandoned_external_results_[token] = std::move(result);
+}
+
+size_t Scheduler::sweepAbandonedExternals() {
+  // Collect matches under goroutines_mutex_, then unpark outside it
+  // (unpark takes priority_mutex_ — same lock order as
+  // resumeExternalWithValue: never hold priority_mutex_ while taking
+  // goroutines_mutex_).
+  std::vector<Goroutine *> toWake;
+  std::vector<uint32_t> delivered;
+  size_t revived = 0;
+  {
+    std::lock_guard alock(abandoned_external_mutex_);
+    if (abandoned_external_results_.empty()) return 0;
+    std::lock_guard lock(goroutines_mutex_);
+    for (auto &[id, g_uptr] : goroutines_) {
+      Goroutine *g = g_uptr.get();
+      if (!g || g->state != GoroutineState::Suspended) continue;
+      std::lock_guard wm(g->wait_handle_mutex_);
+      if (g->wait_handle.type != AwaitableType::EXTERNAL) continue;
+      auto it = abandoned_external_results_.find(g->wait_handle.target_id);
+      if (it == abandoned_external_results_.end()) continue;
+      g->wait_handle.set_resume_value(std::move(it->second));
+      delivered.push_back(it->first);
+      toWake.push_back(g);
+      revived++;
+      ::havel::warn("[Scheduler] sweepAbandonedExternals: revived gid={} token={} "
+                    "(async-host-call completion was delivered before its park "
+                    "registered - result handed over on sweep)",
+                    g->id, it->first);
+    }
+    for (uint32_t tok : delivered) {
+      abandoned_external_results_.erase(tok);
+    }
+  }
+  for (Goroutine *g : toWake) {
+    unpark(g);
+  }
+  return revived;
+}
+
+bool Scheduler::hasAbandonedExternals() const {
+  std::lock_guard lock(abandoned_external_mutex_);
+  return !abandoned_external_results_.empty();
 }
 
 bool Scheduler::removeHotkeyByAlias(const std::string &alias) {

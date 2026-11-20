@@ -937,8 +937,25 @@ public:
     // globals_stack_ vector-of-maps copy) plus the symmetric restore is
     // pure waste - measured at ~8% of a compile-heavy profile (_M_assign +
     // _M_move_assign). Skip it when a tick has nothing to do.
+    //
+    // "Nothing to do" MUST include the event-driven resume cases, or the
+    // skipped tick eats exactly the work that was pending:
+    //  - a goroutine parked on a fiber-suspending host call (EXTERNAL)
+    //    resumes via an ASYNC_HOST_COMPLETE event; tickScheduler drains
+    //    it at the tick START (event_queue_->processAll()) and unparks
+    //    the waiter. If the probe returns before that, the completion
+    //    event sits in the queue and the parked goroutine never runs —
+    //    the "update() goroutine froze in window.active(), all
+    //    goroutines stopped but hotkeys still fired" stall. So: pending
+    //    queue events, or any event-awaiting suspended goroutine, or an
+    //    abandoned-completion stash, all force the tick.
     static const bool _idle_trace = std::getenv("HAVEL_TRACE_CYCLE") != nullptr;
-    if (!sched->hasPendingWork()) {
+    bool eq_pending = hostContext_ && hostContext_->eventQueue &&
+                      hostContext_->eventQueue->size() > 0;
+    if (!eq_pending) {
+      sched->sweepAbandonedExternals();
+    }
+    if (!sched->hasPendingWork() && !eq_pending) {
       if (_idle_trace)
         ::havel::info("[INLINE_YIELD] idle: no pending scheduler work");
       return;
@@ -1666,6 +1683,13 @@ private:
 
       if (hostContext_->eventQueue) {
         hostContext_->eventQueue->processAll();
+      }
+      // Async-host-call completions whose waiter was missing at delivery
+      // time are stashed by the scheduler; hand them to any goroutine
+      // that has since parked on the same token (see tickScheduler for
+      // the parallel sweep on the tick-driven paths).
+      if (auto *sched = vm_->getScheduler()) {
+        sched->sweepAbandonedExternals();
       }
       // Generic event bus: run queued events' matching subscriptions'
       // handlers in VM context (never on backend threads - producers

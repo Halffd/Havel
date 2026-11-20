@@ -598,7 +598,12 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
     post_reset_setup_(*this);
   }
   opcode_counts_.fill(0);
-  executed_instructions_ = 0;
+  // executed_instructions_ is NOT reset here: it counts the work against
+  // the VM's instruction budget, which bounds the VM's TOTAL work. A
+  // script that reaches execute() more than once (eval(), a module load,
+  // a re-entrant host call) would otherwise clear the count and let an
+  // unbounded loop escape the budget. setMaxInstructions() starts a fresh
+  // count when a new limit is set.
 
   if (frame_arena_.size() <= frame_count_) {
     frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}});
@@ -2245,8 +2250,14 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool has_profiling = profiling_enabled_;
   const bool has_tracing = trace_execution_;
 
+  // The instruction limit no longer forces the slow path: the fast path
+  // enforces the limit at its own periodic checkpoint (see
+  // checkFastPathInstructionLimit). Excluding the fast path here changed
+  // scheduling behaviour - the fast path observes a suspension request
+  // every 8192 instructions, the slow path every instruction - and that
+  // difference is load-bearing for the conditional-hotkey yield pump.
   const bool use_fast_path =
-      !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit;
+      !debugger_attached_ && !has_profiling && !has_tracing;
 
   if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n",
@@ -2490,6 +2501,10 @@ slow_path:
     }
 
     if (has_instruction_limit) {
+      // Share the budget counter with the fast dispatch path: a script may
+      // run both paths (the fast path redirects to the slow path for
+      // complex opcodes), so each path counting into its own counter would
+      // let the total work reach twice the configured budget.
       executed_instructions_++;
       if (executed_instructions_ > max_instructions_) {
         throw std::runtime_error("VM instruction limit exceeded (" +
@@ -5035,6 +5050,11 @@ void VM::tickScheduler(bool wait_for_sleepers) {
 
   sched->drainDeferredCallbacks(FiberPriority::NORMAL);
   sched->wakeSleepingGoroutines();
+  // Async-host-call completions whose waiter was missing at delivery
+  // time (resumeExternalWithValue unmatched) are stashed by the
+  // scheduler; re-check each tick so a goroutine that parked a moment
+  // later still receives its result instead of sleeping forever.
+  sched->sweepAbandonedExternals();
 
   // bc.tick() semantics: a script explicitly advancing the scheduler
   // expects sleeping goroutines to make progress across ticks (the

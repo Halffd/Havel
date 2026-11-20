@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 300
 // smoke: tier = slow
 // Regression: GC re-entry safety of JIT-compiled frames. holder() creates
 // an array, calls the INTERPRETED churner() (kept out of the lowering

@@ -188,6 +188,7 @@ havel --full-aot --target aot script.hv -o script
 | `-de`, `--debug-engine` | VM engine debug |
 | `-dio`, `--debug-io` | IO subsystem debug |
 | `-dhk`, `--debug-hotkeys` | Hotkey system debug |
+| `-dvc`, `--debug-var-changed` | Conditional-hotkey re-eval + focus-poll debug |
 | `--debug-jit` | Print LLVM IR and assembly for JIT |
 
 ## Error Handling

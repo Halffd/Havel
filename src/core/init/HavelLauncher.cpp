@@ -1951,6 +1951,13 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--debug-var-changed" || arg == "-dvc") {
+      // Conditional-hotkey re-eval path: "[Havel] cond gid=... X->Y" lines
+      // (Havel.cpp), "[Havel] focus poll" transitions, and the per-tick
+      // VM var-changed trace. debug() is level-gated; raise the log level
+      // or the flag prints nothing visible.
+      debugging::debug_var_changed = true;
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "--debug-events" || arg == "-dev") {
       // Input-path debugging: event pump + grab lifecycle (EventListener)
       // and evdev adapter reads. debug() output is level-gated, so raise
@@ -2418,6 +2425,7 @@ Options:
   -de, --debug-engine Enable engine debugging
    -dio, --debug-io    Enable IO debugging
    -dhk, --debug-hotkeys Enable hotkey debugging
+   -dvc, --debug-var-changed Enable conditional-hotkey re-eval + focus-poll debugging
    -dev, --debug-events  Enable input event + grab debugging (event listener, evdev)
    --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
   --error             Stop on first error/warning

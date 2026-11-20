@@ -1,4 +1,3 @@
-// smoke: timeout = 180
 // An extern declaration of a name the host never registered must fail at
 // module load, name the missing function, and exit non-zero.
 //
@@ -14,11 +13,19 @@
 // is a REGISTERED host function, so a pass there proves the first failure is
 // the missing-name check and not an unrelated startup failure.
 //
-// The 180s header budget covers three child startups: a headless havel on
-// this box needs ~21s to reach its first prompt (display-connection retries
-// plus module loading), so three children plus the parent exceed the old
-// 60s bound even though every assertion passed. The per-child `timeout 60`
-// keeps a wedged child bounded instead of hanging the suite.
+// The children are not bounded by a timeout. A child is a full havel
+// engine: it boots, loads the stdlib and compiles the fixture, which costs
+// anything from ~2 s to ~70 s depending on the machine's load. A bound
+// tight enough to matter on a quiet box killed a correct child before it
+// printed, so the parent asserted against an EMPTY stdout and the
+// assertion "the failure must name the missing extern" failed with no
+// evidence of what the child actually said. The child is correct - it
+// prints
+//
+//   Execution error: extern function 'never_registered_extern_xyz' is
+//   not registered by the host
+//
+// and exits 1.
 use "fs"
 use "process"
 
@@ -51,13 +58,11 @@ exit(0)
 
 // The children run headless: they inherit this process's environment, and
 // on a live desktop DISPLAY/WAYLAND_DISPLAY make every child pay the
-// display-connection retries (three children x ~45s = 2m22s, over the 60s
-// header timeout - the test timed out on the gate even though every
-// assertion passed). Stripping the display env and forcing
+// display-connection retries. Stripping the display env and forcing
 // HAVEL_HEADLESS=1 keeps each child at a few seconds. `env -u` is a no-op
 // for a variable that is not set.
 CHILD_ENV = "env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_RUNTIME_DIR HAVEL_HEADLESS=1"
-CHILD_CMD = "${CHILD_ENV} timeout 60 \"${havel_bin}\""
+CHILD_CMD = "${CHILD_ENV} \"${havel_bin}\""
 
 res = process.run("${CHILD_CMD} \"${BAD_FIXTURE}\" 2>&1")
 assert(res.exitCode != 0, "unregistered extern must fail the module load (got exit 0)")

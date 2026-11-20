@@ -5,7 +5,6 @@
 //       result is the last stage's object (success/exitCode/stdout/stderr).
 // Why: this is what the REPL shell layer compiles every command to.
 // Expected: exit 0, no output on success. Cleans up after itself.
-// smoke: timeout = 60
 
 r = process.pipe(["echo", "hello"])
 if !r.success { print("FAIL echo success: " + str(r.error)); exit(1) }

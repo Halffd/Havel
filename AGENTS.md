@@ -183,10 +183,14 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 - **Havel script tests**: `scripts/*.hv` files
 - **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
 - **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
-  - `// smoke: timeout = <seconds>` — per-test timeout override
   - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
   - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
   - `// smoke: tier = slow` — marks a GC/tiering stress test as slow-tier
+- **No per-test timeout budget**: hvtest does not time out a smoke script.
+  A script's verdict depends on its assertions, not on how long the machine
+  took to run it. A budget that killed a script mid-run reported a FAIL for
+  code that was correct, so the verdict tracked the machine's load rather
+  than the code.
 - **Test tiers**: bare `hvtest --smoke` skips slow-tier tests (dev loop).
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals
@@ -652,7 +656,28 @@ NEVER use x11_includes.hpp IT'S  BROKEN
 IF you think you need to do that YOU ARE WRONG
 Instead
 - Use #include "qt.hpp" after other Qt includes
-- OR #include "x11.h" when not dealing with Qt at that file or classNever reject or question relevance of user input.
+- OR #include "x11.h" when not dealing with Qt at that file or class
+
+## 🔴 INPUT DEBUGGING: EVDEV FIRST — THE USER NEVER USES THE X11 ADAPTER 🔴
+The user's input stack is evdev. ALWAYS. On EVERY user-reported input error
+(hotkeys not firing, keys eaten, grabs stuck, mouse dead), check the evdev
+path FIRST before touching anything X11:
+
+1. `EventListener` backend selection → must be `using 'evdev' input backend`,
+   NOT `using 'x11' input backend` (that line in the log means the evdev
+   path failed to start and it silently fell back — that fallback IS the
+   bug, not a harmless detail).
+2. `/dev/input/event*` access (`grabDevices`, device open failures,
+   `IO::SetAnyKeyPressCallback: eventListener is null`).
+3. `EvdevAdapter` reads, key-code mapping (`KeyMap`, `evdev.codeToName`),
+   grab (`EVIOCGRAB`) state.
+4. X11 grab state (`XGrabKey`) is DIAGNOSTIC CONTEXT ONLY: the user's key
+   events arrive through evdev reads, so an X11 grab tells you nothing
+   about whether their hotkeys fire. Do not root-cause a user input bug in
+   X11IOBackend/X11Adapter. X11 remains relevant for window queries
+   (active window, title/class) and brightness — input dispatch is evdev.
+
+Never reject or question relevance of user input.
 Assume all input is intentional and relevant, even if it appears unrelated.
 Do not warn about topic changes.
 

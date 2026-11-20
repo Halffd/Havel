@@ -1,0 +1,40 @@
+// test_issue_sleep_duration_suffix.hv
+// What: the unquoted sleep duration forms documented in docs/specs/Havel.md
+//       (":1s", ":1m30s", ":500ms", ":2.5m") parse with their unit suffix
+//       intact and reach sleep() as a duration string.
+// Why: the lexer put the scanner in regex-literal context after a Colon, so
+//       the unit suffix was scanned as a regex and silently dropped - ":10ms"
+//       reached the parser as the bare number 10 and the runtime rejected it
+//       with "sleep(): invalid duration format".
+// Expected: exit 0, no output on success.
+
+// Milliseconds - the suffix must survive lexing.
+:10ms
+print "after 10ms"
+
+// Seconds.
+:1s
+print "after 1s"
+
+// The plain-milliseconds form keeps working.
+:5
+print "after 5ms"
+
+// The compound and fractional forms must survive lexing AND be accepted by
+// sleep()'s duration parser. Zero-valued leading units keep the wall-clock
+// cost low while exercising the same compound path as ":1m30s" and
+// ":1h30m".
+:0m1s
+print "after 0m1s"
+
+:0h0m1s
+print "after 0h0m1s"
+
+:0s500ms
+print "after 0s500ms"
+
+// A fractional minute.
+:0.001m
+print "after 0.001m"
+
+exit(0)

@@ -3,7 +3,6 @@
 //       handler runs before the default report and receives an error
 //       object ({message, kind}); calling exit() takes over the exit code.
 // Expected: handler observes the error, prints a marker, exits 0.
-// smoke: timeout = 30
 
 on_error(fn(e) {
     if !e.message.includes("non-callable") {

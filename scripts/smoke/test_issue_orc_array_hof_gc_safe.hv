@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: GC safety of ORC array map/filter/reduce/foreach bridges
 // (JitRuntimeBridges). The interpreter pins the source array and the

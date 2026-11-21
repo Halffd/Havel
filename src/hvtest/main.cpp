@@ -52,11 +52,15 @@ static void print_usage(const char *prog) {
  " --hvmoke run .hv smoke tests (scripts/smoke/*.hv)\n"
  "          also accepts a NAME substring filter like --smoke\n"
  " --scripts run .hv script tests (smoke + integration + main)\n"
+" --unit run the language unit tests (scripts/tests/unit)\n"
+" --long run the long-running scripts (stress runs, benchmarks)\n"
+"        these are excluded from every auto-collected suite because\n"
+"        their runtime dominates; they run only when asked for.\n"
 " --cpp run C++ unit tests via ctest\n"
 " --jit   run JIT smoke tests (requires LLVM build)\n"
 " --compare run comparison between C++, self-hosted and AOT pipelines\n"
 " --list list all test files without running\n"
-" --all run everything (smoke + jit + hvmoke + scripts + cpp)\n"
+" --all run everything (smoke + jit + hvmoke + scripts + unit + cpp)\n"
 "\n"
  "options:\n"
  " --verbose show script output on failure\n"
@@ -87,6 +91,12 @@ int main(int argc, char **argv) {
 	bool mode_all = false;
 	bool mode_compare = false;
 	bool mode_scheduler = false;
+	// --unit: the assertion-style language unit tests (scripts/tests/unit).
+	// --long: the long-running-by-design scripts (stress runs, benchmarks),
+	// which are excluded from every auto-collected suite because their
+	// runtime dominates and they do not test the code under test.
+	bool mode_unit = false;
+	bool mode_long = false;
 	bool verbose = false;
 	// Default tier = Fast: slow-tier tests (GC/tiering stress, tagged
 	// '// smoke: tier = slow') are skipped unless --slow-too is passed.
@@ -109,6 +119,8 @@ int main(int argc, char **argv) {
         if (arg == "--smoke") { mode_smoke = true; }
         else if (arg == "--hvmoke") { mode_hvmoke = true; }
         else if (arg == "--scripts") { mode_scripts = true; }
+        else if (arg == "--unit") { mode_unit = true; }
+        else if (arg == "--long") { mode_long = true; }
 		else if (arg == "--jit") { mode_jit = true; }
 		else if (arg == "--cpp") { mode_cpp = true; }
 		else if (arg == "--compare") { mode_compare = true; }
@@ -146,28 +158,31 @@ int main(int argc, char **argv) {
 	if (!std::getenv("HAVEL_BINARY") || std::getenv("HAVEL_BINARY")[0] == '\0')
 		setenv("HAVEL_BINARY", havel_bin.c_str(), 1);
 
-    // A positional name next to a suite mode (--smoke/--hvmoke) is a
-    // name FILTER, not a script path: running `hvtest --smoke NAME`
-    // used to push NAME into single_files, where it executed as a
-    // nonexistent script file and always reported [FAIL ... exit=1] -
-    // misleading output that cost real debugging time. Keep positional
-    // args as files only when no suite mode requested a filter.
+    // A positional name next to a suite mode (--smoke/--hvmoke/--unit/
+    // --long) is a name FILTER, not a script path: running
+    // `hvtest --smoke NAME` used to push NAME into single_files, where
+    // it executed as a nonexistent script file and always reported
+    // [FAIL ... exit=1] - misleading output that cost real debugging
+    // time. Keep positional args as files only when no suite mode
+    // requested a filter.
     std::vector<std::string> suite_filters;
-    if (mode_smoke || mode_hvmoke) {
+    if (mode_smoke || mode_hvmoke || mode_unit || mode_long) {
         suite_filters = std::move(single_files);
         single_files.clear();
     }
 
-    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_compare && !mode_all && single_files.empty()) {
+    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_compare && !mode_all && !mode_unit && !mode_long && single_files.empty()) {
 		mode_all = true;
 	}
 
 	int failures = 0;
 
 	if (mode_list) {
-		auto dirs = hvtest::list_test_dirs(scripts_root);
-		return hvtest::list_scripts(dirs);
-	}
+        auto dirs = hvtest::list_test_dirs(scripts_root);
+        auto unit_dirs = hvtest::list_assertion_test_dirs(scripts_root);
+        dirs.insert(dirs.end(), unit_dirs.begin(), unit_dirs.end());
+        return hvtest::list_scripts(dirs);
+    }
 
 	if (mode_scheduler) {
 		havel::test::run_scheduler_tests();
@@ -276,6 +291,43 @@ if (mode_compare) {
         };
         if (optimize_bytecode) self_hosted_flags.push_back("--optimize-bytecode");
         failures += hvtest::run_script_suite(havel_bin, dirs, verbose, self_hosted_flags);
+    }
+
+	if (mode_all || mode_unit) {
+        std::cout << "\n=== language unit tests ===" << std::endl;
+        auto dirs = hvtest::list_assertion_test_dirs(scripts_root);
+        fs::path bin_path(havel_bin);
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
+        std::vector<std::string> self_hosted_flags = {
+            "--run",
+            "--self-hosted-path",
+            self_hosted_path.string()
+        };
+        if (optimize_bytecode) self_hosted_flags.push_back("--optimize-bytecode");
+        // Parallel, like the smoke suite: the unit directory holds 250+
+        // scripts and each one pays the self-hosted boot cost.
+        failures += hvtest::run_smoke_suite_dirs(havel_bin, dirs, verbose, self_hosted_flags,
+                                                 suite_filters);
+    }
+
+	if (mode_long) {
+        std::cout << "\n=== long-running scripts (stress, benchmarks) ===" << std::endl;
+        auto dirs = hvtest::list_long_running_dirs(scripts_root);
+        fs::path bin_path(havel_bin);
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
+        std::vector<std::string> self_hosted_flags = {
+            "--run",
+            "--self-hosted-path",
+            self_hosted_path.string()
+        };
+        if (optimize_bytecode) self_hosted_flags.push_back("--optimize-bytecode");
+        // No instruction budget: these scripts are long-running by design,
+        // so bounding their work would fail them for being slow. They run
+        // only when explicitly requested, never in the pre-merge gate.
+        failures += hvtest::run_smoke_suite_dirs(havel_bin, dirs, verbose, self_hosted_flags,
+                                                 suite_filters, hvtest::TierMode::All, 0);
     }
 
 	if (mode_all || mode_cpp) {

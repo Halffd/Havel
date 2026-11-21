@@ -1,0 +1,143 @@
+// Regression: setting an instruction budget must NOT change VM behaviour.
+//
+// What: the VM has two dispatch paths. The fast path observes a
+//       suspension request every 8192 instructions; the slow path observes
+//       it every instruction. A conditional hotkey's yield pump depends
+//       on that difference: the mode flip is picked up at a suspension
+//       checkpoint, and a script that yields often flips the branch it
+//       runs depending on how often the VM polls for suspension.
+//
+// Why: the instruction budget originally disabled the fast path entirely
+//       (use_fast_path excluded "has_instruction_limit"), which silently
+//       changed which conditional-hotkey branch fired. The budget is a
+//       test-harness bound; it must be invisible to the script under test.
+//
+// Expectation: running the same script with and without a (never
+//       reached) budget produces IDENTICAL output. The budget is set by
+//       the runner, so the script re-executes ITSELF as a child process
+//       with and without the budget and compares the two transcripts.
+//
+// Uses no OS input: the hotkey is triggered through hotkey.trigger.
+
+use "fs"
+use "process"
+use "sys"
+
+cwd = sys.cwd()
+havel_bin = ""
+for c in [cwd + "/build-debug/havel", cwd + "/build/havel", cwd + "/havel"] {
+    if fs.isFile(c) {
+        havel_bin = c
+        break
+    }
+}
+assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+
+tmp = "/tmp/havel_smoke_budget_neutral"
+fs.rmdir(tmp, true)
+fs.mkdirAll(tmp)
+
+// The child script: two conditional branches on the same key, and a mode
+// flip between them. The branch that runs after the flip depends on the
+// VM's suspension-polling granularity - exactly the behaviour the budget
+// must not disturb.
+child = tmp + "/child.hv"
+fs.write(child, """
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+mode = "off"
+alt_mode = "on"
+first_hits = 0
+second_hits = 0
+
+when mode == "on" {
+    F24 => {
+        first_hits = first_hits + 1
+    }
+}
+
+when alt_mode == "on" {
+    F24 => {
+        second_hits = second_hits + 1
+    }
+}
+
+sleep(300)
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while second_hits < 1 && time.millis() < waited {
+    sleep(5)
+}
+check("second branch fired", second_hits == 1)
+
+// The branch that runs after the mode flip depends on how often the VM
+// polls for a suspension request: the fast path polls every 8192
+// instructions, the slow path every instruction. The budget must not
+// change which branch is live.
+mode = "on"
+alt_mode = "off"
+sleep(300)
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while first_hits + second_hits < 2 && time.millis() < waited {
+    sleep(5)
+}
+check("exactly one branch fired after the flip", first_hits + second_hits == 2)
+
+if failures > 0 {
+    print("FAIL child: " + failures + " check(s) failed")
+    exit(1)
+}
+print("PASS child")
+exit(0)
+""")
+
+// Run the child without a budget, then with a budget that is far larger
+// than the script can possibly reach (the budget must be inert, not
+// merely large). The flags mirror the suite's own invocation.
+plain = process.run("\"${havel_bin}\" --headless --run --self-hosted-path ${cwd}/out --minimal ${child} 2>&1")
+budgeted = process.run("\"${havel_bin}\" --headless --run --self-hosted-path ${cwd}/out --minimal --max-instructions 100000000000 ${child} 2>&1")
+
+assert(plain.exitCode == 0,
+       "the unbudgeted child must succeed, got exit=${plain.exitCode}: ${plain.stdout}")
+assert(budgeted.exitCode == 0,
+       "the budgeted child must succeed, got exit=${budgeted.exitCode}: ${budgeted.stdout}")
+// The exit codes must agree with each other, not merely both be zero:
+// the original defect made the budgeted run exit 1 while the unbudgeted
+// run exited 0, on the SAME script.
+assert(plain.exitCode == budgeted.exitCode,
+       "the instruction budget changed the child's exit code: plain=${plain.exitCode} budgeted=${budgeted.exitCode}")
+
+// Compare only the script's own output lines, so the launcher banners
+// (which differ between runs) cannot make the comparison flaky.
+fn transcript(out) {
+    lines = []
+    for line in out.split("\n") {
+        if line.startsWith("PASS ") || line.startsWith("FAIL ") {
+            lines.push(line)
+        }
+    }
+    return lines
+}
+
+plain_lines = transcript(plain.stdout)
+budgeted_lines = transcript(budgeted.stdout)
+
+assert(plain_lines.len() > 0,
+       "the unbudgeted child must print check lines, got: ${plain_lines}")
+assert(budgeted_lines.len() > 0,
+       "the budgeted child must print check lines, got: ${budgeted_lines}")
+assert(plain_lines.join("|") == budgeted_lines.join("|"),
+       "the instruction budget changed the script's behaviour: plain=${plain_lines} budgeted=${budgeted_lines}")
+
+fs.rmdir(tmp, true)
+print("PASS")

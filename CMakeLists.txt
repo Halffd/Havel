@@ -2298,6 +2298,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # killed a script mid-run reported a FAIL for code that was correct, and
   # the verdict then tracked the machine's load rather than the code.
   add_test(NAME hvtest-smoke COMMAND hvtest --smoke --slow-too)
+  # The language unit tests (scripts/tests/unit) were written but never
+  # wired into any runner: the directory was referenced nowhere in the
+  # build or test infrastructure, so a regression in any of them went
+  # unnoticed. Every script there is side-effect free (no fs.write, no
+  # process.run, no mouse/keyboard/brightness/window calls), so it is safe
+  # to collect automatically.
+  add_test(NAME hvtest-unit COMMAND hvtest --unit)
   # Module globals drift guard: fails if a setGlobal() module global is not
   # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
   # for --build/--full-aot depends on.

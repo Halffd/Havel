@@ -904,6 +904,8 @@ op_LOAD_CONST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -974,6 +976,8 @@ op_LOAD_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1025,6 +1029,8 @@ op_STORE_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1067,6 +1073,8 @@ op_POP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1104,6 +1112,8 @@ op_PUSH_NULL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1169,6 +1179,8 @@ op_CALL:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -1283,6 +1295,8 @@ op_CALL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1335,6 +1349,8 @@ op_RETURN:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1435,6 +1451,8 @@ dispatch_next:
       }
     }
     profiler_.recordInstructions(8192);
+    if (max_instructions_ > 0)
+      checkFastPathInstructionLimit(counter);
     if (exit_requested_.load())
       return;
     maybeCollectGarbage();
@@ -1494,6 +1512,8 @@ op_LOAD_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1547,6 +1567,8 @@ op_STORE_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1599,6 +1621,8 @@ op_STORE_IMMUT_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1646,6 +1670,8 @@ op_STORE_IMMUT_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1692,6 +1718,8 @@ op_LOAD_UPVALUE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1738,6 +1766,8 @@ op_STORE_UPVALUE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1777,6 +1807,8 @@ op_DUP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1817,6 +1849,8 @@ op_SWAP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1874,6 +1908,8 @@ op_INCLOCAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1931,6 +1967,8 @@ op_DECLOCAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1983,6 +2021,8 @@ op_INCLOCAL_POST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2035,6 +2075,8 @@ op_DECLOCAL_POST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2098,6 +2140,8 @@ op_BIT_RSH:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2175,6 +2219,8 @@ op_ADD_INT:
             }
           }
           profiler_.recordInstructions(8192);
+          if (max_instructions_ > 0)
+            checkFastPathInstructionLimit(counter);
           if (exit_requested_.load())
             return;
           maybeCollectGarbage();
@@ -2211,6 +2257,8 @@ op_ADD_INT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2250,6 +2298,8 @@ op_OR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2288,6 +2338,8 @@ op_NOT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2331,6 +2383,8 @@ op_BIT_NOT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2368,6 +2422,8 @@ op_NEGATE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2490,6 +2546,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2630,6 +2688,8 @@ op_STRING_GET_FAST:
             }
           }
           profiler_.recordInstructions(8192);
+          if (max_instructions_ > 0)
+            checkFastPathInstructionLimit(counter);
           if (exit_requested_.load())
             return;
           maybeCollectGarbage();
@@ -2668,6 +2728,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2711,6 +2773,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2780,6 +2844,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2850,6 +2916,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2919,6 +2987,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2967,6 +3037,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3013,6 +3085,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3093,6 +3167,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3133,6 +3209,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3174,6 +3252,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3216,6 +3296,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3258,6 +3340,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3296,6 +3380,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3342,6 +3428,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3436,6 +3524,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();

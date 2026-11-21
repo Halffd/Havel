@@ -56,18 +56,49 @@ Full command reference: `./build.sh help`.
 
 ### Tests
 
-Four kinds, because "run the tests" means very different durations:
+Six kinds, because "run the tests" means very different durations:
 
 | Kind | What runs | Duration |
 |------|-----------|----------|
 | `quick` | fast gtest subset (`config_store_test`, `window_manager_detector_test`) | seconds |
+| `unit` | `hvtest --unit` — the language unit tests (`scripts/tests/unit`) | ~2-5 min |
 | `gate` | `hvtest --smoke --slow-too` — **the pre-merge gate** | ~6-10 min |
 | `smoke` | `hvtest --smoke` (skips slow-tier) | ~3-5 min |
+| `long` | `hvtest --long` — stress runs + benchmarks (opt-in only) | minutes |
 | `ctest` | full ctest | ~8-15 min |
 
 ```bash
 ./build.sh test --kind gate
 ```
+
+#### How a hung test is detected
+
+There is no wall-clock timeout. Each script is bounded by the VM's
+`--max-instructions` (50M by default, overridable per script with
+`// smoke: max-instructions = <count>`). A script stuck in an infinite loop
+is stopped by the VM and reported as:
+
+```
+[FAIL] <name> (infinite loop: exceeded the 50000000-instruction budget)
+```
+
+The bound is on **work**, not on elapsed time, so a loaded machine cannot
+turn a correct script into a failure, and a script that legitimately sleeps
+for minutes is unaffected. Scripts that are long-running *by design* (the
+stress runs and benchmarks) are excluded from every auto-collected suite and
+run only via `--kind long` / `hvtest --long`.
+
+#### Which script directories run
+
+`scripts/tests/unit` holds 250+ language unit tests that were written but
+never wired into any runner — the directory was referenced nowhere in the
+build or test infrastructure, so a regression in any of them went unnoticed.
+It is now collected by `hvtest --unit` and by the ctest gate `hvtest-unit`.
+
+Directories that touch the real machine or run long by design stay out of
+the auto-collected suites: `scripts/tests/io`, `scripts/tests/window`,
+`scripts/tests/events`, `scripts/tests/mod`, `scripts/tests/stress`,
+`scripts/stress`, `scripts/benchmarks`.
 
 ### Fleet: Working Across Checkouts
 

@@ -270,6 +270,8 @@ ws_test() { # workspace mode kind
   case "$kind" in
     gate)   "$dir/hvtest" --smoke --slow-too >"$logf" 2>&1 ;;
     smoke)  "$dir/hvtest" --smoke >"$logf" 2>&1 ;;
+    unit)   "$dir/hvtest" --unit >"$logf" 2>&1 ;;
+    long)   "$dir/hvtest" --long >"$logf" 2>&1 ;;
     ctest)  ctest --test-dir "$dir" --output-on-failure -j"$(resolve_threads)" >"$logf" 2>&1 ;;
     quick)
       local n
@@ -277,7 +279,7 @@ ws_test() { # workspace mode kind
       [ "${n:-0}" -eq 0 ] && { err "no ctest entries"; return 1; }
       ctest --test-dir "$dir" -j"$(resolve_threads)" -R "config_store_test|window_manager_detector_test" --output-on-failure >"$logf" 2>&1
       ;;
-    *) die "unknown test kind '$kind' (gate|smoke|ctest|quick)" ;;
+    *) die "unknown test kind '$kind' (gate|smoke|unit|long|ctest|quick)" ;;
   esac
   rc=$?
   t1=$(date +%s)
@@ -844,9 +846,11 @@ Build lifecycle
   run [-- args]        run the built havel binary
 
 Tests
-  test [--kind gate|smoke|ctest|quick]
+  test [--kind gate|smoke|unit|long|ctest|quick]
        gate  = hvtest --smoke --slow-too   (the pre-merge gate)
        smoke = hvtest --smoke
+       unit  = hvtest --unit   (language unit tests, scripts/tests/unit)
+       long  = hvtest --long   (stress runs + benchmarks; opt-in only)
        ctest = full ctest
        quick = fast gtest subset (seconds)
 

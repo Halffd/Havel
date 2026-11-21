@@ -165,6 +165,35 @@ Implications:
   `is_coroutine`, `Parser.cpp:3928`), so the AST is where the hoist flag
   must go.
 
+## RESOLVED: containsYield hoisted to parse time (2026-11-21)
+
+The last open target above is closed. The compiler no longer re-walks each
+function body: `is_generator` is now read from a parse-time flag.
+
+- The walk lives in ONE place: `src/havel-lang/ast/YieldAnalysis.hpp`
+  (`havel::ast::bodyContainsYield` / `statementContainsYield` /
+  `expressionContainsYield`). The parser calls it once per function-like
+  node at construction; `ByteCompiler`'s three member walks now forward
+  to it rather than re-implementing the cases.
+- New AST field `contains_yield` on the five body owners:
+  `FunctionDeclaration`, `LambdaExpression`, `StructMethodDef`,
+  `ClassMethodDef`, `TraitMethod`.
+- The five compile sites (`ByteCompiler.cpp` compileFunction,
+  compileLambda, struct method, class method, trait default body) now read
+  the flag. `compileFunction` keeps `is_coroutine ||` — a `co fn` with no
+  yield is still a generator.
+- Semantic parity is the hard requirement, because `is_generator` decides
+  whether a call returns a coroutine (VM.cpp) or runs the body inline.
+  Preserved deliberately, NOT fixed: `TryExpression` still conservatively
+  returns true, and there is still no `ReturnStatement` case. Both
+  behaviors are carried over exactly, so no function changes
+  classification.
+- Regression fixture: `scripts/tests/test_is_generator_parity.hv`, which
+  asserts the *observable* classification (a generator's body has not run
+  yet when the call returns; an ordinary function's has) across all five
+  node owners plus the co-fn-only, yield-in-if, yield-in-loop,
+  outer-with-yield-lambda, await-only and try-only cases.
+
 ### Phase C history
 
 - **2026-10-09 — first measurement.** 1927-line generated script through

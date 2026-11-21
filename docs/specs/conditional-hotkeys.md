@@ -77,6 +77,10 @@ handleHotkeyRegisterConditional:
    - Create conditionFn = [vm, condCallbackId]() { vm->invokeCallback(condCallbackId, {}); }
    - Call condMgr.AddConditionalHotkey(key, conditionFn, trueAction, falseAction, 0, true)
    - Track global dependencies via DependencyTracker
+     (havel::compiler::DependencyTracker,
+     src/havel-lang/runtime/concurrency/DependencyTracker.hpp — NOT the
+     unrelated havel::compiler::incremental::DependencyTracker; see
+     docs/known-issues/dependency-tracker-name-shadowing.md)
     ↓ ConditionalHotkeyManager
    - conditionFn (the VM closure) is called to evaluate grab/ungrab
    - Action lambda calls EvaluateCondition(string) → EvaluateConditionInternal (redundant!)

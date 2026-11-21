@@ -2,6 +2,7 @@
 
 #pragma once
 #include "../ast/AST.h"
+#include "../ast/YieldAnalysis.hpp"
 #include "../common/Debug.hpp"
 #include "../lexer/Lexer.hpp"
 #include <algorithm>

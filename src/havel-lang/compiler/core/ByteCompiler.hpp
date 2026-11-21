@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../ast/AST.h"
+#include "../../ast/YieldAnalysis.hpp"
 #include "BytecodeIR.hpp"
 #include "../semantic/LexicalResolver.hpp"
 #include "../semantic/TypeChecker.hpp"

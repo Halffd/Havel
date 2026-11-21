@@ -1,5 +1,17 @@
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+// Build identity (commit/branch/dirty for --version). Generated at build time
+// into the build tree by cmake/BuildIdentity.cmake.in, so an incremental
+// rebuild cannot carry a stale commit stamp. Guarded with __has_include so a
+// translation unit compiled without the generated header still builds.
+#if defined(__has_include)
+#  if __has_include("BuildIdentity.generated.hpp")
+#    include "BuildIdentity.generated.hpp"
+#    define HAVEL_HAVE_BUILD_IDENTITY 1
+#  endif
+#elif defined(HAVEL_BUILD_COMMIT)
+#  define HAVEL_HAVE_BUILD_IDENTITY 1
+#endif
 #include "havel-lang/compiler/CompilationService.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
@@ -2332,7 +2344,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "--version" || arg == "-v") {
       std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
-#ifdef HAVEL_BUILD_COMMIT
+#ifdef HAVEL_HAVE_BUILD_IDENTITY
       std::cout << "commit " << HAVEL_BUILD_COMMIT << " (" << HAVEL_BUILD_BRANCH << ", "
                 << HAVEL_BUILD_DIRTY << ")\n";
 #endif

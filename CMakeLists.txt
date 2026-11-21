@@ -9,48 +9,49 @@ set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
 # -- build source identity ---------------------------------------------------
 # Stamps the binary with the exact git commit it was built from so
 # regression reports can name the commit ("havel --version" shows it).
-# Falls back to "unknown" outside a git checkout (e.g. tarball builds).
-# A packager that builds from a source tarball can set
-# -DHAVEL_BUILD_COMMIT=<sha> -DHAVEL_BUILD_BRANCH=<name> to stamp the same
-# identity instead of "unknown".
-if(NOT HAVEL_BUILD_COMMIT)
-  execute_process(
-    COMMAND git rev-parse --short=12 HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE HAVEL_BUILD_COMMIT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE _git_commit_rc
-  )
-  if(NOT _git_commit_rc EQUAL 0)
-    set(HAVEL_BUILD_COMMIT "unknown")
-  endif()
-endif()
-if(NOT HAVEL_BUILD_BRANCH)
-  execute_process(
-    COMMAND git rev-parse --abbrev-ref HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE HAVEL_BUILD_BRANCH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE _git_branch_rc
-  )
-  if(NOT _git_branch_rc EQUAL 0)
-    set(HAVEL_BUILD_BRANCH "unknown")
-  endif()
-endif()
-execute_process(
-  COMMAND git status --porcelain
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE _git_status_out
-  ERROR_QUIET
-  RESULT_VARIABLE _git_status_rc
-)
-if(_git_status_rc EQUAL 0 AND NOT _git_status_out STREQUAL "")
-  set(HAVEL_BUILD_DIRTY "dirty")
-else()
-  set(HAVEL_BUILD_DIRTY "clean")
-endif()
+#
+# These values are derived at BUILD time, not configure time. A configure-time
+# value is frozen into an object's command line, so an incremental rebuild
+# that follows new commits keeps advertising the commit CMake was last
+# CONFIGURED at - the "new code, old stamp" state recorded in
+# docs/known-issues/build-commit-stamp-is-configure-time-only.md.
+# BuildIdentity.generated.hpp is a real file dependency instead: Ninja
+# re-derives it whenever HEAD, the refs or the index move, and rebuilds only
+# the files that include it.
+#
+# A packager that builds from a source tarball (no git binary, no .git) can
+# pass -DHAVEL_BUILD_COMMIT=<sha> -DHAVEL_BUILD_BRANCH=<name>
+# -DHAVEL_BUILD_DIRTY=<state> to stamp the same identity. Those seeds are a
+# fallback, never an override, so a value left in CMakeCache by an earlier
+# configure cannot pin a live checkout forever - that is the staleness this
+# mechanism removes. "unknown" is reported only when nothing ever knew.
+set(HAVEL_BUILD_IDENTITY_HEADER
+    "${CMAKE_BINARY_DIR}/generated/BuildIdentity.generated.hpp")
+# Values substituted into the generator. Everything the generator needs is
+# passed explicitly: it runs as `cmake -P`, where CMAKE_SOURCE_DIR is the
+# working directory and would be wrong.
+set(HAVEL_GITPROBE_CMAKE
+    "${CMAKE_SOURCE_DIR}/cmake/GitProbe.cmake")
+set(HAVEL_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
+configure_file(${CMAKE_SOURCE_DIR}/cmake/BuildIdentity.cmake.in
+               ${CMAKE_BINARY_DIR}/BuildIdentity.cmake @ONLY)
+# .git itself covers a linked worktree, whose .git is a pointer file.
+file(GLOB_RECURSE _HAVEL_GIT_IDENTITY_DEPS
+    "${CMAKE_SOURCE_DIR}/.git/HEAD"
+    "${CMAKE_SOURCE_DIR}/.git/index"
+    "${CMAKE_SOURCE_DIR}/.git/packed-refs"
+    "${CMAKE_SOURCE_DIR}/.git/refs/*"
+    "${CMAKE_SOURCE_DIR}/.git/worktrees/*/HEAD")
+add_custom_command(
+    OUTPUT ${HAVEL_BUILD_IDENTITY_HEADER}
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/BuildIdentity.cmake
+    DEPENDS ${CMAKE_BINARY_DIR}/BuildIdentity.cmake
+            ${CMAKE_SOURCE_DIR}/cmake/BuildIdentity.cmake.in
+            ${CMAKE_SOURCE_DIR}/cmake/GitProbe.cmake
+            ${_HAVEL_GIT_IDENTITY_DEPS}
+    COMMENT "Deriving build identity (commit, branch, dirty)")
+add_custom_target(gen_build_identity ALL
+    DEPENDS ${HAVEL_BUILD_IDENTITY_HEADER})
 include(FindPkgConfig)
 
 # ==============================================================================
@@ -1811,6 +1812,11 @@ set_target_properties(havel_core PROPERTIES
     C_STANDARD 17
     C_STANDARD_REQUIRED ON
 )
+# The build-identity header must exist before anything compiles. It is an
+# OUTPUT of add_custom_command, so Ninja would order this anyway for files
+# that depend on it; the target dependency makes it unconditional for the
+# whole archive (and for a bare `ninja gen_build_identity`).
+add_dependencies(havel_core gen_build_identity)
 if(ENABLE_MODULE_PLUGINS)
     set_target_properties(havel_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -1940,6 +1946,9 @@ target_include_directories(${lib} PRIVATE
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/extensions
+    # BuildIdentity.generated.hpp (commit/branch/dirty stamp) is generated at
+    # build time, so it lives in the build tree rather than the source tree.
+    ${CMAKE_BINARY_DIR}/generated
     ${X11_INCLUDE_DIR}
     ${XI_INCLUDE_DIR}
 ${PIPEWIRE_INCLUDE_DIRS}
@@ -1966,11 +1975,17 @@ ${PIPEWIRE_INCLUDE_DIRS}
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
     HAVEL_VERSION_STRING=\"${PROJECT_VERSION}\"
-    HAVEL_BUILD_COMMIT=\"${HAVEL_BUILD_COMMIT}\"
-    HAVEL_BUILD_BRANCH=\"${HAVEL_BUILD_BRANCH}\"
-    HAVEL_BUILD_DIRTY=\"${HAVEL_BUILD_DIRTY}\"
 )
 endforeach()
+
+# The only consumer of HAVEL_BUILD_COMMIT/BRANCH/DIRTY is
+# src/core/init/HavelLauncher.cpp, which includes the generated header rather
+# than taking them as compile definitions (see the build-identity block near
+# the top of this file). OBJECT_DEPENDS makes that object rebuild when the
+# identity changes, so the stamp cannot drift from the code it describes.
+set_source_files_properties(
+    src/core/init/HavelLauncher.cpp
+    PROPERTIES OBJECT_DEPENDS "${HAVEL_BUILD_IDENTITY_HEADER}")
 
 add_executable(havel
     src/main.cpp

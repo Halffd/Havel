@@ -1,0 +1,243 @@
+# BuildIdentity.cmake.in - configured by CMakeLists.txt into
+# <builddir>/BuildIdentity.cmake and run at BUILD time with `cmake -P`.
+#
+# It regenerates <builddir>/BuildIdentity.generated.hpp, which is what
+# `havel --version` prints its commit, branch and dirty state from.
+#
+# WHY THIS IS A HEADER AND NOT A COMPILE DEFINITION
+# -------------------------------------------------
+# A macro passed via target_compile_definitions is part of an object's
+# command line, so it only changes when CMake re-runs. `ninja` after new
+# commits recompiles the tree but keeps the cached command line, and the
+# binary then advertises the commit it was CONFIGURED at - the "new code,
+# old stamp" state recorded in
+# docs/known-issues/build-commit-stamp-is-configure-time-only.md.
+# A generated header is a real file dependency instead: Ninja sees the new
+# sha and rebuilds only the includer, so an incremental build cannot lie.
+#
+# RESOLUTION ORDER (first non-empty wins, per field)
+# --------------------------------------------------
+#   1. git, when the binary is present         - authoritative
+#   2. a reader over .git itself                - no git on PATH (the
+#                                                xbps-src chroot used for
+#                                                packaging and iteration
+#                                                builds, minimal CI images)
+#   3. -DHAVEL_BUILD_* passed to CMake          - the packager/tarball seed,
+#                                                persisted in CMakeCache.txt
+#   4. the last non-empty value already on disk - keeps a no-git incremental
+#                                                rebuild from going back to
+#                                                "unknown"
+#   5. "unknown"                                - only when nothing ever knew
+#
+# The -D seed is deliberately a FALLBACK and not an override. A cached seed
+# must not pin a live checkout forever, because that is precisely the
+# staleness this mechanism exists to remove. A tarball build has neither git
+# nor .git, so the seed is still what it gets, and "unknown" is only ever
+# reported for a checkout that never had a stamp of any kind.
+
+set(BI_SOURCE_DIR "@HAVEL_SOURCE_DIR@")
+set(BI_OUTPUT "@HAVEL_BUILD_IDENTITY_HEADER@")
+set(BI_SEED_COMMIT "@HAVEL_BUILD_COMMIT@")
+set(BI_SEED_BRANCH "@HAVEL_BUILD_BRANCH@")
+set(BI_SEED_DIRTY "@HAVEL_BUILD_DIRTY@")
+set(BI_GITPROBE "@HAVEL_GITPROBE_CMAKE@")
+
+# git_probe_head_sha / git_probe_branch: the .git readers used in step 2.
+if(EXISTS "${BI_GITPROBE}")
+    include("${BI_GITPROBE}")
+endif()
+
+# ------------------------------------------------------------------------------
+# helpers
+# ------------------------------------------------------------------------------
+
+# Is a git binary reachable? find_program works in script mode and, unlike
+# execute_process against a missing command, gives a clean yes/no instead of
+# a result variable holding the string "no such file or directory".
+find_program(BI_GIT NAMES git)
+
+# Is the source directory actually a repository? Both conditions are needed
+# before any git answer is trusted:
+#   - no binary  -> git_probe_* reads .git directly instead
+#   - no repo    -> `git status` exits 128 with empty output, which is NOT a
+#                   clean tree, and `git rev-parse HEAD` likewise fails. A
+#                   tarball build with git installed must not read as "clean"
+#                   just because the command produced no lines.
+# `git rev-parse --git-dir` prints nothing when it is not in a repository.
+set(BI_IN_REPO FALSE)
+if(NOT BI_GIT STREQUAL "BI_GIT-NOTFOUND" AND NOT BI_GIT STREQUAL "")
+    execute_process(COMMAND git rev-parse --git-dir
+        WORKING_DIRECTORY "${BI_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bi_git_dir
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _bi_git_dir STREQUAL "")
+        set(BI_IN_REPO TRUE)
+    endif()
+endif()
+
+# The value of `#define <name> "<value>"` in an existing header, or "".
+# Used for step 4: preserve what a previous run already knew.
+function(bi_existing_value header name out)
+    set(${out} "" PARENT_SCOPE)
+    if(NOT EXISTS "${header}")
+        return()
+    endif()
+    file(STRINGS "${header}" _bi_lines)
+    foreach(_bi_l IN LISTS _bi_lines)
+        if(_bi_l MATCHES "^#define[ \t]+${name}[ \t]+\"([^\"]*)\"")
+            set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+endfunction()
+
+# ------------------------------------------------------------------------------
+# commit
+# ------------------------------------------------------------------------------
+set(BI_COMMIT "")
+
+# 1. git, when present.
+if(BI_IN_REPO)
+    execute_process(COMMAND git rev-parse HEAD
+        WORKING_DIRECTORY "${BI_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bi_git_head
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _bi_git_head STREQUAL "")
+        set(BI_COMMIT "${_bi_git_head}")
+    endif()
+endif()
+
+# 2. no git: read .git/HEAD, then packed-refs, without the binary.
+if(BI_COMMIT STREQUAL "")
+    git_probe_head_sha("${BI_SOURCE_DIR}" _bi_probed_head)
+    if(NOT _bi_probed_head STREQUAL "")
+        set(BI_COMMIT "${_bi_probed_head}")
+    endif()
+endif()
+
+# 3. the -D seed (packager / tarball).
+if(BI_COMMIT STREQUAL "" AND NOT BI_SEED_COMMIT STREQUAL "")
+    set(BI_COMMIT "${BI_SEED_COMMIT}")
+endif()
+
+# 4. what this build dir already recorded.
+if(BI_COMMIT STREQUAL "")
+    bi_existing_value("${BI_OUTPUT}" "HAVEL_BUILD_COMMIT" _bi_prev_commit)
+    if(NOT _bi_prev_commit STREQUAL "" AND NOT _bi_prev_commit STREQUAL "unknown")
+        set(BI_COMMIT "${_bi_prev_commit}")
+    endif()
+endif()
+
+# 5. nothing ever knew.
+if(BI_COMMIT STREQUAL "")
+    set(BI_COMMIT "unknown")
+endif()
+
+# ------------------------------------------------------------------------------
+# branch
+# ------------------------------------------------------------------------------
+set(BI_BRANCH "")
+
+if(BI_IN_REPO)
+    execute_process(COMMAND git rev-parse --abbrev-ref HEAD
+        WORKING_DIRECTORY "${BI_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bi_git_branch
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _bi_git_branch STREQUAL "")
+        set(BI_BRANCH "${_bi_git_branch}")
+    endif()
+endif()
+
+if(BI_BRANCH STREQUAL "")
+    git_probe_branch("${BI_SOURCE_DIR}" _bi_probed_branch)
+    if(NOT _bi_probed_branch STREQUAL "" AND NOT _bi_probed_branch STREQUAL "(detached)")
+        set(BI_BRANCH "${_bi_probed_branch}")
+    endif()
+endif()
+
+if(BI_BRANCH STREQUAL "" AND NOT BI_SEED_BRANCH STREQUAL "")
+    set(BI_BRANCH "${BI_SEED_BRANCH}")
+endif()
+
+if(BI_BRANCH STREQUAL "")
+    bi_existing_value("${BI_OUTPUT}" "HAVEL_BUILD_BRANCH" _bi_prev_branch)
+    if(NOT _bi_prev_branch STREQUAL "" AND NOT _bi_prev_branch STREQUAL "unknown")
+        set(BI_BRANCH "${_bi_prev_branch}")
+    endif()
+endif()
+
+if(BI_BRANCH STREQUAL "")
+    set(BI_BRANCH "unknown")
+endif()
+
+# ------------------------------------------------------------------------------
+# dirty
+# ------------------------------------------------------------------------------
+# git is the only authority. Without it there is no reliable signal:
+# .git/index is a binary format CMake cannot parse, and an mtime comparison
+# cannot tell a modified tracked file from an untracked one (or from a file
+# restored to its indexed mtime with different content). Claiming "clean"
+# there would be a provenance statement this generator cannot support, so it
+# reports "unknown" instead - which costs one word in --version output and
+# makes no claim either way.
+#
+# Untracked files are excluded with --untracked-files=no, matching
+# scripts/which-havel.sh: an untracked scratch file is not a modification of
+# anything the commit describes.
+set(BI_DIRTY "")
+
+if(BI_IN_REPO)
+    execute_process(COMMAND git status --porcelain --untracked-files=no
+        WORKING_DIRECTORY "${BI_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bi_git_status
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_bi_git_status STREQUAL "")
+        set(BI_DIRTY "clean")
+    else()
+        set(BI_DIRTY "dirty")
+    endif()
+endif()
+
+if(BI_DIRTY STREQUAL "" AND NOT BI_SEED_DIRTY STREQUAL "")
+    set(BI_DIRTY "${BI_SEED_DIRTY}")
+endif()
+
+if(BI_DIRTY STREQUAL "")
+    bi_existing_value("${BI_OUTPUT}" "HAVEL_BUILD_DIRTY" _bi_prev_dirty)
+    if(NOT _bi_prev_dirty STREQUAL "" AND NOT _bi_prev_dirty STREQUAL "unknown")
+        set(BI_DIRTY "${_bi_prev_dirty}")
+    endif()
+endif()
+
+if(BI_DIRTY STREQUAL "")
+    set(BI_DIRTY "unknown")
+endif()
+
+# ------------------------------------------------------------------------------
+# write
+# ------------------------------------------------------------------------------
+# Written to a temp file and moved with copy_if_different so an unchanged
+# identity leaves the header's mtime alone and does not trigger a rebuild of
+# every file that includes it.
+set(_bi_tmp "${BI_OUTPUT}.tmp")
+file(WRITE "${_bi_tmp}"
+    "// Generated at build time by cmake/BuildIdentity.cmake.in. Do not edit.\n"
+    "//\n"
+    "// Derived from git when available, otherwise by reading .git directly\n"
+    "// (the xbps-src chroot has no git binary), otherwise from the value the\n"
+    "// packager passed with -DHAVEL_BUILD_*, otherwise from the last value\n"
+    "// this build directory recorded. \"unknown\" means nothing ever knew.\n"
+    "#pragma once\n"
+    "#define HAVEL_BUILD_COMMIT \"${BI_COMMIT}\"\n"
+    "#define HAVEL_BUILD_BRANCH \"${BI_BRANCH}\"\n"
+    "#define HAVEL_BUILD_DIRTY \"${BI_DIRTY}\"\n")
+
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${_bi_tmp}" "${BI_OUTPUT}")
+file(REMOVE "${_bi_tmp}")
+
+message(STATUS "build identity: ${BI_COMMIT} (${BI_BRANCH}, ${BI_DIRTY})")

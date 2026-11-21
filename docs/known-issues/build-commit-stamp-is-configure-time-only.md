@@ -1,8 +1,8 @@
 # The binary's `commit <sha>` stamp is captured at CMake configure time only
 
-**Status:** OPEN. Symptom resolved once by hand (reconfigure); the root cause
-is not fixed. This documents the root cause, the evidence, and the concrete
-next step.
+**Status:** FIXED (2026-11-21, `cfcf377a`). The root cause is gone: the
+stamp is now a build-time input. The analysis and evidence below are kept
+because they are what the fix was designed against.
 
 ## Symptom
 
@@ -101,9 +101,27 @@ incremental rebuild cannot lie:
 3. Delete the `execute_process` block (lines 16-53) and the three
    `target_compile_definitions` entries (line 1969).
 
-That keeps the no-git case honest (`unknown` only when it has never been
-stamped) and removes the "new code, old stamp" state entirely.
+## Resolution
 
-A second, cheaper step: teach `scripts/which-havel.sh` to also scan
-`*/builddir/*/havel` (relative to the repo and its siblings), so a build laid
-out by `xbps-src` is visible instead of silently absent.
+Landed as described, with one deliberate strengthening: the -D seed is a
+**fallback, not an override**. A cached `-DHAVEL_BUILD_COMMIT` must not pin a
+live checkout forever, because that is the same staleness wearing a
+different hat - and this defect was itself reproduced with a build directory
+whose CMakeCache held a `-DHAVEL_BUILD_COMMIT` from an earlier manual fix.
+The order is:
+
+1. `git`, when the binary is present - authoritative.
+2. a reader over `.git` itself - the xbps-src chroot has no git(1).
+3. the `-DHAVEL_BUILD_*` seed a packager passed.
+4. the last non-empty value the build directory already recorded.
+5. `unknown`, only when nothing ever knew.
+
+`HAVEL_BUILD_DIRTY` answers `unknown` rather than `clean` without git:
+`git status` is the only authority, and `.git/index` is a binary format CMake
+cannot parse, so "clean" would be a provenance claim the generator cannot
+back. Untracked files are excluded with `--untracked-files=no`, matching
+`scripts/which-havel.sh`.
+
+Still open, and cheaper than the above: `scripts/which-havel.sh` never scans
+`*/builddir/*/havel`, so a build laid out by `xbps-src` is invisible to it
+rather than merely mislabelled.

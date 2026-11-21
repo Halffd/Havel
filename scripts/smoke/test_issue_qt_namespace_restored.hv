@@ -47,14 +47,22 @@ if suite_bin && suite_bin != "" && fs.exists(suite_bin) {
 }
 build_dir = ""
 for c in candidates {
-    if fs.exists("${c}/havel") && fs.exists("${c}/toolkits/havel_toolkit_qt.so") {
+    // BOTH toolkits are required. Case 2 asserts
+    // "Registered extension function: gtk.init", which the child can only
+    // print when havel_toolkit_gtk.so exists. A build with Qt but without
+    // GTK (ENABLE_GTK=OFF) used to reach case 2 and fail there with
+    // "No UI backend available" - and when the children were slow to start
+    // it instead blew the 600s suite timeout, so the same tree reported this
+    // test as a failure, a timeout and a pass on different runs.
+    if fs.exists("${c}/havel") && fs.exists("${c}/toolkits/havel_toolkit_qt.so") && fs.exists("${c}/toolkits/havel_toolkit_gtk.so") {
         build_dir = c
         break
     }
 }
 if build_dir == "" {
-    // No Qt toolkit plugin in this build (Qt dev libs absent) — the
-    // registration path has nothing to exercise. Explicit pass.
+    // No Qt toolkit plugin, or no GTK one, in this build (Qt/GTK dev libs
+    // absent) — the registration path has nothing to exercise. Explicit
+    // pass.
     print("OK qt-namespace (toolkit not built in this configuration)")
     process.exit(0)
 }

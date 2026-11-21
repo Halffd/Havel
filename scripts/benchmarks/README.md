@@ -112,6 +112,14 @@ For the self-hosted-parse workload (Phase C), the generator is
 
 ## Phase C: where the self-hosted parse actually spends its CPU
 
+> **STATUS (2026-11-20 reconciliation): this diagnosis was ACTED ON.**
+> Both targets below are closed — target (1) by the de-seeding fix in
+> "Phase D" and then by the save-and-swap in "VM-OPT-001"; target (2)
+> (the `containsYield` hoist) is the only one still open, and the walk it
+> describes still exists in the source as `functionContainsYield`. The
+> 437.4 us/call figure below is historical, not current. Read this
+> section as a diagnosis, not as work to do.
+
 **Headline (2026-10-11, post-diagnosis): the parse's CPU is not
 bytecode dispatch — it is C++ map copying in the module call path.**
 ~80% of the parse phase's ~53s of user CPU (567-line workload, verified
@@ -142,6 +150,20 @@ Implications:
   (2) hoist containsYield (mark generator/coroutine bodies at parse
   time instead of re-walking per compiled function). The calls bench
   (0.88 row above) is the leading indicator for (1).
+
+  **Both (1) and (2) are now DONE, in that order, with a remeasure between
+  them** — see "Phase D" for (1)-a, "VM-OPT-001" for (1)-b. The
+  sequencing discipline the two-line plan implied (fix one, remeasure,
+  then decide whether the second still matters) is what the record shows
+  happened: after the de-seed, the 437 us/call was gone and the residual
+  was O(module-own-names), which is what justified the swap change. What
+  remains open from this list is ONLY the containsYield hoist, and the
+  function is now spelled `functionContainsYield`
+  (`ByteCompiler.cpp:10909`) — `is_generator` is a field on the IR
+  `BytecodeFunction` struct (`BytecodeIR.hpp:871`), NOT on the AST, and
+  is never set at parse time (the only parse-time AST write is
+  `is_coroutine`, `Parser.cpp:3928`), so the AST is where the hoist flag
+  must go.
 
 ### Phase C history
 
@@ -352,6 +374,23 @@ computePipelineFingerprint) makes foreign entries reject as
 pipeline-fingerprint-drift and recompile; `HAVEL_STARTUP_TIMING=1` shows
 the rejects. Clear the cache when in doubt.
 
+## doCall's error-path dump is NOT duplicated (audited 2026-11-20)
+
+A claim that `doCall` carries "a literally duplicated nested block" in
+its error path — a copy-pasted frame-dump + instruction-dump — was
+audited against this tree and **does not hold**. `VM::doCall`
+(`VM.cpp:3005`, ending `VM.cpp:3728`) contains exactly ONE such block:
+the `if (!recovered)` branch at `VM.cpp:3310-3347`, which builds
+`frameInfo` (last 8 frames) and `instrInfo` (15 instructions around the
+failing IP) and throws once. There is no second copy in `doCall`, none in
+`doTailCall` (`VM.cpp:3730` — its error handling delegates to `doCall`),
+and no `dumpCallStack`/`dumpFrames` helper anywhere in `src/`.
+
+So the sequencing worry ("remove it before the globals surgery lands") is
+moot for this specific block. Genuinely duplicated logic in the same
+function is a different matter and still worth a grep before any
+`doCall` surgery — but this block is a single instance.
+
 ## VM-OPT-001: save-and-swap ambient installs (2026-10-13)
 
 Ticket VM-OPT-001 asked to eliminate the residual O(n) map copy on
@@ -459,6 +498,13 @@ pass; full gate 345/6 = exactly the pre-existing set (orc quartet +
 repl + qt); ctest 12/12; both module benches intact.
 
 ## ORC vs Cranelift at tier 2 (2026-10-12, first-ever measurement)
+
+> **VERDICT, stated up front so nobody has to read to the bottom: the
+> head-to-head HAS been measured, and ORC's O2 buys nothing measurable
+> over Cranelift tier-1 on Havel's hot-loop shapes.** Cranelift stays the
+> tier-1 default; ORC is opt-in only. This is the answer to "is tier-2
+> doing more harm than good" — yes, as a *default*; no, left opt-in. The
+> caveats that keep it honest are in the table below.
 
 Matched workloads on the LLVM-enabled build (`build-crane-release`, mode
 19), now unblocked by the ORC LLVM-23 fix. Tier-1 fires at 15k hotness on

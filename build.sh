@@ -98,6 +98,7 @@ OPT_THREADS=""
 OPT_MODE=""
 OPT_YES=0
 OPT_TEST_KIND="gate"
+OPT_PREFIX=""
 
 find_workspaces() {
   WORKSPACES=()
@@ -227,6 +228,19 @@ ws_build() { # workspace mode threads
   if [ "$headless" = "ON" ]; then cmake_cmd+=(-DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF); fi
   [ ${#SAN_FLAGS[@]} -gt 0 ] && cmake_cmd+=("${SAN_FLAGS[@]}")
 
+  # Seed the generated build-identity header from this checkout. The generator
+  # still prefers live git/.git at BUILD time, so a cached -D cannot pin a
+  # moving checkout; this only keeps a build.sh configure from leaving the
+  # stamp with no commit at all when git is available.
+  local build_commit=""
+  build_commit="$(git -C "$ws" rev-parse HEAD 2>/dev/null || true)"
+  if [ -n "$build_commit" ]; then
+    cmake_cmd+=(-DHAVEL_BUILD_COMMIT="$build_commit")
+    local build_branch
+    build_branch="$(git -C "$ws" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    [ -n "$build_branch" ] && cmake_cmd+=(-DHAVEL_BUILD_BRANCH="$build_branch")
+  fi
+
   # Lock per workspace+dir. Plain `build` and `queue build` both end up here,
   # so two agents pointing at the same directory queue behind each other in
   # the foreground instead of interleaving two cmake runs into one dir.
@@ -257,6 +271,65 @@ ws_build() { # workspace mode threads
     ok "build ok in $((t1 - t0))s"
   fi
   return $rc
+}
+
+ws_install() { # workspace mode threads prefix
+  local ws="$1" m="$2" threads="$3" prefix="$4"
+  local fields bdir
+  IFS=',' read -r _ _ _ _ _ _ _ _ _ bdir <<<"${BUILD_CONFIGS[$m]}"
+  local dir="$ws/$bdir"
+  # `cmake --install` installs what was built; it does not build. Fail with the
+  # build command rather than half-installing a tree that was never compiled.
+  [ -f "$dir/CMakeCache.txt" ] || {
+    err "not configured: $dir - build first (build.sh --mode $m build)"; return 1; }
+  [ -x "$dir/havel" ] || {
+    err "no havel binary in $dir - build first (build.sh --mode $m build)"; return 1; }
+
+  # A prefix under /usr, /usr/local or / rewrites whatever the distro put
+  # there. The default is a staging directory so the command is safe to try,
+  # and a system prefix is accepted only when it is asked for explicitly.
+  case "$prefix" in
+    /|/usr|/usr/local|/usr/bin|/opt)
+      warn "installing into a system prefix ($prefix) - this overwrites files owned by the system package manager"
+      [ "$OPT_YES" = 1 ] || { err "refusing without --yes"; return 1; } ;;
+  esac
+
+  local lock; lock="$(lock_name "$(ws_name "$ws")" "$bdir" install)"
+  acquire_lock_blocking "$lock" 9
+  BUILD_LOCK_NAME="$lock"
+  trap 'release_lock 9' RETURN
+  say "install: $(ws_name "$ws") mode $m -> $prefix" "$BLUE"
+  if [ "$FLAGS_DRYRUN" = 1 ]; then
+    say "  (dry-run) cmake --install $dir --prefix $prefix" "$DIM"
+    release_lock 9; trap - RETURN; return 0
+  fi
+
+  mkdir -p "$prefix"
+  local logf="$LOG_DIR/install-$(ws_name "$ws")-$bdir.log"
+  local t0 t1 rc
+  t0=$(date +%s)
+  cmake --install "$dir" --prefix "$prefix" >"$logf" 2>&1
+  rc=$?
+  t1=$(date +%s)
+  release_lock 9
+  trap - RETURN
+  if [ $rc -ne 0 ]; then
+    err "install failed rc=$rc (log: $logf)"
+    tail -30 "$logf" >&2
+    return $rc
+  fi
+
+  # Report provenance from the installed binary itself, not from the build
+  # tree: an install step is exactly where a stale artifact can be copied
+  # forward, and the reader needs to know which one landed.
+  local installed_bin="$prefix/bin/havel" commit
+  if [ -x "$installed_bin" ]; then
+    commit="$(binary_commit "$installed_bin")"
+    ok "installed $installed_bin (commit ${commit:-unknown}) to $prefix in $((t1 - t0))s"
+  else
+    ok "installed to $prefix in $((t1 - t0))s (no bin/havel - check the log: $logf)"
+  fi
+  return 0
 }
 
 ws_test() { # workspace mode kind
@@ -763,6 +836,7 @@ cmd_queue() {
     build)   do_build;   rc=$? ;;
     rebuild) do_rebuild; rc=$? ;;
     test)    do_test;    rc=$? ;;
+    install) do_install; rc=$? ;;
     fleet)   cmd_fleet "$@"; rc=$? ;;
   esac
   t1=$(date +%s)
@@ -807,6 +881,23 @@ do_run() {
   exec "$bin" "$@"
 }
 
+do_install() {
+  local m prefix t0 t1 rc
+  m=$(resolve_mode "$OPT_MODE")
+  # Default to a staging prefix under the state dir. Installing is a copy
+  # operation with real side effects, so the default never touches a system
+  # path; --prefix is how a real destination is named.
+  prefix="$OPT_PREFIX"
+  if [ -z "$prefix" ]; then
+    prefix="$STATE_DIR/install/$(ws_name "$SCRIPT_DIR")-$(cut -d, -f10 <<<"${BUILD_CONFIGS[$m]}")"
+  fi
+  t0=$(date +%s)
+  ws_install "$SCRIPT_DIR" "$m" "$(resolve_threads)" "$prefix"; rc=$?
+  t1=$(date +%s)
+  record_time "$(ws_name "$SCRIPT_DIR")" "$m" install $((t1 - t0)) $rc
+  return $rc
+}
+
 # ---------------------------------------------------------------------------
 # help
 # ---------------------------------------------------------------------------
@@ -845,6 +936,9 @@ Build lifecycle
   rebuild              clean + build
   clean                remove the build dir for the mode
   run [-- args]        run the built havel binary
+  install [--prefix D] install the mode's build into a prefix (default:
+                       ~/.cache/havel-build/install/<ws>-<dir>), then report
+                       the commit of the binary that actually landed
 
 Tests
   test [--kind gate|smoke|ctest|quick]
@@ -860,7 +954,7 @@ Fleet (every sibling checkout: /host/havel, /host/havel-2, ...)
   fleet gc             disk report everywhere
 
 Queueing (foreground - nothing ever backgrounds)
-  queue <build|rebuild|test|fleet> [args]
+  queue <build|rebuild|test|install|fleet> [args]
                        take the lock for this workspace+mode. If another
                        agent already holds it, BLOCK here with visible
                        progress until they finish, then run, then notify.
@@ -893,6 +987,7 @@ Options
   --mode N             build mode
   -j, --threads N      parallel jobs (default: auto, capped at 2)
   --kind K             test kind for `test`
+  --prefix DIR         destination for `install` (system prefixes need --yes)
   --yes                apply destructive actions
   --dry-run            print commands, run nothing
   -h, --help           this help
@@ -906,7 +1001,7 @@ EOF
 # ---------------------------------------------------------------------------
 # argument parsing: global flags, optional leading MODE, then a command
 # ---------------------------------------------------------------------------
-COMMANDS=(build rebuild clean test run status which fleet jobs pause resume stop limit queue await notify locks gc report doctor detect info help)
+COMMANDS=(build rebuild clean test run install status which fleet jobs pause resume stop limit queue await notify locks gc report doctor detect info help)
 is_command() { local c; for c in "${COMMANDS[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
 
 POSITIONAL=()
@@ -916,6 +1011,7 @@ while [ $# -gt 0 ]; do
     --mode|-m) OPT_MODE="$2"; shift 2 ;;
     -j|--threads) OPT_THREADS="$2"; shift 2 ;;
     --kind) OPT_TEST_KIND="$2"; shift 2 ;;
+    --prefix) OPT_PREFIX="$2"; shift 2 ;;
     --json) FLAGS_JSON=1; shift ;;
     --dry-run) FLAGS_DRYRUN=1; shift ;;
     --yes) OPT_YES=1; shift ;;
@@ -954,6 +1050,7 @@ case "$CMD" in
   clean)   m=$(resolve_mode "$OPT_MODE"); rm -rf "$SCRIPT_DIR/$(cut -d, -f10 <<<"${BUILD_CONFIGS[$m]}")"; ok "removed mode $m build dir" ;;
   test)    do_test ;;
   run)     do_run "$@" ;;
+  install) do_install ;;
   status)  cmd_status ;;
   which)   cmd_which "$@" ;;
   fleet)   cmd_fleet "$@" ;;

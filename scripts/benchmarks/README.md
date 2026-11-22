@@ -112,13 +112,13 @@ For the self-hosted-parse workload (Phase C), the generator is
 
 ## Phase C: where the self-hosted parse actually spends its CPU
 
-> **STATUS (2026-11-20 reconciliation): this diagnosis was ACTED ON.**
-> Both targets below are closed — target (1) by the de-seeding fix in
-> "Phase D" and then by the save-and-swap in "VM-OPT-001"; target (2)
-> (the `containsYield` hoist) is the only one still open, and the walk it
-> describes still exists in the source as `functionContainsYield`. The
-> 437.4 us/call figure below is historical, not current. Read this
-> section as a diagnosis, not as work to do.
+> **STATUS (2026-11-22): this diagnosis was ACTED ON. BOTH targets are
+> closed.** Target (1) by the de-seeding fix in "Phase D" and then by the
+> save-and-swap in "VM-OPT-001". Target (2) — the `containsYield` hoist —
+> landed as `f5bdb87cad`; the walk is gone from the compile path and is
+> now a parse-time field read. See "RESOLVED: containsYield hoisted to
+> parse time" below. The 437.4 us/call figure is historical, not current.
+> Read this section as a diagnosis, not as work to do.
 
 **Headline (2026-10-11, post-diagnosis): the parse's CPU is not
 bytecode dispatch — it is C++ map copying in the module call path.**
@@ -157,15 +157,11 @@ Implications:
   then decide whether the second still matters) is what the record shows
   happened: after the de-seed, the 437 us/call was gone and the residual
   was O(module-own-names), which is what justified the swap change. What
-  remains open from this list is ONLY the containsYield hoist, and the
-  function is now spelled `functionContainsYield`
-  (`ByteCompiler.cpp:10909`) — `is_generator` is a field on the IR
-  `BytecodeFunction` struct (`BytecodeIR.hpp:871`), NOT on the AST, and
-  is never set at parse time (the only parse-time AST write is
-  `is_coroutine`, `Parser.cpp:3928`), so the AST is where the hoist flag
-  must go.
+  remained open from this list was ONLY the containsYield hoist, and the
+  function was spelled `functionContainsYield`. That is now fixed too, in
+  the section below.
 
-## RESOLVED: containsYield hoisted to parse time (2026-11-21)
+## RESOLVED: containsYield hoisted to parse time (2026-11-22, `f5bdb87cad`)
 
 The last open target above is closed. The compiler no longer re-walks each
 function body: `is_generator` is now read from a parse-time flag.
@@ -193,6 +189,22 @@ function body: `is_generator` is now read from a parse-time flag.
   yet when the call returns; an ordinary function's has) across all five
   node owners plus the co-fn-only, yield-in-if, yield-in-loop,
   outer-with-yield-lambda, await-only and try-only cases.
+
+**The win is structural and is measured by construction, not by a new
+benchmark run.** The per-function body walk was removed from the compile
+path (5 call sites, all now a field read), and that walk is what the
+110/169 figure above counted. A before/after rusage run has NOT been
+taken, and the 110/169 baseline should not be treated as succeeded by a
+new number until one is. Two things block a cheap rerun here and should be
+fixed before anyone tries:
+
+- `scripts/benchmarks/gen_parse_workload.py` emits `local <name>`, which
+  this tree rejects with `Unresolved identifier 'local'` — the workload
+  does not parse, so every timing taken from it was a timeout artifact.
+- `havel run` has no `--no-tiering` flag; it treats the argument as the
+  script FILENAME, so `havel run --no-tiering x.hv` exits 1 immediately
+  with "Failed to read script file: --no-tiering". Tiering-off runs need a
+  real flag, or a config/env switch, from whoever owns the CLI.
 
 ### Phase C history
 

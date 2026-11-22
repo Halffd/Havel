@@ -172,8 +172,11 @@ static int cmd_init(const std::vector<std::string> &args) {
     f << "// " << pkg_name << " - a Havel package\n\n";
     f << "fn hello() {\n";
     f << "  print(\"hello from " << pkg_name << "\")\n";
-    f << "}\n\n";
-    f << "export hello\n";
+    f << "}\n";
+    // No `export` keyword: Havel modules are Python-style, so every top-level
+    // function is already the package's API. An `export hello` line here makes
+    // the scaffolded package fail to compile with
+    // "SemanticError: Unresolved identifier 'export'".
     std::cout << "created " << entry_point.string() << std::endl;
   }
 

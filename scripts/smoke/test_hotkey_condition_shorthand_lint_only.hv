@@ -84,6 +84,8 @@ assert(res.exitCode == 0, "bare-word condition shorthand must pass --lint, got e
 // here so the shorthand fix cannot quietly change how they parse.
 explicit_src = """
 mode = "work"
+health = 100
+title = "A"
 F1 when mode == "gaming" => { print("a") }
 F2 if mode == "work" => { print("a") }
 F3 if health < 50 => print("a")
@@ -94,7 +96,14 @@ F7:up => print("a")
 F8:: => print("a")
 RShift & WheelUp => print("a")
 LButton & RButton => print("a")
-f9 when gaming => print("a")
+// `when <ident> <word>` is the documented bare-word shorthand (spec:
+// `F1 when mode gaming`, `F2 when title Firefox`). A LONE word after `when`
+// is not a form at all - it is a bare identifier, and `f9 when gaming` used
+// to sit here looking like a valid case only because --lint never ran the
+// semantic pass. It fails at run time with
+// "Unresolved identifier 'gaming'"; lint now agrees, so the fixture uses the
+// documented two-token shorthand.
+f9 when mode gaming => print("a")
 return 0
 """
 fs.write(EXPLICIT_FIXTURE, explicit_src)

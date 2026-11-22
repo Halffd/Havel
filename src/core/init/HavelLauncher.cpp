@@ -25,6 +25,7 @@
 #include "havel-lang/compiler/core/ModuleGlobals.hpp"
 #include "havel-lang/compiler/core/HostFunctionNames.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/semantic/SemanticAnalyzer.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/incremental/IncrementalDriver.hpp"
 #include "havel-lang/compiler/incremental/CacheLayer.hpp"
@@ -422,6 +423,177 @@ lintWalkStatements(const havel::ast::Statement *stmt, const std::string &primary
   }
 }
 
+// The global-name universe a VM-less compilation path must assume: every host
+// function actually registered (derived at build time by
+// scripts/gen_host_function_names.py into kHostFunctionNames), every module
+// global (kModuleGlobals), and the runtime extras Pipeline.cpp seeds. Sidecar
+// globals (G, force, ...) come from a probe VM that loads the same stdlib
+// modules the engine loads - no script is ever executed, only registered.
+//
+// Shared by runLint and runBuild so the two paths cannot disagree about what a
+// valid script may reference: a name --build accepts must not fail --lint, and
+// a name --lint accepts must not fail at run time.
+static std::unordered_set<std::string>
+vmlessKnownGlobals(const havel::init::LaunchConfig &cfg) {
+  (void)cfg;
+  std::unordered_set<std::string> knownGlobals;
+  for (const char *hf : havel::compiler::kHostFunctionNames) {
+    knownGlobals.insert(hf);
+    std::string name(hf);
+    auto dotPos = name.find('.');
+    if (dotPos != std::string::npos) {
+      knownGlobals.insert(name.substr(0, dotPos));
+    }
+  }
+  for (const char *g : havel::compiler::kModuleGlobals) {
+    knownGlobals.insert(g);
+  }
+  knownGlobals.insert("process");
+  knownGlobals.insert("sys");
+  knownGlobals.insert("shell");
+  knownGlobals.insert("_nativeTokenize");
+
+  // Sidecar-module globals (G, force, momentum, ...) are declared in
+  // modules/lang/**.hv and registered on the VM when its stdlib modules load
+  // their sidecars. The script pipeline seeds the resolver from the live VM
+  // (options.vm_override->getAllGlobals()); a VM-less path has no VM, so
+  // construct one and take the same universe. Without this, lexical
+  // resolution rejects any script touching sidecar globals (e.g. `G` from
+  // modules/lang/math/physics.hv).
+  try {
+    havel::compiler::VM probeVm;
+    // Configure module source resolution the same way engine startup does
+    // (Havel.cpp): without these paths loadModule("math/physics") throws
+    // "Module not found" and the sidecar globals never register. Must happen
+    // BEFORE registerPureStdLib, which loads the math sidecars.
+    {
+      const char *envStdlib = std::getenv("HAVEL_STDLIB");
+      std::string stdlibPath;
+      if (envStdlib && envStdlib[0] != '\0') {
+        stdlibPath = envStdlib;
+      } else {
+        std::string exePath = Env::executable();
+        if (!exePath.empty()) {
+          stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." /
+                        "modules" / "std")
+                           .string();
+        } else {
+          stdlibPath = "./modules/std";
+        }
+      }
+      probeVm.moduleLoader().setStdlibPath(stdlibPath);
+      std::string exePath = Env::executable();
+      if (!exePath.empty()) {
+        auto modulesPath =
+            std::filesystem::path(exePath).parent_path().parent_path() / "modules";
+        std::error_code ec;
+        if (std::filesystem::exists(modulesPath, ec)) {
+          auto canonicalRoot = std::filesystem::canonical(modulesPath, ec).string();
+          probeVm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+          probeVm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+          probeVm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+          probeVm.moduleLoader().addSearchPath(canonicalRoot);
+        }
+      }
+    }
+    havel::registerPureStdLib(probeVm);
+    // Stdlib modules registered lazily only register their host-function table
+    // until first use; force-load the ones whose sidecar modules declare bare
+    // globals (G, force, ...) so getAllGlobals() sees them.
+    for (const char *modName : {"math", "physics", "array", "object", "string"}) {
+      try {
+        probeVm.ensureModuleLoaded(modName);
+      } catch (...) {
+      }
+    }
+    for (const auto &hfName : probeVm.getHostFunctionNames()) {
+      if (hfName.empty())
+        continue;
+      knownGlobals.insert(hfName);
+      auto dotPos = hfName.find('.');
+      if (dotPos != std::string::npos) {
+        knownGlobals.insert(hfName.substr(0, dotPos));
+      }
+    }
+    for (const auto &[globalName, val] : probeVm.getAllGlobals()) {
+      (void)val;
+      if (globalName.empty())
+        continue;
+      knownGlobals.insert(globalName);
+      auto dotPos = globalName.find('.');
+      if (dotPos != std::string::npos) {
+        knownGlobals.insert(globalName.substr(0, dotPos));
+      }
+    }
+  } catch (const std::exception &e) {
+    warn("could not probe VM globals for global-name seeding ({}); "
+         "sidecar-module globals may not resolve",
+         e.what());
+  }
+  return knownGlobals;
+}
+
+// Semantic pass for `havel --lint`. Returns false (after reporting) when the
+// script would fail to compile.
+//
+// Without this pass lint reports "Linting successful" for scripts that fail
+// at run time with "Unresolved identifier 'x'" - a rubber stamp on the exact
+// error class lint exists to catch. Found on a scaffolded hpkg package: its
+// entry point carries `export hello`, which --lint passed and `run` rejected
+// with SemanticError, so a user following `hpkg init` got a package that
+// could never be used.
+static bool lintSemantic(const std::string &code, const std::string &primaryFile,
+                         const havel::init::LaunchConfig &cfg,
+                         const havel::ast::Program &program) {
+  using havel::compiler::SemanticAnalyzer;
+  SemanticAnalyzer::Options semOptions;
+  // The same global-name universe --build assumes, so a name --build accepts
+  // cannot fail --lint (see vmlessKnownGlobals).
+  semOptions.knownGlobals = vmlessKnownGlobals(cfg);
+  SemanticAnalyzer semanticAnalyzer(semOptions);
+  try {
+    auto semResult = semanticAnalyzer.analyze(program);
+    if (semResult.errors.empty())
+      return true;
+    for (const auto &err : semResult.errors) {
+      std::string sourceLine;
+      // "Unresolved identifier 'x' at 3:1" carries line and column, so the
+      // diagnostic can name the call site the way the compile errors do.
+      size_t line = 0, col = 0;
+      if (auto at = err.rfind(" at "); at != std::string::npos) {
+        std::string tail = err.substr(at + 4);
+        if (auto colon = tail.find(':'); colon != std::string::npos) {
+          try {
+            line = std::stoul(tail.substr(0, colon));
+            col = std::stoul(tail.substr(colon + 1));
+          } catch (...) {
+          }
+        }
+      }
+      if (line > 0) {
+        std::istringstream ss(code);
+        std::string l;
+        for (size_t i = 1; i <= line && std::getline(ss, l); ++i) {
+          if (i == line) {
+            sourceLine = l;
+            break;
+          }
+        }
+      }
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "error", err, primaryFile, line, col, 1, sourceLine);
+      std::cerr << formatted;
+    }
+    error("Compilation failed with {} semantic error(s)",
+          semResult.errors.size());
+    return false;
+  } catch (const std::exception &) {
+    // The analyzer itself must not take lint down; the bytecode pass still
+    // runs and reports what it finds.
+    return true;
+  }
+}
+
 static int runLint(const std::string &code, const std::string &primaryFile,
                    const havel::init::LaunchConfig &cfg) {
   havel::parser::Parser parser{
@@ -491,6 +663,9 @@ static int runLint(const std::string &code, const std::string &primaryFile,
 
     havel::compiler::ByteCompiler compiler;
     compiler.setCollectErrors(true);
+    if (!lintSemantic(code, primaryFile, cfg, *program)) {
+      return 1;
+    }
     try {
       auto chunk = compiler.compile(*program);
       (void)chunk;
@@ -2872,111 +3047,16 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       compiler.setCollectErrors(true);
     }
     compiler.setStrictMode(cfg.strictSemantics);
-    // Populate known globals for strict mode. All host-function names are
-    // derived from the actual registration sites at build time
-    // (scripts/gen_host_function_names.py -> kHostFunctionNames, freshness
-    // checked by the havel-launcher globals drift guard); no hand-maintained
-    // copy. Module globals come from the canonical kModuleGlobals list the
-    // same way. Language keywords never reach the bare-identifier strict
-    // check, so the old keyword list has no place here.
+    // Populate known globals for strict mode. The universe is the shared
+    // vmlessKnownGlobals() (same one runLint uses), so --build and --lint
+    // cannot disagree about what a valid script may reference. All
+    // host-function names are derived from the actual registration sites at
+    // build time (scripts/gen_host_function_names.py -> kHostFunctionNames,
+    // freshness checked by the havel-launcher globals drift guard); no
+    // hand-maintained copy. Language keywords never reach the
+    // bare-identifier strict check, so no keyword list belongs here.
     if (cfg.strictSemantics) {
-      std::unordered_set<std::string> knownGlobals;
-      for (const char *hf : havel::compiler::kHostFunctionNames) {
-        knownGlobals.insert(hf);
-        std::string name(hf);
-        auto dotPos = name.find('.');
-        if (dotPos != std::string::npos) {
-          knownGlobals.insert(name.substr(0, dotPos));
-        }
-      }
-      for (const char *g : havel::compiler::kModuleGlobals) {
-        knownGlobals.insert(g);
-      }
-      // Runtime globals that are not host functions but are available at
-      // runtime (the same extras the pipeline path seeds in Pipeline.cpp).
-      knownGlobals.insert("process");
-      knownGlobals.insert("sys");
-      knownGlobals.insert("shell");
-      knownGlobals.insert("_nativeTokenize");
-      // Sidecar-module globals (G, force, momentum, ...) are declared in
-      // modules/lang/**.hv and registered on the VM when its stdlib modules
-      // load their sidecars. The script pipeline seeds the resolver from the
-      // live VM (options.vm_override->getAllGlobals()); the build path has no
-      // VM, so construct one and take the same universe. Without this, strict
-      // lexical resolution rejects any script touching sidecar globals
-      // (e.g. `G` from modules/lang/math/physics.hv) in --target aot builds
-      // even though --run accepts them.
-      try {
-        havel::compiler::VM probeVm;
-        // Configure module source resolution the same way engine startup does
-        // (Havel.cpp): without these paths loadModule("math/physics") throws
-        // "Module not found" and the sidecar globals (G, force, ...) never
-        // register. Must happen BEFORE registerPureStdLib, which loads the
-        // math sidecars during registration.
-        {
-          const char *envStdlib = std::getenv("HAVEL_STDLIB");
-          std::string stdlibPath;
-          if (envStdlib && envStdlib[0] != '\0') {
-            stdlibPath = envStdlib;
-          } else {
-            std::string exePath = Env::executable();
-            if (!exePath.empty()) {
-              stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std")
-                               .string();
-            } else {
-              stdlibPath = "./modules/std";
-            }
-          }
-          probeVm.moduleLoader().setStdlibPath(stdlibPath);
-          std::string exePath = Env::executable();
-          if (!exePath.empty()) {
-            auto modulesPath =
-                std::filesystem::path(exePath).parent_path().parent_path() / "modules";
-            std::error_code ec;
-            if (std::filesystem::exists(modulesPath, ec)) {
-              auto canonicalRoot = std::filesystem::canonical(modulesPath, ec).string();
-              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
-              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/std");
-              probeVm.moduleLoader().addSearchPath(canonicalRoot + "/app");
-              probeVm.moduleLoader().addSearchPath(canonicalRoot);
-            }
-          }
-        }
-        havel::registerPureStdLib(probeVm);
-        // Stdlib modules registered lazily only register their host-function
-        // table until first use; force-load the ones whose sidecar modules
-        // declare bare globals (G, force, ...) so getAllGlobals() sees them.
-        for (const char *modName : {"math", "physics", "array", "object", "string"}) {
-          try {
-            probeVm.ensureModuleLoaded(modName);
-          } catch (...) {
-          }
-        }
-        for (const auto &hfName : probeVm.getHostFunctionNames()) {
-          if (hfName.empty())
-            continue;
-          knownGlobals.insert(hfName);
-          auto dotPos = hfName.find('.');
-          if (dotPos != std::string::npos) {
-            knownGlobals.insert(hfName.substr(0, dotPos));
-          }
-        }
-        for (const auto &[globalName, val] : probeVm.getAllGlobals()) {
-          (void)val;
-          if (globalName.empty())
-            continue;
-          knownGlobals.insert(globalName);
-          auto dotPos = globalName.find('.');
-          if (dotPos != std::string::npos) {
-            knownGlobals.insert(globalName.substr(0, dotPos));
-          }
-        }
-      } catch (const std::exception &e) {
-        warn("AOT: could not probe VM globals for strict-mode seeding ({}); "
-             "sidecar-module globals may not resolve",
-             e.what());
-      }
-      compiler.setKnownGlobals(knownGlobals);
+      compiler.setKnownGlobals(vmlessKnownGlobals(cfg));
     }
     try {
       chunk = compiler.compile(*program);

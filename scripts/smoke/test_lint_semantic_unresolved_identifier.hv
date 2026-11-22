@@ -1,0 +1,99 @@
+// Regression: `havel --lint` reported "Linting successful" for a script that
+// cannot compile.
+//
+// runLint() ran the parser and the bytecode compiler, but never the semantic
+// pass, so the one error class lint exists to catch - SemanticError:
+// Unresolved identifier - was invisible to it. Found through hpkg: `hpkg init`
+// scaffolded an entry point containing `export hello`, which --lint passed and
+// `run` rejected with "Unresolved identifier 'export'". A user following the
+// documented first command got a package that could never be used.
+//
+// The fix runs the semantic analyzer in lint, seeded with the same
+// global-name universe --build uses (kHostFunctionNames from the generated
+// registration list, kModuleGlobals, and sidecar globals from a probe VM), so
+// a name --build accepts cannot fail --lint.
+//
+// This test covers one thing: lint fails on an unresolved identifier, and the
+// diagnostic names the identifier and its source line. A companion change
+// keeps the valid-control case honest (same script, identifier defined).
+//
+// Expected: PASS, exit 0. Fails if --lint rubber-stamps an unresolved
+// identifier again, if the error does not name the call site, or if a valid
+// script is rejected.
+use "fs"
+use "process"
+use "sys"
+
+FIXTURE_DIR = "${sys.tmpdir()}/havel_lint_semantic_${sys.pid()}"
+BROKEN = "${FIXTURE_DIR}/broken.hv"
+GOOD = "${FIXTURE_DIR}/good.hv"
+SENTINEL = "${FIXTURE_DIR}/SIDE_EFFECT.txt"
+
+fs.mkdir(FIXTURE_DIR)
+
+// Locate the havel binary the same way the other lint-only tests do.
+havel_bin = sys.env("HAVEL_BINARY")
+if !havel_bin || havel_bin == "" {
+    cwd = sys.cwd()
+    candidates = ["${cwd}/build-release/havel", "${cwd}/build-nollvm/havel",
+                  "${cwd}/build-debug/havel", "${cwd}/havel"]
+    for c in candidates {
+        if fs.exists(c) {
+            havel_bin = c
+            break
+        }
+    }
+    assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+}
+
+// ------------------------------------------------------------- broken fixture
+// The exact shape that hid the defect: a defined function, then a bare
+// identifier nothing defines. The body would write the sentinel if executed.
+fs.write(BROKEN, """fn ok() {
+  print("fine")
+}
+
+notDefinedAnywhere
+fs.write("SENTINEL_PATH", "executed")
+""".replace("SENTINEL_PATH", SENTINEL))
+
+res = process.run("\"${havel_bin}\" --lint \"${BROKEN}\" 2>&1")
+out = res.stdout
+
+assert(res.exitCode != 0,
+       "lint must FAIL on an unresolved identifier (got exit 0): ${out}")
+
+// Without the identifier named, the next hour of debugging is a guess.
+assert(out.find("notDefinedAnywhere") != -1,
+       "the error must name the unresolved identifier, got: ${out}")
+
+// Without the line, the reader cannot find the call site.
+assert(out.find(":5:") != -1 || out.find("at 5:") != -1,
+       "the error must name the source line of the identifier, got: ${out}")
+
+// --------------------------------------------------------------- good fixture
+// The same script with the identifier defined. This is the false-positive
+// guard: the semantic pass must not reject valid scripts. It also proves the
+// check is about resolution, not about the identifier's position in the file.
+fs.write(GOOD, """fn ok() {
+  print("fine")
+}
+
+notDefinedAnywhere = 42
+print(notDefinedAnywhere)
+""")
+
+res2 = process.run("\"${havel_bin}\" --lint \"${GOOD}\" 2>&1")
+
+assert(res2.exitCode == 0,
+       "lint must PASS the same script with the identifier defined, got exit ${res2.exitCode}: ${res2.stdout}")
+
+// The whole point of lint-only coverage: nothing ran, so no sentinel exists
+// and no hotkey was registered.
+assert(!fs.exists(SENTINEL),
+       "--lint must NOT execute the fixture (sentinel created: ${SENTINEL})")
+
+fs.remove(FIXTURE_DIR)
+
+print("PASS: --lint fails on an unresolved identifier and names it; valid scripts still pass")
+return 0

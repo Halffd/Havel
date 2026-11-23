@@ -12,8 +12,9 @@
 // `is_generator` decides whether a call returns a coroutine object (VM.cpp) or
 // runs the body inline, so the two walks must agree on EVERY function for the
 // whole language. Two copies would eventually disagree. The compiler's old
-// private walks (ByteCompiler::functionContainsYield /
-// statementContainsYield / expressionContainsYield) now forward here.
+// private walks were DELETED rather than kept as forwarders -- they had no
+// callers left, and a shim that exists only to satisfy its own declaration is
+// dead weight. Everything reaches this file directly.
 //
 // Deliberate over-approximations, PRESERVED from the original walk, NOT fixed:
 //   - TryExpression conservatively returns true, so a function whose only

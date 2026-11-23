@@ -126,7 +126,7 @@ public:
         }
 
         // 7. Update tracker
-        DependencyTracker::CompilationUnit unit;
+        IncrementalDependencyTracker::CompilationUnit unit;
         unit.name = source_path.string();
         unit.fingerprint = mod_fp->combined.value;
         unit.inputs = {source_path.string()};
@@ -157,7 +157,7 @@ public:
     const DependencyGraph& dependencyGraph() const { return dep_graph_; }
 
     /// Get dependency tracker.
-    const DependencyTracker& tracker() const { return tracker_; }
+    const IncrementalDependencyTracker& tracker() const { return tracker_; }
 
     /// Save dependency state to lock file (.hvd).
     bool saveLockFile(const std::filesystem::path& path);
@@ -169,7 +169,7 @@ private:
     IncrementalConfig config_;
     std::unique_ptr<CacheLayer> cache_;
     DependencyGraph dep_graph_;
-    DependencyTracker tracker_;
+    IncrementalDependencyTracker tracker_;
     Fingerprint config_fp_;
 };
 

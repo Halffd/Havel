@@ -87,7 +87,7 @@ bool IncrementalDriver::loadLockFile(const std::filesystem::path& path) {
     if (!dep_opt) return false;
     dep_graph_ = *dep_opt;
 
-    auto tracker_opt = DependencyTracker::deserialize(lock_data);
+    auto tracker_opt = IncrementalDependencyTracker::deserialize(lock_data);
     if (!tracker_opt) return false;
     tracker_ = *tracker_opt;
 

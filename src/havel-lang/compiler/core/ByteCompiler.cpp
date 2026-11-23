@@ -10905,21 +10905,6 @@ void ByteCompiler::compileWaitExpression(const ast::WaitExpression &expression) 
   emit(OpCode::THREAD_JOIN);
 }
 
-bool ByteCompiler::functionContainsYield(const ast::BlockStatement &body) const {
-  // Hoisted: the parser has already computed this once, at parse time. Keep
-  // this entry point because non-lambda function bodies that reach the
-  // compiler without going through parseFunctionDeclaration still need an
-  // answer, and because it is the single reference implementation both sides
-  // must agree on (see ast/YieldAnalysis.hpp).
-  return ast::bodyContainsYield(body);
-}
-
-bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
-  // Forwarding to the single shared implementation (ast/YieldAnalysis.hpp).
-  // Kept as a member so existing call sites compile unchanged.
-  return ast::statementContainsYield(stmt);
-}
-
 void ByteCompiler::optimizeJumps() {
   if (!current_function || current_function->instructions.empty()) {
     return;
@@ -10964,11 +10949,6 @@ void ByteCompiler::optimizeJumps() {
   for (auto &[pc, target] : jump_targets) {
     instructions[pc].operands[0] = Value(static_cast<int64_t>(target));
   }
-}
-
-bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
-  // Forwarding to the single shared implementation (ast/YieldAnalysis.hpp).
-  return ast::expressionContainsYield(expr);
 }
 
 } // namespace havel::compiler

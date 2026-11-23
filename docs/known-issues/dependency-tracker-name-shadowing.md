@@ -1,7 +1,8 @@
 # Two unrelated classes are both named DependencyTracker
 
-**Status:** OPEN (documentation hazard, not a code defect). No behavioral
-bug. Recorded because it cost a full git-archaeology pass to answer a
+**Status:** FIXED (2026-11-22). The incremental class was renamed to
+`IncrementalDependencyTracker`, so `DependencyTracker` now names exactly one
+thing. Recorded because it cost a full git-archaeology pass to answer a
 question — "why was DependencyTracker deleted?" — whose answer was "it
 wasn't".
 
@@ -55,16 +56,23 @@ Not a bug. A hazard for anyone auditing the subsystem:
   (`docs/specs/conditional-hotkeys.md`,
   `docs/known-issues/conditional-hotkey-window-reactivity.md`) refer to the
   reactive one, without saying so.
+## Resolved
 
-## Recommended next step
+`havel::compiler::incremental::DependencyTracker` was renamed to
+`IncrementalDependencyTracker` across `DependencyGraph.hpp` (the class, its
+`deserialize` return type, plus a doc comment recording why the name matters),
+`DependencyGraph.cpp` (8 method definitions) and `IncrementalDriver.hpp`/`.cpp`
+(3 + 1 references). No call site qualified the name with its namespace, so every
+reference was the bare name and the substitution is name-only — no logic touched.
 
-Rename one of the two so grep is unambiguous. The incremental one is the
-better rename candidate (it is newer, less referenced, and `DependencyGraph`
-already sits in the same file), e.g. `IncrementalDependencyTracker`.
-Measured cost: `grep -rn 'incremental::DependencyTracker' src/` returns a
-single hit (the header's own class definition) — no call site qualifies the
-name with its namespace, so every external reference is to the bare name and
-the rename is a substitution inside ~3 files
-(`DependencyGraph.hpp`, `IncrementalDriver.hpp/.cpp`). Behavior-neutral, and
-it removes the audit trap permanently. Not done here: this change was a
-diagnosis task, and a rename belongs with its own verification.
+Correcting the estimate this file previously made, which understated the work:
+`incremental::DependencyTracker` does **not** have "a single hit, the header's
+own class definition". It has ~15 real references — 8 method definitions in
+`DependencyGraph.cpp` plus 4 uses in `IncrementalDriver`. The qualified grep
+returned one because no call site qualifies the name; that is a statement about
+how it is *used*, not about how many references exist. Count the bare name, not
+the qualified one.
+
+The reactive tracker keeps its name: it has ~26 references across 12 files, it
+is the more widely used of the two, and renaming the cheaper one is what
+actually disambiguates a grep.

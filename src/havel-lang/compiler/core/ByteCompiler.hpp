@@ -261,11 +261,6 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
 
-  
-  bool functionContainsYield(const ast::BlockStatement &body) const;
-  bool statementContainsYield(const ast::Statement &stmt) const;
-  bool expressionContainsYield(const ast::Expression &expr) const;
-
   // Try to evaluate an expression to a constant Value at compile time.
   // Returns std::nullopt if the expression cannot be evaluated at compile time.
   std::optional<Value> tryEvaluateConstant(const ast::Expression &expr) const;

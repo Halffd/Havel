@@ -219,4 +219,24 @@ public:
     virtual void *getScreenshotManager() { return nullptr; }
 };
 
+// Ask a backend to leave its event loop.
+//
+// quitEventLoop is a pure virtual method, so calling it through a null
+// pointer reaches the pure-virtual thunk and terminates the process with
+// "pure virtual method called" - an abort that turns a script's ordinary
+// error into a crash. The launcher installs this as the VM's shutdown
+// callback, and it fires while the process tears down, when the backend
+// may already be gone. This helper is the one place that knows how to
+// ask safely, so every caller uses it instead of dereferencing the
+// backend itself.
+//
+// A null backend is not an error here: the caller may be running without
+// a UI backend at all (headless), in which case there is simply no event
+// loop to quit.
+inline void quitEventLoopIfAlive(UIBackend *backend, int exitCode) {
+    if (!backend)
+        return;
+    backend->quitEventLoop(exitCode);
+}
+
 } // namespace havel::host

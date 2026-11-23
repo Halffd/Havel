@@ -210,6 +210,10 @@ int QtBackend::runEventLoop() {
 }
 
 void QtBackend::quitEventLoop(int exitCode) {
+    // shutdown() resets service_. The shutdown callback can fire after the
+    // backend was shut down, and dereferencing a reset unique_ptr is a
+    // null-pointer dereference that takes the process down mid-teardown.
+    if (!service_) return;
     service_->quitEventLoop(exitCode);
 }
 

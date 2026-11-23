@@ -3870,6 +3870,31 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME clipboard_backend_test COMMAND clipboard_backend_test)
+
+    # UI-backend shutdown path. The launcher's shutdown callback used to
+    # call the pure-virtual quitEventLoop through a possibly-null backend,
+    # which aborted the process with "pure virtual method called" while
+    # tearing down after a script error. This drives the production helper
+    # (quitEventLoopIfAlive) that the callback now uses.
+    add_executable(ui_backend_shutdown_test
+        tests/ui_backend_shutdown_ut.cpp
+    )
+    target_compile_features(ui_backend_shutdown_test PRIVATE cxx_std_23)
+    target_include_directories(ui_backend_shutdown_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(ui_backend_shutdown_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME ui_backend_shutdown_test COMMAND ui_backend_shutdown_test)
 endif()
 
 # ==============================================================================

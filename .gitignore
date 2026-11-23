@@ -43,7 +43,10 @@ log/*.log.*
 *.log
 crash*
 hav
-havel
+# `havel` unanchored matched every path component named "havel", which
+# silently swallowed the new public mod SDK header include/havel/mod.h.
+# Anchor it to the root-level binary artifact it was written for.
+/havel
 src/wm/build/
 src/wm/protocols/
 src/wm/xdg*

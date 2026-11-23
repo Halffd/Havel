@@ -1155,6 +1155,29 @@ op_CALL:
     // Falls through to the full executeInstruction path for anything else
     // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
     if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+      // Fiber-suspending host call on the inline fast path: the callee left a
+      // Pending marker on the stack. Park the goroutine on the pending token
+      // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
+      // resume it with the lifted value.
+      //
+      // ORDER IS LOAD-BEARING: park BEFORE the budget check. The budget
+      // expiry return used to run first, so a tick that exhausted exactly
+      // between a fiber-suspending host call returning makePending(token)
+      // and this park requeued the goroutine with the Pending marker as a
+      // live stack value — never parked, never resumed by its completion
+      // event. The marker then leaked into script-visible values (captured
+      // closure cells, globals), where every later read threw "Length
+      // operator requires array, string, object, or set" (execLengthOp has
+      // no Pending branch) and string interpolation of it printed
+      // null/unknown-type. Live-reproduced 2026-11-22: interval callbacks
+      // throwing Length every fire after the autoclicker started, while
+      // the interval thread kept firing and conditional hotkeys froze.
+      // The slow path (op_CALL epilogue below, :~1269) already had the
+      // correct park-then-budget order; this path now matches it.
+      if (!stack.empty() && stack.back().isPending()) {
+        if (parkIfPendingCallResult())
+          return;
+      }
       // A module-wrapper callee can consume the remaining tick budget inside
       // doCall and unwind with NO result pushed (budget_unwind_no_result_): its
       // wrapped frame stays live on the fiber and supplies the result on resume.
@@ -1162,14 +1185,6 @@ op_CALL:
       // with the budget already spent.
       if (tickBudgetExhausted())
         return;
-      // Fiber-suspending host call on the inline fast path: the callee left a
-      // Pending marker on the stack. Park the goroutine on the pending token
-      // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
-      // resume it with the lifted value.
-      if (!stack.empty() && stack.back().isPending()) {
-        if (parkIfPendingCallResult())
-          return;
-      }
       counter++;
       if ((counter & 8191) == 0) {
         if (fast_tick_budget_ != 0) {
@@ -3496,7 +3511,7 @@ op_STRING_GET_FAST:
           throw std::runtime_error(e.what());
         }
       }
-      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      if (suspension_requested_ || last_suspension_reason_ != 0)
         goto slow_dispatch_fallback;
       // exit() may have been called inside executeInstruction (e.g. a
       // CALL_METHOD to process.exit). Stop immediately, mirroring the slow
@@ -3508,8 +3523,18 @@ op_STRING_GET_FAST:
       // Fiber-suspending host call via CALL_METHOD or another complex
       // opcode: executeInstruction pushed a Pending marker; park the
       // goroutine on the pending token (see parkIfPendingCallResult).
+      //
+      // ORDER IS LOAD-BEARING, same as the inline fast path above: park
+      // BEFORE the budget check. A budget exhaustion between
+      // executeInstruction pushing makePending(token) and this park
+      // previously fell through to slow_dispatch_fallback, leaving the
+      // Pending as a live stack value on a requeued goroutine - never
+      // parked, never resumed, leaking into script-visible values (see
+      // the inline-path comment for the full failure chain).
       if (parkIfPendingCallResult())
         return;
+      if (tickBudgetExhausted())
+        goto slow_dispatch_fallback;
       counter++;
       if ((counter & 8191) == 0) {
         // Scheduler time-slice: when a tick budget is armed, return at this

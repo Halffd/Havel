@@ -113,6 +113,7 @@ nav:
       - Desktop Automation Tool: guides/desktop-automation.md
       - Web Server: guides/web-server.md
       - Using FFI: guides/ffi.md
+      - Native Mods: modding/mods.md
       - Profiling & Debugging: guides/profiling.md
       - Migration Guide: guides/migration.md
   - API Reference:

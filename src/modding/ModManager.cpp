@@ -104,6 +104,39 @@ std::string ModManager::generationPath(const std::string &name, int gen) const {
  * from hookFromMod while the caller already holds it.
  * ------------------------------------------------------------------------- */
 
+void *ModManager::resolveWithOwner(const std::string &symbol,
+                                   std::string &ownerOut) const {
+	ownerOut.clear();
+	if (symbol.empty()) return nullptr;
+
+	/* Mod-owned symbols resolve through the mod's own handle FIRST, and the
+	 * global namespace LAST. This order is not stylistic: a
+	 * dlsym(RTLD_DEFAULT) that lands in an RTLD_GLOBAL library registers a
+	 * scope reference glibc's dlclose can never drop (measured: the library
+	 * stays mapped and shadows later generations, so a hot reload's hook
+	 * would patch the OLD text while its resolve() returned the NEW one).
+	 * The sequence mod-handle -> RTLD_DEFAULT keeps generations closeable and
+	 * keeps a mod's own exports from being shadowed by an earlier one. */
+	if (installing_) {
+		dlerror();
+		void *s = dlsym(installing_->handle, symbol.c_str());
+		if (dlerror() == nullptr && s) { ownerOut = installing_->name; return s; }
+	}
+	/* reverse load order: the most recently loaded generation wins */
+	for (auto it = mods_.rbegin(); it != mods_.rend(); ++it) {
+		if (!(*it)->handle) continue;
+		dlerror();
+		void *s = dlsym((*it)->handle, symbol.c_str());
+		if (dlerror() == nullptr && s) { ownerOut = (*it)->name; return s; }
+	}
+
+	/* host/global scope: symbols not owned by any mod (exe, libc, libs) */
+	dlerror();
+	void *s = dlsym(RTLD_DEFAULT, symbol.c_str());
+	if (dlerror() == nullptr && s) { ownerOut.clear(); return s; }
+	return nullptr;
+}
+
 void *ModManager::resolve(const std::string &modName,
                           const std::string &symbol) const {
 	if (symbol.empty()) return nullptr;
@@ -119,32 +152,8 @@ void *ModManager::resolve(const std::string &modName,
 		return s;
 	}
 
-	/* Mod-owned symbols resolve through the mod's own handle FIRST, and the
-	 * global namespace LAST. This order is not stylistic: a
-	 * dlsym(RTLD_DEFAULT) that lands in an RTLD_GLOBAL library registers a
-	 * scope reference glibc's dlclose can never drop (measured: the library
-	 * stays mapped and shadows later generations, so a hot reload's hook
-	 * would patch the OLD text while its resolve() returned the NEW one).
-	 * The sequence mod-handle -> RTLD_DEFAULT keeps generations closeable and
-	 * keeps a mod's own exports from being shadowed by an earlier one. */
-	if (installing_) {
-		dlerror();
-		void *s = dlsym(installing_->handle, symbol.c_str());
-		if (dlerror() == nullptr && s) return s;
-	}
-	/* reverse load order: the most recently loaded generation wins */
-	for (auto it = mods_.rbegin(); it != mods_.rend(); ++it) {
-		if (!(*it)->handle) continue;
-		dlerror();
-		void *s = dlsym((*it)->handle, symbol.c_str());
-		if (dlerror() == nullptr && s) return s;
-	}
-
-	/* host/global scope: symbols not owned by any mod (exe, libc, libs) */
-	dlerror();
-	void *s = dlsym(RTLD_DEFAULT, symbol.c_str());
-	if (dlerror() == nullptr && s) return s;
-	return nullptr;
+	std::string owner;
+	return resolveWithOwner(symbol, owner);
 }
 
 /* ---------------------------------------------------------------------------
@@ -159,9 +168,10 @@ void *ModManager::hookFromMod(const std::string &symbol, void *replacement) {
 			throw std::runtime_error("hook '" + symbol + "' already installed (owner '" +
 			                         (h.modName.empty() ? std::string("script") : h.modName) + "')");
 	}
-	void *target = resolve("", symbol);
+	std::string targetOwner;
+	void *target = resolveWithOwner(symbol, targetOwner);
 	if (!target)
-		throw std::runtime_error("hook '" + symbol + "': symbol not resolvable (global scope or a loaded mod)");
+		throw std::runtime_error("hook '" + symbol + "': symbol not resolvable (host scope or a loaded mod)");
 
 	char err[HAVEL_MOD_ERR_SIZE];
 	void *tramp = nullptr;
@@ -174,9 +184,10 @@ void *ModManager::hookFromMod(const std::string &symbol, void *replacement) {
 	info.replacement = replacement;
 	info.trampoline = tramp;
 	info.modName = owner;
+	info.targetMod = targetOwner; /* whose text the detour lives on */
 	hooks_.push_back(std::move(info));
-	HAVEL_LOGF_INFO("mod hook: '%s' at %p -> %p (trampoline %p, owner '%s')",
-	                symbol.c_str(), target, replacement, tramp, owner.c_str());
+	HAVEL_LOGF_INFO("mod hook: '%s' at %p -> %p (trampoline %p, owner '%s', target mod '%s')",
+	                symbol.c_str(), target, replacement, tramp, owner.c_str(), targetOwner.c_str());
 	return tramp;
 }
 
@@ -220,15 +231,19 @@ std::vector<HookInfo> ModManager::hooks() const {
 	return hooks_;
 }
 
-void ModManager::removeModHooks(const std::string &ownerName) {
+/* Remove every hook that would dangle when this mod's generation goes away:
+ * one it installed (modName), and one any script installed into its text
+ * (targetMod). A hook whose target lives in the HOST survives - dlclose does
+ * not touch the executable or system libraries. */
+void ModManager::removeModHooks(const std::string &name) {
 	/* caller holds the mutex */
 	for (auto it = hooks_.begin(); it != hooks_.end();) {
-		if (it->modName != ownerName) { ++it; continue; }
+		if (it->modName != name && it->targetMod != name) { ++it; continue; }
 		char err[HAVEL_MOD_ERR_SIZE];
 		int rc = havel_hook_remove(it->target, err, sizeof err);
 		if (rc != 0)
 			HAVEL_LOGF_ERROR("mod hook: removing '%s' from unloaded mod '%s' failed: %s",
-			                 it->symbol.c_str(), ownerName.c_str(), err);
+			                 it->symbol.c_str(), name.c_str(), err);
 		it = hooks_.erase(it);
 	}
 }

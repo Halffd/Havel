@@ -43,6 +43,7 @@ struct HookInfo {
 	void *replacement = nullptr;
 	void *trampoline = nullptr;
 	std::string modName;     /* owning mod, or "" for script-installed */
+	std::string targetMod;   /* whose text the target lives in; "" = host */
 };
 
 class ModManager {
@@ -58,6 +59,12 @@ public:
 	 * loaded mod (a mod loaded with RTLD_GLOBAL is in the global scope, so
 	 * RTLD_DEFAULT usually finds it; the extra search covers RTLD_LOCAL). */
 	void *resolve(const std::string &modName, const std::string &symbol) const;
+
+	/* Same resolution, and reports WHICH mod's text the symbol came from
+	 * ("" when it came from the host: the executable or a system library).
+	 * A hook's target owns that mapping, so unload/reload can drop hooks
+	 * pointing into a generation that is about to be unmapped. */
+	void *resolveWithOwner(const std::string &symbol, std::string &ownerOut) const;
 
 	/* Install a detour on `symbol`, resolved through resolve(). Returns the
 	 * trampoline pointer (callable address of the original). Throws with the

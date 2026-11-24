@@ -3161,6 +3161,37 @@ target_sources(havel_mod_ffi PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFICall.cpp
 )
 target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES} havel_ffi_types)
+
+# -- native modding (.so/.dll patching with hot reload) ----------------------
+# The `mod` module gives scripts mod.load/reload/unload/hook/unhook. The
+# lifecycle manager and the x86-64 detour engine are separate translation
+# units (C), so the plugin is more than one source. -ldl is explicit: older
+# glibc keeps dlopen out of libc proper, and the plugin resolves its
+# dependencies from the main executable only for HAVEL's own symbols.
+add_havel_module_plugin(mod ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ModModule.cpp)
+target_sources(havel_mod_mod PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/modding/hook.c
+  ${CMAKE_SOURCE_DIR}/src/modding/ModManager.cpp)
+target_include_directories(havel_mod_mod PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(havel_mod_mod PRIVATE ${CMAKE_DL_LIBS})
+
+# Demo mod used by scripts/tests/modding/test_mod_hot_reload.hv and the host
+# lifecycle gate (scripts/ci/mod-lifecycle-test.sh). Built beside the module
+# plugins so a Havel test can locate it from the binary's directory, exactly
+# the way the other binary-relative tests do. Not installed.
+if(NOT WIN32)
+  add_library(havel_demo_mod MODULE ${CMAKE_SOURCE_DIR}/examples/mods/demo_mod.c)
+  set_target_properties(havel_demo_mod PROPERTIES
+    PREFIX "lib"
+    # libdemo_mod.so: the file's stem is the mod's name, per the SDK
+    # (havel_demo_mod.so would load as the mod name "havel_demo_mod")
+    OUTPUT_NAME "demo_mod"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/mods"
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(havel_demo_mod PRIVATE ${CMAKE_SOURCE_DIR}/include)
+endif()
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)

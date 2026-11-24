@@ -1,0 +1,161 @@
+// Hot reload of a native mod, through the real `mod` module.
+//
+// A mod is a .so exporting the protocol in include/havel/mod.h. This test
+// loads the example demo mod (examples/mods/demo_mod.c, built as
+// libdemo_mod.so beside the havel binary), proves the detour the mod
+// installed at init fires through a real function call, reloads it and proves
+// the state round-tripped while the instance is genuinely fresh, then
+// unloads it and re-loads it.
+//
+// The trap it guards: a stale generation left mapped makes resolve() find
+// the OLD code, so a reload's hook would patch text that no longer runs
+// while the mod's own state appears lost, and the re-load would come back
+// with the previous instance's state.
+//
+// Expected: PASS, exit 0. Skips (exit 0) when the demo mod is not built in
+// this configuration - the same convention as the hpkg toolchain test.
+use "mod"
+use "ffi"
+use "fs"
+use "sys"
+use "process"
+
+// ------------------------------------------------------------ locate the mod
+// The demo mod is built beside the havel binary by CMake, so HAVEL_BINARY's
+// directory is the authoritative source (the same rule the hpkg toolchain
+// test uses: probing build-debug first validated a foreign build's binary).
+DEMO = ""
+bindir = sys.env("HAVEL_BINARY")
+if bindir != null && bindir != "" {
+    lastSlash = -1
+    bi = #bindir - 1
+    while bi >= 0 {
+        if bindir[bi:bi+1] == "/" { lastSlash = bi; bi = -1 }
+        bi = bi - 1
+    }
+    if lastSlash > 0 {
+        DEMO = "${bindir[0:lastSlash]}/mods/libdemo_mod.so"
+    }
+}
+if DEMO == "" {
+    for c in ["${sys.cwd()}/mods/libdemo_mod.so",
+              "${sys.cwd()}/build-debug/mods/libdemo_mod.so",
+              "${sys.cwd()}/build-release/mods/libdemo_mod.so"] {
+        if fs.exists(c) { DEMO = c; break }
+    }
+}
+if DEMO == "" || !fs.exists(DEMO) {
+    print("SKIP mod_hot_reload: libdemo_mod.so not built in this configuration")
+    process.exit(0)
+}
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+// helpers: resolve the mod's exports through the manager (pointer values)
+fn modFn(name, symbol) {
+    p = mod.sym(name, symbol)
+    if p == null {
+        print("FAIL symbol not found: " + symbol)
+        process.exit(1)
+    }
+    return p
+}
+
+fn callInt(handle, symbol) {
+    p = ffi.sym(handle, symbol)
+    return ffi.call(p, "int32", [])
+}
+
+// ---------------------------------------------------------------------- load
+info = mod.load(DEMO)
+check("load returns generation 1", info.generation == 1)
+check("load names the mod from the file", info.name == "demo_mod")
+check("list reports one mod", #mod.list() == 1)
+
+lib = ffi.open(info.loadedPath)
+counter = callInt(lib, "demo_counter")
+check("counter starts at 0", counter == 0)
+check("bump returns 1", callInt(lib, "demo_bump") == 1)
+check("bump returns 2", callInt(lib, "demo_bump") == 2)
+
+// the detour the mod installed on its own demo_add must fire
+addPtr = ffi.sym(lib, "demo_add")
+check("hooked demo_add(2,3) == 1005", ffi.call(addPtr, "int32", ["int32", "int32"], 2, 3) == 1005)
+
+hooks = mod.hooks()
+check("one hook registered", #hooks == 1)
+if #hooks == 1 {
+    check("hook attributed to the mod", hooks[0].mod == "demo_mod")
+    check("hook names the symbol", hooks[0].symbol == "demo_add")
+}
+
+// -------------------------------------------------------------------- reload
+// Release the previous generation's ffi handle first: an open dlopen handle
+// is a reference, so while one exists the manager's dlclose cannot be the
+// last one and the generation stays mapped. (The manager's own bookkeeping is
+// unaffected - that is the point of resolving through the mod's handle.)
+ffi.close(lib)
+info2 = mod.reload("demo_mod")
+check("reload bumps the generation", info2.generation == 2)
+check("reload stages a new file", info2.loadedPath != info.loadedPath)
+
+lib2 = ffi.open(info2.loadedPath)
+check("state preserved across reload (counter == 2)", callInt(lib2, "demo_counter") == 2)
+check("fresh instance really loaded (instances == 1)", callInt(lib2, "demo_instances") == 1)
+check("new generation re-installs its hook: demo_add(2,3) == 1005",
+     ffi.call(ffi.sym(lib2, "demo_add"), "int32", ["int32", "int32"], 2, 3) == 1005)
+check("still exactly one hook", #mod.hooks() == 1)
+
+// a script-installed hook on a mod export, then unhook. demo_triple is the
+// pair for this: the engine supports one detour per target and the mod's own
+// init already took demo_add.
+triplePtr = ffi.sym(lib2, "demo_triple")
+check("demo_triple(4) == 12 before the script hook",
+     ffi.call(triplePtr, "int32", ["int32"], 4) == 12)
+tramp = mod.hook("demo_triple", modFn("demo_mod", "demo_hooked_triple"))
+if tramp != null {
+    check("script hook installed", #mod.hooks() == 2)
+    check("hooked demo_triple(4) == 1012",
+          ffi.call(triplePtr, "int32", ["int32"], 4) == 1012)
+    check("mod.unhook removes it", mod.unhook("demo_triple"))
+    check("demo_triple(4) == 12 after unhook",
+          ffi.call(triplePtr, "int32", ["int32"], 4) == 12)
+    check("hook count back to 1", #mod.hooks() == 1)
+} else {
+    print("FAIL mod.hook on demo_triple failed")
+    failures = failures + 1
+}
+
+// --------------------------------------------------------------- unload/reload
+// Same rule as before the reload: no open handle into the generation being
+// torn down, or dlclose is not the last reference and the next load at that
+// generation path returns the still-mapped instance (state appears to
+// survive the unload, which is exactly the trap).
+ffi.close(lib2)
+check("unload returns true", mod.unload("demo_mod"))
+check("list is empty after unload", #mod.list() == 0)
+check("hooks are removed on unload", #mod.hooks() == 0)
+
+info3 = mod.load(DEMO)
+check("re-load returns generation 1", info3.generation == 1)
+lib3 = ffi.open(info3.loadedPath)
+check("re-load restarts state at 0", callInt(lib3, "demo_counter") == 0)
+check("re-load restarts the instance count", callInt(lib3, "demo_instances") == 1)
+ffi.close(lib3)
+check("unload after re-load", mod.unload("demo_mod"))
+
+if failures > 0 {
+    print("FAIL mod_hot_reload: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS mod_hot_reload")
+process.exit(0)

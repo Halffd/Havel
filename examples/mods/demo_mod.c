@@ -34,9 +34,13 @@ static int g_instances;
 static void *g_demo_add_trampoline;
 
 /* prototypes: init() installs a detour on demo_add that redirects to
- * demo_hooked_add, both defined below */
+ * demo_hooked_add, both defined below. demo_triple/demo_hooked_triple are
+ * the pair the SCRIPT-level hook test uses (a symbol the mod itself leaves
+ * unhooked, since one detour per target is supported). */
 __attribute__((visibility("default"))) int demo_add(int a, int b);
 __attribute__((visibility("default"))) int demo_hooked_add(int a, int b);
+__attribute__((visibility("default"))) int demo_triple(int x);
+__attribute__((visibility("default"))) int demo_hooked_triple(int x);
 
 static size_t state_size(void) { return sizeof(g_counter); }
 static void state_save(void *buf) { memcpy(buf, &g_counter, sizeof(g_counter)); }
@@ -105,10 +109,23 @@ static int g_demo_scratch;
  * in turn makes it long enough for the engine's 5-byte patch. A body like
  * `lea eax,[rdi+rsi]; ret` is only 4 bytes and is legitimately un-hookable. */
 __attribute__((noinline, visibility("hidden"))) static void demo_note(int v) {
-    g_demo_scratch += v;
+	g_demo_scratch += v;
 }
 
-__attribute__((visibility("default"))) int demo_add(int a, int b) {
+/* The pointer form: the caller's array escapes through it, which is what
+ * gives the caller a frame when a single noinline call would not (a
+ * register-only body schedules the call first, and relocating a call's
+ * rel32 is exactly what the hook decoder must refuse). */
+__attribute__((noinline, visibility("hidden"))) static void demo_note_arr(const int *p) {
+	g_demo_scratch += p ? p[0] : 0;
+}
+
+/* optnone: the demo mod is built with the release flags (-O3 -flto), and at
+ * that level IPA eliminates any escaping-store trick, leaving a body too
+ * short to hook. -O0 codegen gives the function the full, deterministic
+ * prologue the detour engine needs. This is a test-fixture concern, not a
+ * modding-API rule: real mods are compiled by their author's own build. */
+__attribute__((visibility("default"), optnone)) int demo_add(int a, int b) {
     demo_note(a);
     demo_note(b);
     int c = a + b;
@@ -117,4 +134,27 @@ __attribute__((visibility("default"))) int demo_add(int a, int b) {
 
 __attribute__((visibility("default"))) int demo_hooked_add(int a, int b) {
     return a + b + 1000;
+}
+
+/* Same shape as demo_add: a frame (via demo_note) so the hook engine has
+ * prologue bytes to steal, and a value a test can distinguish from the ho
+ * oked replacement. Left un-hooked by init so a script can take it.
+ * A single noinline call leaves no frame (a register-only body schedules the
+ * call first, and a relocated call's rel32 cannot be stolen), so the
+ * escaping array is what forces the prologue. */
+__attribute__((visibility("default"), optnone)) int demo_triple(int x) {
+    int buf[8];
+    /* the whole array escapes into demo_note_arr, so none of these stores can
+     * be eliminated: they are the >5 bytes of position-independent prologue
+     * the detour needs before the (unrelocatable) call. */
+    buf[0] = x;
+    buf[1] = x + 1;
+    buf[2] = x + 2;
+    demo_note_arr(buf);
+    buf[3] = buf[0] * 3;
+    return buf[3];
+}
+
+__attribute__((visibility("default"))) int demo_hooked_triple(int x) {
+    return x * 3 + 1000;
 }

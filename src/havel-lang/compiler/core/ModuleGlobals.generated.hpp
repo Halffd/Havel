@@ -65,6 +65,7 @@ inline constexpr const char *kModuleGlobals[] = {
     "mapmanager",
     "math",
     "media",
+    "mod",
     "mouse",
     "pack",
     "physics",

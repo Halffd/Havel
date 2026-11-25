@@ -1,0 +1,99 @@
+# Template file for 'havel'
+pkgname=havel
+version=0.3.9.20261125
+revision=1
+# Pinned to the commit this template was verified against. Bump _commit,
+# version and checksum together (version = <next release>.<commit date>).
+_commit=b53eb5f2962e468a037df5a32a2e8d9647958f13
+# Void keeps LLVM under /usr/lib/llvm/<major>/ and does not put
+# LLVMConfig.cmake on CMake's default search path, so both the dependency
+# names and LLVM_DIR have to name the major version explicitly.
+_llvmver=21
+build_style=cmake
+# The upstream build is only supported with clang + lld (C++23, ThinLTO in
+# the Release flags). The distro packaging script that ships in the tree
+# (packaging/package.sh) uses this exact set, so packages built here behave
+# like the .deb/.rpm artifacts.
+configure_args="-DCMAKE_BUILD_TYPE=Release
+ -DCMAKE_C_COMPILER=clang
+ -DCMAKE_CXX_COMPILER=clang++
+ -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
+ -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
+ -DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld
+ -DLLVM_DIR=${XBPS_CROSS_BASE}/usr/lib/llvm/${_llvmver}/lib/cmake/llvm
+ -DHAVEL_BUILD_COMMIT=${_commit}
+ -DHAVEL_BUILD_BRANCH=main
+ -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+ -DPORTABLE_BUILD=ON
+ -DUSE_CLANG=ON
+ -DENABLE_LLVM=ON
+ -DENABLE_CRANELIFT=OFF
+ -DENABLE_HAVEL_LANG=ON
+ -DENABLE_MODULE_PLUGINS=ON
+ -DENABLE_TESTS=OFF
+ -DENABLE_HVDB=ON
+ -DENABLE_HAVEL_DAP=ON
+ -DENABLE_HVTEST=ON
+ -DENABLE_QT=ON
+ -DENABLE_QT_UI_BACKEND=ON
+ -DENABLE_GTK=OFF
+ -DENABLE_IMGUI=OFF
+ -DENABLE_HEADLESS=OFF"
+hostmakedepends="pkg-config python3 wayland-protocols"
+makedepends="clang${_llvmver} llvm${_llvmver}-devel lld${_llvmver}
+ json-c++ fmt-devel spdlog
+ qt6-base-devel
+ libX11-devel libXrandr-devel libXinerama-devel libXcomposite-devel
+ libXtst-devel libXi-devel libXfixes-devel libXdamage-devel
+ libxkbcommon-devel wayland-devel
+ dbus-devel alsa-lib-devel pulseaudio-devel pipewire-devel
+ pcre2-devel libffi-devel minizip-devel libcurl-devel readline-devel
+ zlib-devel libpng-devel libjpeg-turbo-devel
+ leptonica-devel tesseract-ocr-devel libopencv-devel"
+short_desc="Window manager and scripting language"
+maintainer="Half <guhalfeld@hotmail.com>"
+license="MIT"
+homepage="https://github.com/Halffd/Havel"
+distfiles="https://github.com/Halffd/Havel/archive/${_commit}.tar.gz>${pkgname}-${_commit}.tar.gz"
+checksum=d592bc8e13d6edb3a49a61b8eba93bbe86c5a20b0e036fcedb71427ac6c4a98a
+wrksrc="Havel-${_commit}"
+# The tree has no `make test` target with ENABLE_TESTS=OFF; the project's
+# own gate (hvtest --smoke --slow-too) is run out-of-tree because it needs
+# a writable scratch dir and a full script corpus.
+make_check=no
+
+post_build() {
+	# Precompile modules/std/*.hv to .hvc. The install rule for
+	# share/havel/modules requires this target to have run.
+	cd build
+	ninja compile-stdlib-bytecode
+}
+
+# NOTE: do not define do_install() in this template. A template-level
+# do_install() REPLACES the cmake build-style's install step (xbps-src only
+# sources the build-style when the template does not define the step), so the
+# package would end up empty. Everything that has to happen after the install
+# belongs in post_install().
+
+post_install() {
+	# Upstream sets LIBRARY_OUTPUT_DIRECTORY for the UI toolkit plugins
+	# (havel_toolkit_qt.so) but has no install() rule for them, so the
+	# package shipped no UI backend at all: `havel --repl` died with
+	# "No UI backend available. Use --minimal or --run for REPL without UI."
+	# and hotkey scripts could not register. /usr/lib/havel/toolkits is on
+	# the loader's search path (see the loader's find_library trace).
+	vmkdir usr/lib/havel/toolkits
+	for _tk in ${wrksrc}/build/toolkits/*.so; do
+		[ -e "${_tk}" ] || continue
+		cp -a "${_tk}" ${PKGDESTDIR}/usr/lib/havel/toolkits/
+	done
+
+	# Upstream commits two stray compiled test binaries under scripts/tests/,
+	# which the install rules copy into /usr/share. Void's pkglint rejects
+	# ELF files below /usr/share, so drop them from the package.
+	rm -f ${PKGDESTDIR}/usr/share/havel/scripts/tests/io/padctl
+	rm -f ${PKGDESTDIR}/usr/share/havel/scripts/tests/main/test_ranges
+
+	vlicense LICENSE
+	vdoc README.md
+}

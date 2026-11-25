@@ -952,16 +952,11 @@ bool Scheduler::resumeExternalWithValue(uint32_t token, Value result) {
     }
   }
   if (!target) {
-    // The completion was computed but no goroutine currently carries this
-    // token. Two sub-cases: (a) the goroutine was really removed (script
-    // aborted, teardown) — the stash is harmless and gets swept never;
-    // (b) a race where the goroutine is mid-park (parkIfPendingCallResult
-    // set the wait_handle on the stack path, but its Suspended record /
-    // wait_handle write landed after we scanned). Stash instead of drop:
-    // sweepAbandonedExternals() re-checks every tick and delivers to the
-    // parked goroutine. Dropping here was the "lost FFI resume" that left
-    // goroutines parked forever (update() in window.active() never woke;
-    // all goroutines appeared to stop while hotkeys kept firing).
+    // No goroutine carries this token right now: either it was really
+    // removed (teardown — the stash then lives until the map dies) or
+    // it is mid-park and its wait_handle write landed after this scan.
+    // Stash for sweepAbandonedExternals() rather than dropping: the
+    // drop was the lost-FFI-resume that parked goroutines forever.
     ::havel::debug("[Scheduler] resumeExternalWithValue: token {} "
                    "unmatched - stashing for sweep",
                    token);
@@ -1021,11 +1016,6 @@ size_t Scheduler::sweepAbandonedExternals() {
     unpark(g);
   }
   return revived;
-}
-
-bool Scheduler::hasAbandonedExternals() const {
-  std::lock_guard lock(abandoned_external_mutex_);
-  return !abandoned_external_results_.empty();
 }
 
 bool Scheduler::removeHotkeyByAlias(const std::string &alias) {

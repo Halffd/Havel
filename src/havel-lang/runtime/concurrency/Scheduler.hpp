@@ -607,9 +607,6 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // goroutines_mutex_ once, compares against the (tiny) stash map.
     size_t sweepAbandonedExternals();
 
-    // True when any stash entry exists (hasPendingWork arm).
-    bool hasAbandonedExternals() const;
-
     // Count suspended goroutines awaiting an event-driven resume that
     // still matters for script completion (async host calls, channel
     // waits) - i.e. excluding persistent hotkey/update goroutines,
@@ -720,20 +717,15 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // - a sleeping goroutine whose deadline has passed (wake pending)
     // - a goroutine suspended on an EVENT-DRIVEN awaitable (EXTERNAL
     //   async host call, channel, thread join, timer, coroutine): its
-    //   resume arrives as an EventQueue event, and the tick that drains
-    //   that event (tickScheduler's event_queue_->processAll()) is the
-    //   thing that unparks it. Skipping the tick when such a waiter
-    //   exists starved exactly those goroutines: update() parked in
-    //   window.active() while the pump idled on hasPendingWork()==false,
-    //   the completion event sat in the queue unprocessed, and the
-    //   goroutine never woke (the "all goroutines stop but hotkeys still
-    //   trigger" stall — hotkeys are woken by wakeHotkey, not by this
-    //   pump). The EventQueue side is checked by the caller (tick
-    //   driver) via eventQueueHasPending(); this probe covers the
-    //   scheduler-side state.
-    // - an abandoned EXTERNAL park (resume already computed but the
-    //   wait target was gone at delivery): sweepAbandonedExternals()
-    //   can still deliver it.
+    //   resume arrives as an EventQueue event, and only the tick that
+    //   drains that event (tickScheduler's event_queue_->processAll())
+    //   unparks it. Skipping the tick while such a waiter exists
+    //   starved exactly those goroutines (the completion sat in the
+    //   queue unprocessed). The EventQueue side is checked by the tick
+    //   driver (HavelEngine::tickGoroutines: eventQueue->size() > 0);
+    //   this probe covers the scheduler-side state.
+    // - an abandoned EXTERNAL park (resume computed but the wait target
+    //   was gone at delivery): sweepAbandonedExternals() can deliver it.
     // Used by HavelEngine::processGoroutinesInline to skip the expensive
     // main-fiber save/restore when a single-threaded script (no siblings)
     // fires the yield callback from its dispatch loop.

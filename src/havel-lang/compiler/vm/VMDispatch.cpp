@@ -1160,20 +1160,14 @@ op_CALL:
       // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
       // resume it with the lifted value.
       //
-      // ORDER IS LOAD-BEARING: park BEFORE the budget check. The budget
-      // expiry return used to run first, so a tick that exhausted exactly
-      // between a fiber-suspending host call returning makePending(token)
-      // and this park requeued the goroutine with the Pending marker as a
-      // live stack value — never parked, never resumed by its completion
-      // event. The marker then leaked into script-visible values (captured
-      // closure cells, globals), where every later read threw "Length
-      // operator requires array, string, object, or set" (execLengthOp has
-      // no Pending branch) and string interpolation of it printed
-      // null/unknown-type. Live-reproduced 2026-11-22: interval callbacks
-      // throwing Length every fire after the autoclicker started, while
-      // the interval thread kept firing and conditional hotkeys froze.
-      // The slow path (op_CALL epilogue below, :~1269) already had the
-      // correct park-then-budget order; this path now matches it.
+      // ORDER IS LOAD-BEARING: park BEFORE the budget check. If the
+      // budget expires between a fiber-suspending host call returning
+      // makePending(token) and this park, the goroutine would be
+      // requeued with the Pending marker as a live stack value — never
+      // parked, never resumed by its completion event. The marker then
+      // leaked into script-visible values (reads threw "Length operator
+      // requires...", interpolation printed null). The slow path below
+      // already had this order; keep both in sync.
       if (!stack.empty() && stack.back().isPending()) {
         if (parkIfPendingCallResult())
           return;
@@ -3525,12 +3519,9 @@ op_STRING_GET_FAST:
       // goroutine on the pending token (see parkIfPendingCallResult).
       //
       // ORDER IS LOAD-BEARING, same as the inline fast path above: park
-      // BEFORE the budget check. A budget exhaustion between
-      // executeInstruction pushing makePending(token) and this park
-      // previously fell through to slow_dispatch_fallback, leaving the
-      // Pending as a live stack value on a requeued goroutine - never
-      // parked, never resumed, leaking into script-visible values (see
-      // the inline-path comment for the full failure chain).
+      // BEFORE the budget check, or a budget exhaustion here leaves the
+      // Pending as a live stack value on a requeued goroutine (see the
+      // inline-path comment).
       if (parkIfPendingCallResult())
         return;
       if (tickBudgetExhausted())

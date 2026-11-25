@@ -766,15 +766,12 @@ void VM::executePendingTimerCallbacks() {
   for (auto &cb : callbacks) {
     if (exit_requested_.load())
       break;
-    // Skip callbacks for intervals that were stopped after their
-    // TIMER_FIRE event was queued. intervalStop() joins the pusher
-    // thread and releases the callback pin, but events already sitting
-    // in the queue still fired their bodies — up to a whole backlog of
-    // send()/click() calls running AFTER the script's stop() had
-    // returned and "handles cleared" was printed (timestamped probe:
-    // 7/8/18 post-stop body executions, 5ms cadence). The heap Interval
-    // object survives until GC sweeps it, with isRunning() false once
-    // stopped — that is the authoritative cancellation signal.
+    // Skip callbacks for intervals stopped after their TIMER_FIRE event
+    // was queued: intervalStop() joins the pusher and releases the pin,
+    // but queued events still fired — up to a whole backlog running
+    // after the script's stop() returned (probe: 7/8/18 post-stop
+    // bodies). The heap Interval survives until GC sweeps it;
+    // isRunning() false = cancelled, the authoritative signal.
     if (!cb.is_timeout) {
       ::havel::Interval *interval = heap_.interval(cb.timer_id);
       if (!interval || !interval->isRunning()) {

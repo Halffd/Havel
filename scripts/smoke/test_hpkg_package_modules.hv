@@ -1,0 +1,131 @@
+// Regression: installed packages are the module loader's bare-name search path.
+//
+// What: `hpkg install` copies a package into ~/.havel/packages/<name>/<name>.hv
+//       (nested, matching what the manifest and `hpkg list`/`info` expect), and
+//       the VM's module loader resolves a bare module name through that
+//       directory (src/havel-lang/runtime/ModuleLoader.cpp, resolution step 5)
+//       with no script-local file and no search-path entry involved.
+//
+// Why: this exact behavior was twice reported as missing - "single-file install
+//       creates a flat structure" and "use mypkg won't find anything". Both were
+//       checked against stale code. This test pins the current contract so the
+//       next reader has proof instead of a doubt: install a package with a
+//       scratch HOME, then `use` it from a NEUTRAL directory that contains no
+//       local copy of the module, so the only thing that can satisfy the import
+//       is the installed package.
+//
+// Negative control: the same import with an uninstalled name must fail, or the
+// positive checks could pass for the wrong reason (a stale module cache or the
+// script's own directory).
+//
+// HOME is redirected with `env HOME=...` for every child (process.run execs
+// directly, so the assignment goes through env(1)), so a developer's real
+// ~/.havel/packages is never touched.
+
+use "fs"
+use "process"
+use "sys"
+
+// ------------------------------------------------------------ locate the tools
+// Same convention as the toolchain-store test: prefer the hpkg/havel built
+// beside HAVEL_BINARY's havel, fall back to the cwd candidates.
+HPKG = ""
+HAVEL = ""
+bindir = sys.env("HAVEL_BINARY")
+if bindir != null && bindir != "" {
+    lastSlash = -1
+    bi = #bindir - 1
+    while bi >= 0 {
+        if bindir[bi:bi+1] == "/" { lastSlash = bi; bi = -1 }
+        bi = bi - 1
+    }
+    if lastSlash > 0 {
+        dir = bindir[0:lastSlash]
+        HPKG = dir + "/hpkg"
+        HAVEL = dir + "/havel"
+    }
+}
+for c in ["${sys.cwd()}/build-debug/hpkg", "${sys.cwd()}/build-release/hpkg",
+          "${sys.cwd()}/hpkg"] {
+    if HPKG == "" && fs.isFile(c) { HPKG = c }
+}
+for c in ["${sys.cwd()}/build-debug/havel", "${sys.cwd()}/build-release/havel",
+          "${sys.cwd()}/havel"] {
+    if HAVEL == "" && fs.isFile(c) { HAVEL = c }
+}
+if HPKG == "" || HAVEL == "" {
+    print("SKIP hpkg_package_modules: hpkg/havel not built in this configuration")
+    process.exit(0)
+}
+
+TMP = sys.tmpdir() + "/havel_pkg_mod_" + sys.pid()
+WORK = TMP + "/src"          // package source dir
+NEUTRAL = TMP + "/neutral"   // run dir: no local modules, only installed ones
+HOME = TMP + "/home"
+fs.rmdir(TMP, true)
+fs.mkdirAll(WORK)
+fs.mkdirAll(NEUTRAL)
+fs.mkdirAll(HOME)
+
+env_prefix = "env HOME=" + HOME
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+// ------------------------------------------------------------------- install
+// process.run execs directly (no shell), so the cd/&& go through sh -c.
+r = process.run(env_prefix + " sh -c 'cd " + WORK + " && " + HPKG + " init mypkg'")
+check("hpkg init succeeds", r.exitCode == 0 && fs.exists(WORK + "/havel.toml") && fs.exists(WORK + "/mypkg.hv"))
+
+// A distinctive value so a satisfied import can only be the installed file.
+fs.append(WORK + "/mypkg.hv", "fn add(a, b) { return a + b }")
+
+r = process.run(env_prefix + " " + HPKG + " install " + WORK + "/mypkg.hv")
+check("hpkg install (single file) succeeds", r.exitCode == 0)
+
+installed = HOME + "/.havel/packages/mypkg/mypkg.hv"
+check("install nests the module as <name>/<name>.hv", fs.exists(installed))
+check("install leaves no flat <name>.hv beside the directory",
+      !fs.exists(HOME + "/.havel/packages/mypkg.hv"))
+check("install did not create the directory form",
+      !fs.exists(HOME + "/.havel/packages/mypkg/havel.toml"))
+
+// ------------------------------------------------------- resolve from install
+fs.write(NEUTRAL + "/use_qualified.hv", "use mypkg\nprint(\"qualified=\" + mypkg.add(2, 3))\n")
+fs.write(NEUTRAL + "/use_named.hv", "use { add } from mypkg\nprint(\"named=\" + add(1, 2))\n")
+fs.write(NEUTRAL + "/use_wild.hv", "use mypkg.*\nprint(\"wild=\" + add(3, 4))\n")
+
+// Children inherit HAVEL_STDLIB from the suite's environment; passing it
+// explicitly would render the literal "null" when unset (sys.env -> null).
+r = process.run(env_prefix + " " + HAVEL + " run " + NEUTRAL + "/use_qualified.hv")
+check("use mypkg + mypkg.add() resolves from the installed package",
+      r.exitCode == 0 && r.stdout.includes("qualified=5"))
+
+r = process.run(env_prefix + " " + HAVEL + " run " + NEUTRAL + "/use_named.hv")
+check("use { add } from mypkg resolves from the installed package",
+      r.exitCode == 0 && r.stdout.includes("named=3"))
+
+r = process.run(env_prefix + " " + HAVEL + " run " + NEUTRAL + "/use_wild.hv")
+check("use mypkg.* resolves bare members from the installed package",
+      r.exitCode == 0 && r.stdout.includes("wild=7"))
+
+// ------------------------------------------------------------ negative control
+fs.write(NEUTRAL + "/use_missing.hv", "use nosuchpkg\nprint(\"nope\")\n")
+r = process.run(env_prefix + " " + HAVEL + " run " + NEUTRAL + "/use_missing.hv")
+check("an uninstalled bare name fails", r.exitCode != 0 && !r.stdout.includes("nope"))
+
+fs.rmdir(TMP, true)
+
+if failures > 0 {
+    print("FAIL hpkg_package_modules: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS hpkg_package_modules")
+process.exit(0)

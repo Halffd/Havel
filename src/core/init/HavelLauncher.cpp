@@ -775,8 +775,18 @@ public:
         }
 
         info("Havel started successfully - running in system tray");
-        havel_inst.setShutdownCallback(
-            [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
+        // Capture the validated backend instead of re-fetching it: the
+        // shutdown callback runs while the process tears down, and
+        // UIManager::backend() can return null then (its backend_ is
+        // destroyed without resetting initialized_, so the lazy re-create
+        // never happens). quitEventLoopIfAlive also refuses to call
+        // through a null pointer - quitEventLoop is pure virtual, so that
+        // reached the pure-virtual thunk and aborted the process with
+        // "pure virtual method called" instead of letting the script's
+        // error exit cleanly.
+        havel_inst.setShutdownCallback([backend](int code) {
+          host::quitEventLoopIfAlive(backend, code);
+        });
 
         if (auto *io = havel_inst.getIO()) {
           backend->setIdleCallback([io]() { io->PumpOnce(); });
@@ -888,8 +898,18 @@ public:
         return 1;
       }
 
-      havel_inst.setShutdownCallback(
-          [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
+      // Capture the validated backend instead of re-fetching it: the
+      // shutdown callback runs while the process tears down, and
+      // UIManager::backend() can return null then (its backend_ is
+      // destroyed without resetting initialized_, so the lazy re-create
+      // never happens). quitEventLoopIfAlive also refuses to call
+      // through a null pointer - quitEventLoop is pure virtual, so that
+      // reached the pure-virtual thunk and aborted the process with
+      // "pure virtual method called" instead of letting the script's
+      // error exit cleanly.
+      havel_inst.setShutdownCallback([backend](int code) {
+        host::quitEventLoopIfAlive(backend, code);
+      });
 
       if (auto *io = havel_inst.getIO()) {
         backend->setIdleCallback([io]() { io->PumpOnce(); });

@@ -1,0 +1,28 @@
+// LD_PRELOAD interposition through the real `mod` module.
+//
+// scripts/ci/ld-preload-test.sh preloads a tiny .so exporting
+// havel_ld_preload_probe() and runs this script. mod.sym("", symbol) searches
+// RTLD_DEFAULT first, so a preloaded library's export must be callable with
+// no mod.load() and no dlopen() in the script.
+//
+// Expected with the preload: PASS, exit 0.
+// Expected without it: FAIL, exit 1 (the symbol is not in the global scope).
+use "mod"
+use "ffi"
+use "process"
+
+EXPECTED = 4242
+
+p = mod.sym("", "havel_ld_preload_probe")
+if p == null {
+    print("FAIL ld preload probe symbol not found")
+    process.exit(1)
+}
+
+got = ffi.call(p, "int32", [])
+if got == EXPECTED {
+    print("PASS ld preload probe resolves and calls")
+} else {
+    print("FAIL ld preload probe returned ${got}, expected ${EXPECTED}")
+    process.exit(1)
+}

@@ -168,7 +168,15 @@ handle.
 
 # End-to-end through the VM and the `mod` module
 HAVEL_STDLIB=modules/std build-debug/havel run scripts/tests/modding/test_mod_hot_reload.hv
+
+# RTLD_DEFAULT resolution from a library injected with LD_PRELOAD
+HAVEL_BIN=/abs/path/to/havel HAVEL_STDLIB=/abs/path/to/modules/std ./scripts/ci/ld-preload-test.sh
 ```
+
+`ld-preload-test.sh` preloads a probe `.so`, resolves its export with
+`mod.sym("", ...)`, and calls it through `ffi`. It then reruns the same script
+without `LD_PRELOAD` and requires the lookup to fail, so the test cannot pass
+unless the preloaded object itself supplied the symbol.
 
 `examples/mods/demo_mod.c` is the worked example: it hooks its own export at
 init, round-trips state through the protocol, and unhooks on unload.

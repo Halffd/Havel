@@ -862,6 +862,8 @@ struct StructMethodDef : public ASTNode {
     std::unique_ptr<BlockStatement> body;
     bool isConstructor;
     bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+    // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+    bool contains_yield = false;
 	std::vector<TypeParam> typeParameters;
 
 	StructMethodDef(const std::string &methodName,
@@ -971,6 +973,8 @@ struct ClassMethodDef : public ASTNode {
     bool isConstructor;
     bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
     bool isClassMethod = false; // true if @@fn (class/static method)
+    // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+    bool contains_yield = false;
 	std::vector<TypeParam> typeParameters;
 
 	ClassMethodDef(const std::string &methodName,
@@ -1071,6 +1075,8 @@ struct TraitMethod : public ASTNode {
   std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<BlockStatement>
       defaultBody; // nullptr if no default implementation
+  // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+  bool contains_yield = false;
 
   TraitMethod(std::unique_ptr<Identifier> n,
               std::vector<std::unique_ptr<FunctionParameter>> params,
@@ -2281,6 +2287,11 @@ struct FunctionDeclaration : public Statement {
     std::optional<std::unique_ptr<TypeAnnotation>>
         returnType; // Optional return type annotation
     bool is_coroutine = false; // co fn - creates a fiber
+    // True when this body reaches a `yield`/`await`, computed ONCE at parse
+    // time. Must match ByteCompiler::functionContainsYield's semantics
+    // exactly (nested functions/lambdas do NOT count: they get their own
+    // flag). See scripts/tests/test_is_generator_parity.hv.
+    bool contains_yield = false;
 	std::vector<TypeParam> typeParameters;
 
 	FunctionDeclaration(
@@ -3014,6 +3025,8 @@ struct UpdateExpression : public Expression {
 struct LambdaExpression : public Expression {
   std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
+  // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+  bool contains_yield = false;
 
   LambdaExpression() { kind = NodeType::LambdaExpression; }
   LambdaExpression(std::vector<std::unique_ptr<FunctionParameter>> params,

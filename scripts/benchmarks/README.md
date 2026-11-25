@@ -112,6 +112,14 @@ For the self-hosted-parse workload (Phase C), the generator is
 
 ## Phase C: where the self-hosted parse actually spends its CPU
 
+> **STATUS (2026-11-22): this diagnosis was ACTED ON. BOTH targets are
+> closed.** Target (1) by the de-seeding fix in "Phase D" and then by the
+> save-and-swap in "VM-OPT-001". Target (2) — the `containsYield` hoist —
+> landed as `f5bdb87cad`; the walk is gone from the compile path and is
+> now a parse-time field read. See "RESOLVED: containsYield hoisted to
+> parse time" below. The 437.4 us/call figure is historical, not current.
+> Read this section as a diagnosis, not as work to do.
+
 **Headline (2026-10-11, post-diagnosis): the parse's CPU is not
 bytecode dispatch — it is C++ map copying in the module call path.**
 ~80% of the parse phase's ~53s of user CPU (567-line workload, verified
@@ -142,6 +150,61 @@ Implications:
   (2) hoist containsYield (mark generator/coroutine bodies at parse
   time instead of re-walking per compiled function). The calls bench
   (0.88 row above) is the leading indicator for (1).
+
+  **Both (1) and (2) are now DONE, in that order, with a remeasure between
+  them** — see "Phase D" for (1)-a, "VM-OPT-001" for (1)-b. The
+  sequencing discipline the two-line plan implied (fix one, remeasure,
+  then decide whether the second still matters) is what the record shows
+  happened: after the de-seed, the 437 us/call was gone and the residual
+  was O(module-own-names), which is what justified the swap change. What
+  remained open from this list was ONLY the containsYield hoist, and the
+  function was spelled `functionContainsYield`. That is now fixed too, in
+  the section below.
+
+## RESOLVED: containsYield hoisted to parse time (2026-11-22, `f5bdb87cad`)
+
+The last open target above is closed. The compiler no longer re-walks each
+function body: `is_generator` is now read from a parse-time flag.
+
+- The walk lives in ONE place: `src/havel-lang/ast/YieldAnalysis.hpp`
+  (`havel::ast::bodyContainsYield` / `statementContainsYield` /
+  `expressionContainsYield`). The parser calls it once per function-like
+  node at construction; `ByteCompiler`'s three member walks now forward
+  to it rather than re-implementing the cases.
+- New AST field `contains_yield` on the five body owners:
+  `FunctionDeclaration`, `LambdaExpression`, `StructMethodDef`,
+  `ClassMethodDef`, `TraitMethod`.
+- The five compile sites (`ByteCompiler.cpp` compileFunction,
+  compileLambda, struct method, class method, trait default body) now read
+  the flag. `compileFunction` keeps `is_coroutine ||` — a `co fn` with no
+  yield is still a generator.
+- Semantic parity is the hard requirement, because `is_generator` decides
+  whether a call returns a coroutine (VM.cpp) or runs the body inline.
+  Preserved deliberately, NOT fixed: `TryExpression` still conservatively
+  returns true, and there is still no `ReturnStatement` case. Both
+  behaviors are carried over exactly, so no function changes
+  classification.
+- Regression fixture: `scripts/tests/test_is_generator_parity.hv`, which
+  asserts the *observable* classification (a generator's body has not run
+  yet when the call returns; an ordinary function's has) across all five
+  node owners plus the co-fn-only, yield-in-if, yield-in-loop,
+  outer-with-yield-lambda, await-only and try-only cases.
+
+**The win is structural and is measured by construction, not by a new
+benchmark run.** The per-function body walk was removed from the compile
+path (5 call sites, all now a field read), and that walk is what the
+110/169 figure above counted. A before/after rusage run has NOT been
+taken, and the 110/169 baseline should not be treated as succeeded by a
+new number until one is. Two things block a cheap rerun here and should be
+fixed before anyone tries:
+
+- `scripts/benchmarks/gen_parse_workload.py` emits `local <name>`, which
+  this tree rejects with `Unresolved identifier 'local'` — the workload
+  does not parse, so every timing taken from it was a timeout artifact.
+- `havel run` has no `--no-tiering` flag; it treats the argument as the
+  script FILENAME, so `havel run --no-tiering x.hv` exits 1 immediately
+  with "Failed to read script file: --no-tiering". Tiering-off runs need a
+  real flag, or a config/env switch, from whoever owns the CLI.
 
 ### Phase C history
 
@@ -352,6 +415,23 @@ computePipelineFingerprint) makes foreign entries reject as
 pipeline-fingerprint-drift and recompile; `HAVEL_STARTUP_TIMING=1` shows
 the rejects. Clear the cache when in doubt.
 
+## doCall's error-path dump is NOT duplicated (audited 2026-11-20)
+
+A claim that `doCall` carries "a literally duplicated nested block" in
+its error path — a copy-pasted frame-dump + instruction-dump — was
+audited against this tree and **does not hold**. `VM::doCall`
+(`VM.cpp:3005`, ending `VM.cpp:3728`) contains exactly ONE such block:
+the `if (!recovered)` branch at `VM.cpp:3310-3347`, which builds
+`frameInfo` (last 8 frames) and `instrInfo` (15 instructions around the
+failing IP) and throws once. There is no second copy in `doCall`, none in
+`doTailCall` (`VM.cpp:3730` — its error handling delegates to `doCall`),
+and no `dumpCallStack`/`dumpFrames` helper anywhere in `src/`.
+
+So the sequencing worry ("remove it before the globals surgery lands") is
+moot for this specific block. Genuinely duplicated logic in the same
+function is a different matter and still worth a grep before any
+`doCall` surgery — but this block is a single instance.
+
 ## VM-OPT-001: save-and-swap ambient installs (2026-10-13)
 
 Ticket VM-OPT-001 asked to eliminate the residual O(n) map copy on
@@ -459,6 +539,13 @@ pass; full gate 345/6 = exactly the pre-existing set (orc quartet +
 repl + qt); ctest 12/12; both module benches intact.
 
 ## ORC vs Cranelift at tier 2 (2026-10-12, first-ever measurement)
+
+> **VERDICT, stated up front so nobody has to read to the bottom: the
+> head-to-head HAS been measured, and ORC's O2 buys nothing measurable
+> over Cranelift tier-1 on Havel's hot-loop shapes.** Cranelift stays the
+> tier-1 default; ORC is opt-in only. This is the answer to "is tier-2
+> doing more harm than good" — yes, as a *default*; no, left opt-in. The
+> caveats that keep it honest are in the table below.
 
 Matched workloads on the LLVM-enabled build (`build-crane-release`, mode
 19), now unblocked by the ORC LLVM-23 fix. Tier-1 fires at 15k hotness on

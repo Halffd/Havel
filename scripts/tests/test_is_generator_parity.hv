@@ -1,0 +1,176 @@
+// Parity oracle for is_generator / containsYield hoisting.
+//
+// WHAT THIS TESTS: that the compiler's *observable* classification of a
+// function as a generator (or not) is unchanged by the containsYield
+// architecture change (hoisting the per-function AST walk from the
+// compiler to parse time).
+//
+// WHY OBSERVABLE BEHAVIOR AND NOT A FIELD DUMP: `is_generator` is not a
+// script-visible property. What it controls is observable: VM.cpp:3520
+// makes a call to an is_generator function allocate a COROUTINE and
+// return it instead of running the body. So calling a generator gives a
+// resumable object (its side effect has NOT happened yet), while calling
+// an ordinary function runs it immediately and returns a value.
+//
+// EXPECTED RESULT: every case below asserts the classification that the
+// pre-hoist walk produced. They are all `PASS` before AND after; any
+// regression here means a function changed classification, which is a
+// correctness bug (generator silently running inline, or an ordinary call
+// returning a coroutine).
+
+failures = []
+
+fn check(name, cond) {
+  if !cond {
+    failures.push(name)
+    print("FAIL " + name)
+  }
+}
+
+// 1. Plain `yield` in a fn body -> generator (FunctionDeclaration path).
+sideEffects = 0
+fn plainYield() {
+  sideEffects = sideEffects + 1
+  yield 1
+  return 2
+}
+c1 = plainYield()
+check("plain_yield_is_generator", c1 != nil && !c1.is_nil())
+// Positive half: a generator's body has NOT run yet, so the side effect
+// count is still 0 at this point. An ordinary function would already be 1.
+// This is what makes an is_generator classification failure observable.
+check("generator_body_not_yet_run", sideEffects == 0)
+
+// 2. No yield -> ordinary function, runs inline.
+fn ordinary() {
+  return 41 + 1
+}
+r2 = ordinary()
+check("ordinary_not_generator", r2 == 42)
+// Negative half of the same check: an ordinary fn must NOT return a
+// resumable object. Without this, case 1's assertion
+// (`c1 != nil && !c1.is_nil()`) could pass for the wrong reason.
+check("ordinary_not_resumable", !(r2 != nil && !r2.is_nil()) || r2 == 42)
+
+// 3. `co fn` with NO yield -> still a generator: is_coroutine alone forces it.
+//    This is the case that proves the hoist must OR is_coroutine, not replace it.
+co fn coroutineOnly() {
+  return 7
+}
+c3 = coroutineOnly()
+check("co_fn_no_yield_is_generator", c3 != nil && !c3.is_nil())
+
+// 4. yield nested inside an if -> generator (statementContainsYield IfStatement).
+fn yieldInIf(flag) {
+  if flag {
+    yield "deep"
+  }
+  return "done"
+}
+c4 = yieldInIf(true)
+check("yield_in_if_is_generator", c4 != nil && !c4.is_nil())
+
+// 5. yield inside a loop -> generator (LoopStatement/WhileStatement/ForStatement).
+fn yieldInLoop(n) {
+  i = 0
+  while i < n {
+    yield i
+    i = i + 1
+  }
+  return i
+}
+c5 = yieldInLoop(3)
+check("yield_in_while_is_generator", c5 != nil && !c5.is_nil())
+
+// 6. A lambda containing yield. Lambdas are their own function, so the
+//    OUTER fn stays ordinary while the lambda is a generator. The hoist must
+//    keep LambdaExpression -> false in the outer walk (nested functions do
+//    not inherit yield detection), exactly as expressionContainsYield does.
+fn outerWithYieldLambda() {
+  f = () => { yield 99 }
+  return "outer"
+}
+r6 = outerWithYieldLambda()
+check("outer_with_yield_lambda_is_ordinary", r6 == "outer")
+
+// 7. `await` with no yield -> generator (AwaitExpression also forces the flag).
+fn awaitOnly() {
+  val x = await someAwaitable()
+  return x
+}
+// someAwaitable is never reached: the classification is decided at compile
+// time, and `await` makes awaitOnly a generator regardless of the argument.
+fn someAwaitable() {
+  return 1
+}
+c7 = awaitOnly()
+check("await_only_is_generator", c7 != nil && !c7.is_nil())
+
+// 8. try/catch in the body. The walk conservatively returns TRUE for any
+//    TryExpression, so a fn whose only "suspicious" construct is a try is
+//    classified a generator. This over-approximation is DELIBERATELY
+//    preserved by this change - it must not be "fixed" while hoisting.
+fn tryOnly() {
+  try {
+    risky()
+  } catch e {
+    return 0
+  }
+  return 1
+}
+fn risky() {
+  return 5
+}
+c8 = tryOnly()
+check("try_only_is_generator", c8 != nil && !c8.is_nil())
+
+// 9. Class method with yield -> generator (ClassMethodDef path).
+class YieldBox {
+  fn tick() {
+    yield "t1"
+    yield "t2"
+  }
+  fn plain() {
+    return "p"
+  }
+}
+yb = YieldBox()
+c9 = yb.tick()
+check("class_method_with_yield_is_generator", c9 != nil && !c9.is_nil())
+check("class_method_plain_is_ordinary", yb.plain() == "p")
+
+// 10. Struct method with yield -> generator (StructMethodDef path).
+struct YieldStruct {
+  fn produce() {
+    yield "s1"
+    return "s2"
+  }
+  fn value() {
+    return 3
+  }
+}
+ys = YieldStruct()
+c10 = ys.produce()
+check("struct_method_with_yield_is_generator", c10 != nil && !c10.is_nil())
+check("struct_method_plain_is_ordinary", ys.value() == 3)
+
+// 11. Resume actually works on a hoisted-classification generator: the
+//     coroutine must be intact, not a mis-dispatched ordinary call.
+fn resumable() {
+  yield "a"
+  yield "b"
+  return "c"
+}
+rc = resumable()
+val v1 = rc()
+val v2 = rc()
+val v3 = rc()
+check("resumable_sequence", str(v1) == "a" && str(v2) == "b" && str(v3) == "c")
+
+if failures.len() > 0 {
+  print("FAIL test_is_generator_parity: " + str(failures.len()) + " case(s) failed")
+  process.exit(255)
+}
+print("PASS test_is_generator_parity")
+val __result = 0
+return __result

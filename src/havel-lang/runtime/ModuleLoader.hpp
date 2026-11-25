@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -109,6 +110,11 @@ public:
 
     // Compute SHA-256 hash of a file (for persistent cache index)
     static std::string sha256FileHex(const std::string& path);
+
+    // Number of file hashes performed for `path` in this process. Used by
+    // regression tests to prove the process-local validation memo avoids
+    // rehashing an unchanged file.
+    static std::uint64_t sha256FileHashCount(const std::string& path);
 
     // Deterministic flat cache filename for a compiled source file:
     //   lang.<stem>.hvc / std.<stem>.hvc for bundled modules,

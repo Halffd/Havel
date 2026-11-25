@@ -3733,6 +3733,7 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(bytecode_cache_identity_test PRIVATE cxx_std_23)

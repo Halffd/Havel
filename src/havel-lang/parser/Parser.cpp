@@ -1395,8 +1395,10 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     // a set; '{}' stays an empty object.
     {
       auto lambdaBody = parseBlockStatement();
-      return makeNodeAt<ast::LambdaExpression>(
+      auto _lam = makeNodeAt<ast::LambdaExpression>(
           token, std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(lambdaBody));
+      ast::setLambdaContainsYield(*_lam);
+      return _lam;
     }
   }
 
@@ -2506,7 +2508,11 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     params.push_back(makeNodeAt<ast::FunctionParameter>(token, std::move(ident), std::nullopt,
                                                         std::nullopt, false));
 
-    return makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*_lam);
+
+    return _lam;
   }
 
   default:
@@ -2536,7 +2542,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Check if this is a multi-parameter lambda: (a, b, c) => body
@@ -2583,7 +2591,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    return makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Not a multi-param lambda, restore position and parse normally
@@ -2636,7 +2646,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   if (isBraceLambda) {
     // Parse lambda body as block (parseBlockStatement expects to see '{')
     std::unique_ptr<ast::Statement> body = parseBlockStatement();
-    return makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Not a brace lambda, restore position and parse normally
@@ -2746,7 +2758,11 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     body->body.push_back(std::move(stmt));
   }
 
-  return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+  std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+
+  ast::setLambdaContainsYield(*_lam);
+
+  return _lam;
 }
 
 // Replace the old parseExpression with a wrapper that calls Pratt parser
@@ -3574,6 +3590,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(delay));
       args.push_back(std::move(lambda));
@@ -3588,6 +3605,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(lambda));
       auto call = makeNodeAt<havel::ast::CallExpression>(
@@ -3614,6 +3632,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(delay));
       args.push_back(std::move(lambda));
@@ -4562,9 +4581,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
   auto body = parseBlockStatement();
 
-  return makeNodeAt<havel::ast::FunctionDeclaration>(keyword, std::move(name), std::move(params),
+  auto decl = makeNodeAt<havel::ast::FunctionDeclaration>(keyword, std::move(name), std::move(params),
                                                      std::move(body), std::move(returnType),
                                                      std::move(typeParams));
+  // Hoisted generator detection: one walk here, instead of one per call to
+  // this function inside the compiler. See YieldAnalysis.hpp for why the
+  // semantics must stay identical to the old compiler-side walk.
+  if (decl->body) {
+    decl->contains_yield = ast::bodyContainsYield(*decl->body);
+  }
+  return decl;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
@@ -6016,8 +6042,12 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
       // Parse body
       auto body = parseBlockStatement();
 
-      methods.push_back(makeNode<ast::StructMethodDef>(methodName, std::move(params),
-                                                       std::move(body), isConstructor, isOperator));
+      auto _m = makeNode<ast::StructMethodDef>(methodName, std::move(params),
+                                             std::move(body), isConstructor, isOperator);
+      if (_m->body) {
+        _m->contains_yield = ast::bodyContainsYield(*_m->body);
+      }
+      methods.push_back(std::move(_m));
       continue;
     }
 
@@ -6438,9 +6468,13 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
       // Check if this is a constructor (method name is "init")
       bool isConstructor = (methodName == "init");
 
-      methods.push_back(makeNode<ast::ClassMethodDef>(methodName, std::move(params),
-                                                      std::move(body), isConstructor, isOperator,
-                                                      isClassMember));
+      auto _m = makeNode<ast::ClassMethodDef>(methodName, std::move(params),
+                                            std::move(body), isConstructor, isOperator,
+                                            isClassMember);
+      if (_m->body) {
+        _m->contains_yield = ast::bodyContainsYield(*_m->body);
+      }
+      methods.push_back(std::move(_m));
       continue;
     }
 
@@ -6692,8 +6726,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
       defaultBody = parseBlockStatement();
     }
 
-    methods.push_back(makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                                        std::move(defaultBody)));
+    auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
+                                             std::move(defaultBody));
+    if (_t->defaultBody) {
+      _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
+    }
+    methods.push_back(std::move(_t));
   }
 
   if (at().type != havel::TokenType::CloseBrace) {
@@ -6797,8 +6835,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
       defaultBody = parseBlockStatement();
     }
 
-    methods.push_back(makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                                        std::move(defaultBody)));
+    auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
+                                             std::move(defaultBody));
+    if (_t->defaultBody) {
+      _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
+    }
+    methods.push_back(std::move(_t));
   }
 
   if (isColonBody) {
@@ -7141,6 +7183,7 @@ void Parser::parseUIElementDeclaration(const std::string &parentVar, bool addToP
           auto body = parseBlockStatement();
           auto lambda = makeNode<havel::ast::LambdaExpression>();
           lambda->body = std::move(body);
+          ast::setLambdaContainsYield(*lambda);
           handler = std::move(lambda);
         } else {
           // Expression handler
@@ -9619,6 +9662,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     // Wrap the condition expression in an ExpressionStatement
     auto body = makeNode<havel::ast::ExpressionStatement>(std::move(condition));
     auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*lambda);
 
     filterCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(filterCall));
@@ -9640,6 +9684,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     // Wrap the transform expression in an ExpressionStatement
     auto body = makeNode<havel::ast::ExpressionStatement>(std::move(transform));
     auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*lambda);
 
     mapCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(mapCall));
@@ -10744,7 +10789,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     }
     auto body = parseBlockStatement();
 
-    return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<havel::ast::LambdaExpression> _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*_lam);
+
+    return _lam;
   }
 
   case havel::TokenType::OpenParen: {
@@ -11944,14 +11993,18 @@ Parser::parseLambdaFromParams(std::vector<std::unique_ptr<havel::ast::FunctionPa
   // Body can be block or expression
   if (at().type == havel::TokenType::OpenBrace) {
     auto block = parseBlockStatement();
-    return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+    auto _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
   // Expression body: wrap in Return inside a block
   auto expr = parseExpression();
   auto exprStmt = makeNode<havel::ast::ExpressionStatement>(std::move(expr));
   auto block = makeNode<havel::ast::BlockStatement>();
   block->body.push_back(std::move(exprStmt));
-  return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+  auto _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+  ast::setLambdaContainsYield(*_lam);
+  return _lam;
 }
 
 std::unique_ptr<havel::ast::Expression>
@@ -11976,8 +12029,8 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         if (!isObject) {
           auto block = parseBlockStatement();
           std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
-          auto lambda =
-              makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+          auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+          ast::setLambdaContainsYield(*lambda);
           // Append lambda to existing call args
           if (auto *callPtr = dynamic_cast<havel::ast::CallExpression *>(expr.get())) {
             callPtr->args.push_back(std::move(lambda));
@@ -12037,6 +12090,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         auto block = parseBlockStatement();
         std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
         auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+        ast::setLambdaContainsYield(*lambda);
         args.push_back(std::move(lambda));
       }
       expr = makeNode<havel::ast::CallExpression>(std::move(expr), std::move(args));
@@ -12789,6 +12843,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
     // Create lambda expression with no parameters and the block as body
     call = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*call));
   } else {
     // Parse the function call expression: go fn()
     call = parseExpression();
@@ -12830,6 +12885,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
     // Create lambda expression with no parameters and the block as body
     call = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*call));
 
   } else {
     // go func() or go identifier - function call
@@ -12955,6 +13011,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAsyncExpression() {
     }
 
     auto fnExpr = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*fnExpr);
     auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(fnExpr));
     auto expr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
     expr->line = asyncToken.line;
@@ -13128,6 +13186,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
     advance();
     expr = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*expr));
   } else {
     expr = parseExpression();
   }
@@ -13188,4 +13247,13 @@ std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
   }
   return std::nullopt;
 }
+
+// ============================================================================
+// Parse-time yield containment (hoisted generator detection)
+// ============================================================================
+//
+// The walk itself lives in ONE place - havel::ast::YieldAnalysis - so the
+// predicate that decides `contains_yield` cannot drift into a second copy in
+// the parser or the compiler. This file only calls into it (see
+// parseFunctionDeclaration).
 } // namespace havel::parser

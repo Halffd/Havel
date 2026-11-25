@@ -20,6 +20,7 @@
 
 #include "RuntimeSupport.hpp"
 #include "Pipeline.hpp"
+#include "ModuleLoader.hpp"
 
 #include <gtest/gtest.h>
 
@@ -210,4 +211,53 @@ TEST(BytecodeCacheIdentity, SecondCompileOfSameTextIsServedFromCache) {
         << "the second compile must be served from the cache; the entry "
            "written by the first compile did not validate";
   }
+}
+
+// The loader validates the same cache artifact repeatedly while resolving
+// modules. The SHA-256 result is memoized per observed file version, so an
+// unchanged artifact is hashed once in the process. The fingerprint (device,
+// inode, size, mtime, ctime) is the invalidation boundary: a changed file
+// version is hashed again and its new content is used.
+TEST(ModuleLoaderFileHashMemo, UnchangedFileIsHashedOnceAndChangedFileIsHashedAgain) {
+  ScratchDir scratch;
+  const fs::path file = scratch.path() / "unit.hvc";
+  WriteFile(file, "first content\n");
+
+  const std::string firstHash = havel::ModuleLoader::sha256FileHex(file.string());
+  ASSERT_FALSE(firstHash.empty());
+  EXPECT_EQ(havel::ModuleLoader::sha256FileHashCount(file.string()), 1U);
+
+  const std::string repeatedHash = havel::ModuleLoader::sha256FileHex(file.string());
+  EXPECT_EQ(repeatedHash, firstHash);
+  EXPECT_EQ(havel::ModuleLoader::sha256FileHashCount(file.string()), 1U)
+      << "an unchanged file must not be hashed again in the same process";
+
+  // Replace the file with different content. The new inode and timestamps
+  // make this a new file version, so validation must hash it again.
+  const fs::path replacement = scratch.path() / "replacement.hvc";
+  WriteFile(replacement, "second content\n");
+  fs::rename(replacement, file);
+
+  const std::string changedHash = havel::ModuleLoader::sha256FileHex(file.string());
+  EXPECT_NE(changedHash, firstHash);
+  EXPECT_EQ(havel::ModuleLoader::sha256FileHashCount(file.string()), 2U)
+      << "a replaced file must be validated again";
+}
+
+// A corrupt artifact is a validation failure, not a reason to skip the
+// hash: the memo keeps the failed version's hash so the same corrupt bytes
+// are not hashed again during this process.
+TEST(ModuleLoaderFileHashMemo, CorruptFileIsNotHashedRepeatedly) {
+  ScratchDir scratch;
+  const fs::path file = scratch.path() / "corrupt.hvc";
+  WriteFile(file, "not a valid hvc payload\n");
+
+  const std::string firstHash = havel::ModuleLoader::sha256FileHex(file.string());
+  ASSERT_FALSE(firstHash.empty());
+  EXPECT_EQ(havel::ModuleLoader::sha256FileHashCount(file.string()), 1U);
+
+  const std::string repeatedHash = havel::ModuleLoader::sha256FileHex(file.string());
+  EXPECT_EQ(repeatedHash, firstHash);
+  EXPECT_EQ(havel::ModuleLoader::sha256FileHashCount(file.string()), 1U)
+      << "a corrupt but unchanged file must not be hashed again";
 }

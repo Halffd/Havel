@@ -4,16 +4,21 @@
 #include "../compiler/runtime/RuntimeSupport.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <cstdlib>
+#include <memory>
+#include <mutex>
 #include <system_error>
 #include <array>
 #include <fstream>
 #include <span>
+#include <unordered_map>
 
 #ifndef _WIN32
 #include <dlfcn.h>
+#include <sys/stat.h>
 #else
 #include <windows.h>
 #endif
@@ -102,11 +107,180 @@ std::array<uint8_t, 32> sha256_file(const std::string& path) {
     return sha256(buf.data(), buf.size());
 }
 
-std::string sha256_file_hex(const std::string& path) {
+std::string sha256_file_hex_uncached(const std::string& path) {
     auto hash = sha256_file(path);
     std::ostringstream oss;
     for (uint8_t b : hash) oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
     return oss.str();
+}
+
+// A file version observed by the process. The inode identity distinguishes
+// replacement from in-place modification; size and both timestamps catch
+// ordinary rewrites. Nanosecond fields are used where the platform exposes
+// them.
+struct FileFingerprint {
+    bool present = false;
+    std::uint64_t device = 0;
+    std::uint64_t inode = 0;
+    std::uint64_t size = 0;
+    std::int64_t mtime_seconds = 0;
+    std::int64_t mtime_nanoseconds = 0;
+    std::int64_t ctime_seconds = 0;
+    std::int64_t ctime_nanoseconds = 0;
+
+    bool operator==(const FileFingerprint&) const = default;
+};
+
+FileFingerprint fileFingerprint(const std::string& path) {
+    std::error_code ec;
+    const auto status = std::filesystem::status(path, ec);
+    if (ec || !std::filesystem::exists(status)) {
+        return {};
+    }
+
+    FileFingerprint fingerprint;
+    fingerprint.present = true;
+    const auto fileSize = std::filesystem::file_size(path, ec);
+    if (ec) {
+        fingerprint.present = false;
+        return fingerprint;
+    }
+    fingerprint.size = fileSize;
+
+#ifndef _WIN32
+    struct stat st {};
+    if (::stat(path.c_str(), &st) != 0) {
+        fingerprint.present = false;
+        return fingerprint;
+    }
+    fingerprint.device = static_cast<std::uint64_t>(st.st_dev);
+    fingerprint.inode = static_cast<std::uint64_t>(st.st_ino);
+#if defined(__APPLE__)
+    fingerprint.mtime_seconds = static_cast<std::int64_t>(st.st_mtimespec.tv_sec);
+    fingerprint.mtime_nanoseconds = static_cast<std::int64_t>(st.st_mtimespec.tv_nsec);
+    fingerprint.ctime_seconds = static_cast<std::int64_t>(st.st_ctimespec.tv_sec);
+    fingerprint.ctime_nanoseconds = static_cast<std::int64_t>(st.st_ctimespec.tv_nsec);
+#else
+    fingerprint.mtime_seconds = static_cast<std::int64_t>(st.st_mtim.tv_sec);
+    fingerprint.mtime_nanoseconds = static_cast<std::int64_t>(st.st_mtim.tv_nsec);
+    fingerprint.ctime_seconds = static_cast<std::int64_t>(st.st_ctim.tv_sec);
+    fingerprint.ctime_nanoseconds = static_cast<std::int64_t>(st.st_ctim.tv_nsec);
+#endif
+#else
+    // Windows has no stable inode number in the CRT stat structure. The
+    // file index from the handle plus its timestamps provides the same
+    // replacement/modification boundary for this process-local memo.
+    HANDLE handle = CreateFileA(path.c_str(), GENERIC_READ,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                nullptr, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS,
+                                nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        fingerprint.present = false;
+        return fingerprint;
+    }
+    BY_HANDLE_FILE_INFORMATION info {};
+    const bool ok = GetFileInformationByHandle(handle, &info) != FALSE;
+    CloseHandle(handle);
+    if (!ok) {
+        fingerprint.present = false;
+        return fingerprint;
+    }
+    fingerprint.device = static_cast<std::uint64_t>(info.dwVolumeSerialNumber);
+    fingerprint.inode = (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) |
+                        static_cast<std::uint64_t>(info.nFileIndexLow);
+    ULARGE_INTEGER time {};
+    time.LowPart = info.ftLastWriteTime.dwLowDateTime;
+    time.HighPart = info.ftLastWriteTime.dwHighDateTime;
+    fingerprint.mtime_seconds = static_cast<std::int64_t>(time.QuadPart / 10'000'000ULL);
+    fingerprint.mtime_nanoseconds =
+        static_cast<std::int64_t>((time.QuadPart % 10'000'000ULL) * 100ULL);
+    ULARGE_INTEGER changeTime {};
+    changeTime.LowPart = info.ftCreationTime.dwLowDateTime;
+    changeTime.HighPart = info.ftCreationTime.dwHighDateTime;
+    fingerprint.ctime_seconds = static_cast<std::int64_t>(changeTime.QuadPart / 10'000'000ULL);
+    fingerprint.ctime_nanoseconds =
+        static_cast<std::int64_t>((changeTime.QuadPart % 10'000'000ULL) * 100ULL);
+#endif
+    return fingerprint;
+}
+
+struct FileHashMemoEntry {
+    FileFingerprint fingerprint;
+    std::string hash;
+    std::uint64_t hash_count = 0;
+    bool hashed = false;
+    std::mutex mutex;
+};
+
+// One SHA-256 result per observed file version. The table is process-local
+// and thread-safe. Valid and invalid results are both memoized: the hash is
+// the value, so an unreadable file's empty result is cached exactly like a
+// successful hash.
+class FileHashMemo {
+public:
+    static FileHashMemo& instance() {
+        static FileHashMemo memo;
+        return memo;
+    }
+
+    std::string hash(const std::string& path) {
+        const std::string canonical = canonicalPath(path);
+        const auto fingerprint = fileFingerprint(canonical);
+
+        std::shared_ptr<FileHashMemoEntry> entry;
+        {
+            std::lock_guard lock(mutex_);
+            auto it = entries_.find(canonical);
+            if (it == entries_.end()) {
+                entry = std::make_shared<FileHashMemoEntry>();
+                entries_.emplace(canonical, entry);
+            } else {
+                entry = it->second;
+            }
+        }
+
+        // Serialize hashes for one path, but not for unrelated paths: a
+        // large module must not block lookups of other modules.
+        std::lock_guard entryLock(entry->mutex);
+        if (entry->hashed && entry->fingerprint == fingerprint) {
+            return entry->hash;
+        }
+        std::string hash = sha256_file_hex_uncached(canonical);
+        entry->fingerprint = fingerprint;
+        entry->hash = std::move(hash);
+        entry->hashed = true;
+        ++entry->hash_count;
+        return entry->hash;
+    }
+
+    std::uint64_t hashCount(const std::string& path) {
+        const std::string canonical = canonicalPath(path);
+        std::shared_ptr<FileHashMemoEntry> entry;
+        {
+            std::lock_guard lock(mutex_);
+            auto it = entries_.find(canonical);
+            if (it == entries_.end()) return 0;
+            entry = it->second;
+        }
+        std::lock_guard entryLock(entry->mutex);
+        return entry->hash_count;
+    }
+
+private:
+    static std::string canonicalPath(const std::string& path) {
+        std::error_code ec;
+        auto canonical = std::filesystem::canonical(path, ec);
+        if (!ec) return canonical.string();
+        return path;
+    }
+
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::shared_ptr<FileHashMemoEntry>> entries_;
+};
+
+std::string sha256_file_hex(const std::string& path) {
+    return FileHashMemo::instance().hash(path);
 }
 
 std::string sha256_hex(const std::string& data) {
@@ -1109,6 +1283,10 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
 
   std::string ModuleLoader::sha256FileHex(const std::string& path) {
     return sha256_file_hex(path);
+  }
+
+  std::uint64_t ModuleLoader::sha256FileHashCount(const std::string& path) {
+    return ::FileHashMemo::instance().hashCount(path);
   }
 
   std::string ModuleLoader::canonicalizePath(const std::string& modulePath,

@@ -1606,8 +1606,8 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   }
 
   if (function.body) {
-    current_function->is_generator =
-        function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
+    // Hoisted: the parser already walked this body once (see ast/YieldAnalysis.hpp).
+    current_function->is_generator = function.is_coroutine || function.contains_yield;
   }
 
   if (is_impl_method) {
@@ -1759,9 +1759,8 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   }
 
   if (lambda.body) {
-    // For lambda expressions, we need to check if the body contains yield
-    // Note: lambda.body is a Statement, so we use statementContainsYield directly
-    current_function->is_generator = statementContainsYield(*lambda.body);
+    // Hoisted: the parser already walked this lambda's body once.
+    current_function->is_generator = lambda.contains_yield;
   }
 
   leaveFunction();
@@ -2051,7 +2050,7 @@ void ByteCompiler::compileClassMethod(const std::string &class_name,
   }
 
   if (method.body) {
-    current_function->is_generator = functionContainsYield(*method.body);
+    current_function->is_generator = method.contains_yield;
   }
 
   current_class_name_ = prev_class_name;
@@ -2193,7 +2192,7 @@ void ByteCompiler::compileStructMethod(const std::string &struct_name,
   }
 
   if (method.body) {
-    current_function->is_generator = functionContainsYield(*method.body);
+    current_function->is_generator = method.contains_yield;
   }
 
   current_class_name_ = prev_class_name;
@@ -2343,7 +2342,7 @@ void ByteCompiler::compileDefaultMethodBody(const std::string &type_name,
   }
 
   if (traitMethod.defaultBody) {
-    current_function->is_generator = functionContainsYield(*traitMethod.defaultBody);
+    current_function->is_generator = traitMethod.contains_yield;
   }
 
   leaveFunction();
@@ -10906,138 +10905,6 @@ void ByteCompiler::compileWaitExpression(const ast::WaitExpression &expression) 
   emit(OpCode::THREAD_JOIN);
 }
 
-bool ByteCompiler::functionContainsYield(const ast::BlockStatement &body) const {
-  // BlockStatement stores statements in `body` field (vector of unique_ptr<Statement>)
-  for (const auto &stmt : body.body) {
-    if (stmt && statementContainsYield(*stmt)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
-  switch (stmt.kind) {
-  case ast::NodeType::ExpressionStatement: {
-    const auto &expr_stmt = static_cast<const ast::ExpressionStatement &>(stmt);
-    return expr_stmt.expression && expressionContainsYield(*expr_stmt.expression);
-  }
-
-  case ast::NodeType::BlockStatement: {
-    const auto &block = static_cast<const ast::BlockStatement &>(stmt);
-    return functionContainsYield(block);
-  }
-
-  case ast::NodeType::IfStatement: {
-    const auto &if_stmt = static_cast<const ast::IfStatement &>(stmt);
-    if (if_stmt.condition && expressionContainsYield(*if_stmt.condition)) {
-      return true;
-    }
-    if (if_stmt.consequence && statementContainsYield(*if_stmt.consequence)) {
-      return true;
-    }
-    if (if_stmt.alternative && statementContainsYield(*if_stmt.alternative)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::WhileStatement: {
-    const auto &while_stmt = static_cast<const ast::WhileStatement &>(stmt);
-    if (while_stmt.condition && expressionContainsYield(*while_stmt.condition)) {
-      return true;
-    }
-    if (while_stmt.body && statementContainsYield(*while_stmt.body)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::DoWhileStatement: {
-    const auto &do_while = static_cast<const ast::DoWhileStatement &>(stmt);
-    if (do_while.body && statementContainsYield(*do_while.body)) {
-      return true;
-    }
-    if (do_while.condition && expressionContainsYield(*do_while.condition)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::ForStatement: {
-    const auto &for_stmt = static_cast<const ast::ForStatement &>(stmt);
-    if (for_stmt.iterable && expressionContainsYield(*for_stmt.iterable)) {
-      return true;
-    }
-    if (for_stmt.body && statementContainsYield(*for_stmt.body)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::LoopStatement: {
-    const auto &loop = static_cast<const ast::LoopStatement &>(stmt);
-    if (loop.condition && expressionContainsYield(*loop.condition)) {
-      return true;
-    }
-    if (loop.countExpr && expressionContainsYield(*loop.countExpr)) {
-      return true;
-    }
-    if (loop.body && statementContainsYield(*loop.body)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::TryExpression: {
-    const auto &try_expr = static_cast<const ast::TryExpression &>(stmt);
-    if (try_expr.tryBody && statementContainsYield(*try_expr.tryBody)) {
-      return true;
-    }
-    if (try_expr.catchBody && statementContainsYield(*try_expr.catchBody)) {
-      return true;
-    }
-    if (try_expr.finallyBlock && statementContainsYield(*try_expr.finallyBlock)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::HotkeyBinding: {
-    const auto &hotkey = static_cast<const ast::HotkeyBinding &>(stmt);
-    if (hotkey.action && statementContainsYield(*hotkey.action)) {
-      return true;
-    }
-    return false;
-  }
-
-  case ast::NodeType::WaitStatement: {
-    const auto &wait = static_cast<const ast::WaitStatement &>(stmt);
-    return wait.condition && expressionContainsYield(*wait.condition);
-  }
-
-  case ast::NodeType::WithStatement: {
-    const auto &withStmt = static_cast<const ast::WithStatement &>(stmt);
-    for (const auto &s : withStmt.body) {
-      if (s && statementContainsYield(*s))
-        return true;
-    }
-    return false;
-  }
-
-    // Note: We check if the IMMEDIATE parent function contains yield, not nested ones
-    // Nested functions are compiled separately and get their own is_generator flag
-  case ast::NodeType::FunctionDeclaration:
-  case ast::NodeType::ClassDeclaration:
-  case ast::NodeType::EnumDeclaration:
-  case ast::NodeType::DecoratorStatement:
-    return false;
-
-  default:
-    return false;
-  }
-}
-
 void ByteCompiler::optimizeJumps() {
   if (!current_function || current_function->instructions.empty()) {
     return;
@@ -11081,66 +10948,6 @@ void ByteCompiler::optimizeJumps() {
   // Third pass: patch instructions with optimized targets
   for (auto &[pc, target] : jump_targets) {
     instructions[pc].operands[0] = Value(static_cast<int64_t>(target));
-  }
-}
-
-bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
-  switch (expr.kind) {
-  case ast::NodeType::YieldExpression:
-    return true;
-
-  case ast::NodeType::AwaitExpression:
-    return true;
-
-  case ast::NodeType::BinaryExpression: {
-    const auto &binary = static_cast<const ast::BinaryExpression &>(expr);
-    return (binary.left && expressionContainsYield(*binary.left)) ||
-           (binary.right && expressionContainsYield(*binary.right));
-  }
-
-  case ast::NodeType::UnaryExpression: {
-    const auto &unary = static_cast<const ast::UnaryExpression &>(expr);
-    return unary.operand && expressionContainsYield(*unary.operand);
-  }
-
-  case ast::NodeType::CallExpression: {
-    const auto &call = static_cast<const ast::CallExpression &>(expr);
-    if (call.callee && expressionContainsYield(*call.callee)) {
-      return true;
-    }
-    for (const auto &arg : call.args) {
-      if (arg && expressionContainsYield(*arg)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  case ast::NodeType::MemberExpression: {
-    const auto &member = static_cast<const ast::MemberExpression &>(expr);
-    return member.object && expressionContainsYield(*member.object);
-  }
-
-  case ast::NodeType::IndexExpression: {
-    const auto &index = static_cast<const ast::IndexExpression &>(expr);
-    return (index.object && expressionContainsYield(*index.object)) ||
-           (index.index && expressionContainsYield(*index.index));
-  }
-
-  case ast::NodeType::LambdaExpression: {
-    // Lambdas are separate functions, don't inherit outer function's yield detection
-    return false;
-  }
-
-  case ast::NodeType::TryExpression: {
-    // Note: TryExpression is an expression, not a statement
-    // It may contain statements, but we need to be careful with the structure
-    // For now, conservatively assume it might contain yield
-    return true; // TODO: Implement proper TryExpression yield detection
-  }
-
-  default:
-    return false;
   }
 }
 

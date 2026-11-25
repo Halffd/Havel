@@ -216,27 +216,27 @@ void DependencyGraph::clear() {
     edge_count_ = 0;
 }
 
-// DependencyTracker implementation
+// IncrementalDependencyTracker implementation
 
-void DependencyTracker::recordCompilation(const CompilationUnit& unit) {
+void IncrementalDependencyTracker::recordCompilation(const CompilationUnit& unit) {
     compilations_[unit.name] = unit;
 }
 
-std::optional<DependencyTracker::CompilationUnit> DependencyTracker::getCompilation(
+std::optional<IncrementalDependencyTracker::CompilationUnit> IncrementalDependencyTracker::getCompilation(
     const std::string& name) const {
     auto it = compilations_.find(name);
     if (it != compilations_.end()) return it->second;
     return std::nullopt;
 }
 
-bool DependencyTracker::needsRecompilation(
+bool IncrementalDependencyTracker::needsRecompilation(
     const std::string& name, const std::string& current_fingerprint) const {
     auto it = compilations_.find(name);
     if (it == compilations_.end()) return true;  // never compiled
     return it->second.fingerprint != current_fingerprint;
 }
 
-std::vector<std::string> DependencyTracker::getAffectedUnits(
+std::vector<std::string> IncrementalDependencyTracker::getAffectedUnits(
     const std::unordered_set<std::string>& changed_inputs) const {
     std::vector<std::string> affected;
     for (const auto& [name, unit] : compilations_) {
@@ -250,7 +250,7 @@ std::vector<std::string> DependencyTracker::getAffectedUnits(
     return affected;
 }
 
-std::string DependencyTracker::serialize() const {
+std::string IncrementalDependencyTracker::serialize() const {
     std::ostringstream oss;
     oss << "DEPLOCK v1\n";
     oss << compilations_.size() << "\n";
@@ -268,8 +268,8 @@ std::string DependencyTracker::serialize() const {
     return oss.str();
 }
 
-std::optional<DependencyTracker> DependencyTracker::deserialize(const std::string& data) {
-    DependencyTracker t;
+std::optional<IncrementalDependencyTracker> IncrementalDependencyTracker::deserialize(const std::string& data) {
+    IncrementalDependencyTracker t;
     std::istringstream iss(data);
     std::string line;
     if (!std::getline(iss, line) || line != "DEPLOCK v1") return std::nullopt;
